@@ -1572,6 +1572,8 @@ public class BrowserApp extends GeckoApp
 
     @Override
     public void onDestroy() {
+        mOuinet.stop();
+
         if (mIsAbortingAppLaunch) {
             super.onDestroy();
             return;
