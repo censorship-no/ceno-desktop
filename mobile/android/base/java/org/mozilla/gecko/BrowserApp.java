@@ -180,6 +180,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
+import ie.equalit.ouinet.Ouinet;
 
 import static org.mozilla.gecko.mma.MmaDelegate.NEW_TAB;
 import static org.mozilla.gecko.util.JavaUtil.getBundleSizeInBytes;
@@ -332,8 +333,13 @@ public class BrowserApp extends GeckoApp
 
     private boolean mHasResumed;
 
+    private Ouinet mOuinet;
+
     @Override
     public View onCreateView(final View parent, final String name, final Context context, final AttributeSet attrs) {
+
+        mOuinet = new Ouinet(this, null, null, null);
+
         final View view;
         if (BrowserToolbar.class.getName().equals(name)) {
             view = BrowserToolbar.create(context, attrs);

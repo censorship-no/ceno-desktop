@@ -223,7 +223,14 @@ android {
     }
 }
 
+repositories {
+    flatDir {
+        dirs "${topsrcdir}/../build/build.ouinet/build-android/builddir/ouinet/build-android/outputs/aar"
+    }
+}
+
 dependencies {
+    implementation(name: "ouinet-debug", ext: 'aar')
     implementation "com.android.support:support-v4:$support_library_version"
     implementation "com.android.support:appcompat-v7:$support_library_version"
     implementation "com.android.support:cardview-v7:$support_library_version"
