@@ -975,7 +975,10 @@ public abstract class GeckoApp extends GeckoActivity
             return;
         }
 
-        mOuinet = new Ouinet(this, null, null, null);
+        mOuinet = new Ouinet(this,
+                getResources().getString(R.string.ouinet_injector_ipfs_id),
+                getResources().getString(R.string.ouinet_injector_endpoint),
+                getResources().getString(R.string.ouinet_injector_credentials));
 
         // The clock starts...now. Better hurry!
         mJavaUiStartupTimer = new Telemetry.UptimeTimer("FENNEC_STARTUP_TIME_JAVAUI");
