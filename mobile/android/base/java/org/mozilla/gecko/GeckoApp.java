@@ -2065,7 +2065,9 @@ public abstract class GeckoApp extends GeckoActivity
 
     @Override
     public void onDestroy() {
-        mOuinet.stop();
+        if (mOuinet != null) {
+            mOuinet.stop();
+        }
 
         if (mIsAbortingAppLaunch) {
             // This build does not support the Android version of the device:
