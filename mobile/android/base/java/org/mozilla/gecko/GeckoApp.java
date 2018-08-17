@@ -104,6 +104,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import ie.equalit.ouinet.Ouinet;
+
 import static org.mozilla.gecko.Tabs.INTENT_EXTRA_SESSION_UUID;
 import static org.mozilla.gecko.Tabs.INTENT_EXTRA_TAB_ID;
 import static org.mozilla.gecko.Tabs.INVALID_TAB_ID;
@@ -191,6 +193,8 @@ public abstract class GeckoApp extends GeckoActivity
     private boolean mSessionRestoreParsingFinished = false;
 
     private boolean foregrounded = false;
+
+    private Ouinet mOuinet;
 
     private static final class LastSessionParser extends SessionParser {
         private JSONArray tabs;
@@ -970,6 +974,8 @@ public abstract class GeckoApp extends GeckoActivity
             finish();
             return;
         }
+
+        mOuinet = new Ouinet(this, null, null, null);
 
         // The clock starts...now. Better hurry!
         mJavaUiStartupTimer = new Telemetry.UptimeTimer("FENNEC_STARTUP_TIME_JAVAUI");
@@ -2054,6 +2060,8 @@ public abstract class GeckoApp extends GeckoActivity
 
     @Override
     public void onDestroy() {
+        mOuinet.stop();
+
         if (mIsAbortingAppLaunch) {
             // This build does not support the Android version of the device:
             // We did not initialize anything, so skip cleaning up.
