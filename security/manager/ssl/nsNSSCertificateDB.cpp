@@ -49,6 +49,16 @@
 #include <winsock.h> // for ntohl
 #endif
 
+// This will do two things:
+//
+// 1. Don't prompt when inserting an already inserted CA certificate
+// 2. Don't prompt whether the user want's to install a CA certificate
+//
+// These are not ideal and a proper fix should be in place. But "luckily"
+// Fennec doesn't currently allow the user to install certificates so we'll be
+// the only ones calling these functions.
+#define OUINET_QUICK_HACK
+
 using namespace mozilla;
 using namespace mozilla::psm;
 using mozilla::psm::SharedSSLState;
@@ -343,15 +353,24 @@ nsNSSCertificateDB::handleCACertDownload(NotNull<nsIArray*> x509Certs,
   }
 
   if (tmpCert->isperm) {
+#ifndef OUINET_QUICK_HACK
+    // Don't warn if certificate already exists
     DisplayCertificateAlert(ctx, "CaCertExists", certToShow);
+#endif
     return NS_ERROR_FAILURE;
   }
 
+#ifdef OUINET_QUICK_HACK
+  uint32_t trustBits = nsIX509CertDB::TRUSTED_SSL;
+  bool allows = true;
+#else
   uint32_t trustBits;
+
   bool allows;
   rv = dialogs->ConfirmDownloadCACert(ctx, certToShow, &trustBits, &allows);
   if (NS_FAILED(rv))
     return rv;
+#endif
 
   if (!allows)
     return NS_ERROR_NOT_AVAILABLE;
