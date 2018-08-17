@@ -333,6 +333,17 @@ function InitLater(fn, object, name) {
   return DelayedInit.schedule(fn, object, name, 15000 /* 15s max wait */);
 }
 
+function injectOuinetClientCARootCertificate() {
+    const nsX509CertDB = "@mozilla.org/security/x509certdb;1";
+
+    var certdb = Cc[nsX509CertDB].getService(Ci.nsIX509CertDB);
+    var settings = window.arguments[0].QueryInterface(Ci.nsIAndroidView).initData.settings;
+    var file = new FileUtils.File(settings.ouinetClientRootCert);
+
+    // TODO: This prompts the user to accept the certificate, try to disable that.
+    certdb.importCertsFromFile(file, Ci.nsIX509Cert.CA_CERT);
+}
+
 var BrowserApp = {
   _tabs: [],
   _selectedTab: null,
@@ -394,6 +405,8 @@ var BrowserApp = {
       "Session:Stop",
       "Telemetry:CustomTabsPing",
     ]);
+
+    injectOuinetClientCARootCertificate();
 
     // Initialize the default l10n resource sources for L10nRegistry.
     let locales = Services.locale.packagedLocales;

@@ -56,6 +56,12 @@ public final class GeckoSessionSettings implements Parcelable {
     public static final Key<String> CHROME_URI =
         new Key<String>("chromeUri", /* initOnly */ true, /* values */ null);
     /**
+     * Path to the Ouinet/Client't root certificate
+     * Read-only once session is open.
+     */
+    public static final Key<String> OUINET_CLIENT_ROOT_CERTIFICATE =
+        new Key<String>("ouinetClientRootCert", /* initOnly */ true, /* values */ null);
+    /**
      * Key to set the window screen ID, or 0 to use default ID.
      * Read-only once session is open.
      */

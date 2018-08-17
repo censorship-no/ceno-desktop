@@ -1089,6 +1089,8 @@ public abstract class GeckoApp extends GeckoActivity
         final GeckoSession session = new GeckoSession();
         session.getSettings().setString(GeckoSessionSettings.CHROME_URI,
                                         "chrome://browser/content/browser.xul");
+        session.getSettings().setString(GeckoSessionSettings.OUINET_CLIENT_ROOT_CERTIFICATE,
+                                        mOuinet.pathToCARootCert());
         session.setContentDelegate(this);
 
         // If the view already has a session, we need to ensure it is closed.
