@@ -225,7 +225,8 @@ android {
 
 repositories {
     flatDir {
-        dirs "${topsrcdir}/../build/build.ouinet/build-android/builddir/ouinet/build-android/outputs/aar"
+        def ouinetArchiveDir = "${topsrcdir}/../build.ouinet/build-android/builddir/ouinet/build-android/outputs/aar"
+        dirs "${ouinetArchiveDir}"
     }
 }
 
