@@ -66,6 +66,7 @@ class VideoStreamTrack;
 } // namespace dom
 } // namespace mozilla
 
+class AudioDeviceInfo;
 class nsIChannel;
 class nsIHttpChannel;
 class nsILoadGroup;
@@ -122,7 +123,7 @@ public:
     return mCORSMode;
   }
 
-  explicit HTMLMediaElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLMediaElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   void ReportCanPlayTelemetry();
 
@@ -397,7 +398,7 @@ public:
    */
   bool GetPlayedOrSeeked() const { return mHasPlayedOrSeeked; }
 
-  nsresult CopyInnerTo(Element* aDest, bool aPreallocateChildren);
+  nsresult CopyInnerTo(Element* aDest);
 
   /**
    * Sets the Accept header on the HTTP channel to the required
@@ -827,6 +828,17 @@ public:
     return mMainThreadEventTarget;
   }
 
+  // Set the sink id (of the output device) that the audio will play. If aSinkId
+  // is empty the default device will be set.
+  already_AddRefed<Promise> SetSinkId(const nsAString& aSinkId, ErrorResult& aRv);
+  // Get the sink id of the device that audio is being played. Initial value is
+  // empty and the default device is being used.
+  void GetSinkId(nsString& aSinkId)
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+    aSinkId = mSink.first();
+  }
+
 protected:
   virtual ~HTMLMediaElement();
 
@@ -843,8 +855,6 @@ protected:
   MediaDecoderOwner::NextFrameStatus NextFrameStatus();
 
   void SetDecoder(MediaDecoder* aDecoder);
-
-  void UpdateWakeLock();
 
   // Holds references to the DOM wrappers for the MediaStreams that we're
   // writing to.
@@ -882,11 +892,14 @@ protected:
   void ChangeNetworkState(nsMediaNetworkState aState);
 
   /**
-   * These two methods are called when mPaused is changed to ensure we have
-   * a wake lock active when we're playing audibly.
+   * The MediaElement will be responsible for creating and releasing the audio
+   * wakelock depending on the playing and audible state.
    */
-  virtual void WakeLockCreate();
   virtual void WakeLockRelease();
+  virtual void UpdateWakeLock();
+
+  void CreateAudioWakeLockIfNeeded();
+  void ReleaseAudioWakeLockIfExists();
   RefPtr<WakeLock> mWakeLock;
 
   /**
@@ -1310,10 +1323,6 @@ protected:
   // For nsAsyncEventRunner.
   nsresult DispatchEvent(const nsAString& aName);
 
-  // Open unsupported types media with the external app when the media element
-  // triggers play() after loaded fail. eg. preload the data before start play.
-  void OpenUnsupportedMediaWithExternalAppIfNeeded() const;
-
   // This method moves the mPendingPlayPromises into a temperate object. So the
   // mPendingPlayPromises is cleared after this method call.
   nsTArray<RefPtr<PlayPromise>> TakePendingPlayPromises();
@@ -1368,6 +1377,27 @@ protected:
 
   // Ensures we're prompting the user for permission to autoplay.
   void EnsureAutoplayRequested(bool aHandlingUserInput);
+
+  // Update the silence range of the audio track when the audible status of
+  // silent audio track changes or seeking to the new position where the audio
+  // track is silent.
+  void UpdateAudioTrackSilenceRange(bool aAudible);
+
+  // When silent audio track becomes audible or seeking to new place, we would
+  // end the current silence range and accumulate it to the total silence
+  // proportion of audio track and update current silence range.
+  void AccumulateAudioTrackSilence();
+
+  // True when the media element's audio track is containing silence now.
+  bool IsAudioTrackCurrentlySilent() const;
+
+  // Calculate the audio track silence proportion and then report the telemetry
+  // result. we would report the result when decoder is destroyed.
+  void ReportAudioTrackSilenceProportionTelemetry();
+
+  // When the play is not allowed, dispatch related events which are used for
+  // testing or changing control UI.
+  void DispatchEventsWhenPlayWasNotAllowed();
 
   // The current decoder. Load() has been called on this decoder.
   // At most one of mDecoder and mSrcStream can be non-null.
@@ -1486,6 +1516,17 @@ protected:
 
   // True if the audio track is not silent.
   bool mIsAudioTrackAudible = false;
+
+  // Used to mark the start of the silence range of audio track.
+  double mAudioTrackSilenceStartedTime = 0.0;
+
+  // Save all the silence ranges, all ranges would be normalized. That means
+  // intervals won't overlap or touch each other.
+  media::TimeIntervals mSilenceTimeRanges;
+
+  // True if we have calculated silence range before SeekEnd(). This attribute
+  // would be reset after seeking completed.
+  bool mHasAccumulatedSilenceRangeBeforeSeekEnd = false;
 
   enum MutedReasons {
     MUTED_BY_CONTENT               = 0x01,
@@ -1733,6 +1774,9 @@ protected:
   // before attaching to the DOM tree.
   bool mUnboundFromTree = false;
 
+  // True if the autoplay media was blocked because it hadn't loaded metadata yet.
+  bool mBlockedAsWithoutMetadata = false;
+
 public:
   // Helper class to measure times for MSE telemetry stats
   class TimeDurationAccumulator
@@ -1786,7 +1830,7 @@ private:
 
   already_AddRefed<PlayPromise> CreatePlayPromise(ErrorResult& aRv) const;
 
-  void UpdateHadAudibleAutoplayState() const;
+  void UpdateHadAudibleAutoplayState();
 
   /**
    * This function is called by AfterSetAttr and OnAttrSetButNotChanged.
@@ -1858,6 +1902,14 @@ private:
 
   // For debugging bug 1407148.
   void AssertReadyStateIsNothing();
+
+  // Contains the unique id of the sink device and the device info.
+  // The initial value is ("", nullptr) and the default output device is used.
+  // It can contain an invalid id and info if the device has been
+  // unplugged. It can be set to ("", nullptr). It follows the spec attribute:
+  // https://w3c.github.io/mediacapture-output/#htmlmediaelement-extensions
+  // Read/Write from the main thread only.
+  Pair<nsString, RefPtr<AudioDeviceInfo>> mSink;
 };
 
 // Check if the context is chrome or has the debugger or tabs permission

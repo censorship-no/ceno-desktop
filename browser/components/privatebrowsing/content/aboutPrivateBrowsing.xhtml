@@ -20,7 +20,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" class="private">
   <head>
     <meta http-equiv="Content-Security-Policy" content="default-src chrome:"/>
-    <link id="favicon" rel="icon" type="image/png" href="chrome://browser/skin/privatebrowsing/favicon.svg"/>
+    <link rel="icon" type="image/png" href="chrome://browser/skin/privatebrowsing/favicon.svg"/>
     <link rel="stylesheet" href="chrome://browser/content/aboutPrivateBrowsing.css" type="text/css" media="all"/>
     <link rel="stylesheet" href="chrome://browser/skin/privatebrowsing/aboutPrivateBrowsing.css" type="text/css" media="all"/>
     <script type="application/javascript" src="chrome://browser/content/aboutPrivateBrowsing.js"></script>
@@ -34,7 +34,6 @@
     <div class="showPrivate container">
       <h1 class="title">
         <span id="title">&privateBrowsing.title;</span>
-        <span id="titleTracking">&privateBrowsing.title.tracking;</span>
       </h1>
       <section class="section-main">
         <p>&aboutPrivateBrowsing.info.notsaved.before;<strong>&aboutPrivateBrowsing.info.notsaved.emphasize;</strong>&aboutPrivateBrowsing.info.notsaved.after;</p>
@@ -51,19 +50,18 @@
           <ul>
             <li>&aboutPrivateBrowsing.info.bookmarks;</li>
             <li>&aboutPrivateBrowsing.info.downloads;</li>
+            <li>&aboutPrivateBrowsing.info.clipboard;</li>
           </ul>
         </div>
         <p>&aboutPrivateBrowsing.note.before;<strong>&aboutPrivateBrowsing.note.emphasize;</strong>&aboutPrivateBrowsing.note.after;</p>
       </section>
 
       <h2 id="tpSubHeader" class="about-subheader">
-        <span class="tpTitle">&trackingProtection.title;</span>
-        <input id="tpToggle" class="toggle toggle-input" type="checkbox"/>
-        <span id="tpButton" class="toggle-btn"></span>
+        <span id="cbTitle">&contentBlocking.title;</span>
       </h2>
 
-      <section class="section-main">
-        <p>&trackingProtection.description2;</p>
+      <section id="tpSection" class="section-main">
+        <p id="cbDescription">&contentBlocking.description;</p>
         <p>
           <a id="startTour" class="button">&trackingProtection.startTour1;</a>
         </p>
@@ -72,7 +70,6 @@
       <section class="section-main">
         <p class="about-info">&aboutPrivateBrowsing.learnMore3.before;<a id="learnMore" target="_blank">&aboutPrivateBrowsing.learnMore3.title;</a>&aboutPrivateBrowsing.learnMore3.after;</p>
       </section>
-
     </div>
   </body>
 </html>

@@ -21,7 +21,7 @@ typedef SVGGeometryElement SVGRectElementBase;
 class SVGRectElement final : public SVGRectElementBase
 {
 protected:
-  explicit SVGRectElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGRectElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
   friend nsresult (::NS_NewSVGRectElement(nsIContent **aResult,
                                           already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
@@ -37,8 +37,7 @@ public:
   virtual void GetAsSimplePath(SimplePath* aSimplePath) override;
   virtual already_AddRefed<Path> BuildPath(PathBuilder* aBuilder = nullptr) override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedLength> X();

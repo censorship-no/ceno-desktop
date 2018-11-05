@@ -105,7 +105,8 @@ nsNativeTheme::GetContentState(nsIFrame* aFrame, StyleAppearance aWidgetType)
   // focus something in the window.
 #if defined(XP_MACOSX)
   // Mac always draws focus rings for textboxes and lists.
-  if (aWidgetType == StyleAppearance::NumberInput ||
+  if (aWidgetType == StyleAppearance::MenulistTextfield ||
+      aWidgetType == StyleAppearance::NumberInput ||
       aWidgetType == StyleAppearance::Textfield ||
       aWidgetType == StyleAppearance::TextfieldMultiline ||
       aWidgetType == StyleAppearance::Searchfield ||
@@ -347,6 +348,7 @@ nsNativeTheme::IsWidgetStyled(nsPresContext* aPresContext, nsIFrame* aFrame,
 
   return (aWidgetType == StyleAppearance::NumberInput ||
           aWidgetType == StyleAppearance::Button ||
+          aWidgetType == StyleAppearance::MenulistTextfield ||
           aWidgetType == StyleAppearance::Textfield ||
           aWidgetType == StyleAppearance::TextfieldMultiline ||
           aWidgetType == StyleAppearance::Listbox ||
@@ -413,8 +415,8 @@ nsNativeTheme::GetScrollbarButtonType(nsIFrame* aFrame)
     return 0;
 
   static Element::AttrValuesArray strings[] =
-    {&nsGkAtoms::scrollbarDownBottom, &nsGkAtoms::scrollbarDownTop,
-     &nsGkAtoms::scrollbarUpBottom, &nsGkAtoms::scrollbarUpTop,
+    {nsGkAtoms::scrollbarDownBottom, nsGkAtoms::scrollbarDownTop,
+     nsGkAtoms::scrollbarUpBottom, nsGkAtoms::scrollbarUpTop,
      nullptr};
 
   nsIContent* content = aFrame->GetContent();
@@ -442,7 +444,7 @@ nsNativeTheme::GetTreeSortDirection(nsIFrame* aFrame)
     return eTreeSortDirection_Natural;
 
   static Element::AttrValuesArray strings[] =
-    {&nsGkAtoms::descending, &nsGkAtoms::ascending, nullptr};
+    {nsGkAtoms::descending, nsGkAtoms::ascending, nullptr};
 
   nsIContent* content = aFrame->GetContent();
   if (content->IsElement()) {
@@ -639,16 +641,6 @@ nsNativeTheme::IsRegularMenuItem(nsIFrame *aFrame)
   nsMenuFrame *menuFrame = do_QueryFrame(aFrame);
   return !(menuFrame && (menuFrame->IsOnMenuBar() ||
                          menuFrame->GetParentMenuListType() != eNotMenuList));
-}
-
-bool
-nsNativeTheme::IsMenuListEditable(nsIFrame *aFrame)
-{
-  bool isEditable = false;
-  nsCOMPtr<nsIDOMXULMenuListElement> menulist = do_QueryInterface(aFrame->GetContent());
-  if (menulist)
-    menulist->GetEditable(&isEditable);
-  return isEditable;
 }
 
 bool
@@ -849,8 +841,7 @@ nscolor
 nsNativeTheme::GetScrollbarFaceColor(ComputedStyle* aStyle,
                                      AutoColorGetter aAutoGetter)
 {
-  StyleComplexColor complexColor =
-    aStyle->StyleUserInterface()->mScrollbarFaceColor;
+  StyleComplexColor complexColor = aStyle->StyleUI()->mScrollbarFaceColor;
   if (complexColor.IsAuto()) {
     return aAutoGetter(aStyle);
   }
@@ -866,8 +857,7 @@ nscolor
 nsNativeTheme::GetScrollbarTrackColor(ComputedStyle* aStyle,
                                       AutoColorGetter aAutoGetter)
 {
-  StyleComplexColor complexColor =
-    aStyle->StyleUserInterface()->mScrollbarTrackColor;
+  StyleComplexColor complexColor = aStyle->StyleUI()->mScrollbarTrackColor;
   nscolor color;
   if (complexColor.IsAuto()) {
     color = aAutoGetter(aStyle);

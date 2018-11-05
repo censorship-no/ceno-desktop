@@ -36,7 +36,7 @@ NetMonitorApp.prototype = {
       const parentDoc = toolbox.doc;
       const iframe = parentDoc.getElementById("toolbox-panel-iframe-netmonitor");
       const top = iframe.ownerDocument.defaultView.top;
-      top.openUILinkIn(link, "tab");
+      top.openWebLinkIn(link, "tab");
     };
 
     const openSplitConsole = (err) => {
@@ -57,7 +57,7 @@ NetMonitorApp.prototype = {
       connector,
       openLink,
       openSplitConsole,
-      sourceMapService
+      sourceMapService,
     });
 
     // Render the root Application component.
@@ -118,7 +118,7 @@ NetMonitorApp.prototype = {
         this.api.on(EVENTS.REQUEST_ADDED, inspector);
       }
     });
-  }
+  },
 };
 
 exports.NetMonitorApp = NetMonitorApp;

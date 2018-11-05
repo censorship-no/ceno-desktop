@@ -13,11 +13,11 @@ interface nsIPaymentAddress : nsISupports
   readonly attribute AString country;
   readonly attribute nsIArray addressLine;
   readonly attribute AString region;
+  readonly attribute AString regionCode;
   readonly attribute AString city;
   readonly attribute AString dependentLocality;
   readonly attribute AString postalCode;
   readonly attribute AString sortingCode;
-  readonly attribute AString languageCode;
   readonly attribute AString organization;
   readonly attribute AString recipient;
   readonly attribute AString phone;
@@ -25,11 +25,11 @@ interface nsIPaymentAddress : nsISupports
   void init(in AString aCountry,
             in nsIArray aAddressLine,
             in AString aRegion,
+            in AString aRegionCode,
             in AString aCity,
             in AString aDependentLocality,
             in AString aPostalCode,
             in AString aSortingCode,
-            in AString aLanguageCode,
             in AString aOrganization,
             in AString aRecipient,
             in AString aPhone);

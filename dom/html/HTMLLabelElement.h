@@ -20,8 +20,8 @@ namespace dom {
 class HTMLLabelElement final : public nsGenericHTMLElement
 {
 public:
-  explicit HTMLLabelElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElement(aNodeInfo),
+  explicit HTMLLabelElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo)),
       mHandlingEvent(false)
   {
   }
@@ -59,8 +59,7 @@ public:
                      EventChainPostVisitor& aVisitor) override;
   virtual bool PerformAccesskey(bool aKeyCausesActivation,
                                 bool aIsTrustedEvent) override;
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   nsGenericHTMLElement* GetLabeledElement() const;
 protected:

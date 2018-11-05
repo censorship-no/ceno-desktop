@@ -17,7 +17,7 @@ add_task(async function() {
   const hud = await openConsole();
 
   // Fire a completion.
-  await jstermSetValueAndComplete(hud.jsterm, "doc");
+  await setInputValueForAutocompletion(hud.jsterm, "doc");
 
   let errorWhileClosing = false;
   function errorListener() {
@@ -31,7 +31,7 @@ add_task(async function() {
   hud.jsterm.focus();
   EventUtils.synthesizeKey("i", {
     accelKey: true,
-    [Services.appinfo.OS == "Darwin" ? "altKey" : "shiftKey"]: true
+    [Services.appinfo.OS == "Darwin" ? "altKey" : "shiftKey"]: true,
   });
 
   await onToolboxDestroyed;

@@ -18,7 +18,7 @@ const kPostPath = "/post";
 const kPostUrl = kBaseUrl + kPostPath;
 const kPostDataSent = [["foo", "bar"], ["complex", "!*()@"]];
 const kPostDataReceived = "foo=bar&complex=%21%2A%28%29%40";
-const kPostMimeTypeReceived = "application/x-www-form-urlencoded; charset=utf-8";
+const kPostMimeTypeReceived = "application/x-www-form-urlencoded;charset=UTF-8";
 
 const kJsonPostPath = "/json_post";
 const kJsonPostUrl = kBaseUrl + kJsonPostPath;
@@ -77,7 +77,7 @@ add_test(function test_successCallback() {
       Assert.ok(false);
       do_test_finished();
       run_next_test();
-    }
+    },
   };
   httpRequest(kSuccessUrl, options);
 });
@@ -94,7 +94,7 @@ add_test(function test_errorCallback() {
       Assert.equal(e, "404 - Not Found");
       do_test_finished();
       run_next_test();
-    }
+    },
   };
   httpRequest(kBaseUrl + "/failure", options);
 });
@@ -112,7 +112,7 @@ add_test(function test_PostData() {
       do_test_finished();
       run_next_test();
     },
-    postData: kPostDataSent
+    postData: kPostDataSent,
   };
   httpRequest(kPostUrl, options);
 });
@@ -131,7 +131,7 @@ add_test(function test_PutData() {
       do_test_finished();
       run_next_test();
     },
-    postData: kPutDataSent
+    postData: kPutDataSent,
   };
   httpRequest(kPutUrl, options);
 });
@@ -149,7 +149,7 @@ add_test(function test_GetData() {
       do_test_finished();
       run_next_test();
     },
-    postData: null
+    postData: null,
   };
   httpRequest(kGetUrl, options);
 });
@@ -158,7 +158,7 @@ add_test(function test_OptionalParameters() {
   let options = {
     onLoad: null,
     onError: null,
-    logger: null
+    logger: null,
   };
   // Just make sure that nothing throws when doing this (i.e. httpRequest
   // doesn't try to access null options).
@@ -187,7 +187,7 @@ add_test(function test_CustomContentTypeOnPost() {
     },
     postData: kJsonPostData,
     // Setting a custom Content-Type header.
-    headers: [["Content-Type", "application/json"]]
+    headers: [["Content-Type", "application/json"]],
   };
 
   // Firing the request.
@@ -221,7 +221,7 @@ add_test(function test_OverrideMimeType() {
       Assert.ok(false);
       do_test_finished();
       run_next_test();
-    }
+    },
   };
 
   // Firing the request.
@@ -232,6 +232,9 @@ add_test(function test_OverrideMimeType() {
 });
 
 function run_test() {
+  const PREF = "dom.xhr.standard_content_type_normalization";
+  Services.prefs.setBoolPref(PREF, true);
+
   // Set up a mock HTTP server to serve a success page.
   server = new HttpServer();
   server.registerPathHandler(kSuccessPath, successResult);
@@ -251,6 +254,7 @@ function run_test() {
 
   // Teardown.
   registerCleanupFunction(function() {
+    Services.prefs.clearUserPref(PREF);
     server.stop(function() { });
   });
 }

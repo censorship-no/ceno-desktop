@@ -30,6 +30,7 @@ static NS_DEFINE_CID(kPrefServiceCID,   NS_PREFSERVICE_CID);
 
 // various pref strings
 static const char kCookiesPermissions[] = "network.cookie.cookieBehavior";
+static const char kPrefCookieQuotaPerHost[] = "network.cookie.quotaPerHost";
 static const char kCookiesMaxPerHost[] = "network.cookie.maxPerHost";
 static const char kCookieLeaveSecurityAlone[] = "network.cookie.leave-secure-alone";
 
@@ -179,6 +180,9 @@ InitPrefs(nsIPrefBranch *aPrefBranch)
     // however, we don't test third party blocking here.
     aPrefBranch->SetIntPref(kCookiesPermissions, 0); // accept all
     aPrefBranch->SetBoolPref(kCookieLeaveSecurityAlone, true);
+    // Set quotaPerHost to maxPerHost - 1, so there is only one cookie
+    // will be evicted everytime.
+    aPrefBranch->SetIntPref(kPrefCookieQuotaPerHost, 49);
     // Set the base domain limit to 50 so we have a known value.
     aPrefBranch->SetIntPref(kCookiesMaxPerHost, 50);
 }
@@ -711,7 +715,10 @@ TEST(TestCookie,TestCookieMain)
     EXPECT_EQ(hostCookies, 2u);
     // check CookieExistsNative() using the third cookie
     bool found;
-    EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->CookieExistsNative(newDomainCookie, &attrs,  &found)));
+    EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->CookieExistsNative(NS_LITERAL_CSTRING("new.domain"),
+                                                            NS_LITERAL_CSTRING("/rabbit"),
+                                                            NS_LITERAL_CSTRING("test3"),
+                                                            &attrs,  &found)));
     EXPECT_TRUE(found);
 
 
@@ -721,7 +728,10 @@ TEST(TestCookie,TestCookieMain)
                                                      NS_LITERAL_CSTRING("/rabbit"),    // path
                                                      true,                             // is blocked
                                                      &attrs)));                         // originAttributes
-    EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->CookieExistsNative(newDomainCookie, &attrs, &found)));
+    EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->CookieExistsNative(NS_LITERAL_CSTRING("new.domain"),
+                                                            NS_LITERAL_CSTRING("/rabbit"),
+                                                            NS_LITERAL_CSTRING("test3"),
+                                                            &attrs,  &found)));
     EXPECT_FALSE(found);
     EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->AddNative(NS_LITERAL_CSTRING("new.domain"),     // domain
                                                    NS_LITERAL_CSTRING("/rabbit"),        // path
@@ -733,7 +743,10 @@ TEST(TestCookie,TestCookieMain)
                                                    INT64_MIN,                            // expiry time
                                                    &attrs,                            // originAttributes
                                                    nsICookie2::SAMESITE_UNSET)));
-    EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->CookieExistsNative(newDomainCookie, &attrs, &found)));
+    EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->CookieExistsNative(NS_LITERAL_CSTRING("new.domain"),
+                                                            NS_LITERAL_CSTRING("/rabbit"),
+                                                            NS_LITERAL_CSTRING("test3"),
+                                                            &attrs,  &found)));
     EXPECT_FALSE(found);
     // sleep four seconds, to make sure the second cookie has expired
     PR_Sleep(4 * PR_TicksPerSecond());
@@ -741,7 +754,10 @@ TEST(TestCookie,TestCookieMain)
     // expired cookie
     EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->CountCookiesFromHost(NS_LITERAL_CSTRING("cookiemgr.test"), &hostCookies)));
     EXPECT_EQ(hostCookies, 2u);
-    EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->CookieExistsNative(expiredCookie, &attrs, &found)));
+    EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->CookieExistsNative(NS_LITERAL_CSTRING("cookiemgr.test"),
+                                                            NS_LITERAL_CSTRING("/foo"),
+                                                            NS_LITERAL_CSTRING("test2"),
+                                                            &attrs,  &found)));
     EXPECT_TRUE(found);
     // double-check RemoveAll() using the enumerator
     EXPECT_TRUE(NS_SUCCEEDED(cookieMgr->RemoveAll()));

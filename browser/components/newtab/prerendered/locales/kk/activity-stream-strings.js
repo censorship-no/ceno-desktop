@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Суретті жүктеу қатемен аяқталды. Басқа URL адресін қолданып көріңіз.",
   "pocket_read_more": "Әйгілі тақырыптар:",
   "pocket_read_even_more": "Көбірек хикаяларды қарау",
+  "pocket_more_reccommendations": "Көбірек ұсыныстар",
+  "pocket_how_it_works": "Ол қалай жұмыс істейді",
+  "pocket_cta_button": "Pocket-ті алу",
+  "pocket_cta_text": "Өзіңіз ұнатқан хикаяларды Pocket ішіне сақтап, миіңізді тамаша оқумен толықтырыңыз.",
   "highlights_empty_state": "Шолуды бастаңыз, сіз жақында шолған немесе бетбелгілерге қосқан тамаша мақалалар, видеолар немесе басқа парақтардың кейбіреулері осында көрсетіледі.",
   "topstories_empty_state": "Дайын. {provider} ұсынған көбірек мақалаларды алу үшін кейінірек тексеріңіз. Күте алмайсыз ба? Интернеттен көбірек тамаша мақалаларды алу үшін әйгілі теманы таңдаңыз.",
   "manual_migration_explanation2": "Firefox қолданбасын басқа браузер бетбелгілері, тарихы және парольдерімен қолданып көріңіз.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Санатты басқару",
   "section_menu_action_manage_webext": "Кеңейтуді басқару",
   "section_menu_action_add_topsite": "Үздік сайт қосу",
+  "section_menu_action_add_search_engine": "Іздеу жүйесін қосу",
   "section_menu_action_move_up": "Жоғары жылжыту",
   "section_menu_action_move_down": "Төмен жылжыту",
   "section_menu_action_privacy_notice": "Жекелік ескертуі",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Қолдану шарттары",
   "firstrun_privacy_notice": "Жекелік ескертуі",
   "firstrun_continue_to_login": "Жалғастыру",
-  "firstrun_skip_login": "Бұл қадамды аттап кету"
+  "firstrun_skip_login": "Бұл қадамды аттап кету",
+  "context_menu_title": "Мәзірді ашу",
+  "pocket_learn_more": "Көбірек білу"
 };

@@ -15,7 +15,6 @@
 #include "nsIObserverService.h"
 #include "nsIScriptError.h"
 #include "nsITimer.h"
-#include "nsIWeakReference.h"
 #include "nsPluginHost.h"
 #include "nsPrintfCString.h"
 #include "VideoUtils.h"
@@ -816,7 +815,7 @@ DecoderDoctorDocumentWatcher::Notify(nsITimer* timer)
 NS_IMETHODIMP
 DecoderDoctorDocumentWatcher::GetName(nsACString& aName)
 {
-  aName.AssignASCII("DecoderDoctorDocumentWatcher_timer");
+  aName.AssignLiteral("DecoderDoctorDocumentWatcher_timer");
   return NS_OK;
 }
 

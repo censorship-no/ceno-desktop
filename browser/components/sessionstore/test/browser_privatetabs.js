@@ -22,7 +22,7 @@ add_task(async function() {
     tab2 = BrowserTestUtils.addTab(gBrowser);
     await promiseBrowserLoaded(tab2.linkedBrowser);
     await setUsePrivateBrowsing(tab2.linkedBrowser, true);
-    tab2.linkedBrowser.loadURI(URL_PRIVATE);
+    BrowserTestUtils.loadURI(tab2.linkedBrowser, URL_PRIVATE);
     await promiseBrowserLoaded(tab2.linkedBrowser);
 
     info("Flush to make sure chrome received all data.");
@@ -72,7 +72,7 @@ add_task(async function() {
   mm.loadFrameScript(FRAME_SCRIPT, true);
 
   // Create a new tab in the new window that will load the frame script.
-  let tab = win.gBrowser.addTab("about:mozilla");
+  let tab = BrowserTestUtils.addTab(win.gBrowser, "about:mozilla");
   let browser = tab.linkedBrowser;
   await promiseBrowserLoaded(browser);
   await TabStateFlusher.flush(browser);
@@ -86,7 +86,7 @@ add_task(async function() {
   is(ss.getClosedTabCount(win), 0, "no tabs to restore");
 
   // Create a new tab in the new window that will load the frame script.
-  tab = win.gBrowser.addTab("about:mozilla");
+  tab = BrowserTestUtils.addTab(win.gBrowser, "about:mozilla");
   browser = tab.linkedBrowser;
   await promiseBrowserLoaded(browser);
   await TabStateFlusher.flush(browser);
@@ -109,7 +109,7 @@ add_task(async function() {
   let win = await promiseNewWindowLoaded({private: true});
 
   // Create a new tab in the new window that will load the frame script.
-  let tab = win.gBrowser.addTab("about:mozilla");
+  let tab = BrowserTestUtils.addTab(win.gBrowser, "about:mozilla");
   let browser = tab.linkedBrowser;
   await promiseBrowserLoaded(browser);
   await TabStateFlusher.flush(browser);

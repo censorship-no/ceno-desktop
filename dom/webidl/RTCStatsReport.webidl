@@ -29,6 +29,7 @@ dictionary RTCStats {
 dictionary RTCRtpStreamStats : RTCStats {
   unsigned long ssrc;
   DOMString mediaType;
+  DOMString kind;
   DOMString remoteId;
   boolean isRemote = false;
   DOMString mediaTrackId;
@@ -154,7 +155,8 @@ dictionary RTCIceCandidateStats : RTCStats {
   DOMString candidateId;
   DOMString ipAddress;
   DOMString transport;
-  DOMString mozLocalTransport; // needs standardization
+  DOMString mozLocalTransport; // obsoleted by relayProtocol
+  DOMString relayProtocol;
   long portNumber;
   RTCStatsIceCandidateType candidateType;
 };

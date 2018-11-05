@@ -27,7 +27,7 @@ class WindowDestroyObserver;
 class HTMLTrackElement final : public nsGenericHTMLElement
 {
 public:
-  explicit HTMLTrackElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLTrackElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
@@ -88,8 +88,7 @@ public:
 
   TextTrack* GetTrack();
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // Override ParseAttribute() to convert kind strings to enum values.
   virtual bool ParseAttribute(int32_t aNamespaceID,

@@ -1,22 +1,13 @@
 // Tests that system add-on upgrades work.
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-
-BootstrapMonitor.init();
-
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "2");
-
-var testserver = new HttpServer();
-testserver.registerDirectory("/data/", do_get_file("data/system_addons"));
-testserver.start();
-var root = testserver.identity.primaryScheme + "://" +
-           testserver.identity.primaryHost + ":" +
-           testserver.identity.primaryPort + "/data/";
-Services.prefs.setCharPref(PREF_SYSTEM_ADDON_UPDATE_URL, root + "update.xml");
 
 let distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "empty"], true);
 registerDirectory("XREAppFeat", distroDir);
-initSystemAddonDirs();
+
+AddonTestUtils.usePrivilegedSignatures = id => "system";
+
+add_task(() => initSystemAddonDirs());
 
 /**
  * Defines the set of initial conditions to run each test against. Each should
@@ -37,7 +28,7 @@ const TEST_CONDITIONS = {
       { isUpgrade: false, version: null},
       { isUpgrade: false, version: null},
       { isUpgrade: false, version: null},
-      { isUpgrade: false, version: null}
+      { isUpgrade: false, version: null},
     ],
   },
   // Runs tests with default system add-ons installed
@@ -51,14 +42,14 @@ const TEST_CONDITIONS = {
       { isUpgrade: false, version: "2.0"},
       { isUpgrade: false, version: "2.0"},
       { isUpgrade: false, version: null},
-      { isUpgrade: false, version: null}
-    ]
+      { isUpgrade: false, version: null},
+    ],
   },
 
   // Runs tests with updated system add-ons installed
   withProfileSet: {
-    setup() {
-      buildPrefilledUpdatesDir();
+    async setup() {
+      await buildPrefilledUpdatesDir();
       distroDir.leafName = "empty";
     },
     initialState: [
@@ -66,14 +57,14 @@ const TEST_CONDITIONS = {
       { isUpgrade: true, version: "2.0"},
       { isUpgrade: true, version: "2.0"},
       { isUpgrade: false, version: null},
-      { isUpgrade: false, version: null}
-    ]
+      { isUpgrade: false, version: null},
+    ],
   },
 
   // Runs tests with both default and updated system add-ons installed
   withBothSets: {
-    setup() {
-      buildPrefilledUpdatesDir();
+    async setup() {
+      await buildPrefilledUpdatesDir();
       distroDir.leafName = "hidden";
     },
     initialState: [
@@ -81,8 +72,8 @@ const TEST_CONDITIONS = {
       { isUpgrade: true, version: "2.0"},
       { isUpgrade: true, version: "2.0"},
       { isUpgrade: false, version: null},
-      { isUpgrade: false, version: null}
-    ]
+      { isUpgrade: false, version: null},
+    ],
   },
 };
 
@@ -101,41 +92,39 @@ const TEST_CONDITIONS = {
 const TESTS = {
   // Tests that a new set of system add-ons gets installed
   newset: {
-    updateList: [
-      { id: "system4@tests.mozilla.org", version: "1.0", path: "system4_1.xpi" },
-      { id: "system5@tests.mozilla.org", version: "1.0", path: "system5_1.xpi" }
-    ],
+    // updateList is populated in setup() below
+    updateList: [ ],
     finalState: {
       blank: [
         { isUpgrade: false, version: null},
         { isUpgrade: false, version: null},
         { isUpgrade: false, version: null},
         { isUpgrade: true, version: "1.0"},
-        { isUpgrade: true, version: "1.0"}
+        { isUpgrade: true, version: "1.0"},
       ],
       withAppSet: [
         { isUpgrade: false, version: null},
         { isUpgrade: false, version: "2.0"},
         { isUpgrade: false, version: "2.0"},
         { isUpgrade: true, version: "1.0"},
-        { isUpgrade: true, version: "1.0"}
+        { isUpgrade: true, version: "1.0"},
       ],
       withProfileSet: [
         { isUpgrade: false, version: null},
         { isUpgrade: false, version: null},
         { isUpgrade: false, version: null},
         { isUpgrade: true, version: "1.0"},
-        { isUpgrade: true, version: "1.0"}
+        { isUpgrade: true, version: "1.0"},
       ],
       withBothSets: [
         { isUpgrade: false, version: "1.0"},
         { isUpgrade: false, version: "1.0"},
         { isUpgrade: false, version: null},
         { isUpgrade: true, version: "1.0"},
-        { isUpgrade: true, version: "1.0"}
-      ]
-    }
-  }
+        { isUpgrade: true, version: "1.0"},
+      ],
+    },
+  },
 };
 
 add_task(async function setup() {
@@ -143,6 +132,23 @@ add_task(async function setup() {
   await overrideBuiltIns({ "system": [] });
   await promiseStartupManager();
   await promiseShutdownManager();
+
+  let list = TESTS.newset.updateList;
+  let xpi = await getSystemAddonXPI(4, "1.0");
+  list.push({
+    id: "system4@tests.mozilla.org",
+    version: "1.0",
+    path: "system4_1.xpi",
+    xpi,
+  });
+
+  xpi = await getSystemAddonXPI(5, "1.0");
+  list.push({
+    id: "system5@tests.mozilla.org",
+    version: "1.0",
+    path: "system5_1.xpi",
+    xpi,
+  });
 });
 
 add_task(async function() {
@@ -153,7 +159,7 @@ add_task(async function() {
         let setup = TEST_CONDITIONS[setupName];
         let test = TESTS[testName];
 
-        await execSystemAddonTest(setupName, setup, test, distroDir, root, testserver);
+        await execSystemAddonTest(setupName, setup, test, distroDir);
     }
   }
 });

@@ -9,34 +9,58 @@
 namespace mozilla {
 namespace detail {
 
-MOZ_PUSH_DISABLE_INTEGRAL_CONSTANT_OVERFLOW_WARNING
+// Because this is `constexpr` it ends up in read-only memory where it can be
+// shared between processes.
 extern constexpr GkAtoms gGkAtoms = {
-  #define GK_ATOM(name_, value_) NS_STATIC_ATOM_INIT_STRING(value_)
+  // The initialization of each atom's string.
+  //
+  // Expansion of the example GK_ATOM entries in nsGkAtoms.h:
+  //
+  //   u"a",
+  //   u"bb",
+  //   u"ccc",
+  //
+  #define GK_ATOM(name_, value_, hash_, type_, atom_type_) \
+    u"" value_,
   #include "nsGkAtomList.h"
   #undef GK_ATOM
   {
-    #define GK_ATOM(name_, value_) \
-      NS_STATIC_ATOM_INIT_ATOM(nsStaticAtom, GkAtoms, name_, value_)
+    // The initialization of the atoms themselves.
+    //
+    // Note that |value_| is an 8-bit string, and so |sizeof(value_)| is equal
+    // to the number of chars (including the terminating '\0'). The |u""| prefix
+    // converts |value_| to a 16-bit string.
+    //
+    // Expansion of the example GK_ATOM entries in nsGkAtoms.h:
+    //
+    //   nsStaticAtom(
+    //     1, 0x01234567,
+    //     offsetof(GkAtoms, mAtoms[static_cast<size_t>(GkAtoms::Atoms::a)]) -
+    //     offsetof(GkAtoms, a_string)),
+    //
+    //   nsStaticAtom(
+    //     2, 0x12345678,
+    //     offsetof(GkAtoms, mAtoms[static_cast<size_t>(GkAtoms::Atoms::bb)]) -
+    //     offsetof(GkAtoms, bb_string)),
+    //
+    //   nsStaticAtom(
+    //     3, 0x23456789,
+    //     offsetof(GkAtoms, mAtoms[static_cast<size_t>(GkAtoms::Atoms::ccc)]) -
+    //     offsetof(GkAtoms, ccc_string)),
+    //
+    #define GK_ATOM(name_, value_, hash_, type_, atom_type_)                   \
+      nsStaticAtom(                                                            \
+        sizeof(value_) - 1, hash_,                                             \
+        offsetof(GkAtoms,                                                      \
+                 mAtoms[static_cast<size_t>(GkAtoms::Atoms::name_)]) -         \
+        offsetof(GkAtoms, name_##_string)),
     #include "nsGkAtomList.h"
     #undef GK_ATOM
   }
 };
-MOZ_POP_DISABLE_INTEGRAL_CONSTANT_OVERFLOW_WARNING
 
 } // namespace detail
 } // namespace mozilla
 
 const nsStaticAtom* const nsGkAtoms::sAtoms = mozilla::detail::gGkAtoms.mAtoms;
-
-#define GK_ATOM(name_, value_) \
-  NS_STATIC_ATOM_DEFN_PTR( \
-    nsStaticAtom, mozilla::detail::GkAtoms, mozilla::detail::gGkAtoms, \
-    nsGkAtoms, name_)
-#include "nsGkAtomList.h"
-#undef GK_ATOM
-
-void nsGkAtoms::RegisterStaticAtoms()
-{
-  NS_RegisterStaticAtoms(sAtoms, sAtomsLen);
-}
 

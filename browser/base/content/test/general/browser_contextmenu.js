@@ -7,7 +7,7 @@ let LOGIN_FILL_ITEMS = [
     [
       "fill-login-no-logins", false,
       "---", null,
-      "fill-login-saved-passwords", true
+      "fill-login-saved-passwords", true,
     ], null,
 ];
 let hasPocket = Services.prefs.getBoolPref("extensions.pocket.enabled");
@@ -18,6 +18,12 @@ const chrome_base = "chrome://mochitests/content/browser/browser/base/content/te
 
 /* import-globals-from contextmenu_common.js */
 Services.scriptloader.loadSubScript(chrome_base + "contextmenu_common.js", this);
+
+add_task(async function init() {
+  // Ensure screenshots is really disabled (bug 1498738)
+  const addon = await AddonManager.getAddonByID("screenshots@mozilla.org");
+  await addon.disable({allowSystemAddons: true});
+});
 
 // Below are test cases for XUL element
 add_task(async function test_xul_text_link_label() {
@@ -105,10 +111,10 @@ add_task(async function test_plaintext() {
                     "context-selectall",    true,
                     "---",                  null,
                     "context-viewsource",   true,
-                    "context-viewinfo",     true
+                    "context-viewinfo",     true,
                    ];
   await test_contextmenu("#test-text", plainTextItems, {
-    maybeScreenshotsPresent: true
+    maybeScreenshotsPresent: true,
   });
 });
 
@@ -153,7 +159,7 @@ add_task(async function test_link_in_shadow_dom() {
     ],
     {
       offsetX: 6,
-      offsetY: 6
+      offsetY: 6,
     }
   );
 });
@@ -161,7 +167,7 @@ add_task(async function test_link_in_shadow_dom() {
 add_task(async function test_mailto() {
   await test_contextmenu("#test-mailto",
     ["context-copyemail", true,
-     "context-searchselect", true
+     "context-searchselect", true,
     ]
   );
 });
@@ -175,7 +181,7 @@ add_task(async function test_image() {
      "context-saveimage",            true,
      "context-sendimage",            true,
      "context-setDesktopBackground", true,
-     "context-viewimageinfo",        true
+     "context-viewimageinfo",        true,
     ]
   );
 });
@@ -184,9 +190,9 @@ add_task(async function test_canvas() {
   await test_contextmenu("#test-canvas",
     ["context-viewimage",    true,
      "context-saveimage",    true,
-     "context-selectall",    true
+     "context-selectall",    true,
     ], {
-      maybeScreenshotsPresent: true
+      maybeScreenshotsPresent: true,
     }
   );
 });
@@ -231,7 +237,7 @@ add_task(async function test_audio_in_video() {
      "context-copyaudiourl",       true,
      "---",                        null,
      "context-saveaudio",          true,
-     "context-sendaudio",          true
+     "context-sendaudio",          true,
     ]
   );
 });
@@ -315,7 +321,7 @@ add_task(async function test_iframe() {
           "context-viewframeinfo",     true], null,
      "---",                  null,
      "context-viewsource",   true,
-     "context-viewinfo",     true
+     "context-viewinfo",     true,
     ]
   );
 });
@@ -476,7 +482,7 @@ add_task(async function test_textarea_spellcheck() {
 
 add_task(async function test_plaintext2() {
   await test_contextmenu("#test-text", plainTextItems, {
-    maybeScreenshotsPresent: true
+    maybeScreenshotsPresent: true,
   });
 });
 
@@ -564,7 +570,7 @@ add_task(async function test_copylinkcommand() {
         let input = doc.getElementById("test-input");
         Assert.equal(input.value, "http://mozilla.com/", "paste for command cmd_paste");
       });
-    }
+    },
   });
 });
 
@@ -605,7 +611,7 @@ add_task(async function test_pagemenu() {
      "context-selectall",    true,
      "---",                  null,
      "context-viewsource",   true,
-     "context-viewinfo",     true
+     "context-viewinfo",     true,
     ],
     {async postCheckContextMenuFn() {
       let item = contextMenu.getElementsByAttribute("generateditemid", "1")[0];
@@ -616,7 +622,7 @@ add_task(async function test_pagemenu() {
         Assert.ok(!pagemenu.hasAttribute("hopeless"), "attribute got removed");
       });
     },
-    maybeScreenshotsPresent: true
+    maybeScreenshotsPresent: true,
   });
 });
 
@@ -639,7 +645,7 @@ add_task(async function test_dom_full_screen() {
      "context-selectall",            true,
      "---",                          null,
      "context-viewsource",           true,
-     "context-viewinfo",             true
+     "context-viewinfo",             true,
     ],
     {
       maybeScreenshotsPresent: true,
@@ -666,7 +672,7 @@ add_task(async function test_dom_full_screen() {
           content.document.exitFullscreen();
           await awaitFullScreenChange;
         });
-      }
+      },
     }
   );
 });
@@ -688,7 +694,7 @@ add_task(async function test_pagemenu2() {
      "context-selectall",    true,
      "---",                  null,
      "context-viewsource",   true,
-     "context-viewinfo",     true
+     "context-viewinfo",     true,
     ],
     {maybeScreenshotsPresent: true,
      shiftkey: true}
@@ -701,14 +707,14 @@ add_task(async function test_select_text() {
      "context-selectall",                   true,
      "---",                                 null,
      "context-searchselect",                true,
-     "context-viewpartialsource-selection", true
+     "context-viewpartialsource-selection", true,
     ],
     {
       offsetX: 6,
       offsetY: 6,
       async preCheckContextMenuFn() {
         await selectText("#test-select-text");
-      }
+      },
     }
   );
 });
@@ -732,7 +738,7 @@ add_task(async function test_select_text_link() {
      "context-searchselect",                true,
      "---",                                 null,
      "context-sendlinktodevice", true, [],  null,
-     "context-viewpartialsource-selection", true
+     "context-viewpartialsource-selection", true,
     ],
     {
       offsetX: 6,
@@ -745,7 +751,7 @@ add_task(async function test_select_text_link() {
           let win = content.document.defaultView;
           win.getSelection().removeAllRanges();
         });
-      }
+      },
     }
   );
 });
@@ -873,7 +879,7 @@ add_task(async function test_click_to_play_blocked_plugin() {
      "context-selectall",    true,
      "---",                  null,
      "context-viewsource",   true,
-     "context-viewinfo",     true
+     "context-viewinfo",     true,
     ],
     {
       maybeScreenshotsPresent: true,
@@ -883,7 +889,7 @@ add_task(async function test_click_to_play_blocked_plugin() {
       },
       postCheckContextMenuFn() {
         getTestPlugin().enabledState = Ci.nsIPluginTag.STATE_ENABLED;
-      }
+      },
     }
   );
 });
@@ -898,7 +904,7 @@ add_task(async function test_longdesc() {
      "context-sendimage",            true,
      "context-setDesktopBackground", true,
      "context-viewimageinfo",        true,
-     "context-viewimagedesc",        true
+     "context-viewimagedesc",        true,
     ]
   );
 });
@@ -929,7 +935,7 @@ add_task(async function test_srcdoc() {
           "context-viewframeinfo",     true], null,
      "---",                  null,
      "context-viewsource",   true,
-     "context-viewinfo",     true
+     "context-viewinfo",     true,
     ]
   );
 });

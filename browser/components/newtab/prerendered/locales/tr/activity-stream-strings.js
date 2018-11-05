@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Resim yüklenemedi. Başka bir adres deneyin.",
   "pocket_read_more": "Popüler konular:",
   "pocket_read_even_more": "Daha fazla yazı göster",
+  "pocket_more_reccommendations": "Daha fazla öneri",
+  "pocket_how_it_works": "Nasıl çalışıyor?",
+  "pocket_cta_button": "Pocket’ı edinin",
+  "pocket_cta_text": "Sevdiğiniz yazıları Pocket’a kaydedin, aklınız okumaya değer şeylerle doldurun.",
   "highlights_empty_state": "Gezinmeye başlayın. Son zamanlarda baktığınız veya yer imlerinize eklediğiniz bazı güzel makaleleri, videoları ve diğer sayfaları burada göstereceğiz.",
   "topstories_empty_state": "Hepsini bitirdiniz. Yeni {provider} haberleri için daha fazla yine gelin. Beklemek istemiyor musunuz? İlginç yazılara ulaşmak için popüler konulardan birini seçebilirsiniz.",
   "manual_migration_explanation2": "Öteki tarayıcılarınızdaki yer imlerinizi, geçmişinizi ve parolalarınızı Firefox’a aktarabilirsiniz.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Bölümü yönet",
   "section_menu_action_manage_webext": "Eklentiyi yönet",
   "section_menu_action_add_topsite": "Sık kullanılan site ekle",
+  "section_menu_action_add_search_engine": "Arama motoru ekle",
   "section_menu_action_move_up": "Yukarı taşı",
   "section_menu_action_move_down": "Aşağı taşı",
   "section_menu_action_privacy_notice": "Gizlilik bildirimi",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Kullanım Koşullarını",
   "firstrun_privacy_notice": "Gizlilik Bildirimini",
   "firstrun_continue_to_login": "Devam et",
-  "firstrun_skip_login": "Bu adımı atla"
+  "firstrun_skip_login": "Bu adımı atla",
+  "context_menu_title": "Menüyü aç",
+  "pocket_learn_more": "Daha fazla bilgi al"
 };

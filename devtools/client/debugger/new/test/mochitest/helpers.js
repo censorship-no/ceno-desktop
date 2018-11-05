@@ -6,6 +6,11 @@
  * required from other panel test files.
  */
 
+// Import helpers for the new debugger
+Services.scriptloader.loadSubScript(
+"chrome://mochitests/content/browser/devtools/client/debugger/new/test/mochitest/helpers/context.js",
+this);
+
 var { Toolbox } = require("devtools/client/framework/toolbox");
 var { Task } = require("devtools/shared/task");
 var asyncStorage = require("devtools/shared/async-storage");
@@ -373,10 +378,11 @@ function assertHighlightLocation(dbg, source, line) {
   );
 
   ok(isVisibleInEditor(dbg, lineEl), "Highlighted line is visible");
+
+  const cm = getCM(dbg);
+  const lineInfo = cm.lineInfo(line - 1);
   ok(
-    getCM(dbg)
-      .lineInfo(line - 1)
-      .wrapClass.includes("highlight-line"),
+    lineInfo.wrapClass.includes("highlight-line"),
     "Line is highlighted"
   );
 }
@@ -461,28 +467,11 @@ function isSelectedFrameSelected(dbg, state) {
   return source.id == sourceId;
 }
 
-function createDebuggerContext(toolbox) {
-  const panel = toolbox.getPanel("jsdebugger");
-  const win = panel.panelWin;
-  const { store, client, selectors, actions } = panel.getVarsForTests();
-
-  return {
-    actions: actions,
-    selectors: selectors,
-    getState: store.getState,
-    store: store,
-    client: client,
-    toolbox: toolbox,
-    win: win,
-    panel: panel
-  };
-}
-
 /**
  * Clear all the debugger related preferences.
  */
 function clearDebuggerPreferences() {
-  asyncStorage.clear();
+  asyncStorage.clear()
   Services.prefs.clearUserPref("devtools.recordreplay.enabled");
   Services.prefs.clearUserPref("devtools.debugger.pause-on-exceptions");
   Services.prefs.clearUserPref("devtools.debugger.pause-on-caught-exceptions");
@@ -598,13 +587,13 @@ function waitForLoadedSources(dbg) {
  */
 async function selectSource(dbg, url, line) {
   const source = findSource(dbg, url);
-  await dbg.actions.selectLocation({ sourceId: source.id, line });
+  await dbg.actions.selectLocation({ sourceId: source.id, line }, {keepContext: false});
   return waitForSelectedSource(dbg, url);
 }
 
-function closeTab(dbg, url) {
-  const source = findSource(dbg, url);
-  return dbg.actions.closeTab(source.url);
+
+async function closeTab(dbg, url) {
+  await dbg.actions.closeTab(findSource(dbg, url));
 }
 
 /**
@@ -1276,7 +1265,7 @@ function tryHovering(dbg, line, column, elementName) {
 async function assertPreviewTextValue(dbg, line, column, { text, expression }) {
   const previewEl = await tryHovering(dbg, line, column, "previewPopup");
 
-  is(previewEl.innerText, text, "Preview text shown to user");
+  ok(previewEl.innerText.includes(text), "Preview text shown to user");
 
   const preview = dbg.selectors.getPreview(dbg.getState());
   is(preview.updating, false, "Preview.updating");
@@ -1337,4 +1326,35 @@ async function assertPreviews(dbg, previews) {
 
     dbg.actions.clearPreview();
   }
+}
+
+async function waitForSourceCount(dbg, i) {
+  // We are forced to wait until the DOM nodes appear because the
+  // source tree batches its rendering.
+  await waitUntil(() => {
+    return findAllElements(dbg, "sourceNodes").length === i;
+  }, `waiting for ${i} sources`);
+}
+
+async function assertSourceCount(dbg, count) {
+  await waitForSourceCount(dbg, count);
+  is(findAllElements(dbg, "sourceNodes").length, count, `${count} sources`);
+}
+
+async function waitForNodeToGainFocus(dbg, index) {
+  await waitUntil(() => {
+    const element = findElement(dbg, "sourceNode", index);
+
+    if (element) {
+      return element.classList.contains("focused");
+    }
+
+    return false;
+  }, `waiting for source node ${index} to be focused`);
+}
+
+async function assertNodeIsFocused(dbg, index) {
+  await waitForNodeToGainFocus(dbg, index);
+  const node = findElement(dbg, "sourceNode", index);
+  ok(node.classList.contains("focused"), `node ${index} is focused`);
 }

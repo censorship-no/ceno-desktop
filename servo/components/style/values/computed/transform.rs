@@ -22,9 +22,6 @@ pub type Transform = generic::Transform<TransformOperation>;
 /// The computed value of a CSS `<transform-origin>`
 pub type TransformOrigin = generic::TransformOrigin<LengthOrPercentage, LengthOrPercentage, Length>;
 
-/// A computed timing function.
-pub type TimingFunction = generic::TimingFunction<u32, Number>;
-
 /// A vector to represent the direction vector (rotate axis) for Rotate3D.
 pub type DirectionVector = Vector3D<CSSFloat>;
 
@@ -42,6 +39,7 @@ impl TransformOrigin {
 
 /// computed value of matrix3d()
 pub type Matrix3D = generic::Matrix3D<Number>;
+
 /// computed value of matrix()
 pub type Matrix = generic::Matrix<Number>;
 
@@ -161,13 +159,13 @@ impl TransformOperation {
             generic::TransformOperation::RotateZ(ref angle) |
             generic::TransformOperation::Rotate(ref angle) => {
                 generic::TransformOperation::Rotate3D(0., 0., 1., angle.clone())
-            }
+            },
             generic::TransformOperation::RotateX(ref angle) => {
                 generic::TransformOperation::Rotate3D(1., 0., 0., angle.clone())
-            }
+            },
             generic::TransformOperation::RotateY(ref angle) => {
                 generic::TransformOperation::Rotate3D(0., 1., 0., angle.clone())
-            }
+            },
             _ => unreachable!(),
         }
     }
@@ -272,9 +270,9 @@ impl ToAnimatedZero for TransformOperation {
             generic::TransformOperation::Rotate(_) => {
                 Ok(generic::TransformOperation::Rotate(Angle::zero()))
             },
-            generic::TransformOperation::Perspective(ref l) => {
-                Ok(generic::TransformOperation::Perspective(l.to_animated_zero()?))
-            },
+            generic::TransformOperation::Perspective(ref l) => Ok(
+                generic::TransformOperation::Perspective(l.to_animated_zero()?),
+            ),
             generic::TransformOperation::AccumulateMatrix { .. } |
             generic::TransformOperation::InterpolateMatrix { .. } => {
                 // AccumulateMatrix/InterpolateMatrix: We do interpolation on
@@ -292,10 +290,12 @@ impl ToAnimatedZero for TransformOperation {
 impl ToAnimatedZero for Transform {
     #[inline]
     fn to_animated_zero(&self) -> Result<Self, ()> {
-        Ok(generic::Transform(self.0
-            .iter()
-            .map(|op| op.to_animated_zero())
-            .collect::<Result<Vec<_>, _>>()?))
+        Ok(generic::Transform(
+            self.0
+                .iter()
+                .map(|op| op.to_animated_zero())
+                .collect::<Result<Vec<_>, _>>()?,
+        ))
     }
 }
 

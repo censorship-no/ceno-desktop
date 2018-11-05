@@ -18,6 +18,8 @@ namespace child {
 void
 InitRecordingOrReplayingProcess(int* aArgc, char*** aArgv)
 {
+  // This is called from all child processes, and is a no-op if not
+  // recording or replaying.
 }
 
 char*
@@ -38,20 +40,19 @@ ParentProcessId()
   MOZ_CRASH();
 }
 
+void CreateCheckpoint()
+{
+  MOZ_CRASH();
+}
+
 void
 SetVsyncObserver(VsyncObserver* aObserver)
 {
   MOZ_CRASH();
 }
 
-void
-NotifyVsyncObserver()
-{
-  MOZ_CRASH();
-}
-
-void
-NotifyPaint()
+bool
+OnVsync()
 {
   MOZ_CRASH();
 }
@@ -68,44 +69,14 @@ NotifyPaintComplete()
   MOZ_CRASH();
 }
 
-void
-WaitForPaintToComplete()
-{
-  MOZ_CRASH();
-}
-
 already_AddRefed<gfx::DrawTarget>
 DrawTargetForRemoteDrawing(LayoutDeviceIntSize aSize)
 {
   MOZ_CRASH();
 }
 
-void
-NotifyFlushedRecording()
-{
-  MOZ_CRASH();
-}
-
-void
-NotifyAlwaysMarkMajorCheckpoints()
-{
-  MOZ_CRASH();
-}
-
-void
-ReportFatalError(const char* aFormat, ...)
-{
-  MOZ_CRASH();
-}
-
-void
-BeginIdleTime()
-{
-  MOZ_CRASH();
-}
-
-void
-EndIdleTime()
+bool
+SuppressMessageAfterDiverge(IPC::Message* aMsg)
 {
   MOZ_CRASH();
 }
@@ -117,11 +88,15 @@ namespace parent {
 void
 InitializeUIProcess(int aArgc, char** aArgv)
 {
+  // This is called from UI processes, and has no state to initialize if
+  // recording/replaying is disabled on this platform.
 }
 
 const char*
 SaveAllRecordingsDirectory()
 {
+  // This is called from UI processes, and recordings are never saved if
+  // recording/replaying is disabled on this platform.
   return nullptr;
 }
 
@@ -161,6 +136,24 @@ void
 GetArgumentsForChildProcess(base::ProcessId aMiddlemanPid, uint32_t aChannelId,
                             const char* aRecordingFile, bool aRecording,
                             std::vector<std::string>& aExtraArgs)
+{
+  MOZ_CRASH();
+}
+
+base::ProcessId
+ParentProcessId()
+{
+  MOZ_CRASH();
+}
+
+bool
+IsMiddlemanWithRecordingChild()
+{
+  return false;
+}
+
+bool
+DebuggerRunsInMiddleman()
 {
   MOZ_CRASH();
 }

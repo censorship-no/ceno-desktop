@@ -4,6 +4,8 @@
 
 "use strict";
 
+const debugTargets = require("./debug-targets");
+const runtimes = require("./runtimes");
 const ui = require("./ui");
 
-Object.assign(exports, ui);
+Object.assign(exports, ui, runtimes, debugTargets);

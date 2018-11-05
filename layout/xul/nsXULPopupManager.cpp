@@ -632,7 +632,7 @@ nsXULPopupManager::InitTriggerEvent(Event* aEvent, nsIContent* aPopup,
 
   mCachedModifiers = 0;
 
-  UIEvent* uiEvent = aEvent ? aEvent->AsUIEvent() : nullptr;
+  RefPtr<UIEvent> uiEvent = aEvent ? aEvent->AsUIEvent() : nullptr;
   if (uiEvent) {
     mRangeParent = uiEvent->GetRangeParent();
     mRangeOffset = uiEvent->RangeOffset();
@@ -729,14 +729,7 @@ nsXULPopupManager::ShowMenu(nsIContent *aMenu,
 
 #ifdef XP_MACOSX
   nsCOMPtr<nsIDOMXULMenuListElement> menulist = do_QueryInterface(aMenu);
-  bool isNonEditableMenulist = false;
   if (menulist) {
-    bool editable;
-    menulist->GetEditable(&editable);
-    isNonEditableMenulist = !editable;
-  }
-
-  if (isNonEditableMenulist) {
     position.AssignLiteral("selection");
   }
   else
@@ -929,7 +922,7 @@ nsXULPopupManager::ShowPopupCallback(nsIContent* aPopup,
   // use a weak frame as the popup will set an open attribute if it is a menu
   AutoWeakFrame weakFrame(aPopupFrame);
   aPopupFrame->ShowPopup(aIsContextMenu);
-  ENSURE_TRUE(weakFrame.IsAlive());
+  NS_ENSURE_TRUE_VOID(weakFrame.IsAlive());
 
   // popups normally hide when an outside click occurs. Panels may use
   // the noautohide attribute to disable this behaviour. It is expected
@@ -942,6 +935,7 @@ nsXULPopupManager::ShowPopupCallback(nsIContent* aPopup,
   item->SetParent(mPopups);
   mPopups = item;
   SetCaptureState(oldmenu);
+  NS_ENSURE_TRUE_VOID(weakFrame.IsAlive());
 
   item->UpdateFollowAnchor();
 
@@ -1073,7 +1067,7 @@ nsXULPopupManager::HidePopup(nsIContent* aPopup,
 }
 
 // This is used to hide the popup after a transition finishes.
-class TransitionEnder : public nsIDOMEventListener
+class TransitionEnder final : public nsIDOMEventListener
 {
 protected:
   virtual ~TransitionEnder() { }
@@ -1152,7 +1146,7 @@ nsXULPopupManager::HidePopupCallback(nsIContent* aPopup,
 
   AutoWeakFrame weakFrame(aPopupFrame);
   aPopupFrame->HidePopup(aDeselectMenu, ePopupClosed);
-  ENSURE_TRUE(weakFrame.IsAlive());
+  NS_ENSURE_TRUE_VOID(weakFrame.IsAlive());
 
   // send the popuphidden event synchronously. This event has no default
   // behaviour.
@@ -1161,7 +1155,7 @@ nsXULPopupManager::HidePopupCallback(nsIContent* aPopup,
                          WidgetMouseEvent::eReal);
   EventDispatcher::Dispatch(aPopup, aPopupFrame->PresContext(),
                             &event, nullptr, &status);
-  ENSURE_TRUE(weakFrame.IsAlive());
+  NS_ENSURE_TRUE_VOID(weakFrame.IsAlive());
 
   // Force any popups that might be anchored on elements within this popup to update.
   UpdatePopupPositions(aPopupFrame->PresContext()->RefreshDriver());
@@ -1353,7 +1347,7 @@ nsXULPopupManager::ExecuteMenu(nsIContent* aMenu, nsXULMenuCommandEvent* aEvent)
   CloseMenuMode cmm = CloseMenuMode_Auto;
 
   static Element::AttrValuesArray strings[] =
-    {&nsGkAtoms::none, &nsGkAtoms::single, nullptr};
+    {nsGkAtoms::none, nsGkAtoms::single, nullptr};
 
   if (aMenu->IsElement()) {
     switch (aMenu->AsElement()->FindAttrValueIn(kNameSpaceID_None,
@@ -1953,12 +1947,10 @@ nsXULPopupManager::UpdateMenuItems(nsIContent* aPopup)
   }
 
   // When a menu is opened, make sure that command updating is unlocked first.
-  if (document->IsXULDocument()) {
-    nsCOMPtr<nsIDOMXULCommandDispatcher> xulCommandDispatcher =
-      document->AsXULDocument()->GetCommandDispatcher();
-    if (xulCommandDispatcher) {
-      xulCommandDispatcher->Unlock();
-    }
+  nsCOMPtr<nsIDOMXULCommandDispatcher> commandDispatcher =
+    document->GetCommandDispatcher();
+  if (commandDispatcher) {
+    commandDispatcher->Unlock();
   }
 
   for (nsCOMPtr<nsIContent> grandChild = aPopup->GetFirstChild();

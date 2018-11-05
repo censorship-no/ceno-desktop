@@ -20,6 +20,8 @@
 namespace mozilla {
 namespace layers {
 
+class AsyncPanZoomController;
+
 enum CancelAnimationFlags : uint32_t {
   Default = 0x0,             /* Cancel all animations */
   ExcludeOverscroll = 0x1,   /* Don't clear overscroll */
@@ -88,14 +90,27 @@ struct TargetConfirmationFlags {
     , mRequiresTargetConfirmation(false)
   {}
 
-  explicit TargetConfirmationFlags(gfx::CompositorHitTestInfo aHitTestInfo)
-    : mTargetConfirmed(aHitTestInfo != gfx::CompositorHitTestInfo::eInvisibleToHitTest &&
-                       !(aHitTestInfo & gfx::CompositorHitTestInfo::eDispatchToContent))
-    , mRequiresTargetConfirmation(aHitTestInfo & gfx::CompositorHitTestInfo::eRequiresTargetConfirmation)
+  explicit TargetConfirmationFlags(const gfx::CompositorHitTestInfo& aHitTestInfo)
+    : mTargetConfirmed((aHitTestInfo != gfx::CompositorHitTestInvisibleToHit) &&
+                       !aHitTestInfo.contains(gfx::CompositorHitTestFlags::eDispatchToContent))
+    , mRequiresTargetConfirmation(aHitTestInfo.contains(gfx::CompositorHitTestFlags::eRequiresTargetConfirmation))
   {}
 
   bool mTargetConfirmed : 1;
   bool mRequiresTargetConfirmation : 1;
+};
+
+/**
+ * An RAII class to temporarily apply async test attributes to the provided
+ * AsyncPanZoomController.
+ */
+class MOZ_RAII AutoApplyAsyncTestAttributes {
+public:
+  explicit AutoApplyAsyncTestAttributes(AsyncPanZoomController*);
+  ~AutoApplyAsyncTestAttributes();
+private:
+  AsyncPanZoomController* mApzc;
+  FrameMetrics mPrevFrameMetrics;
 };
 
 namespace apz {

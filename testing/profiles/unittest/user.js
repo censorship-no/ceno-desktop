@@ -63,7 +63,7 @@ user_pref("browser.tabs.remote.autostart", false);
 // Make sure Translation won't hit the network.
 user_pref("browser.translation.bing.authURL", "http://{server}/browser/browser/components/translation/test/bing.sjs");
 user_pref("browser.translation.bing.translateArrayURL", "http://{server}/browser/browser/components/translation/test/bing.sjs");
-user_pref("browser.translation.engine", "bing");
+user_pref("browser.translation.engine", "Bing");
 user_pref("browser.translation.yandex.translateURLOverride", "http://{server}/browser/browser/components/translation/test/yandex.sjs");
 user_pref("browser.ui.layout.tablet", 0); // force tablet UI off
 // Ensure UITour won't hit the network
@@ -91,6 +91,8 @@ user_pref("devtools.debugger.prompt-connection", true);
 user_pref("devtools.debugger.remote-enabled", false);
 user_pref("devtools.debugger.remote-port", 6023);
 user_pref("devtools.testing", true);
+// Required to set values in wpt metadata files (bug 1485842)
+user_pref("dom.audioworklet.enabled", false);
 user_pref("dom.allow_scripts_to_close_windows", true);
 user_pref("dom.disable_open_during_load", false);
 user_pref("dom.experimental_forms", true); // on for testing
@@ -118,7 +120,7 @@ user_pref("dom.successive_dialog_time_limit", 0);
 user_pref("dom.use_xbl_scopes_for_remote_xul", true);
 user_pref("dom.w3c_touch_events.enabled", 1);
 user_pref("dom.webcomponents.customelements.enabled", true);
-user_pref("dom.webcomponents.shadowdom.enabled", false);
+user_pref("dom.webcomponents.shadowdom.enabled", true);
 user_pref("extensions.autoDisableScopes", 0);
 user_pref("extensions.blocklist.detailsURL", "http://{server}/extensions-dummy/blocklistDetailsURL");
 user_pref("extensions.blocklist.itemURL", "http://{server}/extensions-dummy/blocklistItemURL");
@@ -167,6 +169,8 @@ user_pref("identity.fxaccounts.auth.uri", "https://{server}/fxa-dummy/");
 user_pref("identity.fxaccounts.remote.root", "https://{server}/");
 user_pref("javascript.options.showInConsole", true);
 user_pref("layout.accessiblecaret.enabled_on_touch", false);
+// Enable CSS clip-path `path()` for testing
+user_pref("layout.css.clip-path-path.enabled", true);
 // Enable CSS 'contain' for testing
 user_pref("layout.css.contain.enabled", true);
 // Enable CSS Grid 'subgrid' feature for testing
@@ -190,6 +194,7 @@ user_pref("lightweightThemes.selectedThemeID", "");
 // The prefs recommended by Marionette are typically geared towards
 // consumer automation; not vendor testing.
 user_pref("marionette.prefs.recommended", false);
+user_pref("media.av1.enabled", true);
 user_pref("media.cache_size", 1000);
 user_pref("media.dormant-on-pause-timeout-ms", 0); // Enter dormant immediately without waiting for timeout.
 // Set the number of shmems the PChromiumCDM protocol pre-allocates to 0,
@@ -274,3 +279,5 @@ user_pref("toolkit.telemetry.test.pref2", false);
 // Disable the caret blinking so we get stable snapshot
 user_pref("ui.caretBlinkTime", -1);
 user_pref("webextensions.tests", true);
+// Disable intermittent telemetry collection
+user_pref("toolkit.telemetry.initDelay", 99999999);

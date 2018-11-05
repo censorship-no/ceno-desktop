@@ -1,0 +1,97 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+ /* CSS Variables specific to the Changes panel that aren't defined by the themes */
+ :root {
+   --diff-add-background-color: #f1feec;
+   --diff-add-text-color: #54983f;
+   --diff-remove-background-color: #fbf2f5;
+   --diff-remove-text-color: #bf7173;
+   --diff-level-offset: 15px;
+ }
+
+#sidebar-panel-changes {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+#sidebar-panel-changes .source[open] {
+  padding-bottom: 10px;
+}
+
+#sidebar-panel-changes .href {
+  background: var(--theme-sidebar-background);
+  border-top: 1px solid var(--theme-splitter-color);
+  border-bottom: 1px solid var(--theme-splitter-color);
+  padding: 5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+#sidebar-panel-changes .rule .level {
+  padding-top: 3px;
+  padding-right: 5px;
+  padding-bottom: 3px;
+  padding-left: var(--diff-level-offset);
+  position: relative;
+}
+
+#sidebar-panel-changes .rule > .rule .level {
+  padding-left: calc(var(--diff-level-offset) * 2);
+}
+
+#sidebar-panel-changes .rule > .rule > .rule .level {
+  padding-left: calc(var(--diff-level-offset) * 3);
+}
+
+#sidebar-panel-changes .rule > .rule > .rule > .rule .level {
+  padding-left: calc(var(--diff-level-offset) * 4);
+}
+
+#sidebar-panel-changes .rule .selector,
+#sidebar-panel-changes .rule .bracket-close {
+  margin-left: calc(-1 * var(--diff-level-offset) + 5px);
+}
+
+#sidebar-panel-changes .rule .bracket-open {
+  display: inline-block;
+  margin-left: 5px;
+}
+
+#sidebar-panel-changes .declaration-name {
+  margin-left: 10px;
+}
+
+#sidebar-panel-changes .declaration-value {
+  margin-left: 5px;
+}
+
+.diff-add::before,
+.diff-remove::before{
+  position: absolute;
+  left: 5px;
+}
+
+.diff-add {
+  background-color: var(--diff-add-background-color);
+}
+
+.diff-add::before {
+  content: "+";
+  color: var(--diff-add-text-color);
+}
+
+.diff-remove {
+  background-color: var(--diff-remove-background-color);
+}
+
+.diff-remove::before{
+  content: "-";
+  color: var(--diff-remove-text-color);
+}

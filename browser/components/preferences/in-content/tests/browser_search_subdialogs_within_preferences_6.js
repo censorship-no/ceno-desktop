@@ -13,9 +13,12 @@ add_task(async function() {
  * Test for searching for the "Block Lists" subdialog.
  */
 add_task(async function() {
-  await openPreferencesViaOpenPreferencesAPI("paneGeneral", {leaveOpen: true});
-  await evaluateSearchResults("block Web elements", "trackingGroup");
-  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  async function doTest() {
+    await openPreferencesViaOpenPreferencesAPI("paneGeneral", {leaveOpen: true});
+    await evaluateSearchResults("block Web elements", "trackingGroup");
+    BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  }
+  await doTest();
 });
 
 /**

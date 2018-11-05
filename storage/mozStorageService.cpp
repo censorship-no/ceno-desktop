@@ -619,8 +619,10 @@ Service::OpenAsyncDatabase(nsIVariant *aDatabaseStore,
       return NS_ERROR_INVALID_ARG;
     }
 
-    rv = storageFile->Clone(getter_AddRefs(storageFile));
+    nsCOMPtr<nsIFile> cloned;
+    rv = storageFile->Clone(getter_AddRefs(cloned));
     MOZ_ASSERT(NS_SUCCEEDED(rv));
+    storageFile = cloned.forget();
 
     if (!readOnly) {
       // Ensure that SQLITE_OPEN_CREATE is passed in for compatibility reasons.
@@ -796,7 +798,7 @@ Service::Observe(nsISupports *, const char *aTopic, const char16_t *)
           // getFilename is only the leaf name for the database file,
           // so it shouldn't contain privacy-sensitive information.
           CrashReporter::AnnotateCrashReport(
-            NS_LITERAL_CSTRING("StorageConnectionNotClosed"),
+            CrashReporter::Annotation::StorageConnectionNotClosed,
             connections[i]->getFilename());
 #ifdef DEBUG
           printf_stderr("Storage connection not closed: %s",

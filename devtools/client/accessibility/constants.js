@@ -42,7 +42,8 @@ exports.ORDERED_PROPS = [
   "childCount",
   "indexInParent",
   "states",
-  "attributes"
+  "relations",
+  "attributes",
 ];
 
 // Accessible events (emitted by accessible front) that the accessible component
@@ -57,9 +58,13 @@ exports.ACCESSIBLE_EVENTS = [
   "states-change",
   "text-change",
   "value-change",
-  "index-in-parent-change"
+  "index-in-parent-change",
 ];
 
 // Telemetry name constants.
 exports.A11Y_SERVICE_DURATION = "DEVTOOLS_ACCESSIBILITY_SERVICE_TIME_ACTIVE_SECONDS";
 exports.A11Y_SERVICE_ENABLED_COUNT = "devtools.accessibility.service_enabled_count";
+
+// URL constants
+exports.A11Y_LEARN_MORE_LINK =
+  "https://developer.mozilla.org/docs/Tools/Accessibility_inspector";

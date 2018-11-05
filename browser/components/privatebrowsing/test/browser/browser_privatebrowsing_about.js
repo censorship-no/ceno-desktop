@@ -2,14 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+const TP_PB_ENABLED_PREF = "privacy.trackingprotection.pbmode.enabled";
+
 /**
  * Opens a new private window and loads "about:privatebrowsing" there.
  */
 async function openAboutPrivateBrowsing() {
-  let win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
+  let win = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+    waitForTabURL: "about:privatebrowsing",
+  });
   let tab = win.gBrowser.selectedBrowser;
-  tab.loadURI("about:privatebrowsing");
-  await BrowserTestUtils.browserLoaded(tab);
   return { win, tab };
 }
 
@@ -63,53 +66,9 @@ add_task(async function test_links() {
 
   await testLinkOpensUrl({ win, tab,
     elementId: "startTour",
-    expectedUrl: "https://example.com/tour",
+    expectedUrl: "https://example.com/tour?variation=1",
   });
 
   await BrowserTestUtils.closeWindow(win);
 });
 
-/**
- * Tests the action to disable and re-enable Tracking Protection in
- * "about:privatebrowsing".
- */
-add_task(async function test_toggleTrackingProtection() {
-  // Use tour version but disable Tracking Protection.
-  Services.prefs.setBoolPref("privacy.trackingprotection.pbmode.enabled",
-                             true);
-  registerCleanupFunction(function() {
-    Services.prefs.clearUserPref("privacy.trackingprotection.pbmode.enabled");
-  });
-
-  let { win, tab } = await openAboutPrivateBrowsing();
-
-  // Set up the observer for the preference change before triggering the action.
-  let prefBranch =
-      Services.prefs.getBranch("privacy.trackingprotection.pbmode.");
-  let waitForPrefChanged = () => new Promise(resolve => {
-    let prefObserver = {
-      QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
-      observe() {
-        prefBranch.removeObserver("enabled", prefObserver);
-        resolve();
-      },
-    };
-    prefBranch.addObserver("enabled", prefObserver);
-  });
-
-  let promisePrefChanged = waitForPrefChanged();
-  await ContentTask.spawn(tab, {}, async function() {
-    content.document.getElementById("tpButton").click();
-  });
-  await promisePrefChanged;
-  ok(!prefBranch.getBoolPref("enabled"), "Tracking Protection is disabled.");
-
-  promisePrefChanged = waitForPrefChanged();
-  await ContentTask.spawn(tab, {}, async function() {
-    content.document.getElementById("tpButton").click();
-  });
-  await promisePrefChanged;
-  ok(prefBranch.getBoolPref("enabled"), "Tracking Protection is enabled.");
-
-  await BrowserTestUtils.closeWindow(win);
-});

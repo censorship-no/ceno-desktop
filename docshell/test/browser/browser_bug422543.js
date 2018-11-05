@@ -9,7 +9,7 @@ add_task(async function runTests() {
 
   // Check if all history listeners are always notified.
   info("# part 1");
-  await whenPageShown(browser, () => browser.loadURI("http://www.example.com/"));
+  await whenPageShown(browser, () => BrowserTestUtils.loadURI(browser, "http://www.example.com/"));
   await checkListeners("newentry", "shistory has a new entry");
   ok(browser.canGoBack, "we can go back");
 
@@ -26,7 +26,7 @@ add_task(async function runTests() {
   await whenPageShown(browser, () => browser.gotoIndex(0));
   await checkListeners("gotoindex", "back to the first index");
 
-  // Check nsISHistoryInternal.notifyOnHistoryReload
+  // Check nsISHistory.notifyOnHistoryReload
   info("# part 2");
   ok((await notifyReload()), "reloading has not been canceled");
   await checkListeners("reload", "saw the reload notification");

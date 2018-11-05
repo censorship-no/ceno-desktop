@@ -332,18 +332,51 @@ ToolSidebar.prototype = {
       return;
     }
 
-    if (previousToolId) {
-      this._telemetry.toolClosed(previousToolId);
+    const sessionId = this._toolPanel._toolbox.sessionId;
 
-      this._telemetry.recordEvent("devtools.main", "sidepanel_changed", "inspector", null,
+    currentToolId = this.getTelemetryPanelNameOrOther(currentToolId);
+
+    if (previousToolId) {
+      previousToolId = this.getTelemetryPanelNameOrOther(previousToolId);
+      this._telemetry.toolClosed(previousToolId, sessionId, this);
+
+      this._telemetry.recordEvent("sidepanel_changed", "inspector", null,
         {
           "oldpanel": previousToolId,
           "newpanel": currentToolId,
-          "session_id": this._toolPanel._toolbox.sessionId
+          "os": this._telemetry.osNameAndVersion,
+          "session_id": sessionId,
         }
       );
     }
-    this._telemetry.toolOpened(currentToolId);
+    this._telemetry.toolOpened(currentToolId, sessionId, this);
+  },
+
+  /**
+   * Returns a panel id in the case of built in panels or "other" in the case of
+   * third party panels. This is necessary due to limitations in addon id strings,
+   * the permitted length of event telemetry property values and what we actually
+   * want to see in our telemetry.
+   *
+   * @param {String} id
+   *        The panel id we would like to process.
+   */
+  getTelemetryPanelNameOrOther: function(id) {
+    if (!this._toolNames) {
+      // Get all built in tool ids. We identify third party tool ids by checking
+      // for a "-", which shows it originates from an addon.
+      const ids = this._tabbar.state.tabs.map(({ id: toolId }) => {
+        return toolId.includes("-") ? "other" : toolId;
+      });
+
+      this._toolNames = new Set(ids);
+    }
+
+    if (!this._toolNames.has(id)) {
+      return "other";
+    }
+
+    return id;
   },
 
   /**
@@ -413,7 +446,8 @@ ToolSidebar.prototype = {
     }
 
     if (this._currentTool && this._telemetry) {
-      this._telemetry.toolClosed(this._currentTool);
+      const sessionId = this._toolPanel._toolbox.sessionId;
+      this._telemetry.toolClosed(this._currentTool, sessionId, this);
     }
 
     this._toolPanel.emit("sidebar-destroyed", this);
@@ -423,5 +457,5 @@ ToolSidebar.prototype = {
     this._telemetry = null;
     this._panelDoc = null;
     this._toolPanel = null;
-  }
+  },
 };

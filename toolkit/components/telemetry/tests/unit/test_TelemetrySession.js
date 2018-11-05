@@ -120,7 +120,7 @@ function getSavedPingFile(basename) {
 
 function checkPingFormat(aPing, aType, aHasClientId, aHasEnvironment) {
   const MANDATORY_PING_FIELDS = [
-    "type", "id", "creationDate", "version", "application", "payload"
+    "type", "id", "creationDate", "version", "application", "payload",
   ];
 
   const APPLICATION_TEST_DATA = {
@@ -160,7 +160,7 @@ function checkPingFormat(aPing, aType, aHasClientId, aHasEnvironment) {
 
 function checkPayloadInfo(data, reason) {
   const ALLOWED_REASONS = [
-    "environment-change", "shutdown", "daily", "saved-session", "test-ping"
+    "environment-change", "shutdown", "daily", "saved-session", "test-ping",
   ];
   let numberCheck = arg => { return (typeof arg == "number"); };
   let positiveNumberCheck = arg => { return numberCheck(arg) && (arg >= 0); };
@@ -280,7 +280,6 @@ function checkPayload(payload, reason, successfulPings) {
   checkPayloadInfo(payload.info, reason);
 
   Assert.ok(payload.simpleMeasurements.totalTime >= 0);
-  Assert.ok(payload.simpleMeasurements.uptime >= 0);
   Assert.equal(payload.simpleMeasurements.startupInterrupted, 1);
   Assert.equal(payload.simpleMeasurements.shutdownDuration, SHUTDOWN_TIME);
   Assert.ok("maximalNumberOfConcurrentThreads" in payload.simpleMeasurements);
@@ -328,10 +327,10 @@ function checkPayload(payload, reason, successfulPings) {
     bucket_count: 3,
     histogram_type: 3,
     values: {0: 1, 1: 0},
-    sum: 0
+    sum: 0,
   };
   let flag = payload.histograms[TELEMETRY_TEST_FLAG];
-  Assert.equal(uneval(flag), uneval(expected_flag));
+  Assert.deepEqual(flag, expected_flag);
 
   // We should have a test count.
   const expected_count = {
@@ -342,7 +341,7 @@ function checkPayload(payload, reason, successfulPings) {
     sum: 1,
   };
   let count = payload.histograms[TELEMETRY_TEST_COUNT];
-  Assert.equal(uneval(count), uneval(expected_count));
+  Assert.deepEqual(count, expected_count);
 
   // There should be one successful report from the previous telemetry ping.
   if (successfulPings > 0) {
@@ -351,10 +350,10 @@ function checkPayload(payload, reason, successfulPings) {
       bucket_count: 3,
       histogram_type: 2,
       values: {0: 2, 1: successfulPings, 2: 0},
-      sum: successfulPings
+      sum: successfulPings,
     };
     let tc = payload.histograms[TELEMETRY_SUCCESS];
-    Assert.equal(uneval(tc), uneval(expected_tc));
+    Assert.deepEqual(tc, expected_tc);
   }
 
   // The ping should include data from memory reporters.  We can't check that
@@ -362,7 +361,7 @@ function checkPayload(payload, reason, successfulPings) {
   // memory reporters.  But we can at least check that the data is there.
   //
   // It's important to check for the presence of reporters with a mix of units,
-  // because TelemetryController has separate logic for each one.  But we can't
+  // because MemoryTelemetry has separate logic for each one.  But we can't
   // currently check UNITS_COUNT_CUMULATIVE or UNITS_PERCENTAGE because
   // Telemetry doesn't touch a memory reporter with these units that's
   // available on all platforms.
@@ -403,6 +402,11 @@ function checkPayload(payload, reason, successfulPings) {
 
   Assert.ok("processes" in payload, "The payload must have a processes section.");
   Assert.ok("parent" in payload.processes, "There must be at least a parent process.");
+
+  if (Services.prefs.getBoolPref("prio.enabled", false)) {
+    Assert.ok("prio" in payload, "The payload must have a prio section.");
+  }
+
   checkScalars(payload.processes);
 }
 
@@ -926,6 +930,41 @@ add_task(async function test_environmentChange() {
   Assert.ok(!(COUNT_ID in ping.payload.histograms));
   Assert.ok(!(KEYED_ID in ping.payload.keyedHistograms));
 
+  // Trigger and collect another ping. The histograms should be reset.
+  startHour = TelemetryUtils.truncateToHours(now);
+  gMonotonicNow = fakeMonotonicNow(gMonotonicNow + 10 * MILLISECONDS_PER_MINUTE);
+  now = fakeNow(futureDate(now, 10 * MILLISECONDS_PER_MINUTE));
+
+  if (Services.prefs.getBoolPref("prio.enabled", false)) {
+    fakePrioEncode();
+
+    // Set histograms to expected state.
+    let prioMeasures = [
+      "BROWSER_IS_USER_DEFAULT",
+      "NEWTAB_PAGE_ENABLED",
+    ];
+
+    for (let measure of prioMeasures) {
+      const value = Telemetry.getHistogramById(measure);
+      value.clear();
+      value.add(1);
+    }
+
+    let expectedPrioResult = {
+      "booleans": [
+        true,
+        true,
+        false,
+      ],
+    };
+
+    Preferences.set(PREF_TEST, 3);
+    ping = await PingServer.promiseNextPing();
+    Assert.ok(!!ping);
+
+    Assert.deepEqual(ping.payload.prio, expectedPrioResult);
+  }
+
   await TelemetryController.testShutdown();
 });
 
@@ -1032,8 +1071,6 @@ add_task(async function test_sendShutdownPing() {
     return;
   }
 
-  const OSSHUTDOWN_SCALAR = "telemetry.os_shutting_down";
-
   let checkPendingShutdownPing = async function() {
     let pendingPings = await TelemetryStorage.loadPendingPingList();
     Assert.equal(pendingPings.length, 1,
@@ -1043,8 +1080,6 @@ add_task(async function test_sendShutdownPing() {
     Assert.ok(shutdownPing, "The 'shutdown' ping must be saved to disk.");
     Assert.equal("shutdown", shutdownPing.payload.info.reason,
                  "The 'shutdown' ping must be saved to disk.");
-    Assert.ok(shutdownPing.payload.processes.parent.scalars[OSSHUTDOWN_SCALAR],
-              "The OS shutdown scalar must be set to true.");
   };
 
   Preferences.set(TelemetryUtils.Preferences.ShutdownPingSender, true);
@@ -1063,8 +1098,6 @@ add_task(async function test_sendShutdownPing() {
   checkPingFormat(ping, ping.type, true, true);
   Assert.equal(ping.payload.info.reason, REASON_SHUTDOWN);
   Assert.equal(ping.clientId, gClientID);
-  Assert.ok(!(OSSHUTDOWN_SCALAR in ping.payload.processes.parent.scalars),
-            "The OS shutdown scalar must not be set.");
   // Try again, this time disable ping upload. The PingSender
   // should not be sending any ping!
   PingServer.registerPingHandler(() => Assert.ok(false, "Telemetry must not send pings if not allowed to."));
@@ -1081,6 +1114,8 @@ add_task(async function test_sendShutdownPing() {
   await TelemetryController.testReset();
   Services.obs.notifyObservers(null, "quit-application-forced");
   await TelemetryController.testShutdown();
+  // After re-enabling FHR, wait for the new client ID
+  gClientID = await ClientID.getClientID();
 
   // Check that the "shutdown" ping was correctly saved to disk.
   await checkPendingShutdownPing();
@@ -1730,7 +1765,7 @@ add_task(async function test_schedulerNothingDue() {
 add_task(async function test_pingExtendedStats() {
   const EXTENDED_PAYLOAD_FIELDS = [
     "log", "slowSQL", "fileIOReports", "lateWrites",
-    "addonDetails", "webrtc"
+    "addonDetails", "webrtc",
   ];
 
   if (AppConstants.platform == "android") {

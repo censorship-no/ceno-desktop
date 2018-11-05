@@ -426,12 +426,6 @@ function setupEnvironment() {
     ]
   };
 
-  if (!WANT_FAKE_AUDIO) {
-    defaultMochitestPrefs.set.push(
-      ["media.volume_scale", "1"],
-    );
-  }
-
   const isAndroid = !!navigator.userAgent.includes("Android");
 
   if (isAndroid) {
@@ -1027,6 +1021,8 @@ class VideoFrameEmitter {
     }
     this._helper = new CaptureStreamTestHelper2D(width, height);
     this._canvas = this._helper.createAndAppendElement('canvas', 'source_canvas');
+    this._canvas.width = width;
+    this._canvas.height = height;
     this._color1 = color1 ? color1 : this._helper.green;
     this._color2 = color2 ? color2 : this._helper.red;
     // Make sure this is initted
@@ -1051,6 +1047,11 @@ class VideoFrameEmitter {
     } catch (e) {
       // ignore; stream might have shut down
     }
+  }
+
+  size(width, height) {
+    this._canvas.width = width;
+    this._canvas.height = height;
   }
 
   start() {
@@ -1137,21 +1138,6 @@ class VideoStreamHelper {
       is(e, "timeout", "Frame shouldn't change for " + time/1000 + " seconds");
     }
   }
-}
-
-
-function IsMacOSX10_6orOlder() {
-  if (navigator.platform.indexOf("Mac") !== 0) {
-    return false;
-  }
-
-  var version = Cc["@mozilla.org/system-info;1"]
-      .getService(Ci.nsIPropertyBag2)
-      .getProperty("version");
-  // the next line is correct: Mac OS 10.6 corresponds to Darwin version 10.x !
-  // Mac OS 10.7 is Darwin version 11.x. the |version| string we've got here
-  // is the Darwin version.
-  return (parseFloat(version) < 11.0);
 }
 
 (function(){

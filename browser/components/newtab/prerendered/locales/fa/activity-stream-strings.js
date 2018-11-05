@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "بارگیری عکس شکست خورد. آدرس دیگری امتحان کنید.",
   "pocket_read_more": "موضوع‌های محبوب:",
   "pocket_read_even_more": "مشاهده داستان‌های بیشتر",
+  "pocket_more_reccommendations": "توصیه‌های بیشتر",
+  "pocket_how_it_works": "این چجوری کار میکنه",
+  "pocket_cta_button": "دریافت پاکت",
+  "pocket_cta_text": "داستان‌هایی را که دوست دارید در پاکت خود ذخیره کنید و ذهن خود را با خواندنی‌های جذاب پرورش دهید.",
   "highlights_empty_state": "مرور کردن را شروع کنید و شاهد تعداد زیادی مقاله، فیلم و صفحات خوبی باشید که اخیر مشاهده کرده اید یا نشانگ گذاری کرده اید.",
   "topstories_empty_state": "فعلا تموم شد. بعدا دوباره سر بزن تا مطالب جدید از {provider} ببینی. نمی‌تونی صبر کنی؟ یک موضوع محبوب رو انتخاب کن تا مطالب جالب مرتبط از سراسر دنیا رو پیدا کنی.",
   "manual_migration_explanation2": "فایرفاکس را با نشانک‌ها،‌ تاریخچه‌ها و کلمات عبور از سایر مرورگر ها تجربه کنید.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "مدیریت قسمت",
   "section_menu_action_manage_webext": "مدیریت افزودنی",
   "section_menu_action_add_topsite": "اضافه کردن سایت برتر",
+  "section_menu_action_add_search_engine": "افزودن موتور جست‌وجو",
   "section_menu_action_move_up": "جابه‌جایی به بالا",
   "section_menu_action_move_down": "جابه‌جایی به پایین",
   "section_menu_action_privacy_notice": "نکات حریم‌خصوصی",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "قوانین سرویس",
   "firstrun_privacy_notice": "نکات حریم‌خصوصی",
   "firstrun_continue_to_login": "ادامه",
-  "firstrun_skip_login": "پرش از این مرحله"
+  "firstrun_skip_login": "پرش از این مرحله",
+  "context_menu_title": "Open menu",
+  "pocket_learn_more": "بیشتر بدانید"
 };

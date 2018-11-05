@@ -5,13 +5,19 @@
 
 "use strict";
 
-// See Bug 812618.
+// Test that editing text inside parens behave as expected, i.e.
+// - it does not show the autocompletion text
+// - show popup when there's properties to complete
+// - insert the selected item from the popup in the input
+// - right arrow dismiss popup and don't autocomplete
+// - tab key when there is not visible autocomplete suggestion insert a tab
+// See Bug 812618, 1479521 and 1334130.
 
 const TEST_URI = `data:text/html;charset=utf-8,
 <head>
   <script>
-    window.testBugA = "hello world";
-    window.testBugB = "hello world 2";
+    window.testBugAA = "hello world";
+    window.testBugBB = "hello world 2";
   </script>
 </head>
 <body>bug 812618 - test completion inside text</body>`;
@@ -31,35 +37,115 @@ async function performTests() {
 
   const { autocompletePopup: popup } = jsterm;
 
-  const onPopUpOpen = popup.once("popup-opened");
-
-  const dumpString = "dump(window.testBu)";
-  jstermSetValueAndComplete(jsterm, dumpString, -1);
-
-  await onPopUpOpen;
+  await setInitialState(jsterm);
 
   ok(popup.isOpen, "popup is open");
   is(popup.itemCount, 2, "popup.itemCount is correct");
   is(popup.selectedIndex, 0, "popup.selectedIndex is correct");
+  ok(!getJsTermCompletionValue(jsterm), "there is no completion text");
 
+  info("Pressing arrow right");
+  let onPopupClose = popup.once("popup-closed");
+  EventUtils.synthesizeKey("KEY_ArrowRight");
+  await onPopupClose;
+  ok(true, "popup was closed");
+  checkJsTermValueAndCursor(jsterm, "dump(window.testB)|", "input wasn't modified");
+
+  await setInitialState(jsterm);
   EventUtils.synthesizeKey("KEY_ArrowDown");
   is(popup.selectedIndex, 1, "popup.selectedIndex is correct");
   ok(!getJsTermCompletionValue(jsterm), "completeNode.value is empty");
 
   const items = popup.getItems().map(e => e.label);
-  const expectedItems = ["testBugA", "testBugB"];
+  const expectedItems = ["testBugAA", "testBugBB"];
   is(items.join("-"), expectedItems.join("-"), "getItems returns the items we expect");
 
   info("press Tab and wait for popup to hide");
-  const onPopupClose = popup.once("popup-closed");
+  onPopupClose = popup.once("popup-closed");
   EventUtils.synthesizeKey("KEY_Tab");
-
   await onPopupClose;
 
   // At this point the completion suggestion should be accepted.
   ok(!popup.isOpen, "popup is not open");
-  const expectedInput = "dump(window.testBugB)";
-  is(jsterm.getInputValue(), expectedInput, "completion was successful after VK_TAB");
-  checkJsTermCursor(jsterm, expectedInput.length - 1, "cursor location is correct");
-  ok(!getJsTermCompletionValue(jsterm), "completeNode is empty");
+  checkJsTermValueAndCursor(jsterm, "dump(window.testBugBB|)",
+    "completion was successful after VK_TAB");
+  ok(!getJsTermCompletionValue(jsterm), "there is no completion text");
+
+  info("Test ENTER key when popup is visible with a selected item");
+  await setInitialState(jsterm);
+  info("press Enter and wait for popup to hide");
+  onPopupClose = popup.once("popup-closed");
+  EventUtils.synthesizeKey("KEY_Enter");
+  await onPopupClose;
+
+  ok(!popup.isOpen, "popup is not open");
+  checkJsTermValueAndCursor(jsterm, "dump(window.testBugAA|)",
+    "completion was successful after Enter");
+  ok(!getJsTermCompletionValue(jsterm), "there is no completion text");
+
+  info("Test autocomplete inside parens");
+  jsterm.setInputValue("dump()");
+  EventUtils.synthesizeKey("KEY_ArrowLeft");
+  let onAutocompleteUpdated = jsterm.once("autocomplete-updated");
+  EventUtils.sendString("window.testBugA");
+  await onAutocompleteUpdated;
+  ok(popup.isOpen, "popup is open");
+  ok(!getJsTermCompletionValue(jsterm), "there is no completion text");
+
+  info("Matching the completion proposal should close the popup");
+  onPopupClose = popup.once("popup-closed");
+  EventUtils.sendString("A");
+  await onPopupClose;
+
+  info("Test TAB key when there is no autocomplete suggestion");
+  ok(!popup.isOpen, "popup is not open");
+  ok(!getJsTermCompletionValue(jsterm), "there is no completion text");
+
+  EventUtils.synthesizeKey("KEY_Tab");
+  checkJsTermValueAndCursor(jsterm, "dump(window.testBugAA\t|)",
+    "completion was successful after Enter");
+
+  info("Check that we don't show the popup when editing words");
+  await setInputValueForAutocompletion(jsterm, "estBug", 0);
+  onAutocompleteUpdated = jsterm.once("autocomplete-updated");
+  EventUtils.sendString("t");
+  await onAutocompleteUpdated;
+  is(jsterm.getInputValue(), "testBug", "jsterm has expected value");
+  is(popup.isOpen, false, "popup is not open");
+  ok(!getJsTermCompletionValue(jsterm), "there is no completion text");
+
+  await setInputValueForAutocompletion(jsterm, "__foo", 1);
+  onAutocompleteUpdated = jsterm.once("autocomplete-updated");
+  EventUtils.sendString("t");
+  await onAutocompleteUpdated;
+  is(jsterm.getInputValue(), "_t_foo", "jsterm has expected value");
+  is(popup.isOpen, false, "popup is not open");
+  ok(!getJsTermCompletionValue(jsterm), "there is no completion text");
+
+  await setInputValueForAutocompletion(jsterm, "$$bar", 1);
+  onAutocompleteUpdated = jsterm.once("autocomplete-updated");
+  EventUtils.sendString("t");
+  await onAutocompleteUpdated;
+  is(jsterm.getInputValue(), "$t$bar", "jsterm has expected value");
+  is(popup.isOpen, false, "popup is not open");
+  ok(!getJsTermCompletionValue(jsterm), "there is no completion text");
+
+  await setInputValueForAutocompletion(jsterm, "99luftballons", 1);
+  onAutocompleteUpdated = jsterm.once("autocomplete-updated");
+  EventUtils.sendString("t");
+  await onAutocompleteUpdated;
+  is(jsterm.getInputValue(), "9t9luftballons", "jsterm has expected value");
+  is(popup.isOpen, false, "popup is not open");
+  ok(!getJsTermCompletionValue(jsterm), "there is no completion text");
+}
+
+async function setInitialState(jsterm) {
+  jsterm.focus();
+  jsterm.setInputValue("dump()");
+  EventUtils.synthesizeKey("KEY_ArrowLeft");
+
+  const onPopUpOpen = jsterm.autocompletePopup.once("popup-opened");
+  EventUtils.sendString("window.testB");
+  checkJsTermValueAndCursor(jsterm, "dump(window.testB|)");
+  await onPopUpOpen;
 }

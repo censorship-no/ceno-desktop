@@ -536,6 +536,12 @@ typedef void (*GtkWindowHandleExported) (GtkWindow  *window,
                                          const char *handle,
                                          gpointer    user_data);
 #ifdef MOZ_WAYLAND
+#if !GTK_CHECK_VERSION(3,22,0)
+typedef void (*GdkWaylandWindowExported) (GdkWindow  *window,
+                                          const char *handle,
+                                          gpointer    user_data);
+#endif
+
 typedef struct {
     GtkWindow *window;
     WindowHandleExported callback;
@@ -662,6 +668,7 @@ nsFlatpakPrintPortal::nsFlatpakPrintPortal(nsPrintSettingsGTK* aPrintSettings):
   mPrintAndPageSettings(aPrintSettings),
   mProxy(nullptr),
   mLoop(nullptr),
+  mResponseSignalId(0),
   mParentWindow(nullptr)
 {
 }
@@ -789,8 +796,10 @@ nsFlatpakPrintPortal::PreparePrint(GtkWindow* aWindow, const char* aWindowHandle
   if (strcmp (aWindowHandleStr, handle) != 0)
   {
     aWindowHandleStr = g_strdup (handle);
-    g_dbus_connection_signal_unsubscribe(
-        g_dbus_proxy_get_connection(G_DBUS_PROXY(mProxy)), mResponseSignalId);
+    if (mResponseSignalId) {
+      g_dbus_connection_signal_unsubscribe(
+          g_dbus_proxy_get_connection(G_DBUS_PROXY(mProxy)), mResponseSignalId);
+    }
   }
   mResponseSignalId =
     g_dbus_connection_signal_subscribe(
@@ -976,8 +985,13 @@ nsFlatpakPrintPortal::Observe(nsISupports *aObject, const char * aTopic,
 }
 
 nsFlatpakPrintPortal::~nsFlatpakPrintPortal() {
-  if (mProxy)
+  if (mProxy) {
+    if (mResponseSignalId) {
+      g_dbus_connection_signal_unsubscribe(
+          g_dbus_proxy_get_connection(G_DBUS_PROXY(mProxy)), mResponseSignalId);
+    }
     g_object_unref(mProxy);
+  }
   if (mLoop)
     g_main_loop_quit(mLoop);
 }
@@ -1016,12 +1030,11 @@ nsPrintDialogServiceGTK::Show(nsPIDOMWindowOuter *aParent,
     switch (printDialogResult) {
       case GTK_PRINT_OPERATION_RESULT_APPLY:
         {
-          nsCOMPtr<nsIObserver> observer = do_QueryInterface(fpPrintPortal);
           nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
           NS_ENSURE_STATE(os);
           // Observer waits until notified that the file with the content
           // to print has been written.
-          rv = os->AddObserver(observer, "print-to-file-finished", false);
+          rv = os->AddObserver(fpPrintPortal, "print-to-file-finished", false);
           NS_ENSURE_SUCCESS(rv, rv);
           break;
         }

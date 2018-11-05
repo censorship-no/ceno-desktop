@@ -12,7 +12,6 @@
 #include "nsIContentPermissionPrompt.h"
 #include "nsISupports.h"
 #include "nsIWeakReferenceUtils.h"
-#include "nsWeakReference.h"
 
 class nsGlobalWindowInner;
 class nsIEventTarget;
@@ -48,10 +47,11 @@ public:
 
   // Called by AutoplayPermissionRequest to approve the play request,
   // and resolve the MozPromise returned by RequestWithPrompt().
-  void ApprovePlayRequest();
-  // Called by AutoplayPermissionRequest to deny the play request,
-  // and reject the MozPromise returned by RequestWithPrompt().
-  void DenyPlayRequest();
+  void ApprovePlayRequestIfExists();
+  // Called by AutoplayPermissionRequest to deny the play request or the inner
+  // window is going to be destroyed, this function would reject the MozPromise
+  // returned by RequestWithPrompt().
+  void DenyPlayRequestIfExists();
 
 private:
   ~AutoplayPermissionManager();

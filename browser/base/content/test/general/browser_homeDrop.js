@@ -19,6 +19,8 @@ add_task(async function() {
     let setHomepageDialogPromise = BrowserTestUtils.domWindowOpened();
 
     EventUtils.synthesizeDrop(dragSrcElement, homeButton, dragData, "copy", window);
+    // Ensure dnd suppression is cleared.
+    EventUtils.synthesizeMouseAtCenter(homeButton, { type: "mouseup" }, window);
 
     let setHomepageDialog = await setHomepageDialogPromise;
     ok(true, "dialog appeared in response to home button drop");
@@ -37,7 +39,7 @@ add_task(async function() {
           Services.prefs.setStringPref(HOMEPAGE_PREF, "about:mozilla;");
 
           resolve();
-        }
+        },
       };
       Services.prefs.addObserver(HOMEPAGE_PREF, observer);
     });
@@ -55,7 +57,7 @@ add_task(async function() {
             ok(true, "drop was blocked");
             resolve();
           }
-        }
+        },
       };
       Services.console.registerListener(consoleListener);
       registerCleanupFunction(function() {
@@ -68,6 +70,8 @@ add_task(async function() {
         // principal, e.g. javascript:
         expectUncaughtException();
         EventUtils.synthesizeDrop(dragSrcElement, homeButton, [[{type: "text/plain", data: "javascript:8888"}]], "copy", window);
+        // Ensure dnd suppression is cleared.
+        EventUtils.synthesizeMouseAtCenter(homeButton, { type: "mouseup" }, window);
       });
     });
   }

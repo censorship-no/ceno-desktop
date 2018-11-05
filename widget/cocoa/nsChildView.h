@@ -15,7 +15,7 @@
 
 #include "nsISupports.h"
 #include "nsBaseWidget.h"
-#include "nsWeakPtr.h"
+#include "nsIWeakReferenceUtils.h"
 #include "TextInputHandler.h"
 #include "nsCocoaUtils.h"
 #include "gfxQuartzSurface.h"
@@ -147,11 +147,6 @@ class WidgetRenderingContext;
   // when acceptsFirstMouse: is called, we store the event here (strong)
   NSEvent* mClickThroughMouseDownEvent;
 
-  // rects that were invalidated during a draw, so have pending drawing
-  NSMutableArray* mPendingDirtyRects;
-  BOOL mPendingFullDisplay;
-  BOOL mPendingDisplay;
-
   // WheelStart/Stop events should always come in pairs. This BOOL records the
   // last received event so that, when we receive one of the events, we make sure
   // to send its pair event first, in case we didn't yet for any reason.
@@ -192,8 +187,6 @@ class WidgetRenderingContext;
   } mGestureState;
   float mCumulativeMagnification;
   float mCumulativeRotation;
-
-  BOOL mWaitingForPaint;
 
 #ifdef __LP64__
   // Support for fluid swipe tracking.
@@ -259,7 +252,6 @@ class WidgetRenderingContext;
 - (void)endGestureWithEvent:(NSEvent *)anEvent;
 
 - (void)scrollWheel:(NSEvent *)anEvent;
-- (void)handleAsyncScrollEvent:(CGEventRef)cgEvent ofType:(CGEventType)type;
 
 - (void)setUsingOMTCompositor:(BOOL)aUseOMTC;
 
@@ -531,8 +523,6 @@ public:
   void CleanupRemoteDrawing() override;
   bool InitCompositor(mozilla::layers::Compositor* aCompositor) override;
 
-  IAPZCTreeManager* APZCTM() { return mAPZC ; }
-
   virtual MOZ_MUST_USE nsresult
   StartPluginIME(const mozilla::WidgetKeyboardEvent& aKeyboardEvent,
                  int32_t aPanelX, int32_t aPanelY,
@@ -549,6 +539,9 @@ public:
 
   void SwipeFinished();
 
+  nsresult SetPrefersReducedMotionOverrideForTest(bool aValue) override;
+  nsresult ResetPrefersReducedMotionOverrideForTest() override;
+
 protected:
   virtual ~nsChildView();
 
@@ -563,9 +556,7 @@ protected:
   virtual already_AddRefed<nsIWidget>
   AllocateChildPopupWidget() override
   {
-    static NS_DEFINE_IID(kCPopUpCID, NS_POPUP_CID);
-    nsCOMPtr<nsIWidget> widget = do_CreateInstance(kCPopUpCID);
-    return widget.forget();
+    return nsIWidget::CreateTopLevelWindow();
   }
 
   void ConfigureAPZCTreeManager() override;

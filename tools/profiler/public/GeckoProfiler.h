@@ -16,6 +16,10 @@
 #ifndef GeckoProfiler_h
 #define GeckoProfiler_h
 
+// everything in here is also safe to include unconditionally, and only defines
+// empty macros if MOZ_GECKO_PROFILER is unset
+#include "mozilla/ProfilerCounts.h"
+
 #ifndef MOZ_GECKO_PROFILER
 
 // This file can be #included unconditionally. However, everything within this
@@ -59,18 +63,17 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/GuardObjects.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/net/TimingStruct.h"
 #include "js/ProfilingStack.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "nscore.h"
-#include "nsIURI.h"
 
 // Make sure that we can use std::min here without the Windows headers messing
 // with us.
@@ -81,6 +84,12 @@
 class ProfilerBacktrace;
 class ProfilerMarkerPayload;
 class SpliceableJSONWriter;
+namespace mozilla {
+namespace net {
+struct TimingStruct;
+}
+}
+class nsIURI;
 
 namespace mozilla {
 class MallocAllocPolicy;
@@ -245,7 +254,7 @@ void profiler_shutdown();
 // selected options. Stops and restarts the profiler if it is already active.
 // After starting the profiler is "active". The samples will be recorded in a
 // circular buffer.
-//   "aEntries" is the number of entries in the profiler's circular buffer.
+//   "aCapacity" is the maximum number of entries in the profiler's circular buffer.
 //   "aInterval" the sampling interval, measured in millseconds.
 //   "aFeatures" is the feature set. Features unsupported by this
 //               platform/configuration are ignored.
@@ -255,7 +264,7 @@ void profiler_shutdown();
 //                  substring, or
 //              (b) the filter is of the form "pid:<n>" where n is the process
 //                  id of the process that the thread is running in.
-void profiler_start(uint32_t aEntries, double aInterval, uint32_t aFeatures,
+void profiler_start(uint32_t aCapacity, double aInterval, uint32_t aFeatures,
                     const char** aFilters, uint32_t aFilterCount);
 
 // Stop the profiler and discard the profile without saving it. A no-op if the
@@ -267,7 +276,7 @@ void profiler_stop();
 // the state change are performed while the profiler state is locked.
 // The only difference to profiler_start is that the current buffer contents are
 // not discarded if the profiler is already running with the requested settings.
-void profiler_ensure_started(uint32_t aEntries, double aInterval,
+void profiler_ensure_started(uint32_t aCapacity, double aInterval,
                              uint32_t aFeatures, const char** aFilters,
                              uint32_t aFilterCount);
 
@@ -283,6 +292,10 @@ void profiler_ensure_started(uint32_t aEntries, double aInterval,
   profiler_unregister_thread()
 ProfilingStack* profiler_register_thread(const char* name, void* guessStackTop);
 void profiler_unregister_thread();
+
+class BaseProfilerCount;
+void profiler_add_sampled_counter(BaseProfilerCount* aCounter);
+void profiler_remove_sampled_counter(BaseProfilerCount* aCounter);
 
 // Register and unregister a thread within a scope.
 #define AUTO_PROFILER_REGISTER_THREAD(name) \
@@ -810,7 +823,7 @@ public:
 
 private:
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
-  char mSetEntries[64];
+  char mSetCapacity[64];
   char mSetInterval[64];
   char mSetFeaturesBitfield[64];
   char mSetFilters[1024];

@@ -141,8 +141,8 @@ class nsView;
 class nsMenuPopupFrame;
 
 // this class is used for dispatching popupshown events asynchronously.
-class nsXULPopupShownEvent : public mozilla::Runnable,
-                             public nsIDOMEventListener
+class nsXULPopupShownEvent final : public mozilla::Runnable,
+                                   public nsIDOMEventListener
 {
 public:
   nsXULPopupShownEvent(nsIContent* aPopup, nsPresContext* aPresContext)
@@ -373,7 +373,7 @@ public:
   nsIScrollableFrame* GetScrollFrame(nsIFrame* aStart);
 
   void SetOverrideConstraintRect(mozilla::LayoutDeviceIntRect aRect) {
-    mOverrideConstraintRect = ToAppUnits(aRect, PresContext()->AppUnitsPerCSSPixel());
+    mOverrideConstraintRect = ToAppUnits(aRect, mozilla::AppUnitsPerCSSPixel());
   }
 
   // For a popup that should appear anchored at the given rect, determine

@@ -6,7 +6,7 @@
 
 #include "Callback.h"
 
-#include "ipc/ChildIPC.h"
+#include "ipc/ChildInternal.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/RecordReplay.h"
 #include "mozilla/StaticMutex.h"
@@ -29,9 +29,7 @@ RegisterCallbackData(void* aData)
     return;
   }
 
-  RecordReplayAssert("RegisterCallbackData");
-
-  AutoOrderedAtomicAccess at;
+  AutoOrderedAtomicAccess at(&gCallbackData);
   StaticMutexAutoLock lock(gCallbackMutex);
   if (!gCallbackData) {
     gCallbackData = new ValueIndex();
@@ -50,6 +48,9 @@ BeginCallback(size_t aCallbackId)
     child::EndIdleTime();
   }
   thread->SetPassThrough(false);
+
+  RecordingEventSection res(thread);
+  MOZ_RELEASE_ASSERT(res.CanAccessEvents());
 
   thread->Events().RecordOrReplayThreadEvent(ThreadEvent::ExecuteCallback);
   thread->Events().WriteScalar(aCallbackId);
@@ -72,14 +73,11 @@ EndCallback()
 void
 SaveOrRestoreCallbackData(void** aData)
 {
-  MOZ_RELEASE_ASSERT(IsRecordingOrReplaying());
-  MOZ_RELEASE_ASSERT(!AreThreadEventsPassedThrough());
-  MOZ_RELEASE_ASSERT(!AreThreadEventsDisallowed());
   MOZ_RELEASE_ASSERT(gCallbackData);
 
   Thread* thread = Thread::Current();
-
-  RecordReplayAssert("RestoreCallbackData");
+  RecordingEventSection res(thread);
+  MOZ_RELEASE_ASSERT(res.CanAccessEvents());
 
   thread->Events().RecordOrReplayThreadEvent(ThreadEvent::RestoreCallbackData);
 
@@ -107,10 +105,9 @@ RemoveCallbackData(void* aData)
 void
 PassThroughThreadEventsAllowCallbacks(const std::function<void()>& aFn)
 {
-  MOZ_RELEASE_ASSERT(IsRecordingOrReplaying());
-  MOZ_RELEASE_ASSERT(!AreThreadEventsDisallowed());
-
   Thread* thread = Thread::Current();
+  RecordingEventSection res(thread);
+  MOZ_RELEASE_ASSERT(res.CanAccessEvents());
 
   if (IsRecording()) {
     if (thread->IsMainThread()) {
@@ -127,9 +124,7 @@ PassThroughThreadEventsAllowCallbacks(const std::function<void()>& aFn)
     while (true) {
       ThreadEvent ev = (ThreadEvent) thread->Events().ReadScalar();
       if (ev != ThreadEvent::ExecuteCallback) {
-        if (ev != ThreadEvent::CallbacksFinished) {
-          child::ReportFatalError("Unexpected event while replaying callback events");
-        }
+        MOZ_RELEASE_ASSERT(ev == ThreadEvent::CallbacksFinished);
         break;
       }
       size_t id = thread->Events().ReadScalar();

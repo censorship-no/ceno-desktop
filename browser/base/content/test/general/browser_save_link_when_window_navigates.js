@@ -29,7 +29,7 @@ function triggerSave(aWindow, aCallback) {
   let testBrowser = aWindow.gBrowser.selectedBrowser;
   let testURI = "http://mochi.test:8888/browser/browser/base/content/test/general/navigating_window_with_download.html";
   windowObserver.setCallback(onUCTDialog);
-  testBrowser.loadURI(testURI);
+  BrowserTestUtils.loadURI(testBrowser, testURI);
 
   // Create the folder the link will be saved into.
   var destDir = createTemporarySaveDirectory();
@@ -65,9 +65,7 @@ function triggerSave(aWindow, aCallback) {
   }
 
   function continueDownloading() {
-    let windows = Services.wm.getEnumerator("");
-    while (windows.hasMoreElements()) {
-      let win = windows.getNext();
+    for (let win of Services.wm.getEnumerator("")) {
       if (win.location && win.location.href == UCT_URI) {
         win.document.documentElement._fireButtonEvent("accept");
         win.close();
@@ -112,7 +110,7 @@ var windowObserver = {
         });
       }
     }, {once: true});
-  }
+  },
 };
 
 Services.ww.registerNotification(windowObserver);

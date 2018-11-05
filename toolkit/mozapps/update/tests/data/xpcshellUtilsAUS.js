@@ -223,7 +223,7 @@ var gTestFilesCommon = [
     originalFile: null,
     compareFile: null,
     originalPerms: 0o767,
-    comparePerms: 0o767
+    comparePerms: 0o767,
   }, {
     description: "Should never change",
     fileName: "channel-prefs.js",
@@ -233,7 +233,7 @@ var gTestFilesCommon = [
     originalFile: null,
     compareFile: null,
     originalPerms: 0o767,
-    comparePerms: 0o767
+    comparePerms: 0o767,
   }];
 
   // Files for a complete successful update. This can be used for a complete
@@ -248,7 +248,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: FILE_PARTIAL_PRECOMPLETE,
     compareFile: FILE_COMPLETE_PRECOMPLETE,
     originalPerms: 0o666,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "searchpluginstext0",
@@ -258,7 +258,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: 0o775,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "searchpluginspng1.png",
@@ -268,7 +268,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: "complete.png",
     originalPerms: null,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "searchpluginspng0.png",
@@ -278,7 +278,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: "partial.png",
     compareFile: "complete.png",
     originalPerms: 0o666,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "removed-files",
@@ -288,7 +288,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: FILE_PARTIAL_REMOVEDFILES,
     compareFile: FILE_COMPLETE_REMOVEDFILES,
     originalPerms: 0o666,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest if the parent directory exists (add-if)",
     fileName: "extensions1text0",
@@ -298,7 +298,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: null,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest if the parent directory exists (add-if)",
     fileName: "extensions1png1.png",
@@ -308,7 +308,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: "partial.png",
     compareFile: "complete.png",
     originalPerms: 0o666,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest if the parent directory exists (add-if)",
     fileName: "extensions1png0.png",
@@ -318,7 +318,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: "complete.png",
     originalPerms: null,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest if the parent directory exists (add-if)",
     fileName: "extensions0text0",
@@ -328,7 +328,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: null,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest if the parent directory exists (add-if)",
     fileName: "extensions0png1.png",
@@ -338,7 +338,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: "complete.png",
     originalPerms: null,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest if the parent directory exists (add-if)",
     fileName: "extensions0png0.png",
@@ -348,7 +348,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: "complete.png",
     originalPerms: null,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "exe0.exe",
@@ -358,7 +358,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: FILE_HELPER_BIN,
     compareFile: FILE_COMPLETE_EXE,
     originalPerms: 0o777,
-    comparePerms: 0o755
+    comparePerms: 0o755,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "10text0",
@@ -368,7 +368,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: 0o767,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "0exe0.exe",
@@ -378,7 +378,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: FILE_HELPER_BIN,
     compareFile: FILE_COMPLETE_EXE,
     originalPerms: 0o777,
-    comparePerms: 0o755
+    comparePerms: 0o755,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "00text1",
@@ -388,7 +388,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: 0o677,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "00text0",
@@ -398,7 +398,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: 0o775,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "00png0.png",
@@ -408,7 +408,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: "complete.png",
     originalPerms: 0o776,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Removed by precomplete (remove)",
     fileName: "20text0",
@@ -418,7 +418,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: null,
-    comparePerms: null
+    comparePerms: null,
   }, {
     description: "Removed by precomplete (remove)",
     fileName: "20png0.png",
@@ -428,7 +428,7 @@ var gTestFilesCompleteSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: null,
-    comparePerms: null
+    comparePerms: null,
   }];
 
 // Concatenate the common files to the end of the array.
@@ -446,7 +446,7 @@ var gTestFilesPartialSuccess = [
     originalFile: FILE_COMPLETE_PRECOMPLETE,
     compareFile: FILE_PARTIAL_PRECOMPLETE,
     originalPerms: 0o666,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "searchpluginstext0",
@@ -456,7 +456,7 @@ var gTestFilesPartialSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: 0o775,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Patched by update.manifest if the file exists (patch-if)",
     fileName: "searchpluginspng1.png",
@@ -466,7 +466,7 @@ var gTestFilesPartialSuccess = [
     originalFile: "complete.png",
     compareFile: "partial.png",
     originalPerms: 0o666,
-    comparePerms: 0o666
+    comparePerms: 0o666,
   }, {
     description: "Patched by update.manifest if the file exists (patch-if)",
     fileName: "searchpluginspng0.png",
@@ -476,7 +476,7 @@ var gTestFilesPartialSuccess = [
     originalFile: "complete.png",
     compareFile: "partial.png",
     originalPerms: 0o666,
-    comparePerms: 0o666
+    comparePerms: 0o666,
   }, {
     description: "Added by update.manifest if the parent directory exists (add-if)",
     fileName: "extensions1text0",
@@ -486,7 +486,7 @@ var gTestFilesPartialSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: null,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Patched by update.manifest if the parent directory exists (patch-if)",
     fileName: "extensions1png1.png",
@@ -496,7 +496,7 @@ var gTestFilesPartialSuccess = [
     originalFile: "complete.png",
     compareFile: "partial.png",
     originalPerms: 0o666,
-    comparePerms: 0o666
+    comparePerms: 0o666,
   }, {
     description: "Patched by update.manifest if the parent directory exists (patch-if)",
     fileName: "extensions1png0.png",
@@ -506,7 +506,7 @@ var gTestFilesPartialSuccess = [
     originalFile: "complete.png",
     compareFile: "partial.png",
     originalPerms: 0o666,
-    comparePerms: 0o666
+    comparePerms: 0o666,
   }, {
     description: "Added by update.manifest if the parent directory exists (add-if)",
     fileName: "extensions0text0",
@@ -516,7 +516,7 @@ var gTestFilesPartialSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: 0o644,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Patched by update.manifest if the parent directory exists (patch-if)",
     fileName: "extensions0png1.png",
@@ -526,7 +526,7 @@ var gTestFilesPartialSuccess = [
     originalFile: "complete.png",
     compareFile: "partial.png",
     originalPerms: 0o644,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Patched by update.manifest if the parent directory exists (patch-if)",
     fileName: "extensions0png0.png",
@@ -536,7 +536,7 @@ var gTestFilesPartialSuccess = [
     originalFile: "complete.png",
     compareFile: "partial.png",
     originalPerms: 0o644,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Patched by update.manifest (patch)",
     fileName: "exe0.exe",
@@ -546,7 +546,7 @@ var gTestFilesPartialSuccess = [
     originalFile: FILE_COMPLETE_EXE,
     compareFile: FILE_PARTIAL_EXE,
     originalPerms: 0o755,
-    comparePerms: 0o755
+    comparePerms: 0o755,
   }, {
     description: "Patched by update.manifest (patch)",
     fileName: "0exe0.exe",
@@ -556,7 +556,7 @@ var gTestFilesPartialSuccess = [
     originalFile: FILE_COMPLETE_EXE,
     compareFile: FILE_PARTIAL_EXE,
     originalPerms: 0o755,
-    comparePerms: 0o755
+    comparePerms: 0o755,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "00text0",
@@ -566,7 +566,7 @@ var gTestFilesPartialSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: 0o644,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Patched by update.manifest (patch)",
     fileName: "00png0.png",
@@ -576,7 +576,7 @@ var gTestFilesPartialSuccess = [
     originalFile: "complete.png",
     compareFile: "partial.png",
     originalPerms: 0o666,
-    comparePerms: 0o666
+    comparePerms: 0o666,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "20text0",
@@ -586,7 +586,7 @@ var gTestFilesPartialSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: null,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "20png0.png",
@@ -596,7 +596,7 @@ var gTestFilesPartialSuccess = [
     originalFile: null,
     compareFile: "partial.png",
     originalPerms: null,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Added by update.manifest (add)",
     fileName: "00text2",
@@ -606,7 +606,7 @@ var gTestFilesPartialSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: null,
-    comparePerms: 0o644
+    comparePerms: 0o644,
   }, {
     description: "Removed by update.manifest (remove)",
     fileName: "10text0",
@@ -616,7 +616,7 @@ var gTestFilesPartialSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: null,
-    comparePerms: null
+    comparePerms: null,
   }, {
     description: "Removed by update.manifest (remove)",
     fileName: "00text1",
@@ -626,7 +626,7 @@ var gTestFilesPartialSuccess = [
     originalFile: null,
     compareFile: null,
     originalPerms: null,
-    comparePerms: null
+    comparePerms: null,
   }];
 
 // Concatenate the common files to the end of the array.
@@ -637,99 +637,99 @@ var gTestDirsCommon = [
     relPathDir: DIR_RESOURCES + "3/",
     dirRemoved: false,
     files: ["3text0", "3text1"],
-    filesRemoved: true
+    filesRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "4/",
     dirRemoved: true,
     files: ["4text0", "4text1"],
-    filesRemoved: true
+    filesRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "5/",
     dirRemoved: true,
     files: ["5test.exe", "5text0", "5text1"],
-    filesRemoved: true
+    filesRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "6/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "7/",
     dirRemoved: true,
     files: ["7text0", "7text1"],
     subDirs: ["70/", "71/"],
-    subDirFiles: ["7xtest.exe", "7xtext0", "7xtext1"]
+    subDirFiles: ["7xtest.exe", "7xtext0", "7xtext1"],
   }, {
     relPathDir: DIR_RESOURCES + "8/",
-    dirRemoved: false
+    dirRemoved: false,
   }, {
     relPathDir: DIR_RESOURCES + "8/80/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "8/81/",
     dirRemoved: false,
-    files: ["81text0", "81text1"]
+    files: ["81text0", "81text1"],
   }, {
     relPathDir: DIR_RESOURCES + "8/82/",
     dirRemoved: false,
-    subDirs: ["820/", "821/"]
+    subDirs: ["820/", "821/"],
   }, {
     relPathDir: DIR_RESOURCES + "8/83/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "8/84/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "8/85/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "8/86/",
     dirRemoved: true,
-    files: ["86text0", "86text1"]
+    files: ["86text0", "86text1"],
   }, {
     relPathDir: DIR_RESOURCES + "8/87/",
     dirRemoved: true,
     subDirs: ["870/", "871/"],
-    subDirFiles: ["87xtext0", "87xtext1"]
+    subDirFiles: ["87xtext0", "87xtext1"],
   }, {
     relPathDir: DIR_RESOURCES + "8/88/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "8/89/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "9/90/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "9/91/",
     dirRemoved: false,
-    files: ["91text0", "91text1"]
+    files: ["91text0", "91text1"],
   }, {
     relPathDir: DIR_RESOURCES + "9/92/",
     dirRemoved: false,
-    subDirs: ["920/", "921/"]
+    subDirs: ["920/", "921/"],
   }, {
     relPathDir: DIR_RESOURCES + "9/93/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "9/94/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "9/95/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "9/96/",
     dirRemoved: true,
-    files: ["96text0", "96text1"]
+    files: ["96text0", "96text1"],
   }, {
     relPathDir: DIR_RESOURCES + "9/97/",
     dirRemoved: true,
     subDirs: ["970/", "971/"],
-    subDirFiles: ["97xtext0", "97xtext1"]
+    subDirFiles: ["97xtext0", "97xtext1"],
   }, {
     relPathDir: DIR_RESOURCES + "9/98/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     relPathDir: DIR_RESOURCES + "9/99/",
-    dirRemoved: true
+    dirRemoved: true,
   }];
 
 // Directories for a complete successful update. This array can be used for a
@@ -738,11 +738,11 @@ var gTestDirsCompleteSuccess = [
   {
     description: "Removed by precomplete (rmdir)",
     relPathDir: DIR_RESOURCES + "2/20/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     description: "Removed by precomplete (rmdir)",
     relPathDir: DIR_RESOURCES + "2/",
-    dirRemoved: true
+    dirRemoved: true,
   }];
 
 // Concatenate the common files to the beginning of the array.
@@ -754,11 +754,11 @@ var gTestDirsPartialSuccess = [
   {
     description: "Removed by update.manifest (rmdir)",
     relPathDir: DIR_RESOURCES + "1/10/",
-    dirRemoved: true
+    dirRemoved: true,
   }, {
     description: "Removed by update.manifest (rmdir)",
     relPathDir: DIR_RESOURCES + "1/",
-    dirRemoved: true
+    dirRemoved: true,
   }];
 
 // Concatenate the common files to the beginning of the array.
@@ -840,6 +840,8 @@ function setupTestCommon() {
   // adjustGeneralPaths registers a cleanup function that calls end_test when
   // it is defined as a function.
   adjustGeneralPaths();
+  createWorldWritableAppUpdateDir();
+
   // Logged once here instead of in the mock directory provider to lessen test
   // log spam.
   debugDump("Updates Directory (UpdRootD) Path: " + getMockUpdRootD().path);
@@ -1583,6 +1585,8 @@ XPCOMUtils.defineLazyGetter(this, "gInstallDirPathHash", function test_gIDPH() {
     logTestInfo("failed to create registry key. Registry Path: " + REG_PATH +
                 ", Key Name: " + appDir.path + ", Key Value: " + gTestID +
                 ", Exception " + e);
+    do_throw("Unable to write HKLM or HKCU TaskBarIDs registry key, key path: "
+             + REG_PATH);
   }
   return null;
 });
@@ -1594,6 +1598,15 @@ XPCOMUtils.defineLazyGetter(this, "gLocalAppDataDir", function test_gLADD() {
 
   const CSIDL_LOCAL_APPDATA = 0x1c;
   return getSpecialFolderDir(CSIDL_LOCAL_APPDATA);
+});
+
+XPCOMUtils.defineLazyGetter(this, "gCommonAppDataDir", function test_gCDD() {
+  if (!IS_WIN) {
+    do_throw("Windows only function called by a different platform!");
+  }
+
+  const CSIDL_COMMON_APPDATA = 0x0023;
+  return getSpecialFolderDir(CSIDL_COMMON_APPDATA);
 });
 
 XPCOMUtils.defineLazyGetter(this, "gProgFilesDir", function test_gPFD() {
@@ -1610,10 +1623,14 @@ XPCOMUtils.defineLazyGetter(this, "gProgFilesDir", function test_gPFD() {
  * returns the same directory as returned by nsXREDirProvider::GetUpdateRootDir
  * in nsXREDirProvider.cpp so an application will be able to find the update
  * when running a test that launches the application.
+ *
+ * The aGetOldLocation argument performs the same function that the argument
+ * with the same name in nsXREDirProvider::GetUpdateRootDir performs. If true,
+ * the old (pre-migration) update directory is returned.
  */
-function getMockUpdRootD() {
+function getMockUpdRootD(aGetOldLocation = false) {
   if (IS_WIN) {
-    return getMockUpdRootDWin();
+    return getMockUpdRootDWin(aGetOldLocation);
   }
 
   if (IS_MACOSX) {
@@ -1629,48 +1646,39 @@ function getMockUpdRootD() {
  * in nsXREDirProvider.cpp so an application will be able to find the update
  * when running a test that launches the application.
  */
-function getMockUpdRootDWin() {
+function getMockUpdRootDWin(aGetOldLocation) {
   if (!IS_WIN) {
     do_throw("Windows only function called by a different platform!");
   }
 
-  let localAppDataDir = gLocalAppDataDir.clone();
-  let progFilesDir = gProgFilesDir.clone();
-  let appDir = Services.dirsvc.get(XRE_EXECUTABLE_FILE, Ci.nsIFile).parent;
-
-  let appDirPath = appDir.path;
   let relPathUpdates = "";
-  if (gInstallDirPathHash && (MOZ_APP_VENDOR || MOZ_APP_BASENAME)) {
-    relPathUpdates += (MOZ_APP_VENDOR ? MOZ_APP_VENDOR : MOZ_APP_BASENAME) +
-                      "\\" + DIR_UPDATES + "\\" + gInstallDirPathHash;
-  }
-
-  if (!relPathUpdates && progFilesDir) {
-    if (appDirPath.length > progFilesDir.path.length) {
-      if (appDirPath.substr(0, progFilesDir.path.length) == progFilesDir.path) {
-        if (MOZ_APP_VENDOR && MOZ_APP_BASENAME) {
-          relPathUpdates += MOZ_APP_VENDOR + "\\" + MOZ_APP_BASENAME;
-        } else {
-          relPathUpdates += MOZ_APP_BASENAME;
-        }
-        relPathUpdates += appDirPath.substr(progFilesDir.path.length);
-      }
-    }
-  }
-
-  if (!relPathUpdates) {
-    if (MOZ_APP_VENDOR && MOZ_APP_BASENAME) {
-      relPathUpdates += MOZ_APP_VENDOR + "\\" + MOZ_APP_BASENAME;
+  let dataDirectory;
+  if (aGetOldLocation) {
+    dataDirectory = gLocalAppDataDir.clone();
+    if (MOZ_APP_VENDOR || MOZ_APP_BASENAME) {
+      relPathUpdates += (MOZ_APP_VENDOR ? MOZ_APP_VENDOR : MOZ_APP_BASENAME);
     } else {
-      relPathUpdates += MOZ_APP_BASENAME;
+      relPathUpdates += "Mozilla";
     }
-    relPathUpdates += "\\" + MOZ_APP_NAME;
+  } else {
+    dataDirectory = gCommonAppDataDir.clone();
+    relPathUpdates += "Mozilla";
   }
 
+  relPathUpdates += "\\" + DIR_UPDATES + "\\" + gInstallDirPathHash;
   let updatesDir = Cc["@mozilla.org/file/local;1"].
                    createInstance(Ci.nsIFile);
-  updatesDir.initWithPath(localAppDataDir.path + "\\" + relPathUpdates);
+  updatesDir.initWithPath(dataDirectory.path + "\\" + relPathUpdates);
   return updatesDir;
+}
+
+function createWorldWritableAppUpdateDir() {
+  // This function is only necessary in Windows
+  if (IS_WIN) {
+    let installDir = Services.dirsvc.get(XRE_EXECUTABLE_FILE, Ci.nsIFile).parent;
+    let exitValue = runTestHelperSync(["create-update-dir", installDir.path]);
+    Assert.equal(exitValue, 0, "The helper process exit value should be 0");
+  }
 }
 
 XPCOMUtils.defineLazyGetter(this, "gUpdatesRootDir", function test_gURD() {
@@ -2123,7 +2131,7 @@ const gUpdateStagedObserver = {
       executeSoon(checkUpdateStagedState.bind(null, aData));
     }
   },
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
 };
 
 /**
@@ -3729,7 +3737,7 @@ UpdatePrompt.prototype = {
     aCount.value = interfaces.length;
     return interfaces;
   },
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIClassInfo, Ci.nsIUpdatePrompt])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIClassInfo, Ci.nsIUpdatePrompt]),
 };
 
 /* Update check listener */
@@ -3762,7 +3770,7 @@ const updateCheckListener = {
     executeSoon(gCheckFunc.bind(null, aRequest, aUpdate));
   },
 
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdateCheckListener])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdateCheckListener]),
 };
 
 /* Update download listener - nsIRequestObserver */
@@ -3783,7 +3791,7 @@ const downloadListener = {
   },
 
   QueryInterface: ChromeUtils.generateQI([Ci.nsIRequestObserver,
-                                          Ci.nsIProgressEventSink])
+                                          Ci.nsIProgressEventSink]),
 };
 
 /**
@@ -3865,7 +3873,7 @@ function createAppInfo(aID, aName, aVersion, aPlatformVersion) {
     OS: "XPCShell",
     XPCOMABI: "noarch-spidermonkey",
 
-    QueryInterface: ChromeUtils.generateQI(ifaces)
+    QueryInterface: ChromeUtils.generateQI(ifaces),
   };
 
   const XULAppInfoFactory = {
@@ -3874,7 +3882,7 @@ function createAppInfo(aID, aName, aVersion, aPlatformVersion) {
         return XULAppInfo.QueryInterface(aIID);
       }
       throw Cr.NS_ERROR_NO_AGGREGATION;
-    }
+    },
   };
 
   let registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
@@ -3926,8 +3934,8 @@ function getProcessArgs(aExtraArgs) {
               scriptContents);
     args = [launchScript.path];
   } else {
-    args = ["/D", "/Q", "/C", appBinPath, "-no-remote", "-test-process-updates"].
-           concat(aExtraArgs).concat([PIPE_TO_NULL]);
+    args = ["/D", "/Q", "/C", appBinPath, "-no-remote", "-test-process-updates",
+            "-wait-for-browser"].concat(aExtraArgs).concat([PIPE_TO_NULL]);
   }
   return args;
 }
@@ -3981,10 +3989,12 @@ function adjustGeneralPaths() {
           return getApplyDirFile(DIR_MACOS + FILE_APP_BIN, true);
         case XRE_UPDATE_ROOT_DIR:
           return getMockUpdRootD();
+        case XRE_OLD_UPDATE_ROOT_DIR:
+          return getMockUpdRootD(true);
       }
       return null;
     },
-    QueryInterface: ChromeUtils.generateQI([Ci.nsIDirectoryServiceProvider])
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIDirectoryServiceProvider]),
   };
   let ds = Services.dirsvc.QueryInterface(Ci.nsIDirectoryService);
   ds.QueryInterface(Ci.nsIProperties).undefine(NS_GRE_DIR);
@@ -4066,7 +4076,7 @@ const gAppTimerCallback = {
     }
     Assert.ok(false, "launch application timer expired");
   },
-  QueryInterface: ChromeUtils.generateQI([Ci.nsITimerCallback])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsITimerCallback]),
 };
 
 /**
@@ -4098,7 +4108,7 @@ function runUpdateUsingApp(aExpectedStatus) {
 
       executeSoon(afterAppExits);
     },
-    QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver])
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
   };
 
   function afterAppExits() {
@@ -4289,7 +4299,7 @@ IncrementalDownload.prototype = {
   get status() {
     return this._status;
   },
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIIncrementalDownload])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIIncrementalDownload]),
 };
 
 /**

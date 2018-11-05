@@ -199,7 +199,7 @@ function set_cookies(begin, end, expiry)
   for (let i = begin; i < end; ++i) {
     let host = "eviction." + i + ".tests";
     Services.cookiemgr.add(host, "", "test", "eviction", false, false, false,
-      expiry, {});
+      expiry, {}, Ci.nsICookie2.SAMESITE_UNSET);
 
     if (i == begin)
       beginTime = get_creationTime(i);
@@ -231,11 +231,8 @@ function get_creationTime(i)
 // time, if both the limit on total cookies (maxNumber + 10%) and the purge age
 // + 10% are exceeded.
 function check_remaining_cookies(aNumberTotal, aNumberOld, aNumberToExpect) {
-  var enumerator = Services.cookiemgr.enumerator;
-
   let i = 0;
-  while (enumerator.hasMoreElements()) {
-    var cookie = enumerator.getNext().QueryInterface(Ci.nsICookie2);
+  for (let cookie of Services.cookiemgr.enumerator) {
     ++i;
 
     if (aNumberTotal != aNumberToExpect) {

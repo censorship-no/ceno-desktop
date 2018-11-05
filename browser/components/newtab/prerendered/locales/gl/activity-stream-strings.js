@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Produciuse un fallo ao cargar a imaxe. Probe un URL diferente.",
   "pocket_read_more": "Temas populares:",
   "pocket_read_even_more": "Ver máis historias",
+  "pocket_more_reccommendations": "More Recommendations",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "Get Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "Comece a navegar e aquí amosarémoslle algúns dos mellores artigos, vídeos e outras páxinas que visitara recentemente ou que engadira aos marcadores.",
   "topstories_empty_state": "Xa está ao día. Regrese máis tarde para ver máis historias de {provider}. Non pode agardar? Seleccione un tema popular e atopará máis historias interesantes da web.",
   "manual_migration_explanation2": "Probe Firefox cos marcadores, historial e contrasinais doutro navegador.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Xestionar sección",
   "section_menu_action_manage_webext": "Xestionar extensión",
   "section_menu_action_add_topsite": "Engadir sitio favorito",
+  "section_menu_action_add_search_engine": "Engadir buscador",
   "section_menu_action_move_up": "Subir",
   "section_menu_action_move_down": "Baixar",
   "section_menu_action_privacy_notice": "Política de privacidade",
@@ -101,5 +106,6 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Termos do servizo",
   "firstrun_privacy_notice": "Política de privacidade",
   "firstrun_continue_to_login": "Continuar",
-  "firstrun_skip_login": "Ignorar este paso"
+  "firstrun_skip_login": "Ignorar este paso",
+  "context_menu_title": "Open menu"
 };

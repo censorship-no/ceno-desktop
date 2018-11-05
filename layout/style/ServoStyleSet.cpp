@@ -176,7 +176,7 @@ EnumerateShadowRoots(const nsIDocument& aDoc, const Functor& aCb)
   for (auto iter = shadowRoots.ConstIter(); !iter.Done(); iter.Next()) {
     ShadowRoot* root = iter.Get()->GetKey();
     MOZ_ASSERT(root);
-    MOZ_DIAGNOSTIC_ASSERT(root->IsComposedDocParticipant());
+    MOZ_DIAGNOSTIC_ASSERT(root->IsInComposedDoc());
     aCb(*root);
   }
 }
@@ -228,7 +228,9 @@ ServoStyleSet::InvalidateStyleForDocumentStateChanges(EventStates aStatesChanged
   AutoTArray<RawServoAuthorStylesBorrowed, 20> nonDocumentStyles;
 
   EnumerateShadowRoots(*mDocument, [&](ShadowRoot& aShadowRoot) {
-    nonDocumentStyles.AppendElement(aShadowRoot.ServoStyles());
+    if (auto* authorStyles = aShadowRoot.GetServoStyles()) {
+      nonDocumentStyles.AppendElement(authorStyles);
+    }
   });
 
   mDocument->BindingManager()->EnumerateBoundContentProtoBindings(
@@ -261,7 +263,9 @@ ServoStyleSet::MediumFeaturesChanged(MediaFeatureChangeReason aReason)
   AutoTArray<RawServoAuthorStylesBorrowedMut, 20> nonDocumentStyles;
 
   EnumerateShadowRoots(*mDocument, [&](ShadowRoot& aShadowRoot) {
-    nonDocumentStyles.AppendElement(aShadowRoot.ServoStyles());
+    if (auto* authorStyles = aShadowRoot.GetServoStyles()) {
+      nonDocumentStyles.AppendElement(authorStyles);
+    }
   });
 
   // FIXME(emilio): This is broken for XBL. See bug 1406875.
@@ -376,7 +380,6 @@ ServoStyleSet::SetAuthorStyleDisabled(bool aStyleDisabled)
 
 already_AddRefed<ComputedStyle>
 ServoStyleSet::ResolveStyleFor(Element* aElement,
-                               ComputedStyle* aParentContext,
                                LazyComputeBehavior aMayCompute)
 {
   if (aMayCompute == LazyComputeBehavior::Allow) {
@@ -468,9 +471,9 @@ ResolveStyleForTextOrFirstLetterContinuation(
     ComputedStyle& aParent,
     nsAtom* aAnonBox)
 {
-  MOZ_ASSERT(aAnonBox == nsCSSAnonBoxes::mozText ||
-             aAnonBox == nsCSSAnonBoxes::firstLetterContinuation);
-  auto inheritTarget = aAnonBox == nsCSSAnonBoxes::mozText
+  MOZ_ASSERT(aAnonBox == nsCSSAnonBoxes::mozText() ||
+             aAnonBox == nsCSSAnonBoxes::firstLetterContinuation());
+  auto inheritTarget = aAnonBox == nsCSSAnonBoxes::mozText()
     ? InheritTarget::Text
     : InheritTarget::FirstLetterContinuation;
 
@@ -497,7 +500,7 @@ ServoStyleSet::ResolveStyleForText(nsIContent* aTextNode,
   MOZ_ASSERT(aParentContext);
 
   return ResolveStyleForTextOrFirstLetterContinuation(
-      mRawSet.get(), *aParentContext, nsCSSAnonBoxes::mozText);
+      mRawSet.get(), *aParentContext, nsCSSAnonBoxes::mozText());
 }
 
 already_AddRefed<ComputedStyle>
@@ -506,7 +509,7 @@ ServoStyleSet::ResolveStyleForFirstLetterContinuation(ComputedStyle* aParentCont
   MOZ_ASSERT(aParentContext);
 
   return ResolveStyleForTextOrFirstLetterContinuation(
-      mRawSet.get(), *aParentContext, nsCSSAnonBoxes::firstLetterContinuation);
+      mRawSet.get(), *aParentContext, nsCSSAnonBoxes::firstLetterContinuation());
 }
 
 already_AddRefed<ComputedStyle>
@@ -521,7 +524,7 @@ ServoStyleSet::ResolveStyleForPlaceholder()
 
   RefPtr<ComputedStyle> computedValues =
     Servo_ComputedValues_Inherit(mRawSet.get(),
-                                 nsCSSAnonBoxes::oofPlaceholder,
+                                 nsCSSAnonBoxes::oofPlaceholder(),
                                  nullptr,
                                  InheritTarget::PlaceholderFrame)
                                  .Consume();
@@ -627,8 +630,8 @@ ServoStyleSet::ResolveNonInheritingAnonymousBoxStyle(nsAtom* aPseudoTag)
 {
   MOZ_ASSERT(nsCSSAnonBoxes::IsAnonBox(aPseudoTag) &&
              nsCSSAnonBoxes::IsNonInheritingAnonBox(aPseudoTag));
-  MOZ_ASSERT(aPseudoTag != nsCSSAnonBoxes::pageContent,
-             "If nsCSSAnonBoxes::pageContent ends up non-inheriting, check "
+  MOZ_ASSERT(aPseudoTag != nsCSSAnonBoxes::pageContent(),
+             "If nsCSSAnonBoxes::pageContent() ends up non-inheriting, check "
              "whether we need to do anything to move the "
              "@page handling from ResolveInheritingAnonymousBoxStyle to "
              "ResolveNonInheritingAnonymousBoxStyle");
@@ -647,7 +650,7 @@ ServoStyleSet::ResolveNonInheritingAnonymousBoxStyle(nsAtom* aPseudoTag)
   // sense for non-inheriting anonymous boxes.  (Static assertions in
   // nsCSSAnonBoxes.cpp ensure that all non-inheriting non-anonymous boxes
   // are indeed annotated as skipping this fixup.)
-  MOZ_ASSERT(!nsCSSAnonBoxes::IsNonInheritingAnonBox(nsCSSAnonBoxes::viewport),
+  MOZ_ASSERT(!nsCSSAnonBoxes::IsNonInheritingAnonBox(nsCSSAnonBoxes::viewport()),
              "viewport needs fixup to handle blockifying it");
   RefPtr<ComputedStyle> computedValues =
     Servo_ComputedValues_GetForAnonymousBox(nullptr,
@@ -670,7 +673,7 @@ ServoStyleSet::ResolveNonInheritingAnonymousBoxStyle(nsAtom* aPseudoTag)
 #ifdef MOZ_XUL
 already_AddRefed<ComputedStyle>
 ServoStyleSet::ResolveXULTreePseudoStyle(dom::Element* aParentElement,
-                                         nsICSSAnonBoxPseudo* aPseudoTag,
+                                         nsCSSAnonBoxPseudoStaticAtom* aPseudoTag,
                                          ComputedStyle* aParentContext,
                                          const AtomArray& aInputWord)
 {
@@ -1281,16 +1284,17 @@ ServoStyleSet::EnsureUniqueInnerOnCSSSheets()
     queue.RemoveElementAt(idx);
 
     if (!sheet->HasUniqueInner()) {
+      RawServoAuthorStyles* authorStyles = nullptr;
       if (owner.is<ShadowRoot*>()) {
-        Servo_AuthorStyles_ForceDirty(owner.as<ShadowRoot*>()->ServoStyles());
+        authorStyles = owner.as<ShadowRoot*>()->GetServoStyles();
+      } else if (owner.is<nsXBLPrototypeBinding*>()) {
+        authorStyles = owner.as<nsXBLPrototypeBinding*>()->GetServoStyles();
+      }
+
+      if (authorStyles) {
+        Servo_AuthorStyles_ForceDirty(authorStyles);
         mNeedsRestyleAfterEnsureUniqueInner = true;
         anyNonDocStyleChanged = true;
-      } else if (owner.is<nsXBLPrototypeBinding*>()) {
-        if (auto* styles = owner.as<nsXBLPrototypeBinding*>()->GetServoStyles()) {
-          Servo_AuthorStyles_ForceDirty(styles);
-          mNeedsRestyleAfterEnsureUniqueInner = true;
-          anyNonDocStyleChanged = true;
-        }
       }
     }
 
@@ -1411,6 +1415,7 @@ ServoStyleSet::ResolveStyleLazilyInternal(Element* aElement,
 bool
 ServoStyleSet::AppendFontFaceRules(nsTArray<nsFontFaceRuleContainer>& aArray)
 {
+  // TODO(emilio): Can we make this so this asserts instead?
   UpdateStylistIfNeeded();
   Servo_StyleSet_GetFontFaceRules(mRawSet.get(), &aArray);
   return true;
@@ -1426,9 +1431,7 @@ ServoStyleSet::CounterStyleRuleForName(nsAtom* aName)
 already_AddRefed<gfxFontFeatureValueSet>
 ServoStyleSet::BuildFontFeatureValueSet()
 {
-  // FIXME(emilio): This should assert once we update the stylist from
-  // FlushPendingNotifications explicitly.
-  UpdateStylistIfNeeded();
+  MOZ_ASSERT(!StylistNeedsUpdate());
   RefPtr<gfxFontFeatureValueSet> set =
     Servo_StyleSet_BuildFontFeatureValueSet(mRawSet.get());
   return set.forget();
@@ -1466,7 +1469,9 @@ ServoStyleSet::UpdateStylist()
     MOZ_ASSERT(GetPresContext(), "How did they get dirty?");
 
     EnumerateShadowRoots(*mDocument, [&](ShadowRoot& aShadowRoot) {
-      Servo_AuthorStyles_Flush(aShadowRoot.ServoStyles(), mRawSet.get());
+      if (auto* authorStyles = aShadowRoot.GetServoStyles()) {
+        Servo_AuthorStyles_Flush(authorStyles, mRawSet.get());
+      }
     });
 
     mDocument->BindingManager()->EnumerateBoundContentProtoBindings(

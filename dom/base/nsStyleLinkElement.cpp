@@ -303,11 +303,6 @@ nsStyleLinkElement::DoUpdateStyleSheet(nsIDocument* aOldDocument,
     // unload the stylesheet.  We want to do this even if updates are
     // disabled, since otherwise a sheet with a stale linking element pointer
     // will be hanging around -- not good!
-    //
-    // TODO(emilio): We can reach this code with aOldShadowRoot ==
-    // thisContent->GetContainingShadowRoot(), when moving the shadow host
-    // around. We probably could optimize some of this stuff out, is it worth
-    // it?
     if (aOldShadowRoot) {
       aOldShadowRoot->RemoveSheet(mStyleSheet);
     } else {
@@ -317,8 +312,7 @@ nsStyleLinkElement::DoUpdateStyleSheet(nsIDocument* aOldDocument,
     SetStyleSheet(nullptr);
   }
 
-  nsIDocument* doc = thisContent->IsInShadowTree()
-    ? thisContent->OwnerDoc() : thisContent->GetUncomposedDoc();
+  nsIDocument* doc = thisContent->GetComposedDoc();
 
   // Loader could be null during unlink, see bug 1425866.
   if (!doc || !doc->CSSLoader() || !doc->CSSLoader()->GetEnabled()) {
@@ -348,7 +342,10 @@ nsStyleLinkElement::DoUpdateStyleSheet(nsIDocument* aOldDocument,
   if (mStyleSheet) {
     if (thisContent->IsInShadowTree()) {
       ShadowRoot* containingShadow = thisContent->GetContainingShadow();
-      containingShadow->RemoveSheet(mStyleSheet);
+      // Could be null only during unlink.
+      if (MOZ_LIKELY(containingShadow)) {
+        containingShadow->RemoveSheet(mStyleSheet);
+      }
     } else {
       doc->RemoveStyleSheet(mStyleSheet);
     }

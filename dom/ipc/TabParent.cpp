@@ -65,7 +65,6 @@
 #include "nsIWebBrowserChrome.h"
 #include "nsIXULBrowserWindow.h"
 #include "nsIXULWindow.h"
-#include "nsIRemoteBrowser.h"
 #include "nsViewManager.h"
 #include "nsVariant.h"
 #include "nsIWidget.h"
@@ -134,7 +133,6 @@ TabParent::LayerToTabParentTable* TabParent::sLayerToTabParentTable = nullptr;
 NS_IMPL_ISUPPORTS(TabParent,
                   nsITabParent,
                   nsIAuthPromptProvider,
-                  nsISecureBrowserUI,
                   nsISupportsWeakReference)
 
 TabParent::TabParent(nsIContentParent* aManager,
@@ -172,6 +170,7 @@ TabParent::TabParent(nsIContentParent* aManager,
   , mLayerTreeEpoch{1}
   , mPreserveLayers(false)
   , mRenderLayers(true)
+  , mActiveInPriorityManager(false)
   , mHasLayers(false)
   , mHasPresented(false)
   , mHasBeforeUnload(false)
@@ -233,7 +232,7 @@ TabParent::CacheFrameLoader(nsFrameLoader* aFrameLoader)
 already_AddRefed<nsPIDOMWindowOuter>
 TabParent::GetParentWindowOuter()
 {
-  nsCOMPtr<nsIContent> frame = do_QueryInterface(GetOwnerElement());
+  nsCOMPtr<nsIContent> frame = GetOwnerElement();
   if (!frame) {
     return nullptr;
   }
@@ -586,7 +585,7 @@ TabParent::RecvEvent(const RemoteDOMEvent& aEvent)
   RefPtr<Event> event = aEvent.mEvent;
   NS_ENSURE_TRUE(event, IPC_OK());
 
-  nsCOMPtr<mozilla::dom::EventTarget> target = do_QueryInterface(mFrameElement);
+  nsCOMPtr<mozilla::dom::EventTarget> target = mFrameElement;
   NS_ENSURE_TRUE(target, IPC_OK());
 
   event->SetOwner(target);
@@ -770,7 +769,7 @@ TabParent::UpdateDimensions(const nsIntRect& rect, const ScreenIntSize& size)
 
   hal::ScreenConfiguration config;
   hal::GetCurrentScreenConfiguration(&config);
-  ScreenOrientationInternal orientation = config.orientation();
+  hal::ScreenOrientation orientation = config.orientation();
   LayoutDeviceIntPoint clientOffset = GetClientOffset();
   LayoutDeviceIntPoint chromeOffset = -GetChildProcessOffset();
 
@@ -877,38 +876,6 @@ TabParent::Deactivate()
   if (!mIsDestroyed) {
     Unused << Manager()->SendDeactivate(this);
   }
-}
-
-NS_IMETHODIMP
-TabParent::Init(mozIDOMWindowProxy *window)
-{
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-TabParent::GetState(uint32_t *aState)
-{
-  NS_ENSURE_ARG(aState);
-  NS_WARNING("SecurityState not valid here");
-  *aState = 0;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-TabParent::GetSecInfo(nsITransportSecurityInfo** _result)
-{
-  NS_ENSURE_ARG_POINTER(_result);
-  NS_WARNING("TransportSecurityInfo not valid here");
-  *_result = nullptr;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-TabParent::SetDocShell(nsIDocShell *aDocShell)
-{
-  NS_ENSURE_ARG(aDocShell);
-  NS_WARNING("No mDocShell member in TabParent so there is no docShell to set");
-  return NS_OK;
 }
 
   a11y::PDocAccessibleParent*
@@ -1179,11 +1146,10 @@ TabParent::SendRealMouseEvent(WidgetMouseEvent& aEvent)
 LayoutDeviceToCSSScale
 TabParent::GetLayoutDeviceToCSSScale()
 {
-  nsCOMPtr<nsIContent> content = do_QueryInterface(mFrameElement);
-  nsIDocument* doc = (content ? content->OwnerDoc() : nullptr);
+  nsIDocument* doc = (mFrameElement ? mFrameElement->OwnerDoc() : nullptr);
   nsPresContext* ctx = (doc ? doc->GetPresContext() : nullptr);
   return LayoutDeviceToCSSScale(ctx
-    ? (float)ctx->AppUnitsPerDevPixel() / nsPresContext::AppUnitsPerCSSPixel()
+    ? (float)ctx->AppUnitsPerDevPixel() / AppUnitsPerCSSPixel()
     : 0.0f);
 }
 
@@ -1564,6 +1530,26 @@ TabParent::RecvClearNativeTouchSequence(const uint64_t& aObserverId)
   nsCOMPtr<nsIWidget> widget = GetWidget();
   if (widget) {
     widget->ClearNativeTouchSequence(responder.GetObserver());
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+TabParent::RecvSetPrefersReducedMotionOverrideForTest(const bool& aValue)
+{
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (widget) {
+    widget->SetPrefersReducedMotionOverrideForTest(aValue);
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+TabParent::RecvResetPrefersReducedMotionOverrideForTest()
+{
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (widget) {
+    widget->ResetPrefersReducedMotionOverrideForTest();
   }
   return IPC_OK();
 }
@@ -2041,8 +2027,7 @@ TabParent::RecvRequestFocus(const bool& aCanRaise)
     return IPC_OK();
   }
 
-  nsCOMPtr<nsIContent> content = do_QueryInterface(mFrameElement);
-  if (!content || !content->OwnerDoc()) {
+  if (!mFrameElement || !mFrameElement->OwnerDoc()) {
     return IPC_OK();
   }
 
@@ -2060,8 +2045,12 @@ TabParent::RecvEnableDisableCommands(const nsString& aAction,
                                      nsTArray<nsCString>&& aEnabledCommands,
                                      nsTArray<nsCString>&& aDisabledCommands)
 {
-  nsCOMPtr<nsIRemoteBrowser> remoteBrowser = do_QueryInterface(mFrameElement);
-  if (remoteBrowser) {
+  nsCOMPtr<nsIBrowser> browser = do_QueryInterface(mFrameElement);
+  bool isRemoteBrowser = false;
+  if (browser) {
+    browser->GetIsRemoteBrowser(&isRemoteBrowser);
+  }
+  if (isRemoteBrowser) {
     UniquePtr<const char*[]> enabledCommands, disabledCommands;
 
     if (aEnabledCommands.Length()) {
@@ -2078,9 +2067,9 @@ TabParent::RecvEnableDisableCommands(const nsString& aAction,
       }
     }
 
-    remoteBrowser->EnableDisableCommands(aAction,
-                                         aEnabledCommands.Length(), enabledCommands.get(),
-                                         aDisabledCommands.Length(), disabledCommands.get());
+    browser->EnableDisableCommandsRemoteOnly(aAction,
+                                             aEnabledCommands.Length(), enabledCommands.get(),
+                                             aDisabledCommands.Length(), disabledCommands.get());
   }
 
   return IPC_OK();
@@ -2494,7 +2483,7 @@ TabParent::RecvSetInputContext(
 already_AddRefed<nsIWidget>
 TabParent::GetTopLevelWidget()
 {
-  nsCOMPtr<nsIContent> content = do_QueryInterface(mFrameElement);
+  nsCOMPtr<nsIContent> content = mFrameElement;
   if (content) {
     nsIPresShell* shell = content->OwnerDoc()->GetShell();
     if (shell) {
@@ -2575,7 +2564,7 @@ TabParent::GetAuthPrompt(uint32_t aPromptReason, const nsIID& iid,
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsPIDOMWindowOuter> window;
-  nsCOMPtr<nsIContent> frame = do_QueryInterface(mFrameElement);
+  nsCOMPtr<nsIContent> frame = mFrameElement;
   if (frame)
     window = frame->OwnerDoc()->GetWindow();
 
@@ -2745,7 +2734,7 @@ TabParent::ApzAwareEventRoutingToChild(ScrollableLayerGuid* aOutTargetGuid,
       // testing code "wins" so we need to update the guid to reflect this.
       if (RenderFrameParent* rfp = GetRenderFrame()) {
         if (aOutTargetGuid->mLayersId != rfp->GetLayersId()) {
-          *aOutTargetGuid = ScrollableLayerGuid(rfp->GetLayersId(), 0, FrameMetrics::NULL_SCROLL_ID);
+          *aOutTargetGuid = ScrollableLayerGuid(rfp->GetLayersId(), 0, ScrollableLayerGuid::NULL_SCROLL_ID);
         }
       }
     }
@@ -2836,13 +2825,6 @@ TabParent::GetLoadContext()
   return loadContext.forget();
 }
 
-NS_IMETHODIMP
-TabParent::GetUseAsyncPanZoom(bool* useAsyncPanZoom)
-{
-  *useAsyncPanZoom = AsyncPanZoomEnabled();
-  return NS_OK;
-}
-
 // defined in nsITabParent
 NS_IMETHODIMP
 TabParent::SetDocShellIsActive(bool isActive)
@@ -2868,10 +2850,6 @@ TabParent::SetDocShellIsActive(bool isActive)
   }
 #endif
 
-  // Let's inform the priority manager. This operation can end up with the
-  // changing of the process priority.
-  ProcessPriorityManager::TabActivityChanged(this, isActive);
-
   // Keep track of how many active recording/replaying tabs there are.
   if (Manager()->AsContentParent()->IsRecordingOrReplaying()) {
     SetIsActiveRecordReplayTab(isActive);
@@ -2890,6 +2868,13 @@ TabParent::GetDocShellIsActive(bool* aIsActive)
 NS_IMETHODIMP
 TabParent::SetRenderLayers(bool aEnabled)
 {
+  if (mActiveInPriorityManager != aEnabled) {
+    mActiveInPriorityManager = aEnabled;
+    // Let's inform the priority manager. This operation can end up with the
+    // changing of the process priority.
+    ProcessPriorityManager::TabActivityChanged(this, aEnabled);
+  }
+
   if (aEnabled == mRenderLayers) {
     if (aEnabled && mHasLayers && mPreserveLayers) {
       // RenderLayers might be called when we've been preserving layers,
@@ -2936,8 +2921,26 @@ TabParent::GetHasLayers(bool* aResult)
 }
 
 NS_IMETHODIMP
+TabParent::Deprioritize()
+{
+  if (mActiveInPriorityManager)   {
+    ProcessPriorityManager::TabActivityChanged(this, false);
+    mActiveInPriorityManager = false;
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 TabParent::ForceRepaint()
 {
+  if (!mActiveInPriorityManager) {
+    // If a tab is left and then returned to very rapidly, it can be
+    // deprioritized without losing its loaded status. In this case we won't
+    // go through SetRenderLayers.
+    mActiveInPriorityManager = true;
+    ProcessPriorityManager::TabActivityChanged(this, true);
+  }
+
   SetRenderLayersInternal(true /* aEnabled */,
                           true /* aForceRepaint */);
   return NS_OK;
@@ -2976,6 +2979,42 @@ TabParent::SaveRecording(const nsAString& aFilename, bool* aRetval)
     return rv;
   }
   return Manager()->AsContentParent()->SaveRecording(file, aRetval);
+}
+
+NS_IMETHODIMP
+TabParent::GetContentBlockingLog(Promise** aPromise)
+{
+  NS_ENSURE_ARG_POINTER(aPromise);
+
+  *aPromise = nullptr;
+  if (!mFrameElement) {
+    return NS_ERROR_FAILURE;
+  }
+
+  ErrorResult rv;
+  RefPtr<Promise> jsPromise =
+    Promise::Create(mFrameElement->OwnerDoc()->GetOwnerGlobal(), rv);
+  if (rv.Failed()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  RefPtr<Promise> copy(jsPromise);
+  copy.forget(aPromise);
+
+  auto cblPromise = SendGetContentBlockingLog();
+  cblPromise->Then(GetMainThreadSerialEventTarget(), __func__,
+                   [jsPromise] (Tuple<nsString, bool> aResult) {
+                     if (Get<1>(aResult)) {
+                       jsPromise->MaybeResolve(Get<0>(aResult));
+                     } else {
+                       jsPromise->MaybeRejectWithUndefined();
+                     }
+                   },
+                   [jsPromise] (ResponseRejectReason aReason) {
+                     jsPromise->MaybeRejectWithUndefined();
+                   });
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -3068,7 +3107,7 @@ TabParent::LayerTreeUpdate(const LayersObserverEpoch& aEpoch, bool aActive)
     return;
   }
 
-  nsCOMPtr<mozilla::dom::EventTarget> target = do_QueryInterface(mFrameElement);
+  nsCOMPtr<mozilla::dom::EventTarget> target = mFrameElement;
   if (!target) {
     NS_WARNING("Could not locate target for layer tree message.");
     return;
@@ -3088,6 +3127,38 @@ TabParent::LayerTreeUpdate(const LayersObserverEpoch& aEpoch, bool aActive)
   mFrameElement->DispatchEvent(*event);
 }
 
+void
+TabParent::RequestRootPaint(gfx::CrossProcessPaint* aPaint, IntRect aRect, float aScale, nscolor aBackgroundColor)
+{
+  auto promise = SendRequestRootPaint(aRect, aScale, aBackgroundColor);
+
+  RefPtr<gfx::CrossProcessPaint> paint(aPaint);
+  TabId tabId(GetTabId());
+  promise->Then(GetMainThreadSerialEventTarget(), __func__,
+                [paint, tabId] (PaintFragment&& aFragment) {
+                  paint->ReceiveFragment(tabId, std::move(aFragment));
+                },
+                [paint, tabId] (ResponseRejectReason aReason) {
+                  paint->LostFragment(tabId);
+                });
+}
+
+void
+TabParent::RequestSubPaint(gfx::CrossProcessPaint* aPaint, float aScale, nscolor aBackgroundColor)
+{
+  auto promise = SendRequestSubPaint(aScale, aBackgroundColor);
+
+  RefPtr<gfx::CrossProcessPaint> paint(aPaint);
+  TabId tabId(GetTabId());
+  promise->Then(GetMainThreadSerialEventTarget(), __func__,
+                [paint, tabId] (PaintFragment&& aFragment) {
+                  paint->ReceiveFragment(tabId, std::move(aFragment));
+                },
+                [paint, tabId] (ResponseRejectReason aReason) {
+                  paint->LostFragment(tabId);
+                });
+}
+
 mozilla::ipc::IPCResult
 TabParent::RecvPaintWhileInterruptingJSNoOp(const LayersObserverEpoch& aEpoch)
 {
@@ -3101,7 +3172,7 @@ TabParent::RecvPaintWhileInterruptingJSNoOp(const LayersObserverEpoch& aEpoch)
 mozilla::ipc::IPCResult
 TabParent::RecvRemotePaintIsReady()
 {
-  nsCOMPtr<mozilla::dom::EventTarget> target = do_QueryInterface(mFrameElement);
+  nsCOMPtr<mozilla::dom::EventTarget> target = mFrameElement;
   if (!target) {
     NS_WARNING("Could not locate target for MozAfterRemotePaint message.");
     return IPC_OK();
@@ -3263,7 +3334,7 @@ public:
   NS_IMETHOD SetUsePrivateBrowsing(bool) NO_IMPL
   NS_IMETHOD SetPrivateBrowsing(bool) NO_IMPL
   NS_IMETHOD GetIsInIsolatedMozBrowserElement(bool*) NO_IMPL
-  NS_IMETHOD GetScriptableOriginAttributes(JS::MutableHandleValue) NO_IMPL
+  NS_IMETHOD GetScriptableOriginAttributes(JSContext*, JS::MutableHandleValue) NO_IMPL
   NS_IMETHOD_(void) GetOriginAttributes(mozilla::OriginAttributes& aAttrs) override {}
   NS_IMETHOD GetUseRemoteTabs(bool*) NO_IMPL
   NS_IMETHOD SetRemoteTabs(bool) NO_IMPL
@@ -3604,6 +3675,26 @@ TabParent::SetIsActiveRecordReplayTab(bool aIsActive)
     gNumActiveRecordReplayTabs += aIsActive ? 1 : -1;
     mIsActiveRecordReplayTab = aIsActive;
   }
+}
+
+mozilla::ipc::IPCResult
+TabParent::RecvSetSystemFont(const nsCString& aFontName)
+{
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (widget) {
+    widget->SetSystemFont(aFontName);
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+TabParent::RecvGetSystemFont(nsCString* aFontName)
+{
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (widget) {
+    widget->GetSystemFont(*aFontName);
+  }
+  return IPC_OK();
 }
 
 NS_IMETHODIMP

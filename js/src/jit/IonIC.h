@@ -65,6 +65,7 @@ class IonGetIteratorIC;
 class IonHasOwnIC;
 class IonInIC;
 class IonInstanceOfIC;
+class IonCompareIC;
 class IonUnaryArithIC;
 class IonBinaryArithIC;
 
@@ -173,6 +174,10 @@ class IonIC
     IonInstanceOfIC* asInstanceOfIC() {
         MOZ_ASSERT(kind_ == CacheKind::InstanceOf);
         return (IonInstanceOfIC*)this;
+    }
+    IonCompareIC* asCompareIC() {
+        MOZ_ASSERT(kind_ == CacheKind::Compare);
+        return (IonCompareIC*)this;
     }
     IonUnaryArithIC* asUnaryArithIC() {
         MOZ_ASSERT(kind_ == CacheKind::UnaryArith);
@@ -483,6 +488,39 @@ class IonInstanceOfIC : public IonIC
     // This signature mimics that of TryAttachInstanceOfStub in baseline
     static MOZ_MUST_USE bool update(JSContext* cx, HandleScript outerScript, IonInstanceOfIC* ic,
                                     HandleValue lhs, HandleObject rhs, bool* attached);
+};
+
+class IonCompareIC : public IonIC
+{
+    LiveRegisterSet liveRegs_;
+
+    TypedOrValueRegister lhs_;
+    TypedOrValueRegister rhs_;
+    Register output_;
+
+  public:
+    IonCompareIC(LiveRegisterSet liveRegs,
+                 TypedOrValueRegister lhs,
+                 TypedOrValueRegister rhs,
+                 Register output)
+      : IonIC(CacheKind::Compare),
+        liveRegs_(liveRegs),
+        lhs_(lhs),
+        rhs_(rhs),
+        output_(output)
+    { }
+
+    LiveRegisterSet liveRegs() const { return liveRegs_; }
+    TypedOrValueRegister lhs() const { return lhs_; }
+    TypedOrValueRegister rhs() const { return rhs_; }
+    Register output() const { return output_; }
+
+    static MOZ_MUST_USE bool update(JSContext* cx,
+                                    HandleScript outerScript,
+                                    IonCompareIC* stub,
+                                    HandleValue lhs,
+                                    HandleValue rhs,
+                                    bool* res);
 };
 
 class IonUnaryArithIC : public IonIC

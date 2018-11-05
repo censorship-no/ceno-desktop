@@ -305,7 +305,7 @@ void
 nsTypeAheadFind::SaveFind()
 {
   if (mWebBrowserFind)
-    mWebBrowserFind->SetSearchString(mTypeAheadBuffer.get());
+    mWebBrowserFind->SetSearchString(mTypeAheadBuffer);
 
   // save the length of this find for "not found" sound
   mLastFindLength = mTypeAheadBuffer.Length();
@@ -541,8 +541,7 @@ nsTypeAheadFind::FindItNow(nsIPresShell *aPresShell, bool aIsLinksOnly,
         mPresShell = do_GetWeakReference(presShell);
       }
 
-      nsCOMPtr<nsIDocument> document =
-        do_QueryInterface(presShell->GetDocument());
+      nsCOMPtr<nsIDocument> document = presShell->GetDocument();
       NS_ASSERTION(document, "Wow, presShell doesn't have document!");
       if (!document)
         return NS_ERROR_UNEXPECTED;
@@ -563,8 +562,7 @@ nsTypeAheadFind::FindItNow(nsIPresShell *aPresShell, bool aIsLinksOnly,
           nsresult rv = fm->GetFocusedWindow(getter_AddRefs(focusedWindow));
           if (NS_SUCCEEDED(rv) && focusedWindow) {
             auto* fwPI = nsPIDOMWindowOuter::From(focusedWindow);
-            nsCOMPtr<nsIDocShellTreeItem> fwTreeItem
-              (do_QueryInterface(fwPI->GetDocShell(), &rv));
+            nsCOMPtr<nsIDocShellTreeItem> fwTreeItem(fwPI->GetDocShell());
             if (NS_SUCCEEDED(rv)) {
               nsCOMPtr<nsIDocShellTreeItem> fwRootTreeItem;
               rv = fwTreeItem->GetSameTypeRootTreeItem(getter_AddRefs(fwRootTreeItem));
@@ -1086,8 +1084,7 @@ nsTypeAheadFind::Find(const nsAString& aSearchString, bool aLinksOnly,
       nsPresContext* presContext = presShell->GetPresContext();
       NS_ENSURE_TRUE(presContext, NS_OK);
 
-      nsCOMPtr<nsIDocument> document =
-        do_QueryInterface(presShell->GetDocument());
+      nsCOMPtr<nsIDocument> document = presShell->GetDocument();
       if (!document)
         return NS_ERROR_UNEXPECTED;
 

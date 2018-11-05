@@ -16,7 +16,7 @@ const {
 const CONTENT_MIME_TYPE_ABBREVIATIONS = {
   "ecmascript": "js",
   "javascript": "js",
-  "x-javascript": "js"
+  "x-javascript": "js",
 };
 
 /**
@@ -150,6 +150,17 @@ function getAbbreviatedMimeType(mimeType) {
   }
   const abbrevType = (mimeType.split(";")[0].split("/")[1] || "").split("+")[0];
   return CONTENT_MIME_TYPE_ABBREVIATIONS[abbrevType] || abbrevType;
+}
+
+/**
+ * Helpers for getting a filename from a mime type.
+ *
+ * @param {string} baseNameWithQuery - unicode basename and query of a url
+ * @return {string} unicode filename portion of a url
+ */
+function getFileName(baseNameWithQuery) {
+  const basename = baseNameWithQuery && baseNameWithQuery.split("?")[0];
+  return basename && basename.includes(".") ? basename : null;
 }
 
 /**
@@ -288,7 +299,7 @@ function getUrlDetails(url) {
     host,
     scheme,
     unicodeUrl,
-    isLocal
+    isLocal,
   };
 }
 
@@ -307,7 +318,7 @@ function parseQueryString(query) {
     const param = e.split("=");
     return {
       name: param[0] ? getUnicodeUrlPath(param[0]) : "",
-      value: param[1] ? getUnicodeUrlPath(param[1]) : "",
+      value: param[1] ? getUnicodeUrlPath(param.slice(1).join("=")) : "",
     };
   });
 }
@@ -491,9 +502,9 @@ async function updateFormDataSections(props) {
  * incoming network update packets. It's used by Network and
  * Console panel reducers.
  */
-function processNetworkUpdates(request = {}) {
+function processNetworkUpdates(update, request) {
   const result = {};
-  for (const [key, value] of Object.entries(request)) {
+  for (const [key, value] of Object.entries(update)) {
     if (UPDATE_PROPS.includes(key)) {
       result[key] = value;
 
@@ -501,8 +512,11 @@ function processNetworkUpdates(request = {}) {
         case "securityInfo":
           result.securityState = value.state;
           break;
+        case "securityState":
+          result.securityState = update.securityState || request.securityState;
+          break;
         case "totalTime":
-          result.totalTime = request.totalTime;
+          result.totalTime = update.totalTime;
           break;
         case "requestPostData":
           result.requestHeadersFromUploadStream = value.uploadHeaders;
@@ -521,6 +535,7 @@ module.exports = {
   formDataURI,
   writeHeaderText,
   getAbbreviatedMimeType,
+  getFileName,
   getEndTime,
   getFormattedProtocol,
   getResponseHeader,

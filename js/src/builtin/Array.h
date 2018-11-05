@@ -31,12 +31,14 @@ IdIsIndex(jsid id, uint32_t* indexp)
         return true;
     }
 
-    if (MOZ_UNLIKELY(!JSID_IS_STRING(id)))
+    if (MOZ_UNLIKELY(!JSID_IS_STRING(id))) {
         return false;
+    }
 
     JSAtom* atom = JSID_TO_ATOM(id);
-    if (atom->length() == 0 || !mozilla::IsAsciiDigit(atom->latin1OrTwoByteChar(0)))
+    if (atom->length() == 0 || !mozilla::IsAsciiDigit(atom->latin1OrTwoByteChar(0))) {
         return false;
+    }
 
     return js::StringIsArrayIndex(atom, indexp);
 }
@@ -194,6 +196,9 @@ array_construct(JSContext* cx, unsigned argc, Value* vp);
 extern bool
 IsCrossRealmArrayConstructor(JSContext* cx, const Value& v, bool* result);
 
+extern bool
+ObjectMayHaveExtraIndexedProperties(JSObject* obj);
+
 class MOZ_NON_TEMPORARY_CLASS ArraySpeciesLookup final
 {
     /*
@@ -273,8 +278,9 @@ class MOZ_NON_TEMPORARY_CLASS ArraySpeciesLookup final
 
     // Purge the cache and all info associated with it.
     void purge() {
-        if (state_ == State::Initialized)
+        if (state_ == State::Initialized) {
             reset();
+        }
     }
 };
 

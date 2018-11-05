@@ -77,8 +77,9 @@ static float calculateNormalizationScale(const nsTArray<const float*>& response,
     return scale;
 }
 
-Reverb::Reverb(const AudioChunk& impulseResponse, size_t maxFFTSize, bool useBackgroundThreads, bool normalize, float sampleRate)
+Reverb::Reverb(const AudioChunk& impulseResponse, size_t maxFFTSize, bool useBackgroundThreads, bool normalize, float sampleRate, bool* aAllocationFailure)
 {
+    MOZ_ASSERT(aAllocationFailure);
     size_t impulseResponseBufferLength = impulseResponse.mDuration;
     float scale = impulseResponse.mVolume;
 
@@ -90,7 +91,12 @@ Reverb::Reverb(const AudioChunk& impulseResponse, size_t maxFFTSize, bool useBac
     }
 
     if (scale != 1.0f) {
-        tempBuf.SetLength(irChannels.Length()*impulseResponseBufferLength);
+        bool rv = tempBuf.SetLength(irChannels.Length()*impulseResponseBufferLength, mozilla::fallible);
+        *aAllocationFailure = !rv;
+        if (*aAllocationFailure) {
+          return;
+        }
+
         for (uint32_t i = 0; i < irChannels.Length(); ++i) {
             float* buf = &tempBuf[i*impulseResponseBufferLength];
             AudioBufferCopyWithScale(irChannels[i], scale, buf,
@@ -126,11 +132,18 @@ void Reverb::initialize(const nsTArray<const float*>& impulseResponseBuffer,
 
     // The reverb can handle a mono impulse response and still do stereo processing
     size_t numResponseChannels = impulseResponseBuffer.Length();
-    m_convolvers.SetCapacity(numResponseChannels);
+    MOZ_ASSERT(numResponseChannels > 0);
+    // The number of convolvers required is at least the number of audio
+    // channels.  Even if there is initially only one audio channel, another
+    // may be added later, and so a second convolver is created now while the
+    // impulse response is available.
+    size_t numConvolvers = std::max<size_t>(numResponseChannels, 2);
+    m_convolvers.SetCapacity(numConvolvers);
 
     int convolverRenderPhase = 0;
-    for (size_t i = 0; i < numResponseChannels; ++i) {
-        const float* channel = impulseResponseBuffer[i];
+    for (size_t i = 0; i < numConvolvers; ++i) {
+        size_t channelIndex = i < numResponseChannels ? i : 0;
+        const float* channel = impulseResponseBuffer[channelIndex];
         size_t length = impulseResponseBufferLength;
 
         nsAutoPtr<ReverbConvolver> convolver(new ReverbConvolver(channel, length, maxFFTSize, convolverRenderPhase, useBackgroundThreads));
@@ -185,19 +198,8 @@ void Reverb::process(const AudioBlock* sourceBus, AudioBlock* destinationBus)
             float* destinationChannel = static_cast<float*>(const_cast<void*>(destinationBus->mChannelData[i]));
             m_convolvers[i]->process(sourceBusL, destinationChannel);
         }
-    } else if (numInputChannels == 1 && numReverbChannels == 1 && numOutputChannels == 2) {
-        // 1 -> 1 -> 2
-        m_convolvers[0]->process(sourceBusL, destinationChannelL);
-
-        // simply copy L -> R
-        float* destinationChannelR = static_cast<float*>(const_cast<void*>(destinationBus->mChannelData[1]));
-        bool isCopySafe = destinationChannelL && destinationChannelR && size_t(destinationBus->GetDuration()) >= WEBAUDIO_BLOCK_SIZE;
-        MOZ_ASSERT(isCopySafe);
-        if (!isCopySafe)
-            return;
-        PodCopy(destinationChannelR, destinationChannelL, WEBAUDIO_BLOCK_SIZE);
-    } else if (numInputChannels == 1 && numReverbChannels == 1 && numOutputChannels == 1) {
-        // 1 -> 1 -> 1
+    } else if (numInputChannels == 1 && numOutputChannels == 1) {
+        // 1 -> 1 -> 1 (Only one of the convolvers is used.)
         m_convolvers[0]->process(sourceBusL, destinationChannelL);
     } else if (numInputChannels == 2 && numReverbChannels == 4 && numOutputChannels == 2) {
         // 2 -> 4 -> 2 ("True" stereo)
@@ -236,8 +238,7 @@ void Reverb::process(const AudioBlock* sourceBus, AudioBlock* destinationBus)
         AudioBufferAddWithScale(tempChannelL, 1.0f, destinationChannelL, sourceBus->GetDuration());
         AudioBufferAddWithScale(tempChannelR, 1.0f, destinationChannelR, sourceBus->GetDuration());
     } else {
-        // Handle gracefully any unexpected / unsupported matrixing
-        // FIXME: add code for 5.1 support...
+        MOZ_ASSERT_UNREACHABLE("Unexpected Reverb configuration");
         destinationBus->SetNull(destinationBus->GetDuration());
     }
 }

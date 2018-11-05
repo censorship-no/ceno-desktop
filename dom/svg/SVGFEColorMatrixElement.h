@@ -24,8 +24,8 @@ class SVGFEColorMatrixElement : public SVGFEColorMatrixElementBase
   friend nsresult (::NS_NewSVGFEColorMatrixElement(nsIContent **aResult,
                                                    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 protected:
-  explicit SVGFEColorMatrixElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGFEColorMatrixElementBase(aNodeInfo)
+  explicit SVGFEColorMatrixElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGFEColorMatrixElementBase(std::move(aNodeInfo))
   {
   }
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
@@ -41,8 +41,7 @@ public:
   virtual nsSVGString& GetResultImageName() override { return mStringAttributes[RESULT]; }
   virtual void GetSourceImageNames(nsTArray<nsSVGStringInfo>& aSources) override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedString> In1();

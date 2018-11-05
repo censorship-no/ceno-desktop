@@ -181,9 +181,9 @@ struct nsPrevNextBidiLevels
 };
 
 namespace mozilla {
+class SelectionChangeEventDispatcher;
 namespace dom {
 class Selection;
-class SelectionChangeListener;
 } // namespace dom
 
 /**
@@ -239,7 +239,7 @@ public:
    *  @param aHint will tell the selection which direction geometrically to actually show the caret on.
    *         1 = end of this line 0 = beginning of this line
    */
-  /*unsafe*/
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsresult HandleClick(nsIContent *aNewFocus,
                        uint32_t aContentOffset,
                        uint32_t aContentEndOffset,
@@ -360,7 +360,7 @@ public:
    *  sets the drag state to aState for resons of drag state.
    * @param aState is the new state of drag
    */
-  /*unsafe*/
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void SetDragState(bool aState);
 
   /** GetDragState(bool *);
@@ -425,6 +425,14 @@ public:
                                   int32_t*           aReturnOffset) const;
 
   /**
+   * GetFrameToPageSelect() returns a frame which is ancestor limit of
+   * per-page selection.  The frame may not be scrollable.  E.g.,
+   * when selection ancestor limit is set to a frame of an editing host of
+   * contenteditable element and it's not scrollable.
+   */
+  nsIFrame* GetFrameToPageSelect() const;
+
+  /**
    * Scrolling then moving caret placement code in common to text areas and
    * content areas should be located in the implementer
    * This method will accept the following parameters and perform the scroll
@@ -434,12 +442,14 @@ public:
    *
    * @param aForward if true, scroll forward if not scroll backward
    * @param aExtend  if true, extend selection to the new point
-   * @param aScrollableFrame the frame to scroll
+   * @param aFrame   the frame to scroll or container of per-page selection.
+   *                 if aExtend is true and selection may have ancestor limit,
+   *                 should set result of GetFrameToPageSelect().
    */
-  /*unsafe*/
+  MOZ_CAN_RUN_SCRIPT
   void CommonPageMove(bool aForward,
                       bool aExtend,
-                      nsIScrollableFrame* aScrollableFrame);
+                      nsIFrame* aFrame);
 
   void SetHint(CaretAssociateHint aHintRight) { mHint = aHintRight; }
   CaretAssociateHint GetHint() const { return mHint; }
@@ -524,8 +534,7 @@ public:
   /** Select All will generally be called from the nsiselectioncontroller implementations.
    *  it will select the whole doc
    */
-  /*unsafe*/
-  nsresult SelectAll();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult SelectAll();
 
   /** Sets/Gets The display selection enum.
    */
@@ -573,8 +582,7 @@ public:
   nsIContent* GetLimiter() const { return mLimiter; }
 
   nsIContent* GetAncestorLimiter() const { return mAncestorLimiter; }
-  /*unsafe*/
-  void SetAncestorLimiter(nsIContent *aLimiter);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void SetAncestorLimiter(nsIContent* aLimiter);
 
   /** This will tell the frame selection that a double click has been pressed
    *  so it can track abort future drags if inside the same selection
@@ -638,6 +646,8 @@ public:
   nsFrameSelection();
 
   void StartBatchChanges();
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void EndBatchChanges(int16_t aReason = nsISelectionListener::NO_REASON);
 
   /*unsafe*/
@@ -651,6 +661,7 @@ public:
 private:
   ~nsFrameSelection();
 
+  MOZ_CAN_RUN_SCRIPT
   nsresult TakeFocus(nsIContent *aNewFocus,
                      uint32_t aContentOffset,
                      uint32_t aContentEndOffset,
@@ -690,7 +701,7 @@ private:
   }
 
   friend class mozilla::dom::Selection;
-  friend class mozilla::dom::SelectionChangeListener;
+  friend class mozilla::SelectionChangeEventDispatcher;
   friend struct mozilla::AutoPrepareFocusRange;
 #ifdef DEBUG
   void printSelection();       // for debugging
@@ -706,6 +717,7 @@ private:
     eVisual,
     eUsePrefStyle
   };
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsresult     MoveCaret(nsDirection aDirection, bool aContinueSelection,
                          nsSelectionAmount aAmount,
                          CaretMovementStyle aMovementStyle);
@@ -720,6 +732,7 @@ private:
 
   // nsFrameSelection may get deleted when calling this,
   // so remember to use nsCOMPtr when needed.
+  MOZ_CAN_RUN_SCRIPT
   nsresult     NotifySelectionListeners(mozilla::SelectionType aSelectionType);
   // Update the selection cache on repaint when the
   // selection being repainted is not empty.

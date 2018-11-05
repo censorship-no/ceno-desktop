@@ -9,6 +9,7 @@
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "ScopedGLHelpers.h"
 #include "WebGLContext.h"
+#include "WebGLFormats.h"
 #include "WebGLStrongTypes.h"
 #include "WebGLTexture.h"
 
@@ -51,36 +52,26 @@ WebGLRenderbuffer::WebGLRenderbuffer(WebGLContext* webgl)
     , mPrimaryRB( DoCreateRenderbuffer(webgl->gl) )
     , mEmulatePackedDepthStencil( EmulatePackedDepthStencil(webgl->gl) )
     , mSecondaryRB(0)
-    , mFormat(nullptr)
-    , mSamples(0)
-    , mImageDataStatus(WebGLImageDataStatus::NoImageData)
-    , mHasBeenBound(false)
 {
     mContext->mRenderbuffers.insertBack(this);
+
+    // Bind our RB, or we might end up calling FramebufferRenderbuffer before we ever call
+    // BindRenderbuffer, since webgl.bindRenderbuffer doesn't actually call
+    // glBindRenderbuffer anymore.
+    mContext->gl->fBindRenderbuffer(LOCAL_GL_RENDERBUFFER, mPrimaryRB);
 }
 
 void
 WebGLRenderbuffer::Delete()
 {
     mContext->gl->fDeleteRenderbuffers(1, &mPrimaryRB);
-    if (mSecondaryRB)
+    if (mSecondaryRB) {
         mContext->gl->fDeleteRenderbuffers(1, &mSecondaryRB);
+    }
+
+    mImageInfo = webgl::ImageInfo();
 
     LinkedListElement<WebGLRenderbuffer>::removeFrom(mContext->mRenderbuffers);
-}
-
-int64_t
-WebGLRenderbuffer::MemoryUsage() const
-{
-    // If there is no defined format, we're not taking up any memory
-    if (!mFormat)
-        return 0;
-
-    const auto bytesPerPixel = mFormat->format->estimatedBytesPerPixel;
-    const int64_t pixels = int64_t(mWidth) * int64_t(mHeight);
-
-    const int64_t totalSize = pixels * bytesPerPixel;
-    return totalSize;
 }
 
 static GLenum
@@ -175,13 +166,12 @@ WebGLRenderbuffer::DoRenderbufferStorage(uint32_t samples,
 }
 
 void
-WebGLRenderbuffer::RenderbufferStorage(const char* funcName, uint32_t samples,
-                                       GLenum internalFormat, uint32_t width,
-                                       uint32_t height)
+WebGLRenderbuffer::RenderbufferStorage(uint32_t samples, GLenum internalFormat,
+                                       uint32_t width, uint32_t height)
 {
     const auto usage = mContext->mFormatUsage->GetRBUsage(internalFormat);
     if (!usage) {
-        mContext->ErrorInvalidEnum("%s: Invalid `internalFormat`: 0x%04x.", funcName,
+        mContext->ErrorInvalidEnum("Invalid `internalFormat`: 0x%04x.",
                                    internalFormat);
         return;
     }
@@ -189,9 +179,8 @@ WebGLRenderbuffer::RenderbufferStorage(const char* funcName, uint32_t samples,
     if (width > mContext->mGLMaxRenderbufferSize ||
         height > mContext->mGLMaxRenderbufferSize)
     {
-        mContext->ErrorInvalidValue("%s: Width or height exceeds maximum renderbuffer"
-                                    " size.",
-                                    funcName);
+        mContext->ErrorInvalidValue("Width or height exceeds maximum renderbuffer"
+                                    " size.");
         return;
     }
 
@@ -201,7 +190,7 @@ WebGLRenderbuffer::RenderbufferStorage(const char* funcName, uint32_t samples,
     MOZ_ASSERT(usage->maxSamplesKnown);
 
     if (samples > usage->maxSamples) {
-        mContext->ErrorInvalidOperation("%s: `samples` is out of the valid range.", funcName);
+        mContext->ErrorInvalidOperation("`samples` is out of the valid range.");
         return;
     }
 
@@ -209,37 +198,33 @@ WebGLRenderbuffer::RenderbufferStorage(const char* funcName, uint32_t samples,
 
     const GLenum error = DoRenderbufferStorage(samples, usage, width, height);
     if (error) {
-        const char* errorName = WebGLContext::ErrorName(error);
-        mContext->GenerateWarning("%s generated error %s", funcName, errorName);
+        mContext->GenerateWarning("Unexpected error %s", EnumString(error).c_str());
         return;
     }
 
     mContext->OnDataAllocCall();
 
-    mSamples = samples;
-    mFormat = usage;
-    mWidth = width;
-    mHeight = height;
-    mImageDataStatus = WebGLImageDataStatus::UninitializedImageData;
-
-    InvalidateStatusOfAttachedFBs(funcName);
+    const uint32_t depth = 1;
+    const bool hasData = false;
+    mImageInfo = { usage, width, height, depth, hasData, uint8_t(samples) };
+    InvalidateCaches();
 }
 
 void
-WebGLRenderbuffer::DoFramebufferRenderbuffer(FBTarget target, GLenum attachment) const
+WebGLRenderbuffer::DoFramebufferRenderbuffer(const GLenum attachment) const
 {
     gl::GLContext* gl = mContext->gl;
 
     if (attachment == LOCAL_GL_DEPTH_STENCIL_ATTACHMENT) {
         const GLuint stencilRB = (mSecondaryRB ? mSecondaryRB : mPrimaryRB);
-        gl->fFramebufferRenderbuffer(target.get(), LOCAL_GL_DEPTH_ATTACHMENT,
+        gl->fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_DEPTH_ATTACHMENT,
                                      LOCAL_GL_RENDERBUFFER, mPrimaryRB);
-        gl->fFramebufferRenderbuffer(target.get(), LOCAL_GL_STENCIL_ATTACHMENT,
+        gl->fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_STENCIL_ATTACHMENT,
                                      LOCAL_GL_RENDERBUFFER, stencilRB);
         return;
     }
 
-    gl->fFramebufferRenderbuffer(target.get(), attachment,
+    gl->fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER, attachment,
                                  LOCAL_GL_RENDERBUFFER, mPrimaryRB);
 }
 
@@ -251,10 +236,10 @@ WebGLRenderbuffer::GetRenderbufferParameter(RBTarget target,
 
     switch (pname.get()) {
     case LOCAL_GL_RENDERBUFFER_STENCIL_SIZE:
-        if (!mFormat)
+        if (!mImageInfo.mFormat)
             return 0;
 
-        if (!mFormat->format->s)
+        if (!mImageInfo.mFormat->format->s)
             return 0;
 
         return 8;
@@ -277,8 +262,8 @@ WebGLRenderbuffer::GetRenderbufferParameter(RBTarget target,
     case LOCAL_GL_RENDERBUFFER_INTERNAL_FORMAT:
         {
             GLenum ret = LOCAL_GL_RGBA4;
-            if (mFormat) {
-                ret = mFormat->format->sizedFormat;
+            if (mImageInfo.mFormat) {
+                ret = mImageInfo.mFormat->format->sizedFormat;
 
                 if (!mContext->IsWebGL2() && ret == LOCAL_GL_DEPTH24_STENCIL8) {
                     ret = LOCAL_GL_DEPTH_STENCIL;

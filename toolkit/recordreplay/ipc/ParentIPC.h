@@ -37,6 +37,13 @@ const char* SaveAllRecordingsDirectory();
 
 // Middleman process API
 
+// Get the pid of the UI process.
+base::ProcessId ParentProcessId();
+
+// Return whether this is a middleman process that forwards IPDL messages to
+// a recording child process.
+bool IsMiddlemanWithRecordingChild();
+
 // Save the recording up to the current point in execution.
 void SaveRecording(const ipc::FileDescriptor& aFile);
 
@@ -58,6 +65,9 @@ void OpenChannel(base::ProcessId aMiddlemanPid, uint32_t aChannelId,
 void GetArgumentsForChildProcess(base::ProcessId aMiddlemanPid, uint32_t aChannelId,
                                  const char* aRecordingFile, bool aRecording,
                                  std::vector<std::string>& aExtraArgs);
+
+// Return whether the middleman will be running developer tools server code.
+bool DebuggerRunsInMiddleman();
 
 } // namespace parent
 } // namespace recordreplay

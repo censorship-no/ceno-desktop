@@ -4,15 +4,22 @@
 
 "use strict";
 
-const { getBounds } = require("./utils/accessibility");
+const { getBounds, XULWindowInfobar } = require("./utils/accessibility");
 const { createNode, isNodeValid } = require("./utils/markup");
 const { getCurrentZoom, loadSheet } = require("devtools/shared/layout/utils");
+const { TEXT_NODE } = require("devtools/shared/dom-node-constants");
 
 /**
  * Stylesheet used for highlighter styling of accessible objects in chrome. It
  * is consistent with the styling of an in-content accessible highlighter.
  */
 const ACCESSIBLE_BOUNDS_SHEET = "data:text/css;charset=utf-8," + encodeURIComponent(`
+  .highlighter-container {
+    --highlighter-bubble-background-color: hsl(214, 13%, 24%);
+    --highlighter-bubble-border-color: rgba(255, 255, 255, 0.2);
+    --highlighter-bubble-arrow-size: 8px;
+  }
+
   .accessible-bounds {
     position: fixed;
     pointer-events: none;
@@ -20,6 +27,85 @@ const ACCESSIBLE_BOUNDS_SHEET = "data:text/css;charset=utf-8," + encodeURICompon
     display: block;
     background-color: #6a5acd!important;
     opacity: 0.6;
+  }
+
+  .accessible-infobar-container {
+    position: fixed;
+    max-width: 90%;
+    z-index: 11;
+  }
+
+  .accessible-infobar {
+    position: relative;
+    left: -50%;
+    background-color: var(--highlighter-bubble-background-color);
+    min-width: 75px;
+    border: 1px solid var(--highlighter-bubble-border-color);
+    border-radius: 3px;
+    padding: 5px;
+  }
+
+  .accessible-arrow {
+    position: absolute;
+    width: 0;
+    height: 0;
+    border-left: var(--highlighter-bubble-arrow-size) solid transparent;
+    border-right: var(--highlighter-bubble-arrow-size) solid transparent;
+    left: calc(50% - var(--highlighter-bubble-arrow-size));
+  }
+
+  .top {
+    border-bottom: var(--highlighter-bubble-arrow-size) solid
+      var(--highlighter-bubble-background-color);
+    top: calc(-1 * var(--highlighter-bubble-arrow-size));
+  }
+
+  .bottom {
+    border-top: var(--highlighter-bubble-arrow-size) solid
+      var(--highlighter-bubble-background-color);
+    bottom: calc(-1 * var(--highlighter-bubble-arrow-size));
+  }
+
+  .accessible-infobar-text {
+    overflow: hidden;
+    white-space: nowrap;
+    display: flex;
+    justify-content: center;
+  }
+
+  .accessible-infobar-name,
+  .accessible-infobar-audit {
+    color: hsl(210, 30%, 85%);
+    max-width: 90%;
+  }
+
+  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AA:after,
+  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AAA:after {
+    color: #90E274;
+  }
+
+  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).fail:after {
+    color: #E57180;
+    content: " ⚠️";
+  }
+
+  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AA:after {
+    content: " AA\u2713";
+  }
+
+  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AAA:after {
+    content: " AAA\u2713";
+  }
+
+  .accessible-infobar-name:not(:empty),
+  .accessible-infobar-audit:not(:empty) {
+    border-inline-start: 1px solid #5a6169;
+    margin-inline-start: 6px;
+    padding-inline-start: 6px;
+  }
+
+  .accessible-infobar-role {
+    color: #9CDCFE;
   }`);
 
 /**
@@ -37,8 +123,10 @@ const ACCESSIBLE_BOUNDS_SHEET = "data:text/css;charset=utf-8," + encodeURICompon
  */
 class XULWindowAccessibleHighlighter {
   constructor(highlighterEnv) {
+    this.ID_CLASS_PREFIX = "accessible-";
     this.highlighterEnv = highlighterEnv;
     this.win = highlighterEnv.window;
+    this.accessibleInfobar = new XULWindowInfobar(this);
   }
 
   /**
@@ -60,17 +148,18 @@ class XULWindowAccessibleHighlighter {
       parent: doc.body || doc.documentElement,
       attributes: {
         "class": "highlighter-container",
-        "role": "presentation"
-      }
+        "aria-hidden": "true",
+      },
     });
 
     this.bounds = createNode(this.win, {
       parent: this.container,
       attributes: {
         "class": "accessible-bounds",
-        "role": "presentation"
-      }
+      },
     });
+
+    this.accessibleInfobar.buildMarkup(this.container);
   }
 
   /**
@@ -104,6 +193,11 @@ class XULWindowAccessibleHighlighter {
    *           height of the the accessible object
    *         - duration {Number}
    *                    Duration of time that the highlighter should be shown.
+   *         - {String|null} name
+   *           name of the the accessible object
+   *         - {String} role
+   *           role of the the accessible object
+   *
    * @return {Boolean} True if accessible is highlighted, false otherwise.
    */
   show(node, options = {}) {
@@ -112,7 +206,7 @@ class XULWindowAccessibleHighlighter {
                                typeof options.y == "number" &&
                                typeof options.w == "number" &&
                                typeof options.h == "number";
-    if (!hasBounds || !isNodeValid(node) || isSameNode) {
+    if (!hasBounds || !this._isNodeValid(node) || isSameNode) {
       return false;
     }
 
@@ -158,6 +252,7 @@ class XULWindowAccessibleHighlighter {
     }
 
     let boundsEl = this.bounds;
+
     if (!boundsEl) {
       this._buildMarkup();
       boundsEl = this.bounds;
@@ -168,7 +263,9 @@ class XULWindowAccessibleHighlighter {
     boundsEl.style.left = `${left}px`;
     boundsEl.style.width = `${width}px`;
     boundsEl.style.height = `${height}px`;
+
     this._showAccessibleBounds();
+    this.accessibleInfobar.show();
 
     return true;
   }
@@ -182,8 +279,21 @@ class XULWindowAccessibleHighlighter {
     }
 
     this._hideAccessibleBounds();
+    this.accessibleInfobar.hide();
+
     this.currentNode = null;
     this.options = null;
+  }
+
+  /**
+   * Check if node is a valid element or text node.
+   *
+   * @param  {DOMNode} node
+   *         The node to highlight.
+   * @return {Boolean} whether or not node is valid.
+   */
+  _isNodeValid(node) {
+    return isNodeValid(node) || isNodeValid(node, TEXT_NODE);
   }
 
   /**
@@ -218,6 +328,9 @@ class XULWindowAccessibleHighlighter {
       this.container.remove();
     }
 
+    this.accessibleInfobar.destroy();
+
+    this.accessibleInfobar = null;
     this.win = null;
   }
 }

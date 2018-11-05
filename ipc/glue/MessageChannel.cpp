@@ -634,7 +634,6 @@ MessageChannel::MessageChannel(const char* aName,
     mPeerPidSet(false),
     mPeerPid(-1),
     mIsPostponingSends(false),
-    mInKillHardShutdown(false),
     mBuildIDsConfirmedMatch(false)
 {
     MOZ_COUNT_CTOR(ipc::MessageChannel);
@@ -774,9 +773,8 @@ void
 MessageChannel::WillDestroyCurrentMessageLoop()
 {
 #if defined(DEBUG)
-    CrashReporter::AnnotateCrashReport(
-        NS_LITERAL_CSTRING("IPCFatalErrorProtocol"),
-        nsDependentCString(mName));
+    CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::IPCFatalErrorProtocol,
+                                       nsDependentCString(mName));
     MOZ_CRASH("MessageLoop destroyed before MessageChannel that's bound to it");
 #endif
 
@@ -799,13 +797,9 @@ MessageChannel::Clear()
     // before mListener.  But just to be safe, mListener is a weak pointer.
 
 #if !defined(ANDROID)
-    // KillHard shutdowns can occur with the channel in connected state. We are
-    // already collecting crash dump data about KillHard shutdowns and we
-    // shouldn't intentionally crash here.
-    if (!Unsound_IsClosed() && !mInKillHardShutdown) {
+    if (!Unsound_IsClosed()) {
         CrashReporter::AnnotateCrashReport(
-            NS_LITERAL_CSTRING("IPCFatalErrorProtocol"),
-            nsDependentCString(mName));
+          CrashReporter::Annotation::IPCFatalErrorProtocol, nsDependentCString(mName));
         switch (mChannelState) {
             case ChannelOpening:
                 MOZ_CRASH("MessageChannel destroyed without being closed " \
@@ -997,6 +991,17 @@ MessageChannel::Echo(Message* aMsg)
 bool
 MessageChannel::Send(Message* aMsg)
 {
+    if (recordreplay::HasDivergedFromRecording() &&
+        recordreplay::child::SuppressMessageAfterDiverge(aMsg))
+    {
+        // Only certain IPDL messages are allowed to be sent in a replaying
+        // process after it has diverged from the recording, to avoid
+        // deadlocking with threads that remain idle. The browser remains
+        // paused after diverging from the recording, and other IPDL messages
+        // do not need to be sent.
+        return true;
+    }
+
     if (aMsg->size() >= kMinTelemetryMessageSize) {
         Telemetry::Accumulate(Telemetry::IPC_MESSAGE_SIZE2, aMsg->size());
     }
@@ -2103,6 +2108,15 @@ MessageChannel::MessageTask::Clear()
 NS_IMETHODIMP
 MessageChannel::MessageTask::GetPriority(uint32_t* aPriority)
 {
+  if (recordreplay::IsRecordingOrReplaying()) {
+    // Ignore message priorities in recording/replaying processes. Incoming
+    // messages were sorted in the middleman process according to their
+    // priority before being forwarded here, and reordering them again in this
+    // process can cause problems such as dispatching messages for an actor
+    // before the constructor for that actor.
+    *aPriority = PRIORITY_NORMAL;
+    return NS_OK;
+  }
   switch (mMessage.priority()) {
   case Message::NORMAL_PRIORITY:
     *aPriority = PRIORITY_NORMAL;
@@ -2192,7 +2206,10 @@ MessageChannel::DispatchSyncMessage(const Message& aMsg, Message*& aReply)
 
     int nestedLevel = aMsg.nested_level();
 
-    MOZ_RELEASE_ASSERT(nestedLevel == IPC::Message::NOT_NESTED || NS_IsMainThread());
+    MOZ_RELEASE_ASSERT(nestedLevel == IPC::Message::NOT_NESTED ||
+                       NS_IsMainThread() ||
+                       // Middleman processes forward sync messages on a non-main thread.
+                       recordreplay::IsMiddleman());
 #ifdef MOZ_TASK_TRACER
     AutoScopedLabel autolabel("sync message %s", aMsg.name());
 #endif

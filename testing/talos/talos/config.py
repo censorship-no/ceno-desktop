@@ -19,7 +19,7 @@ class ConfigurationError(Exception):
 
 DEFAULTS = dict(
     # args to pass to browser
-    extra_args='',
+    extra_args=[],
     buildid='testbuildid',
     init_url='getInfo.html',
     env={'NO_EM_RESTART': '1'},
@@ -112,6 +112,7 @@ def fix_xperf(config):
     # BBB: remove doubly-quoted xperf values from command line
     # (needed for buildbot)
     # https://bugzilla.mozilla.org/show_bug.cgi?id=704654#c43
+    win7_path = 'c:/Program Files/Microsoft Windows Performance Toolkit/xperf.exe'
     if config['xperf_path']:
         xperf_path = config['xperf_path']
         quotes = ('"', "'")
@@ -120,8 +121,11 @@ def fix_xperf(config):
                 config['xperf_path'] = xperf_path[1:-1]
                 break
         if not os.path.exists(config['xperf_path']):
-            raise ConfigurationError(
-                "xperf.exe cannot be found at the path specified")
+            # look for old win7 path
+            if not os.path.exists(win7_path):
+                raise ConfigurationError(
+                    "xperf.exe cannot be found at the path specified")
+            config['xperf_path'] = win7_path
 
 
 @validator
@@ -133,7 +137,7 @@ def set_webserver(config):
     port = sock.getsockname()[1]
     sock.close()
 
-    config['webserver'] = 'localhost:%d' % port
+    config['webserver'] = '127.0.0.1:%d' % port
 
 
 @validator
@@ -332,7 +336,10 @@ def get_config(argv=None):
         except KeyError:
             raise ConfigurationError('No such suite: %r' % cli_opts.suite)
         argv += ['-a', ':'.join(suite_conf['tests'])]
-        argv += suite_conf.get('talos_options', [])
+        # talos_options in the suite config should not override command line
+        # options, so we prepend argv with talos_options so that, when parsed,
+        # the command line options will clobber the suite config options.
+        argv = suite_conf.get('talos_options', []) + argv
         # args needs to be reparsed now
     elif not cli_opts.activeTests:
         raise ConfigurationError('--activeTests or --suite required!')

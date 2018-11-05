@@ -6,10 +6,10 @@
 """output formats for Talos"""
 from __future__ import absolute_import
 
-import filter
+from talos import filter
 # NOTE: we have a circular dependency with output.py when we import results
 import simplejson as json
-import utils
+from talos import utils
 from mozlog import get_proxy_logger
 
 LOG = get_proxy_logger()
@@ -117,6 +117,12 @@ class Output(object):
                         if test.test_config.get('lower_is_better') is not None:
                             subtest['lowerIsBetter'] = \
                                 test.test_config['lower_is_better']
+                        if test.test_config.get('alert_threshold') is not None:
+                            subtest['alertThreshold'] = \
+                                test.test_config['alert_threshold']
+                        if test.test_config.get('subtest_alerts') is not None:
+                            subtest['shouldAlert'] = \
+                                test.test_config['subtest_alerts']
                         if test.test_config.get('alert_threshold') is not None:
                             subtest['alertThreshold'] = \
                                 test.test_config['alert_threshold']

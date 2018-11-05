@@ -15,10 +15,10 @@ function test() {
   pm.add(makeURI("http://example.com/"), "install", pm.ALLOW_ACTION);
 
   var triggers = encodeURIComponent(JSON.stringify({
-    "Unsigned XPI": TESTROOT + "authRedirect.sjs?" + TESTROOT + "amosigned.xpi"
+    "Unsigned XPI": TESTROOT + "authRedirect.sjs?" + TESTROOT + "amosigned.xpi",
   }));
   gNewTab = BrowserTestUtils.addTab(gBrowser);
-  gBrowser.getBrowserForTab(gNewTab).loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  BrowserTestUtils.loadURI(gBrowser.getBrowserForTab(gNewTab), TESTROOT + "installtrigger.html?" + triggers);
 }
 
 function get_auth_info() {

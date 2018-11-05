@@ -14,10 +14,18 @@
 #include "gfxVR.h"
 #include "VRDisplayLocal.h"
 
+#if defined(XP_WIN)
+#include "CompositorD3D11.h"
+#endif
+
 #if defined(XP_MACOSX)
 class MacIOSurface;
 #endif
 namespace mozilla {
+namespace layers {
+struct VertexShaderConstants;
+struct PixelShaderConstants;
+}
 namespace gfx {
 namespace impl {
 
@@ -131,6 +139,7 @@ public:
                              const VRManagerPromise& aPromise) override;
   virtual void StopVibrateHaptic(uint32_t aControllerIdx) override;
   virtual void NotifyVSync() override;
+  virtual void Run10msTasks() override;
 
 protected:
   VRSystemManagerPuppet();

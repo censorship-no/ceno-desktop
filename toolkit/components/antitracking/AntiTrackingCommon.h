@@ -11,7 +11,11 @@
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
 
+#define USER_INTERACTION_PERM "storageAccessAPI"
+
+class nsIChannel;
 class nsIHttpChannel;
+class nsIPermission;
 class nsIPrincipal;
 class nsIURI;
 class nsPIDOMWindowInner;
@@ -32,9 +36,17 @@ public:
   // loaded inside the passed 3rd party context tracking resource window.
   // If the window is first party context, please use
   // MaybeIsFirstPartyStorageAccessGrantedFor();
+  //
+  // aRejectedReason could be set to one of these values if passed and if the
+  // storage permission is not granted:
+  //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION
+  //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER
+  //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL
+  //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN
   static bool
   IsFirstPartyStorageAccessGrantedFor(nsPIDOMWindowInner* a3rdPartyTrackingWindow,
-                                      nsIURI* aURI);
+                                      nsIURI* aURI,
+                                      uint32_t* aRejectedReason);
 
   // Note: you should use IsFirstPartyStorageAccessGrantedFor() passing the
   // nsIHttpChannel! Use this method _only_ if the channel is not available.
@@ -46,12 +58,24 @@ public:
   MaybeIsFirstPartyStorageAccessGrantedFor(nsPIDOMWindowInner* aFirstPartyWindow,
                                            nsIURI* aURI);
 
-  // This can be called only if the a3rdPartyTrackingChannel is _really_ a 3rd
-  // party context and marked as tracking resource.
   // It returns true if the URI has access to the first party storage.
+  // aChannel can be a 3rd party channel, or not.
+  // See IsFirstPartyStorageAccessGrantedFor(window) to see the possible values
+  // of aRejectedReason.
   static bool
-  IsFirstPartyStorageAccessGrantedFor(nsIHttpChannel* a3rdPartyTrackingChannel,
-                                      nsIURI* aURI);
+  IsFirstPartyStorageAccessGrantedFor(nsIHttpChannel* aChannel, nsIURI* aURI,
+                                      uint32_t* aRejectedReason);
+
+  // This method checks if the principal has the permission to access to the
+  // first party storage.
+  static bool
+  IsFirstPartyStorageAccessGrantedFor(nsIPrincipal* aPrincipal);
+
+  enum StorageAccessGrantedReason
+  {
+    eStorageAccessAPI,
+    eHeuristic,
+  };
 
   // Grant the permission for aOrigin to have access to the first party storage.
   // This method can handle 2 different scenarios:
@@ -70,8 +94,20 @@ public:
   //   example.net.
   typedef MozPromise<bool, bool, false> StorageAccessGrantPromise;
   static MOZ_MUST_USE RefPtr<StorageAccessGrantPromise>
-  AddFirstPartyStorageAccessGrantedFor(const nsAString& aOrigin,
-                                       nsPIDOMWindowInner* aParentWindow);
+  AddFirstPartyStorageAccessGrantedFor(nsIPrincipal* aPrincipal,
+                                       nsPIDOMWindowInner* aParentWindow,
+                                       StorageAccessGrantedReason aReason);
+
+  // Returns true if the permission passed in is a storage access permission
+  // for the passed in principal argument.
+  static bool
+  IsStorageAccessPermission(nsIPermission* aPermission, nsIPrincipal* aPrincipal);
+
+  static void
+  StoreUserInteractionFor(nsIPrincipal* aPrincipal);
+
+  static bool
+  HasUserInteraction(nsIPrincipal* aPrincipal);
 
   // For IPC only.
   static void
@@ -80,6 +116,34 @@ public:
                                                              const nsCString& aGrantedOrigin,
                                                              FirstPartyStorageAccessGrantedForOriginResolver&& aResolver);
 
+  enum ContentBlockingAllowListPurpose {
+    eStorageChecks,
+    eTrackingProtection,
+    eTrackingAnnotations,
+  };
+
+  // Check whether a top window URI is on the content blocking allow list.
+  static nsresult
+  IsOnContentBlockingAllowList(nsIURI* aTopWinURI,
+                               bool aIsPrivateBrowsing,
+                               ContentBlockingAllowListPurpose aPurpose,
+                               bool& aIsAllowListed);
+
+  // This method can be called on the parent process or on the content process.
+  // The notification is propagated to the child channel if aChannel is a parent
+  // channel proxy.
+  //
+  // aRejectedReason must be one of these values:
+  //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION
+  //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER
+  //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL
+  //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN
+  //  * nsIWebProgressListener::STATE_BLOCKED_SLOW_TRACKING_CONTENT
+  static void
+  NotifyRejection(nsIChannel* aChannel, uint32_t aRejectedReason);
+
+  static void
+  NotifyRejection(nsPIDOMWindowInner* aWindow, uint32_t aRejectedReason);
 };
 
 } // namespace mozilla

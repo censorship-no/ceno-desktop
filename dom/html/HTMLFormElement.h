@@ -44,7 +44,7 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 public:
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLFormElement, form)
 
-  explicit HTMLFormElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLFormElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   enum {
     FORM_CONTROL_LIST_HASHTABLE_LENGTH = 8
@@ -117,8 +117,7 @@ public:
    */
   void ForgetCurrentSubmission();
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLFormElement,
                                            nsGenericHTMLElement)
@@ -518,7 +517,7 @@ protected:
    *
    * @return Whether the form is currently valid.
    */
-  bool CheckFormValidity(nsIMutableArray* aInvalidElements) const;
+  bool CheckFormValidity(nsTArray<RefPtr<Element>>* aInvalidElements) const;
 
   // Clear the mImageNameLookupTable and mImageElements.
   void Clear();

@@ -16,17 +16,17 @@ add_task(async function test() {
     id: "extension@tests.mozilla.org",
     name: "Extension 1",
     type: "extension",
-    version: "123"
+    version: "123",
   }, {
     id: "theme@tests.mozilla.org",
     name: "Theme 2",
     type: "theme",
-    version: "456"
+    version: "456",
   }, {
     id: "lwtheme@personas.mozilla.org",
     name: "Persona 3",
     type: "theme",
-    version: "789"
+    version: "789",
   }]);
 
   gManagerWindow = await open_manager();
@@ -43,15 +43,14 @@ function get_node(parent, anonid) {
 
 function open_details(aList, aItem, aCallback) {
   aList.ensureElementIsVisible(aItem);
-  EventUtils.synthesizeMouseAtCenter(aItem, { clickCount: 1 }, gManagerWindow);
-  EventUtils.synthesizeMouseAtCenter(aItem, { clickCount: 2 }, gManagerWindow);
+  EventUtils.synthesizeMouseAtCenter(aItem, {}, gManagerWindow);
   return new Promise(resolve => wait_for_view_load(gManagerWindow, resolve));
 }
 
 var check_addon_has_version = async function(aList, aName, aVersion) {
   for (let i = 0; i < aList.itemCount; i++) {
     let item = aList.getItemAtIndex(i);
-    if (get_node(item, "name").value === aName) {
+    if (get_node(item, "name").textContent === aName) {
       ok(true, "Item with correct name found");
       let { version } = await get_tooltip_info(item);
       is(version, aVersion, "Item has correct version");

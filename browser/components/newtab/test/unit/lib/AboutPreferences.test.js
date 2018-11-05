@@ -87,7 +87,7 @@ describe("AboutPreferences Feed", () => {
       global.Cc["@mozilla.org/browser/aboutnewtab-service;1"] = {
         getService() {
           return {activityStreamLocale};
-        }
+        },
       };
       fetchStub = sandbox.stub().resolves({text: () => Promise.resolve(fetchText)});
       globals.set("fetch", fetchStub);
@@ -132,13 +132,13 @@ describe("AboutPreferences Feed", () => {
     let gHomePane;
     const testRender = () => instance.renderPreferences({
       document: {
-        createElementNS: sandbox.stub().returns(node),
+        createXULElement: sandbox.stub().returns(node),
         createProcessingInstruction: sandbox.stub(),
         getElementById: sandbox.stub().returns(node),
-        insertBefore: sandbox.stub().returnsArg(0)
+        insertBefore: sandbox.stub().returnsArg(0),
       },
       Preferences,
-      gHomePane
+      gHomePane,
     }, strings, prefStructure);
     beforeEach(() => {
       node = {
@@ -146,13 +146,13 @@ describe("AboutPreferences Feed", () => {
         classList: {add: sandbox.stub()},
         cloneNode: sandbox.stub().returnsThis(),
         insertAdjacentElement: sandbox.stub().returnsArg(1),
-        setAttribute: sandbox.stub()
+        setAttribute: sandbox.stub(),
       };
       strings = {};
       prefStructure = [];
       Preferences = {
         add: sandbox.stub(),
-        get: sandbox.stub().returns({})
+        get: sandbox.stub().returns({}),
       };
       gHomePane = {toggleRestoreDefaultsBtn: sandbox.stub()};
     });
@@ -245,10 +245,9 @@ describe("AboutPreferences Feed", () => {
       });
       it("should add a link for top stories", () => {
         const href = "https://disclaimer/";
-        prefStructure = [{disclaimer: {link: {href}}, id: "topstories"}];
+        prefStructure = [{learnMore: {link: {href}}, id: "topstories"}];
 
         testRender();
-
         assert.calledWith(node.setAttribute, "href", href);
       });
     });

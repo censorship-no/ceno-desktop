@@ -11,6 +11,8 @@ ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
                                "resource://gre/modules/PrivateBrowsingUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "Services",
                                "resource://gre/modules/Services.jsm");
+XPCOMUtils.defineLazyPreferenceGetter(this, "containersEnabled",
+                                      "privacy.userContext.enabled");
 
 var {
   DefaultMap,
@@ -296,7 +298,7 @@ class TabBase {
    *        @readonly
    */
   get frameLoader() {
-    return this.browser.frameLoader;
+    return this.browser && this.browser.frameLoader;
   }
 
   /**
@@ -461,6 +463,17 @@ class TabBase {
   }
 
   /**
+   * @property {boolean} attention
+   *          Returns true if the tab is drawing attention.
+   *          @readonly
+   *          @abstract
+   */
+  get attention() {
+    throw new Error("Not implemented");
+  }
+
+
+  /**
    * @property {boolean} isArticle
    *        Returns true if the document in the tab can be rendered in reader
    *        mode.
@@ -570,18 +583,19 @@ class TabBase {
    * of its properties which the extension is permitted to access, in the format
    * required to be returned by WebExtension APIs.
    *
-   * @param {Tab} [fallbackTab]
-   *        A tab to retrieve geometry data from if the lazy geometry data for
-   *        this tab hasn't been initialized yet.
+   * @param {Object} [fallbackTabSize]
+   *        A geometry data if the lazy geometry data for this tab hasn't been
+   *        initialized yet.
    * @returns {object}
    */
-  convert(fallbackTab = null) {
+  convert(fallbackTabSize = null) {
     let result = {
       id: this.id,
       index: this.index,
       windowId: this.windowId,
       highlighted: this.highlighted,
       active: this.active,
+      attention: this.attention,
       pinned: this.pinned,
       status: this.status,
       hidden: this.hidden,
@@ -599,9 +613,9 @@ class TabBase {
 
     // If the tab has not been fully layed-out yet, fallback to the geometry
     // from a different tab (usually the currently active tab).
-    if (fallbackTab && (!result.width || !result.height)) {
-      result.width = fallbackTab.width;
-      result.height = fallbackTab.height;
+    if (fallbackTabSize && (!result.width || !result.height)) {
+      result.width = fallbackTabSize.width;
+      result.height = fallbackTabSize.height;
     }
 
     let opener = this.openerTabId;
@@ -648,9 +662,9 @@ class TabBase {
    */
   _execute(context, details, kind, method) {
     let options = {
-      js: [],
-      css: [],
-      remove_css: method == "removeCSS",
+      jsPaths: [],
+      cssPaths: [],
+      removeCSS: method == "removeCSS",
     };
 
     // We require a `code` or a `file` property, but we can't accept both.
@@ -673,26 +687,26 @@ class TabBase {
       if (!this.extension.isExtensionURL(url)) {
         return Promise.reject({message: "Files to be injected must be within the extension"});
       }
-      options[kind].push(url);
+      options[`${kind}Paths`].push(url);
     }
     if (details.allFrames) {
-      options.all_frames = details.allFrames;
+      options.allFrames = details.allFrames;
     }
     if (details.frameId !== null) {
-      options.frame_id = details.frameId;
+      options.frameID = details.frameId;
     }
     if (details.matchAboutBlank) {
-      options.match_about_blank = details.matchAboutBlank;
+      options.matchAboutBlank = details.matchAboutBlank;
     }
     if (details.runAt !== null) {
-      options.run_at = details.runAt;
+      options.runAt = details.runAt;
     } else {
-      options.run_at = "document_idle";
+      options.runAt = "document_idle";
     }
     if (details.cssOrigin !== null) {
-      options.css_origin = details.cssOrigin;
+      options.cssOrigin = details.cssOrigin;
     } else {
-      options.css_origin = "author";
+      options.cssOrigin = "author";
     }
 
     options.wantReturnValue = true;
@@ -1354,10 +1368,7 @@ class WindowTrackerBase extends EventEmitter {
     // fires for browser windows when they're in that in-between state, and just
     // before we register our own "domwindowcreated" listener.
 
-    let e = Services.wm.getEnumerator("");
-    while (e.hasMoreElements()) {
-      let window = e.getNext();
-
+    for (let window of Services.wm.getEnumerator("")) {
       let ok = includeIncomplete;
       if (window.document.readyState === "complete") {
         ok = this.isBrowserWindow(window);
@@ -1822,15 +1833,15 @@ class TabManagerBase {
    *
    * @param {NativeTab} nativeTab
    *        The native tab to convert.
-   * @param {NativeTab} [fallbackTab]
-   *        A tab to retrieve geometry data from if the lazy geometry data for
-   *        this tab hasn't been initialized yet.
+   * @param {Object} [fallbackTabSize]
+   *        A geometry data if the lazy geometry data for this tab hasn't been
+   *        initialized yet.
    *
    * @returns {Object}
    */
-  convert(nativeTab, fallbackTab = null) {
+  convert(nativeTab, fallbackTabSize = null) {
     return this.getWrapper(nativeTab)
-               .convert(fallbackTab && this.getWrapper(fallbackTab));
+               .convert(fallbackTabSize);
   }
 
   // The JSDoc validator does not support @returns tags in abstract functions or
@@ -2045,4 +2056,39 @@ class WindowManagerBase {
   /* eslint-enable valid-jsdoc */
 }
 
-Object.assign(global, {TabTrackerBase, TabManagerBase, TabBase, WindowTrackerBase, WindowManagerBase, WindowBase});
+function getUserContextIdForCookieStoreId(extension, cookieStoreId, isPrivateBrowsing) {
+  if (!extension.hasPermission("cookies")) {
+    throw new ExtensionError(`No permission for cookieStoreId: ${cookieStoreId}`);
+  }
+
+  if (!isValidCookieStoreId(cookieStoreId)) {
+    throw new ExtensionError(`Illegal cookieStoreId: ${cookieStoreId}`);
+  }
+
+  if (isPrivateBrowsing && !isPrivateCookieStoreId(cookieStoreId)) {
+    throw new ExtensionError(`Illegal to set non-private cookieStoreId in a private window`);
+  }
+
+  if (!isPrivateBrowsing && isPrivateCookieStoreId(cookieStoreId)) {
+    throw new ExtensionError(`Illegal to set private cookieStoreId in a non-private window`);
+  }
+
+  if (isContainerCookieStoreId(cookieStoreId)) {
+    if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
+      // Container tabs are not supported in perma-private browsing mode - bug 1320757
+      throw new ExtensionError(`Contextual identities are unavailable in permanent private browsing mode`);
+    }
+    if (!containersEnabled) {
+      throw new ExtensionError(`Contextual identities are currently disabled`);
+    }
+    let userContextId = getContainerForCookieStoreId(cookieStoreId);
+    if (!userContextId) {
+      throw new ExtensionError(`No cookie store exists with ID ${cookieStoreId}`);
+    }
+    return userContextId;
+  }
+
+  return Services.scriptSecurityManager.DEFAULT_USER_CONTEXT_ID;
+}
+
+Object.assign(global, {TabTrackerBase, TabManagerBase, TabBase, WindowTrackerBase, WindowManagerBase, WindowBase, getUserContextIdForCookieStoreId});

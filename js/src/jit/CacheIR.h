@@ -14,7 +14,9 @@
 #include "gc/Rooting.h"
 #include "jit/CompactBuffer.h"
 #include "jit/ICState.h"
-#include "jit/SharedIC.h"
+#include "jit/MacroAssembler.h"
+#include "vm/Iteration.h"
+#include "vm/Shape.h"
 
 namespace js {
 namespace jit {
@@ -167,7 +169,8 @@ class TypedOperandId : public OperandId
     _(ToBool)               \
     _(Call)                 \
     _(UnaryArith)           \
-    _(BinaryArith)
+    _(BinaryArith)          \
+    _(NewObject)
 
 enum class CacheKind : uint8_t
 {
@@ -176,12 +179,15 @@ enum class CacheKind : uint8_t
 #undef DEFINE_KIND
 };
 
-extern const char* CacheKindNames[];
+extern const char* const CacheKindNames[];
 
 #define CACHE_IR_OPS(_)                   \
     _(GuardIsObject)                      \
     _(GuardIsObjectOrNull)                \
     _(GuardIsNullOrUndefined)             \
+    _(GuardIsNotNullOrUndefined)          \
+    _(GuardIsNull)                        \
+    _(GuardIsUndefined)                   \
     _(GuardIsBoolean)                     \
     _(GuardIsString)                      \
     _(GuardIsSymbol)                      \
@@ -195,6 +201,7 @@ extern const char* CacheKindNames[];
     _(GuardClass)                         /* Guard an object class, per GuardClassKind */ \
     _(GuardAnyClass)                      /* Guard an arbitrary class for an object */ \
     _(GuardCompartment)                   \
+    _(GuardIsExtensible)                  \
     _(GuardIsNativeFunction)              \
     _(GuardIsNativeObject)                \
     _(GuardIsProxy)                       \
@@ -211,13 +218,20 @@ extern const char* CacheKindNames[];
     _(GuardNoUnboxedExpando)              \
     _(GuardAndLoadUnboxedExpando)         \
     _(GuardAndGetIndexFromString)         \
+    _(GuardAndGetNumberFromString)        \
     _(GuardAndGetIterator)                \
     _(GuardHasGetterSetter)               \
     _(GuardGroupHasUnanalyzedNewScript)   \
     _(GuardIndexIsNonNegative)            \
+    _(GuardIndexGreaterThanDenseCapacity) \
+    _(GuardIndexGreaterThanArrayLength)   \
+    _(GuardIndexIsValidUpdateOrAdd)       \
+    _(GuardIndexGreaterThanDenseInitLength) \
     _(GuardTagNotEqual)                   \
     _(GuardXrayExpandoShapeAndDefaultProto) \
     _(GuardFunctionPrototype)             \
+    _(GuardNoAllocationMetadataBuilder)   \
+    _(GuardObjectGroupNotPretenured)      \
     _(LoadStackValue)                     \
     _(LoadObject)                         \
     _(LoadProto)                          \
@@ -257,6 +271,9 @@ extern const char* CacheKindNames[];
     _(CallSetArrayLength)                 \
     _(CallProxySet)                       \
     _(CallProxySetByValue)                \
+    _(CallAddOrUpdateSparseElementHelper) \
+    _(CallInt32ToString)                  \
+    _(CallNumberToString)                 \
                                           \
     /* The *Result ops load a value into the cache's result register. */ \
     _(LoadFixedSlotResult)                \
@@ -265,6 +282,7 @@ extern const char* CacheKindNames[];
     _(LoadTypedObjectResult)              \
     _(LoadDenseElementResult)             \
     _(LoadDenseElementHoleResult)         \
+    _(CallGetSparseElementResult)         \
     _(LoadDenseElementExistsResult)       \
     _(LoadTypedElementExistsResult)       \
     _(LoadDenseElementHoleExistsResult)   \
@@ -287,6 +305,7 @@ extern const char* CacheKindNames[];
     _(CallProxyGetByValueResult)          \
     _(CallProxyHasPropResult)             \
     _(CallObjectHasSparseElementResult)   \
+    _(CallNativeGetElementResult)        \
     _(LoadUndefinedResult)                \
     _(LoadBooleanResult)                  \
     _(LoadStringResult)                   \
@@ -316,6 +335,7 @@ extern const char* CacheKindNames[];
     _(LoadStringTruthyResult)             \
     _(LoadObjectTruthyResult)             \
     _(LoadValueResult)                    \
+    _(LoadNewObjectFromTemplateResult)    \
                                           \
     _(CallStringSplitResult)              \
     _(CallStringConcatResult)             \
@@ -324,6 +344,9 @@ extern const char* CacheKindNames[];
     _(CompareStringResult)                \
     _(CompareObjectResult)                \
     _(CompareSymbolResult)                \
+    _(CompareInt32Result)                 \
+    _(CompareDoubleResult)                \
+    _(CompareObjectUndefinedNullResult)   \
                                           \
     _(CallPrintString)                    \
     _(Breakpoint)                         \
@@ -369,8 +392,9 @@ class StubField
         return type >= Type::First64BitType;
     }
     static size_t sizeInBytes(Type type) {
-        if (sizeIsWord(type))
+        if (sizeIsWord(type)) {
             return sizeof(uintptr_t);
+        }
         MOZ_ASSERT(sizeIsInt64(type));
         return sizeof(int64_t);
     }
@@ -412,6 +436,13 @@ enum class GuardClassKind : uint8_t
 // zone, which refer to the actual shape via a reserved slot.
 JSObject* NewWrapperWithObjectShape(JSContext* cx, HandleNativeObject obj);
 
+// Enum for stubs handling a combination of typed arrays and typed objects.
+enum TypedThingLayout {
+    Layout_TypedArray,
+    Layout_OutlineTypedObject,
+    Layout_InlineTypedObject
+};
+
 void LoadShapeWrapperContents(MacroAssembler& masm, Register obj, Register dst, Label* failure);
 
 // Class to record CacheIR + some additional metadata for code generation.
@@ -438,6 +469,10 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
     static const size_t MaxStubDataSizeInBytes = 20 * sizeof(uintptr_t);
     bool tooLarge_;
 
+    // Basic caching to avoid quadatic lookup behaviour in readStubFieldForIon.
+    mutable uint32_t lastOffset_;
+    mutable uint32_t lastIndex_;
+
     void assertSameCompartment(JSObject*);
 
     void writeOp(CacheOp op) {
@@ -456,8 +491,9 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
         }
         if (opId.id() >= operandLastUsed_.length()) {
             buffer_.propagateOOM(operandLastUsed_.resize(opId.id() + 1));
-            if (buffer_.oom())
+            if (buffer_.oom()) {
                 return;
+            }
         }
         MOZ_ASSERT(nextInstructionId_ > 0);
         operandLastUsed_[opId.id()] = nextInstructionId_ - 1;
@@ -501,7 +537,9 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
         nextInstructionId_(0),
         numInputOperands_(0),
         stubDataSize_(0),
-        tooLarge_(false)
+        tooLarge_(false),
+        lastOffset_(0),
+        lastIndex_(0)
     {}
 
     bool failed() const { return buffer_.oom() || tooLarge_; }
@@ -532,8 +570,9 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
     bool stubDataEqualsMaybeUpdate(uint8_t* stubData, bool* updated) const;
 
     bool operandIsDead(uint32_t operandId, uint32_t currentInstruction) const {
-        if (operandId >= operandLastUsed_.length())
+        if (operandId >= operandLastUsed_.length()) {
             return false;
+        }
         return currentInstruction > operandLastUsed_[operandId];
     }
     const uint8_t* codeStart() const {
@@ -551,10 +590,7 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
 
     // This should not be used when compiling Baseline code, as Baseline code
     // shouldn't bake in stub values.
-    StubField readStubFieldForIon(size_t i, StubField::Type type) const {
-        MOZ_ASSERT(stubFields_[i].type() == type);
-        return stubFields_[i];
-    }
+    StubField readStubFieldForIon(uint32_t offset, StubField::Type type) const;
 
     ObjOperandId guardIsObject(ValOperandId val) {
         writeOpWithOperandId(CacheOp::GuardIsObject, val);
@@ -600,6 +636,15 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
     void guardIsNullOrUndefined(ValOperandId val) {
         writeOpWithOperandId(CacheOp::GuardIsNullOrUndefined, val);
     }
+    void guardIsNotNullOrUndefined(ValOperandId val) {
+        writeOpWithOperandId(CacheOp::GuardIsNotNullOrUndefined, val);
+    }
+    void guardIsNull(ValOperandId val) {
+        writeOpWithOperandId(CacheOp::GuardIsNull, val);
+    }
+    void guardIsUndefined(ValOperandId val) {
+        writeOpWithOperandId(CacheOp::GuardIsUndefined, val);
+    }
     void guardShape(ObjOperandId obj, Shape* shape) {
         MOZ_ASSERT(shape);
         writeOpWithOperandId(CacheOp::GuardShape, obj);
@@ -627,6 +672,13 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
         writeOpWithOperandId(CacheOp::GuardFunctionPrototype, rhs);
         writeOperandId(protoId);
         addStubField(slot, StubField::Type::RawWord);
+    }
+    void guardNoAllocationMetadataBuilder() {
+        writeOp(CacheOp::GuardNoAllocationMetadataBuilder);
+    }
+    void guardObjectGroupNotPretenured(ObjectGroup* group) {
+        writeOp(CacheOp::GuardObjectGroupNotPretenured);
+        addStubField(uintptr_t(group), StubField::Type::ObjectGroup);
     }
   private:
     // Use (or create) a specialization below to clarify what constaint the
@@ -719,6 +771,9 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
         // Use RawWord, because compartments never move and it can't be GCed.
         addStubField(uintptr_t(compartment), StubField::Type::RawWord);
     }
+    void guardIsExtensible(ObjOperandId obj) {
+        writeOpWithOperandId(CacheOp::GuardIsExtensible, obj);
+    }
     void guardNoDetachedTypedObjects() {
         writeOp(CacheOp::GuardNoDetachedTypedObjects);
     }
@@ -729,6 +784,12 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
     Int32OperandId guardAndGetIndexFromString(StringOperandId str) {
         Int32OperandId res(nextOperandId_++);
         writeOpWithOperandId(CacheOp::GuardAndGetIndexFromString, str);
+        writeOperandId(res);
+        return res;
+    }
+    ValOperandId guardAndGetNumberFromString(StringOperandId str) {
+        ValOperandId res(nextOperandId_++);
+        writeOpWithOperandId(CacheOp::GuardAndGetNumberFromString, str);
         writeOperandId(res);
         return res;
     }
@@ -754,6 +815,22 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
 
     void guardIndexIsNonNegative(Int32OperandId index) {
         writeOpWithOperandId(CacheOp::GuardIndexIsNonNegative, index);
+    }
+    void guardIndexGreaterThanDenseInitLength(ObjOperandId obj, Int32OperandId index) {
+        writeOpWithOperandId(CacheOp::GuardIndexGreaterThanDenseInitLength, obj);
+        writeOperandId(index);
+    }
+    void guardIndexGreaterThanDenseCapacity(ObjOperandId obj, Int32OperandId index) {
+        writeOpWithOperandId(CacheOp::GuardIndexGreaterThanDenseCapacity, obj);
+        writeOperandId(index);
+    }
+    void guardIndexGreaterThanArrayLength(ObjOperandId obj, Int32OperandId index) {
+        writeOpWithOperandId(CacheOp::GuardIndexGreaterThanArrayLength, obj);
+        writeOperandId(index);
+    }
+    void guardIndexIsValidUpdateOrAdd(ObjOperandId obj, Int32OperandId index) {
+        writeOpWithOperandId(CacheOp::GuardIndexIsValidUpdateOrAdd, obj);
+        writeOperandId(index);
     }
     void guardTagNotEqual(ValueTagOperandId lhs, ValueTagOperandId rhs) {
         writeOpWithOperandId(CacheOp::GuardTagNotEqual, lhs);
@@ -985,6 +1062,24 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
         writeOperandId(rhs);
         buffer_.writeByte(uint32_t(strict));
     }
+    void callAddOrUpdateSparseElementHelper(ObjOperandId obj, Int32OperandId id, ValOperandId rhs, bool strict) {
+        writeOpWithOperandId(CacheOp::CallAddOrUpdateSparseElementHelper, obj);
+        writeOperandId(id);
+        writeOperandId(rhs);
+        buffer_.writeByte(uint32_t(strict));
+    }
+    StringOperandId callInt32ToString(Int32OperandId id) {
+        StringOperandId res(nextOperandId_++);
+        writeOpWithOperandId(CacheOp::CallInt32ToString, id);
+        writeOperandId(res);
+        return res;
+    }
+    StringOperandId callNumberToString(ValOperandId id) {
+        StringOperandId res(nextOperandId_++);
+        writeOpWithOperandId(CacheOp::CallNumberToString, id);
+        writeOperandId(res);
+        return res;
+    }
 
     void megamorphicLoadSlotResult(ObjOperandId obj, PropertyName* name, bool handleMissing) {
         writeOpWithOperandId(CacheOp::MegamorphicLoadSlotResult, obj);
@@ -1144,6 +1239,10 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
         writeOpWithOperandId(CacheOp::LoadDenseElementHoleResult, obj);
         writeOperandId(index);
     }
+    void callGetSparseElementResult(ObjOperandId obj, Int32OperandId index) {
+        writeOpWithOperandId(CacheOp::CallGetSparseElementResult, obj);
+        writeOperandId(index);
+    }
     void loadDenseElementExistsResult(ObjOperandId obj, Int32OperandId index) {
         writeOpWithOperandId(CacheOp::LoadDenseElementExistsResult, obj);
         writeOperandId(index);
@@ -1197,6 +1296,10 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
         writeOpWithOperandId(CacheOp::CallObjectHasSparseElementResult, obj);
         writeOperandId(index);
     }
+    void callNativeGetElementResult(ObjOperandId obj, Int32OperandId index) {
+        writeOpWithOperandId(CacheOp::CallNativeGetElementResult, obj);
+        writeOperandId(index);
+    }
     void loadEnvironmentFixedSlotResult(ObjOperandId obj, size_t offset) {
         writeOpWithOperandId(CacheOp::LoadEnvironmentFixedSlotResult, obj);
         addStubField(offset, StubField::Type::RawWord);
@@ -1232,6 +1335,16 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
         writeOp(CacheOp::LoadValueResult);
         addStubField(val.asRawBits(), StubField::Type::Value);
     }
+    void loadNewObjectFromTemplateResult(JSObject* templateObj) {
+        writeOp(CacheOp::LoadNewObjectFromTemplateResult);
+        addStubField(uintptr_t(templateObj), StubField::Type::JSObject);
+        // Bake in a monotonically increasing number to ensure we differentiate
+        // between different baseline stubs that otherwise might share
+        // stub code.
+        uint64_t id = cx_->runtime()->jitRuntime()->nextDisambiguationId();
+        writeUint32Immediate(id & UINT32_MAX);
+        writeUint32Immediate(id >> 32);
+    }
     void callStringConcatResult(StringOperandId lhs, StringOperandId rhs) {
         writeOpWithOperandId(CacheOp::CallStringConcatResult, lhs);
         writeOperandId(rhs);
@@ -1257,8 +1370,22 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter
         writeOperandId(rhs);
         buffer_.writeByte(uint32_t(op));
     }
+    void compareObjectUndefinedNullResult(uint32_t op, ObjOperandId object) {
+        writeOpWithOperandId(CacheOp::CompareObjectUndefinedNullResult, object);
+        buffer_.writeByte(uint32_t(op));
+    }
     void compareSymbolResult(uint32_t op, SymbolOperandId lhs, SymbolOperandId rhs) {
         writeOpWithOperandId(CacheOp::CompareSymbolResult, lhs);
+        writeOperandId(rhs);
+        buffer_.writeByte(uint32_t(op));
+    }
+    void compareInt32Result(uint32_t op, Int32OperandId lhs, Int32OperandId rhs) {
+        writeOpWithOperandId(CacheOp::CompareInt32Result, lhs);
+        writeOperandId(rhs);
+        buffer_.writeByte(uint32_t(op));
+    }
+    void compareDoubleResult(uint32_t op, ValOperandId lhs, ValOperandId rhs) {
+        writeOpWithOperandId(CacheOp::CompareDoubleResult, lhs);
         writeOperandId(rhs);
         buffer_.writeByte(uint32_t(op));
     }
@@ -1344,23 +1471,26 @@ class MOZ_RAII CacheIRReader
 
     bool matchOp(CacheOp op) {
         const uint8_t* pos = buffer_.currentPosition();
-        if (readOp() == op)
+        if (readOp() == op) {
             return true;
+        }
         buffer_.seek(pos, 0);
         return false;
     }
     bool matchOp(CacheOp op, OperandId id) {
         const uint8_t* pos = buffer_.currentPosition();
-        if (readOp() == op && buffer_.readByte() == id.id())
+        if (readOp() == op && buffer_.readByte() == id.id()) {
             return true;
+        }
         buffer_.seek(pos, 0);
         return false;
     }
     bool matchOpEither(CacheOp op1, CacheOp op2) {
         const uint8_t* pos = buffer_.currentPosition();
         CacheOp op = readOp();
-        if (op == op1 || op == op2)
+        if (op == op1 || op == op2) {
             return true;
+        }
         buffer_.seek(pos, 0);
         return false;
     }
@@ -1475,10 +1605,15 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator
                                uint32_t index, Int32OperandId indexId);
     bool tryAttachDenseElementHole(HandleObject obj, ObjOperandId objId,
                                    uint32_t index, Int32OperandId indexId);
+    bool tryAttachSparseElement(HandleObject obj, ObjOperandId objId,
+                                uint32_t index, Int32OperandId indexId);
     bool tryAttachTypedElement(HandleObject obj, ObjOperandId objId,
                                uint32_t index, Int32OperandId indexId);
     bool tryAttachUnboxedElementHole(HandleObject obj, ObjOperandId objId,
                                      uint32_t index, Int32OperandId indexId);
+
+    bool tryAttachGenericElement(HandleObject obj, ObjOperandId objId,
+                                 uint32_t index, Int32OperandId indexId);
 
     bool tryAttachProxyElement(HandleObject obj, ObjOperandId objId);
 
@@ -1490,8 +1625,9 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator
     }
 
     ValOperandId getSuperReceiverValueId() const {
-        if (cacheKind_ == CacheKind::GetPropSuper)
+        if (cacheKind_ == CacheKind::GetPropSuper) {
             return ValOperandId(1);
+        }
 
         MOZ_ASSERT(cacheKind_ == CacheKind::GetElemSuper);
         return ValOperandId(2);
@@ -1616,8 +1752,9 @@ class MOZ_RAII SetPropIRGenerator : public IRGenerator
         return ValOperandId(1);
     }
     ValOperandId rhsValueId() const {
-        if (cacheKind_ == CacheKind::SetProp)
+        if (cacheKind_ == CacheKind::SetProp) {
             return ValOperandId(1);
+        }
         MOZ_ASSERT(cacheKind_ == CacheKind::SetElem);
         return ValOperandId(2);
     }
@@ -1648,6 +1785,10 @@ class MOZ_RAII SetPropIRGenerator : public IRGenerator
 
     bool tryAttachSetDenseElementHole(HandleObject obj, ObjOperandId objId, uint32_t index,
                                       Int32OperandId indexId, ValOperandId rhsId);
+
+    bool tryAttachAddOrUpdateSparseElement(HandleObject obj, ObjOperandId objId, uint32_t index,
+                                           Int32OperandId indexId, ValOperandId rhsId);
+
 
     bool tryAttachGenericProxy(HandleObject obj, ObjOperandId objId, HandleId id,
                                ValOperandId rhsId, bool handleDOMProxies);
@@ -1725,8 +1866,8 @@ class MOZ_RAII HasPropIRGenerator : public IRGenerator
 
   public:
     // NOTE: Argument order is PROPERTY, OBJECT
-    HasPropIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc, CacheKind cacheKind,
-                       ICState::Mode mode, HandleValue idVal, HandleValue val);
+    HasPropIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc, ICState::Mode mode,
+                       CacheKind cacheKind, HandleValue idVal, HandleValue val);
 
     bool tryAttachStub();
 };
@@ -1816,6 +1957,13 @@ class MOZ_RAII CompareIRGenerator : public IRGenerator
     bool tryAttachObject(ValOperandId lhsId, ValOperandId rhsId);
     bool tryAttachSymbol(ValOperandId lhsId, ValOperandId rhsId);
     bool tryAttachStrictDifferentTypes(ValOperandId lhsId, ValOperandId rhsId);
+    bool tryAttachInt32(ValOperandId lhsId, ValOperandId rhsId);
+    bool tryAttachNumber(ValOperandId lhsId, ValOperandId rhsId);
+    bool tryAttachNumberUndefined(ValOperandId lhsId, ValOperandId rhsId);
+    bool tryAttachPrimitiveUndefined(ValOperandId lhsId, ValOperandId rhsId);
+    bool tryAttachObjectUndefined(ValOperandId lhsId, ValOperandId rhsId);
+    bool tryAttachNullUndefined(ValOperandId lhsId, ValOperandId rhsId);
+    bool tryAttachStringNumber(ValOperandId lhsId, ValOperandId rhsId);
 
     void trackAttached(const char* name);
 
@@ -1888,10 +2036,10 @@ class MOZ_RAII BinaryArithIRGenerator : public IRGenerator
 
     bool tryAttachInt32();
     bool tryAttachDouble();
-    bool tryAttachDoubleWithInt32();
-    bool tryAttachBooleanWithInt32();
+    bool tryAttachBitwise();
     bool tryAttachStringConcat();
     bool tryAttachStringObjectConcat();
+    bool tryAttachStringNumberConcat();
 
   public:
     BinaryArithIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc, ICState::Mode,
@@ -1900,6 +2048,52 @@ class MOZ_RAII BinaryArithIRGenerator : public IRGenerator
     bool tryAttachStub();
 
 };
+
+class MOZ_RAII NewObjectIRGenerator : public IRGenerator
+{
+#ifdef  JS_CACHEIR_SPEW
+    JSOp op_;
+ #endif
+    HandleObject templateObject_;
+
+    void trackAttached(const char* name);
+
+  public:
+    NewObjectIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc, ICState::Mode,
+                         JSOp op, HandleObject templateObj);
+
+    bool tryAttachStub();
+};
+
+static inline uint32_t
+SimpleTypeDescrKey(SimpleTypeDescr* descr)
+{
+    if (descr->is<ScalarTypeDescr>()) {
+        return uint32_t(descr->as<ScalarTypeDescr>().type()) << 1;
+    }
+    return (uint32_t(descr->as<ReferenceTypeDescr>().type()) << 1) | 1;
+}
+
+inline bool
+SimpleTypeDescrKeyIsScalar(uint32_t key)
+{
+    return !(key & 1);
+}
+
+inline ScalarTypeDescr::Type
+ScalarTypeFromSimpleTypeDescrKey(uint32_t key)
+{
+    MOZ_ASSERT(SimpleTypeDescrKeyIsScalar(key));
+    return ScalarTypeDescr::Type(key >> 1);
+}
+
+inline ReferenceType
+ReferenceTypeFromSimpleTypeDescrKey(uint32_t key)
+{
+    MOZ_ASSERT(!SimpleTypeDescrKeyIsScalar(key));
+    return ReferenceType(key >> 1);
+}
+
 
 } // namespace jit
 } // namespace js

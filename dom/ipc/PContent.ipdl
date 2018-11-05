@@ -115,8 +115,8 @@ namespace dom {
 // Used on Android/B2G to pass the list of fonts on the device
 // to the child process
 struct FontListEntry {
-    nsString  familyName;
-    nsString  faceName;
+    nsCString familyName;
+    nsCString faceName;
     nsCString filepath;
     uint32_t  weightRange;
     uint32_t  stretchRange;
@@ -129,8 +129,8 @@ struct FontListEntry {
 // The entryType field distinguishes several types of font family
 // record; see gfxMacPlatformFontList.h for values and meaning.
 struct FontFamilyListEntry {
-    nsString familyName;
-    uint8_t  entryType;
+    nsCString familyName;
+    uint8_t   entryType;
 };
 
 // Used on Linux to pass list of font patterns from chrome to content.
@@ -194,10 +194,10 @@ union FileDescOrError {
 struct DomainPolicyClone
 {
     bool        active;
-    URIParams[] blacklist;
-    URIParams[] whitelist;
-    URIParams[] superBlacklist;
-    URIParams[] superWhitelist;
+    URIParams[] blocklist;
+    URIParams[] allowlist;
+    URIParams[] superBlocklist;
+    URIParams[] superAllowlist;
 };
 
 struct AndroidSystemInfo
@@ -648,8 +648,7 @@ child:
     async SetPluginList(uint32_t pluginEpoch, PluginTag[] plugins, FakePluginTag[] fakePlugins);
 
     async ShareCodeCoverageMutex(CrossProcessMutexHandle handle);
-    async DumpCodeCoverageCounters() returns (bool unused);
-    async ResetCodeCoverageCounters() returns (bool unused);
+    async FlushCodeCoverageCounters() returns (bool unused);
 
     /*
      * IPC message to enable the input event queue on the main thread of the
@@ -742,7 +741,6 @@ parent:
     sync OpenRecordReplayChannel(uint32_t channelId)
         returns (FileDescriptor connection);
     async CreateReplayingProcess(uint32_t channelId);
-    async TerminateReplayingProcess(uint32_t channelId);
 
     async CreateGMPService();
 
@@ -894,9 +892,6 @@ parent:
     async Beep() compress;
     async PlayEventSound(uint32_t aEventId) compress;
 
-    sync GetSystemColors(uint32_t colorsCount)
-        returns (uint32_t[] colors);
-
     sync GetIconForExtension(nsCString aFileExt, uint32_t aIconSize)
         returns (uint8_t[] bits);
 
@@ -937,9 +932,6 @@ parent:
 
     // Graphics errors
     async GraphicsError(nsCString aError);
-
-    // Record/replay errors.
-    async RecordReplayFatalError(nsCString aError);
 
     // Driver crash guards. aGuardType must be a member of CrashGuardType.
     sync BeginDriverCrashGuard(uint32_t aGuardType) returns (bool crashDetected);
@@ -1126,13 +1118,6 @@ parent:
     async NotifyPushSubscriptionChangeObservers(nsCString scope,
                                                 Principal principal);
 
-    /**
-     * Tell the parent process that the child process is low on memory. This
-     * allows the parent process to save a memory report that can potentially be
-     * sent with a crash report from the content process.
-     */
-     async NotifyLowMemory();
-
      async GetFilesRequest(nsID aID, nsString aDirectory, bool aRecursiveFlag);
      async DeleteGetFilesRequest(nsID aID);
 
@@ -1177,6 +1162,8 @@ parent:
                                                   nsCString aTrackingOrigin,
                                                   nsCString aGrantedOrigin)
           returns (bool unused);
+
+    async StoreUserInteractionAsPermission(Principal aPrincipal);
 
     /**
      * Sync the BrowsingContext with id 'aContextId' and name 'aName'

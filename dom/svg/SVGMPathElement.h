@@ -27,7 +27,7 @@ class SVGMPathElement final : public SVGMPathElementBase,
 protected:
   friend nsresult (::NS_NewSVGMPathElement(nsIContent **aResult,
                                            already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGMPathElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGMPathElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   ~SVGMPathElement();
 
   virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
@@ -42,8 +42,7 @@ public:
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
 
   // nsIContent interface
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent) override;
   virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;

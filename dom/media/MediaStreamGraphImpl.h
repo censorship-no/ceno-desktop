@@ -10,7 +10,6 @@
 
 #include "AudioMixer.h"
 #include "GraphDriver.h"
-#include "Latency.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Services.h"
@@ -204,11 +203,6 @@ public:
    */
   void SignalMainThreadCleanup();
 
-  bool Running() const
-  {
-    return LifecycleStateRef() == LIFECYCLE_RUNNING;
-  }
-
   /* This is the end of the current iteration, that is, the current time of the
    * graph. */
   GraphTime IterationEnd() const;
@@ -224,11 +218,6 @@ public:
    * mMonitor must be held.
    */
   void PrepareUpdatesToMainThreadState(bool aFinalUpdate);
-  /**
-   * Returns false if there is any stream that has finished but not yet finished
-   * playing out.
-   */
-  bool AllFinishedStreamsNotified();
   /**
    * If we are rendering in non-realtime mode, we don't want to send messages to
    * the main thread at each iteration for performance reasons. We instead
@@ -337,12 +326,12 @@ public:
    * Returns smallest value of t such that t is a multiple of
    * WEBAUDIO_BLOCK_SIZE and t >= aTime.
    */
-  GraphTime RoundUpToEndOfAudioBlock(GraphTime aTime);
+  static GraphTime RoundUpToEndOfAudioBlock(GraphTime aTime);
   /**
    * Returns smallest value of t such that t is a multiple of
    * WEBAUDIO_BLOCK_SIZE and t > aTime.
    */
-  GraphTime RoundUpToNextAudioBlock(GraphTime aTime);
+  static GraphTime RoundUpToNextAudioBlock(GraphTime aTime);
   /**
    * Produce data for all streams >= aStreamIndex for the current time interval.
    * Advances block by block, each iteration producing data for all streams
@@ -468,14 +457,18 @@ public:
   {
     MOZ_ASSERT(OnGraphThreadOrNotRunning());
 
+#ifdef ANDROID
+    if (!mInputDeviceUsers.GetValue(mInputDeviceID)) {
+      return 0;
+    }
+#else
     if (!mInputDeviceID) {
-#ifndef ANDROID
       MOZ_ASSERT(mInputDeviceUsers.Count() == 0,
         "If running on a platform other than android,"
         "an explicit device id should be present");
-#endif
       return 0;
     }
+#endif
     uint32_t maxInputChannels = 0;
     // When/if we decide to support multiple input device per graph, this needs
     // loop over them.
@@ -679,6 +672,10 @@ public:
    */
   GraphTime mProcessedTime = 0;
   /**
+   * The graph should stop processing at this time.
+   */
+  GraphTime mEndTime;
+  /**
    * Date of the last time we updated the main thread with the graph state.
    */
   TimeStamp mLastMainThreadUpdate;
@@ -819,11 +816,6 @@ public:
 #endif
     return mLifecycleState;
   }
-  /**
-   * The graph should stop processing at or after this time.
-   * Only set on main thread. Read on both main and MSG thread.
-   */
-  Atomic<GraphTime> mEndTime;
 
   /**
    * True when we need to do a forced shutdown during application shutdown.
@@ -873,19 +865,10 @@ public:
    */
   const bool mRealtime;
   /**
-   * True when a non-realtime MediaStreamGraph has started to process input.  This
-   * value is only accessed on the main thread.
-   */
-  bool mNonRealtimeProcessing;
-  /**
    * True when a change has happened which requires us to recompute the stream
    * blocking order.
    */
   bool mStreamOrderDirty;
-  /**
-   * Hold a ref to the Latency logger
-   */
-  RefPtr<AsyncLatencyLogger> mLatencyLog;
   AudioMixer mMixer;
   const RefPtr<AbstractThread> mAbstractMainThread;
 
@@ -921,6 +904,12 @@ private:
    * Number of channels on output.
    */
   const uint32_t mOutputChannels;
+
+  /**
+   * Global volume scale. Used when running tests so that the output is not too
+   * loud.
+   */
+  const float mGlobalVolume;
 
 #ifdef DEBUG
   /**

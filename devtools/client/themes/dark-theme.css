@@ -19,20 +19,12 @@ body {
 
 .theme-sidebar {
   background: var(--theme-sidebar-background);
-  color: var(--theme-toolbar-color);
+  color: var(--theme-body-color);
 }
 
 ::-moz-selection {
   background-color: var(--theme-selection-background);
   color: var(--theme-selection-color);
-}
-
-:root[platform="win"],
-:root[platform="mac"] {
-  /* Set colors for native scrollbars on Windows dark theme */
-  /* Other platforms support for scrollbar theming is Bug 1460109 */
-  scrollbar-face-color: var(--theme-body-color-inactive);
-  scrollbar-track-color: var(--theme-splitter-color);
 }
 
 .theme-selected,
@@ -257,13 +249,6 @@ div.CodeMirror span.eval-text {
 .cm-s-markup-view pre {
   line-height: 1.4em;
   min-height: 1.4em;
-}
-
-.devtools-textinput,
-.devtools-searchinput,
-.devtools-filterinput {
-  background-color: rgba(24, 29, 32, 1);
-  color: rgba(184, 200, 217, 1);
 }
 
 .CodeMirror-Tern-fname {

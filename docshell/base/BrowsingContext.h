@@ -14,6 +14,8 @@
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsString.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 class nsIDocShell;
 
@@ -36,7 +38,8 @@ namespace dom {
 // BrowsingContext tree for a tab, in both the parent and the child
 // process.
 class BrowsingContext
-  : public SupportsWeakPtr<BrowsingContext>
+  : public nsWrapperCache
+  , public SupportsWeakPtr<BrowsingContext>
   , public LinkedListElement<RefPtr<BrowsingContext>>
 {
 public:
@@ -45,18 +48,7 @@ public:
   static void CleanupContexts(uint64_t aProcessId);
 
   static already_AddRefed<BrowsingContext> Get(uint64_t aId);
-
-  // Create a new BrowsingContext for 'aDocShell'. The id will be
-  // generated so that it is unique across all content child processes
-  // and the content parent process.
-  explicit BrowsingContext(nsIDocShell* aDocShell);
-  // Create a BrowsingContext for a particular BrowsingContext id, in
-  // the case where the id is known beforehand and a nsDocShell isn't
-  // needed (e.g. when creating BrowsingContexts in the parent
-  // process).
-  BrowsingContext(uint64_t aBrowsingContextId,
-                  const nsAString& aName,
-                  const Maybe<uint64_t>& aProcessId = Nothing());
+  static already_AddRefed<BrowsingContext> Create(nsIDocShell* aDocShell);
 
   // Attach the current BrowsingContext to its parent, in both the
   // child and the parent process. If 'aParent' is null, 'this' is
@@ -79,24 +71,43 @@ public:
 
   uint64_t Id() const { return mBrowsingContextId; }
   uint64_t OwnerProcessId() const;
-  bool IsOwnedByProcess() const { return mProcessId.isSome(); }
 
-  BrowsingContext* Parent() const { return mParent; }
+  already_AddRefed<BrowsingContext> GetParent()
+  {
+    return do_AddRef(mParent.get());
+  }
+
+  void GetChildren(nsTArray<RefPtr<BrowsingContext>>& aChildren);
+
+  already_AddRefed<nsIDocShell> GetDocShell()
+  {
+    return do_AddRef(mDocShell.get());
+  }
+
+  static void GetRootBrowsingContexts(
+    nsTArray<RefPtr<BrowsingContext>>& aBrowsingContexts);
+
+  nsISupports* GetParentObject() const;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
   MOZ_DECLARE_WEAKREFERENCE_TYPENAME(BrowsingContext)
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(BrowsingContext)
-  NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(BrowsingContext)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(BrowsingContext)
 
   using Children = AutoCleanLinkedList<RefPtr<BrowsingContext>>;
 
+protected:
+  virtual ~BrowsingContext();
+  // Create a new BrowsingContext for 'aDocShell'. The id will be
+  // generated so that it is unique across all content child processes
+  // and the content parent process.
+  explicit BrowsingContext(nsIDocShell* aDocShell);
+  BrowsingContext(uint64_t aBrowsingContextId,
+                  const nsAString& aName);
+
 private:
-  ~BrowsingContext();
-
   const uint64_t mBrowsingContextId;
-
-  // Indicates which process owns the docshell. Only valid in the
-  // parent process.
-  Maybe<uint64_t> mProcessId;
 
   WeakPtr<BrowsingContext> mParent;
   Children mChildren;

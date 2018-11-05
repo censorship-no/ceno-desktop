@@ -1,61 +1,55 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.getSelectedSource = exports.getSelectedLocation = exports.getSourcesForTabs = exports.getSourceTabs = exports.getTabs = undefined;
-exports.initialSourcesState = initialSourcesState;
-exports.createSource = createSource;
-exports.removeSourceFromTabList = removeSourceFromTabList;
-exports.removeSourcesFromTabList = removeSourcesFromTabList;
-exports.getBlackBoxList = getBlackBoxList;
-exports.getNewSelectedSourceId = getNewSelectedSourceId;
-exports.getSource = getSource;
-exports.getSourceFromId = getSourceFromId;
-exports.getSourceByURL = getSourceByURL;
-exports.getGeneratedSource = getGeneratedSource;
-exports.getPendingSelectedLocation = getPendingSelectedLocation;
-exports.getPrettySource = getPrettySource;
-exports.hasPrettySource = hasPrettySource;
-exports.getSourceInSources = getSourceInSources;
-exports.getSources = getSources;
-exports.getSourceList = getSourceList;
-exports.getSourceCount = getSourceCount;
-
-var _reselect = require("devtools/client/debugger/new/dist/vendors").vendored["reselect"];
-
-var _lodashMove = require("devtools/client/debugger/new/dist/vendors").vendored["lodash-move"];
-
-var _lodashMove2 = _interopRequireDefault(_lodashMove);
-
-var _source = require("../utils/source");
-
-var _devtoolsSourceMap = require("devtools/client/shared/source-map/index.js");
-
-var _lodash = require("devtools/client/shared/vendor/lodash");
-
-var _prefs = require("../utils/prefs");
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+// @flow
 
 /**
  * Sources reducer
  * @module reducers/sources
  */
-function initialSourcesState() {
+
+import { createSelector } from "reselect";
+import {
+  getPrettySourceURL,
+  underRoot,
+  getRelativeUrl,
+  isGenerated,
+  isOriginal as isOriginalSource
+} from "../utils/source";
+import { originalToGeneratedId } from "devtools-source-map";
+import { prefs } from "../utils/prefs";
+
+import type { Source, SourceId, Location } from "../types";
+import type { PendingSelectedLocation } from "./types";
+import type { Action, DonePromiseAction } from "../actions/types";
+import type { LoadSourceAction } from "../actions/types/SourceAction";
+
+export type SourcesMap = { [string]: Source };
+
+type UrlsMap = { [string]: SourceId[] };
+
+export type SourcesState = {
+  sources: SourcesMap,
+  urls: UrlsMap,
+  relativeSources: SourcesMap,
+  pendingSelectedLocation?: PendingSelectedLocation,
+  selectedLocation: ?Location,
+  projectDirectoryRoot: string
+};
+
+export function initialSourcesState(): SourcesState {
   return {
     sources: {},
+    urls: {},
+    relativeSources: {},
     selectedLocation: undefined,
-    pendingSelectedLocation: _prefs.prefs.pendingSelectedLocation,
-    tabs: restoreTabs()
+    pendingSelectedLocation: prefs.pendingSelectedLocation,
+    projectDirectoryRoot: prefs.projectDirectoryRoot
   };
 }
 
-function createSource(source) {
+export function createSource(source: Object): Source {
   return {
     id: undefined,
     url: undefined,
@@ -71,33 +65,39 @@ function createSource(source) {
   };
 }
 
-function update(state = initialSourcesState(), action) {
+function update(
+  state: SourcesState = initialSourcesState(),
+  action: Action
+): SourcesState {
   let location = null;
 
   switch (action.type) {
-    case "UPDATE_SOURCE":
-      {
-        const source = action.source;
-        return updateSource(state, source);
-      }
+    case "UPDATE_SOURCE": {
+      const source = action.source;
+      return updateSources(state, [source]);
+    }
 
-    case "ADD_SOURCE":
-      {
-        const source = action.source;
-        return updateSource(state, source);
-      }
+    case "ADD_SOURCE": {
+      const source = action.source;
+      return updateSources(state, [source]);
+    }
 
-    case "ADD_SOURCES":
-      {
-        return action.sources.reduce((newState, source) => updateSource(newState, source), state);
-      }
+    case "ADD_SOURCES": {
+      return updateSources(state, action.sources);
+    }
 
     case "SET_SELECTED_LOCATION":
-      location = { ...action.location,
+      location = {
+        ...action.location,
         url: action.source.url
       };
-      _prefs.prefs.pendingSelectedLocation = location;
-      return { ...state,
+
+      if (action.source.url) {
+        prefs.pendingSelectedLocation = location;
+      }
+
+      return {
+        ...state,
         selectedLocation: {
           sourceId: action.source.id,
           ...action.location
@@ -106,11 +106,11 @@ function update(state = initialSourcesState(), action) {
       };
 
     case "CLEAR_SELECTED_LOCATION":
-      location = {
-        url: ""
-      };
-      _prefs.prefs.pendingSelectedLocation = location;
-      return { ...state,
+      location = { url: "" };
+      prefs.pendingSelectedLocation = location;
+
+      return {
+        ...state,
         selectedLocation: null,
         pendingSelectedLocation: location
       };
@@ -120,157 +120,152 @@ function update(state = initialSourcesState(), action) {
         url: action.url,
         line: action.line
       };
-      _prefs.prefs.pendingSelectedLocation = location;
-      return { ...state,
-        pendingSelectedLocation: location
-      };
 
-    case "ADD_TAB":
-      return { ...state,
-        tabs: updateTabList(state.tabs, action.url)
-      };
-
-    case "MOVE_TAB":
-      return { ...state,
-        tabs: updateTabList(state.tabs, action.url, action.tabIndex)
-      };
-
-    case "CLOSE_TAB":
-      _prefs.prefs.tabs = action.tabs;
-      return { ...state,
-        tabs: action.tabs
-      };
-
-    case "CLOSE_TABS":
-      _prefs.prefs.tabs = action.tabs;
-      return { ...state,
-        tabs: action.tabs
-      };
+      prefs.pendingSelectedLocation = location;
+      return { ...state, pendingSelectedLocation: location };
 
     case "LOAD_SOURCE_TEXT":
       return setSourceTextProps(state, action);
 
     case "BLACKBOX":
       if (action.status === "done") {
-        const {
-          id,
-          url
-        } = action.source;
-        const {
-          isBlackBoxed
-        } = action.value;
+        const { id, url } = action.source;
+        const { isBlackBoxed } = ((action: any): DonePromiseAction).value;
         updateBlackBoxList(url, isBlackBoxed);
-        return updateSource(state, {
-          id,
-          isBlackBoxed
-        });
+        return updateSources(state, [{ id, isBlackBoxed }]);
       }
-
       break;
 
+    case "SET_PROJECT_DIRECTORY_ROOT":
+      return recalculateRelativeSources(state, action.url);
+
     case "NAVIGATE":
-      const source = state.selectedLocation && state.sources[state.selectedLocation.sourceId];
+      const source =
+        state.selectedLocation &&
+        state.sources[state.selectedLocation.sourceId];
+
       const url = source && source.url;
 
       if (!url) {
         return initialSourcesState();
       }
 
-      return { ...initialSourcesState(),
-        url
-      };
+      return { ...initialSourcesState(), url };
   }
 
   return state;
 }
 
 function getTextPropsFromAction(action) {
-  const {
-    sourceId
-  } = action;
+  const { sourceId } = action;
 
   if (action.status === "start") {
-    return {
-      id: sourceId,
-      loadedState: "loading"
-    };
+    return { id: sourceId, loadedState: "loading" };
   } else if (action.status === "error") {
-    return {
-      id: sourceId,
-      error: action.error,
-      loadedState: "loaded"
-    };
+    return { id: sourceId, error: action.error, loadedState: "loaded" };
+  }
+
+  if (!action.value) {
+    return null;
   }
 
   return {
-    text: action.value.text,
     id: sourceId,
+    text: action.value.text,
     contentType: action.value.contentType,
     loadedState: "loaded"
   };
-} // TODO: Action is coerced to `any` unfortunately because how we type
+}
+
+// TODO: Action is coerced to `any` unfortunately because how we type
 // asynchronous actions is wrong. The `value` may be null for the
 // "start" and "error" states but we don't type it like that. We need
 // to rethink how we type async actions.
-
-
-function setSourceTextProps(state, action) {
-  const text = getTextPropsFromAction(action);
-  return updateSource(state, text);
+function setSourceTextProps(state, action: LoadSourceAction): SourcesState {
+  const source = getTextPropsFromAction(action);
+  if (!source) {
+    return state;
+  }
+  return updateSources(state, [source]);
 }
 
-function updateSource(state, source) {
+function updateSources(state, sources) {
+  state = {
+    ...state,
+    sources: { ...state.sources },
+    relativeSources: { ...state.relativeSources },
+    urls: { ...state.urls }
+  };
+
+  return sources.reduce(
+    (newState, source) => updateSource(newState, source),
+    state
+  );
+}
+
+function updateSource(state: SourcesState, source: Object) {
   if (!source.id) {
     return state;
   }
 
   const existingSource = state.sources[source.id];
-  const updatedSource = existingSource ? { ...existingSource,
-    ...source
-  } : createSource(source);
-  return { ...state,
-    sources: { ...state.sources,
-      [source.id]: updatedSource
-    }
-  };
+  const updatedSource = existingSource
+    ? { ...existingSource, ...source }
+    : createSource(source);
+
+  state.sources[source.id] = updatedSource;
+
+  const existingUrls = state.urls[source.url];
+  state.urls[source.url] = existingUrls
+    ? [...existingUrls, source.id]
+    : [source.id];
+
+  updateRelativeSource(
+    state.relativeSources,
+    updatedSource,
+    state.projectDirectoryRoot
+  );
+
+  return state;
 }
 
-function removeSourceFromTabList(tabs, url) {
-  return tabs.filter(tab => tab !== url);
-}
-
-function removeSourcesFromTabList(tabs, urls) {
-  return urls.reduce((t, url) => removeSourceFromTabList(t, url), tabs);
-}
-
-function restoreTabs() {
-  const prefsTabs = _prefs.prefs.tabs || [];
-  return prefsTabs;
-}
-/**
- * Adds the new source to the tab list if it is not already there
- * @memberof reducers/sources
- * @static
- */
-
-
-function updateTabList(tabs, url, newIndex) {
-  const currentIndex = tabs.indexOf(url);
-
-  if (currentIndex === -1) {
-    tabs = [url, ...tabs];
-  } else if (newIndex !== undefined) {
-    tabs = (0, _lodashMove2.default)(tabs, currentIndex, newIndex);
+function updateRelativeSource(
+  relativeSources: SourcesMap,
+  source: Source,
+  root: string
+): SourcesMap {
+  if (!underRoot(source, root)) {
+    return relativeSources;
   }
 
-  _prefs.prefs.tabs = tabs;
-  return tabs;
+  const relativeSource: Source = ({
+    ...source,
+    relativeUrl: getRelativeUrl(source, root)
+  }: any);
+
+  relativeSources[source.id] = relativeSource;
+
+  return relativeSources;
+}
+
+function recalculateRelativeSources(state: SourcesState, root: string) {
+  prefs.projectDirectoryRoot = root;
+
+  const relativeSources = (Object.values(state.sources): any).reduce(
+    (sources, source: Source) => updateRelativeSource(sources, source, root),
+    {}
+  );
+
+  return {
+    ...state,
+    projectDirectoryRoot: root,
+    relativeSources
+  };
 }
 
 function updateBlackBoxList(url, isBlackBoxed) {
   const tabs = getBlackBoxList();
   const i = tabs.indexOf(url);
-
   if (i >= 0) {
     if (!isBlackBoxed) {
       tabs.splice(i, 1);
@@ -278,66 +273,15 @@ function updateBlackBoxList(url, isBlackBoxed) {
   } else if (isBlackBoxed) {
     tabs.push(url);
   }
-
-  _prefs.prefs.tabsBlackBoxed = tabs;
+  prefs.tabsBlackBoxed = tabs;
 }
 
-function getBlackBoxList() {
-  return _prefs.prefs.tabsBlackBoxed || [];
+export function getBlackBoxList() {
+  return prefs.tabsBlackBoxed || [];
 }
-/**
- * Gets the next tab to select when a tab closes. Heuristics:
- * 1. if the selected tab is available, it remains selected
- * 2. if it is gone, the next available tab to the left should be active
- * 3. if the first tab is active and closed, select the second tab
- *
- * @memberof reducers/sources
- * @static
- */
 
+// Selectors
 
-function getNewSelectedSourceId(state, availableTabs) {
-  const selectedLocation = state.sources.selectedLocation;
-
-  if (!selectedLocation) {
-    return "";
-  }
-
-  const selectedTab = getSource(state, selectedLocation.sourceId);
-
-  if (!selectedTab) {
-    return "";
-  }
-
-  if (availableTabs.includes(selectedTab.url)) {
-    const sources = state.sources.sources;
-
-    if (!sources) {
-      return "";
-    }
-
-    const selectedSource = getSourceByURL(state, selectedTab.url);
-
-    if (selectedSource) {
-      return selectedSource.id;
-    }
-
-    return "";
-  }
-
-  const tabUrls = state.sources.tabs;
-  const leftNeighborIndex = Math.max(tabUrls.indexOf(selectedTab.url) - 1, 0);
-  const lastAvailbleTabIndex = availableTabs.length - 1;
-  const newSelectedTabIndex = Math.min(leftNeighborIndex, lastAvailbleTabIndex);
-  const availableTab = availableTabs[newSelectedTabIndex];
-  const tabSource = getSourceByUrlInSources(state.sources.sources, availableTab);
-
-  if (tabSource) {
-    return tabSource.id;
-  }
-
-  return "";
-} // Selectors
 // Unfortunately, it's really hard to make these functions accept just
 // the state that we care about and still type it with Flow. The
 // problem is that we want to re-export all selectors from a single
@@ -345,83 +289,201 @@ function getNewSelectedSourceId(state, availableTabs) {
 // top-level app state, so we'd have to "wrap" them to automatically
 // pick off the piece of state we're interested in. It's impossible
 // (right now) to type those wrapped functions.
+type OuterState = { sources: SourcesState };
 
+const getSourcesState = (state: OuterState) => state.sources;
 
-const getSourcesState = state => state.sources;
-
-function getSource(state, id) {
+export function getSource(state: OuterState, id: string) {
   return getSourceInSources(getSources(state), id);
 }
 
-function getSourceFromId(state, id) {
+export function getSourceFromId(state: OuterState, id: string): Source {
   return getSourcesState(state).sources[id];
 }
 
-function getSourceByURL(state, url) {
-  return getSourceByUrlInSources(state.sources.sources, url);
+export function getOriginalSourceByURL(
+  state: OuterState,
+  url: string
+): ?Source {
+  return getOriginalSourceByUrlInSources(
+    getSources(state),
+    getUrls(state),
+    url
+  );
 }
 
-function getGeneratedSource(state, source) {
-  if (!(0, _devtoolsSourceMap.isOriginalId)(source.id)) {
+export function getGeneratedSourceByURL(
+  state: OuterState,
+  url: string
+): ?Source {
+  return getGeneratedSourceByUrlInSources(
+    getSources(state),
+    getUrls(state),
+    url
+  );
+}
+
+export function getSpecificSourceByURL(
+  state: OuterState,
+  url: string,
+  isOriginal: boolean
+): ?Source {
+  return isOriginal
+    ? getOriginalSourceByUrlInSources(getSources(state), getUrls(state), url)
+    : getGeneratedSourceByUrlInSources(getSources(state), getUrls(state), url);
+}
+
+export function getSourceByURL(state: OuterState, url: string): ?Source {
+  return getSourceByUrlInSources(getSources(state), getUrls(state), url);
+}
+
+export function getSourcesByURLs(state: OuterState, urls: string[]) {
+  return urls.map(url => getSourceByURL(state, url)).filter(Boolean);
+}
+
+export function getSourcesByURL(state: OuterState, url: string): Source[] {
+  return getSourcesByUrlInSources(getSources(state), getUrls(state), url);
+}
+
+export function getGeneratedSource(state: OuterState, source: Source): Source {
+  if (isGenerated(source)) {
     return source;
   }
 
-  return getSourceFromId(state, (0, _devtoolsSourceMap.originalToGeneratedId)(source.id));
+  return getSourceFromId(state, originalToGeneratedId(source.id));
 }
 
-function getPendingSelectedLocation(state) {
+export function getPendingSelectedLocation(state: OuterState) {
   return state.sources.pendingSelectedLocation;
 }
 
-function getPrettySource(state, id) {
+export function getPrettySource(state: OuterState, id: string) {
   const source = getSource(state, id);
-
   if (!source) {
     return;
   }
 
-  return getSourceByURL(state, (0, _source.getPrettySourceURL)(source.url));
+  return getSpecificSourceByURL(state, getPrettySourceURL(source.url), true);
 }
 
-function hasPrettySource(state, id) {
+export function hasPrettySource(state: OuterState, id: string) {
   return !!getPrettySource(state, id);
 }
 
-function getSourceByUrlInSources(sources, url) {
-  if (!url) {
+export function getOriginalSourceByUrlInSources(
+  sources: SourcesMap,
+  urls: UrlsMap,
+  url: string
+) {
+  const foundSources = getSourcesByUrlInSources(sources, urls, url);
+  if (!foundSources) {
     return null;
   }
 
-  return (0, _lodash.find)(sources, source => source.url === url);
+  return foundSources.find(source => isOriginalSource(source) == true);
+}
+export function getGeneratedSourceByUrlInSources(
+  sources: SourcesMap,
+  urls: UrlsMap,
+  url: string
+) {
+  const foundSources = getSourcesByUrlInSources(sources, urls, url);
+  if (!foundSources) {
+    return null;
+  }
+
+  return foundSources.find(source => isOriginalSource(source) == false);
 }
 
-function getSourceInSources(sources, id) {
+export function getSpecificSourceByUrlInSources(
+  sources: SourcesMap,
+  urls: UrlsMap,
+  url: string,
+  isOriginal: boolean
+) {
+  return isOriginal
+    ? getOriginalSourceByUrlInSources(sources, urls, url)
+    : getGeneratedSourceByUrlInSources(sources, urls, url);
+}
+
+export function getSourceByUrlInSources(
+  sources: SourcesMap,
+  urls: UrlsMap,
+  url: string
+) {
+  const foundSources = getSourcesByUrlInSources(sources, urls, url);
+  if (!foundSources) {
+    return null;
+  }
+
+  return foundSources[0];
+}
+
+function getSourcesByUrlInSources(
+  sources: SourcesMap,
+  urls: UrlsMap,
+  url: string
+) {
+  if (!url || !urls[url]) {
+    return [];
+  }
+
+  return urls[url].map(id => sources[id]);
+}
+
+export function getSourcesUrlsInSources(state: OuterState, url: string) {
+  const urls = getUrls(state);
+  if (!url || !urls[url]) {
+    return [];
+  }
+
+  return [...new Set(Object.keys(urls).filter(Boolean))];
+}
+
+export function getSourceInSources(sources: SourcesMap, id: string): ?Source {
   return sources[id];
 }
 
-function getSources(state) {
+export function getSources(state: OuterState) {
   return state.sources.sources;
 }
 
-function getSourceList(state) {
-  return Object.values(getSources(state));
+export function getUrls(state: OuterState) {
+  return state.sources.urls;
 }
 
-function getSourceCount(state) {
-  return Object.keys(getSources(state)).length;
+export function getSourceList(state: OuterState): Source[] {
+  return (Object.values(getSources(state)): any);
 }
 
-const getTabs = exports.getTabs = (0, _reselect.createSelector)(getSourcesState, sources => sources.tabs);
-const getSourceTabs = exports.getSourceTabs = (0, _reselect.createSelector)(getTabs, getSources, (tabs, sources) => tabs.filter(tab => getSourceByUrlInSources(sources, tab)));
-const getSourcesForTabs = exports.getSourcesForTabs = (0, _reselect.createSelector)(getSourceTabs, getSources, (tabs, sources) => {
-  return tabs.map(tab => getSourceByUrlInSources(sources, tab)).filter(source => source);
-});
-const getSelectedLocation = exports.getSelectedLocation = (0, _reselect.createSelector)(getSourcesState, sources => sources.selectedLocation);
-const getSelectedSource = exports.getSelectedSource = (0, _reselect.createSelector)(getSelectedLocation, getSources, (selectedLocation, sources) => {
-  if (!selectedLocation) {
-    return;
+export const getSourceCount = createSelector(
+  getSources,
+  sources => Object.keys(sources).length
+);
+
+export const getSelectedLocation = createSelector(
+  getSourcesState,
+  sources => sources.selectedLocation
+);
+
+export const getSelectedSource = createSelector(
+  getSelectedLocation,
+  getSources,
+  (selectedLocation: ?Location, sources: SourcesMap): ?Source => {
+    if (!selectedLocation) {
+      return;
+    }
+
+    return sources[selectedLocation.sourceId];
   }
+);
 
-  return sources[selectedLocation.sourceId];
-});
-exports.default = update;
+export function getProjectDirectoryRoot(state: OuterState): string {
+  return state.sources.projectDirectoryRoot;
+}
+
+export function getRelativeSources(state: OuterState): SourcesMap {
+  return state.sources.relativeSources;
+}
+
+export default update;

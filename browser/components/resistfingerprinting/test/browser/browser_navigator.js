@@ -43,7 +43,6 @@ const SPOOFED_UA_OS = {
   android: "Android 6.0; Mobile",
   other: "X11; Linux x86_64",
 };
-const SPOOFED_BUILDID        = "20100101";
 const SPOOFED_HW_CONCURRENCY = 2;
 
 const CONST_APPCODENAME = "Mozilla";
@@ -70,7 +69,6 @@ async function testNavigator() {
   is(result.mimeTypesLength, 0, "Navigator.mimeTypes has a length of 0.");
   is(result.pluginsLength, 0, "Navigator.plugins has a length of 0.");
   is(result.oscpu, SPOOFED_OSCPU[AppConstants.platform], "Navigator.oscpu is correctly spoofed.");
-  is(result.buildID, SPOOFED_BUILDID, "Navigator.buildID is correctly spoofed.");
   is(result.hardwareConcurrency, SPOOFED_HW_CONCURRENCY, "Navigator.hardwareConcurrency is correctly spoofed.");
 
   is(result.appCodeName, CONST_APPCODENAME, "Navigator.appCodeName reports correct constant value.");
@@ -115,7 +113,7 @@ async function testWorkerNavigator() {
 
 add_task(async function setup() {
   await SpecialPowers.pushPrefEnv({"set":
-    [["privacy.resistFingerprinting", true]]
+    [["privacy.resistFingerprinting", true]],
   });
 
   let appVersion = parseInt(Services.appinfo.version);
@@ -140,8 +138,7 @@ add_task(async function runOverrideTest() {
       ["general.platform.override", "platform overridden"],
       ["general.useragent.override", "userAgent overridden"],
       ["general.oscpu.override", "oscpu overridden"],
-      ["general.buildID.override", "buildID overridden"],
-    ]
+    ],
   });
 
   await testNavigator();

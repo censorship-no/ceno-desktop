@@ -58,7 +58,7 @@ public:
 
   void Redraw(const VideoInfo& aInfo) override;
 
-  void Start(const TimeUnit& aStartTime, const MediaInfo& aInfo) override;
+  nsresult Start(const TimeUnit& aStartTime, const MediaInfo& aInfo) override;
 
   void Stop() override;
 
@@ -108,7 +108,8 @@ private:
     MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
   }
 
-  MediaQueue<VideoData>& VideoQueue() const {
+  MediaQueue<VideoData>& VideoQueue() const
+  {
     return mVideoQueue;
   }
 
@@ -130,6 +131,9 @@ private:
 
   // The presentation end time of the last video frame which has been displayed.
   TimeUnit mVideoFrameEndTime;
+
+  uint32_t mOldCompositorDroppedCount;
+  uint32_t mPendingDroppedCount;
 
   // Event listeners for VideoQueue
   MediaEventListener mPushListener;

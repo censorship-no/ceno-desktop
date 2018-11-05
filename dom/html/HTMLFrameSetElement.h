@@ -46,8 +46,8 @@ class OnBeforeUnloadEventHandlerNonNull;
 class HTMLFrameSetElement final : public nsGenericHTMLElement
 {
 public:
-  explicit HTMLFrameSetElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElement(aNodeInfo),
+  explicit HTMLFrameSetElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo)),
       mNumRows(0),
       mNumCols(0),
       mCurrentRowColHint(NS_STYLE_HINT_REFLOW)
@@ -122,8 +122,7 @@ public:
   virtual nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
                                               int32_t aModType) const override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
 protected:
   virtual ~HTMLFrameSetElement();

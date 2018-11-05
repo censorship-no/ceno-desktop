@@ -97,7 +97,7 @@ var gBrowserContext =
 {
   browserWnd: null,
   testFunc: null,
-  startURL: ""
+  startURL: "",
 };
 
 function openBrowserWindowIntl() {
@@ -117,7 +117,7 @@ function openBrowserWindowIntl() {
   gBrowserContext.browserWnd =
     window.openDialog(AppConstants.BROWSER_CHROME_URL,
                       "_blank", params,
-                      gBrowserContext.startURL);
+                      gBrowserContext.startURL || "data:text/html,<html></html>");
 
   whenDelayedStartupFinished(browserWindow(), function() {
     addA11yLoadEvent(startBrowserTests, browserWindow());

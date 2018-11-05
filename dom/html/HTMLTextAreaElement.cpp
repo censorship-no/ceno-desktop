@@ -40,8 +40,8 @@
 #include "nsStyleConsts.h"
 #include "nsTextEditorState.h"
 #include "nsIController.h"
-
-static NS_DEFINE_CID(kXULControllersCID,  NS_XULCONTROLLERS_CID);
+#include "nsBaseCommandController.h"
+#include "nsXULControllers.h"
 
 #define NS_NO_CONTENT_DISPATCH (1 << 0)
 
@@ -50,9 +50,9 @@ NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(TextArea)
 namespace mozilla {
 namespace dom {
 
-HTMLTextAreaElement::HTMLTextAreaElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+HTMLTextAreaElement::HTMLTextAreaElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                                          FromParser aFromParser)
-  : nsGenericHTMLFormElementWithState(aNodeInfo, NS_FORM_TEXTAREA),
+  : nsGenericHTMLFormElementWithState(std::move(aNodeInfo), NS_FORM_TEXTAREA),
     mValueChanged(false),
     mLastValueChangeWasInteractive(false),
     mHandlingSelect(false),
@@ -93,15 +93,13 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLTextAreaElement,
 // nsIDOMHTMLTextAreaElement
 
 nsresult
-HTMLTextAreaElement::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                           bool aPreallocateChildren) const
+HTMLTextAreaElement::Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const
 {
   *aResult = nullptr;
-  already_AddRefed<mozilla::dom::NodeInfo> ni =
-    RefPtr<mozilla::dom::NodeInfo>(aNodeInfo).forget();
-  RefPtr<HTMLTextAreaElement> it = new HTMLTextAreaElement(ni);
+  RefPtr<HTMLTextAreaElement> it =
+    new HTMLTextAreaElement(do_AddRef(aNodeInfo));
 
-  nsresult rv = const_cast<HTMLTextAreaElement*>(this)->CopyInnerTo(it, aPreallocateChildren);
+  nsresult rv = const_cast<HTMLTextAreaElement*>(this)->CopyInnerTo(it);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (mValueChanged) {
@@ -463,7 +461,7 @@ NS_IMETHODIMP_(bool)
 HTMLTextAreaElement::IsAttributeMapped(const nsAtom* aAttribute) const
 {
   static const MappedAttributeEntry attributes[] = {
-    { &nsGkAtoms::wrap },
+    { nsGkAtoms::wrap },
     { nullptr }
   };
 
@@ -483,18 +481,18 @@ HTMLTextAreaElement::GetAttributeMappingFunction() const
 }
 
 bool
-HTMLTextAreaElement::IsDisabledForEvents(EventMessage aMessage)
+HTMLTextAreaElement::IsDisabledForEvents(WidgetEvent* aEvent)
 {
   nsIFormControlFrame* formControlFrame = GetFormControlFrame(false);
   nsIFrame* formFrame = do_QueryFrame(formControlFrame);
-  return IsElementDisabledForEvents(aMessage, formFrame);
+  return IsElementDisabledForEvents(aEvent, formFrame);
 }
 
 void
 HTMLTextAreaElement::GetEventTargetParent(EventChainPreVisitor& aVisitor)
 {
   aVisitor.mCanHandle = false;
-  if (IsDisabledForEvents(aVisitor.mEvent->mMessage)) {
+  if (IsDisabledForEvents(aVisitor.mEvent)) {
     return;
   }
 
@@ -624,24 +622,24 @@ HTMLTextAreaElement::GetControllers(ErrorResult& aError)
 {
   if (!mControllers)
   {
-    nsresult rv;
-    mControllers = do_CreateInstance(kXULControllersCID, &rv);
-    if (NS_FAILED(rv)) {
-      aError.Throw(rv);
+    mControllers = new nsXULControllers();
+    if (!mControllers) {
+      aError.Throw(NS_ERROR_FAILURE);
       return nullptr;
     }
 
-    nsCOMPtr<nsIController> controller = do_CreateInstance("@mozilla.org/editor/editorcontroller;1", &rv);
-    if (NS_FAILED(rv)) {
-      aError.Throw(rv);
+    nsCOMPtr<nsIController> controller =
+      nsBaseCommandController::CreateEditorController();
+    if (!controller) {
+      aError.Throw(NS_ERROR_FAILURE);
       return nullptr;
     }
 
     mControllers->AppendController(controller);
 
-    controller = do_CreateInstance("@mozilla.org/editor/editingcontroller;1", &rv);
-    if (NS_FAILED(rv)) {
-      aError.Throw(rv);
+    controller = nsBaseCommandController::CreateEditingController();
+    if (!controller) {
+      aError.Throw(NS_ERROR_FAILURE);
       return nullptr;
     }
 
@@ -1038,10 +1036,9 @@ HTMLTextAreaElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   }
 
 nsresult
-HTMLTextAreaElement::CopyInnerTo(Element* aDest, bool aPreallocateChildren)
+HTMLTextAreaElement::CopyInnerTo(Element* aDest)
 {
-  nsresult rv = nsGenericHTMLFormElementWithState::CopyInnerTo(aDest,
-                                                               aPreallocateChildren);
+  nsresult rv = nsGenericHTMLFormElementWithState::CopyInnerTo(aDest);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (aDest->OwnerDoc()->IsStaticDocument()) {

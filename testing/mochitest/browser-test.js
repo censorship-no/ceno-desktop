@@ -17,18 +17,9 @@ ChromeUtils.defineModuleGetter(this, "ContentSearch",
   "resource:///modules/ContentSearch.jsm");
 
 const SIMPLETEST_OVERRIDES =
-  ["ok", "is", "isnot", "todo", "todo_is", "todo_isnot", "info", "expectAssertions", "requestCompleteLog"];
+  ["ok", "record", "is", "isnot", "todo", "todo_is", "todo_isnot", "info", "expectAssertions", "requestCompleteLog"];
 
-// non-android is bootstrapped by marionette
-if (Services.appinfo.OS == "Android") {
-  window.addEventListener("load", function() {
-    window.addEventListener("MozAfterPaint", function() {
-      setTimeout(testInit, 0);
-    }, {once: true});
-  }, {once: true});
-} else {
-  setTimeout(testInit, 0);
-}
+setTimeout(testInit, 0);
 
 var TabDestroyObserver = {
   outstanding: new Set(),
@@ -135,7 +126,7 @@ function testInit() {
 function takeInstrumentation() {
 
   let instrumentData = {
-    elements: {}
+    elements: {},
   };
 
   function pad(str, length) {
@@ -365,7 +356,7 @@ function takeInstrumentation() {
     }
 
     win.addEventListener("load", () => {
-      if (win.location.href != "chrome://browser/content/browser.xul") {
+      if (win.location.href != AppConstants.BROWSER_CHROME_URL) {
         return;
       }
 
@@ -537,9 +528,7 @@ Tester.prototype = {
   },
 
   waitForGraphicsTestWindowToBeGone(aCallback) {
-    let windowsEnum = Services.wm.getEnumerator(null);
-    while (windowsEnum.hasMoreElements()) {
-      let win = windowsEnum.getNext();
+    for (let win of Services.wm.getEnumerator(null)) {
       if (win != window && !win.closed &&
           win.document.documentURI == "chrome://gfxsanity/content/sanityparent.html") {
         this.BrowserTestUtils.domWindowClosed(win).then(aCallback);
@@ -560,7 +549,7 @@ Tester.prototype = {
     // Remove stale tabs
     if (this.currentTest && window.gBrowser && gBrowser.tabs.length > 1) {
       while (gBrowser.tabs.length > 1) {
-        let lastTab = gBrowser.tabContainer.lastChild;
+        let lastTab = gBrowser.tabContainer.lastElementChild;
         if (!lastTab.closing) {
           // Report the stale tab as an error only when they're not closing.
           // Tests can finish without waiting for the closing tabs.
@@ -576,16 +565,17 @@ Tester.prototype = {
 
     // Replace the last tab with a fresh one
     if (window.gBrowser) {
-      gBrowser.addTab("about:blank", { skipAnimation: true });
+      gBrowser.addTab("about:blank", {
+        skipAnimation: true,
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      });
       gBrowser.removeTab(gBrowser.selectedTab, { skipPermitUnload: true });
       gBrowser.stop();
     }
 
     // Remove stale windows
     this.structuredLogger.info("checking window state");
-    let windowsEnum = Services.wm.getEnumerator(null);
-    while (windowsEnum.hasMoreElements()) {
-      let win = windowsEnum.getNext();
+    for (let win of Services.wm.getEnumerator(null)) {
       if (win != window && !win.closed &&
           win.document.documentElement.getAttribute("id") != "browserTestHarness") {
         let type = win.document.documentElement.getAttribute("windowtype");
@@ -1057,10 +1047,14 @@ Tester.prototype = {
     try {
       this._scriptLoader.loadSubScript(headPath, scope);
     } catch (ex) {
-      // Ignore if no head.js exists, but report all other errors.  Note this
-      // will also ignore an existing head.js attempting to import a missing
-      // module - see bug 755558 for why this strategy is preferred anyway.
-      if (!/^Error opening input stream/.test(ex.toString())) {
+      // Bug 755558 - Ignore loadSubScript errors due to a missing head.js.
+      const isImportError = /^Error opening input stream/.test(ex.toString());
+
+      // Bug 1503169 - head.js may call loadSubScript, and generate similar errors.
+      // Only swallow errors that are strictly related to loading head.js.
+      const containsHeadPath = ex.toString().includes(headPath);
+
+      if (!isImportError || !containsHeadPath) {
        this.currentTest.addResult(new testResult({
          name: "head.js import threw an exception",
          ex,
@@ -1202,7 +1196,7 @@ Tester.prototype = {
     }
   },
 
-  QueryInterface: ChromeUtils.generateQI(["nsIConsoleListener"])
+  QueryInterface: ChromeUtils.generateQI(["nsIConsoleListener"]),
 };
 
 /**
@@ -1294,7 +1288,15 @@ function testScope(aTester, aTest, expected) {
   aTest.allowFailure = expected == "fail";
 
   var self = this;
-  this.ok = function test_ok(condition, name, ex, stack) {
+  this.ok = function test_ok(condition, name) {
+    if (arguments.length > 2) {
+      const ex = "Too many arguments passed to ok(condition, name)`.";
+      self.record(false, name, ex);
+    } else {
+      self.record(condition, name);
+    }
+  };
+  this.record = function test_record(condition, name, ex, stack) {
     aTest.addResult(new testResult({
       name, pass: condition, ex,
       stack: stack || Components.stack.caller,
@@ -1302,11 +1304,11 @@ function testScope(aTester, aTest, expected) {
     }));
   };
   this.is = function test_is(a, b, name) {
-    self.ok(a == b, name, "Got " + a + ", expected " + b, false,
+    self.record(a == b, name, "Got " + a + ", expected " + b, false,
             Components.stack.caller);
   };
   this.isnot = function test_isnot(a, b, name) {
-    self.ok(a != b, name, "Didn't expect " + a + ", but got it", false,
+    self.record(a != b, name, "Didn't expect " + a + ", but got it", false,
             Components.stack.caller);
   };
   this.todo = function test_todo(condition, name, ex, stack) {
@@ -1332,7 +1334,7 @@ function testScope(aTester, aTest, expected) {
     Services.tm.dispatchToMainThread({
       run() {
         func();
-      }
+      },
     });
   };
 
@@ -1461,7 +1463,7 @@ testScope.prototype = {
           },
           set: (value) => {
             this[prop] = value;
-          }
+          },
         });
       }
     }
@@ -1513,5 +1515,5 @@ testScope.prototype = {
   destroy: function test_destroy() {
     for (let prop in this)
       delete this[prop];
-  }
+  },
 };

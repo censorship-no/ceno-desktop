@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "טעינת התמונה נכשלה. נא לנסות כתובת שונה.",
   "pocket_read_more": "נושאים פופולריים:",
   "pocket_read_even_more": "צפייה בחדשות נוספות",
+  "pocket_more_reccommendations": "המלצות נוספות",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "קבלת Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "ניתן להתחיל בגלישה ואנו נציג בפניך מספר כתבות, סרטונים ועמודים שונים מעולים בהם ביקרת לאחרונה או שהוספת לסימניות.",
   "topstories_empty_state": "התעדכנת בכל הסיפורים. כדאי לנסות שוב מאוחר יותר כדי לקבל עוד סיפורים מובילים מאת {provider}. לא רוצה לחכות? ניתן לבחור נושא נפוץ כדי למצוא עוד סיפורים נפלאים מרחבי הרשת.",
   "manual_migration_explanation2": "ניתן להתנסות ב־Firefox עם הסימניות, ההיסטוריה והססמאות מדפדפן אחר.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "ניהול מדור",
   "section_menu_action_manage_webext": "ניהול הרחבה",
   "section_menu_action_add_topsite": "הוספת אתר מוביל",
+  "section_menu_action_add_search_engine": "הוספת מנוע חיפוש",
   "section_menu_action_move_up": "העברה למעלה",
   "section_menu_action_move_down": "העברה למטה",
   "section_menu_action_privacy_notice": "הצהרת פרטיות",
@@ -96,10 +101,12 @@ window.gActivityStreamStrings = {
   "firstrun_form_header": "נא להקליד את כתובת הדוא״ל שלך",
   "firstrun_form_sub_header": "כדי להמשיך אל Firefox Sync.",
   "firstrun_email_input_placeholder": "דוא״ל",
-  "firstrun_invalid_input": "Valid email required",
+  "firstrun_invalid_input": "נדרשת כתובת דוא״ל חוקית",
   "firstrun_extra_legal_links": "בחירתך להמשיך בתהליך מהווה את הסכמתך ל{terms} ול{privacy}.",
   "firstrun_terms_of_service": "תנאי השירות",
   "firstrun_privacy_notice": "הצהרת הפרטיות",
   "firstrun_continue_to_login": "להמשיך",
-  "firstrun_skip_login": "לדלג על שלב זה"
+  "firstrun_skip_login": "לדלג על שלב זה",
+  "context_menu_title": "Open menu",
+  "pocket_learn_more": "מידע נוסף"
 };

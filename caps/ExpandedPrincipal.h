@@ -17,7 +17,7 @@ class ExpandedPrincipal : public nsIExpandedPrincipal
 {
 public:
   static already_AddRefed<ExpandedPrincipal>
-  Create(nsTArray<nsCOMPtr<nsIPrincipal>>& aWhiteList,
+  Create(nsTArray<nsCOMPtr<nsIPrincipal>>& aAllowList,
          const mozilla::OriginAttributes& aAttrs);
 
   static PrincipalKind Kind() { return eExpandedPrincipal; }
@@ -47,8 +47,10 @@ public:
   // URL. See BasePrincipal::PrincipalToInherit.
   nsIPrincipal* PrincipalToInherit(nsIURI* aRequestedURI = nullptr);
 
+  nsresult GetSiteIdentifier(mozilla::SiteIdentifier& aSite) override;
+
 protected:
-  explicit ExpandedPrincipal(nsTArray<nsCOMPtr<nsIPrincipal>> &aWhiteList);
+  explicit ExpandedPrincipal(nsTArray<nsCOMPtr<nsIPrincipal>> &aAllowList);
 
   virtual ~ExpandedPrincipal();
 

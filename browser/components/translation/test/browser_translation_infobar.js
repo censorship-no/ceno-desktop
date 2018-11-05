@@ -53,7 +53,7 @@ var TranslationStub = {
     this.showTranslatedContent();
     this.state = Translation.STATE_TRANSLATED;
     this._reset();
-  }
+  },
 };
 
 function showTranslationUI(aDetectedLanguage) {
@@ -88,7 +88,7 @@ function test() {
     });
   });
 
-  gBrowser.selectedBrowser.loadURI("data:text/plain,test page");
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "data:text/plain,test page");
 }
 
 function checkURLBarIcon(aExpectTranslated = false) {

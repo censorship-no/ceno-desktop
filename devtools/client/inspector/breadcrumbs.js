@@ -7,19 +7,21 @@
 "use strict";
 
 const promise = require("promise");
-
+const flags = require("devtools/shared/flags");
 const {ELLIPSIS} = require("devtools/shared/l10n");
+const EventEmitter = require("devtools/shared/event-emitter");
+
+loader.lazyRequireGetter(this, "KeyShortcuts", "devtools/client/shared/key-shortcuts");
 
 const MAX_LABEL_LENGTH = 40;
 
 const NS_XHTML = "http://www.w3.org/1999/xhtml";
 const SCROLL_REPEAT_MS = 100;
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
-
 // Some margin may be required for visible element detection.
 const SCROLL_MARGIN = 1;
+
+const SHADOW_ROOT_TAGNAME = "#shadow-root";
 
 /**
  * Component to replicate functionality of XUL arrowscrollbox
@@ -47,8 +49,6 @@ ArrowScrollBox.prototype = {
    */
   init: function() {
     this.constructHtml();
-
-    this.onUnderflow();
 
     this.onScroll = this.onScroll.bind(this);
     this.onStartBtnClick = this.onStartBtnClick.bind(this);
@@ -385,11 +385,16 @@ HTMLBreadcrumbs.prototype = {
     this.outer.addEventListener("mouseout", this, true);
     this.outer.addEventListener("focus", this, true);
 
-    this.shortcuts = new KeyShortcuts({ window: this.win, target: this.outer });
     this.handleShortcut = this.handleShortcut.bind(this);
 
-    this.shortcuts.on("Right", this.handleShortcut);
-    this.shortcuts.on("Left", this.handleShortcut);
+    if (flags.testing) {
+      // In tests, we start listening immediately to avoid having to simulate a focus.
+      this.initKeyShortcuts();
+    } else {
+      this.outer.addEventListener("focus", () => {
+        this.initKeyShortcuts();
+      }, { once: true });
+    }
 
     // We will save a list of already displayed nodes in this array.
     this.nodeHierarchy = [];
@@ -410,14 +415,19 @@ HTMLBreadcrumbs.prototype = {
     this.update();
   },
 
-  /**
+  initKeyShortcuts() {
+    this.shortcuts = new KeyShortcuts({ window: this.win, target: this.outer });
+    this.shortcuts.on("Right", this.handleShortcut);
+    this.shortcuts.on("Left", this.handleShortcut);
+  },
 
+  /**
    * Build a string that represents the node: tagName#id.class1.class2.
    * @param {NodeFront} node The node to pretty-print
    * @return {String}
    */
   prettyPrintNodeAsText: function(node) {
-    let text = node.displayName;
+    let text = node.isShadowRoot ? SHADOW_ROOT_TAGNAME : node.displayName;
     if (node.isPseudoElement) {
       text = node.isBeforePseudoElement ? "::before" : "::after";
     }
@@ -461,7 +471,7 @@ HTMLBreadcrumbs.prototype = {
     const pseudosLabel = this.doc.createElementNS(NS_XHTML, "span");
     pseudosLabel.className = "breadcrumbs-widget-item-pseudo-classes plain";
 
-    let tagText = node.displayName;
+    let tagText = node.isShadowRoot ? SHADOW_ROOT_TAGNAME : node.displayName;
     if (node.isPseudoElement) {
       tagText = node.isBeforePseudoElement ? "::before" : "::after";
     }
@@ -619,7 +629,10 @@ HTMLBreadcrumbs.prototype = {
     this.container.removeEventListener("mouseover", this, true);
     this.container.removeEventListener("mouseout", this, true);
     this.container.removeEventListener("focus", this, true);
-    this.shortcuts.destroy();
+
+    if (this.shortcuts) {
+      this.shortcuts.destroy();
+    }
 
     this.empty();
 
@@ -729,14 +742,14 @@ HTMLBreadcrumbs.prototype = {
       stopNode = this.nodeHierarchy[originalLength - 1].node;
     }
     while (node && node != stopNode) {
-      if (node.tagName) {
+      if (node.tagName || node.isShadowRoot) {
         const button = this.buildButton(node);
         fragment.insertBefore(button, lastButtonInserted);
         lastButtonInserted = button;
         this.nodeHierarchy.splice(originalLength, 0, {
           node,
           button,
-          currentPrettyPrintText: this.prettyPrintNodeAsText(node)
+          currentPrettyPrintText: this.prettyPrintNodeAsText(node),
         });
       }
       node = node.parentOrHost();
@@ -880,7 +893,7 @@ HTMLBreadcrumbs.prototype = {
       }
     }
 
-    if (!this.selection.isElementNode()) {
+    if (!this.selection.isElementNode() && !this.selection.isShadowRootNode()) {
       // no selection
       this.setCursor(-1);
       if (trimmed) {
@@ -932,5 +945,5 @@ HTMLBreadcrumbs.prototype = {
         }
       }
     }, 0);
-  }
+  },
 };

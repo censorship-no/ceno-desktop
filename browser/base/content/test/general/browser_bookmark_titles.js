@@ -16,7 +16,7 @@ var tests = [
    "data:application/vnd.mozilla.xul+xml,"],
   // about:certerror
   ["https://untrusted.example.com/somepage.html",
-   "https://untrusted.example.com/somepage.html"]
+   "https://untrusted.example.com/somepage.html"],
 ];
 
 SpecialPowers.pushPrefEnv({"set": [["browser.bookmarks.editDialog.showForNewBookmarks", false]]});
@@ -78,8 +78,9 @@ async function checkBookmark(url, expected_title) {
   Assert.equal(gBrowser.selectedBrowser.currentURI.spec, url,
     "Trying to bookmark the expected uri");
 
-  let promiseBookmark = PlacesTestUtils.waitForNotification("onItemAdded",
-    (id, parentId, index, type, itemUrl) => itemUrl.equals(gBrowser.selectedBrowser.currentURI));
+  let promiseBookmark = PlacesTestUtils.waitForNotification("bookmark-added",
+    (events) => events.some(({url: eventUrl}) => eventUrl == gBrowser.selectedBrowser.currentURI.spec),
+    "places");
   PlacesCommandHook.bookmarkPage();
   await promiseBookmark;
 

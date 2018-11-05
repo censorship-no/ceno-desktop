@@ -8,6 +8,7 @@
 #define nsDocShell_h__
 
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/HalScreenConfiguration.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Move.h"
@@ -69,7 +70,6 @@ namespace dom {
 class ClientInfo;
 class ClientSource;
 class EventTarget;
-typedef uint32_t ScreenOrientationInternal;
 } // namespace dom
 } // namespace mozilla
 
@@ -230,7 +230,8 @@ public:
   NS_IMETHOD SetPrivateBrowsing(bool) override;
   NS_IMETHOD GetUseRemoteTabs(bool*) override;
   NS_IMETHOD SetRemoteTabs(bool) override;
-  NS_IMETHOD GetScriptableOriginAttributes(JS::MutableHandle<JS::Value>) override;
+  NS_IMETHOD GetScriptableOriginAttributes(JSContext*,
+                                           JS::MutableHandle<JS::Value>) override;
   NS_IMETHOD_(void) GetOriginAttributes(mozilla::OriginAttributes& aAttrs) override;
 
   // Restores a cached presentation from history (mLSHE).
@@ -254,14 +255,16 @@ public:
                          LOCATION_CHANGE_SAME_DOCUMENT);
   }
 
-  nsresult HistoryTransactionRemoved(int32_t aIndex);
+  nsresult HistoryEntryRemoved(int32_t aIndex);
 
   // Notify Scroll observers when an async panning/zooming transform
   // has started being applied
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void NotifyAsyncPanZoomStarted();
 
   // Notify Scroll observers when an async panning/zooming transform
   // is no longer applied
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void NotifyAsyncPanZoomStopped();
 
   void SetInFrameSwap(bool aInSwap)
@@ -531,7 +534,7 @@ private: // member functions
                      uint32_t aReferrerPolicy,
                      nsIPrincipal* aTriggeringPrincipal,
                      nsIPrincipal* aPrincipalToInherit,
-                     const char* aTypeHint,
+                     const nsACString& aTypeHint,
                      const nsAString& aFileName,
                      nsIInputStream* aPostData,
                      nsIInputStream* aHeadersData,
@@ -590,12 +593,18 @@ private: // member functions
                        nsresult aResult);
 
 
+  // Builds an error page URI (e.g. about:neterror?etc) for the given aURI
+  // and displays it via the LoadErrorPage() overload below.
   nsresult LoadErrorPage(nsIURI* aURI, const char16_t* aURL,
-                           const char* aErrorPage,
-                           const char* aErrorType,
-                           const char16_t* aDescription,
-                           const char* aCSSClass,
-                           nsIChannel* aFailedChannel);
+                         const char* aErrorPage,
+                         const char* aErrorType,
+                         const char16_t* aDescription,
+                         const char* aCSSClass,
+                         nsIChannel* aFailedChannel);
+
+  // This method directly loads aErrorURI as an error page. aFailedURI and aFailedChannel
+  // come from DisplayLoadError() or the LoadErrorPage() overload above.
+  nsresult LoadErrorPage(nsIURI* aErrorURI, nsIURI* aFailedURI, nsIChannel* aFailedChannel);
 
   bool DisplayLoadError(nsresult aError, nsIURI* aURI, const char16_t* aURL,
                         nsIChannel* aFailedChannel)
@@ -896,6 +905,14 @@ private: // member functions
     return mCSSErrorReportingEnabled;
   }
 
+  // Handles retrieval of subframe session history for nsDocShell::LoadURI. If a
+  // load is requested in a subframe of the current DocShell, the subframe
+  // loadType may need to reflect the loadType of the parent document, or in
+  // some cases (like reloads), the history load may need to be cancelled. See
+  // function comments for in-depth logic descriptions.
+  void
+  MaybeHandleSubframeHistory(nsDocShellLoadState* aLoadState);
+
 private: // data members
   static nsIURIFixup* sURIFixup;
 
@@ -927,6 +944,7 @@ private: // data members
   nsCOMPtr<nsIMutableArray> mRefreshURIList;
   nsCOMPtr<nsIMutableArray> mSavedRefreshURIList;
   nsCOMPtr<nsIDOMStorageManager> mSessionStorageManager;
+  uint64_t mContentWindowID;
   nsCOMPtr<nsIContentViewer> mContentViewer;
   nsCOMPtr<nsIWidget> mParentWidget;
   RefPtr<mozilla::dom::ChildSHistory> mSessionHistory;
@@ -1013,9 +1031,7 @@ private: // data members
 
   eCharsetReloadState mCharsetReloadState;
 
-  // The orientation lock as described by
-  // https://w3c.github.io/screen-orientation/
-  mozilla::dom::ScreenOrientationInternal mOrientationLock;
+  mozilla::hal::ScreenOrientation mOrientationLock;
 
   int32_t mParentCharsetSource;
   int32_t mMarginWidth;
@@ -1025,11 +1041,11 @@ private: // data members
   // Create() is called, the type is not expected to change.
   int32_t mItemType;
 
-  // Index into the SHTransaction list, indicating the previous and current
-  // transaction at the time that this DocShell begins to load. Consequently
+  // Index into the nsISHEntry array, indicating the previous and current
+  // entry at the time that this DocShell begins to load. Consequently
   // root docshell's indices can differ from child docshells'.
-  int32_t mPreviousTransIndex;
-  int32_t mLoadedTransIndex;
+  int32_t mPreviousEntryIndex;
+  int32_t mLoadedEntryIndex;
 
   // Offset in the parent's child list.
   // -1 if the docshell is added dynamically to the parent shell.
@@ -1072,6 +1088,10 @@ private: // data members
   // Whether or not touch events are overridden. Possible values are defined
   // as constants in the nsIDocShell.idl file.
   uint32_t mTouchEventsOverride;
+
+  // Whether or not handling of the <meta name="viewport"> tag is overridden.
+  // Possible values are defined as constants in nsIDocShell.idl.
+  uint32_t mMetaViewportOverride;
 
   // mFullscreenAllowed stores how we determine whether fullscreen is allowed
   // when GetFullscreenAllowed() is called. Fullscreen is allowed in a
@@ -1167,6 +1187,9 @@ private: // data members
   // We will check the innerWin's timing before creating a new one
   // in MaybeInitTiming()
   bool mBlankTiming : 1;
+
+  // This flag indicates when the title is valid for the current URI.
+  bool mTitleValidForCurrentURI : 1;
 };
 
 #endif /* nsDocShell_h__ */

@@ -283,7 +283,8 @@ Faulty::IsValidProcessType(void)
           || currentProcessType == GeckoProcessType_Content
           || currentProcessType == GeckoProcessType_GMPlugin
           || currentProcessType == GeckoProcessType_GPU
-          || currentProcessType == GeckoProcessType_PDFium)) {
+          || currentProcessType == GeckoProcessType_PDFium
+          || currentProcessType == GeckoProcessType_VR)) {
     // Fuzz inside any of the above child process only.
     isValidProcessType = true;
   } else if (targetChildren && targetParent) {
@@ -348,6 +349,14 @@ Faulty::MutationFactor()
     }
   }
   return sPropValue;
+}
+
+// static
+Faulty&
+Faulty::instance()
+{
+  static Faulty faulty;
+  return faulty;
 }
 
 //
@@ -750,8 +759,6 @@ Faulty::ReadFile(const char* aPathname, nsTArray<nsCString> &aArray)
     }
     aArray.AppendElement(line);
   } while (more);
-
-  file.forget();
 
   return NS_OK;
 }

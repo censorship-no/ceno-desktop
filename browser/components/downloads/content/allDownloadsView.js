@@ -38,7 +38,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 function HistoryDownloadElementShell(download) {
   this._download = download;
 
-  this.element = document.createElement("richlistitem");
+  this.element = document.createXULElement("richlistitem");
   this.element._shell = this;
 
   this.element.classList.add("download");
@@ -47,22 +47,6 @@ function HistoryDownloadElementShell(download) {
 
 HistoryDownloadElementShell.prototype = {
   __proto__: DownloadsViewUI.DownloadElementShell.prototype,
-
-  /**
-   * Manages the "active" state of the shell.  By default all the shells are
-   * inactive, thus their UI is not updated.  They must be activated when
-   * entering the visible area.
-   */
-  ensureActive() {
-    if (!this._active) {
-      this._active = true;
-      this.element.setAttribute("active", true);
-      this.onChanged();
-    }
-  },
-  get active() {
-    return !!this._active;
-  },
 
   /**
    * Overrides the base getter to return the Download or HistoryDownload object
@@ -97,14 +81,9 @@ HistoryDownloadElementShell.prototype = {
     if (this._downloadState !== newState) {
       this._downloadState = newState;
       this.onStateChanged();
+    } else {
+      this._updateStateInner();
     }
-
-    // This cannot be placed within onStateChanged because
-    // when a download goes from hasBlockedData to !hasBlockedData
-    // it will still remain in the same state.
-    this.element.classList.toggle("temporary-block",
-                                  !!this.download.hasBlockedData);
-    this._updateProgress();
   },
   _downloadState: null,
 
@@ -137,7 +116,8 @@ HistoryDownloadElementShell.prototype = {
       return true;
     }
     aTerm = aTerm.toLowerCase();
-    return this.displayName.toLowerCase().includes(aTerm) ||
+    let displayName = DownloadsViewUI.getDisplayName(this.download);
+    return displayName.toLowerCase().includes(aTerm) ||
            this.download.source.url.toLowerCase().includes(aTerm);
   },
 
@@ -182,8 +162,8 @@ HistoryDownloadElementShell.prototype = {
  * Relays commands from the download.xml binding to the selected items.
  */
 const DownloadsView = {
-  onDownloadCommand(event, command) {
-    goDoCommand(command);
+  onDownloadButton(event) {
+    event.target.closest("richlistitem")._shell.onButton();
   },
 
   onDownloadClick() {},
@@ -548,7 +528,7 @@ DownloadsPlacesView.prototype = {
     // Getting the data or creating the nsIURI might fail.
     try {
       let data = {};
-      trans.getAnyTransferData({}, data, {});
+      trans.getAnyTransferData({}, data);
       let [url, name] = data.value.QueryInterface(Ci.nsISupportsString)
                             .data.split("\n");
       if (url) {
@@ -613,7 +593,7 @@ DownloadsPlacesView.prototype = {
     this._downloadsData.removeFinished();
     if (this._place) {
       PlacesUtils.history.removeVisitsByFilter({
-        transition: PlacesUtils.history.TRANSITIONS.DOWNLOAD
+        transition: PlacesUtils.history.TRANSITIONS.DOWNLOAD,
       }).catch(Cu.reportError);
     }
     // There may be no selection or focus change as a result

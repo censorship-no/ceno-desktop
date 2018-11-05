@@ -442,7 +442,7 @@ var gUpdates = {
     this.update = update;
     if (this.update)
       this.update.QueryInterface(Ci.nsIWritablePropertyBag);
-  }
+  },
 };
 
 /**
@@ -548,7 +548,7 @@ var gCheckingPage = {
      * See nsISupports.idl
      */
     QueryInterface: ChromeUtils.generateQI(["nsIUpdateCheckListener"]),
-  }
+  },
 };
 
 /**
@@ -568,7 +568,7 @@ var gNoUpdatesPage = {
 
     gUpdates.setButtons(null, null, "okButton", true);
     gUpdates.wiz.getButton("finish").focus();
-  }
+  },
 };
 
 /**
@@ -584,7 +584,7 @@ var gManualUpdatePage = {
 
     gUpdates.setButtons(null, null, "okButton", true);
     gUpdates.wiz.getButton("finish").focus();
-  }
+  },
 };
 
 /**
@@ -601,7 +601,7 @@ var gUnsupportedPage = {
 
     gUpdates.setButtons(null, null, "okButton", true);
     gUpdates.wiz.getButton("finish").focus();
-  }
+  },
 };
 
 /**
@@ -649,7 +649,7 @@ var gUpdatesFoundBasicPage = {
 
   onExtra1() {
     gUpdates.wiz.cancel();
-  }
+  },
 };
 
 /**
@@ -816,8 +816,8 @@ var gDownloadingPage = {
   _setUIState(paused) {
     var u = gUpdates.update;
     if (paused) {
-      if (this._downloadProgress.mode != "normal")
-        this._downloadProgress.mode = "normal";
+      if (!this._downloadProgress.hasAttribute("value"))
+        this._downloadProgress.setAttribute("value", "0");
       this._pauseButton.setAttribute("tooltiptext",
                                      gUpdates.getAUSString("pauseButtonResume"));
       this._pauseButton.setAttribute("paused", "true");
@@ -828,8 +828,7 @@ var gDownloadingPage = {
         this._setStatus(pausedStatus);
       }
     } else {
-      if (this._downloadProgress.mode != "undetermined")
-        this._downloadProgress.mode = "undetermined";
+      this._downloadProgress.removeAttribute("value");
       this._pauseButton.setAttribute("paused", "false");
       this._pauseButton.setAttribute("tooltiptext",
                                      gUpdates.getAUSString("pauseButtonPause"));
@@ -841,7 +840,7 @@ var gDownloadingPage = {
    * Wait for an update being staged in the background.
    */
   _setUpdateApplying() {
-    this._downloadProgress.mode = "undetermined";
+    this._downloadProgress.removeAttribute("value");
     this._pauseButton.hidden = true;
     let applyingStatus = gUpdates.getAUSString("applyingUpdate");
     this._setStatus(applyingStatus);
@@ -955,8 +954,7 @@ var gDownloadingPage = {
     if (this._paused)
       return;
 
-    if (this._downloadProgress.mode != "undetermined")
-      this._downloadProgress.mode = "undetermined";
+    this._downloadProgress.removeAttribute("value");
     this._setStatus(this._label_downloadStatus);
   },
 
@@ -985,10 +983,7 @@ var gDownloadingPage = {
     if (this._paused)
       return;
 
-    if (this._downloadProgress.mode != "normal")
-      this._downloadProgress.mode = "normal";
-    if (this._downloadProgress.value != currentProgress)
-      this._downloadProgress.value = currentProgress;
+    this._downloadProgress.setAttribute("value", currentProgress);
     if (this._pauseButton.disabled)
       this._pauseButton.disabled = false;
 
@@ -1030,8 +1025,7 @@ var gDownloadingPage = {
    *          Status code containing the reason for the cessation.
    */
   onStopRequest(request, context, status) {
-    if (this._downloadProgress.mode != "normal")
-      this._downloadProgress.mode = "normal";
+    this._downloadProgress.setAttribute("value", "100");
 
     var u = gUpdates.update;
     switch (status) {
@@ -1050,7 +1044,7 @@ var gDownloadingPage = {
 
         // Reset the progress meter to "undertermined" mode so that we don't
         // show old progress for the new download of the "complete" patch.
-        this._downloadProgress.mode = "undetermined";
+        this._downloadProgress.removeAttribute("value");
         document.getElementById("verificationFailed").hidden = false;
         break;
       case Cr.NS_BINDING_ABORTED:
@@ -1108,7 +1102,7 @@ var gDownloadingPage = {
   /**
    * See nsISupports.idl
    */
-  QueryInterface: ChromeUtils.generateQI(["nsIRequestObserver", "nsIProgressEventSink", "nsIObserver"])
+  QueryInterface: ChromeUtils.generateQI(["nsIRequestObserver", "nsIProgressEventSink", "nsIObserver"]),
 };
 
 /**
@@ -1131,7 +1125,7 @@ var gErrorsPage = {
     var errorLinkLabel = document.getElementById("errorLinkLabel");
     errorLinkLabel.value = manualURL;
     errorLinkLabel.setAttribute("url", manualURL);
-  }
+  },
 };
 
 /**
@@ -1155,7 +1149,7 @@ var gErrorExtraPage = {
     let errorLinkLabel = document.getElementById("errorExtraLinkLabel");
     errorLinkLabel.value = manualURL;
     errorLinkLabel.setAttribute("url", manualURL);
-  }
+  },
 };
 
 /**
@@ -1191,7 +1185,7 @@ var gErrorPatchingPage = {
         gUpdates.wiz.goTo("errors");
         break;
     }
-  }
+  },
 };
 
 /**

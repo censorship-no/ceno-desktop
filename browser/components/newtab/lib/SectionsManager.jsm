@@ -5,7 +5,6 @@
 
 ChromeUtils.import("resource://gre/modules/EventEmitter.jsm");
 ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 const {actionCreators: ac, actionTypes: at} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm", {});
 const {getDefaultOptions} = ChromeUtils.import("resource://activity-stream/lib/ActivityStreamStorage.jsm", {});
 
@@ -25,20 +24,18 @@ const BUILT_IN_SECTIONS = {
       nestedPrefs: options.show_spocs ? [{
         name: "showSponsored",
         titleString: "prefs_topstories_options_sponsored_label",
-        icon: "icon-info"
-      }] : []
+        icon: "icon-info",
+      }] : [],
     },
     shouldHidePref: options.hidden,
     eventSource: "TOP_STORIES",
     icon: options.provider_icon,
     title: {id: "header_recommended_by", values: {provider: options.provider_name}},
-    disclaimer: {
-      text: {id: "section_disclaimer_topstories"},
+    learnMore: {
       link: {
         href: "https://getpocket.com/firefox/new_tab_learn_more",
-        id: "section_disclaimer_topstories_linktext"
+        id: "pocket_how_it_works",
       },
-      button: {id: "section_disclaimer_topstories_buttontext"}
     },
     privacyNoticeURL: "https://www.mozilla.org/privacy/firefox/#suggest-relevant-content",
     compactCards: false,
@@ -47,10 +44,10 @@ const BUILT_IN_SECTIONS = {
     availableLinkMenuOptions: ["CheckBookmarkOrArchive", "CheckSavedToPocket", "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl"],
     emptyState: {
       message: {id: "topstories_empty_state", values: {provider: options.provider_name}},
-      icon: "check"
+      icon: "check",
     },
     shouldSendImpressionStats: true,
-    dedupeFrom: ["highlights"]
+    dedupeFrom: ["highlights"],
   }),
   "feeds.section.highlights": options => ({
     id: "highlights",
@@ -59,17 +56,17 @@ const BUILT_IN_SECTIONS = {
       descString: {id: "prefs_highlights_description"},
       nestedPrefs: [{
         name: "section.highlights.includeVisited",
-        titleString: "prefs_highlights_options_visited_label"
+        titleString: "prefs_highlights_options_visited_label",
       }, {
         name: "section.highlights.includeBookmarks",
-        titleString: "settings_pane_highlights_options_bookmarks"
+        titleString: "settings_pane_highlights_options_bookmarks",
       }, {
         name: "section.highlights.includeDownloads",
-        titleString: "prefs_highlights_options_download_label"
+        titleString: "prefs_highlights_options_download_label",
       }, {
         name: "section.highlights.includePocket",
-        titleString: "prefs_highlights_options_pocket_label"
-      }]
+        titleString: "prefs_highlights_options_pocket_label",
+      }],
     },
     shouldHidePref:  false,
     eventSource: "HIGHLIGHTS",
@@ -80,10 +77,10 @@ const BUILT_IN_SECTIONS = {
     maxRows: 4,
     emptyState: {
       message: {id: "highlights_empty_state"},
-      icon: "highlights"
+      icon: "highlights",
     },
-    shouldSendImpressionStats: false
-  })
+    shouldSendImpressionStats: false,
+  }),
 };
 
 const SectionsManager = {
@@ -93,7 +90,7 @@ const SectionsManager = {
     history: ["CheckBookmark", "CheckSavedToPocket", "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl", "DeleteUrl"],
     bookmark: ["CheckBookmark", "CheckSavedToPocket", "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl", "DeleteUrl"],
     pocket: ["ArchiveFromPocket", "CheckSavedToPocket", "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl"],
-    download: ["OpenFile", "ShowFile", "Separator", "GoToDownloadPage", "CopyDownloadLink", "Separator", "RemoveDownload", "BlockUrl"]
+    download: ["OpenFile", "ShowFile", "Separator", "GoToDownloadPage", "CopyDownloadLink", "Separator", "RemoveDownload", "BlockUrl"],
   },
   initialized: false,
   sections: new Map(),
@@ -109,7 +106,7 @@ const SectionsManager = {
         if (section.dedupeFrom) {
           this._dedupeConfiguration.push({
             id: section.id,
-            dedupeFrom: section.dedupeFrom
+            dedupeFrom: section.dedupeFrom,
           });
         }
       });
@@ -206,13 +203,13 @@ const SectionsManager = {
               url: card.url,
               title: card.title,
               description: card.description,
-              previewImageURL: card.image
+              previewImageURL: card.image,
             });
             // Highlights query skips bookmarks with no visits.
             PlacesUtils.history.insert({
               url,
               title: card.title,
-              visits: [{}]
+              visits: [{}],
             });
           }
         });
@@ -301,7 +298,7 @@ const SectionsManager = {
     Object.keys(this.CONTEXT_MENU_PREFS).forEach(k =>
       Services.prefs.removeObserver(this.CONTEXT_MENU_PREFS[k], this));
     SectionsManager.initialized = false;
-  }
+  },
 };
 
 for (const action of [
@@ -313,7 +310,7 @@ for (const action of [
   "UPDATE_SECTION",
   "UPDATE_SECTION_CARD",
   "INIT",
-  "UNINIT"
+  "UNINIT",
 ]) {
   SectionsManager[action] = action;
 }
@@ -422,7 +419,7 @@ class SectionsFeed {
     this.store.dispatch(ac.SetPref("sectionOrder", orderedSections.join(",")));
   }
 
-  onAction(action) {
+  async onAction(action) {
     switch (action.type) {
       case at.INIT:
         SectionsManager.onceInitialized(this.init);
@@ -435,7 +432,7 @@ class SectionsFeed {
         if (action.data) {
           const matched = action.data.name.match(/^(feeds.section.(\S+)).options$/i);
           if (matched) {
-            SectionsManager.addBuiltInSection(matched[1], action.data.value);
+            await SectionsManager.addBuiltInSection(matched[1], action.data.value);
             this.store.dispatch({type: at.SECTION_OPTIONS_CHANGED, data: matched[2]});
           }
         }

@@ -26,6 +26,7 @@
 
 namespace js {
 
+class BaseScopeData;
 class ModuleObject;
 class Scope;
 
@@ -202,13 +203,15 @@ class TrailingNamesArray
     TrailingNamesArray() = delete;
 
     explicit TrailingNamesArray(size_t nameCount) {
-        if (nameCount)
+        if (nameCount) {
             JS_POISON(&data_, 0xCC, sizeof(BindingName) * nameCount, MemCheckKind::MakeUndefined);
+        }
     }
 
     BindingName* start() { return reinterpret_cast<BindingName*>(ptr()); }
 
-    BindingName& operator[](size_t i) { return start()[i]; }
+    BindingName& get(size_t i) { return start()[i]; }
+    BindingName& operator[](size_t i) { return get(i); }
 };
 
 class BindingLocation
@@ -304,41 +307,32 @@ class Scope : public js::gc::TenuredCell
 {
     friend class GCMarker;
 
-    // The kind determines data_.
-    //
-    // The memory here must be fully initialized, since otherwise the magic_
-    // value for gc::RelocationOverlay will land in the padding and may be
-    // stale.
-    union {
-        ScopeKind kind_;
-        uintptr_t paddedKind_;
-    };
-
     // The enclosing scope or nullptr.
     GCPtrScope enclosing_;
+
+    // The kind determines data_.
+    ScopeKind kind_;
 
     // If there are any aliased bindings, the shape for the
     // EnvironmentObject. Otherwise nullptr.
     GCPtrShape environmentShape_;
 
   protected:
-    uintptr_t data_;
+    BaseScopeData* data_;
 
     Scope(ScopeKind kind, Scope* enclosing, Shape* environmentShape)
       : enclosing_(enclosing),
+        kind_(kind),
         environmentShape_(environmentShape),
-        data_(0)
-    {
-        paddedKind_ = 0;
-        kind_ = kind;
-    }
+        data_(nullptr) { }
 
     static Scope* create(JSContext* cx, ScopeKind kind, HandleScope enclosing,
                          HandleShape envShape);
 
-    template <typename T, typename D>
-    static Scope* create(JSContext* cx, ScopeKind kind, HandleScope enclosing,
-                         HandleShape envShape, mozilla::UniquePtr<T, D> data);
+    template <typename ConcreteScope>
+    static ConcreteScope* create(JSContext* cx, ScopeKind kind, HandleScope enclosing,
+                                 HandleShape envShape,
+                                 MutableHandle<UniquePtr<typename ConcreteScope::Data>> data);
 
     template <typename ConcreteScope, XDRMode mode>
     static XDRResult XDRSizedBindingNames(XDRState<mode>* xdr, Handle<ConcreteScope*> scope,
@@ -346,11 +340,8 @@ class Scope : public js::gc::TenuredCell
 
     Shape* maybeCloneEnvironmentShape(JSContext* cx);
 
-    template <typename T, typename D>
-    void initData(mozilla::UniquePtr<T, D> data) {
-        MOZ_ASSERT(!data_);
-        data_ = reinterpret_cast<uintptr_t>(data.release());
-    }
+    template <typename ConcreteScope>
+    void initData(MutableHandle<UniquePtr<typename ConcreteScope::Data>> data);
 
   public:
     static const JS::TraceKind TraceKind = JS::TraceKind::Scope;
@@ -402,16 +393,18 @@ class Scope : public js::gc::TenuredCell
     template <typename T>
     bool hasOnChain() const {
         for (const Scope* it = this; it; it = it->enclosing()) {
-            if (it->is<T>())
+            if (it->is<T>()) {
                 return true;
+            }
         }
         return false;
     }
 
     bool hasOnChain(ScopeKind kind) const {
         for (const Scope* it = this; it; it = it->enclosing()) {
-            if (it->kind() == kind)
+            if (it->kind() == kind) {
                 return true;
+            }
         }
         return false;
     }
@@ -465,11 +458,12 @@ class LexicalScope : public Scope
 {
     friend class Scope;
     friend class BindingIter;
+    friend class GCMarker;
 
   public:
     // Data is public because it is created by the frontend. See
     // Parser<FullParseHandler>::newLexicalScopeData.
-    struct Data : BaseScopeData
+    struct Data : public BaseScopeData
     {
         // Bindings are sorted by kind in both frames and environments.
         //
@@ -505,11 +499,11 @@ class LexicalScope : public Scope
                                         uint32_t firstFrameSlot, HandleScope enclosing);
 
     Data& data() {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
     const Data& data() const {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
     static uint32_t nextFrameSlot(Scope* start);
@@ -566,7 +560,7 @@ class FunctionScope : public Scope
   public:
     // Data is public because it is created by the
     // frontend. See Parser<FullParseHandler>::newFunctionScopeData.
-    struct Data : BaseScopeData
+    struct Data : public BaseScopeData
     {
         // The canonical function of the scope, as during a scope walk we
         // often query properties of the JSFunction (e.g., is the function an
@@ -640,11 +634,11 @@ class FunctionScope : public Scope
                                          HandleFunction fun, HandleScope enclosing);
 
     Data& data() {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
     const Data& data() const {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
   public:
@@ -699,7 +693,7 @@ class VarScope : public Scope
   public:
     // Data is public because it is created by the
     // frontend. See Parser<FullParseHandler>::newVarScopeData.
-    struct Data : BaseScopeData
+    struct Data : public BaseScopeData
     {
         // All bindings are vars.
         uint32_t length = 0;
@@ -732,11 +726,11 @@ class VarScope : public Scope
                                     HandleScope enclosing);
 
     Data& data() {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
     const Data& data() const {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
   public:
@@ -779,6 +773,7 @@ class GlobalScope : public Scope
 {
     friend class Scope;
     friend class BindingIter;
+    friend class GCMarker;
 
   public:
     // Data is public because it is created by the frontend. See
@@ -822,11 +817,11 @@ class GlobalScope : public Scope
                                        MutableHandle<UniquePtr<Data>> data);
 
     Data& data() {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
     const Data& data() const {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
   public:
@@ -875,11 +870,12 @@ class EvalScope : public Scope
 {
     friend class Scope;
     friend class BindingIter;
+    friend class GCMarker;
 
   public:
     // Data is public because it is created by the frontend. See
     // Parser<FullParseHandler>::newEvalScopeData.
-    struct Data : BaseScopeData
+    struct Data : public BaseScopeData
     {
         // All bindings in an eval script are 'var' bindings. The implicit
         // lexical scope around the eval is present regardless of strictness
@@ -917,11 +913,11 @@ class EvalScope : public Scope
                                      HandleScope enclosing);
 
     Data& data() {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
     const Data& data() const {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
   public:
@@ -942,8 +938,9 @@ class EvalScope : public Scope
     }
 
     bool isNonGlobal() const {
-        if (strict())
+        if (strict()) {
             return true;
+        }
         return !nearestVarScopeForDirectEval(enclosing())->is<GlobalScope>();
     }
 
@@ -1014,11 +1011,11 @@ class ModuleScope : public Scope
                                        Handle<ModuleObject*> module, HandleScope enclosing);
 
     Data& data() {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
     const Data& data() const {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
   public:
@@ -1030,8 +1027,6 @@ class ModuleScope : public Scope
         return data().module;
     }
 
-    JSScript* script() const;
-
     static Shape* getEmptyEnvironmentShape(JSContext* cx);
 };
 
@@ -1039,10 +1034,11 @@ class WasmInstanceScope : public Scope
 {
     friend class BindingIter;
     friend class Scope;
+    friend class GCMarker;
     static const ScopeKind classScopeKind_ = ScopeKind::WasmInstance;
 
   public:
-    struct Data : BaseScopeData
+    struct Data : public BaseScopeData
     {
         uint32_t memoriesStart = 0;
         uint32_t globalsStart = 0;
@@ -1064,11 +1060,11 @@ class WasmInstanceScope : public Scope
 
   private:
     Data& data() {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
     const Data& data() const {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
   public:
@@ -1098,10 +1094,11 @@ class WasmFunctionScope : public Scope
 {
     friend class BindingIter;
     friend class Scope;
+    friend class GCMarker;
     static const ScopeKind classScopeKind_ = ScopeKind::WasmFunction;
 
   public:
-    struct Data : BaseScopeData
+    struct Data : public BaseScopeData
     {
         uint32_t length = 0;
         uint32_t nextFrameSlot = 0;
@@ -1119,11 +1116,11 @@ class WasmFunctionScope : public Scope
 
   private:
     Data& data() {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
     const Data& data() const {
-        return *reinterpret_cast<Data*>(data_);
+        return *static_cast<Data*>(data_);
     }
 
   public:
@@ -1271,8 +1268,9 @@ class BindingIter
                 // Usually positional formal parameters don't have frame
                 // slots, except when there are parameter expressions, in
                 // which case they act like lets.
-                if (index_ >= nonPositionalFormalStart_ || (hasFormalParameterExprs() && name()))
+                if (index_ >= nonPositionalFormalStart_ || (hasFormalParameterExprs() && name())) {
                     frameSlot_++;
+                }
             }
         }
         index_++;
@@ -1280,8 +1278,9 @@ class BindingIter
 
     void settle() {
         if (ignoreDestructuredFormalParameters()) {
-            while (!done() && !name())
+            while (!done() && !name()) {
                 increment();
+            }
         }
     }
 
@@ -1363,39 +1362,48 @@ class BindingIter
 
     BindingLocation location() const {
         MOZ_ASSERT(!done());
-        if (!(flags_ & CanHaveSlotsMask))
+        if (!(flags_ & CanHaveSlotsMask)) {
             return BindingLocation::Global();
-        if (index_ < positionalFormalStart_)
+        }
+        if (index_ < positionalFormalStart_) {
             return BindingLocation::Import();
+        }
         if (closedOver()) {
             MOZ_ASSERT(canHaveEnvironmentSlots());
             return BindingLocation::Environment(environmentSlot_);
         }
-        if (index_ < nonPositionalFormalStart_ && canHaveArgumentSlots())
+        if (index_ < nonPositionalFormalStart_ && canHaveArgumentSlots()) {
             return BindingLocation::Argument(argumentSlot_);
-        if (canHaveFrameSlots())
+        }
+        if (canHaveFrameSlots()) {
             return BindingLocation::Frame(frameSlot_);
+        }
         MOZ_ASSERT(isNamedLambda());
         return BindingLocation::NamedLambdaCallee();
     }
 
     BindingKind kind() const {
         MOZ_ASSERT(!done());
-        if (index_ < positionalFormalStart_)
+        if (index_ < positionalFormalStart_) {
             return BindingKind::Import;
+        }
         if (index_ < varStart_) {
             // When the parameter list has expressions, the parameters act
             // like lexical bindings and have TDZ.
-            if (hasFormalParameterExprs())
+            if (hasFormalParameterExprs()) {
                 return BindingKind::Let;
+            }
             return BindingKind::FormalParameter;
         }
-        if (index_ < letStart_)
+        if (index_ < letStart_) {
             return BindingKind::Var;
-        if (index_ < constStart_)
+        }
+        if (index_ < constStart_) {
             return BindingKind::Let;
-        if (isNamedLambda())
+        }
+        if (isNamedLambda()) {
             return BindingKind::NamedLambdaCallee;
+        }
         return BindingKind::Const;
     }
 
@@ -1408,8 +1416,9 @@ class BindingIter
 
     bool hasArgumentSlot() const {
         MOZ_ASSERT(!done());
-        if (hasFormalParameterExprs())
+        if (hasFormalParameterExprs()) {
             return false;
+        }
         return index_ >= positionalFormalStart_ && index_ < nonPositionalFormalStart_;
     }
 
@@ -1441,8 +1450,9 @@ JSAtom* FrameSlotName(JSScript* script, jsbytecode* pc);
 class PositionalFormalParameterIter : public BindingIter
 {
     void settle() {
-        if (index_ >= nonPositionalFormalStart_)
+        if (index_ >= nonPositionalFormalStart_) {
             index_ = length_;
+        }
     }
 
   public:
@@ -1519,8 +1529,9 @@ class MOZ_STACK_CLASS ScopeIter
     bool hasSyntacticEnvironment() const;
 
     void trace(JSTracer* trc) {
-        if (scope_)
+        if (scope_) {
             TraceRoot(trc, &scope_, "scope iter scope");
+        }
     }
 };
 

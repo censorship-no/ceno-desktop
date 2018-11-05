@@ -4,6 +4,10 @@
 
 #![allow(unsafe_code)]
 
+// This is needed for the constants in atom_macro.rs, because we have some
+// atoms whose names differ only by case, e.g. datetime and dateTime.
+#![allow(non_upper_case_globals)]
+
 //! A drop-in replacement for string_cache, but backed by Gecko `nsAtom`s.
 
 use gecko_bindings::bindings::Gecko_AddRefAtom;
@@ -48,10 +52,6 @@ pub struct Atom(*mut WeakAtom);
 /// Only usable as `&'a WeakAtom`,
 /// where `'a` is the lifetime of something that holds a strong reference to that atom.
 pub struct WeakAtom(nsAtom);
-
-/// A BorrowedAtom for Gecko is just a weak reference to a `nsAtom`, that
-/// hasn't been bumped.
-pub type BorrowedAtom<'a> = &'a WeakAtom;
 
 impl Deref for Atom {
     type Target = WeakAtom;
@@ -267,7 +267,7 @@ impl fmt::Display for WeakAtom {
 
 impl Atom {
     /// Execute a callback with the atom represented by `ptr`.
-    pub unsafe fn with<F, R>(ptr: *mut nsAtom, callback: F) -> R
+    pub unsafe fn with<F, R>(ptr: *const nsAtom, callback: F) -> R
     where
         F: FnOnce(&Atom) -> R,
     {
@@ -284,7 +284,7 @@ impl Atom {
     /// that way, now we have sugar for is_static, creating atoms using
     /// Atom::from_raw should involve almost no overhead.
     #[inline]
-    pub unsafe fn from_static(ptr: *mut nsStaticAtom) -> Self {
+    pub unsafe fn from_static(ptr: *const nsStaticAtom) -> Self {
         let atom = Atom(ptr as *mut WeakAtom);
         debug_assert!(
             atom.is_static(),

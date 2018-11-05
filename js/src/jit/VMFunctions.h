@@ -667,8 +667,9 @@ class AutoDetectInvalidation
     }
 
     ~AutoDetectInvalidation() {
-        if (MOZ_UNLIKELY(shouldSetReturnOverride()))
+        if (MOZ_UNLIKELY(shouldSetReturnOverride())) {
             setReturnOverride();
+        }
     }
 };
 
@@ -683,8 +684,7 @@ class InterpreterStubExitFrameLayout;
 bool InvokeFromInterpreterStub(JSContext* cx, InterpreterStubExitFrameLayout* frame);
 
 bool CheckOverRecursed(JSContext* cx);
-bool CheckOverRecursedWithExtra(JSContext* cx, BaselineFrame* frame,
-                                uint32_t extra, uint32_t earlyCheck);
+bool CheckOverRecursedBaseline(JSContext* cx, BaselineFrame* frame);
 
 JSObject* BindVar(JSContext* cx, HandleObject scopeChain);
 MOZ_MUST_USE bool
@@ -750,7 +750,7 @@ GetIntrinsicValue(JSContext* cx, HandlePropertyName name, MutableHandleValue rva
 MOZ_MUST_USE bool
 CreateThis(JSContext* cx, HandleObject callee, HandleObject newTarget, MutableHandleValue rval);
 
-void GetDynamicName(JSContext* cx, JSObject* scopeChain, JSString* str, Value* vp);
+bool GetDynamicNamePure(JSContext* cx, JSObject* scopeChain, JSString* str, Value* vp);
 
 void PostWriteBarrier(JSRuntime* rt, js::gc::Cell* cell);
 void PostGlobalWriteBarrier(JSRuntime* rt, GlobalObject* obj);
@@ -785,7 +785,7 @@ MOZ_MUST_USE bool
 InterpretResume(JSContext* cx, HandleObject obj, HandleValue val, HandlePropertyName kind,
                 MutableHandleValue rval);
 MOZ_MUST_USE bool
-DebugAfterYield(JSContext* cx, BaselineFrame* frame);
+DebugAfterYield(JSContext* cx, BaselineFrame* frame, jsbytecode* pc, bool* mustReturn);
 MOZ_MUST_USE bool
 GeneratorThrowOrReturn(JSContext* cx, BaselineFrame* frame, Handle<GeneratorObject*> genObj,
                        HandleValue arg, uint32_t resumeKind);
@@ -917,32 +917,32 @@ CallNativeSetter(JSContext* cx, HandleFunction callee, HandleObject obj,
                  HandleValue rhs);
 
 MOZ_MUST_USE bool
-EqualStringsHelper(JSString* str1, JSString* str2);
+EqualStringsHelperPure(JSString* str1, JSString* str2);
 
 MOZ_MUST_USE bool
 CheckIsCallable(JSContext* cx, HandleValue v, CheckIsCallableKind kind);
 
 template <bool HandleMissing>
 bool
-GetNativeDataProperty(JSContext* cx, JSObject* obj, PropertyName* name, Value* vp);
+GetNativeDataPropertyPure(JSContext* cx, JSObject* obj, PropertyName* name, Value* vp);
 
 template <bool HandleMissing>
 bool
-GetNativeDataPropertyByValue(JSContext* cx, JSObject* obj, Value* vp);
+GetNativeDataPropertyByValuePure(JSContext* cx, JSObject* obj, Value* vp);
 
 template <bool HasOwn>
 bool
-HasNativeDataProperty(JSContext* cx, JSObject* obj, Value* vp);
+HasNativeDataPropertyPure(JSContext* cx, JSObject* obj, Value* vp);
 
 bool
-HasNativeElement(JSContext* cx, NativeObject* obj, int32_t index, Value* vp);
+HasNativeElementPure(JSContext* cx, NativeObject* obj, int32_t index, Value* vp);
 
 template <bool NeedsTypeBarrier>
 bool
-SetNativeDataProperty(JSContext* cx, JSObject* obj, PropertyName* name, Value* val);
+SetNativeDataPropertyPure(JSContext* cx, JSObject* obj, PropertyName* name, Value* val);
 
 bool
-ObjectHasGetterSetter(JSContext* cx, JSObject* obj, Shape* propShape);
+ObjectHasGetterSetterPure(JSContext* cx, JSObject* obj, Shape* propShape);
 
 JSString*
 TypeOfObject(JSObject* obj, JSRuntime* rt);
@@ -952,8 +952,6 @@ GetPrototypeOf(JSContext* cx, HandleObject target, MutableHandleValue rval);
 
 void
 CloseIteratorFromIon(JSContext* cx, JSObject* obj);
-
-extern const VMFunction SetObjectElementInfo;
 
 bool
 DoConcatStringObject(JSContext* cx, HandleValue lhs, HandleValue rhs,
@@ -966,11 +964,29 @@ DoConcatStringObject(JSContext* cx, HandleValue lhs, HandleValue rhs,
 MOZ_MUST_USE bool
 TrySkipAwait(JSContext* cx, HandleValue val, MutableHandleValue resolved);
 
-// This is the tailcall version of DoConcatStringObject
-extern const VMFunction DoConcatStringObjectInfo;
+// VMFunctions shared by JITs
+extern const VMFunction SetArrayLengthInfo;
+extern const VMFunction SetObjectElementInfo;
 
 extern const VMFunction StringsEqualInfo;
 extern const VMFunction StringsNotEqualInfo;
+extern const VMFunction ConcatStringsInfo;
+extern const VMFunction StringSplitHelperInfo;
+
+extern const VMFunction ProxyGetPropertyInfo;
+extern const VMFunction ProxyGetPropertyByValueInfo;
+extern const VMFunction ProxySetPropertyInfo;
+extern const VMFunction ProxySetPropertyByValueInfo;
+extern const VMFunction ProxyHasInfo;
+extern const VMFunction ProxyHasOwnInfo;
+
+extern const VMFunction NativeGetElementInfo;
+
+extern const VMFunction AddOrUpdateSparseElementHelperInfo;
+extern const VMFunction GetSparseElementHelperInfo;
+
+// TailCall VMFunctions
+extern const VMFunction DoConcatStringObjectInfo;
 
 } // namespace jit
 } // namespace js

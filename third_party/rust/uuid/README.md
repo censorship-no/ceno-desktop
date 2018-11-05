@@ -1,8 +1,10 @@
 uuid
 ====
 
-[![Build Status](https://travis-ci.org/rust-lang-nursery/uuid.svg?branch=master)](https://travis-ci.org/rust-lang-nursery/uuid)
-[![](http://meritbadge.herokuapp.com/uuid)](https://crates.io/crates/uuid)
+[![Build Status](https://travis-ci.org/uuid-rs/uuid.svg?branch=master)](https://travis-ci.org/uuid-rs/uuid) 
+[![Appveyor Status](https://ci.appveyor.com/api/projects/status/github/uuid-rs/uuid?branch=master&svg=true)](https://ci.appveyor.com/project/KodrAus/uuid) 
+[![Latest Version](https://img.shields.io/crates/v/uuid.svg)](https://crates.io/crates/uuid) 
+[![Join the chat at https://gitter.im/uuid-rs/Lobby](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/uuid-rs/Lobby?utm_source=badge&utm_medium=badge&utm_content=badge)
 
 A Rust library to generate and parse UUIDs.
 
@@ -19,7 +21,7 @@ The uniqueness property is not strictly guaranteed, however for all practical
 purposes, it can be assumed that an unintentional collision would be extremely
 unlikely.
 
-[Documentation](https://doc.rust-lang.org/uuid)
+[Documentation](https://docs.rs/uuid)
 
 ## Usage
 
@@ -27,8 +29,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-
-uuid = "0.1"
+uuid = "0.6"
 ```
 
 and this to your crate root:
@@ -39,13 +40,15 @@ extern crate uuid;
 
 ## Examples
 
-To create a new random (V4) UUID and print it out in hexadecimal form:
+To parse a simple UUID, then print the version and urn string format:
 
 ```rust
+extern crate uuid;
 use uuid::Uuid;
 
 fn main() {
-    let my_uuid = Uuid::new_v4();
+    let my_uuid = Uuid::parse_str("936DA01F9ABD4d9d80C702AF85C822A8").unwrap();
+    println!("Parsed a version {} UUID.", my_uuid.get_version_num());
     println!("{}", my_uuid);
 }
 ```
@@ -60,15 +63,43 @@ Md5      | Version 3: MD5 hash
 Random   | Version 4: Random
 Sha1     | Version 5: SHA-1 hash
 
-To parse a simple UUID, then print the version and urn string format:
+To create a new random (V4) UUID and print it out in hexadecimal form, first
+you'll need to change how you depend on `uuid`:
+
+```toml
+[dependencies]
+uuid = { version = "0.6", features = ["v4"] }
+```
+
+Next, you'll write:
 
 ```rust
+extern crate uuid;
 use uuid::Uuid;
 
 fn main() {
-    let my_uuid = Uuid::parse_str("936DA01F9ABD4d9d80C702AF85C822A8").unwrap();
-    println!("Parsed a version {} UUID.", my_uuid.get_version_num());
-    println!("{}", my_uuid.to_urn_string());
+    let my_uuid = Uuid::new_v4();
+    println!("{}", my_uuid);
+}
+```
+
+To create a new sha1-hash based (V5) UUID and print it out in hexadecimal form,
+you'll also need to change how you depend on `uuid`:
+
+```toml
+[dependencies]
+uuid = { version = "0.6", features = ["v5"] }
+```
+
+Next, you'll write:
+
+```rust
+extern crate uuid;
+use uuid::Uuid;
+
+fn main() {
+    let my_uuid = Uuid::new_v5(&uuid::NAMESPACE_DNS, "foo");
+    println!("{}", my_uuid);
 }
 ```
 

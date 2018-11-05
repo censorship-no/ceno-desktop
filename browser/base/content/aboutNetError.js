@@ -15,6 +15,7 @@ let searchParams = new URLSearchParams(document.documentURI.split("?")[1]);
 
 // Set to true on init if the error code is nssBadCert.
 let gIsCertError;
+let gNewErrorPagesEnabled;
 
 function getErrorCode() {
   return searchParams.get("e");
@@ -53,7 +54,7 @@ function toggleDisplay(node) {
   const toggle = {
     "": "block",
     "none": "block",
-    "block": "none"
+    "block": "none",
   };
   return (node.style.display = toggle[node.style.display]);
 }
@@ -82,8 +83,10 @@ function setupAdvancedButton() {
   }
 
   // Register click handler for the weakCryptoAdvancedPanel
-  document.getElementById("advancedButton")
-          .addEventListener("click", function togglePanelVisibility() {
+  document.getElementById("advancedButton").addEventListener("click", togglePanelVisibility);
+  document.getElementById("moreInformationButton").addEventListener("click", togglePanelVisibility);
+
+  function togglePanelVisibility() {
     toggleDisplay(panel);
     if (gIsCertError) {
       // Toggling the advanced panel must ensure that the debugging
@@ -98,7 +101,7 @@ function setupAdvancedButton() {
       var event = new CustomEvent("AboutNetErrorUIExpanded", {bubbles: true});
       document.dispatchEvent(event);
     }
-  });
+  }
 
   if (!gIsCertError) {
     return;
@@ -126,6 +129,12 @@ function disallowCertOverridesIfNeeded() {
   }
   if (cssClass == "badStsCert") {
     document.getElementById("badStsCertExplanation").removeAttribute("hidden");
+
+    if (gNewErrorPagesEnabled) {
+      let stsReturnButtonText = document.getElementById("stsReturnButtonText").textContent;
+      document.getElementById("returnButton").textContent = stsReturnButtonText;
+      document.getElementById("advancedPanelReturnButton").textContent = stsReturnButtonText;
+    }
   }
 }
 
@@ -144,21 +153,32 @@ function initPage() {
   }
 
   gIsCertError = (err == "nssBadCert");
+  gNewErrorPagesEnabled = !!document.body.dataset.newErrorPagesEnabled;
   // Only worry about captive portals if this is a cert error.
   let showCaptivePortalUI = isCaptive() && gIsCertError;
   if (showCaptivePortalUI) {
     err = "captivePortal";
   }
 
-  let pageTitle = document.getElementById("ept_" + err);
+  let l10nErrId = err;
+  let className = getCSSClass();
+  if (className) {
+    document.body.classList.add(className);
+  }
+
+  if (gNewErrorPagesEnabled && gIsCertError && className == "badStsCert") {
+    l10nErrId += "_sts";
+  }
+
+  let pageTitle = document.getElementById("ept_" + l10nErrId);
   if (pageTitle) {
     document.title = pageTitle.textContent;
   }
 
   // if it's an unknown error or there's no title or description
   // defined, get the generic message
-  var errTitle = document.getElementById("et_" + err);
-  var errDesc  = document.getElementById("ed_" + err);
+  var errTitle = document.getElementById("et_" + l10nErrId);
+  var errDesc  = document.getElementById("ed_" + l10nErrId);
   if (!errTitle || !errDesc) {
     errTitle = document.getElementById("et_generic");
     errDesc  = document.getElementById("ed_generic");
@@ -206,7 +226,6 @@ function initPage() {
   var errContainer = document.getElementById("errorContainer");
   errContainer.remove();
 
-  var className = getCSSClass();
   if (className && className != "expertBadCert") {
     // Associate a CSS class with the root of the page, if one was passed in,
     // to allow custom styling.
@@ -268,7 +287,7 @@ function initPage() {
         "SSL_ERROR_PROTOCOL_VERSION_ALERT",
         "SSL_ERROR_UNSUPPORTED_VERSION",
         "SSL_ERROR_NO_CYPHER_OVERLAP",
-        "SSL_ERROR_NO_CIPHERS_SUPPORTED"
+        "SSL_ERROR_NO_CIPHERS_SUPPORTED",
       ].some((substring) => shortDesc.includes(substring));
       // If it looks like an error that is user config based
       if (getErrorCode() == "nssFailure2" && hasPrefStyleError && options && options.changedCertPrefs) {
@@ -320,7 +339,7 @@ function initPageCaptivePortal() {
 }
 
 function initPageCertError() {
-  document.body.className = "certerror";
+  document.body.classList.add("certerror");
   for (let host of document.querySelectorAll(".hostname")) {
     host.textContent = document.location.hostname;
   }
@@ -334,7 +353,7 @@ function initPageCertError() {
   checkbox.addEventListener("change", function({target: {checked}}) {
     document.dispatchEvent(new CustomEvent("AboutNetErrorSetAutomatic", {
       detail: checked,
-      bubbles: true
+      bubbles: true,
     }));
   });
 
@@ -374,6 +393,11 @@ function addAutofocus(buttonId, position = "afterbegin") {
 
 let errorTryAgain = document.getElementById("errorTryAgain");
 errorTryAgain.addEventListener("click", function() {
+  retryThis(this);
+});
+
+let advancedPanelErrorTryAgain = document.getElementById("advancedPanelErrorTryAgain");
+advancedPanelErrorTryAgain.addEventListener("click", function() {
   retryThis(this);
 });
 

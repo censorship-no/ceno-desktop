@@ -1305,8 +1305,8 @@ TextureClient::CreateForYCbCr(KnowsCompositor* aAllocator,
                               gfx::IntSize aCbCrSize,
                               uint32_t aCbCrStride,
                               StereoMode aStereoMode,
+                              gfx::ColorDepth aColorDepth,
                               YUVColorSpace aYUVColorSpace,
-                              uint32_t aBitDepth,
                               TextureFlags aTextureFlags)
 {
   if (!aAllocator || !aAllocator->GetLayersIPCActor()->IPCOpen()) {
@@ -1317,12 +1317,15 @@ TextureClient::CreateForYCbCr(KnowsCompositor* aAllocator,
     return nullptr;
   }
 
-  TextureData* data =
-    BufferTextureData::CreateForYCbCr(aAllocator,
-                                      aYSize, aYStride,
-                                      aCbCrSize, aCbCrStride,
-                                      aStereoMode, aYUVColorSpace,
-                                      aBitDepth, aTextureFlags);
+  TextureData* data = BufferTextureData::CreateForYCbCr(aAllocator,
+                                                        aYSize,
+                                                        aYStride,
+                                                        aCbCrSize,
+                                                        aCbCrStride,
+                                                        aStereoMode,
+                                                        aColorDepth,
+                                                        aYUVColorSpace,
+                                                        aTextureFlags);
   if (!data) {
     return nullptr;
   }
@@ -1470,7 +1473,7 @@ public:
 
   virtual bool Serialize(ReadLockDescriptor& aOutput, base::ProcessId aOther) override;
 
-  int32_t mReadCount;
+  Atomic<int32_t> mReadCount;
 };
 
 // The cross-prcess implementation of TextureReadLock.
@@ -1651,14 +1654,14 @@ MemoryTextureReadLock::ReadLock()
 {
   NS_ASSERT_OWNINGTHREAD(MemoryTextureReadLock);
 
-  PR_ATOMIC_INCREMENT(&mReadCount);
+  ++mReadCount;
   return true;
 }
 
 int32_t
 MemoryTextureReadLock::ReadUnlock()
 {
-  int32_t readCount = PR_ATOMIC_DECREMENT(&mReadCount);
+  int32_t readCount = --mReadCount;
   MOZ_ASSERT(readCount >= 0);
 
   return readCount;
@@ -1775,7 +1778,7 @@ TextureClient::AddPaintThreadRef()
 void
 TextureClient::DropPaintThreadRef()
 {
-  MOZ_RELEASE_ASSERT(PaintThread::IsOnPaintThread());
+  MOZ_RELEASE_ASSERT(PaintThread::Get()->IsOnPaintWorkerThread());
   MOZ_RELEASE_ASSERT(mPaintThreadRefs >= 1);
   mPaintThreadRefs -= 1;
 }
@@ -1796,23 +1799,24 @@ UpdateYCbCrTextureClient(TextureClient* aTexture, const PlanarYCbCrData& aData)
     return false;
   }
 
+  uint32_t bytesPerPixel =
+    BytesPerPixel(SurfaceFormatForColorDepth(aData.mColorDepth));
   MappedYCbCrTextureData srcData;
   srcData.y.data = aData.mYChannel;
   srcData.y.size = aData.mYSize;
   srcData.y.stride = aData.mYStride;
   srcData.y.skip = aData.mYSkip;
-  MOZ_ASSERT(aData.mBitDepth == 8 || (aData.mBitDepth > 8 && aData.mBitDepth <= 16));
-  srcData.y.bytesPerPixel = (aData.mBitDepth > 8) ? 2 : 1;
+  srcData.y.bytesPerPixel = bytesPerPixel;
   srcData.cb.data = aData.mCbChannel;
   srcData.cb.size = aData.mCbCrSize;
   srcData.cb.stride = aData.mCbCrStride;
   srcData.cb.skip = aData.mCbSkip;
-  srcData.cb.bytesPerPixel = (aData.mBitDepth > 8) ? 2 : 1;
+  srcData.cb.bytesPerPixel = bytesPerPixel;
   srcData.cr.data = aData.mCrChannel;
   srcData.cr.size = aData.mCbCrSize;
   srcData.cr.stride = aData.mCbCrStride;
   srcData.cr.skip = aData.mCrSkip;
-  srcData.cr.bytesPerPixel = (aData.mBitDepth > 8) ? 2 : 1;
+  srcData.cr.bytesPerPixel = bytesPerPixel;
   srcData.metadata = nullptr;
 
   if (!srcData.CopyInto(mapped)) {
@@ -1891,13 +1895,6 @@ MappedYCbCrChannelData::CopyInto(MappedYCbCrChannelData& aDst)
   if (bytesPerPixel == 1) {
     copyData(aDst.data, aDst, data, *this);
   } else if (bytesPerPixel == 2) {
-    if (skip != 0) {
-      // The skip value definition doesn't specify if it's in bytes, or in
-      // "pixels". We will assume the later. There are currently no decoders
-      // returning HDR content with a skip value different than zero anyway.
-      NS_WARNING("skip value non zero for HDR content, please verify code "
-                 "(see bug 1421187)");
-    }
     copyData(reinterpret_cast<uint16_t*>(aDst.data),
              aDst,
              reinterpret_cast<uint16_t*>(data),

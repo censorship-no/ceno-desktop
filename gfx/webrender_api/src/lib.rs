@@ -2,6 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! The `webrender_api` crate contains an assortment types and functions used
+//! by WebRender consumers as well as, in many cases, WebRender itself.
+//!
+//! This separation allows Servo to parallelize compilation across `webrender`
+//! and other crates that depend on `webrender_api`. So in practice, we put
+//! things in this crate when Servo needs to use them. Firefox depends on the
+//! `webrender` crate directly, and so this distinction is not really relevant
+//! there.
+
 #![cfg_attr(feature = "nightly", feature(nonzero))]
 #![cfg_attr(feature = "cargo-clippy", allow(float_cmp, too_many_arguments, unreadable_literal))]
 
@@ -33,6 +42,7 @@ mod color;
 mod display_item;
 mod display_list;
 mod font;
+mod gradient_builder;
 mod image;
 mod units;
 
@@ -41,5 +51,6 @@ pub use color::*;
 pub use display_item::*;
 pub use display_list::*;
 pub use font::*;
+pub use gradient_builder::*;
 pub use image::*;
 pub use units::*;

@@ -62,8 +62,8 @@ add_task(async function test_no_files_exist() {
   // Checking if the histogram is updated negatively
   let h = Telemetry.getHistogramById(HistogramId);
   let s = h.snapshot();
-  Assert.equal(s.counts[0], 1, "One probe for the 'false' bucket.");
-  Assert.equal(s.counts[1], 0, "No probes in the 'true' bucket.");
+  Assert.equal(s.values[0], 1, "One probe for the 'false' bucket.");
+  Assert.equal(s.values[1], 0, "No probes in the 'true' bucket.");
 });
 
 /**
@@ -78,15 +78,15 @@ add_task(async function test_one_file_valid() {
     clean: invalidSession,
     cleanBackup: validSession,
     recovery: invalidSession,
-    recoveryBackup: invalidSession
+    recoveryBackup: invalidSession,
   });
 
   await SessionFile.read();
   // Checking if the histogram is updated negatively.
   let h = Telemetry.getHistogramById(HistogramId);
   let s = h.snapshot();
-  Assert.equal(s.counts[0], 1, "One probe for the 'false' bucket.");
-  Assert.equal(s.counts[1], 0, "No probes in the 'true' bucket.");
+  Assert.equal(s.values[0], 1, "One probe for the 'false' bucket.");
+  Assert.equal(s.values[1], 0, "No probes in the 'true' bucket.");
 });
 
 /**
@@ -100,13 +100,13 @@ add_task(async function test_all_files_corrupt() {
     clean: invalidSession,
     cleanBackup: invalidSession,
     recovery: invalidSession,
-    recoveryBackup: invalidSession
+    recoveryBackup: invalidSession,
   });
 
   await SessionFile.read();
   // Checking if the histogram is positively updated.
   let h = Telemetry.getHistogramById(HistogramId);
   let s = h.snapshot();
-  Assert.equal(s.counts[1], 1, "One probe for the 'true' bucket.");
-  Assert.equal(s.counts[0], 0, "No probes in the 'false' bucket.");
+  Assert.equal(s.values[1], 1, "One probe for the 'true' bucket.");
+  Assert.equal(s.values[0], 0, "No probes in the 'false' bucket.");
 });

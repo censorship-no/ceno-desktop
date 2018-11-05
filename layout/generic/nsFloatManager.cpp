@@ -581,7 +581,7 @@ public:
     const nsSize& aContainerSize);
 
   static UniquePtr<ShapeInfo> CreateBasicShape(
-    const UniquePtr<StyleBasicShape>& aBasicShape,
+    const StyleBasicShape& aBasicShape,
     nscoord aShapeMargin,
     nsIFrame* const aFrame,
     const LogicalRect& aShapeBoxRect,
@@ -590,7 +590,7 @@ public:
     const nsSize& aContainerSize);
 
   static UniquePtr<ShapeInfo> CreateInset(
-    const UniquePtr<StyleBasicShape>& aBasicShape,
+    const StyleBasicShape& aBasicShape,
     nscoord aShapeMargin,
     nsIFrame* aFrame,
     const LogicalRect& aShapeBoxRect,
@@ -598,7 +598,7 @@ public:
     const nsSize& aContainerSize);
 
   static UniquePtr<ShapeInfo> CreateCircleOrEllipse(
-    const UniquePtr<StyleBasicShape>& aBasicShape,
+    const StyleBasicShape& aBasicShape,
     nscoord aShapeMargin,
     nsIFrame* const aFrame,
     const LogicalRect& aShapeBoxRect,
@@ -606,7 +606,7 @@ public:
     const nsSize& aContainerSize);
 
   static UniquePtr<ShapeInfo> CreatePolygon(
-    const UniquePtr<StyleBasicShape>& aBasicShape,
+    const StyleBasicShape& aBasicShape,
     nscoord aShapeMargin,
     nsIFrame* const aFrame,
     const LogicalRect& aShapeBoxRect,
@@ -615,7 +615,7 @@ public:
     const nsSize& aContainerSize);
 
   static UniquePtr<ShapeInfo> CreateImageShape(
-    const UniquePtr<nsStyleImage>& aShapeImage,
+    const nsStyleImage& aShapeImage,
     float aShapeImageThreshold,
     nscoord aShapeMargin,
     nsIFrame* const aFrame,
@@ -2409,9 +2409,13 @@ nsFloatManager::FloatInfo::FloatInfo(nsIFrame* aFrame,
       MOZ_ASSERT_UNREACHABLE("shape-outside doesn't have URL source type!");
       return;
 
+    case StyleShapeSourceType::Path:
+      MOZ_ASSERT_UNREACHABLE("shape-outside doesn't have Path source type!");
+      return;
+
     case StyleShapeSourceType::Image: {
       float shapeImageThreshold = styleDisplay->mShapeImageThreshold;
-      mShapeInfo = ShapeInfo::CreateImageShape(shapeOutside.GetShapeImage(),
+      mShapeInfo = ShapeInfo::CreateImageShape(shapeOutside.ShapeImage(),
                                                shapeImageThreshold,
                                                shapeMargin,
                                                mFrame,
@@ -2437,7 +2441,7 @@ nsFloatManager::FloatInfo::FloatInfo(nsIFrame* aFrame,
     }
 
     case StyleShapeSourceType::Shape: {
-      const UniquePtr<StyleBasicShape>& basicShape = shapeOutside.GetBasicShape();
+      const StyleBasicShape& basicShape = shapeOutside.BasicShape();
       // Initialize <shape-box>'s reference rect.
       LogicalRect shapeBoxRect =
         ShapeInfo::ComputeShapeBoxRect(shapeOutside, mFrame, aMarginRect, aWM);
@@ -2641,7 +2645,7 @@ nsFloatManager::ShapeInfo::CreateShapeBox(
 
 /* static */ UniquePtr<nsFloatManager::ShapeInfo>
 nsFloatManager::ShapeInfo::CreateBasicShape(
-  const UniquePtr<StyleBasicShape>& aBasicShape,
+  const StyleBasicShape& aBasicShape,
   nscoord aShapeMargin,
   nsIFrame* const aFrame,
   const LogicalRect& aShapeBoxRect,
@@ -2649,7 +2653,7 @@ nsFloatManager::ShapeInfo::CreateBasicShape(
   WritingMode aWM,
   const nsSize& aContainerSize)
 {
-  switch (aBasicShape->GetShapeType()) {
+  switch (aBasicShape.GetShapeType()) {
     case StyleBasicShapeType::Polygon:
       return CreatePolygon(aBasicShape, aShapeMargin, aFrame, aShapeBoxRect,
                            aMarginRect, aWM, aContainerSize);
@@ -2667,7 +2671,7 @@ nsFloatManager::ShapeInfo::CreateBasicShape(
 
 /* static */ UniquePtr<nsFloatManager::ShapeInfo>
 nsFloatManager::ShapeInfo::CreateInset(
-  const UniquePtr<StyleBasicShape>& aBasicShape,
+  const StyleBasicShape& aBasicShape,
   nscoord aShapeMargin,
   nsIFrame* aFrame,
   const LogicalRect& aShapeBoxRect,
@@ -2739,7 +2743,7 @@ nsFloatManager::ShapeInfo::CreateInset(
 
 /* static */ UniquePtr<nsFloatManager::ShapeInfo>
 nsFloatManager::ShapeInfo::CreateCircleOrEllipse(
-  const UniquePtr<StyleBasicShape>& aBasicShape,
+  const StyleBasicShape& aBasicShape,
   nscoord aShapeMargin,
   nsIFrame* const aFrame,
   const LogicalRect& aShapeBoxRect,
@@ -2758,7 +2762,7 @@ nsFloatManager::ShapeInfo::CreateCircleOrEllipse(
 
   // Compute the circle or ellipse radii.
   nsSize radii;
-  StyleBasicShapeType type = aBasicShape->GetShapeType();
+  StyleBasicShapeType type = aBasicShape.GetShapeType();
   if (type == StyleBasicShapeType::Circle) {
     nscoord radius = ShapeUtils::ComputeCircleRadius(aBasicShape, physicalCenter,
                                                      physicalShapeBoxRect);
@@ -2794,7 +2798,7 @@ nsFloatManager::ShapeInfo::CreateCircleOrEllipse(
 
 /* static */ UniquePtr<nsFloatManager::ShapeInfo>
 nsFloatManager::ShapeInfo::CreatePolygon(
-  const UniquePtr<StyleBasicShape>& aBasicShape,
+  const StyleBasicShape& aBasicShape,
   nscoord aShapeMargin,
   nsIFrame* const aFrame,
   const LogicalRect& aShapeBoxRect,
@@ -2832,7 +2836,7 @@ nsFloatManager::ShapeInfo::CreatePolygon(
 
 /* static */ UniquePtr<nsFloatManager::ShapeInfo>
 nsFloatManager::ShapeInfo::CreateImageShape(
-  const UniquePtr<nsStyleImage>& aShapeImage,
+  const nsStyleImage& aShapeImage,
   float aShapeImageThreshold,
   nscoord aShapeMargin,
   nsIFrame* const aFrame,
@@ -2840,11 +2844,12 @@ nsFloatManager::ShapeInfo::CreateImageShape(
   WritingMode aWM,
   const nsSize& aContainerSize)
 {
-  MOZ_ASSERT(aShapeImage ==
-             aFrame->StyleDisplay()->mShapeOutside.GetShapeImage(),
+  MOZ_ASSERT(&aShapeImage ==
+             &aFrame->StyleDisplay()->mShapeOutside.ShapeImage(),
              "aFrame should be the frame that we got aShapeImage from");
 
-  nsImageRenderer imageRenderer(aFrame, aShapeImage.get(),
+  nsImageRenderer imageRenderer(aFrame,
+                                &aShapeImage,
                                 nsImageRenderer::FLAG_SYNC_DECODE_IMAGES);
 
   if (!imageRenderer.PrepareImage()) {

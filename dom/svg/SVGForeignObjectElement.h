@@ -25,7 +25,7 @@ class SVGForeignObjectElement final : public SVGGraphicsElement
 protected:
   friend nsresult (::NS_NewSVGForeignObjectElement(nsIContent **aResult,
                                                    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGForeignObjectElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGForeignObjectElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
 public:
@@ -38,8 +38,7 @@ public:
   // nsIContent interface
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* name) const override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedLength> X();

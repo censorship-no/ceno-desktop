@@ -8,6 +8,7 @@
 #include "builtin/String.h"
 
 #include "builtin/TestingFunctions.h"
+#include "js/SavedFrameAPI.h"
 #include "jsapi-tests/tests.h"
 #include "vm/ArrayObject.h"
 #include "vm/Realm.h"
@@ -259,7 +260,7 @@ BEGIN_TEST(testSavedStacks_selfHostedFrames)
     result = JS::GetSavedFrameColumn(cx, principals, selfHostedFrame, &column,
                                      JS::SavedFrameSelfHosted::Exclude);
     CHECK(result == JS::SavedFrameResult::Ok);
-    CHECK_EQUAL(column, 5U);
+    CHECK_EQUAL(column, 9U);
 
     // Function display name
     result = JS::GetSavedFrameFunctionDisplayName(cx, principals, selfHostedFrame, &str,

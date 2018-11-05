@@ -10,12 +10,10 @@
 
 #include <sys/types.h>
 
-#include "jsapi.h"
-
 #include "frontend/BinSourceRuntimeSupport.h"
 #include "frontend/TokenStream.h"
-#include "gc/Zone.h"
 #include "js/Result.h"
+#include "vm/JSContext.h"
 
 namespace js {
 namespace frontend {
@@ -73,53 +71,98 @@ const char* describeBinVariant(const BinVariant& variant)
 
 } // namespace frontend
 
-
-JS::Result<const js::frontend::BinKind*>
-BinaryASTSupport::binKind(JSContext* cx, const CharSlice key)
+BinaryASTSupport::BinaryASTSupport()
+  : binKindMap_(frontend::BINKIND_LIMIT)
+  , binFieldMap_(frontend::BINFIELD_LIMIT)
+  , binVariantMap_(frontend::BINVARIANT_LIMIT)
 {
-    if (!binKindMap_.initialized()) {
-        // Initialize lazily.
-        if (!binKindMap_.init(frontend::BINKIND_LIMIT))
-            return ReportOutOfMemoryResult(cx);
+}
 
+/**
+ * It is expected that all bin tables are initialized on the main thread, and that
+ * any helper threads will find the read-only tables properly initialized, so that
+ * they can do their accesses safely without taking any locks.
+ */
+bool
+BinaryASTSupport::ensureBinTablesInitialized(JSContext* cx)
+{
+    return ensureBinKindsInitialized(cx) && ensureBinVariantsInitialized(cx);
+}
+
+bool
+BinaryASTSupport::ensureBinKindsInitialized(JSContext* cx)
+{
+    MOZ_ASSERT(!cx->helperThread());
+    if (binKindMap_.empty()) {
         for (size_t i = 0; i < frontend::BINKIND_LIMIT; ++i) {
             const BinKind variant = static_cast<BinKind>(i);
             const CharSlice& key = getBinKind(variant);
             auto ptr = binKindMap_.lookupForAdd(key);
             MOZ_ASSERT(!ptr);
-            if (!binKindMap_.add(ptr, key, variant))
-                return ReportOutOfMemoryResult(cx);
+            if (!binKindMap_.add(ptr, key, variant)) {
+                ReportOutOfMemory(cx);
+                return false;
+            }
         }
     }
 
-    auto ptr = binKindMap_.lookup(key);
-    if (!ptr)
-        return nullptr;
-
-    return &ptr->value();
+    return true;
 }
 
-JS::Result<const js::frontend::BinVariant*>
-BinaryASTSupport::binVariant(JSContext* cx, const CharSlice key) {
-    if (!binVariantMap_.initialized()) {
-        // Initialize lazily.
-        if (!binVariantMap_.init(frontend::BINVARIANT_LIMIT))
-            return ReportOutOfMemoryResult(cx);
-
+bool
+BinaryASTSupport::ensureBinVariantsInitialized(JSContext* cx)
+{
+    MOZ_ASSERT(!cx->helperThread());
+    if (binVariantMap_.empty()) {
         for (size_t i = 0; i < frontend::BINVARIANT_LIMIT; ++i) {
             const BinVariant variant = static_cast<BinVariant>(i);
             const CharSlice& key = getBinVariant(variant);
             auto ptr = binVariantMap_.lookupForAdd(key);
             MOZ_ASSERT(!ptr);
-            if (!binVariantMap_.add(ptr, key, variant))
-                return ReportOutOfMemoryResult(cx);
+            if (!binVariantMap_.add(ptr, key, variant)) {
+                ReportOutOfMemory(cx);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+
+JS::Result<const js::frontend::BinKind*>
+BinaryASTSupport::binKind(JSContext* cx, const CharSlice key)
+{
+    MOZ_ASSERT_IF(cx->helperThread(), !binKindMap_.empty());
+    if (!cx->helperThread()) {
+        // Initialize Lazily if on main thread.
+        if (!ensureBinKindsInitialized(cx)) {
+            return cx->alreadyReportedError();
         }
     }
 
-
-    auto ptr = binVariantMap_.lookup(key);
-    if (!ptr)
+    auto ptr = binKindMap_.readonlyThreadsafeLookup(key);
+    if (!ptr) {
         return nullptr;
+    }
+
+    return &ptr->value();
+}
+
+JS::Result<const js::frontend::BinVariant*>
+BinaryASTSupport::binVariant(JSContext* cx, const CharSlice key)
+{
+    MOZ_ASSERT_IF(cx->helperThread(), !binVariantMap_.empty());
+    if (!cx->helperThread()) {
+        // Initialize lazily if on main thread.
+        if (!ensureBinVariantsInitialized(cx)) {
+            return cx->alreadyReportedError();
+        }
+    }
+
+    auto ptr = binVariantMap_.readonlyThreadsafeLookup(key);
+    if (!ptr) {
+        return nullptr;
+    }
 
     return &ptr->value();
 }

@@ -356,10 +356,6 @@ public:
   bool FirstLetterComplete() const { return mFirstLetterComplete; }
   void SetFirstLetterComplete() { mFirstLetterComplete = true; }
 
-#ifdef DEBUG
-  nsCString ToString() const;
-#endif
-
 private:
   StyleClear mBreakType;
   InlineBreak mInlineBreak;
@@ -372,11 +368,9 @@ private:
 #define NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aMetrics) \
   aStatus.UpdateTruncated(aReflowInput, aMetrics);
 
-#ifdef DEBUG
 // Convert nsReflowStatus to a human-readable string.
 std::ostream&
 operator<<(std::ostream& aStream, const nsReflowStatus& aStatus);
-#endif
 
 //----------------------------------------------------------------------
 
@@ -659,9 +653,6 @@ public:
       for (auto& content : mozilla::Reversed(mData.mAnonymousContent)) {
         nsIFrame::DestroyAnonymousContent(mPresContext, content.forget());
       }
-      for (auto& content : mozilla::Reversed(mData.mGeneratedContent)) {
-        content->UnbindFromTree();
-      }
     }
     nsPresContext* mPresContext;
     PostDestroyData mData;
@@ -781,10 +772,18 @@ public:
    * Get the style associated with this frame.
    */
   ComputedStyle* Style() const { return mComputedStyle; }
+
+  void AssertNewStyleIsSane(ComputedStyle&)
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    ;
+#else
+    { }
+#endif
+
   void SetComputedStyle(ComputedStyle* aStyle)
   {
     if (aStyle != mComputedStyle) {
-      MOZ_DIAGNOSTIC_ASSERT(PresShell() == aStyle->PresContextForFrame()->PresShell());
+      AssertNewStyleIsSane(*aStyle);
       RefPtr<ComputedStyle> oldComputedStyle = mComputedStyle.forget();
       mComputedStyle = aStyle;
       DidSetComputedStyle(oldComputedStyle);
@@ -874,12 +873,15 @@ public:
   /**
    * Gets the parent of a frame, using the parent of the placeholder for
    * out-of-flow frames.
-   *
-   * This is effectively the primary frame (or one of the continuations) of the
-   * closest flattened tree ancestor that has a frame (flattened tree ancestors
-   * may not have frames in presence of display: contents).
    */
   inline nsContainerFrame* GetInFlowParent() const;
+
+  /**
+   * Gets the primary frame of the closest flattened tree ancestor that has a
+   * frame (flattened tree ancestors may not have frames in presence of display:
+   * contents).
+   */
+  inline nsIFrame* GetClosestFlattenedTreeAncestorPrimaryFrame() const;
 
   /**
    * Return the placeholder for this frame (which must be out-of-flow).
@@ -1258,8 +1260,6 @@ public:
   NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(IBaselinePadProperty, nscoord)
   NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(BBaselinePadProperty, nscoord)
 
-  NS_DECLARE_FRAME_PROPERTY_DELETABLE(ModifiedFrameList, nsTArray<nsIFrame*>)
-  NS_DECLARE_FRAME_PROPERTY_DELETABLE(OverriddenDirtyRectFrameList, nsTArray<nsIFrame*>)
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(DisplayItems, DisplayItemArray)
 
   NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(BidiDataProperty, mozilla::FrameBidiData)
@@ -3617,7 +3617,7 @@ public:
   // nsIFrames themselves are in the nsPresArena, and so are not measured here.
   // Instead, this measures heap-allocated things hanging off the nsIFrame, and
   // likewise for its descendants.
-  void AddSizeOfExcludingThisForTree(nsWindowSizes& aWindowSizes) const;
+  virtual void AddSizeOfExcludingThisForTree(nsWindowSizes& aWindowSizes) const;
 
   /**
    * Return true if and only if this frame obeys visibility:hidden.
@@ -4132,6 +4132,11 @@ public:
 
   bool MayHaveWillChangeBudget() { return mMayHaveWillChangeBudget; }
   void SetMayHaveWillChangeBudget(bool aHasBudget) { mMayHaveWillChangeBudget = aHasBudget; }
+
+  /**
+   * Returns the hit test area of the frame.
+   */
+  nsRect GetCompositorHitTestArea(nsDisplayListBuilder* aBuilder);
 
   /**
    * Returns the set of flags indicating the properties of the frame that the
@@ -4771,6 +4776,25 @@ nsFrameList::FrameLinkEnumerator::Next()
 {
   mPrev = mFrame;
   Enumerator::Next();
+}
+
+template<typename Predicate>
+inline void
+nsFrameList::FrameLinkEnumerator::Find(Predicate&& aPredicate)
+{
+  static_assert(
+    std::is_same<typename mozilla::FunctionTypeTraits<Predicate>::ReturnType,
+                 bool>::value &&
+    mozilla::FunctionTypeTraits<Predicate>::arity == 1 &&
+    std::is_same<typename mozilla::FunctionTypeTraits<Predicate>::template ParameterType<0>,
+                 nsIFrame*>::value,
+    "aPredicate should be of this function signature: bool(nsIFrame*)");
+
+  for (; !AtEnd(); Next()) {
+    if (aPredicate(mFrame)) {
+      return;
+    }
+  }
 }
 
 // Operators of nsFrameList::Iterator

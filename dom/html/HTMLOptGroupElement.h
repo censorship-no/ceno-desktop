@@ -17,7 +17,7 @@ namespace dom {
 class HTMLOptGroupElement final : public nsGenericHTMLElement
 {
 public:
-  explicit HTMLOptGroupElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLOptGroupElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLOptGroupElement, optgroup)
 
@@ -33,8 +33,7 @@ public:
   // nsIContent
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                 const nsAttrValue* aValue,

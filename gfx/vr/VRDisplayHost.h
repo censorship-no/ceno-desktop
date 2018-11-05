@@ -45,6 +45,9 @@ public:
   virtual void StartVRNavigation();
   virtual void StopVRNavigation(const TimeDuration& aTimeout);
   void NotifyVSync();
+  virtual void Run1msTasks(double aDeltaTime);
+  virtual void Run10msTasks();
+  virtual void Run100msTasks();
 
   void StartFrame();
   void SubmitFrame(VRLayerParent* aLayer,
@@ -97,10 +100,15 @@ private:
                            uint64_t aFrameId,
                            const gfx::Rect& aLeftEyeRect,
                            const gfx::Rect& aRightEyeRect);
+  void CheckWatchDog();
 
   VRDisplayInfo mLastUpdateDisplayInfo;
-  TimeStamp mLastFrameStart;
   bool mFrameStarted;
+#if defined(MOZ_WIDGET_ANDROID)
+protected:
+  uint64_t mLastSubmittedFrameId;
+  uint64_t mLastStartedFrame;
+#endif // defined(MOZ_WIDGET_ANDROID)
 
 #if defined(XP_WIN)
 protected:

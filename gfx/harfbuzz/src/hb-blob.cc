@@ -30,8 +30,8 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "hb-private.hh"
-#include "hb-blob-private.hh"
+#include "hb.hh"
+#include "hb-blob.hh"
 
 #ifdef HAVE_SYS_MMAN_H
 #ifdef HAVE_UNISTD_H
@@ -44,6 +44,20 @@
 #include <errno.h>
 #include <stdlib.h>
 
+
+DEFINE_NULL_INSTANCE (hb_blob_t) =
+{
+  HB_OBJECT_HEADER_STATIC,
+
+  true, /* immutable */
+
+  nullptr, /* data */
+  0, /* length */
+  HB_MEMORY_MODE_READONLY, /* mode */
+
+  nullptr, /* user_data */
+  nullptr  /* destroy */
+};
 
 /**
  * hb_blob_create: (skip)
@@ -182,20 +196,7 @@ hb_blob_copy_writable_or_fail (hb_blob_t *blob)
 hb_blob_t *
 hb_blob_get_empty (void)
 {
-  static const hb_blob_t _hb_blob_nil = {
-    HB_OBJECT_HEADER_STATIC,
-
-    true, /* immutable */
-
-    nullptr, /* data */
-    0, /* length */
-    HB_MEMORY_MODE_READONLY, /* mode */
-
-    nullptr, /* user_data */
-    nullptr  /* destroy */
-  };
-
-  return const_cast<hb_blob_t *> (&_hb_blob_nil);
+  return const_cast<hb_blob_t *> (&Null(hb_blob_t));
 }
 
 /**

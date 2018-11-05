@@ -97,8 +97,9 @@ PlacesItem.prototype = {
     let clear = await CryptoWrapper.prototype.decrypt.call(this, keyBundle);
 
     // Convert the abstract places item to the actual object type
-    if (!this.deleted)
+    if (!this.deleted) {
       this.__proto__ = this.getTypeObject(this.type).prototype;
+    }
 
     return clear;
   },
@@ -480,7 +481,7 @@ BaseBookmarksEngine.prototype = {
 
   getValidator() {
     return new BookmarkValidator();
-  }
+  },
 };
 
 /**
@@ -551,8 +552,9 @@ BookmarksEngine.prototype = {
       }
 
       let parentName = parent.title || "";
-      if (guidMap[parentName] == null)
+      if (guidMap[parentName] == null) {
         guidMap[parentName] = {};
+      }
 
       // If the entry already exists, remember that there are explicit dupes.
       let entry = {
@@ -991,20 +993,23 @@ BaseBookmarksStore.prototype = {
 
   async _calculateIndex(record) {
     // Ensure folders have a very high sort index so they're not synced last.
-    if (record.type == "folder")
+    if (record.type == "folder") {
       return FOLDER_SORTINDEX;
+    }
 
     // For anything directly under the toolbar, give it a boost of more than an
     // unvisited bookmark
     let index = 0;
-    if (record.parentid == "toolbar")
+    if (record.parentid == "toolbar") {
       index += 150;
+    }
 
     // Add in the bookmark's frecency if we have something.
     if (record.bmkUri != null) {
       let frecency = await PlacesSyncUtils.history.fetchURLFrecency(record.bmkUri);
-      if (frecency != -1)
+      if (frecency != -1) {
         index += frecency;
+      }
     }
 
     return index;
@@ -1014,7 +1019,7 @@ BaseBookmarksStore.prototype = {
     // Save a backup before clearing out all bookmarks.
     await PlacesBackups.create(null, true);
     await PlacesSyncUtils.bookmarks.wipe();
-  }
+  },
 };
 
 /**
@@ -1070,6 +1075,19 @@ BookmarksStore.prototype = {
           `Record ${record.id} has invalid parentid: ${parentGUID}`);
     }
     this._log.debug("Remote parent is " + parentGUID);
+
+    if (record.type == "livemark") {
+      // Places no longer supports livemarks, so we replace new and updated
+      // livemarks with tombstones, and insert new change records for the engine
+      // to upload.
+      let livemarkInfo = record.toSyncBookmark();
+      let newChanges = await PlacesSyncUtils.bookmarks.removeLivemark(
+        livemarkInfo);
+      if (newChanges) {
+        this.engine._modified.insert(newChanges);
+        return;
+      }
+    }
 
     // Do the normal processing of incoming records
     await Store.prototype.applyIncoming.call(this, record);
@@ -1178,7 +1196,7 @@ BookmarksStore.prototype = {
   async wipe() {
     this.clearPendingDeletions();
     await super.wipe();
-  }
+  },
 };
 
 /**
@@ -1284,6 +1302,8 @@ BookmarksTracker.prototype = {
 
   onStart() {
     PlacesUtils.bookmarks.addObserver(this, true);
+    this._placesListener = new PlacesWeakCallbackWrapper(this.handlePlacesEvents.bind(this));
+    PlacesUtils.observers.addListener(["bookmark-added"], this._placesListener);
     Svc.Obs.add("bookmarks-restore-begin", this);
     Svc.Obs.add("bookmarks-restore-success", this);
     Svc.Obs.add("bookmarks-restore-failed", this);
@@ -1291,6 +1311,7 @@ BookmarksTracker.prototype = {
 
   onStop() {
     PlacesUtils.bookmarks.removeObserver(this);
+    PlacesUtils.observers.removeListener(["bookmark-added"], this._placesListener);
     Svc.Obs.remove("bookmarks-restore-begin", this);
     Svc.Obs.remove("bookmarks-restore-success", this);
     Svc.Obs.remove("bookmarks-restore-failed", this);
@@ -1345,7 +1366,7 @@ BookmarksTracker.prototype = {
   QueryInterface: ChromeUtils.generateQI([
     Ci.nsINavBookmarkObserver,
     Ci.nsINavBookmarkObserver_MOZILLA_1_9_1_ADDITIONS,
-    Ci.nsISupportsWeakReference
+    Ci.nsISupportsWeakReference,
   ]),
 
   /* Every add/remove/change will trigger a sync for MULTI_DEVICE (except in
@@ -1358,15 +1379,15 @@ BookmarksTracker.prototype = {
     }
   },
 
-  onItemAdded: function BMT_onItemAdded(itemId, folder, index,
-                                        itemType, uri, title, dateAdded,
-                                        guid, parentGuid, source) {
-    if (IGNORED_SOURCES.includes(source)) {
-      return;
-    }
+  handlePlacesEvents(events) {
+    for (let event of events) {
+      if (IGNORED_SOURCES.includes(event.source)) {
+        continue;
+      }
 
-    this._log.trace("onItemAdded: " + itemId);
-    this._upScore();
+      this._log.trace("'bookmark-added': " + event.id);
+      this._upScore();
+    }
   },
 
   onItemRemoved(itemId, parentId, index, type, uri,
@@ -1390,13 +1411,15 @@ BookmarksTracker.prototype = {
       return;
     }
 
-    if (isAnno && (!ANNOS_TO_TRACK.includes(property)))
+    if (isAnno && (!ANNOS_TO_TRACK.includes(property))) {
       // Ignore annotations except for the ones that we sync.
       return;
+    }
 
     // Ignore favicon changes to avoid unnecessary churn.
-    if (property == "favicon")
+    if (property == "favicon") {
       return;
+    }
 
     this._log.trace("onItemChanged: " + itemId +
                     (", " + property + (isAnno ? " (anno)" : "")) +
@@ -1425,7 +1448,7 @@ BookmarksTracker.prototype = {
       this._batchSawScoreIncrement = false;
     }
   },
-  onItemVisited() {}
+  onItemVisited() {},
 };
 
 /**

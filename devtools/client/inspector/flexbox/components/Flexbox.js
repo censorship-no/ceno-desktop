@@ -4,12 +4,31 @@
 
 "use strict";
 
-const { createFactory, PureComponent } = require("devtools/client/shared/vendor/react");
+const {
+  createElement,
+  createFactory,
+  Fragment,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { getStr } = require("devtools/client/inspector/layout/utils/l10n");
 
-const FlexboxItem = createFactory(require("./FlexboxItem"));
+loader.lazyGetter(this, "FlexContainerProperties", function() {
+  return createFactory(require("./FlexContainerProperties"));
+});
+loader.lazyGetter(this, "FlexItemList", function() {
+  return createFactory(require("./FlexItemList"));
+});
+loader.lazyGetter(this, "FlexItemSizingOutline", function() {
+  return createFactory(require("./FlexItemSizingOutline"));
+});
+loader.lazyGetter(this, "FlexItemSizingProperties", function() {
+  return createFactory(require("./FlexItemSizingProperties"));
+});
+loader.lazyGetter(this, "Header", function() {
+  return createFactory(require("./Header"));
+});
 
 const Types = require("../types");
 
@@ -17,54 +36,106 @@ class Flexbox extends PureComponent {
   static get propTypes() {
     return {
       flexbox: PropTypes.shape(Types.flexbox).isRequired,
+      flexContainer: PropTypes.shape(Types.flexContainer).isRequired,
       getSwatchColorPickerTooltip: PropTypes.func.isRequired,
-      setSelectedNode: PropTypes.func.isRequired,
       onHideBoxModelHighlighter: PropTypes.func.isRequired,
       onSetFlexboxOverlayColor: PropTypes.func.isRequired,
       onShowBoxModelHighlighterForNode: PropTypes.func.isRequired,
       onToggleFlexboxHighlighter: PropTypes.func.isRequired,
+      setSelectedNode: PropTypes.func.isRequired,
     };
+  }
+
+  renderFlexContainerProperties() {
+    return FlexContainerProperties({
+      properties: this.props.flexContainer.properties,
+    });
+  }
+
+  renderFlexItemList() {
+    const {
+      onHideBoxModelHighlighter,
+      onShowBoxModelHighlighterForNode,
+      setSelectedNode,
+    } = this.props;
+    const { flexItems } = this.props.flexContainer;
+
+    return FlexItemList({
+      flexItems,
+      onHideBoxModelHighlighter,
+      onShowBoxModelHighlighterForNode,
+      setSelectedNode,
+    });
+  }
+
+  renderFlexItemSizing() {
+    const {
+      color,
+    } = this.props.flexbox;
+    const {
+      flexItems,
+      flexItemShown,
+      properties,
+    } = this.props.flexContainer;
+
+    const flexItem = flexItems.find(item => item.nodeFront.actorID === flexItemShown);
+    if (!flexItem) {
+      return null;
+    }
+
+    return createElement(Fragment, null,
+      FlexItemSizingOutline({
+        color,
+        flexDirection: properties["flex-direction"],
+        flexItem,
+      }),
+      FlexItemSizingProperties({
+        flexDirection: properties["flex-direction"],
+        flexItem,
+      })
+    );
   }
 
   render() {
     const {
-      flexbox,
+      flexContainer,
       getSwatchColorPickerTooltip,
-      setSelectedNode,
       onHideBoxModelHighlighter,
       onSetFlexboxOverlayColor,
       onShowBoxModelHighlighterForNode,
       onToggleFlexboxHighlighter,
+      setSelectedNode,
     } = this.props;
 
-    return flexbox.actorID ?
-      dom.div({ id: "layout-flexbox-container" },
-        dom.div({ className: "flexbox-content" },
-          dom.div({ className: "flexbox-container" },
-            dom.span({}, getStr("flexbox.overlayFlexbox")),
-            dom.ul(
-              {
-                id: "flexbox-list",
-                className: "devtools-monospace",
-              },
-              FlexboxItem({
-                key: flexbox.id,
-                flexbox,
-                getSwatchColorPickerTooltip,
-                setSelectedNode,
-                onHideBoxModelHighlighter,
-                onSetFlexboxOverlayColor,
-                onShowBoxModelHighlighterForNode,
-                onToggleFlexboxHighlighter,
-              })
-            )
-          )
+    if (!flexContainer.actorID) {
+      return (
+        dom.div({ className: "devtools-sidepanel-no-result" },
+          getStr("flexbox.noFlexboxeOnThisPage")
         )
-      )
-      :
-      dom.div({ className: "devtools-sidepanel-no-result" },
-        getStr("flexbox.noFlexboxeOnThisPage")
       );
+    }
+
+    const {
+      flexItems,
+      flexItemShown,
+    } = flexContainer;
+
+    return (
+      dom.div({ id: "layout-flexbox-container" },
+        Header({
+          flexContainer,
+          getSwatchColorPickerTooltip,
+          onHideBoxModelHighlighter,
+          onSetFlexboxOverlayColor,
+          onShowBoxModelHighlighterForNode,
+          onToggleFlexboxHighlighter,
+          setSelectedNode,
+        }),
+        !flexItemShown && flexItems.length > 0 ? this.renderFlexItemList() : null,
+        flexItemShown ? this.renderFlexItemSizing() : null,
+        !flexItemShown ? this.renderFlexContainerProperties() : null
+      )
+    );
   }
 }
 

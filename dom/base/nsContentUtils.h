@@ -25,6 +25,7 @@
 #include "mozilla/CORSMode.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/GuardObjects.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/TaskCategory.h"
 #include "mozilla/TimeStamp.h"
 #include "nsContentListDeclarations.h"
@@ -203,6 +204,7 @@ class nsContentUtils
   typedef mozilla::dom::Element Element;
   typedef mozilla::Cancelable Cancelable;
   typedef mozilla::CanBubble CanBubble;
+  typedef mozilla::Composed Composed;
   typedef mozilla::ChromeOnlyDispatch ChromeOnlyDispatch;
   typedef mozilla::EventMessage EventMessage;
   typedef mozilla::TimeDuration TimeDuration;
@@ -214,9 +216,23 @@ public:
   // Strip off "wyciwyg://n/" part of a URL. aURI must have "wyciwyg" scheme.
   static nsresult RemoveWyciwygScheme(nsIURI* aURI, nsIURI** aReturn);
 
-  static bool     IsCallerChrome();
-  static bool     ThreadsafeIsCallerChrome();
-  static bool     IsCallerContentXBL();
+  static bool IsCallerChrome();
+  static bool ThreadsafeIsCallerChrome();
+  static bool IsCallerContentXBL();
+  static bool IsCallerUAWidget();
+  static bool IsFuzzingEnabled()
+#ifndef FUZZING
+  {
+    return false;
+  }
+#else
+  ;
+#endif
+
+  static bool IsCallerChromeOrFuzzingEnabled(JSContext* aCx, JSObject*)
+  {
+    return ThreadsafeIsSystemCaller(aCx) || IsFuzzingEnabled();
+  }
 
   // The APIs for checking whether the caller is system (in the sense of system
   // principal) should only be used when the JSContext is known to accurately
@@ -434,8 +450,35 @@ public:
   /**
    * Returns true if aNode1 is before aNode2 in the same connected
    * tree.
+   * aNode1Index and aNode2Index are in/out arguments. If non-null, and value is
+   * not -1, that value is used instead of calling slow ComputeIndexOf on the
+   * parent node. If value is -1, the value will be set to the return value of
+   * ComputeIndexOf.
    */
-  static bool PositionIsBefore(nsINode* aNode1, nsINode* aNode2);
+  static bool PositionIsBefore(nsINode* aNode1, nsINode* aNode2,
+                               int32_t* aNode1Index = nullptr,
+                               int32_t* aNode2Index = nullptr);
+
+
+  struct ComparePointsCache {
+    int32_t ComputeIndexOf(nsINode* aParent, nsINode* aChild) {
+      if (aParent == mParent &&
+          aChild == mChild) {
+        return mIndex;
+      }
+
+      mIndex = aParent->ComputeIndexOf(aChild);
+      mParent = aParent;
+      mChild = aChild;
+      return mIndex;
+    }
+
+
+  private:
+    nsINode* mParent = nullptr;
+    nsINode* mChild = nullptr;
+    int32_t mIndex = 0;
+  };
 
   /**
    *  Utility routine to compare two "points", where a point is a
@@ -446,6 +489,9 @@ public:
    *  the result is 1, and the optional aDisconnected parameter
    *  is set to true.
    *
+   *  Pass a cache object as aParent1Cache if you expect to repeatedly
+   *  call this function with the same value as aParent1.
+   *
    *  XXX aOffset1 and aOffset2 should be uint32_t since valid offset value is
    *      between 0 - UINT32_MAX.  However, these methods work even with
    *      negative offset values!  E.g., when aOffset1 is -1 and aOffset is 0,
@@ -455,7 +501,8 @@ public:
    */
   static int32_t ComparePoints(nsINode* aParent1, int32_t aOffset1,
                                nsINode* aParent2, int32_t aOffset2,
-                               bool* aDisconnected = nullptr);
+                               bool* aDisconnected = nullptr,
+                               ComparePointsCache* aParent1Cache = nullptr);
   static int32_t ComparePoints(const mozilla::RawRangeBoundary& aFirst,
                                const mozilla::RawRangeBoundary& aSecond,
                                bool* aDisconnected = nullptr);
@@ -665,7 +712,9 @@ public:
   static nsIPrincipal* SubjectPrincipal();
 
   // Returns the prinipal of the given JS object. This may only be called on
-  // the main thread for objects from the main thread's JSRuntime.
+  // the main thread for objects from the main thread's JSRuntime. The object
+  // must not be a cross-compartment wrapper, because CCWs are not associated
+  // with a single realm.
   static nsIPrincipal* ObjectPrincipal(JSObject* aObj);
 
   static nsresult GenerateStateKey(nsIContent* aContent,
@@ -1155,12 +1204,6 @@ public:
                      nsACString& aSourceSpecOut, uint32_t *aLineOut,
                      uint32_t *aColumnOut, nsString& aMessageOut);
 
-  /**
-   * Helper function to tell if user ever enabled DevTools explicitely.
-   * Allows making DevTools related API no-op until user do so.
-   */
-  static bool DevToolsEnabled(JSContext* aCx);
-
   static nsresult CalculateBufferSizeForImage(const uint32_t& aStride,
                                             const mozilla::gfx::IntSize& aImageSize,
                                             const mozilla::gfx::SurfaceFormat& aFormat,
@@ -1343,6 +1386,7 @@ public:
    * @param aEventName     The name of the event.
    * @param aCanBubble     Whether the event can bubble.
    * @param aCancelable    Is the event cancelable.
+   * @param aCopmosed      Is the event composed.
    * @param aDefaultAction Set to true if default action should be taken,
    *                       see EventTarget::DispatchEvent.
    */
@@ -1351,7 +1395,20 @@ public:
                                        const nsAString& aEventName,
                                        CanBubble,
                                        Cancelable,
+                                       Composed aComposed = Composed::eDefault,
                                        bool* aDefaultAction = nullptr);
+
+  static nsresult DispatchTrustedEvent(nsIDocument* aDoc,
+                                       nsISupports* aTarget,
+                                       const nsAString& aEventName,
+                                       CanBubble aCanBubble,
+                                       Cancelable aCancelable,
+                                       bool* aDefaultAction)
+  {
+    return DispatchTrustedEvent(aDoc, aTarget, aEventName,
+                                aCanBubble, aCancelable,
+                                Composed::eDefault, aDefaultAction);
+  }
 
   /**
    * This method creates and dispatches a trusted event using an event message.
@@ -2258,9 +2315,9 @@ public:
   static bool IsFocusedContent(const nsIContent *aContent);
 
   /**
-   * Returns true if the DOM full-screen API is enabled.
+   * Returns true if the DOM fullscreen API is enabled.
    */
-  static bool IsFullScreenApiEnabled();
+  static bool IsFullscreenApiEnabled();
 
   /**
    * Returns true if the unprefixed fullscreen API is enabled.
@@ -2269,12 +2326,12 @@ public:
     { return sIsUnprefixedFullscreenApiEnabled; }
 
   /**
-   * Returns true if requests for full-screen are allowed in the current
+   * Returns true if requests for fullscreen are allowed in the current
    * context. Requests are only allowed if the user initiated them (like with
    * a mouse-click or key press), unless this check has been disabled by
    * setting the pref "full-screen-api.allow-trusted-requests-only" to false.
    */
-  static bool IsRequestFullScreenAllowed(mozilla::dom::CallerType aCallerType);
+  static bool IsRequestFullscreenAllowed(mozilla::dom::CallerType aCallerType);
 
   /**
    * Returns true if calling execCommand with 'cut' or 'copy' arguments
@@ -2848,10 +2905,12 @@ public:
 
   static void FirePageShowEvent(nsIDocShellTreeItem* aItem,
                                 mozilla::dom::EventTarget* aChromeEventHandler,
-                                bool aFireIfShowing);
+                                bool aFireIfShowing,
+                                bool aOnlySystemGroup = false);
 
   static void FirePageHideEvent(nsIDocShellTreeItem* aItem,
-                                mozilla::dom::EventTarget* aChromeEventHandler);
+                                mozilla::dom::EventTarget* aChromeEventHandler,
+                                bool aOnlySystemGroup = false);
 
   static already_AddRefed<nsPIWindowRoot> GetWindowRoot(nsIDocument* aDoc);
 
@@ -2874,6 +2933,16 @@ public:
                                                 nsIDocument* aDoc,
                                                 nsIHttpChannel* aChannel,
                                                 mozilla::net::ReferrerPolicy aReferrerPolicy);
+
+  /*
+   * If there is a Referrer-Policy response header in |aChannel|, parse a
+   * referrer policy from the header.
+   *
+   * @param the channel from which to get the Referrer-Policy header
+   * @return referrer policy from the response header in aChannel
+   */
+  static mozilla::net::ReferrerPolicy
+    GetReferrerPolicyFromChannel(nsIChannel* aChannel);
 
   /*
    * Parse a referrer policy from a Referrer-Policy header
@@ -2949,13 +3018,34 @@ public:
   static StorageAccess StorageAllowedForPrincipal(nsIPrincipal* aPrincipal);
 
   /*
-   * Returns true if this window/channel should disable storages because of the
-   * anti-tracking feature.
+   * Returns true if this document should disable storages because of the anti-tracking feature.
+   */
+  static bool StorageDisabledByAntiTracking(nsIDocument* aDocument,
+                                            nsIURI* aURI)
+  {
+    // Note that GetChannel() below may return null, but that's OK, since the callee
+    // is able to deal with a null channel argument, and if passed null, will only fail
+    // to notify the UI in case storage gets blocked.
+    return StorageDisabledByAntiTracking(aDocument->GetInnerWindow(),
+                                         aDocument->GetChannel(),
+                                         aDocument->NodePrincipal(),
+                                         aURI);
+  }
+
+private:
+  /*
+   * Returns true if this window/channel/aPrincipal should disable storages
+   * because of the anti-tracking feature.
+   * Note that either aWindow or aChannel may be null when calling this function.
+   * If the caller wants the UI to be notified when the storage gets disabled,
+   * it must pass a non-null channel object.
    */
   static bool StorageDisabledByAntiTracking(nsPIDOMWindowInner* aWindow,
                                             nsIChannel* aChannel,
+                                            nsIPrincipal* aPrincipal,
                                             nsIURI* aURI);
 
+public:
   /*
    * Returns true if this window/channel is a 3rd party context.
    */
@@ -3018,6 +3108,9 @@ public:
   static nsresult NewXULOrHTMLElement(Element** aResult, mozilla::dom::NodeInfo* aNodeInfo,
                                       mozilla::dom::FromParser aFromParser, nsAtom* aIsAtom,
                                       mozilla::dom::CustomElementDefinition* aDefinition);
+
+  static mozilla::dom::CustomElementRegistry*
+    GetCustomElementRegistry(nsIDocument*);
 
   /**
    * Looking up a custom element definition.
@@ -3104,6 +3197,18 @@ public:
                                     const mozilla::dom::Sequence<JSObject*>& aTransfer,
                                     JS::MutableHandle<JS::Value> aValue);
 
+  /**
+   * Returns whether or not UA Widget is enabled, controlled by pref
+   * dom.ua_widget.enabled.
+   *
+   * When enabled, UA Widget will replace legacy XBL when rendering JS-implemented
+   * web content widgets (videocontrols/datetimebox/etc.)
+   *
+   * It is really enabled only if Shadow DOM is also enabled.
+   */
+  static bool
+  IsUAWidgetEnabled() { return sIsShadowDOMEnabled && sIsUAWidgetEnabled; }
+
   static bool
   IsShadowDOMEnabled() { return sIsShadowDOMEnabled; }
 
@@ -3151,13 +3256,6 @@ public:
    */
   static bool
   IsLocalRefURL(const nsString& aString);
-
-  /**
-   * Detect whether a string is a local-url.
-   * https://drafts.csswg.org/css-values/#local-urls
-   */
-  static bool
-  IsLocalRefURL(const nsACString& aString);
 
   static bool
   IsCustomElementsEnabled() { return sIsCustomElementsEnabled; }
@@ -3302,6 +3400,7 @@ private:
                                 const nsAString& aEventName,
                                 CanBubble,
                                 Cancelable,
+                                Composed,
                                 Trusted,
                                 bool* aDefaultAction = nullptr,
                                 ChromeOnlyDispatch = ChromeOnlyDispatch::eNo);
@@ -3340,14 +3439,13 @@ private:
                                       void* aArg);
 
   /**
-   * Gets the current cookie lifetime policy and cookie behavior for a given
-   * principal by checking with preferences and the permission manager.
+   * Gets the current cookie lifetime policy for a given principal by checking
+   * with preferences and the permission manager.
    *
    * Used in the implementation of InternalStorageAllowedForPrincipal.
    */
-  static void GetCookieBehaviorForPrincipal(nsIPrincipal* aPrincipal,
-                                            uint32_t* aLifetimePolicy,
-                                            uint32_t* aBehavior);
+  static void GetCookieLifetimePolicyForPrincipal(nsIPrincipal* aPrincipal,
+                                                  uint32_t* aLifetimePolicy);
 
   /*
    * Checks if storage for a given principal is permitted by the user's
@@ -3397,7 +3495,7 @@ private:
   static RefPtr<mozilla::intl::LineBreaker> sLineBreaker;
   static RefPtr<mozilla::intl::WordBreaker> sWordBreaker;
 
-  static nsIBidiKeyboard* sBidiKeyboard;
+  static mozilla::StaticRefPtr<nsIBidiKeyboard> sBidiKeyboard;
 
   static bool sInitialized;
   static uint32_t sScriptBlockerCount;
@@ -3413,9 +3511,9 @@ private:
   static bool sIsHandlingKeyBoardEvent;
   static bool sAllowXULXBL_for_file;
   static bool sDisablePopups;
-  static bool sIsFullScreenApiEnabled;
+  static bool sIsFullscreenApiEnabled;
   static bool sIsUnprefixedFullscreenApiEnabled;
-  static bool sTrustedFullScreenOnly;
+  static bool sTrustedFullscreenOnly;
   static bool sIsCutCopyAllowed;
   static uint32_t sHandlingInputTimeout;
   static bool sIsPerformanceTimingEnabled;
@@ -3424,6 +3522,7 @@ private:
   static bool sIsUpgradableDisplayContentPrefEnabled;
   static bool sIsFrameTimingPrefEnabled;
   static bool sIsFormAutofillAutocompleteEnabled;
+  static bool sIsUAWidgetEnabled;
   static bool sIsShadowDOMEnabled;
   static bool sIsCustomElementsEnabled;
   static bool sSendPerformanceTimingNotifications;
@@ -3442,7 +3541,7 @@ private:
   static bool sIsBytecodeCacheEnabled;
   static int32_t sBytecodeCacheStrategy;
   static uint32_t sCookiesLifetimePolicy;
-  static bool sShortcutsCustomized;
+  static bool sAntiTrackingControlCenterUIEnabled;
 
   static int32_t sPrivacyMaxInnerWidth;
   static int32_t sPrivacyMaxInnerHeight;

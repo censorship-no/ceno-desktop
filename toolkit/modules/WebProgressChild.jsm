@@ -6,6 +6,7 @@
 
 var EXPORTED_SYMBOLS = ["WebProgressChild"];
 
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 ChromeUtils.defineModuleGetter(this, "AppConstants",
@@ -22,6 +23,8 @@ class WebProgressChild {
   constructor(mm) {
     this.mm = mm;
 
+    this.inLoadURI = false;
+
     this._filter = Cc["@mozilla.org/appshell/component/browser-status-filter;1"]
                      .createInstance(Ci.nsIWebProgress);
     this._filter.addProgressListener(this, Ci.nsIWebProgress.NOTIFY_ALL);
@@ -30,6 +33,9 @@ class WebProgressChild {
     let webProgress = this.mm.docShell.QueryInterface(Ci.nsIInterfaceRequestor)
                               .getInterface(Ci.nsIWebProgress);
     webProgress.addProgressListener(this._filter, Ci.nsIWebProgress.NOTIFY_ALL);
+
+    // This message is used for measuring this.mm.content process startup performance.
+    this.mm.sendAsyncMessage("Content:BrowserChildReady", { time: Services.telemetry.msSystemNow() });
   }
 
   _requestSpec(aRequest, aPropertyName) {
@@ -68,7 +74,7 @@ class WebProgressChild {
         isTopLevel: aWebProgress.isTopLevel,
         isLoadingDocument: aWebProgress.isLoadingDocument,
         loadType: aWebProgress.loadType,
-        DOMWindowID: domWindowID
+        DOMWindowID: domWindowID,
       };
     }
 
@@ -81,34 +87,12 @@ class WebProgressChild {
     };
   }
 
-  _setupObjects(aWebProgress, aRequest) {
-    let domWindow;
-    try {
-      domWindow = aWebProgress && aWebProgress.DOMWindow;
-    } catch (e) {
-      // If nsDocShell::Destroy has already been called, then we'll
-      // get NS_NOINTERFACE when trying to get the DOM window. Ignore
-      // that here.
-      domWindow = null;
-    }
-
-    return {
-      contentWindow: this.mm.content,
-      contentDocument: this.mm.content.document,
-      // DOMWindow is not necessarily the this.mm.content-window with subframes.
-      DOMWindow: domWindow,
-      webProgress: aWebProgress,
-      request: aRequest,
-    };
-  }
-
-  _send(name, data, objects) {
-    this.mm.sendAsyncMessage(name, data, objects);
+  _send(name, data) {
+    this.mm.sendAsyncMessage(name, data);
   }
 
   onStateChange(aWebProgress, aRequest, aStateFlags, aStatus) {
     let json = this._setupJSON(aWebProgress, aRequest, aStateFlags);
-    let objects = this._setupObjects(aWebProgress, aRequest);
 
     json.stateFlags = aStateFlags;
     json.status = aStatus;
@@ -121,10 +105,10 @@ class WebProgressChild {
       json.documentURI = this.mm.content.document.documentURIObject.spec;
       json.charset = this.mm.content.document.characterSet;
       json.mayEnableCharacterEncodingMenu = this.mm.docShell.mayEnableCharacterEncodingMenu;
-      json.inLoadURI = this.mm.WebNavigation.inLoadURI;
+      json.inLoadURI = this.inLoadURI;
     }
 
-    this._send("Content:StateChange", json, objects);
+    this._send("Content:StateChange", json);
   }
 
   // Note: Because the nsBrowserStatusFilter timeout runnable is
@@ -132,14 +116,13 @@ class WebProgressChild {
   // run this.mm.content JS.
   onProgressChange(aWebProgress, aRequest, aCurSelf, aMaxSelf, aCurTotal, aMaxTotal) {
     let json = this._setupJSON(aWebProgress, aRequest);
-    let objects = this._setupObjects(aWebProgress, aRequest);
 
     json.curSelf = aCurSelf;
     json.maxSelf = aMaxSelf;
     json.curTotal = aCurTotal;
     json.maxTotal = aMaxTotal;
 
-    this._send("Content:ProgressChange", json, objects);
+    this._send("Content:ProgressChange", json);
   }
 
   onProgressChange64(aWebProgress, aRequest, aCurSelf, aMaxSelf, aCurTotal, aMaxTotal) {
@@ -148,7 +131,6 @@ class WebProgressChild {
 
   onLocationChange(aWebProgress, aRequest, aLocationURI, aFlags) {
     let json = this._setupJSON(aWebProgress, aRequest);
-    let objects = this._setupObjects(aWebProgress, aRequest);
 
     json.location = aLocationURI ? aLocationURI.spec : "";
     json.flags = aFlags;
@@ -165,7 +147,7 @@ class WebProgressChild {
       json.mayEnableCharacterEncodingMenu = this.mm.docShell.mayEnableCharacterEncodingMenu;
       json.principal = this.mm.content.document.nodePrincipal;
       json.synthetic = this.mm.content.document.mozSyntheticDocument;
-      json.inLoadURI = this.mm.WebNavigation.inLoadURI;
+      json.inLoadURI = this.inLoadURI;
       json.requestContextID = this.mm.content.document.documentLoadGroup
         ? this.mm.content.document.documentLoadGroup.requestContextID
         : null;
@@ -182,7 +164,7 @@ class WebProgressChild {
       }
     }
 
-    this._send("Content:LocationChange", json, objects);
+    this._send("Content:LocationChange", json);
   }
 
   // Note: Because the nsBrowserStatusFilter timeout runnable is
@@ -190,12 +172,11 @@ class WebProgressChild {
   // run this.mm.content JS.
   onStatusChange(aWebProgress, aRequest, aStatus, aMessage) {
     let json = this._setupJSON(aWebProgress, aRequest);
-    let objects = this._setupObjects(aWebProgress, aRequest);
 
     json.status = aStatus;
     json.message = aMessage;
 
-    this._send("Content:StatusChange", json, objects);
+    this._send("Content:StatusChange", json);
   }
 
   getSecInfoAsString() {
@@ -207,19 +188,21 @@ class WebProgressChild {
     return null;
   }
 
-  onSecurityChange(aWebProgress, aRequest, aState) {
+  onSecurityChange(aWebProgress, aRequest, aOldState, aState,
+                   aContentBlockingLogJSON) {
     let json = this._setupJSON(aWebProgress, aRequest);
-    let objects = this._setupObjects(aWebProgress, aRequest);
 
+    json.oldState = aOldState;
     json.state = aState;
     json.secInfo = this.getSecInfoAsString();
+    json.contentBlockingLogJSON = aContentBlockingLogJSON;
 
     json.matchedList = null;
     if (aRequest && aRequest instanceof Ci.nsIClassifiedChannel) {
       json.matchedList = aRequest.matchedList;
     }
 
-    this._send("Content:SecurityChange", json, objects);
+    this._send("Content:SecurityChange", json);
   }
 
   onRefreshAttempted(aWebProgress, aURI, aDelay, aSameURI) {

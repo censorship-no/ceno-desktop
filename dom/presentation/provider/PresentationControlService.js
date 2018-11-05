@@ -69,7 +69,7 @@ PresentationControlService.prototype = {
 
             self._serverSocketInit(serverSocketPort, aCert);
           }
-        }
+        },
       });
     } else {
       this._serverSocket = Cc["@mozilla.org/network/server-socket;1"]
@@ -90,7 +90,6 @@ PresentationControlService.prototype = {
 
       if (aCert) {
         this._serverSocket.serverCert = aCert;
-        this._serverSocket.setSessionCache(false);
         this._serverSocket.setSessionTickets(false);
         let requestCert = Ci.nsITLSServerSocket.REQUEST_NEVER;
         this._serverSocket.setRequestClientCertificate(requestCert);

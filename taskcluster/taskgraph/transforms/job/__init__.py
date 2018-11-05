@@ -13,6 +13,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import copy
 import logging
+import json
 import os
 
 from taskgraph.transforms.base import TransformSequence
@@ -24,7 +25,6 @@ from taskgraph.util.taskcluster import get_artifact_prefix
 from taskgraph.util.workertypes import worker_type_implementation
 from taskgraph.transforms.task import task_description_schema
 from voluptuous import (
-    Any,
     Extra,
     Optional,
     Required,
@@ -66,21 +66,26 @@ job_description_schema = Schema({
     Optional('always-target'): task_description_schema['always-target'],
     Exclusive('optimization', 'optimization'): task_description_schema['optimization'],
     Optional('needs-sccache'): task_description_schema['needs-sccache'],
+    Optional('release-artifacts'): task_description_schema['release-artifacts'],
 
     # The "when" section contains descriptions of the circumstances under which
     # this task should be included in the task graph.  This will be converted
     # into an optimization, so it cannot be specified in a job description that
     # also gives 'optimization'.
-    Exclusive('when', 'optimization'): Any({
+    Exclusive('when', 'optimization'): {
         # This task only needs to be run if a file matching one of the given
         # patterns has changed in the push.  The patterns use the mozpack
         # match function (python/mozbuild/mozpack/path.py).
         Optional('files-changed'): [basestring],
-    }),
+    },
 
     # A list of artifacts to install from 'fetch' tasks.
     Optional('fetches'): {
-        basestring: [basestring],
+        basestring: [basestring, {
+            Required('artifact'): basestring,
+            Optional('dest'): basestring,
+            Optional('extract'): bool,
+        }],
     },
 
     # A description of how to run this job.
@@ -144,14 +149,14 @@ def get_attribute(dict, key, attributes, attribute_name):
 
 @transforms.add
 def use_fetches(config, jobs):
-    all_fetches = {}
+    artifact_names = {}
 
     for task in config.kind_dependencies_tasks:
-        if task.kind != 'fetch':
-            continue
-
-        name = task.label.replace('%s-' % task.kind, '')
-        get_attribute(all_fetches, name, task.attributes, 'fetch-artifact')
+        if task.kind in ('fetch', 'toolchain'):
+            get_attribute(
+                artifact_names, task.label, task.attributes,
+                '{kind}-artifact'.format(kind=task.kind),
+            )
 
     for job in jobs:
         fetches = job.pop('fetches', None)
@@ -169,35 +174,59 @@ def use_fetches(config, jobs):
         dependencies = job.setdefault('dependencies', {})
         prefix = get_artifact_prefix(job)
         for kind, artifacts in fetches.items():
-            if kind == 'fetch':
-                for fetch in artifacts:
-                    if fetch not in all_fetches:
+            if kind in ('fetch', 'toolchain'):
+                for fetch_name in artifacts:
+                    label = '{kind}-{name}'.format(kind=kind, name=fetch_name)
+                    if label not in artifact_names:
                         raise Exception('Missing fetch job for {kind}-{name}: {fetch}'.format(
-                            kind=config.kind, name=name, fetch=fetch))
+                            kind=config.kind, name=name, fetch=fetch_name))
 
-                    path = all_fetches[fetch]
+                    path = artifact_names[label]
                     if not path.startswith('public/'):
-                        raise Exception('Non-public artifacts not supported for {kind}-{name}: '
-                                        '{fetch}'.format(kind=config.kind, name=name, fetch=fetch))
+                        raise Exception(
+                            'Non-public artifacts not supported for {kind}-{name}: '
+                            '{fetch}'.format(kind=config.kind, name=name, fetch=fetch_name))
 
-                    dep = 'fetch-{}'.format(fetch)
-                    dependencies[dep] = dep
-                    job_fetches.append('{path}@<{dep}>'.format(path=path, dep=dep))
-
+                    dependencies[label] = label
+                    job_fetches.append({
+                        'artifact': path,
+                        'task': '<{label}>'.format(label=label),
+                        'extract': True,
+                    })
             else:
                 if kind not in dependencies:
                     raise Exception("{name} can't fetch {kind} artifacts because "
                                     "it has no {kind} dependencies!".format(name=name, kind=kind))
 
-                for path in artifacts:
-                    job_fetches.append('{prefix}/{path}@<{dep}>'.format(
-                        prefix=prefix, path=path, dep=kind))
+                for artifact in artifacts:
+                    if isinstance(artifact, basestring):
+                        path = artifact
+                        dest = None
+                        extract = True
+                    else:
+                        path = artifact['artifact']
+                        dest = artifact.get('dest')
+                        extract = artifact.get('extract', True)
+
+                    fetch = {
+                        'artifact': '{prefix}/{path}'.format(prefix=prefix, path=path),
+                        'task': '<{dep}>'.format(dep=kind),
+                        'extract': extract,
+                    }
+                    if dest is not None:
+                        fetch['dest'] = dest
+                    job_fetches.append(fetch)
 
         env = job.setdefault('worker', {}).setdefault('env', {})
-        env['MOZ_FETCHES'] = {'task-reference': ' '.join(job_fetches)}
+        env['MOZ_FETCHES'] = {'task-reference': json.dumps(job_fetches, sort_keys=True)}
 
-        workdir = job['run'].get('workdir', '/builds/worker')
-        env.setdefault('MOZ_FETCHES_DIR', '{}/fetches'.format(workdir))
+        impl, os = worker_type_implementation(job['worker-type'])
+        if os == 'windows':
+            env.setdefault('MOZ_FETCHES_DIR', 'fetches')
+        else:
+            workdir = job['run'].get('workdir', '/builds/worker')
+            env.setdefault('MOZ_FETCHES_DIR', '{}/fetches'.format(workdir))
+
         yield job
 
 

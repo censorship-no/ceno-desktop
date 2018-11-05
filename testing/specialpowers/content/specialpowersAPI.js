@@ -37,13 +37,12 @@ ChromeUtils.defineModuleGetter(this, "ServiceWorkerCleanUp",
 ChromeUtils.defineModuleGetter(this, "PerTestCoverageUtils",
   "resource://testing-common/PerTestCoverageUtils.jsm");
 
-// We're loaded with "this" not set to the global in some cases, so we
-// have to play some games to get at the global object here.  Normally
-// we'd try "this" from a function called with undefined this value,
-// but this whole file is in strict mode.  So instead fall back on
-// returning "this" from indirect eval, which returns the global.
-if (!(function() { var e = eval; return e("this"); })().File) { // eslint-disable-line no-eval
-    Cu.importGlobalProperties(["DOMParser", "File", "InspectorUtils", "NodeFilter"]);
+try {
+    Cu.importGlobalProperties(["DOMParser", "File", "InspectorUtils",
+                               "NodeFilter", "PromiseDebugging"]);
+} catch (e) {
+  // We are in window scope hence DOMParser, File, InspectorUtils, NodeFilter,
+  // and PromiseDebugging are already defined, So do nothing.
 }
 
 // Allow stuff from this scope to be accessed from non-privileged scopes. This
@@ -327,7 +326,7 @@ SpecialPowersHandler.prototype = {
 
   preventExtensions(target) {
     throw "Can't call preventExtensions on SpecialPowers wrapped object";
-  }
+  },
 };
 
 // SPConsoleListener reflects nsIConsoleMessage objects into JS in a
@@ -396,7 +395,7 @@ SPConsoleListener.prototype = {
   },
 
   QueryInterface: ChromeUtils.generateQI([Ci.nsIConsoleListener,
-                                          Ci.nsIObserver])
+                                          Ci.nsIObserver]),
 };
 
 function wrapCallback(cb) {
@@ -512,13 +511,16 @@ SpecialPowersAPI.prototype = {
    */
   loadPrivilegedScript(aFunction) {
     var str = "(" + aFunction.toString() + ")();";
-    var systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
-    var sb = Cu.Sandbox(systemPrincipal);
+    let gGlobalObject = Cu.getGlobalForObject(this);
+    let sb = Cu.Sandbox(gGlobalObject);
     var window = this.window.get();
     var mc = new window.MessageChannel();
     sb.port = mc.port1;
     try {
-      sb.eval(str);
+      Cu.importGlobalProperties(["URL", "Blob"]);
+      let blob = new Blob([str], {type: "application/javascript"});
+      let blobUrl = URL.createObjectURL(blob);
+      Services.scriptloader.loadSubScript(blobUrl, sb);
     } catch (e) {
       throw wrapIfUnwrapped(e);
     }
@@ -599,7 +601,7 @@ SpecialPowersAPI.prototype = {
         } else if (aMessage.name == "SPChromeScriptAssert") {
           assert(aMessage.json);
         }
-      }
+      },
     };
     this._addMessageListener("SPChromeScriptMessage", chromeScript);
     this._addMessageListener("SPChromeScriptAssert", chromeScript);
@@ -694,6 +696,8 @@ SpecialPowersAPI.prototype = {
 
   get InspectorUtils() { return wrapPrivileged(InspectorUtils); },
 
+  get PromiseDebugging() { return wrapPrivileged(PromiseDebugging); },
+
   waitForCrashes(aExpectingProcessCrash) {
     return new Promise((resolve, reject) => {
       if (!aExpectingProcessCrash) {
@@ -714,7 +718,7 @@ SpecialPowersAPI.prototype = {
 
       this._addMessageListener("SPProcessCrashManagerWait", messageListener);
       this._sendAsyncMessage("SPProcessCrashManagerWait", {
-        crashIds
+        crashIds,
       });
     });
   },
@@ -724,7 +728,7 @@ SpecialPowersAPI.prototype = {
     if (aExpectingProcessCrash) {
       var message = {
         op: "delete-crash-dump-files",
-        filenames: this._encounteredCrashDumpFiles
+        filenames: this._encounteredCrashDumpFiles,
       };
       if (!this._sendSyncMessage("SPProcessCrashService", message)[0]) {
         success = false;
@@ -738,7 +742,7 @@ SpecialPowersAPI.prototype = {
     var self = this;
     var message = {
       op: "find-crash-dump-files",
-      crashDumpFilesToIgnore: this._unexpectedCrashDumpFiles
+      crashDumpFilesToIgnore: this._unexpectedCrashDumpFiles,
     };
     var crashDumpFiles = this._sendSyncMessage("SPProcessCrashService", message)[0];
     crashDumpFiles.forEach(function(aFilename) {
@@ -749,7 +753,7 @@ SpecialPowersAPI.prototype = {
 
   removePendingCrashDumpFiles() {
     var message = {
-      op: "delete-pending-crash-dump-files"
+      op: "delete-pending-crash-dump-files",
     };
     var removed = this._sendSyncMessage("SPProcessCrashService", message)[0];
     return removed;
@@ -935,7 +939,7 @@ SpecialPowersAPI.prototype = {
         var permission = aSubject.QueryInterface(Ci.nsIPermission);
         this._specialPowersAPI._permissionObserver.observe(permission, aData);
       }
-    }
+    },
   },
 
   popPermissions(callback) {
@@ -975,7 +979,7 @@ SpecialPowersAPI.prototype = {
     _nextCallback: null,
     _obsDataMap: {
       "deleted": "remove",
-      "added": "add"
+      "added": "add",
     },
     observe(permission, aData) {
       if (this._self._applyingPermissions) {
@@ -1007,7 +1011,7 @@ SpecialPowersAPI.prototype = {
           }
         }
       }
-    }
+    },
   },
 
   /*
@@ -1608,6 +1612,10 @@ SpecialPowersAPI.prototype = {
     Cu.schedulePreciseGC(genGCCallback(callback));
   },
 
+  nondeterministicGetWeakMapKeys(m) {
+    return ChromeUtils.nondeterministicGetWeakMapKeys(m);
+  },
+
   getMemoryReports() {
     try {
       Cc["@mozilla.org/memory-reporter-manager;1"]
@@ -1701,15 +1709,13 @@ SpecialPowersAPI.prototype = {
   },
 
   addCategoryEntry(category, entry, value, persists, replace) {
-    Cc["@mozilla.org/categorymanager;1"].
-      getService(Ci.nsICategoryManager).
-      addCategoryEntry(category, entry, value, persists, replace);
+    Services.catMan
+      .addCategoryEntry(category, entry, value, persists, replace);
   },
 
   deleteCategoryEntry(category, entry, persists) {
-    Cc["@mozilla.org/categorymanager;1"].
-      getService(Ci.nsICategoryManager).
-      deleteCategoryEntry(category, entry, persists);
+    Services.catMan
+      .deleteCategoryEntry(category, entry, persists);
   },
   openDialog(win, args) {
     return win.openDialog.apply(win, args);
@@ -1908,7 +1914,7 @@ SpecialPowersAPI.prototype = {
       "permission": permission,
       "principal": principal,
       "expireType": (typeof expireType === "number") ? expireType : 0,
-      "expireTime": (typeof expireTime === "number") ? expireTime : 0
+      "expireTime": (typeof expireTime === "number") ? expireTime : 0,
     };
 
     this._sendSyncMessage("SPPermissionManager", msg);
@@ -1923,7 +1929,7 @@ SpecialPowersAPI.prototype = {
     var msg = {
       "op": "remove",
       "type": type,
-      "principal": principal
+      "principal": principal,
     };
 
     this._sendSyncMessage("SPPermissionManager", msg);
@@ -1938,7 +1944,7 @@ SpecialPowersAPI.prototype = {
     var msg = {
       "op": "has",
       "type": type,
-      "principal": principal
+      "principal": principal,
     };
 
     return this._sendSyncMessage("SPPermissionManager", msg)[0];
@@ -1954,7 +1960,7 @@ SpecialPowersAPI.prototype = {
       "op": "test",
       "type": type,
       "value": value,
-      "principal": principal
+      "principal": principal,
     };
     return this._sendSyncMessage("SPPermissionManager", msg)[0];
   },
@@ -1974,7 +1980,7 @@ SpecialPowersAPI.prototype = {
     var msg = {
       "op": "notify",
       "observerTopic": topic,
-      "observerData": data
+      "observerData": data,
     };
     this._sendSyncMessage("SPObserverService", msg);
   },
@@ -2151,7 +2157,7 @@ SpecialPowersAPI.prototype = {
 
           let httpStatus = this.httpStatus;
           resolve({status, httpStatus});
-        }
+        },
       };
       let uri = NetUtil.newURI(url);
       let channel = NetUtil.newChannel({uri, loadUsingSystemPrincipal});
@@ -2261,7 +2267,7 @@ SpecialPowersAPI.prototype = {
     };
 
     return classifierService.asyncClassifyLocalWithTables(unwrapIfWrapped(uri),
-                                                          tables,
+                                                          tables, [], [],
                                                           wrapCallback);
   },
 

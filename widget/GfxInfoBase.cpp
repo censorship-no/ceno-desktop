@@ -183,6 +183,12 @@ GetPrefNameForFeature(int32_t aFeature)
     case nsIGfxInfo::FEATURE_DX_NV12:
       name = BLACKLIST_PREF_BRANCH "dx.nv12";
       break;
+    case nsIGfxInfo::FEATURE_DX_P010:
+      name = BLACKLIST_PREF_BRANCH "dx.p010";
+      break;
+    case nsIGfxInfo::FEATURE_DX_P016:
+      name = BLACKLIST_PREF_BRANCH "dx.p016";
+      break;
     case nsIGfxInfo::FEATURE_VP8_HW_DECODE:
     case nsIGfxInfo::FEATURE_VP9_HW_DECODE:
       // We don't provide prefs for these features as these are
@@ -1008,6 +1014,8 @@ GfxInfoBase::EvaluateDownloadedBlacklist(nsTArray<GfxDriverInfo>& aDriverInfo)
     nsIGfxInfo::FEATURE_D3D11_KEYED_MUTEX,
     nsIGfxInfo::FEATURE_WEBRENDER,
     nsIGfxInfo::FEATURE_DX_NV12,
+    nsIGfxInfo::FEATURE_DX_P010,
+    nsIGfxInfo::FEATURE_DX_P016,
     0
   };
 
@@ -1097,31 +1105,17 @@ NS_IMETHODIMP GfxInfoBase::GetFailures(uint32_t* failureCount,
 
   if (*failureCount != 0) {
     *failures = (char**)moz_xmalloc(*failureCount * sizeof(char*));
-    if (!(*failures)) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
     if (indices) {
       *indices = (int32_t*)moz_xmalloc(*failureCount * sizeof(int32_t));
-      if (!(*indices)) {
-        free(*failures);
-        *failures = nullptr;
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
     }
 
     /* copy over the failure messages into the array we just allocated */
     LoggingRecord::const_iterator it;
     uint32_t i=0;
     for(it = loggedStrings.begin() ; it != loggedStrings.end(); ++it, i++) {
-      (*failures)[i] = (char*)nsMemory::Clone(Get<1>(*it).c_str(), Get<1>(*it).size() + 1);
+      (*failures)[i] =
+        (char*) moz_xmemdup(Get<1>(*it).c_str(), Get<1>(*it).size() + 1);
       if (indices) (*indices)[i] = Get<0>(*it);
-
-      if (!(*failures)[i]) {
-        /* <sarcasm> I'm too afraid to use an inline function... </sarcasm> */
-        NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(i, (*failures));
-        *failureCount = i;
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
     }
   }
 

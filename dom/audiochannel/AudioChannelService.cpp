@@ -27,7 +27,7 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-static mozilla::LazyLogModule gAudioChannelLog("AudioChannel");
+mozilla::LazyLogModule gAudioChannelLog("AudioChannel");
 
 namespace {
 
@@ -379,7 +379,7 @@ AudioChannelService::GetMediaConfig(nsPIDOMWindowOuter* aWindow) const
       break;
     }
 
-    window = do_QueryInterface(win);
+    window = win;
 
     // If there is no parent, or we are the toplevel we don't continue.
   } while (window && window != aWindow);

@@ -17,7 +17,7 @@ add_task(async function() {
   const objectInspector = node.querySelector(".tree");
 
   let onOiMutation = waitForNodeMutation(objectInspector, {
-    childList: true
+    childList: true,
   });
 
   info("Expanding the object inspector");
@@ -35,13 +35,12 @@ add_task(async function() {
   const scrollTop = outputContainer.scrollTop;
 
   onOiMutation = waitForNodeMutation(objectInspector, {
-    childList: true
+    childList: true,
   });
 
   info("Expand the last node");
   const view = lastNode.ownerDocument.defaultView;
   EventUtils.synthesizeMouseAtCenter(lastNode, {}, view);
-
   await onOiMutation;
 
   is(scrollTop, outputContainer.scrollTop,

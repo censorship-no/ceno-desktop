@@ -70,21 +70,20 @@ class RegExpObject : public NativeObject
 
     template<typename CharT>
     static RegExpObject*
-    create(JSContext* cx, const CharT* chars, size_t length, RegExpFlag flags, LifoAlloc& alloc,
-           NewObjectKind newKind);
+    create(JSContext* cx, const CharT* chars, size_t length,
+           RegExpFlag flags, NewObjectKind newKind);
 
     template<typename CharT>
     static RegExpObject*
     create(JSContext* cx, const CharT* chars, size_t length, RegExpFlag flags,
-           frontend::TokenStreamAnyChars& ts, LifoAlloc& alloc, NewObjectKind kind);
+           frontend::TokenStreamAnyChars& ts, NewObjectKind kind);
 
     static RegExpObject*
-    create(JSContext* cx, HandleAtom atom, RegExpFlag flags, LifoAlloc& alloc,
-           NewObjectKind newKind);
+    create(JSContext* cx, HandleAtom source, RegExpFlag flags, NewObjectKind newKind);
 
     static RegExpObject*
-    create(JSContext* cx, HandleAtom atom, RegExpFlag flags, frontend::TokenStreamAnyChars& ts,
-           LifoAlloc& alloc, NewObjectKind newKind);
+    create(JSContext* cx, HandleAtom source, RegExpFlag flags,
+           frontend::TokenStreamAnyChars& ts, NewObjectKind newKind);
 
     /*
      * Compute the initial shape to associate with fresh RegExp objects,
@@ -100,10 +99,12 @@ class RegExpObject : public NativeObject
 
     static bool isInitialShape(RegExpObject* rx) {
         Shape* shape = rx->lastProperty();
-        if (shape->isEmptyShape() || !shape->isDataProperty())
+        if (shape->isEmptyShape() || !shape->isDataProperty()) {
             return false;
-        if (shape->maybeSlot() != LAST_INDEX_SLOT)
+        }
+        if (shape->maybeSlot() != LAST_INDEX_SLOT) {
             return false;
+        }
         return true;
     }
 
@@ -202,8 +203,9 @@ ParseRegExpFlags(JSContext* cx, JSString* flagStr, RegExpFlag* flagsOut);
 inline RegExpShared*
 RegExpToShared(JSContext* cx, HandleObject obj)
 {
-    if (obj->is<RegExpObject>())
+    if (obj->is<RegExpObject>()) {
         return RegExpObject::getShared(cx, obj.as<RegExpObject>());
+    }
 
     return Proxy::regexp_toShared(cx, obj);
 }

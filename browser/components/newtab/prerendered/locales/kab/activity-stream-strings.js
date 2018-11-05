@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Tugna ur d-uli ara. Ɛreḍ tansa-nniḍen URL.",
   "pocket_read_more": "Isental ittwasnen aṭas:",
   "pocket_read_even_more": "Wali ugar n teqsiḍin",
+  "pocket_more_reccommendations": "Ugar n iwellihen",
+  "pocket_how_it_works": "Amek iteddu",
+  "pocket_cta_button": "Awi-d Pocket",
+  "pocket_cta_text": "Sekles tiqṣiḍin i tḥemmleḍ deg Pocket, sedhu allaɣ-ik s tɣuri ifazen.",
   "highlights_empty_state": "Bdu tuniginn sakin nekkni ad k-n-sken imagraden, tividyutin, akked isebtar nniḍen i γef terziḍ yakan neγ i tceṛḍeḍ dagi.",
   "topstories_empty_state": "Ulac wiyaḍ. Uɣal-d ticki s wugar n imagraden seg {provider}. Ur tebɣiḍ ara ad terǧuḍ? Fren asentel seg wid yettwasnen akken ad twaliḍ imagraden yelhan di Web.",
   "manual_migration_explanation2": "Σreḍ Firefox s ticṛaḍ n isebtar, amazray akked awalen uffiren sγur ilinigen nniḍen.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Sefrek tigezmi",
   "section_menu_action_manage_webext": "Sefrek asiɣzef",
   "section_menu_action_add_topsite": "Rnu asmel ifazen",
+  "section_menu_action_add_search_engine": "Rnu amsedday n unadi",
   "section_menu_action_move_up": "Ali",
   "section_menu_action_move_down": "Ader",
   "section_menu_action_privacy_notice": "Tasertit n tbaḍnit",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Tiwtilin n useqdec",
   "firstrun_privacy_notice": "Tasertit n tbaḍnit",
   "firstrun_continue_to_login": "Kemmel",
-  "firstrun_skip_login": "Zgel amecwaṛ-agi"
+  "firstrun_skip_login": "Zgel amecwaṛ-agi",
+  "context_menu_title": "Ldi umuɣ",
+  "pocket_learn_more": "Issin ugar"
 };

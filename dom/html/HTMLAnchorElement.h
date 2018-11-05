@@ -23,8 +23,8 @@ class HTMLAnchorElement final : public nsGenericHTMLElement,
 public:
   using Element::GetText;
 
-  explicit HTMLAnchorElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElement(aNodeInfo)
+  explicit HTMLAnchorElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo))
     , Link(this)
   {
   }
@@ -69,8 +69,7 @@ public:
                                 nsIPrincipal* aSubjectPrincipal,
                                 bool aNotify) override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode **aResult) const override;
 
   virtual EventStates IntrinsicState() const override;
 

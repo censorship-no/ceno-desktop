@@ -172,13 +172,8 @@ var AssociatedToNode = class {
     return this.node.ownerGlobal;
   }
 
-  /**
-   * nsIDOMWindowUtils for the window of this node.
-   */
-  get _dwu() {
-    if (this.__dwu)
-      return this.__dwu;
-    return this.__dwu = this.window.windowUtils;
+  _getBoundsWithoutFlushing(element) {
+    return this.window.windowUtils.getBoundsWithoutFlushing(element);
   }
 
   /**
@@ -372,18 +367,18 @@ var PanelMultiView = class extends AssociatedToNode {
     PanelMultiView.ensureUnloadHandlerRegistered(this.window);
 
     let viewContainer = this._viewContainer =
-      this.document.createElement("box");
+      this.document.createXULElement("box");
     viewContainer.classList.add("panel-viewcontainer");
 
-    let viewStack = this._viewStack = this.document.createElement("box");
+    let viewStack = this._viewStack = this.document.createXULElement("box");
     viewStack.classList.add("panel-viewstack");
     viewContainer.append(viewStack);
 
-    let offscreenViewContainer = this.document.createElement("box");
+    let offscreenViewContainer = this.document.createXULElement("box");
     offscreenViewContainer.classList.add("panel-viewcontainer", "offscreen");
 
     let offscreenViewStack = this._offscreenViewStack =
-      this.document.createElement("box");
+      this.document.createXULElement("box");
     offscreenViewStack.classList.add("panel-viewstack");
     offscreenViewContainer.append(offscreenViewStack);
 
@@ -406,7 +401,7 @@ var PanelMultiView = class extends AssociatedToNode {
     ["goBack", "showSubView"].forEach(method => {
       Object.defineProperty(this.node, method, {
         enumerable: true,
-        value: (...args) => this[method](...args)
+        value: (...args) => this[method](...args),
       });
     });
   }
@@ -423,8 +418,7 @@ var PanelMultiView = class extends AssociatedToNode {
     this._panel.removeEventListener("popuphidden", this);
     this.window.removeEventListener("keydown", this);
     this.node = this._openPopupPromise = this._openPopupCancelCallback =
-      this._viewContainer = this._viewStack = this.__dwu =
-      this._transitionDetails = null;
+      this._viewContainer = this._viewStack = this._transitionDetails = null;
   }
 
   /**
@@ -522,6 +516,15 @@ var PanelMultiView = class extends AssociatedToNode {
       try {
         canCancel = false;
         this._panel.openPopup(...args);
+
+        // On Windows, if another popup is hiding while we call openPopup, the
+        // call won't fail but the popup won't open. In this case, we have to
+        // dispatch an artificial "popuphidden" event to reset our state.
+        if (this._panel.state == "closed" && this.openViews.length) {
+          this.dispatchCustomEvent("popuphidden");
+          return false;
+        }
+
         return true;
       } catch (ex) {
         this.dispatchCustomEvent("popuphidden");
@@ -572,9 +575,9 @@ var PanelMultiView = class extends AssociatedToNode {
       return;
     }
 
-    // Node.children and Node.childNodes is live to DOM changes like the
+    // Node.children and Node.children is live to DOM changes like the
     // ones we're about to do, so iterate over a static copy:
-    let subviews = Array.from(this._viewStack.childNodes);
+    let subviews = Array.from(this._viewStack.children);
     let viewCache = this.document.getElementById(viewCacheId);
     for (let subview of subviews) {
       viewCache.appendChild(subview);
@@ -875,10 +878,10 @@ var PanelMultiView = class extends AssociatedToNode {
       nextPanelView.visible = true;
       // Until the header is visible, it has 0 height.
       // Wait for layout before measuring it
-      let header = viewNode.firstChild;
+      let header = viewNode.firstElementChild;
       if (header && header.classList.contains("panel-header")) {
         viewRect.height += await window.promiseDocumentFlushed(() => {
-          return this._dwu.getBoundsWithoutFlushing(header).height;
+          return this._getBoundsWithoutFlushing(header).height;
         });
       }
       await nextPanelView.descriptionHeightWorkaround();
@@ -892,7 +895,7 @@ var PanelMultiView = class extends AssociatedToNode {
       await nextPanelView.descriptionHeightWorkaround();
 
       viewRect = await window.promiseDocumentFlushed(() => {
-        return this._dwu.getBoundsWithoutFlushing(viewNode);
+        return this._getBoundsWithoutFlushing(viewNode);
       });
       // Bail out if the panel was closed in the meantime.
       if (!nextPanelView.isOpenIn(this)) {
@@ -1062,8 +1065,10 @@ var PanelMultiView = class extends AssociatedToNode {
   }
 
   handleEvent(aEvent) {
-    if (aEvent.type.startsWith("popup") && aEvent.target != this._panel) {
-      // Shouldn't act on e.g. context menus being shown from within the panel.
+    // Only process actual popup events from the panel or events we generate
+    // ourselves, but not from menus being shown from within the panel.
+    if (aEvent.type.startsWith("popup") && aEvent.target != this._panel &&
+                                           aEvent.target != this.node) {
       return;
     }
     switch (aEvent.type) {
@@ -1203,7 +1208,7 @@ var PanelView = class extends AssociatedToNode {
    */
   set headerText(value) {
     // If the header already exists, update or remove it as requested.
-    let header = this.node.firstChild;
+    let header = this.node.firstElementChild;
     if (header && header.classList.contains("panel-header")) {
       if (value) {
         header.querySelector("label").setAttribute("value", value);
@@ -1218,10 +1223,10 @@ var PanelView = class extends AssociatedToNode {
       return;
     }
 
-    header = this.document.createElement("box");
+    header = this.document.createXULElement("box");
     header.classList.add("panel-header");
 
-    let backButton = this.document.createElement("toolbarbutton");
+    let backButton = this.document.createXULElement("toolbarbutton");
     backButton.className =
       "subviewbutton subviewbutton-iconic subviewbutton-back";
     backButton.setAttribute("closemenu", "none");
@@ -1234,7 +1239,7 @@ var PanelView = class extends AssociatedToNode {
       backButton.blur();
     });
 
-    let label = this.document.createElement("label");
+    let label = this.document.createXULElement("label");
     label.setAttribute("value", value);
 
     header.append(backButton, label);
@@ -1257,7 +1262,7 @@ var PanelView = class extends AssociatedToNode {
    * navigation if the view is still open but is invisible.
    */
   captureKnownSize() {
-    let rect = this._dwu.getBoundsWithoutFlushing(this.node);
+    let rect = this._getBoundsWithoutFlushing(this.node);
     this.knownWidth = rect.width;
     this.knownHeight = rect.height;
   }
@@ -1370,7 +1375,6 @@ var PanelView = class extends AssociatedToNode {
 
     let navigableElements = Array.from(this.node.querySelectorAll(
       ":-moz-any(button,toolbarbutton,menulist,.text-link):not([disabled])"));
-    let dwu = this._dwu;
     return this.__navigableElements = navigableElements.filter(element => {
       // Set the "tabindex" attribute to make sure the element is focusable.
       if (!element.hasAttribute("tabindex")) {
@@ -1379,7 +1383,7 @@ var PanelView = class extends AssociatedToNode {
       if (element.hasAttribute("disabled")) {
         return false;
       }
-      let bounds = dwu.getBoundsWithoutFlushing(element);
+      let bounds = this._getBoundsWithoutFlushing(element);
       return bounds.width > 0 && bounds.height > 0;
     });
   }
@@ -1408,6 +1412,15 @@ var PanelView = class extends AssociatedToNode {
    */
   focusFirstNavigableElement() {
     this.selectedElement = this._navigableElements[0];
+    this.focusSelectedElement();
+  }
+
+  /**
+   * Focuses and moves keyboard selection to the last navigable element.
+   * This is a no-op if there are no navigable elements.
+   */
+  focusLastNavigableElement() {
+    this.selectedElement = this._navigableElements[this._navigableElements.length - 1];
     this.focusSelectedElement();
   }
 
@@ -1511,6 +1524,14 @@ var PanelView = class extends AssociatedToNode {
         button.focus();
         break;
       }
+      case "Home":
+        stop();
+        this.focusFirstNavigableElement();
+        break;
+      case "End":
+        stop();
+        this.focusLastNavigableElement();
+        break;
       case "ArrowLeft":
       case "ArrowRight": {
         stop();

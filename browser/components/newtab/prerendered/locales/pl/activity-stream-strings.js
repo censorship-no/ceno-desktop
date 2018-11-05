@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Wczytanie obrazu nie powiodło się. Spróbuj innego adresu.",
   "pocket_read_more": "Popularne treści:",
   "pocket_read_even_more": "Pokaż więcej artykułów",
+  "pocket_more_reccommendations": "Więcej polecanych",
+  "pocket_how_it_works": "Jak to działa?",
+  "pocket_cta_button": "Pobierz Pocket",
+  "pocket_cta_text": "Zachowuj historie w Pocket, aby wrócić później do ich lektury.",
   "highlights_empty_state": "Zacznij przeglądać Internet, a pojawią się tutaj świetne artykuły, filmy oraz inne ostatnio odwiedzane strony i dodane zakładki.",
   "topstories_empty_state": "To na razie wszystko. {provider} później będzie mieć więcej popularnych artykułów. Nie możesz się doczekać? Wybierz popularny temat, aby znaleźć więcej treści z całego Internetu.",
   "manual_migration_explanation2": "Wypróbuj program Firefox z zakładkami, historią i hasłami z innej przeglądarki.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Zarządzaj sekcją",
   "section_menu_action_manage_webext": "Zarządzaj rozszerzeniem",
   "section_menu_action_add_topsite": "Dodaj stronę do popularnych",
+  "section_menu_action_add_search_engine": "Dodaj wyszukiwarkę",
   "section_menu_action_move_up": "Przesuń w górę",
   "section_menu_action_move_down": "Przesuń w dół",
   "section_menu_action_privacy_notice": "Uwagi dotyczące prywatności",
@@ -102,6 +107,7 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "uwagi dotyczące prywatności",
   "firstrun_continue_to_login": "Kontynuuj",
   "firstrun_skip_login": "Pomiń",
+  "context_menu_title": "Open menu",
   "prefs_restore_defaults_button": "Przywróć domyślne",
   "settings_pane_header": "Ustawienia nowej karty",
   "settings_pane_body2": "Wybierz, co wyświetlać na tej stronie",
@@ -114,5 +120,6 @@ window.gActivityStreamStrings = {
   "settings_pane_snippets_body": "Krótkie i słodkie informacje od Mozilli o Firefoksie i kulturze internetowej, a od czasu do czasu także jakiś żart.",
   "settings_pane_done_button": "Gotowe",
   "settings_pane_topstories_options_sponsored": "Sponsorowane treści",
+  "pocket_learn_more": "Więcej informacji",
   "pocket_description": "Odkrywaj wysokiej jakości treści dzięki serwisowi Pocket, który jest teraz częścią Mozilli."
 };

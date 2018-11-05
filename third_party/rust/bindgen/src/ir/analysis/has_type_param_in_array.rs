@@ -130,11 +130,11 @@ impl<'ctx> MonotoneFramework for HasTypeParameterInArray<'ctx> {
             TypeKind::NullPtr |
             TypeKind::Int(..) |
             TypeKind::Float(..) |
+            TypeKind::Vector(..) |
             TypeKind::Complex(..) |
             TypeKind::Function(..) |
             TypeKind::Enum(..) |
             TypeKind::Reference(..) |
-            TypeKind::BlockPointer |
             TypeKind::TypeParam |
             TypeKind::Opaque |
             TypeKind::Pointer(..) |
@@ -165,7 +165,8 @@ impl<'ctx> MonotoneFramework for HasTypeParameterInArray<'ctx> {
 
             TypeKind::ResolvedTypeRef(t) |
             TypeKind::TemplateAlias(t, _) |
-            TypeKind::Alias(t) => {
+            TypeKind::Alias(t) |
+            TypeKind::BlockPointer(t) => {
                 if self.has_type_parameter_in_array.contains(&t.into()) {
                     trace!(
                         "    aliases and type refs to T which have array \

@@ -10,7 +10,8 @@ const { openDebuggerAndLog, reloadDebuggerAndLog } = require("./debugger-helpers
 const EXPECTED = {
   sources: 1,
   file: "simple.html",
-  text: "This is a simple page"
+  sourceURL: SIMPLE_URL,
+  text: "This is a simple page",
 };
 
 module.exports = async function() {

@@ -8,6 +8,7 @@ package org.mozilla.geckoview;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.lang.ref.WeakReference;
 import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,6 +26,7 @@ import org.mozilla.gecko.NativeQueue;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
+import org.mozilla.gecko.util.IntentUtils;
 import org.mozilla.gecko.util.ThreadUtils;
 
 import android.content.ContentResolver;
@@ -39,18 +41,21 @@ import android.os.IInterface;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.SystemClock;
+import android.support.annotation.AnyThread;
 import android.support.annotation.IntDef;
 import android.support.annotation.Nullable;
 import android.support.annotation.NonNull;
 import android.support.annotation.StringDef;
+import android.support.annotation.UiThread;
 import android.util.Base64;
 import android.util.Log;
+import android.view.Surface;
 import android.view.inputmethod.CursorAnchorInfo;
 import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
 
 public class GeckoSession extends LayerSession
-                          implements Parcelable {
+        implements Parcelable {
     private static final String LOGTAG = "GeckoSession";
     private static final boolean DEBUG = false;
 
@@ -98,6 +103,8 @@ public class GeckoSession extends LayerSession
 
     private String mId = UUID.randomUUID().toString().replace("-", "");
     /* package */ String getId() { return mId; }
+
+    private boolean mShouldPinOnScreen;
 
     /* package */ static abstract class CallbackResult<T> extends GeckoResult<T>
                                                           implements EventCallback {
@@ -185,105 +192,6 @@ public class GeckoSession extends LayerSession
                 return flags & NavigationDelegate.LOAD_REQUEST_IS_USER_TRIGGERED;
             }
 
-            private @NavigationDelegate.LoadErrorCategory int getErrorCategory(
-                    long errorModule, @NavigationDelegate.LoadError int error) {
-                // Match flags with XPCOM ErrorList.h.
-                if (errorModule == 21) {
-                    return NavigationDelegate.ERROR_CATEGORY_SECURITY;
-                }
-                return error & 0xF;
-            }
-
-            private @NavigationDelegate.LoadError int convertGeckoError(
-                    long geckoError, int geckoErrorModule, int geckoErrorClass) {
-                // Match flags with XPCOM ErrorList.h.
-                // safebrowsing
-                if (geckoError == 0x805D001FL) {
-                    return NavigationDelegate.ERROR_SAFEBROWSING_PHISHING_URI;
-                }
-                if (geckoError == 0x805D001EL) {
-                    return NavigationDelegate.ERROR_SAFEBROWSING_MALWARE_URI;
-                }
-                if (geckoError == 0x805D0023L) {
-                    return NavigationDelegate.ERROR_SAFEBROWSING_UNWANTED_URI;
-                }
-                if (geckoError == 0x805D0026L) {
-                    return NavigationDelegate.ERROR_SAFEBROWSING_HARMFUL_URI;
-                }
-                // content
-                if (geckoError == 0x805E0010L) {
-                    return NavigationDelegate.ERROR_CONTENT_CRASHED;
-                }
-                if (geckoError == 0x804B001BL) {
-                    return NavigationDelegate.ERROR_INVALID_CONTENT_ENCODING;
-                }
-                if (geckoError == 0x804B004AL) {
-                    return NavigationDelegate.ERROR_UNSAFE_CONTENT_TYPE;
-                }
-                if (geckoError == 0x804B001DL) {
-                    return NavigationDelegate.ERROR_CORRUPTED_CONTENT;
-                }
-                // network
-                if (geckoError == 0x804B0014L) {
-                    return NavigationDelegate.ERROR_NET_RESET;
-                }
-                if (geckoError == 0x804B0047L) {
-                    return NavigationDelegate.ERROR_NET_INTERRUPT;
-                }
-                if (geckoError == 0x804B000EL) {
-                    return NavigationDelegate.ERROR_NET_TIMEOUT;
-                }
-                if (geckoError == 0x804B000DL) {
-                    return NavigationDelegate.ERROR_CONNECTION_REFUSED;
-                }
-                if (geckoError == 0x804B0033L) {
-                    return NavigationDelegate.ERROR_UNKNOWN_SOCKET_TYPE;
-                }
-                if (geckoError == 0x804B001FL) {
-                    return NavigationDelegate.ERROR_REDIRECT_LOOP;
-                }
-                if (geckoError == 0x804B0010L) {
-                    return NavigationDelegate.ERROR_OFFLINE;
-                }
-                if (geckoError == 0x804B0013L) {
-                    return NavigationDelegate.ERROR_PORT_BLOCKED;
-                }
-                // uri
-                if (geckoError == 0x804B0012L) {
-                    return NavigationDelegate.ERROR_UNKNOWN_PROTOCOL;
-                }
-                if (geckoError == 0x804B001EL) {
-                    return NavigationDelegate.ERROR_UNKNOWN_HOST;
-                }
-                if (geckoError == 0x804B000AL) {
-                    return NavigationDelegate.ERROR_MALFORMED_URI;
-                }
-                if (geckoError == 0x80520012L) {
-                    return NavigationDelegate.ERROR_FILE_NOT_FOUND;
-                }
-                if (geckoError == 0x80520015L) {
-                    return NavigationDelegate.ERROR_FILE_ACCESS_DENIED;
-                }
-                // proxy
-                if (geckoError == 0x804B002AL) {
-                    return NavigationDelegate.ERROR_UNKNOWN_PROXY_HOST;
-                }
-                if (geckoError == 0x804B0048L) {
-                    return NavigationDelegate.ERROR_PROXY_CONNECTION_REFUSED;
-                }
-
-                if (geckoErrorModule == 21) {
-                    if (geckoErrorClass == 1) {
-                        return NavigationDelegate.ERROR_SECURITY_SSL;
-                    }
-                    if (geckoErrorClass == 2) {
-                        return NavigationDelegate.ERROR_SECURITY_BAD_CERT;
-                    }
-                }
-
-                return NavigationDelegate.ERROR_UNKNOWN;
-            }
-
             @Override
             public void handleMessage(final NavigationDelegate delegate,
                                       final String event,
@@ -299,23 +207,42 @@ public class GeckoSession extends LayerSession
                     delegate.onCanGoForward(GeckoSession.this,
                                             message.getBoolean("canGoForward"));
                 } else if ("GeckoView:OnLoadRequest".equals(event)) {
-                    final String uri = message.getString("uri");
-                    final int where = convertGeckoTarget(message.getInt("where"));
-                    final int flags = filterFlags(message.getInt("flags"));
+                    final NavigationDelegate.LoadRequest request =
+                        new NavigationDelegate.LoadRequest(
+                              message.getString("uri"),
+                              message.getString("triggerUri"),
+                              message.getInt("where"),
+                              message.getInt("flags"));
 
-                    final GeckoResult<Boolean> result = delegate.onLoadRequest(GeckoSession.this,
-                            uri, where, flags);
+                    if (!IntentUtils.isUriSafeForScheme(request.uri)) {
+                        callback.sendError("Blocked unsafe intent URI");
+
+                        delegate.onLoadError(GeckoSession.this, request.uri,
+                                             new WebRequestError(WebRequestError.ERROR_CATEGORY_URI,
+                                                                 WebRequestError.ERROR_MALFORMED_URI));
+
+                        return;
+                    }
+
+                    final GeckoResult<AllowOrDeny> result =
+                        delegate.onLoadRequest(GeckoSession.this, request);
 
                     if (result == null) {
                         callback.sendSuccess(null);
                         return;
                     }
 
-                    result.then(new GeckoResult.OnValueListener<Boolean, Void>() {
+                    result.then(new GeckoResult.OnValueListener<AllowOrDeny, Void>() {
                         @Override
-                        public GeckoResult<Void> onValue(Boolean value) throws Throwable {
+                        public GeckoResult<Void> onValue(AllowOrDeny value) throws Throwable {
                             ThreadUtils.assertOnUiThread();
-                            callback.sendSuccess(value);
+                            if (value == AllowOrDeny.ALLOW) {
+                                callback.sendSuccess(false);
+                            } else  if (value == AllowOrDeny.DENY) {
+                                callback.sendSuccess(true);
+                            } else {
+                                callback.sendError("Invalid response");
+                            }
                             return null;
                         }
                     }, new GeckoResult.OnExceptionListener<Void>() {
@@ -330,13 +257,40 @@ public class GeckoSession extends LayerSession
                     final long errorCode = message.getLong("error");
                     final int errorModule = message.getInt("errorModule");
                     final int errorClass = message.getInt("errorClass");
-                    final int error = convertGeckoError(errorCode, errorModule,
-                                                        errorClass);
-                    final int errorCat = getErrorCategory(errorModule, error);
 
-                    delegate.onLoadError(GeckoSession.this, uri, errorCat, error);
+                    final WebRequestError err = WebRequestError.fromGeckoError(errorCode, errorModule, errorClass);
 
-                    callback.sendSuccess(!GeckoAppShell.isFennec());
+                    final GeckoResult<String> result = delegate.onLoadError(GeckoSession.this, uri, err);
+                    if (result == null) {
+                        if (GeckoAppShell.isFennec()) {
+                            callback.sendSuccess(null);
+                        } else {
+                            callback.sendError("abort");
+                        }
+                        return;
+                    }
+
+                    result.then(new GeckoResult.OnValueListener<String, Void>() {
+                                    @Override
+                                    public GeckoResult<Void> onValue(@Nullable String url) throws Throwable {
+                                        if (url == null) {
+                                            if (GeckoAppShell.isFennec()) {
+                                                callback.sendSuccess(null);
+                                            } else {
+                                                callback.sendError("abort");
+                                            }
+                                        } else {
+                                            callback.sendSuccess(url);
+                                        }
+                                        return null;
+                                    }
+                                }, new GeckoResult.OnExceptionListener<Void>() {
+                                    @Override
+                                    public GeckoResult<Void> onException(@NonNull Throwable exception) throws Throwable {
+                                        callback.sendError(exception.getMessage());
+                                        return null;
+                                    }
+                                });
                 } else if ("GeckoView:OnNewSession".equals(event)) {
                     final String uri = message.getString("uri");
                     final GeckoResult<GeckoSession> result = delegate.onNewSession(GeckoSession.this, uri);
@@ -478,13 +432,14 @@ public class GeckoSession extends LayerSession
                         type = PermissionDelegate.PERMISSION_GEOLOCATION;
                     } else if ("desktop-notification".equals(typeString)) {
                         type = PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION;
+                    } else if ("autoplay-media".equals(typeString)) {
+                        type = PermissionDelegate.PERMISSION_AUTOPLAY_MEDIA;
                     } else {
                         throw new IllegalArgumentException("Unknown permission request: " + typeString);
                     }
                     delegate.onContentPermissionRequest(
                             GeckoSession.this, message.getString("uri"),
-                            type, message.getString("access"),
-                            new PermissionCallback(typeString, callback));
+                            type, new PermissionCallback(typeString, callback));
                 } else if ("GeckoView:MediaPermission".equals(event)) {
                     GeckoBundle[] videoBundles = message.getBundleArray("video");
                     GeckoBundle[] audioBundles = message.getBundleArray("audio");
@@ -621,6 +576,22 @@ public class GeckoSession extends LayerSession
     }
 
     /**
+     * Get the current user agent string for this GeckoSession.
+     *
+     * @return a {@link GeckoResult} containing the UserAgent string
+     */
+    public @NonNull GeckoResult<String> getUserAgent() {
+        final CallbackResult<String> result = new CallbackResult<String>() {
+            @Override
+            public void sendSuccess(final Object value) {
+                complete((String) value);
+            }
+        };
+        mEventDispatcher.dispatch("GeckoView:GetUserAgent", null, result);
+        return result;
+    }
+
+    /**
      * Get the current prompt delegate for this GeckoSession.
      * @return PromptDelegate instance or null if using default delegate.
      */
@@ -642,12 +613,15 @@ public class GeckoSession extends LayerSession
 
     /* package */ static final class Window extends JNIObject implements IInterface {
         public final GeckoRuntime runtime;
+        private WeakReference<GeckoSession> mOwner;
         private NativeQueue mNativeQueue;
         private Binder mBinder;
 
         public Window(final @NonNull GeckoRuntime runtime,
+                      final @NonNull GeckoSession owner,
                       final @NonNull NativeQueue nativeQueue) {
             this.runtime = runtime;
+            mOwner = new WeakReference<>(owner);
             mNativeQueue = nativeQueue;
         }
 
@@ -664,6 +638,7 @@ public class GeckoSession extends LayerSession
         @WrapForJNI(dispatchTo = "proxy")
         public static native void open(Window instance, NativeQueue queue,
                                        Compositor compositor, EventDispatcher dispatcher,
+                                       SessionAccessibility.NativeProvider sessionAccessibility,
                                        GeckoBundle initData, String id, String chromeUri,
                                        int screenId, boolean privateMode);
 
@@ -690,6 +665,7 @@ public class GeckoSession extends LayerSession
                 }
                 mNativeQueue.reset(State.INITIAL);
                 mNativeQueue = null;
+                mOwner = null;
             }
 
             // Detach ourselves from the binder as well, to prevent this window from being
@@ -709,23 +685,33 @@ public class GeckoSession extends LayerSession
 
         // Assign a new set of Java session objects to the underlying Gecko window.
         // This replaces previously assigned objects from open() or transfer() calls.
-        public synchronized void transfer(final NativeQueue queue,
+        public synchronized void transfer(final GeckoSession owner,
+                                          final NativeQueue queue,
                                           final Compositor compositor,
                                           final EventDispatcher dispatcher,
+                                          final SessionAccessibility.NativeProvider sessionAccessibility,
                                           final GeckoBundle initData) {
             if (mNativeQueue == null) {
                 // Already closed.
                 return;
             }
 
+            final GeckoSession oldOwner = mOwner.get();
+            if (oldOwner != null && owner != oldOwner) {
+                oldOwner.abandonWindow();
+            }
+
+            mOwner = new WeakReference<>(owner);
+
             if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
-                nativeTransfer(queue, compositor, dispatcher, initData);
+                nativeTransfer(queue, compositor, dispatcher, sessionAccessibility, initData);
             } else {
                 GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY,
                         this, "nativeTransfer",
                         NativeQueue.class, queue,
                         Compositor.class, compositor,
                         EventDispatcher.class, dispatcher,
+                        SessionAccessibility.NativeProvider.class, sessionAccessibility,
                         GeckoBundle.class, initData);
             }
 
@@ -739,11 +725,16 @@ public class GeckoSession extends LayerSession
 
         @WrapForJNI(dispatchTo = "proxy", stubName = "Transfer")
         private native void nativeTransfer(NativeQueue queue, Compositor compositor,
-                                           EventDispatcher dispatcher, GeckoBundle initData);
+                                           EventDispatcher dispatcher,
+                                           SessionAccessibility.NativeProvider sessionAccessibility,
+                                           GeckoBundle initData);
 
         @WrapForJNI(dispatchTo = "proxy")
         public native void attachEditable(IGeckoEditableParent parent,
                                           GeckoEditableChild child);
+
+        @WrapForJNI(dispatchTo = "proxy")
+        public native void attachAccessibility(SessionAccessibility.NativeProvider sessionAccessibility);
 
         @WrapForJNI(calledFrom = "gecko")
         private synchronized void onReady(final @Nullable NativeQueue queue) {
@@ -766,11 +757,18 @@ public class GeckoSession extends LayerSession
                       " - chrome startup finished");
             }
         }
+
+        @Override
+        protected void finalize() throws Throwable {
+            close();
+            disposeNative();
+        }
     }
 
     private class Listener implements BundleEventListener {
         /* package */ void registerListeners() {
             getEventDispatcher().registerUiThreadListener(this,
+                "GeckoView:PinOnScreen",
                 "GeckoView:Prompt",
                 null);
         }
@@ -782,7 +780,9 @@ public class GeckoSession extends LayerSession
                 Log.d(LOGTAG, "handleMessage: event = " + event);
             }
 
-            if ("GeckoView:Prompt".equals(event)) {
+            if ("GeckoView:PinOnScreen".equals(event)) {
+                GeckoSession.this.setShouldPinOnScreen(message.getBoolean("pinned"));
+            } else if ("GeckoView:Prompt".equals(event)) {
                 handlePromptEvent(GeckoSession.this, message, callback);
             }
         }
@@ -811,6 +811,16 @@ public class GeckoSession extends LayerSession
         return mWindow.runtime;
     }
 
+    /* package */ synchronized void abandonWindow() {
+        if (mWindow == null) {
+            return;
+        }
+
+        onWindowChanged(WINDOW_TRANSFER_OUT, /* inProgress */ true);
+        mWindow = null;
+        onWindowChanged(WINDOW_TRANSFER_OUT, /* inProgress */ false);
+    }
+
     private void transferFrom(final Window window,
                               final GeckoSessionSettings settings,
                               final String id) {
@@ -828,25 +838,16 @@ public class GeckoSession extends LayerSession
         mId = id;
 
         if (mWindow != null) {
-            mWindow.transfer(mNativeQueue, mCompositor,
-                             mEventDispatcher, createInitData());
-
+            mWindow.transfer(this, mNativeQueue, mCompositor,
+                    mEventDispatcher, mAccessibility != null ? mAccessibility.nativeProvider : null,
+                    createInitData());
             onWindowChanged(WINDOW_TRANSFER_IN, /* inProgress */ false);
         }
     }
 
     /* package */ void transferFrom(final GeckoSession session) {
-        final boolean changing = (session.mWindow != null);
-        if (changing) {
-            session.onWindowChanged(WINDOW_TRANSFER_OUT, /* inProgress */ true);
-        }
-
         transferFrom(session.mWindow, session.mSettings, session.mId);
         session.mWindow = null;
-
-        if (changing) {
-            session.onWindowChanged(WINDOW_TRANSFER_OUT, /* inProgress */ false);
-        }
     }
 
     @Override // Parcelable
@@ -886,6 +887,16 @@ public class GeckoSession extends LayerSession
             return new GeckoSession[size];
         }
     };
+
+    @Override
+    public int hashCode() {
+        return mId.hashCode();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        return obj instanceof GeckoSession && mId.equals(((GeckoSession) obj).mId);
+    }
 
     /**
      * Return whether this session is open.
@@ -928,6 +939,7 @@ public class GeckoSession extends LayerSession
      * @see #close
      * @see #isOpen
      */
+    @UiThread
     public void open(final @NonNull GeckoRuntime runtime) {
         ThreadUtils.assertOnUiThread();
 
@@ -940,12 +952,13 @@ public class GeckoSession extends LayerSession
         final int screenId = mSettings.getInt(GeckoSessionSettings.SCREEN_ID);
         final boolean isPrivate = mSettings.getBoolean(GeckoSessionSettings.USE_PRIVATE_MODE);
 
-        mWindow = new Window(runtime, mNativeQueue);
+        mWindow = new Window(runtime, this, mNativeQueue);
 
         onWindowChanged(WINDOW_OPEN, /* inProgress */ true);
 
         if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
             Window.open(mWindow, mNativeQueue, mCompositor, mEventDispatcher,
+                        mAccessibility != null ? mAccessibility.nativeProvider : null,
                         createInitData(), mId, chromeUri, screenId, isPrivate);
         } else {
             GeckoThread.queueNativeCallUntil(
@@ -955,6 +968,8 @@ public class GeckoSession extends LayerSession
                 NativeQueue.class, mNativeQueue,
                 Compositor.class, mCompositor,
                 EventDispatcher.class, mEventDispatcher,
+                SessionAccessibility.NativeProvider.class,
+                mAccessibility != null ? mAccessibility.nativeProvider : null,
                 GeckoBundle.class, createInitData(),
                 String.class, mId,
                 String.class, chromeUri,
@@ -974,6 +989,7 @@ public class GeckoSession extends LayerSession
      * @see #open
      * @see #isOpen
      */
+    @UiThread
     public void close() {
         ThreadUtils.assertOnUiThread();
 
@@ -995,6 +1011,9 @@ public class GeckoSession extends LayerSession
         if ((change == WINDOW_OPEN || change == WINDOW_TRANSFER_IN) && !inProgress) {
             mTextInput.onWindowChanged(mWindow);
         }
+        if ((change == WINDOW_CLOSE || change == WINDOW_TRANSFER_OUT) && !inProgress) {
+            mTextInput.clearAutoFill();
+        }
     }
 
     /**
@@ -1002,6 +1021,7 @@ public class GeckoSession extends LayerSession
      *
      * @return SessionTextInput instance.
      */
+    @AnyThread
     public @NonNull SessionTextInput getTextInput() {
         // May be called on any thread.
         return mTextInput;
@@ -1012,9 +1032,20 @@ public class GeckoSession extends LayerSession
       *
       * @return SessionAccessibility instance.
       */
+    @UiThread
     public @NonNull SessionAccessibility getAccessibility() {
-        if (mAccessibility == null) {
-            mAccessibility = new SessionAccessibility(this);
+        ThreadUtils.assertOnUiThread();
+        if (mAccessibility != null) { return mAccessibility; }
+
+        mAccessibility = new SessionAccessibility(this);
+        if (mWindow != null) {
+            if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
+                mWindow.attachAccessibility(mAccessibility.nativeProvider);
+            } else {
+                GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY,
+                        mWindow, "attachAccessibility",
+                        SessionAccessibility.NativeProvider.class, mAccessibility.nativeProvider);
+            }
         }
         return mAccessibility;
     }
@@ -1284,15 +1315,34 @@ public class GeckoSession extends LayerSession
     }
 
     /**
-    * Set this GeckoSession as active or inactive. Setting a GeckoSession to inactive will
-    * significantly reduce its memory footprint, but should only be done if the
-    * GeckoSession is not currently visible.
-    * @param active A boolean determining whether the GeckoSession is active
-    */
+     * Set this GeckoSession as active or inactive, which represents if the session is currently
+     * visible or not. Setting a GeckoSession to inactive will significantly reduce its memory
+     * footprint, but should only be done if the GeckoSession is not currently visible. Note that
+     * a session can be active (i.e. visible) but not focused.
+     *
+     * @param active A boolean determining whether the GeckoSession is active.
+     *
+     * @see #setFocused
+     */
     public void setActive(boolean active) {
-        final GeckoBundle msg = new GeckoBundle();
+        final GeckoBundle msg = new GeckoBundle(1);
         msg.putBoolean("active", active);
         mEventDispatcher.dispatch("GeckoView:SetActive", msg);
+    }
+
+    /**
+     * Move focus to this session or away from this session. Only one session has focus at
+     * a given time. Note that a session can be unfocused but still active (i.e. visible).
+     *
+     * @param focused True if the session should gain focus or
+     *                false if the session should lose focus.
+     *
+     * @see #setActive
+     */
+    public void setFocused(boolean focused) {
+        final GeckoBundle msg = new GeckoBundle(1);
+        msg.putBoolean("focused", focused);
+        mEventDispatcher.dispatch("GeckoView:SetFocused", msg);
     }
 
     /**
@@ -1375,6 +1425,51 @@ public class GeckoSession extends LayerSession
         final GeckoBundle msg = new GeckoBundle(1);
         msg.putString("state", state.toString());
         mEventDispatcher.dispatch("GeckoView:RestoreState", msg);
+    }
+
+    // This is the GeckoDisplay acquired via acquireDisplay(), if any.
+    private GeckoDisplay mDisplay;
+    /* package */ GeckoDisplay getDisplay() {
+        return mDisplay;
+    }
+
+    /**
+     * Acquire the GeckoDisplay instance for providing the session with a drawing Surface.
+     * Be sure to call {@link GeckoDisplay#surfaceChanged(Surface, int, int)} on the
+     * acquired display if there is already a valid Surface.
+     *
+     * @return GeckoDisplay instance.
+     * @see #releaseDisplay(GeckoDisplay)
+     */
+    @UiThread
+    public @NonNull GeckoDisplay acquireDisplay() {
+        ThreadUtils.assertOnUiThread();
+
+        if (mDisplay != null) {
+            throw new IllegalStateException("Display already acquired");
+        }
+
+        mDisplay = new GeckoDisplay(this);
+        return mDisplay;
+    }
+
+    /**
+     * Release an acquired GeckoDisplay instance. Be sure to call {@link
+     * GeckoDisplay#surfaceDestroyed()} before releasing the display if it still has a
+     * valid Surface.
+     *
+     * @param display Acquired GeckoDisplay instance.
+     * @see #acquireDisplay()
+     */
+    @UiThread
+    public void releaseDisplay(final @NonNull GeckoDisplay display) {
+        ThreadUtils.assertOnUiThread();
+
+        if (display != mDisplay) {
+            throw new IllegalArgumentException("Display not attached");
+        }
+
+        mDisplay = null;
     }
 
     public GeckoSessionSettings getSettings() {
@@ -1491,6 +1586,13 @@ public class GeckoSession extends LayerSession
      * @param delegate SelectionActionDelegate instance or null to unset.
      */
     public void setSelectionActionDelegate(@Nullable SelectionActionDelegate delegate) {
+        if (getSelectionActionDelegate() != null) {
+            // When the delegate is changed or cleared, make sure onHideAction is called
+            // one last time to hide any existing selection action UI. Gecko doesn't keep
+            // track of the old delegate, so we can't rely on Gecko to do that for us.
+            getSelectionActionDelegate().onHideAction(
+                    this, GeckoSession.SelectionActionDelegate.HIDE_REASON_NO_SELECTION);
+        }
         mSelectionActionDelegate.setDelegate(delegate, this);
     }
 
@@ -1854,11 +1956,52 @@ public class GeckoSession extends LayerSession
                 delegate.onFilePrompt(session, title, intMode, mimeTypes, cb);
                 break;
             }
+            case "popup": {
+                GeckoResult<AllowOrDeny> res = delegate.onPopupRequest(session, message.getString("targetUri"));
+
+                if (res == null) {
+                    // Keep the popup blocked if the delegate returns null
+                    callback.sendSuccess(false);
+                    return;
+                }
+
+                res.then(new GeckoResult.OnValueListener<AllowOrDeny, Void>() {
+                    @Override
+                    public GeckoResult<Void> onValue(AllowOrDeny value) throws Throwable {
+                        if (value == AllowOrDeny.ALLOW) {
+                            callback.sendSuccess(true);
+                        } else if (value == AllowOrDeny.DENY) {
+                            callback.sendSuccess(false);
+                        } else {
+                            callback.sendError("Invalid response");
+                        }
+                        return null;
+                    }
+                }, new GeckoResult.OnExceptionListener<Void>() {
+                    @Override
+                    public GeckoResult<Void> onException(Throwable exception) throws Throwable {
+                        callback.sendError("Failed to get popup-blocking decision");
+                        return null;
+                    }
+                });
+                break;
+            }
             default: {
                 callback.sendError("Invalid type");
                 break;
             }
         }
+    }
+
+    @Override
+    protected void setShouldPinOnScreen(final boolean pinned) {
+        super.setShouldPinOnScreen(pinned);
+        mShouldPinOnScreen = pinned;
+    }
+
+    /* package */ boolean shouldPinOnScreen() {
+        ThreadUtils.assertOnUiThread();
+        return mShouldPinOnScreen;
     }
 
     public EventDispatcher getEventDispatcher() {
@@ -1999,27 +2142,27 @@ public class GeckoSession extends LayerSession
     /**
      * WebResponseInfo contains information about a single web response.
      */
-    public class WebResponseInfo {
+    static public class WebResponseInfo {
         /**
          * The URI of the response. Cannot be null.
          */
-        public final String uri;
+        @NonNull public final String uri;
 
         /**
          * The content type (mime type) of the response. May be null.
          */
-        public final String contentType;
+        @Nullable public final String contentType;
 
         /**
          * The content length of the response. May be 0 if unknokwn.
          */
-        public final long contentLength;
+        @Nullable public final long contentLength;
 
         /**
          * The filename obtained from the content disposition, if any.
          * May be null.
          */
-        public final String filename;
+        @Nullable public final String filename;
 
         /* package */ WebResponseInfo(GeckoBundle message) {
             uri = message.getString("uri");
@@ -2325,13 +2468,63 @@ public class GeckoSession extends LayerSession
 
         @IntDef(flag = true,
                 value = {LOAD_REQUEST_IS_USER_TRIGGERED})
-        /* package */ @interface LoadRequestFlags {}
+                /* package */ @interface LoadRequestFlags {}
 
         // Match with nsIDocShell.idl.
         /**
          * The load request was triggered by user input.
          */
         public static final int LOAD_REQUEST_IS_USER_TRIGGERED = 0x1000;
+
+        /**
+         * Load request details.
+         */
+        public static class LoadRequest {
+            /* package */ LoadRequest(@NonNull final String uri,
+                                      @Nullable final String triggerUri,
+                                      int geckoTarget,
+                                      int flags) {
+                this.uri = uri;
+                this.triggerUri = triggerUri;
+                this.target = convertGeckoTarget(geckoTarget);
+
+                // Match with nsIDocShell.idl.
+                this.isUserTriggered = (flags & 0x1000) != 0;
+            }
+
+            // This needs to match nsIBrowserDOMWindow.idl
+            private @TargetWindow int convertGeckoTarget(int geckoTarget) {
+                switch (geckoTarget) {
+                    case 0: // OPEN_DEFAULTWINDOW
+                    case 1: // OPEN_CURRENTWINDOW
+                        return TARGET_WINDOW_CURRENT;
+                    default: // OPEN_NEWWINDOW, OPEN_NEWTAB, OPEN_SWITCHTAB
+                        return TARGET_WINDOW_NEW;
+                }
+            }
+
+            /**
+             * The URI to be loaded.
+             */
+            public final @NonNull String uri;
+
+            /**
+             * The URI of the origin page that triggered the load request.
+             * null for initial loads and loads originating from data: URIs.
+             */
+            public final @Nullable String triggerUri;
+
+            /**
+             * The target where the window has requested to open.
+             * One of {@link #TARGET_WINDOW_NONE TARGET_WINDOW_*}.
+             */
+            public final @TargetWindow int target;
+
+            /**
+             * True if and only if the request was triggered by user interaction.
+             */
+            public final boolean isUserTriggered;
+        }
 
         /**
          * A request to open an URI. This is called before each page load to
@@ -2341,22 +2534,15 @@ public class GeckoSession extends LayerSession
          * GeckoSession via onNewSession.
          *
          * @param session The GeckoSession that initiated the callback.
-         * @param uri The URI to be loaded.
-         * @param target The target where the window has requested to open.
-         *               One of {@link #TARGET_WINDOW_NONE TARGET_WINDOW_*}.
-         * @param flags The load request flags.
-         *              One or more of {@link #LOAD_REQUEST_IS_USER_TRIGGERED
-         *              LOAD_REQUEST_*}.
+         * @param request The {@link LoadRequest} containing the request details.
          *
-         * @return A {@link GeckoResult} with a boolean value which indicates whether or
-         *         not the load was handled. If unhandled, Gecko will continue the
+         * @return A {@link GeckoResult} with a AllowOrDeny value which indicates whether
+         *         or not the load was handled. If unhandled, Gecko will continue the
          *         load as normal. If handled (true value), Gecko will abandon the load.
          *         A null return value is interpreted as false (unhandled).
          */
-        @Nullable GeckoResult<Boolean> onLoadRequest(@NonNull GeckoSession session,
-                                                     @NonNull String uri,
-                                                     @TargetWindow int target,
-                                                     @LoadRequestFlags int flags);
+        @Nullable GeckoResult<AllowOrDeny> onLoadRequest(@NonNull GeckoSession session,
+                                                         @NonNull LoadRequest request);
 
         /**
         * A request has been made to open a new session. The URI is provided only for
@@ -2372,82 +2558,13 @@ public class GeckoSession extends LayerSession
         */
         @Nullable GeckoResult<GeckoSession> onNewSession(@NonNull GeckoSession session, @NonNull String uri);
 
-        @IntDef({ERROR_CATEGORY_UNKNOWN, ERROR_CATEGORY_SECURITY,
-                 ERROR_CATEGORY_NETWORK, ERROR_CATEGORY_CONTENT,
-                 ERROR_CATEGORY_URI, ERROR_CATEGORY_PROXY,
-                 ERROR_CATEGORY_SAFEBROWSING})
-        public @interface LoadErrorCategory {}
-
-        @IntDef({ERROR_UNKNOWN, ERROR_SECURITY_SSL, ERROR_SECURITY_BAD_CERT,
-                 ERROR_NET_RESET, ERROR_NET_INTERRUPT, ERROR_NET_TIMEOUT,
-                 ERROR_CONNECTION_REFUSED, ERROR_UNKNOWN_PROTOCOL,
-                 ERROR_UNKNOWN_HOST, ERROR_UNKNOWN_SOCKET_TYPE,
-                 ERROR_UNKNOWN_PROXY_HOST, ERROR_MALFORMED_URI,
-                 ERROR_REDIRECT_LOOP, ERROR_SAFEBROWSING_PHISHING_URI,
-                 ERROR_SAFEBROWSING_MALWARE_URI, ERROR_SAFEBROWSING_UNWANTED_URI,
-                 ERROR_SAFEBROWSING_HARMFUL_URI, ERROR_CONTENT_CRASHED,
-                 ERROR_OFFLINE, ERROR_PORT_BLOCKED,
-                 ERROR_PROXY_CONNECTION_REFUSED, ERROR_FILE_NOT_FOUND,
-                 ERROR_FILE_ACCESS_DENIED, ERROR_INVALID_CONTENT_ENCODING,
-                 ERROR_UNSAFE_CONTENT_TYPE, ERROR_CORRUPTED_CONTENT})
-        public @interface LoadError {}
-
-        public static final int ERROR_CATEGORY_UNKNOWN = 0x1;
-        public static final int ERROR_CATEGORY_SECURITY = 0x2;
-        public static final int ERROR_CATEGORY_NETWORK = 0x3;
-        public static final int ERROR_CATEGORY_CONTENT = 0x4;
-        public static final int ERROR_CATEGORY_URI = 0x5;
-        public static final int ERROR_CATEGORY_PROXY = 0x6;
-        public static final int ERROR_CATEGORY_SAFEBROWSING = 0x7;
-
-        public static final int ERROR_UNKNOWN = 0x11;
-
-        // Security
-        public static final int ERROR_SECURITY_SSL = 0x22;
-        public static final int ERROR_SECURITY_BAD_CERT = 0x32;
-
-        // Network
-        public static final int ERROR_NET_INTERRUPT = 0x23;
-        public static final int ERROR_NET_TIMEOUT = 0x33;
-        public static final int ERROR_CONNECTION_REFUSED = 0x43;
-        public static final int ERROR_UNKNOWN_SOCKET_TYPE = 0x53;
-        public static final int ERROR_REDIRECT_LOOP = 0x63;
-        public static final int ERROR_OFFLINE = 0x73;
-        public static final int ERROR_PORT_BLOCKED = 0x83;
-        public static final int ERROR_NET_RESET = 0x93;
-
-        // Content
-        public static final int ERROR_UNSAFE_CONTENT_TYPE = 0x24;
-        public static final int ERROR_CORRUPTED_CONTENT = 0x34;
-        public static final int ERROR_CONTENT_CRASHED = 0x44;
-        public static final int ERROR_INVALID_CONTENT_ENCODING = 0x54;
-
-        // URI
-        public static final int ERROR_UNKNOWN_HOST = 0x25;
-        public static final int ERROR_MALFORMED_URI = 0x35;
-        public static final int ERROR_UNKNOWN_PROTOCOL = 0x45;
-        public static final int ERROR_FILE_NOT_FOUND = 0x55;
-        public static final int ERROR_FILE_ACCESS_DENIED = 0x65;
-
-        // Proxy
-        public static final int ERROR_PROXY_CONNECTION_REFUSED = 0x26;
-        public static final int ERROR_UNKNOWN_PROXY_HOST = 0x36;
-
-        // Safebrowsing
-        public static final int ERROR_SAFEBROWSING_MALWARE_URI = 0x27;
-        public static final int ERROR_SAFEBROWSING_UNWANTED_URI = 0x37;
-        public static final int ERROR_SAFEBROWSING_HARMFUL_URI = 0x47;
-        public static final int ERROR_SAFEBROWSING_PHISHING_URI = 0x57;
-
         /**
          * @param session The GeckoSession that initiated the callback.
          * @param uri The URI that failed to load.
-         * @param category The error category.
-         * @param error The error type.
+         * @param error A WebRequestError containing details about the error
+         * @return A URI to display as an error. Returning null will halt the load entirely.
          */
-        void onLoadError(GeckoSession session, String uri,
-                         @LoadErrorCategory int category,
-                         @LoadError int error);
+        GeckoResult<String> onLoadError(GeckoSession session, String uri, WebRequestError error);
     }
 
     /**
@@ -2912,6 +3029,18 @@ public class GeckoSession extends LayerSession
          */
         void onFilePrompt(GeckoSession session, String title, @FileType int type,
                           String[] mimeTypes, FileCallback callback);
+
+        /**
+         * Display a popup request prompt; this occurs when content attempts to open
+         * a new window in a way that doesn't appear to be the result of user input.
+         *
+         * @param session GeckoSession that triggered the prompt
+         * @param targetUri The target URI for the popup
+         *
+         * @return A {@link GeckoResult} resolving to a AllowOrDeny which indicates
+         *         whether or not the popup should be allowed to open.
+         */
+        GeckoResult<AllowOrDeny> onPopupRequest(GeckoSession session, String targetUri);
     }
 
     /**
@@ -2991,7 +3120,7 @@ public class GeckoSession extends LayerSession
      * permission dialog.
      **/
     public interface PermissionDelegate {
-        @IntDef({PERMISSION_GEOLOCATION, PERMISSION_DESKTOP_NOTIFICATION})
+        @IntDef({PERMISSION_GEOLOCATION, PERMISSION_DESKTOP_NOTIFICATION, PERMISSION_AUTOPLAY_MEDIA})
         /* package */ @interface Permission {}
 
         /**
@@ -3005,6 +3134,11 @@ public class GeckoSession extends LayerSession
          * See: https://developer.mozilla.org/en-US/docs/Web/API/notification
          */
         public static final int PERMISSION_DESKTOP_NOTIFICATION = 1;
+
+        /**
+         * Permission for allowing auto-playing media.
+         */
+        public static final int PERMISSION_AUTOPLAY_MEDIA = 2;
 
         /**
          * Callback interface for notifying the result of a permission request.
@@ -3045,12 +3179,11 @@ public class GeckoSession extends LayerSession
          * @param type The type of the requested permission; possible values are,
          *             PERMISSION_GEOLOCATION
          *             PERMISSION_DESKTOP_NOTIFICATION
-         * @param access Not used.
+         *             PERMISSION_AUTOPLAY_MEDIA
          * @param callback Callback interface.
          */
         void onContentPermissionRequest(GeckoSession session, String uri,
-                                        @Permission int type,
-                                        String access, Callback callback);
+                                        @Permission int type, Callback callback);
 
         class MediaSource {
             @IntDef({SOURCE_CAMERA, SOURCE_SCREEN, SOURCE_APPLICATION,
@@ -3269,6 +3402,7 @@ public class GeckoSession extends LayerSession
          * @param session Session instance.
          * @param reason Reason for the reset.
          */
+        @UiThread
         void restartInput(@NonNull GeckoSession session, @RestartReason int reason);
 
         /**
@@ -3278,6 +3412,7 @@ public class GeckoSession extends LayerSession
          * @param session Session instance.
          * @see #hideSoftInput
          * */
+        @UiThread
         void showSoftInput(@NonNull GeckoSession session);
 
         /**
@@ -3287,6 +3422,7 @@ public class GeckoSession extends LayerSession
          * @param session Session instance.
          * @see #showSoftInput
          * */
+        @UiThread
         void hideSoftInput(@NonNull GeckoSession session);
 
         /**
@@ -3299,6 +3435,7 @@ public class GeckoSession extends LayerSession
          * @param compositionStart Composition start offset, or -1 if there is no composition.
          * @param compositionEnd Composition end offset, or -1 if there is no composition.
          */
+        @UiThread
         void updateSelection(@NonNull GeckoSession session, int selStart, int selEnd,
                              int compositionStart, int compositionEnd);
 
@@ -3311,6 +3448,7 @@ public class GeckoSession extends LayerSession
          * @param request The extract text request.
          * @param text The extracted text.
          */
+        @UiThread
         void updateExtractedText(@NonNull GeckoSession session,
                                  @NonNull ExtractedTextRequest request,
                                  @NonNull ExtractedText text);
@@ -3323,6 +3461,48 @@ public class GeckoSession extends LayerSession
          * @param session Session instance.
          * @param info Cursor-anchor information.
          */
+        @UiThread
         void updateCursorAnchorInfo(@NonNull GeckoSession session, @NonNull CursorAnchorInfo info);
+
+        @Retention(RetentionPolicy.SOURCE)
+        @IntDef({AUTO_FILL_NOTIFY_STARTED, AUTO_FILL_NOTIFY_COMMITTED, AUTO_FILL_NOTIFY_CANCELED,
+                AUTO_FILL_NOTIFY_VIEW_ADDED, AUTO_FILL_NOTIFY_VIEW_REMOVED,
+                AUTO_FILL_NOTIFY_VIEW_UPDATED, AUTO_FILL_NOTIFY_VIEW_ENTERED,
+                AUTO_FILL_NOTIFY_VIEW_EXITED})
+        /* package */ @interface AutoFillNotification {}
+
+        /** An auto-fill session has started, usually as a result of loading a page. */
+        int AUTO_FILL_NOTIFY_STARTED = 0;
+        /** An auto-fill session has been committed, usually as a result of submitting a form. */
+        int AUTO_FILL_NOTIFY_COMMITTED = 1;
+        /** An auto-fill session has been canceled, usually as a result of unloading a page. */
+        int AUTO_FILL_NOTIFY_CANCELED = 2;
+        /** A view within the auto-fill session has been added. */
+        int AUTO_FILL_NOTIFY_VIEW_ADDED = 3;
+        /** A view within the auto-fill session has been removed. */
+        int AUTO_FILL_NOTIFY_VIEW_REMOVED = 4;
+        /** A view within the auto-fill session has been updated (e.g. change in state). */
+        int AUTO_FILL_NOTIFY_VIEW_UPDATED = 5;
+        /** A view within the auto-fill session has gained focus. */
+        int AUTO_FILL_NOTIFY_VIEW_ENTERED = 6;
+        /** A view within the auto-fill session has lost focus. */
+        int AUTO_FILL_NOTIFY_VIEW_EXITED = 7;
+
+        /**
+         * Notify that an auto-fill event has occurred. The default implementation forwards the
+         * notification to the system {@link android.view.autofill.AutofillManager}. This method is
+         * only called on Android 6.0 and above, and it is called in viewless mode as well.
+         *
+         * @param session Session instance.
+         * @param notification Notification type as one of the {@link #AUTO_FILL_NOTIFY_STARTED
+         *                     AUTO_FILL_NOTIFY_*} constants.
+         * @param virtualId Virtual ID of the target, or {@link android.view.View#NO_ID} if not
+         *                  applicable. The ID matches one of the virtual IDs provided by {@link
+         *                  SessionTextInput#onProvideAutofillVirtualStructure} and can be used
+         *                  with {@link SessionTextInput#autofill}.
+         */
+        @UiThread
+        void notifyAutoFill(@NonNull GeckoSession session, @AutoFillNotification int notification,
+                            int virtualId);
     }
 }

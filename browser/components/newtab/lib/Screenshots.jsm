@@ -7,8 +7,6 @@ const EXPORTED_SYMBOLS = ["Screenshots"];
 
 Cu.importGlobalProperties(["fetch"]);
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-
 ChromeUtils.defineModuleGetter(this, "BackgroundPageThumbs",
   "resource://gre/modules/BackgroundPageThumbs.jsm");
 ChromeUtils.defineModuleGetter(this, "PageThumbs",
@@ -66,9 +64,8 @@ this.Screenshots = {
    * we are ok to collect screenshots.
    */
   _shouldGetScreenshots() {
-    const windows = Services.wm.getEnumerator("navigator:browser");
-    while (windows.hasMoreElements()) {
-      if (!PrivateBrowsingUtils.isWindowPrivate(windows.getNext())) {
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      if (!PrivateBrowsingUtils.isWindowPrivate(win)) {
         // As soon as we encounter 1 non-private window, screenshots are fair game.
         return true;
       }
@@ -107,5 +104,5 @@ this.Screenshots = {
     // Update the cache for future links and call back for existing content
     cache.updateLink(property, screenshot);
     onScreenshot(screenshot);
-  }
+  },
 };

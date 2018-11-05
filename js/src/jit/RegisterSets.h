@@ -19,10 +19,13 @@ namespace js {
 namespace jit {
 
 struct AnyRegister {
-    typedef uint32_t Code;
+    typedef uint8_t Code;
 
-    static const uint32_t Total = Registers::Total + FloatRegisters::Total;
-    static const uint32_t Invalid = UINT_MAX;
+    static const uint8_t Total = Registers::Total + FloatRegisters::Total;
+    static const uint8_t Invalid = UINT8_MAX;
+
+    static_assert(size_t(Registers::Total) + FloatRegisters::Total <= UINT8_MAX,
+                  "Number of registers must fit in uint8_t");
 
   private:
     Code code_;
@@ -36,7 +39,7 @@ struct AnyRegister {
     explicit AnyRegister(FloatRegister fpu) {
         code_ = fpu.code() + Registers::Total;
     }
-    static AnyRegister FromCode(uint32_t i) {
+    static AnyRegister FromCode(uint8_t i) {
         MOZ_ASSERT(i < Total);
         AnyRegister r;
         r.code_ = i;
@@ -72,33 +75,39 @@ struct AnyRegister {
     bool volatile_() const {
         return isFloat() ? fpu().volatile_() : gpr().volatile_();
     }
-    AnyRegister aliased(uint32_t aliasIdx) const {
+    AnyRegister aliased(uint8_t aliasIdx) const {
         AnyRegister ret;
-        if (isFloat())
+        if (isFloat()) {
             ret = AnyRegister(fpu().aliased(aliasIdx));
-        else
+        } else {
             ret = AnyRegister(gpr().aliased(aliasIdx));
+        }
         MOZ_ASSERT_IF(aliasIdx == 0, ret == *this);
         return ret;
     }
-    uint32_t numAliased() const {
-        if (isFloat())
+    uint8_t numAliased() const {
+        if (isFloat()) {
             return fpu().numAliased();
+        }
         return gpr().numAliased();
     }
     bool aliases(const AnyRegister& other) const {
-        if (isFloat() && other.isFloat())
+        if (isFloat() && other.isFloat()) {
             return fpu().aliases(other.fpu());
-        if (!isFloat() && !other.isFloat())
+        }
+        if (!isFloat() && !other.isFloat()) {
             return gpr().aliases(other.gpr());
+        }
         return false;
     }
     // do the two registers hold the same type of data (e.g. both float32, both gpr)
     bool isCompatibleReg (const AnyRegister other) const {
-        if (isFloat() && other.isFloat())
+        if (isFloat() && other.isFloat()) {
             return fpu().equiv(other.fpu());
-        if (!isFloat() && !other.isFloat())
+        }
+        if (!isFloat() && !other.isFloat()) {
             return true;
+        }
         return false;
     }
     bool isValid() const {
@@ -220,8 +229,9 @@ class TypedOrValueRegister
     }
 
     AnyRegister scratchReg() {
-        if (hasValue())
+        if (hasValue()) {
             return AnyRegister(valueReg().scratchReg());
+        }
         return typedReg();
     }
 };
@@ -789,8 +799,9 @@ class SpecializedRegSet : public Accessors
 
     template <RegTypeName Name = RegSet::DefaultType>
     RegType getAnyExcluding(RegType preclude) {
-        if (!this->has(preclude))
+        if (!this->has(preclude)) {
             return getAny<Name>();
+        }
 
         take(preclude);
         RegType result = getAny<Name>();
@@ -879,17 +890,19 @@ class SpecializedRegSet<Accessors, RegisterSet> : public Accessors
 
     template <RegTypeName Name>
     bool hasAny() const {
-        if (Name == RegTypeName::GPR)
+        if (Name == RegTypeName::GPR) {
             return Parent::template allGpr<RegTypeName::GPR>() != 0;
+        }
         return Parent::template allFpu<Name>() != 0;
     }
 
     using Parent::addUnchecked;
     void addUnchecked(AnyRegister reg) {
-        if (reg.isFloat())
+        if (reg.isFloat()) {
             addUnchecked(reg.fpu());
-        else
+        } else {
             addUnchecked(reg.gpr());
+        }
     }
 
     void add(Register reg) {
@@ -901,18 +914,20 @@ class SpecializedRegSet<Accessors, RegisterSet> : public Accessors
         addUnchecked(reg);
     }
     void add(AnyRegister reg) {
-        if (reg.isFloat())
+        if (reg.isFloat()) {
             add(reg.fpu());
-        else
+        } else {
             add(reg.gpr());
+        }
     }
 
     using Parent::takeUnchecked;
     void takeUnchecked(AnyRegister reg) {
-        if (reg.isFloat())
+        if (reg.isFloat()) {
             takeUnchecked(reg.fpu());
-        else
+        } else {
             takeUnchecked(reg.gpr());
+        }
     }
 
     void take(Register reg) {
@@ -927,10 +942,11 @@ class SpecializedRegSet<Accessors, RegisterSet> : public Accessors
         takeUnchecked(reg);
     }
     void take(AnyRegister reg) {
-        if (reg.isFloat())
+        if (reg.isFloat()) {
             take(reg.fpu());
-        else
+        } else {
             take(reg.gpr());
+        }
     }
 
     Register getAnyGeneral() const {
@@ -1018,10 +1034,11 @@ class CommonRegSet : public SpecializedRegSet<Accessors, Set>
     }
 
     void add(TypedOrValueRegister reg) {
-        if (reg.hasValue())
+        if (reg.hasValue()) {
             add(reg.valueReg());
-        else if (reg.hasTyped())
+        } else if (reg.hasTyped()) {
             add(reg.typedReg());
+        }
     }
 
     using Parent::take;
@@ -1036,10 +1053,11 @@ class CommonRegSet : public SpecializedRegSet<Accessors, Set>
 #endif
     }
     void take(TypedOrValueRegister reg) {
-        if (reg.hasValue())
+        if (reg.hasValue()) {
             take(reg.valueReg());
-        else if (reg.hasTyped())
+        } else if (reg.hasTyped()) {
             take(reg.typedReg());
+        }
     }
 
     using Parent::takeUnchecked;
@@ -1054,10 +1072,11 @@ class CommonRegSet : public SpecializedRegSet<Accessors, Set>
 #endif
     }
     void takeUnchecked(TypedOrValueRegister reg) {
-        if (reg.hasValue())
+        if (reg.hasValue()) {
             takeUnchecked(reg.valueReg());
-        else if (reg.hasTyped())
+        } else if (reg.hasTyped()) {
             takeUnchecked(reg.typedReg());
+        }
     }
 };
 
@@ -1256,15 +1275,17 @@ class AnyRegisterIterator
         return geniter_.more() || floatiter_.more();
     }
     AnyRegisterIterator& operator ++() {
-        if (geniter_.more())
+        if (geniter_.more()) {
             ++geniter_;
-        else
+        } else {
             ++floatiter_;
+        }
         return *this;
     }
     AnyRegister operator*() const {
-        if (geniter_.more())
+        if (geniter_.more()) {
             return AnyRegister(*geniter_);
+        }
         return AnyRegister(*floatiter_);
     }
 };
@@ -1349,8 +1370,9 @@ class ABIArg
     AnyRegister reg() const { return kind() == GPR ? AnyRegister(gpr()) : AnyRegister(fpu()); }
 
     bool operator==(const ABIArg& rhs) const {
-        if (kind_ != rhs.kind_)
+        if (kind_ != rhs.kind_) {
             return false;
+        }
 
         switch(kind_) {
             case GPR:   return u.gpr_ == rhs.u.gpr_;
@@ -1379,8 +1401,9 @@ SavedNonVolatileRegisters(const AllocatableGeneralRegisterSet& unused)
 
     for (GeneralRegisterIterator iter(GeneralRegisterSet::NonVolatile()); iter.more(); ++iter) {
         Register reg = *iter;
-        if (!unused.has(reg))
+        if (!unused.has(reg)) {
             result.add(reg);
+        }
     }
 
     // Some platforms require the link register to be saved, if calls can be made.

@@ -202,7 +202,11 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(nsHTMLDocument,
 JSObject*
 nsHTMLDocument::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return HTMLDocument_Binding::Wrap(aCx, this, aGivenProto);
+  JSObject* obj = HTMLDocument_Binding::Wrap(aCx, this, aGivenProto);
+  if (!obj) {
+      MOZ_CRASH("Looks like bug 1488480/1405521, with nsHTMLDocument::WrapNode failing");
+  }
+  return obj;
 }
 
 nsresult
@@ -1081,7 +1085,7 @@ nsHTMLDocument::CreateDummyChannelForCookies(nsIURI* aCodebaseURI)
       MOZ_ASSERT(httpChannel, "How come we're coming from an HTTP doc but "
                               "we don't have an HTTP channel here?");
       if (httpChannel) {
-        httpChannel->OverrideTrackingResource(isTracking);
+        httpChannel->OverrideTrackingFlagsForDocumentCookieAccessor(docHTTPChannel);
       }
     }
   }
@@ -1106,8 +1110,7 @@ nsHTMLDocument::GetCookie(nsAString& aCookie, ErrorResult& rv)
     return;
   }
 
-  if (nsContentUtils::StorageDisabledByAntiTracking(GetInnerWindow(), nullptr,
-                                                    nullptr)) {
+  if (nsContentUtils::StorageDisabledByAntiTracking(this, nullptr)) {
     return;
   }
 
@@ -1161,8 +1164,7 @@ nsHTMLDocument::SetCookie(const nsAString& aCookie, ErrorResult& rv)
     return;
   }
 
-  if (nsContentUtils::StorageDisabledByAntiTracking(GetInnerWindow(), nullptr,
-                                                    nullptr)) {
+  if (nsContentUtils::StorageDisabledByAntiTracking(this, nullptr)) {
     return;
   }
 
@@ -1396,7 +1398,7 @@ nsHTMLDocument::Open(JSContext* cx,
   if (curDocShell) {
     curDocShell->GetSameTypeParent(getter_AddRefs(parent));
   }
-  
+
   // We are using the same technique as in nsDocShell to figure
   // out the content policy type. If there is no same type parent,
   // we know we are loading a new top level document.
@@ -1985,7 +1987,7 @@ nsHTMLDocument::ResolveName(JSContext* aCx, const nsAString& aName,
   } else {
     // No named items were found, see if there's one registerd by id for aName.
     Element *e = entry->GetIdElement();
-  
+
     if (!e || !nsGenericHTMLElement::ShouldExposeIdAsHTMLDocumentProperty(e)) {
       return false;
     }
@@ -2683,6 +2685,7 @@ struct MidasCommand {
 };
 
 static const struct MidasCommand gMidasCommandTable[] = {
+  // clang-format off
   { "bold",          "cmd_bold",            "", true,  false },
   { "italic",        "cmd_italic",          "", true,  false },
   { "underline",     "cmd_underline",       "", true,  false },
@@ -2730,6 +2733,7 @@ static const struct MidasCommand gMidasCommandTable[] = {
   { "defaultParagraphSeparator", "cmd_defaultParagraphSeparator", "", false, false },
   { "enableObjectResizing", "cmd_enableObjectResizing", "", false, true },
   { "enableInlineTableEditing", "cmd_enableInlineTableEditing", "", false, true },
+  { "enableAbsolutePositionEditing", "cmd_enableAbsolutePositionEditing", "", false, true },
 #if 0
 // no editor support to remove alignments right now
   { "justifynone",   "cmd_align",           "", true,  false },
@@ -2739,11 +2743,13 @@ static const struct MidasCommand gMidasCommandTable[] = {
   { "print",         "cmd_print",           "", true,  false },
 #endif
   { nullptr, nullptr, nullptr, false, false }
+  // clang-format on
 };
 
 #define MidasCommandCount ((sizeof(gMidasCommandTable) / sizeof(struct MidasCommand)) - 1)
 
 static const char* const gBlocks[] = {
+  // clang-format off
   "ADDRESS",
   "BLOCKQUOTE",
   "DD",
@@ -2758,6 +2764,7 @@ static const char* const gBlocks[] = {
   "H6",
   "P",
   "PRE"
+  // clang-format on
 };
 
 static bool
@@ -3279,20 +3286,20 @@ nsHTMLDocument::QueryCommandValue(const nsAString& commandID,
 }
 
 nsresult
-nsHTMLDocument::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                      bool aPreallocateChildren) const
+nsHTMLDocument::Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const
 {
   NS_ASSERTION(aNodeInfo->NodeInfoManager() == mNodeInfoManager,
                "Can't import this document into another document!");
 
   RefPtr<nsHTMLDocument> clone = new nsHTMLDocument();
-  nsresult rv = CloneDocHelper(clone.get(), aPreallocateChildren);
+  nsresult rv = CloneDocHelper(clone.get());
   NS_ENSURE_SUCCESS(rv, rv);
 
   // State from nsHTMLDocument
   clone->mLoadFlags = mLoadFlags;
 
-  return CallQueryInterface(clone.get(), aResult);
+  clone.forget(aResult);
+  return NS_OK;
 }
 
 bool
@@ -3420,7 +3427,5 @@ nsHTMLDocument::GetFormsAndFormControls(nsContentList** aFormList,
 void
 nsHTMLDocument::UserInteractionForTesting()
 {
-  if (!UserHasInteracted()) {
-    SetUserHasInteracted(true);
-  }
+  SetUserHasInteracted();
 }

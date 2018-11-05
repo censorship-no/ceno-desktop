@@ -15,7 +15,9 @@ add_task(async function() {
     // so we skip this for now.
     "telemetry",
     // about:downloads causes a shutdown leak with stylo-chrome. bug 1419943.
-    "downloads"
+    "downloads",
+    // about:debugging requires specific wait code for internal pending RDP requests.
+    "debugging",
   ];
 
   for (let cid in Cc) {

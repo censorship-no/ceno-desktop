@@ -99,13 +99,8 @@ public:
   }
 
   // Set up the ICE And DTLS data.
-  virtual nsresult SetIceCredentials(const std::string& ufrag,
-                                     const std::string& pwd) = 0;
-  virtual const std::string& GetUfrag() const = 0;
-  virtual const std::string& GetPwd() const = 0;
   virtual nsresult SetBundlePolicy(JsepBundlePolicy policy) = 0;
   virtual bool RemoteIsIceLite() const = 0;
-  virtual bool RemoteIceIsRestarting() const = 0;
   virtual std::vector<std::string> GetIceOptions() const = 0;
 
   virtual nsresult AddDtlsFingerprint(const std::string& algorithm,
@@ -166,9 +161,11 @@ public:
                                         const std::string& sdp) = 0;
   virtual nsresult AddRemoteIceCandidate(const std::string& candidate,
                                          const std::string& mid,
-                                         uint16_t level) = 0;
+                                         uint16_t level,
+                                         std::string* transportId) = 0;
   virtual nsresult AddLocalIceCandidate(const std::string& candidate,
-                                        uint16_t level,
+                                        const std::string& transportId,
+                                        uint16_t* level,
                                         std::string* mid,
                                         bool* skipped) = 0;
   virtual nsresult UpdateDefaultCandidate(
@@ -176,13 +173,14 @@ public:
       uint16_t defaultCandidatePort,
       const std::string& defaultRtcpCandidateAddr,
       uint16_t defaultRtcpCandidatePort,
-      uint16_t level) = 0;
-  virtual nsresult EndOfLocalCandidates(uint16_t level) = 0;
+      const std::string& transportId) = 0;
+  virtual nsresult EndOfLocalCandidates(const std::string& transportId) = 0;
   virtual nsresult Close() = 0;
 
   // ICE controlling or controlled
   virtual bool IsIceControlling() const = 0;
   virtual bool IsOfferer() const = 0;
+  virtual bool IsIceRestarting() const = 0;
 
   virtual const std::string
   GetLastError() const
@@ -210,11 +208,13 @@ public:
     memset(sending, 0, sizeof(sending));
 
     for (const auto& transceiver : GetTransceivers()) {
-      if (!transceiver->mRecvTrack.GetTrackId().empty()) {
+      if (!transceiver->mRecvTrack.GetTrackId().empty() ||
+          transceiver->GetMediaType() == SdpMediaSection::kApplication) {
         receiving[transceiver->mRecvTrack.GetMediaType()]++;
       }
 
-      if (!transceiver->mSendTrack.GetTrackId().empty()) {
+      if (!transceiver->mSendTrack.GetTrackId().empty() ||
+          transceiver->GetMediaType() == SdpMediaSection::kApplication) {
         sending[transceiver->mSendTrack.GetMediaType()]++;
       }
     }

@@ -97,7 +97,7 @@ add_test(function test_cache_write() {
 
           run_next_test();
         });
-      }
+      },
     };
     Services.obs.addObserver(cacheWriteObserver, "browser-search-service");
 
@@ -131,21 +131,6 @@ var EXPECTED_ENGINE = {
             {
               "name": "q",
               "value": "{searchTerms}",
-              "purpose": undefined,
-            },
-            {
-              "name": "ie",
-              "value": "utf-8",
-              "purpose": undefined,
-            },
-            {
-              "name": "oe",
-              "value": "utf-8",
-              "purpose": undefined,
-            },
-            {
-              "name": "aq",
-              "value": "t",
               "purpose": undefined,
             },
             {

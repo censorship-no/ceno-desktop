@@ -50,9 +50,9 @@
  * 1. ... JS work, which leads to a request to do GC ...
  * 2. [first GC slice, which performs all root marking and possibly more marking]
  * 3. ... more JS work is allowed to run ...
- * 4. [GC mark slice, which runs entirely in drainMarkStack]
+ * 4. [GC mark slice, which runs entirely in GCRuntime::markUntilBudgetExhaused]
  * 5. ... more JS work ...
- * 6. [GC mark slice, which runs entirely in drainMarkStack]
+ * 6. [GC mark slice, which runs entirely in GCRuntime::markUntilBudgetExhaused]
  * 7. ... more JS work ...
  * 8. [GC marking finishes; sweeping done non-incrementally; GC is done]
  * 9. ... JS continues uninterrupted now that GC is finishes ...
@@ -303,14 +303,16 @@ struct InternalBarrierMethods<Value>
             // skip doing the lookup to add the new entry. Note that we cannot
             // safely assert the presence of the entry because it may have been
             // added via a different store buffer.
-            if ((prev.isObject() || prev.isString()) && prev.toGCThing()->storeBuffer())
+            if ((prev.isObject() || prev.isString()) && prev.toGCThing()->storeBuffer()) {
                 return;
+            }
             sb->putValue(vp);
             return;
         }
         // Remove the prev entry if the new value does not need it.
-        if ((prev.isObject() || prev.isString()) && (sb = prev.toGCThing()->storeBuffer()))
+        if ((prev.isObject() || prev.isString()) && (sb = prev.toGCThing()->storeBuffer())) {
             sb->unputValue(vp);
+        }
     }
 
     static void readBarrier(const Value& v) {
@@ -647,8 +649,9 @@ class ReadBarriered : public ReadBarrieredBase<T>,
     }
 
     const T& get() const {
-        if (InternalBarrierMethods<T>::isMarkable(this->value))
+        if (InternalBarrierMethods<T>::isMarkable(this->value)) {
             this->read();
+        }
         return this->value;
     }
 
@@ -721,8 +724,9 @@ class HeapSlot : public WriteBarrieredBase<Value>
 #endif
         if (this->value.isObject() || this->value.isString()) {
             gc::Cell* cell = this->value.toGCThing();
-            if (cell->storeBuffer())
+            if (cell->storeBuffer()) {
                 cell->storeBuffer()->putSlot(owner, kind, slot, 1);
+            }
         }
     }
 };

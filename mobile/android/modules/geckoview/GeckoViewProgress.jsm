@@ -131,7 +131,7 @@ var IdentityHandler = {
         mixed_display: mixedDisplay,
         mixed_active: mixedActive,
         tracking: trackingMode,
-      }
+      },
     };
 
     if (aBrowser.contentPrincipal) {
@@ -141,7 +141,8 @@ var IdentityHandler = {
     // Don't show identity data for pages with an unknown identity or if any
     // mixed content is loaded (mixed display content is loaded by default).
     if (identityMode === this.IDENTITY_MODE_UNKNOWN ||
-        (aState & Ci.nsIWebProgressListener.STATE_IS_BROKEN)) {
+        (aState & Ci.nsIWebProgressListener.STATE_IS_BROKEN) ||
+        (aState & Ci.nsIWebProgressListener.STATE_IS_INSECURE)) {
       result.secure = false;
       return result;
     }
@@ -159,8 +160,7 @@ var IdentityHandler = {
       result.host = uri.host;
     }
 
-    let status = aBrowser.securityUI.secInfo.SSLStatus;
-    let cert = status.serverCert;
+    let cert = aBrowser.securityUI.secInfo.serverCert;
 
     result.organization = cert.organization;
     result.subjectName = cert.subjectName;
@@ -217,16 +217,23 @@ class GeckoViewProgress extends GeckoViewModule {
 
   onStateChange(aWebProgress, aRequest, aStateFlags, aStatus) {
     debug `onStateChange: isTopLevel=${aWebProgress.isTopLevel},
-                          flags=${aStateFlags}, status=${aStatus}`;
+                          flags=${aStateFlags}, status=${aStatus}
+                          loadType=${aWebProgress.loadType}`;
+
 
     if (!aWebProgress.isTopLevel) {
       return;
     }
 
     const uriSpec = aRequest.QueryInterface(Ci.nsIChannel).URI.displaySpec;
-    debug `onStateChange: uri=${uriSpec}`;
+    const isSuccess = aStatus == Cr.NS_OK;
+    const isStart = (aStateFlags & Ci.nsIWebProgressListener.STATE_START) != 0;
+    const isStop = (aStateFlags & Ci.nsIWebProgressListener.STATE_STOP) != 0;
 
-    if (aStateFlags & Ci.nsIWebProgressListener.STATE_START) {
+    debug `onStateChange: uri=${uriSpec} isSuccess=${isSuccess}
+           isStart=${isStart} isStop=${isStop}`;
+
+    if (isStart) {
       this._inProgress = true;
       const message = {
         type: "GeckoView:PageStart",
@@ -234,19 +241,20 @@ class GeckoViewProgress extends GeckoViewModule {
       };
 
       this.eventDispatcher.sendRequest(message);
-    } else if ((aStateFlags & Ci.nsIWebProgressListener.STATE_STOP) &&
-               !aWebProgress.isLoadingDocument) {
+    } else if (isStop && !aWebProgress.isLoadingDocument) {
       this._inProgress = false;
+
       let message = {
         type: "GeckoView:PageStop",
-        success: !aStatus
+        success: isSuccess,
       };
 
       this.eventDispatcher.sendRequest(message);
     }
   }
 
-  onSecurityChange(aWebProgress, aRequest, aState) {
+  onSecurityChange(aWebProgress, aRequest, aOldState, aState,
+                   aContentBlockingLogJSON) {
     debug `onSecurityChange`;
 
     // Don't need to do anything if the data we use to update the UI hasn't changed
@@ -261,7 +269,7 @@ class GeckoViewProgress extends GeckoViewModule {
 
     let message = {
       type: "GeckoView:SecurityChanged",
-      identity: identity
+      identity: identity,
     };
 
     this.eventDispatcher.sendRequest(message);
@@ -272,13 +280,6 @@ class GeckoViewProgress extends GeckoViewModule {
                              flags=${aFlags}`;
 
     this._hostChanged = true;
-    if (aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_ERROR_PAGE) {
-      // We apparently don't get a STATE_STOP in onStateChange(), so emit PageStop here
-      this.eventDispatcher.sendRequest({
-        type: "GeckoView:PageStop",
-        success: false
-      });
-    }
   }
 
   // nsIObserver event handler
@@ -294,7 +295,7 @@ class GeckoViewProgress extends GeckoViewModule {
 
         this.eventDispatcher.sendRequest({
           type: "GeckoView:PageStop",
-          success: false
+          success: false,
         });
       }
     }

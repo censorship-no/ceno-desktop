@@ -18,9 +18,11 @@ include PBackgroundSharedTypes;
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using struct mozilla::void_t from "ipc/IPCMessageUtils.h";
 using RequestHeaderTuples from "mozilla/net/PHttpChannelParams.h";
+using ArrayOfStringPairs from "mozilla/net/PHttpChannelParams.h";
 using struct nsHttpAtom from "nsHttp.h";
 using class mozilla::net::nsHttpResponseHead from "nsHttpResponseHead.h";
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
+using Telemetry::LABELS_DOCUMENT_ANALYTICS_TRACKER_FASTBLOCKED from "DocumentAnalyticsTrackerFastBlocked.h";
 
 namespace mozilla {
 namespace net {
@@ -42,6 +44,7 @@ struct LoadInfoArgs
   PrincipalInfo               triggeringPrincipalInfo;
   OptionalPrincipalInfo       principalToInheritInfo;
   OptionalPrincipalInfo       sandboxedLoadingPrincipalInfo;
+  OptionalPrincipalInfo       topLevelPrincipalInfo;
   OptionalPrincipalInfo       topLevelStorageAreaPrincipalInfo;
   OptionalURIParams           resultPrincipalURI;
   uint32_t                    securityFlags;
@@ -105,6 +108,8 @@ struct LoadInfoArgs
   bool                        isPreflight;
   bool                        loadTriggeredFromExternal;
   bool                        serviceWorkerTaintingSynthesized;
+  bool                        documentHasUserInteracted;
+  bool                        documentHasLoaded;
 };
 
 /**
@@ -141,6 +146,13 @@ struct ParentLoadInfoForwarderArgs
   // We must also note that the tainting value was explicitly set
   // by the service worker.
   bool serviceWorkerTaintingSynthesized;
+
+  // Tracker information, currently used by FastBlock
+  bool isTracker;
+  bool isTrackerBlocked;
+  LABELS_DOCUMENT_ANALYTICS_TRACKER_FASTBLOCKED trackerBlockedReason;
+  bool documentHasUserInteracted;
+  bool documentHasLoaded;
 
   // IMPORTANT: when you add new properites here you must also update
   // LoadInfoToParentLoadInfoForwarder and MergeParentLoadInfoForwarder
@@ -234,7 +246,7 @@ struct HttpChannelOpenArgs
   uint64_t                    channelId;
   nsString                    integrityMetadata;
   uint64_t                    contentWindowId;
-  nsCString                   preferredAlternativeType;
+  ArrayOfStringPairs          preferredAlternativeTypes;
   uint64_t                    topLevelOuterContentWindowId;
   TimeStamp                   launchServiceWorkerStart;
   TimeStamp                   launchServiceWorkerEnd;

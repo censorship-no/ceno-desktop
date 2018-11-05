@@ -15,6 +15,7 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
@@ -706,7 +707,7 @@ nsRFPService::GetSpoofedUserAgent(nsACString &userAgent)
   uint32_t spoofedVersion = firefoxVersion - ((firefoxVersion - 4) % 7);
   userAgent.Assign(nsPrintfCString(
     "Mozilla/5.0 (%s; rv:%d.0) Gecko/%s Firefox/%d.0",
-    SPOOFED_UA_OS, spoofedVersion, LEGACY_BUILD_ID, spoofedVersion));
+    SPOOFED_UA_OS, spoofedVersion, LEGACY_UA_GECKO_TRAIL, spoofedVersion));
 
   return rv;
 }
@@ -833,6 +834,14 @@ nsRFPService::UpdateRFPPref()
 #endif
     }
   }
+
+  // localtime_r (and other functions) may not call tzset, so do this here after
+  // changing TZ to ensure all <time.h> functions use the new time zone.
+#if defined(XP_WIN)
+  _tzset();
+#else
+  tzset();
+#endif
 
   nsJSUtils::ResetTimeZone();
 }

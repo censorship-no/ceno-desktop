@@ -11,6 +11,7 @@
 
 #include "gc/Barrier.h"
 #include "gc/DeletePolicy.h"
+#include "gc/Zone.h"
 #include "js/HashTable.h"
 
 namespace JS {
@@ -92,7 +93,7 @@ class WeakMapBase : public mozilla::LinkedListElement<WeakMapBase>
     virtual bool findZoneEdges() = 0;
     virtual void sweep() = 0;
     virtual void traceMappings(WeakMapTracer* tracer) = 0;
-    virtual void finish() = 0;
+    virtual void clearAndCompact() = 0;
 
     // Any weakmap key types that want to participate in the non-iterative
     // ephemeron marking must override this method.
@@ -111,13 +112,12 @@ class WeakMapBase : public mozilla::LinkedListElement<WeakMapBase>
     bool marked;
 };
 
-template <class Key, class Value,
-          class HashPolicy = DefaultHasher<Key> >
-class WeakMap : public HashMap<Key, Value, HashPolicy, ZoneAllocPolicy>,
+template <class Key, class Value>
+class WeakMap : public HashMap<Key, Value, MovableCellHasher<Key>, ZoneAllocPolicy>,
                 public WeakMapBase
 {
   public:
-    typedef HashMap<Key, Value, HashPolicy, ZoneAllocPolicy> Base;
+    typedef HashMap<Key, Value, MovableCellHasher<Key>, ZoneAllocPolicy> Base;
     typedef typename Base::Enum Enum;
     typedef typename Base::Lookup Lookup;
     typedef typename Base::Entry Entry;
@@ -127,22 +127,22 @@ class WeakMap : public HashMap<Key, Value, HashPolicy, ZoneAllocPolicy>,
 
     explicit WeakMap(JSContext* cx, JSObject* memOf = nullptr);
 
-    bool init(uint32_t len = 16);
-
     // Overwritten to add a read barrier to prevent an incorrectly gray value
     // from escaping the weak map. See the UnmarkGrayTracer::onChild comment in
     // gc/Marking.cpp.
     Ptr lookup(const Lookup& l) const {
         Ptr p = Base::lookup(l);
-        if (p)
+        if (p) {
             exposeGCThingToActiveJS(p->value());
+        }
         return p;
     }
 
-    AddPtr lookupForAdd(const Lookup& l) const {
+    AddPtr lookupForAdd(const Lookup& l) {
         AddPtr p = Base::lookupForAdd(l);
-        if (p)
+        if (p) {
             exposeGCThingToActiveJS(p->value());
+        }
         return p;
     }
 
@@ -178,8 +178,9 @@ class WeakMap : public HashMap<Key, Value, HashPolicy, ZoneAllocPolicy>,
 
     void sweep() override;
 
-    void finish() override {
-        Base::finish();
+    void clearAndCompact() override {
+        Base::clear();
+        Base::compact();
     }
 
     /* memberOf can be nullptr, which means that the map is not part of a JSObject. */
@@ -192,13 +193,11 @@ class WeakMap : public HashMap<Key, Value, HashPolicy, ZoneAllocPolicy>,
 };
 
 
-class ObjectValueMap : public WeakMap<HeapPtr<JSObject*>, HeapPtr<Value>,
-                                      MovableCellHasher<HeapPtr<JSObject*>>>
+class ObjectValueMap : public WeakMap<HeapPtr<JSObject*>, HeapPtr<Value>>
 {
   public:
     ObjectValueMap(JSContext* cx, JSObject* obj)
-      : WeakMap<HeapPtr<JSObject*>, HeapPtr<Value>,
-                MovableCellHasher<HeapPtr<JSObject*>>>(cx, obj)
+      : WeakMap(cx, obj)
     {}
 
     bool findZoneEdges() override;
@@ -212,7 +211,6 @@ class ObjectWeakMap
 
   public:
     explicit ObjectWeakMap(JSContext* cx);
-    bool init();
 
     JS::Zone* zone() const { return map.zone(); }
 

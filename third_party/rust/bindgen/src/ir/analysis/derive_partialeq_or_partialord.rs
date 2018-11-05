@@ -43,7 +43,7 @@ use std::collections::hash_map::Entry;
 pub struct CannotDerivePartialEqOrPartialOrd<'ctx> {
     ctx: &'ctx BindgenContext,
 
-    // The incremental result of this analysis's computation. 
+    // The incremental result of this analysis's computation.
     // Contains information whether particular item can derive `PartialEq`/`PartialOrd`.
     can_derive_partialeq_or_partialord: HashMap<ItemId, CanDerive>,
 
@@ -129,7 +129,7 @@ impl<'ctx> CannotDerivePartialEqOrPartialOrd<'ctx> {
 
             let layout_can_derive = ty.layout(self.ctx)
                 .map_or(CanDerive::Yes, |l| {
-                    l.opaque().can_trivially_derive_partialeq_or_partialord()
+                    l.opaque().can_trivially_derive_partialeq_or_partialord(self.ctx)
                 });
 
             match layout_can_derive {
@@ -148,7 +148,7 @@ impl<'ctx> CannotDerivePartialEqOrPartialOrd<'ctx> {
         }
 
         match *ty.kind() {
-            // Handle the simple cases. These can derive partialeq without further
+            // Handle the simple cases. These can derive partialeq/partialord without further
             // information.
             TypeKind::Void |
             TypeKind::NullPtr |
@@ -158,7 +158,6 @@ impl<'ctx> CannotDerivePartialEqOrPartialOrd<'ctx> {
             TypeKind::Enum(..) |
             TypeKind::TypeParam |
             TypeKind::UnresolvedTypeRef(..) |
-            TypeKind::BlockPointer |
             TypeKind::Reference(..) |
             TypeKind::ObjCInterface(..) |
             TypeKind::ObjCId |
@@ -199,12 +198,19 @@ impl<'ctx> CannotDerivePartialEqOrPartialOrd<'ctx> {
                     return CanDerive::ArrayTooLarge;
                 }
             }
+            TypeKind::Vector(..) => {
+                // FIXME: vectors always can derive PartialEq, but they should
+                // not derive PartialOrd:
+                // https://github.com/rust-lang-nursery/packed_simd/issues/48
+                trace!("    vectors cannot derive `PartialEq`/`PartialOrd`");
+                return CanDerive::No;
+            }
 
             TypeKind::Pointer(inner) => {
                 let inner_type =
                     self.ctx.resolve_type(inner).canonical_type(self.ctx);
                 if let TypeKind::Function(ref sig) = *inner_type.kind() {
-                    if sig.can_trivially_derive_partialeq_or_partialord()
+                    if sig.can_trivially_derive_partialeq_or_partialord(self.ctx)
                         != CanDerive::Yes
                     {
                         trace!(
@@ -218,7 +224,7 @@ impl<'ctx> CannotDerivePartialEqOrPartialOrd<'ctx> {
             }
 
             TypeKind::Function(ref sig) => {
-                if sig.can_trivially_derive_partialeq_or_partialord()
+                if sig.can_trivially_derive_partialeq_or_partialord(self.ctx)
                     != CanDerive::Yes
                 {
                     trace!(
@@ -252,7 +258,7 @@ impl<'ctx> CannotDerivePartialEqOrPartialOrd<'ctx> {
                     let layout_can_derive =
                         ty.layout(self.ctx).map_or(CanDerive::Yes, |l| {
                             l.opaque()
-                                .can_trivially_derive_partialeq_or_partialord()
+                                .can_trivially_derive_partialeq_or_partialord(self.ctx)
                         });
                     match layout_can_derive {
                         CanDerive::Yes => {
@@ -274,6 +280,7 @@ impl<'ctx> CannotDerivePartialEqOrPartialOrd<'ctx> {
             TypeKind::ResolvedTypeRef(..) |
             TypeKind::TemplateAlias(..) |
             TypeKind::Alias(..) |
+            TypeKind::BlockPointer(..) |
             TypeKind::TemplateInstantiation(..) => {
                 return self.constrain_join(item);
             }

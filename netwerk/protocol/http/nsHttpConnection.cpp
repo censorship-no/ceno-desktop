@@ -17,6 +17,11 @@
 #define TLS_EARLY_DATA_AVAILABLE_BUT_NOT_USED 1
 #define TLS_EARLY_DATA_AVAILABLE_AND_USED 2
 
+#define ESNI_SUCCESSFUL 0
+#define ESNI_FAILED 1
+#define NO_ESNI_SUCCESSFUL 2
+#define NO_ESNI_FAILED 3
+
 #include "ASpdySession.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/Telemetry.h"
@@ -34,7 +39,9 @@
 #include "nsProxyRelease.h"
 #include "nsSocketTransport2.h"
 #include "nsStringStream.h"
+#include "mozpkix/pkixnss.h"
 #include "sslt.h"
+#include "NSSErrorsService.h"
 #include "TunnelUtils.h"
 #include "TCPFastOpenLayer.h"
 
@@ -123,6 +130,19 @@ nsHttpConnection::~nsHttpConnection()
              this, mHttp1xTransactionCount));
         Telemetry::Accumulate(Telemetry::HTTP_REQUEST_PER_CONN,
                               mHttp1xTransactionCount);
+        nsHttpConnectionInfo *ci = nullptr;
+        if (mTransaction) {
+            ci = mTransaction->ConnectionInfo();
+        }
+        if (!ci) {
+            ci = mConnInfo;
+        }
+
+        MOZ_ASSERT(ci);
+        if (ci->GetTrrUsed()) {
+            Telemetry::Accumulate(Telemetry::DNS_TRR_REQUEST_PER_CONN,
+                                  mHttp1xTransactionCount);
+        }
     }
 
     if (mTotalBytesRead) {
@@ -399,10 +419,12 @@ nsHttpConnection::EnsureNPNComplete(nsresult &aOut0RTTWriteHandshakeValue,
         return true;
     }
 
-    nsresult rv;
+    nsresult rv = NS_OK;
     nsCOMPtr<nsISupports> securityInfo;
     nsCOMPtr<nsISSLSocketControl> ssl;
     nsAutoCString negotiatedNPN;
+    // This is neede for telemetry
+    bool handshakeSucceeded = false;
 
     GetSecurityInfo(getter_AddRefs(securityInfo));
     if (!securityInfo) {
@@ -507,15 +529,22 @@ nsHttpConnection::EnsureNPNComplete(nsresult &aOut0RTTWriteHandshakeValue,
              this, mConnInfo->HashKey().get(), negotiatedNPN.get(),
              mTLSFilter ? " [Double Tunnel]" : ""));
 
+        handshakeSucceeded = true;
+
+        int16_t tlsVersion;
+        ssl->GetSSLVersionUsed(&tlsVersion);
+        mConnInfo->SetLessThanTls13((tlsVersion < nsISSLSocketControl::TLS_VERSION_1_3) &&
+                                    (tlsVersion != nsISSLSocketControl::SSL_VERSION_UNKNOWN));
+
         bool earlyDataAccepted = false;
         if (mWaitingFor0RTTResponse) {
             // Check if early data has been accepted.
-            rv = ssl->GetEarlyDataAccepted(&earlyDataAccepted);
+            nsresult rvEarlyData = ssl->GetEarlyDataAccepted(&earlyDataAccepted);
             LOG(("nsHttpConnection::EnsureNPNComplete [this=%p] - early data "
                  "that was sent during 0RTT %s been accepted [rv=%" PRIx32 "].",
                  this, earlyDataAccepted ? "has" : "has not", static_cast<uint32_t>(rv)));
 
-            if (NS_FAILED(rv) ||
+            if (NS_FAILED(rvEarlyData) ||
                 NS_FAILED(mTransaction->Finish0RTT(!earlyDataAccepted, negotiatedNPN != mEarlyNegotiatedALPN))) {
                 LOG(("nsHttpConection::EnsureNPNComplete [this=%p] closing transaction %p", this, mTransaction.get()));
                 mTransaction->Close(NS_ERROR_NET_RESET);
@@ -523,8 +552,6 @@ nsHttpConnection::EnsureNPNComplete(nsresult &aOut0RTTWriteHandshakeValue,
             }
         }
 
-        int16_t tlsVersion;
-        ssl->GetSSLVersionUsed(&tlsVersion);
         // Send the 0RTT telemetry only for tls1.3
         if (tlsVersion > nsISSLSocketControl::TLS_VERSION_1_2) {
             Telemetry::Accumulate(Telemetry::TLS_EARLY_DATA_NEGOTIATED,
@@ -619,6 +646,19 @@ npnComplete:
         // We have to reset this here, just in case we end up starting spdy again,
         // so it can actually do everything it needs to do.
         mDid0RTTSpdy = false;
+    }
+
+    if (ssl) {
+        // Telemetry for tls failure rate with and without esni;
+        bool esni;
+        mSocketTransport->GetEsniUsed(&esni);
+        Telemetry::Accumulate(Telemetry::ESNI_NOESNI_TLS_SUCCESS_RATE,
+                              (esni) ? ((handshakeSucceeded) ? ESNI_SUCCESSFUL : ESNI_FAILED)
+                                     : ((handshakeSucceeded) ? NO_ESNI_SUCCESSFUL : NO_ESNI_FAILED));
+    }
+
+    if (rv == psm::GetXPCOMFromNSSError(mozilla::pkix::MOZILLA_PKIX_ERROR_MITM_DETECTED)) {
+        gSocketTransportService->SetNotTrustedMitmDetected();
     }
     return true;
 }
@@ -749,7 +789,8 @@ nsHttpConnection::Activate(nsAHttpTransaction *trans, uint32_t caps, int32_t pri
     }
 
     if (mTLSFilter) {
-        rv = mTLSFilter->SetProxiedTransaction(trans);
+        RefPtr<NullHttpTransaction> baseTrans(do_QueryReferent(mWeakTrans));
+        rv = mTLSFilter->SetProxiedTransaction(trans, baseTrans);
         NS_ENSURE_SUCCESS(rv, rv);
         mTransaction = mTLSFilter;
     }
@@ -1747,6 +1788,7 @@ nsHttpConnection::CloseTransaction(nsAHttpTransaction *trans, nsresult reason,
     if (mUsingSpdyVersion != SpdyVersion::NONE) {
         DontReuse();
         // if !mSpdySession then mUsingSpdyVersion must be false for canreuse()
+        mSpdySession->SetCleanShutdown(aIsShutdown);
         mUsingSpdyVersion = SpdyVersion::NONE;
         mSpdySession = nullptr;
     }
@@ -2054,12 +2096,14 @@ nsHttpConnection::OnSocketReadable()
 }
 
 void
-nsHttpConnection::SetupSecondaryTLS()
+nsHttpConnection::SetupSecondaryTLS(nsAHttpTransaction *aSpdyConnectTransaction)
 {
     MOZ_ASSERT(OnSocketThread(), "not on socket thread");
     MOZ_ASSERT(!mTLSFilter);
-    LOG(("nsHttpConnection %p SetupSecondaryTLS %s %d\n",
-         this, mConnInfo->Origin(), mConnInfo->OriginPort()));
+    LOG(("nsHttpConnection %p SetupSecondaryTLS %s %d "
+         "aSpdyConnectTransaction=%p\n",
+         this, mConnInfo->Origin(), mConnInfo->OriginPort(),
+         aSpdyConnectTransaction));
 
     nsHttpConnectionInfo *ci = nullptr;
     if (mTransaction) {
@@ -2076,6 +2120,7 @@ nsHttpConnection::SetupSecondaryTLS()
     if (mTransaction) {
         mTransaction = mTLSFilter;
     }
+    mWeakTrans = do_GetWeakReference(aSpdyConnectTransaction);
 }
 
 void

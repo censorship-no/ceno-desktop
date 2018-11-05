@@ -23,14 +23,13 @@ class SVGMetadataElement final : public SVGMetadataElementBase
 protected:
   friend nsresult (::NS_NewSVGMetadataElement(nsIContent **aResult,
                                               already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGMetadataElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGMetadataElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
   nsresult Init();
 
 public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };
 
 } // namespace dom

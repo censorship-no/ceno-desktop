@@ -9,13 +9,11 @@
 #include "base/message_loop.h"
 #include "base/task.h"
 #include "mozilla/Hal.h"
-#include "nsExceptionHandler.h"
 #include "nsIScreen.h"
 #include "nsIScreenManager.h"
 #include "nsWindow.h"
 #include "nsThreadUtils.h"
 #include "nsICommandLineRunner.h"
-#include "nsICrashReporter.h"
 #include "nsIObserverService.h"
 #include "nsIAppStartup.h"
 #include "nsIGeolocationProvider.h"
@@ -66,12 +64,14 @@
 #include "GeckoNetworkManager.h"
 #include "GeckoProcessManager.h"
 #include "GeckoScreenOrientation.h"
+#include "GeckoSystemStateListener.h"
 #include "GeckoVRManager.h"
 #include "PrefsHelper.h"
 #include "fennec/MemoryMonitor.h"
 #include "fennec/Telemetry.h"
 #include "fennec/ThumbnailHelper.h"
 #include "ScreenHelperAndroid.h"
+#include "WebExecutorSupport.h"
 
 #ifdef DEBUG_ANDROID_EVENTS
 #define EVLOG(args...)  ALOG(args)
@@ -407,6 +407,8 @@ nsAppShell::nsAppShell()
         sAppShell = this;
     }
 
+    hal::Init();
+
     if (!XRE_IsParentProcess()) {
         if (jni::IsAvailable()) {
             GeckoThreadSupport::Init();
@@ -430,7 +432,9 @@ nsAppShell::nsAppShell()
         mozilla::GeckoNetworkManager::Init();
         mozilla::GeckoProcessManager::Init();
         mozilla::GeckoScreenOrientation::Init();
+        mozilla::GeckoSystemStateListener::Init();
         mozilla::PrefsHelper::Init();
+        mozilla::widget::WebExecutorSupport::Init();
         nsWindow::InitNatives();
 
         if (jni::IsFennec()) {
@@ -474,6 +478,8 @@ nsAppShell::~nsAppShell()
         sPowerManagerService = nullptr;
         sWakeLockListener = nullptr;
     }
+
+    hal::Shutdown();
 
     if (jni::IsAvailable() && XRE_IsParentProcess()) {
         DestroyAndroidUiThread();
@@ -589,11 +595,6 @@ nsAppShell::Observe(nsISupports* aSubject,
 
     } else if (!strcmp(aTopic, "profile-after-change")) {
         if (jni::IsAvailable()) {
-            // See if we want to force 16-bit color before doing anything
-            if (Preferences::GetBool("gfx.android.rgb16.force", false)) {
-                java::GeckoAppShell::SetScreenDepthOverride(16);
-            }
-
             java::GeckoThread::SetState(
                     java::GeckoThread::State::PROFILE_READY());
 
@@ -748,6 +749,7 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
                                 IDLE);
             mozilla::BackgroundHangMonitor().NotifyWait();
 
+            AUTO_PROFILER_THREAD_SLEEP;
             curEvent = mEventQueue.Pop(/* mayWait */ true);
         }
     }

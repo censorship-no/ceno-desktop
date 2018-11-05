@@ -13,13 +13,10 @@
 
 #include "prlock.h"
 #include "mozilla/RefPtr.h"
-#include "nsWeakPtr.h"
 #include "nsAutoPtr.h"
 #include "nsIWeakReferenceUtils.h" // for the definition of nsWeakPtr
 #include "IPeerConnection.h"
 #include "sigslot.h"
-#include "nricectx.h"
-#include "nricemediastream.h"
 #include "nsComponentManagerUtils.h"
 #include "nsPIDOMWindow.h"
 #include "nsIUUIDGenerator.h"
@@ -39,6 +36,7 @@
 #include "mozilla/dom/PeerConnectionImplEnumsBinding.h"
 #include "mozilla/dom/RTCPeerConnectionBinding.h" // mozPacketDumpType, maybe move?
 #include "mozilla/dom/RTCRtpTransceiverBinding.h"
+#include "mozilla/dom/RTCConfigurationBinding.h"
 #include "PrincipalChangeObserver.h"
 #include "StreamTracks.h"
 
@@ -61,10 +59,6 @@ class nsDOMDataChannel;
 namespace mozilla {
 class DataChannel;
 class DtlsIdentity;
-class NrIceCtx;
-class NrIceMediaStream;
-class NrIceStunServer;
-class NrIceTurnServer;
 class MediaPipeline;
 class TransceiverImpl;
 
@@ -114,12 +108,8 @@ using mozilla::dom::PeerConnectionObserver;
 using mozilla::dom::RTCConfiguration;
 using mozilla::dom::RTCIceServer;
 using mozilla::dom::RTCOfferOptions;
-using mozilla::NrIceCtx;
-using mozilla::NrIceMediaStream;
 using mozilla::DtlsIdentity;
 using mozilla::ErrorResult;
-using mozilla::NrIceStunServer;
-using mozilla::NrIceTurnServer;
 using mozilla::PeerIdentity;
 
 class PeerConnectionWrapper;
@@ -133,59 +123,6 @@ class PCUuidGenerator : public mozilla::JsepUuidGenerator {
 
  private:
   nsCOMPtr<nsIUUIDGenerator> mGenerator;
-};
-
-class PeerConnectionConfiguration
-{
-public:
-  PeerConnectionConfiguration()
-  : mBundlePolicy(kBundleBalanced),
-    mIceTransportPolicy(NrIceCtx::ICE_POLICY_ALL) {}
-
-  bool addStunServer(const std::string& addr, uint16_t port,
-                     const char* transport)
-  {
-    UniquePtr<NrIceStunServer> server(NrIceStunServer::Create(addr, port, transport));
-    if (!server) {
-      return false;
-    }
-    addStunServer(*server);
-    return true;
-  }
-  bool addTurnServer(const std::string& addr, uint16_t port,
-                     const std::string& username,
-                     const std::string& pwd,
-                     const char* transport)
-  {
-    // TODO(ekr@rtfm.com): Need support for SASLprep for
-    // username and password. Bug # ???
-    std::vector<unsigned char> password(pwd.begin(), pwd.end());
-
-    UniquePtr<NrIceTurnServer> server(NrIceTurnServer::Create(addr, port, username, password,
-							      transport));
-    if (!server) {
-      return false;
-    }
-    addTurnServer(*server);
-    return true;
-  }
-  void addStunServer(const NrIceStunServer& server) { mStunServers.push_back (server); }
-  void addTurnServer(const NrIceTurnServer& server) { mTurnServers.push_back (server); }
-  const std::vector<NrIceStunServer>& getStunServers() const { return mStunServers; }
-  const std::vector<NrIceTurnServer>& getTurnServers() const { return mTurnServers; }
-  void setBundlePolicy(JsepBundlePolicy policy) { mBundlePolicy = policy;}
-  JsepBundlePolicy getBundlePolicy() const { return mBundlePolicy; }
-  void setIceTransportPolicy(NrIceCtx::Policy policy) { mIceTransportPolicy = policy;}
-  NrIceCtx::Policy getIceTransportPolicy() const { return mIceTransportPolicy; }
-
-  nsresult Init(const RTCConfiguration& aSrc);
-  nsresult AddIceServer(const RTCIceServer& aServer);
-
-private:
-  std::vector<NrIceStunServer> mStunServers;
-  std::vector<NrIceTurnServer> mTurnServers;
-  JsepBundlePolicy mBundlePolicy;
-  NrIceCtx::Policy mIceTransportPolicy;
 };
 
 // Not an inner class so we can forward declare.
@@ -206,7 +143,8 @@ class RTCStatsQuery {
     std::string pcName;
     bool internalStats;
     nsTArray<RefPtr<mozilla::MediaPipeline>> pipelines;
-    RefPtr<NrIceCtx> iceCtx;
+    std::string transportId;
+    RefPtr<PeerConnectionMedia> media;
     bool grabAllLevels;
     DOMHighResTimeStamp now;
 };
@@ -272,14 +210,6 @@ public:
     return mMedia;
   }
 
-  // Configure the ability to use localhost.
-  void SetAllowIceLoopback(bool val) { mAllowIceLoopback = val; }
-  bool GetAllowIceLoopback() const { return mAllowIceLoopback; }
-
-  // Configure the ability to use IPV6 link-local addresses.
-  void SetAllowIceLinkLocal(bool val) { mAllowIceLinkLocal = val; }
-  bool GetAllowIceLinkLocal() const { return mAllowIceLinkLocal; }
-
   // Handle system to allow weak references to be passed through C code
   virtual const std::string& GetHandle();
 
@@ -287,17 +217,13 @@ public:
   virtual const std::string& GetName();
 
   // ICE events
-  void IceConnectionStateChange(NrIceCtx* ctx,
-                                NrIceCtx::ConnectionState state);
-  void IceGatheringStateChange(NrIceCtx* ctx,
-                               NrIceCtx::GatheringState state);
+  void IceConnectionStateChange(dom::PCImplIceConnectionState state);
+  void IceGatheringStateChange(dom::PCImplIceGatheringState state);
   void UpdateDefaultCandidate(const std::string& defaultAddr,
                               uint16_t defaultPort,
                               const std::string& defaultRtcpAddr,
                               uint16_t defaultRtcpPort,
-                              uint16_t level);
-  void EndOfLocalCandidates(uint16_t level);
-  void IceStreamReady(NrIceMediaStream *aStream);
+                              const std::string& transportId);
 
   static void ListenThread(void *aData);
   static void ConnectThread(void *aData);
@@ -319,12 +245,9 @@ public:
     return mWindow;
   }
 
-  // Initialize PeerConnection from a PeerConnectionConfiguration object
-  // (used directly by unit-tests, and indirectly by the JS entry point)
-  // This is necessary because RTCConfiguration can't be used by unit-tests
   nsresult Initialize(PeerConnectionObserver& aObserver,
                       nsGlobalWindowInner* aWindow,
-                      const PeerConnectionConfiguration& aConfiguration,
+                      const RTCConfiguration& aConfiguration,
                       nsISupports* aThread);
 
   // Initialize PeerConnection from an RTCConfiguration object (JS entrypoint)
@@ -432,28 +355,6 @@ public:
     rv = ReplaceTrackNoRenegotiation(aTransceiver, aWithTrack);
   }
 
-  NS_IMETHODIMP_TO_ERRORRESULT(SetParameters, ErrorResult &rv,
-                               dom::MediaStreamTrack& aTrack,
-                               const dom::RTCRtpParameters& aParameters)
-  {
-    rv = SetParameters(aTrack, aParameters);
-  }
-
-  NS_IMETHODIMP_TO_ERRORRESULT(GetParameters, ErrorResult &rv,
-                               dom::MediaStreamTrack& aTrack,
-                               dom::RTCRtpParameters& aOutParameters)
-  {
-    rv = GetParameters(aTrack, aOutParameters);
-  }
-
-  nsresult
-  SetParameters(dom::MediaStreamTrack& aTrack,
-                const std::vector<JsepTrack::JsConstraints>& aConstraints);
-
-  nsresult
-  GetParameters(dom::MediaStreamTrack& aTrack,
-                std::vector<JsepTrack::JsConstraints>* aOutConstraints);
-
   // test-only: called from contributing sources mochitests.
   NS_IMETHODIMP_TO_ERRORRESULT(InsertAudioLevelForContributingSource,
                                ErrorResult &rv,
@@ -536,7 +437,10 @@ public:
   }
 
   // this method checks to see if we've made a promise to protect media.
-  bool PrivacyRequested() const { return mPrivacyRequested; }
+  bool PrivacyRequested() const
+  {
+    return mPrivacyRequested.isSome() && *mPrivacyRequested;
+  }
 
   NS_IMETHODIMP GetFingerprint(char** fingerprint);
   void GetFingerprint(nsAString& fingerprint)
@@ -630,7 +534,7 @@ public:
 
   bool IsClosed() const;
   // called when DTLS connects; we only need this once
-  nsresult SetDtlsConnected(bool aPrivacyRequested);
+  nsresult OnAlpnNegotiated(const std::string& aAlpn);
 
   bool HasMedia() const;
 
@@ -688,7 +592,8 @@ private:
   // Shut down media - called on main thread only
   void ShutdownMedia();
 
-  void CandidateReady(const std::string& candidate, uint16_t level);
+  void CandidateReady(const std::string& candidate,
+                      const std::string& transportId);
   void SendLocalIceCandidateToContent(uint16_t level,
                                       const std::string& mid,
                                       const std::string& candidate);
@@ -699,19 +604,14 @@ private:
       uint16_t* remoteport,
       uint32_t* maxmessagesize,
       bool*     mmsset,
-      uint16_t* level) const;
+      std::string* transportId,
+      bool* client) const;
 
   nsresult AddRtpTransceiverToJsepSession(RefPtr<JsepTransceiver>& transceiver);
   already_AddRefed<TransceiverImpl> CreateTransceiverImpl(
       JsepTransceiver* aJsepTransceiver,
       dom::MediaStreamTrack* aSendTrack,
       ErrorResult& aRv);
-
-  nsresult SetupIceRestartCredentials();
-  void BeginIceRestart();
-  nsresult ResetIceCredentials();
-  nsresult RollbackIceRestart();
-  void FinalizeIceRestart();
 
   static void GetStatsForPCObserver_s(
       const std::string& pcHandle,
@@ -730,6 +630,8 @@ private:
   // or other things.
   void RecordLongtermICEStatistics();
 
+  void RecordIceRestartStatistics(JsepSdpType type);
+
   // Timecard used to measure processing time. This should be the first class
   // attribute so that we accurately measure the time required to instantiate
   // any other attributes of this class.
@@ -740,10 +642,6 @@ private:
   // ICE State
   mozilla::dom::PCImplIceConnectionState mIceConnectionState;
   mozilla::dom::PCImplIceGatheringState mIceGatheringState;
-
-  // DTLS
-  // this is true if we have been connected ever, see SetDtlsConnected
-  bool mDtlsConnected;
 
   nsCOMPtr<nsIThread> mThread;
   // TODO: Remove if we ever properly wire PeerConnection for cycle-collection.
@@ -771,7 +669,7 @@ private:
   //
   // This can be false if mPeerIdentity is set, in the case where identity is
   // provided, but the media is not protected from the app on either side
-  bool mPrivacyRequested;
+  Maybe<bool> mPrivacyRequested;
 
   // A handle to refer to this PC with
   std::string mHandle;
@@ -785,16 +683,12 @@ private:
   // DataConnection that's used to get all the DataChannels
   RefPtr<mozilla::DataChannelConnection> mDataConnection;
 
-  bool mAllowIceLoopback;
-  bool mAllowIceLinkLocal;
   bool mForceIceTcp;
   RefPtr<PeerConnectionMedia> mMedia;
 
   // The JSEP negotiation session.
   mozilla::UniquePtr<PCUuidGenerator> mUuidGen;
   mozilla::UniquePtr<mozilla::JsepSession> mJsepSession;
-  std::string mPreviousIceUfrag; // used during rollback of ice restart
-  std::string mPreviousIcePwd; // used during rollback of ice restart
   unsigned long mIceRestartCount;
   unsigned long mIceRollbackCount;
 
@@ -804,8 +698,6 @@ private:
   mozilla::TimeStamp mStartTime;
 
   bool mHaveConfiguredCodecs;
-
-  bool mHaveDataStream;
 
   unsigned int mAddCandidateErrorCount;
 

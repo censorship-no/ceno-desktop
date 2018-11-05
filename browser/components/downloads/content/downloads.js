@@ -401,7 +401,7 @@ var DownloadsPanel = {
     if (aEvent.keyCode == aEvent.DOM_VK_DOWN) {
       // If the last element in the list is selected, or the footer is already
       // focused, focus the footer.
-      if (richListBox.selectedItem === richListBox.lastChild ||
+      if (richListBox.selectedItem === richListBox.lastElementChild ||
           document.activeElement.parentNode.id === "downloadsFooter") {
         DownloadsFooter.focus();
         aEvent.preventDefault();
@@ -425,9 +425,9 @@ var DownloadsPanel = {
     // in it, focus the last element in the list when going up.
     if (aEvent.keyCode == aEvent.DOM_VK_UP &&
         document.activeElement.parentNode.id === "downloadsFooter" &&
-        DownloadsView.richListBox.firstChild) {
+        DownloadsView.richListBox.firstElementChild) {
       DownloadsView.richListBox.focus();
-      DownloadsView.richListBox.selectedItem = DownloadsView.richListBox.lastChild;
+      DownloadsView.richListBox.selectedItem = DownloadsView.richListBox.lastElementChild;
       aEvent.preventDefault();
       return;
     }
@@ -450,7 +450,7 @@ var DownloadsPanel = {
     // Getting the data or creating the nsIURI might fail
     try {
       let data = {};
-      trans.getAnyTransferData({}, data, {});
+      trans.getAnyTransferData({}, data);
       let [url, name] = data.value
                             .QueryInterface(Ci.nsISupportsString)
                             .data
@@ -723,15 +723,16 @@ var DownloadsView = {
     DownloadsCommon.log("Adding a new DownloadsViewItem to the downloads list.",
                         "aNewest =", aNewest);
 
-    let element = document.createElement("richlistitem");
+    let element = document.createXULElement("richlistitem");
     let viewItem = new DownloadsViewItem(download, element);
     this._visibleViewItems.set(download, viewItem);
     this._itemsForElements.set(element, viewItem);
     if (aNewest) {
-      this.richListBox.insertBefore(element, this.richListBox.firstChild);
+      this.richListBox.insertBefore(element, this.richListBox.firstElementChild);
     } else {
       this.richListBox.appendChild(element);
     }
+    viewItem.ensureActive();
   },
 
   /**
@@ -752,24 +753,6 @@ var DownloadsView = {
 
   // User interface event functions
 
-  /**
-   * Helper function to do commands on a specific download item.
-   *
-   * @param aEvent
-   *        Event object for the event being handled.  If the event target is
-   *        not a richlistitem that represents a download, this function will
-   *        walk up the parent nodes until it finds a DOM node that is.
-   * @param aCommand
-   *        The command to be performed.
-   */
-  onDownloadCommand(aEvent, aCommand) {
-    let target = aEvent.target;
-    while (target.nodeName != "richlistitem") {
-      target = target.parentNode;
-    }
-    DownloadsView.itemForElement(target).doCommand(aCommand);
-  },
-
   onDownloadClick(aEvent) {
     // Handle primary clicks only, and exclude the action button.
     if (aEvent.button == 0 &&
@@ -785,6 +768,11 @@ var DownloadsView = {
         goDoCommand("downloadsCmd_open");
       }
     }
+  },
+
+  onDownloadButton(event) {
+    let target = event.target.closest("richlistitem");
+    DownloadsView.itemForElement(target).onButton();
   },
 
   /**
@@ -838,13 +826,6 @@ var DownloadsView = {
   onDownloadMouseOver(aEvent) {
     if (aEvent.originalTarget.classList.contains("downloadButton")) {
       aEvent.target.classList.add("downloadHoveringButton");
-
-      let button = aEvent.originalTarget;
-      let tooltip = button.getAttribute("tooltiptext");
-      if (tooltip) {
-        button.setAttribute("aria-label", tooltip);
-        button.removeAttribute("tooltiptext");
-      }
     }
     if (!(this.contextMenuOpen || this.subViewOpen) &&
         aEvent.target.parentNode == this.richListBox) {
@@ -931,14 +912,13 @@ XPCOMUtils.defineConstant(this, "DownloadsView", DownloadsView);
  */
 function DownloadsViewItem(download, aElement) {
   this.download = download;
-  this.downloadState = DownloadsCommon.stateOfDownload(download);
   this.element = aElement;
   this.element._shell = this;
 
   this.element.setAttribute("type", "download");
   this.element.classList.add("download-state");
 
-  this._updateState();
+  this.isPanel = true;
 }
 
 DownloadsViewItem.prototype = {
@@ -951,11 +931,12 @@ DownloadsViewItem.prototype = {
 
   onChanged() {
     let newState = DownloadsCommon.stateOfDownload(this.download);
-    if (this.downloadState != newState) {
+    if (this.downloadState !== newState) {
       this.downloadState = newState;
       this._updateState();
+    } else {
+      this._updateStateInner();
     }
-    this._updateProgress();
   },
 
   isCommandEnabled(aCommand) {
@@ -1048,9 +1029,7 @@ DownloadsViewItem.prototype = {
   },
 
   downloadsCmd_copyLocation() {
-    let clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"]
-                    .getService(Ci.nsIClipboardHelper);
-    clipboard.copyString(this.download.source.url);
+    DownloadsCommon.copyDownloadLink(this.download);
   },
 
   downloadsCmd_doDefault() {
@@ -1344,7 +1323,7 @@ var DownloadsSummary = {
     }
     delete this._detailsNode;
     return this._detailsNode = node;
-  }
+  },
 };
 
 XPCOMUtils.defineConstant(this, "DownloadsSummary", DownloadsSummary);
@@ -1398,7 +1377,7 @@ var DownloadsFooter = {
     }
     delete this._footerNode;
     return this._footerNode = node;
-  }
+  },
 };
 
 XPCOMUtils.defineConstant(this, "DownloadsFooter", DownloadsFooter);

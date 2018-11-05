@@ -71,6 +71,20 @@ where
                 .takes_value(true)
                 .multiple(true)
                 .number_of_values(1),
+            Arg::with_name("blacklist-function")
+                .long("blacklist-function")
+                .help("Mark <function> as hidden.")
+                .value_name("function")
+                .takes_value(true)
+                .multiple(true)
+                .number_of_values(1),
+            Arg::with_name("blacklist-item")
+                .long("blacklist-item")
+                .help("Mark <item> as hidden.")
+                .value_name("item")
+                .takes_value(true)
+                .multiple(true)
+                .number_of_values(1),
             Arg::with_name("no-layout-tests")
                 .long("no-layout-tests")
                 .help("Avoid generating layout tests for any type."),
@@ -125,6 +139,12 @@ where
             Arg::with_name("objc-extern-crate")
                 .long("objc-extern-crate")
                 .help("Use extern crate instead of use for objc."),
+            Arg::with_name("generate-block")
+                .long("generate-block")
+                .help("Generate block signatures instead of void pointers."),
+            Arg::with_name("block-extern-crate")
+                .long("block-extern-crate")
+                .help("Use extern crate instead of use for block."),
             Arg::with_name("distrust-clang-mangling")
                 .long("distrust-clang-mangling")
                 .help("Do not trust the libclang-provided mangling"),
@@ -143,6 +163,7 @@ where
                 .help("Time the different bindgen phases and print to stderr"),
             // All positional arguments after the end of options marker, `--`
             Arg::with_name("clang-args")
+                .last(true)
                 .multiple(true),
             Arg::with_name("emit-clang-ast")
                 .long("emit-clang-ast")
@@ -350,6 +371,18 @@ where
         }
     }
 
+    if let Some(hidden_functions) = matches.values_of("blacklist-function") {
+        for fun in hidden_functions {
+            builder = builder.blacklist_function(fun);
+        }
+    }
+
+    if let Some(hidden_identifiers) = matches.values_of("blacklist-item") {
+        for id in hidden_identifiers {
+            builder = builder.blacklist_item(id);
+        }
+    }
+
     if matches.is_present("builtins") {
         builder = builder.emit_builtins();
     }
@@ -415,15 +448,15 @@ where
     }
 
     if let Some(what_to_generate) = matches.value_of("generate") {
-        let mut config = CodegenConfig::nothing();
+        let mut config = CodegenConfig::empty();
         for what in what_to_generate.split(",") {
             match what {
-                "functions" => config.functions = true,
-                "types" => config.types = true,
-                "vars" => config.vars = true,
-                "methods" => config.methods = true,
-                "constructors" => config.constructors = true,
-                "destructors" => config.destructors = true,
+                "functions" => config.insert(CodegenConfig::FUNCTIONS),
+                "types" => config.insert(CodegenConfig::TYPES),
+                "vars" => config.insert(CodegenConfig::VARS),
+                "methods" => config.insert(CodegenConfig::METHODS),
+                "constructors" => config.insert(CodegenConfig::CONSTRUCTORS),
+                "destructors" => config.insert(CodegenConfig::DESTRUCTORS),
                 otherwise => {
                     return Err(Error::new(
                         ErrorKind::Other,
@@ -477,6 +510,14 @@ where
 
     if matches.is_present("objc-extern-crate") {
         builder = builder.objc_extern_crate(true);
+    }
+
+    if matches.is_present("generate-block") {
+        builder = builder.generate_block(true);
+    }
+
+    if matches.is_present("block-extern-crate") {
+        builder = builder.block_extern_crate(true);
     }
 
     if let Some(opaque_types) = matches.values_of("opaque-type") {

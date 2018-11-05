@@ -17,9 +17,7 @@ var gAppManagerDialog = {
       window);
 
     const appDescElem = document.getElementById("appDescription");
-    if (this.handlerInfo.type == TYPE_MAYBE_FEED) {
-      document.l10n.setAttributes(appDescElem, "app-manager-handle-webfeeds");
-    } else if (this.handlerInfo.wrappedHandlerInfo instanceof Ci.nsIMIMEInfo) {
+    if (this.handlerInfo.wrappedHandlerInfo instanceof Ci.nsIMIMEInfo) {
       document.l10n.setAttributes(appDescElem, "app-manager-handle-file", {
         type: this.handlerInfo.typeDescription,
       });
@@ -30,13 +28,9 @@ var gAppManagerDialog = {
     }
 
     var list = document.getElementById("appList");
-    var apps = this.handlerInfo.possibleApplicationHandlers.enumerate();
-    while (apps.hasMoreElements()) {
-      let app = apps.getNext();
+    for (let app of this.handlerInfo.possibleApplicationHandlers.enumerate()) {
       if (!gMainPane.isValidHandlerApp(app))
         continue;
-
-      app.QueryInterface(Ci.nsIHandlerApp);
 
       // Ensure the XBL binding is created eagerly.
       // eslint-disable-next-line no-undef
@@ -44,11 +38,11 @@ var gAppManagerDialog = {
       var item = list.lastChild;
       item.app = app;
 
-      var image = document.createElement("image");
+      var image = document.createXULElement("image");
       image.setAttribute("src", gMainPane._getIconURLForHandlerApp(app));
       item.appendChild(image);
 
-      var label = document.createElement("label");
+      var label = document.createXULElement("label");
       label.setAttribute("value", app.name);
       item.appendChild(label);
     }
@@ -60,7 +54,7 @@ var gAppManagerDialog = {
     // result will impact the size of the subdialog.
     await document.l10n.translateElements([
       appDescElem,
-      document.getElementById("appType")
+      document.getElementById("appType"),
     ]);
   },
 
@@ -117,5 +111,5 @@ var gAppManagerDialog = {
                                                         : "app-manager-web-app-info";
     const appTypeElem = document.getElementById("appType");
     document.l10n.setAttributes(appTypeElem, l10nId);
-  }
+  },
 };

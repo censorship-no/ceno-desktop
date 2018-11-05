@@ -20,12 +20,6 @@
 using namespace js;
 using namespace js::jit;
 
-// All registers to save and restore. This includes the stack pointer, since we
-// use the ability to reference register values on the stack by index.
-static const LiveRegisterSet AllRegs =
-    LiveRegisterSet(GeneralRegisterSet(Registers::AllMask & ~(1 << 31 | 1 << 30 | 1 << 29| 1 << 28)),
-                FloatRegisterSet(FloatRegisters::AllMask));
-
 /* This method generates a trampoline on ARM64 for a c++ function with
  * the following signature:
  *   bool blah(void* code, int argc, Value* argv, JSObject* scopeChain, Value* vp)
@@ -142,11 +136,11 @@ JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm)
             // Store the argument to tmp_sp, then increment tmp_sp by 8.
             masm.Str(x24, MemOperand(tmp_sp, Operand(8), vixl::PostIndex));
 
-            // Set the condition codes for |cmp tmp_argc, 2| (using the old value).
+            // Decrement tmp_argc and set the condition codes for the new value.
             masm.Subs(tmp_argc, tmp_argc, Operand(1));
 
             // Branch if arguments remain.
-            masm.B(&loopHead, vixl::Condition::ge);
+            masm.B(&loopHead, vixl::Condition::NonZero);
         }
 
         masm.bind(&noArguments);
@@ -164,7 +158,7 @@ JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm)
     masm.subStackPtrFrom(r19);
 
     // Push the frameDescriptor.
-    masm.makeFrameDescriptor(r19, JitFrame_CppToJSJit, JitFrameLayout::Size());
+    masm.makeFrameDescriptor(r19, FrameType::CppToJSJit, JitFrameLayout::Size());
     masm.Push(r19);
 
     Label osrReturnPoint;
@@ -187,7 +181,7 @@ JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm)
 
         // Enter exit frame.
         masm.addPtr(Imm32(BaselineFrame::Size() + BaselineFrame::FramePointerOffset), r19);
-        masm.makeFrameDescriptor(r19, JitFrame_BaselineJS, ExitFrameLayout::Size());
+        masm.makeFrameDescriptor(r19, FrameType::BaselineJS, ExitFrameLayout::Size());
         masm.asVIXL().Push(x19, xzr); // Push xzr for a fake return address.
         // No GC things to mark: push a bare token.
         masm.loadJSContext(r19);
@@ -277,14 +271,47 @@ JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm)
     masm.SetStackPointer64(PseudoStackPointer64);
 }
 
+static void
+PushRegisterDump(MacroAssembler& masm)
+{
+    const LiveRegisterSet First28GeneralRegisters =
+        LiveRegisterSet(GeneralRegisterSet(
+                            Registers::AllMask & ~(1 << 31 | 1 << 30 | 1 << 29 | 1 << 28)),
+                        FloatRegisterSet(FloatRegisters::NoneMask));
+
+    const LiveRegisterSet AllFloatRegisters =
+        LiveRegisterSet(GeneralRegisterSet(Registers::NoneMask),
+                        FloatRegisterSet(FloatRegisters::AllMask));
+
+    // Push all general-purpose registers.
+    //
+    // The ARM64 ABI does not treat SP as a normal register that can
+    // be pushed. So pushing happens in two phases.
+    //
+    // Registers are pushed in reverse order of code.
+
+    // First, push the last four registers, passing zero for sp.
+    // Zero is pushed for x28 and x31: the pseudo-SP and SP, respectively.
+    masm.asVIXL().Push(xzr, x30, x29, xzr);
+
+    // Second, push the first 28 registers that serve no special purpose.
+    masm.PushRegsInMask(First28GeneralRegisters);
+
+    // Finally, push all floating-point registers, completing the RegisterDump.
+    masm.PushRegsInMask(AllFloatRegisters);
+}
+
 void
 JitRuntime::generateInvalidator(MacroAssembler& masm, Label* bailoutTail)
 {
     invalidatorOffset_ = startTrampolineCode(masm);
 
-    masm.push(r0, r1, r2, r3);
-
-    masm.PushRegsInMask(AllRegs);
+    // The InvalidationBailoutStack saved in r0 must be:
+    // - osiPointReturnAddress_
+    // - ionScript_  (pushed by CodeGeneratorARM64::generateInvalidateEpilogue())
+    // - regs_  (pushed here)
+    // - fpregs_  (pushed here) [=r0]
+    PushRegisterDump(masm);
     masm.moveStackPtrTo(r0);
 
     masm.Sub(x1, masm.GetStackPointer64(), Operand(sizeof(size_t)));
@@ -391,7 +418,7 @@ JitRuntime::generateArgumentsRectifier(MacroAssembler& masm)
     masm.Lsl(x6, x6, 3);
 
     // Make that into a frame descriptor.
-    masm.makeFrameDescriptor(r6, JitFrame_Rectifier, JitFrameLayout::Size());
+    masm.makeFrameDescriptor(r6, FrameType::Rectifier, JitFrameLayout::Size());
 
     masm.push(r0,  // Number of actual arguments.
               r1,  // Callee token.
@@ -415,67 +442,27 @@ JitRuntime::generateArgumentsRectifier(MacroAssembler& masm)
 }
 
 static void
-PushBailoutFrame(MacroAssembler& masm, uint32_t frameClass, Register spArg)
+PushBailoutFrame(MacroAssembler& masm, Register spArg)
 {
-    // the stack should look like:
-    // [IonFrame]
-    // bailoutFrame.registersnapshot
-    // bailoutFrame.fpsnapshot
-    // bailoutFrame.snapshotOffset
-    // bailoutFrame.frameSize
-
-    // STEP 1a: Save our register sets to the stack so Bailout() can read
-    // everything.
-    // sp % 8 == 0
-
-    // We don't have to push everything, but this is likely easier.
-    // Setting regs_.
-    masm.subFromStackPtr(Imm32(Registers::TotalPhys * sizeof(void*)));
-    for (uint32_t i = 0; i < Registers::TotalPhys; i += 2) {
-        masm.Stp(ARMRegister::XRegFromCode(i),
-                 ARMRegister::XRegFromCode(i + 1),
-                 MemOperand(masm.GetStackPointer64(), i * sizeof(void*)));
-    }
-
-    // Since our datastructures for stack inspection are compile-time fixed,
-    // if there are only 16 double registers, then we need to reserve
-    // space on the stack for the missing 16.
-    masm.subFromStackPtr(Imm32(FloatRegisters::TotalPhys * sizeof(double)));
-    for (uint32_t i = 0; i < FloatRegisters::TotalPhys; i += 2) {
-        masm.Stp(ARMFPRegister::DRegFromCode(i),
-                 ARMFPRegister::DRegFromCode(i + 1),
-                 MemOperand(masm.GetStackPointer64(), i * sizeof(void*)));
-    }
-
-    // STEP 1b: Push both the "return address" of the function call (the address
-    //          of the instruction after the call that we used to get here) as
-    //          well as the callee token onto the stack. The return address is
-    //          currently in r14. We will proceed by loading the callee token
-    //          into a sacrificial register <= r14, then pushing both onto the
-    //          stack.
-
-    // Now place the frameClass onto the stack, via a register.
-    masm.Mov(x9, frameClass);
-
-    // And onto the stack. Since the stack is full, we need to put this one past
-    // the end of the current stack. Sadly, the ABI says that we need to always
-    // point to the lowest place that has been written. The OS is free to do
-    // whatever it wants below sp.
-    masm.push(r30, r9);
+    // The stack saved in spArg must be (higher entries have higher memory addresses):
+    // - snapshotOffset_
+    // - frameSize_
+    // - regs_
+    // - fpregs_ (spArg + 0)
+    PushRegisterDump(masm);
     masm.moveStackPtrTo(spArg);
 }
 
 static void
-GenerateBailoutThunk(MacroAssembler& masm, uint32_t frameClass, Label* bailoutTail)
+GenerateBailoutThunk(MacroAssembler& masm, Label* bailoutTail)
 {
-    PushBailoutFrame(masm, frameClass, r0);
+    PushBailoutFrame(masm, r0);
 
     // SP % 8 == 4
     // STEP 1c: Call the bailout function, giving a pointer to the
     //          structure we just blitted onto the stack.
     // Make space for the BaselineBailoutInfo* outparam.
-    const int sizeOfBailoutInfo = sizeof(void*) * 2;
-    masm.reserveStack(sizeOfBailoutInfo);
+    masm.reserveStack(sizeof(void*));
     masm.moveStackPtrTo(r1);
 
     masm.setupUnalignedABICall(r2);
@@ -484,25 +471,29 @@ GenerateBailoutThunk(MacroAssembler& masm, uint32_t frameClass, Label* bailoutTa
     masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, Bailout), MoveOp::GENERAL,
                      CheckUnsafeCallWithABI::DontCheckOther);
 
-    masm.Ldr(x2, MemOperand(masm.GetStackPointer64(), 0));
-    masm.addToStackPtr(Imm32(sizeOfBailoutInfo));
+    // Get the bailoutInfo outparam.
+    masm.pop(r2);
 
-    static const uint32_t BailoutDataSize = sizeof(void*) * Registers::Total +
-                                            sizeof(double) * FloatRegisters::TotalPhys;
+    // Stack is:
+    //     [frame]
+    //     snapshotOffset
+    //     frameSize
+    //     [bailoutFrame]
+    //
+    // We want to remove both the bailout frame and the topmost Ion frame's stack.
 
-    if (frameClass == NO_FRAME_SIZE_CLASS_ID) {
-        vixl::UseScratchRegisterScope temps(&masm.asVIXL());
-        const ARMRegister scratch64 = temps.AcquireX();
+    // Remove the bailoutFrame.
+    static const uint32_t BailoutDataSize = sizeof(RegisterDump);
+    masm.addToStackPtr(Imm32(BailoutDataSize));
 
-        masm.Ldr(scratch64, MemOperand(masm.GetStackPointer64(), sizeof(uintptr_t)));
-        masm.addToStackPtr(Imm32(BailoutDataSize + 32));
-        masm.addToStackPtr(scratch64.asUnsized());
-    } else {
-        uint32_t frameSize = FrameSizeClass::FromClass(frameClass).frameSize();
-        masm.addToStackPtr(Imm32(frameSize + BailoutDataSize + sizeof(void*)));
-    }
+    // Pop the frame, snapshotOffset, and frameSize.
+    vixl::UseScratchRegisterScope temps(&masm.asVIXL());
+    const ARMRegister scratch64 = temps.AcquireX();
+    masm.Ldr(scratch64, MemOperand(masm.GetStackPointer64(), 0x0));
+    masm.addPtr(Imm32(2 * sizeof(void*)), scratch64.asUnsized());
+    masm.addToStackPtr(scratch64.asUnsized());
 
-    // Jump to shared bailout tail. The BailoutInfo pointer has to be in r9.
+    // Jump to shared bailout tail. The BailoutInfo pointer has to be in r2.
     masm.jump(bailoutTail);
 }
 
@@ -517,14 +508,13 @@ JitRuntime::generateBailoutHandler(MacroAssembler& masm, Label* bailoutTail)
 {
     bailoutHandlerOffset_ = startTrampolineCode(masm);
 
-    GenerateBailoutThunk(masm, NO_FRAME_SIZE_CLASS_ID, bailoutTail);
+    GenerateBailoutThunk(masm, bailoutTail);
 }
 
 bool
 JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm, const VMFunction& f)
 {
     MOZ_ASSERT(functionWrappers_);
-    MOZ_ASSERT(functionWrappers_->initialized());
 
     uint32_t wrapperOffset = startTrampolineCode(masm);
 
@@ -605,8 +595,9 @@ JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm, const VMFunct
         break;
     }
 
-    if (!generateTLEnterVM(masm, f))
+    if (!generateTLEnterVM(masm, f)) {
         return false;
+    }
 
     masm.setupUnalignedABICall(regs.getAny());
     masm.passABIArg(reg_cx);
@@ -638,17 +629,20 @@ JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm, const VMFunct
     // It is not a C++-abi outparam, which would get passed in the
     // outparam register, but a real parameter to the function, which
     // was stack-allocated above.
-    if (outReg != InvalidReg)
+    if (outReg != InvalidReg) {
         masm.passABIArg(outReg);
+    }
 
     masm.callWithABI(f.wrapped, MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
-    if (!generateTLExitVM(masm, f))
+    if (!generateTLExitVM(masm, f)) {
         return false;
+    }
 
     // SP is used to transfer stack across call boundaries.
-    if (!masm.GetStackPointer64().Is(vixl::sp))
+    if (!masm.GetStackPointer64().Is(vixl::sp)) {
         masm.Mov(masm.GetStackPointer64(), vixl::sp);
+    }
 
     // Test for failure.
     switch (f.failType()) {
@@ -703,8 +697,9 @@ JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm, const VMFunct
 
     // Until C++ code is instrumented against Spectre, prevent speculative
     // execution from returning any private data.
-    if (f.returnsData() && JitOptions.spectreJitToCxxCalls)
+    if (f.returnsData() && JitOptions.spectreJitToCxxCalls) {
         masm.speculationBarrier();
+    }
 
     masm.leaveExitFrame();
     masm.retn(Imm32(sizeof(ExitFrameLayout) +
@@ -934,20 +929,20 @@ JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm, Label* profi
     Label handle_Entry;
     Label end;
 
-    masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_IonJS), &handle_IonJS);
-    masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_BaselineJS), &handle_IonJS);
-    masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_BaselineStub), &handle_BaselineStub);
-    masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_Rectifier), &handle_Rectifier);
-    masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_IonICCall), &handle_IonICCall);
-    masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_CppToJSJit), &handle_Entry);
+    masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::IonJS), &handle_IonJS);
+    masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::BaselineJS), &handle_IonJS);
+    masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::BaselineStub), &handle_BaselineStub);
+    masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::Rectifier), &handle_Rectifier);
+    masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::IonICCall), &handle_IonICCall);
+    masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::CppToJSJit), &handle_Entry);
 
     // The WasmToJSJit is just another kind of entry.
-    masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_WasmToJSJit), &handle_Entry);
+    masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::WasmToJSJit), &handle_Entry);
 
     masm.assumeUnreachable("Invalid caller frame type when exiting from Ion frame.");
 
     //
-    // JitFrame_IonJS
+    // FrameType::IonJS
     //
     // Stack layout:
     //                  ...
@@ -980,7 +975,7 @@ JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm, Label* profi
     }
 
     //
-    // JitFrame_BaselineStub
+    // FrameType::BaselineStub
     //
     // Look past the stub and store the frame pointer to
     // the baselineJS frame prior to it.
@@ -1025,7 +1020,7 @@ JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm, Label* profi
 
 
     //
-    // JitFrame_Rectifier
+    // FrameType::Rectifier
     //
     // The rectifier frame can be preceded by either an IonJS, a BaselineStub,
     // or a CppToJSJit/WasmToJSJit frame.
@@ -1080,7 +1075,7 @@ JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm, Label* profi
 
         // Check for either Ion or BaselineStub frame.
         Label notIonFrame;
-        masm.branch32(Assembler::NotEqual, scratch3, Imm32(JitFrame_IonJS), &notIonFrame);
+        masm.branch32(Assembler::NotEqual, scratch3, Imm32(FrameType::IonJS), &notIonFrame);
 
         // Handle Rectifier <- IonJS
         // scratch3 := RectFrame[ReturnAddr]
@@ -1097,7 +1092,7 @@ JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm, Label* profi
 
         // Check for either BaselineStub or a CppToJSJit/WasmToJSJit entry
         // frame.
-        masm.branch32(Assembler::NotEqual, scratch3, Imm32(JitFrame_BaselineStub), &handle_Entry);
+        masm.branch32(Assembler::NotEqual, scratch3, Imm32(FrameType::BaselineStub), &handle_Entry);
 
         // Handle Rectifier <- BaselineStub <- BaselineJS
         masm.addPtr(scratch2, scratch1, scratch3);
@@ -1114,7 +1109,7 @@ JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm, Label* profi
         masm.ret();
     }
 
-    // JitFrame_IonICCall
+    // FrameType::IonICCall
     //
     // The caller is always an IonJS frame.
     //
@@ -1144,7 +1139,7 @@ JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm, Label* profi
         masm.and32(Imm32((1 << FRAMETYPE_BITS) - 1), scratch1);
         {
             Label checkOk;
-            masm.branch32(Assembler::Equal, scratch1, Imm32(JitFrame_IonJS), &checkOk);
+            masm.branch32(Assembler::Equal, scratch1, Imm32(FrameType::IonJS), &checkOk);
             masm.assumeUnreachable("IonICCall frame must be preceded by IonJS frame");
             masm.bind(&checkOk);
         }
@@ -1164,7 +1159,7 @@ JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm, Label* profi
     }
 
     //
-    // JitFrame_CppToJSJit / JitFrame_WasmToJSJit
+    // FrameType::CppToJSJit / FrameType::WasmToJSJit
     //
     // If at an entry frame, store null into both fields.
     // A fast-path wasm->jit transition frame is an entry frame from the point

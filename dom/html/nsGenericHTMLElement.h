@@ -50,8 +50,8 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase
 public:
   using Element::SetTabIndex;
   using Element::Focus;
-  explicit nsGenericHTMLElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElementBase(aNodeInfo)
+  explicit nsGenericHTMLElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElementBase(std::move(aNodeInfo))
   {
     NS_ASSERTION(mNodeInfo->NamespaceID() == kNameSpaceID_XHTML,
                  "Unexpected namespace");
@@ -65,7 +65,7 @@ public:
   NS_IMPL_FROMNODE(nsGenericHTMLElement, kNameSpaceID_XHTML)
 
   // From Element
-  nsresult CopyInnerTo(mozilla::dom::Element* aDest, bool aPreallocateChildren);
+  nsresult CopyInnerTo(mozilla::dom::Element* aDest);
 
   void GetTitle(mozilla::dom::DOMString& aTitle)
   {
@@ -255,6 +255,9 @@ public:
   {
     return IsNodeInternal(aFirst, aArgs...);
   }
+
+  // Attach UA Shadow Root if it is not attached.
+  void AttachAndSetUAShadowRoot();
 
 protected:
   virtual ~nsGenericHTMLElement() {}
@@ -903,7 +906,7 @@ protected:
   ContentEditableTristate GetContentEditableValue() const
   {
     static const Element::AttrValuesArray values[] =
-      { &nsGkAtoms::_false, &nsGkAtoms::_true, &nsGkAtoms::_empty, nullptr };
+      { nsGkAtoms::_false, nsGkAtoms::_true, nsGkAtoms::_empty, nullptr };
 
     if (!MayHaveContentEditableAttr())
       return eInherit;
@@ -976,7 +979,7 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement,
                                  public nsIFormControl
 {
 public:
-  nsGenericHTMLFormElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+  nsGenericHTMLFormElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                            uint8_t aType);
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -1133,7 +1136,7 @@ protected:
                               void* aData);
 
   // Returns true if the event should not be handled from GetEventTargetParent
-  bool IsElementDisabledForEvents(mozilla::EventMessage aMessage,
+  bool IsElementDisabledForEvents(mozilla::WidgetEvent* aEvent,
                                   nsIFrame* aFrame);
 
   // The focusability state of this form control.  eUnfocusable means that it
@@ -1159,7 +1162,7 @@ protected:
 class nsGenericHTMLFormElementWithState : public nsGenericHTMLFormElement
 {
 public:
-  nsGenericHTMLFormElementWithState(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+  nsGenericHTMLFormElementWithState(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                                     uint8_t aType);
 
   /**
@@ -1246,7 +1249,7 @@ nsGenericHTMLElement*                                                        \
 NS_NewHTML##_elementName##Element(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo, \
                                   mozilla::dom::FromParser aFromParser)      \
 {                                                                            \
-  return new mozilla::dom::HTML##_elementName##Element(aNodeInfo);           \
+  return new mozilla::dom::HTML##_elementName##Element(std::move(aNodeInfo)); \
 }
 
 #define NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(_elementName)               \
@@ -1254,7 +1257,7 @@ nsGenericHTMLElement*                                                        \
 NS_NewHTML##_elementName##Element(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo, \
                                   mozilla::dom::FromParser aFromParser)      \
 {                                                                            \
-  return new mozilla::dom::HTML##_elementName##Element(aNodeInfo,            \
+  return new mozilla::dom::HTML##_elementName##Element(std::move(aNodeInfo), \
                                                        aFromParser);         \
 }
 

@@ -14,6 +14,9 @@
 #include "prsystem.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/CompilationAndEvaluation.h"
+#include "js/OffThreadScriptCompilation.h"
+#include "js/SourceBufferHolder.h"
 #include "js/Utility.h"
 #include "xpcpublic.h"
 #include "nsCycleCollectionParticipant.h"
@@ -491,8 +494,12 @@ ScriptLoader::CreateModuleScript(ModuleLoadRequest* aRequest)
       rv = FillCompileOptionsForRequest(aes, aRequest, global, &options);
 
       if (NS_SUCCEEDED(rv)) {
-        SourceBufferHolder srcBuf = GetScriptSource(cx, aRequest);
-        rv = nsJSUtils::CompileModule(cx, srcBuf, global, options, &module);
+        auto srcBuf = GetScriptSource(cx, aRequest);
+        if (srcBuf) {
+          rv = nsJSUtils::CompileModule(cx, *srcBuf, global, options, &module);
+        } else {
+          rv = NS_ERROR_OUT_OF_MEMORY;
+        }
       }
     }
 
@@ -752,13 +759,13 @@ ScriptLoader::StartFetchingModuleAndDependencies(ModuleLoadRequest* aParent,
 
 // 8.1.3.8.1 HostResolveImportedModule(referencingModule, specifier)
 JSObject*
-HostResolveImportedModule(JSContext* aCx, JS::Handle<JSObject*> aModule,
+HostResolveImportedModule(JSContext* aCx,
+                          JS::Handle<JS::Value> aReferencingPrivate,
                           JS::Handle<JSString*> aSpecifier)
 {
   // Let referencing module script be referencingModule.[[HostDefined]].
-  JS::Value value = JS::GetModuleHostDefinedField(aModule);
-  auto script = static_cast<ModuleScript*>(value.toPrivate());
-  MOZ_ASSERT(script->ModuleRecord() == aModule);
+  auto script = static_cast<ModuleScript*>(aReferencingPrivate.toPrivate());
+  MOZ_ASSERT(JS::GetModulePrivate(script->ModuleRecord()) == aReferencingPrivate);
 
   // Let url be the result of resolving a module specifier given referencing
   // module script and specifier.
@@ -785,19 +792,12 @@ HostResolveImportedModule(JSContext* aCx, JS::Handle<JSObject*> aModule,
 }
 
 bool
-HostPopulateImportMeta(JSContext* aCx, JS::Handle<JSObject*> aModule,
+HostPopulateImportMeta(JSContext* aCx,
+                       JS::Handle<JS::Value> aReferencingPrivate,
                        JS::Handle<JSObject*> aMetaObject)
 {
-  MOZ_DIAGNOSTIC_ASSERT(aModule);
-
-  JS::Value value = JS::GetModuleHostDefinedField(aModule);
-  if (value.isUndefined()) {
-    JS_ReportErrorASCII(aCx, "Module script not found");
-    return false;
-  }
-
-  auto script = static_cast<ModuleScript*>(value.toPrivate());
-  MOZ_DIAGNOSTIC_ASSERT(script->ModuleRecord() == aModule);
+  auto script = static_cast<ModuleScript*>(aReferencingPrivate.toPrivate());
+  MOZ_ASSERT(JS::GetModulePrivate(script->ModuleRecord()) == aReferencingPrivate);
 
   nsAutoCString url;
   MOZ_DIAGNOSTIC_ASSERT(script->BaseURL());
@@ -956,6 +956,40 @@ ScriptLoader::InstantiateModuleTree(ModuleLoadRequest* aRequest)
 }
 
 nsresult
+ScriptLoader::AssociateSourceElementsForModuleTree(JSContext* aCx,
+                                                   ModuleLoadRequest* aRequest)
+{
+  // Preloading can cause JS scripts to be compiled before DOM script element
+  // nodes have been created. This method ensures compiled scripts are
+  // associated with DOM element nodes before execution.
+
+  MOZ_ASSERT(aRequest);
+
+  ModuleScript* moduleScript = aRequest->mModuleScript;
+  if (moduleScript->SourceElementAssociated()) {
+    return NS_OK;
+  }
+
+  for (ModuleLoadRequest* childRequest : aRequest->mImports) {
+    nsresult rv = AssociateSourceElementsForModuleTree(aCx, childRequest);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  JS::Rooted<JSObject*> module(aCx, moduleScript->ModuleRecord());
+  MOZ_ASSERT(module);
+
+  nsresult rv = nsJSUtils::InitModuleSourceElement(aCx, module, aRequest->Element());
+  NS_ENSURE_SUCCESS(rv, rv);
+  moduleScript->SetSourceElementAssociated();
+
+  // The script is now ready to be exposed to the debugger.
+  JS::Rooted<JSScript*> script(aCx, JS::GetModuleScript(module));
+  JS::ExposeScriptToDebugger(aCx, script);
+
+  return NS_OK;
+}
+
+nsresult
 ScriptLoader::RestartLoad(ScriptLoadRequest* aRequest)
 {
   MOZ_ASSERT(aRequest->IsBytecode());
@@ -1029,9 +1063,8 @@ ScriptLoader::StartLoad(ScriptLoadRequest* aRequest)
     // According to the spec, module scripts have different behaviour to classic
     // scripts and always use CORS.
     securityFlags = nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
-    if (aRequest->CORSMode() == CORS_NONE) {
-      securityFlags |= nsILoadInfo::SEC_COOKIES_OMIT;
-    } else if (aRequest->CORSMode() == CORS_ANONYMOUS) {
+    if (aRequest->CORSMode() == CORS_NONE ||
+        aRequest->CORSMode() == CORS_ANONYMOUS) {
       securityFlags |= nsILoadInfo::SEC_COOKIES_SAME_ORIGIN;
     } else {
       MOZ_ASSERT(aRequest->CORSMode() == CORS_USE_CREDENTIALS);
@@ -1069,12 +1102,14 @@ ScriptLoader::StartLoad(ScriptLoadRequest* aRequest)
   // constant.
   aRequest->mCacheInfo = nullptr;
   nsCOMPtr<nsICacheInfoChannel> cic(do_QueryInterface(channel));
-  if (cic && nsContentUtils::IsBytecodeCacheEnabled()) {
+  if (cic && nsContentUtils::IsBytecodeCacheEnabled() &&
+      // Bug 1436400: no bytecode cache support for modules yet.
+      !aRequest->IsModuleRequest()) {
     if (!aRequest->IsLoadingSource()) {
       // Inform the HTTP cache that we prefer to have information coming from the
       // bytecode cache instead of the sources, if such entry is already registered.
       LOG(("ScriptLoadRequest (%p): Maybe request bytecode", aRequest));
-      cic->PreferAlternativeDataType(nsContentUtils::JSBytecodeMimeType());
+      cic->PreferAlternativeDataType(nsContentUtils::JSBytecodeMimeType(), EmptyCString());
     } else {
       // If we are explicitly loading from the sources, such as after a
       // restarted request, we might still want to save the bytecode after.
@@ -1083,7 +1118,7 @@ ScriptLoader::StartLoad(ScriptLoadRequest* aRequest)
       // does not exist, such that we can later save the bytecode with a
       // different alternative data type.
       LOG(("ScriptLoadRequest (%p): Request saving bytecode later", aRequest));
-      cic->PreferAlternativeDataType(kNullMimeType);
+      cic->PreferAlternativeDataType(kNullMimeType, EmptyCString());
     }
   }
 
@@ -1215,7 +1250,9 @@ CSPAllowsInlineScript(nsIScriptElement* aElement, nsIDocument* aDocument)
 
   bool allowInlineScript = false;
   rv = csp->GetAllowsInline(nsIContentPolicy::TYPE_SCRIPT,
-                            nonce, parserCreated, scriptContent, EmptyString(),
+                            nonce, parserCreated, scriptContent,
+                            nullptr /* nsICSPEventListener */,
+                            EmptyString(),
                             aElement->GetScriptLineNumber(),
                             aElement->GetScriptColumnNumber(),
                             &allowInlineScript);
@@ -1824,11 +1861,11 @@ ScriptLoader::AttemptAsyncScriptCompile(ScriptLoadRequest* aRequest,
 
   if (aRequest->IsModuleRequest()) {
     MOZ_ASSERT(aRequest->IsTextSource());
-    SourceBufferHolder srcBuf = GetScriptSource(cx, aRequest);
-    if (!JS::CompileOffThreadModule(cx, options,
-                                    srcBuf,
-                                    OffThreadScriptLoaderCallback,
-                                    static_cast<void*>(runnable))) {
+    auto srcBuf = GetScriptSource(cx, aRequest);
+    if (!srcBuf || !JS::CompileOffThreadModule(cx, options,
+                                               *srcBuf,
+                                               OffThreadScriptLoaderCallback,
+                                               static_cast<void*>(runnable))) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   } else if (aRequest->IsBytecode()) {
@@ -1852,11 +1889,11 @@ ScriptLoader::AttemptAsyncScriptCompile(ScriptLoadRequest* aRequest,
 #endif
   } else {
     MOZ_ASSERT(aRequest->IsTextSource());
-    SourceBufferHolder srcBuf = GetScriptSource(cx, aRequest);
-    if (!JS::CompileOffThread(cx, options,
-                              srcBuf,
-                              OffThreadScriptLoaderCallback,
-                              static_cast<void*>(runnable))) {
+    auto srcBuf = GetScriptSource(cx, aRequest);
+    if (!srcBuf || !JS::CompileOffThread(cx, options,
+                                         *srcBuf,
+                                         OffThreadScriptLoaderCallback,
+                                         static_cast<void*>(runnable))) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   }
@@ -1896,7 +1933,7 @@ ScriptLoader::CompileOffThreadOrProcessRequest(ScriptLoadRequest* aRequest)
   return ProcessRequest(aRequest);
 }
 
-SourceBufferHolder
+mozilla::Maybe<SourceBufferHolder>
 ScriptLoader::GetScriptSource(JSContext* aCx, ScriptLoadRequest* aRequest)
 {
   // Return a SourceBufferHolder object holding the script's source text.
@@ -1909,15 +1946,17 @@ ScriptLoader::GetScriptSource(JSContext* aCx, ScriptLoadRequest* aRequest)
 
     size_t nbytes = inlineData.Length() * sizeof(char16_t);
     JS::UniqueTwoByteChars chars(static_cast<char16_t*>(JS_malloc(aCx, nbytes)));
-    MOZ_RELEASE_ASSERT(chars);
+    if (!chars) {
+      return Nothing();
+    }
+
     memcpy(chars.get(), inlineData.get(), nbytes);
-    return SourceBufferHolder(std::move(chars), inlineData.Length());
+    return Some(SourceBufferHolder(std::move(chars), inlineData.Length()));
   }
 
   size_t length = aRequest->ScriptText().length();
-  return SourceBufferHolder(aRequest->ScriptText().extractOrCopyRawBuffer(),
-                            length,
-                            SourceBufferHolder::GiveOwnership);
+  JS::UniqueTwoByteChars chars(aRequest->ScriptText().extractOrCopyRawBuffer());
+  return Some(SourceBufferHolder(std::move(chars), length));
 }
 
 nsresult
@@ -2301,13 +2340,8 @@ ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest)
       MOZ_ASSERT(module);
 
       if (!moduleScript->SourceElementAssociated()) {
-        rv = nsJSUtils::InitModuleSourceElement(cx, module, aRequest->Element());
+        rv = AssociateSourceElementsForModuleTree(cx, request);
         NS_ENSURE_SUCCESS(rv, rv);
-        moduleScript->SetSourceElementAssociated();
-
-        // The script is now ready to be exposed to the debugger.
-        JS::Rooted<JSScript*> script(cx, JS::GetModuleScript(module));
-        JS::ExposeScriptToDebugger(cx, script);
       }
 
       rv = nsJSUtils::ModuleEvaluate(cx, module);
@@ -2369,14 +2403,17 @@ ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest)
                                               &script);
               } else {
                 MOZ_ASSERT(aRequest->IsTextSource());
-                SourceBufferHolder srcBuf = GetScriptSource(cx, aRequest);
+                auto srcBuf = GetScriptSource(cx, aRequest);
 
-                if (recordreplay::IsRecordingOrReplaying()) {
-                  recordreplay::NoteContentParse(this, options.filename(), "application/javascript",
-                                                 srcBuf.get(), srcBuf.length());
+                if (srcBuf) {
+                  if (recordreplay::IsRecordingOrReplaying()) {
+                    recordreplay::NoteContentParse16(this, options.filename(), "application/javascript",
+                                                     srcBuf->get(), srcBuf->length());
+                  }
+                  rv = exec.CompileAndExec(options, *srcBuf, &script);
+                } else {
+                  rv = NS_ERROR_OUT_OF_MEMORY;
                 }
-
-                rv = exec.CompileAndExec(options, srcBuf, &script);
               }
             }
           }
@@ -2778,14 +2815,24 @@ ScriptLoader::ConvertToUTF16(nsIChannel* aChannel, const uint8_t* aData,
     unicodeDecoder = WINDOWS_1252_ENCODING->NewDecoderWithoutBOMHandling();
   }
 
-  CheckedInt<size_t> unicodeLength =
-    unicodeDecoder->MaxUTF16BufferLength(aLength);
-  if (!unicodeLength.isValid()) {
+  CheckedInt<size_t> maxLength = unicodeDecoder->MaxUTF16BufferLength(aLength);
+  if (!maxLength.isValid()) {
+    aBufOut = nullptr;
+    aLengthOut = 0;
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  aBufOut =
-    static_cast<char16_t*>(js_malloc(unicodeLength.value() * sizeof(char16_t)));
+  size_t unicodeLength = maxLength.value();
+
+  maxLength *= sizeof(char16_t);
+
+  if (!maxLength.isValid()) {
+    aBufOut = nullptr;
+    aLengthOut = 0;
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  aBufOut = static_cast<char16_t*>(js_malloc(maxLength.value()));
   if (!aBufOut) {
     aLengthOut = 0;
     return NS_ERROR_OUT_OF_MEMORY;
@@ -2795,11 +2842,11 @@ ScriptLoader::ConvertToUTF16(nsIChannel* aChannel, const uint8_t* aData,
   size_t read;
   size_t written;
   bool hadErrors;
-  Tie(result, read, written, hadErrors) = unicodeDecoder->DecodeToUTF16(
-    data, MakeSpan(aBufOut, unicodeLength.value()), true);
+  Tie(result, read, written, hadErrors) =
+    unicodeDecoder->DecodeToUTF16(data, MakeSpan(aBufOut, unicodeLength), true);
   MOZ_ASSERT(result == kInputEmpty);
   MOZ_ASSERT(read == aLength);
-  MOZ_ASSERT(written <= unicodeLength.value());
+  MOZ_ASSERT(written <= unicodeLength);
   Unused << hadErrors;
   aLengthOut = written;
 
@@ -2897,6 +2944,7 @@ ScriptLoader::VerifySRI(ScriptLoadRequest* aRequest,
       csp->LogViolationDetails(
         nsIContentSecurityPolicy::VIOLATION_TYPE_REQUIRE_SRI_FOR_SCRIPT,
         nullptr, // triggering element
+        nullptr, // nsICSPEventListener
         NS_ConvertUTF8toUTF16(violationURISpec),
         EmptyString(), lineNo, columnNo, EmptyString(), EmptyString());
       rv = NS_ERROR_SRI_CORRUPT;
@@ -3149,7 +3197,7 @@ ScriptLoader::PrepareLoadedRequest(ScriptLoadRequest* aRequest,
       aRequest->mSourceMapURL = NS_ConvertUTF8toUTF16(sourceMapURL);
     }
 
-    if (httpChannel->GetIsTrackingResource()) {
+    if (httpChannel->GetIsThirdPartyTrackingResource()) {
       aRequest->SetIsTracking();
     }
   }

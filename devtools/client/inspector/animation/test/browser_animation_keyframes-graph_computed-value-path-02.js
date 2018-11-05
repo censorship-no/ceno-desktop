@@ -3,9 +3,8 @@
 
 "use strict";
 
-// Test for following ComputedValuePath component:
-// * element existence
-// * path segments
+// Test for ComputedValuePath of animations that consist by one animated property
+// on complexed keyframes.
 
 requestLongerTimeout(2);
 
@@ -27,7 +26,7 @@ const TEST_DATA = [
     ],
   },
   {
-    targetClass: "frames-keyframe",
+    targetClass: "steps-jump-none-keyframe",
     properties: [
       {
         name: "opacity",

@@ -24,7 +24,7 @@ MARKUPMAP(article,
 
 MARKUPMAP(aside,
           New_HyperText,
-          roles::NOTE)
+          roles::LANDMARK)
 
 MARKUPMAP(blockquote,
           New_HyperText,
@@ -63,9 +63,13 @@ MARKUPMAP(figure,
           roles::FIGURE,
           Attr(xmlroles, figure))
 
-MARKUPMAP(form,
-          New_HyperText,
-          roles::FORM)
+MARKUPMAP(
+  form,
+  [](Element* aElement, Accessible* aContext) -> Accessible* {
+     return new HTMLFormAccessible(aElement, aContext->Document());
+  },
+  0
+)
 
 MARKUPMAP(footer,
           New_HTMLHeaderOrFooter,
@@ -118,6 +122,10 @@ MARKUPMAP(legend,
 MARKUPMAP(li,
           New_HTMLListitem,
           0)
+
+MARKUPMAP(main,
+          New_HyperText,
+          roles::LANDMARK)
 
 MARKUPMAP(map,
           nullptr,
@@ -293,7 +301,7 @@ MARKUPMAP(msline_,
 
 MARKUPMAP(nav,
           New_HyperText,
-          roles::SECTION)
+          roles::LANDMARK)
 
 MARKUPMAP(ol,
           New_HTMLList,
@@ -324,9 +332,13 @@ MARKUPMAP(q,
           New_HyperText,
           0)
 
-MARKUPMAP(section,
-          New_HyperText,
-          roles::SECTION)
+MARKUPMAP(
+  section,
+  [](Element* aElement, Accessible* aContext) -> Accessible* {
+     return new HTMLSectionAccessible(aElement, aContext->Document());
+  },
+  0
+)
 
 MARKUPMAP(summary,
           New_HTMLSummary,
@@ -358,7 +370,10 @@ MARKUPMAP(
        // display style other than 'table', then create a generic table cell
        // accessible, because there's no underlying table layout and thus native
        // HTML table cell class doesn't work.
-       if (!aContext->IsHTMLTableRow()) {
+       // The same is true if the cell itself has CSS display:block;.
+       if (!aContext->IsHTMLTableRow() ||
+           (aElement->GetPrimaryFrame() &&
+            aElement->GetPrimaryFrame()->AccessibleType() != eHTMLTableCellType)) {
          return new ARIAGridCellAccessibleWrap(aElement, aContext->Document());
        }
        if (aElement->HasAttr(kNameSpaceID_None, nsGkAtoms::scope)) {

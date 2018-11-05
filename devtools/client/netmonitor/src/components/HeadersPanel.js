@@ -55,6 +55,7 @@ const SUMMARY_METHOD = L10N.getStr("netmonitor.summary.method");
 const SUMMARY_URL = L10N.getStr("netmonitor.summary.url");
 const SUMMARY_STATUS = L10N.getStr("netmonitor.summary.status");
 const SUMMARY_VERSION = L10N.getStr("netmonitor.summary.version");
+const SUMMARY_STATUS_LEARN_MORE = L10N.getStr("netmonitor.summary.learnMore");
 
 /**
  * Headers panel component
@@ -106,7 +107,7 @@ class HeadersPanel extends Component {
     if (headers && headers.headers.length) {
       const headerKey = `${title} (${getFormattedSize(headers.headersSize, 3)})`;
       const propertiesResult = {
-        [headerKey]: new HeaderList(headers.headers)
+        [headerKey]: new HeaderList(headers.headers),
       };
       return propertiesResult;
     }
@@ -212,6 +213,7 @@ class HeadersPanel extends Component {
 
     if (status) {
       const statusCodeDocURL = getHTTPStatusCodeURL(status.toString());
+      const inputWidth = statusText.length + 1;
       const toggleRawHeadersClassList = ["devtools-button", "raw-headers-button"];
       if (this.state.rawHeadersOpened) {
         toggleRawHeadersClassList.push("checked");
@@ -222,8 +224,16 @@ class HeadersPanel extends Component {
             className: "tabpanel-summary-label headers-summary-label",
           }, SUMMARY_STATUS),
           StatusCode({ item }),
+          input({
+            className: "tabpanel-summary-value textbox-input devtools-monospace"
+              + " status-text",
+            readOnly: true,
+            value: `${statusText}`,
+            size: `${inputWidth}`,
+          }),
           statusCodeDocURL ? MDNLink({
             url: statusCodeDocURL,
+            title: SUMMARY_STATUS_LEARN_MORE,
           }) : span({
             className: "headers-summary learn-more-link",
           }),

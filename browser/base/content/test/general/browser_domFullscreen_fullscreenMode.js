@@ -3,6 +3,12 @@
 
 "use strict";
 
+// This test tends to trigger a race in the fullscreen time telemetry,
+// where the fullscreen enter and fullscreen exit events (which use the
+// same histogram ID) overlap. That causes TelemetryStopwatch to log an
+// error.
+SimpleTest.ignoreAllUncaughtExceptions(true);
+
 var gMessageManager;
 
 function frameScript() {
@@ -15,7 +21,7 @@ function frameScript() {
   addMessageListener("Test:QueryFullscreenState", () => {
     sendAsyncMessage("Test:FullscreenState", {
       inDOMFullscreen: !!content.document.fullscreenElement,
-      inFullscreen: content.fullScreen
+      inFullscreen: content.fullScreen,
     });
   });
   addMessageListener("Test:WaitActivated", () => {
@@ -24,7 +30,7 @@ function frameScript() {
   content.document.addEventListener("fullscreenchange", () => {
     sendAsyncMessage("Test:FullscreenChanged", {
       inDOMFullscreen: !!content.document.fullscreenElement,
-      inFullscreen: content.fullScreen
+      inFullscreen: content.fullScreen,
     });
   });
   function waitUntilActive() {
@@ -121,22 +127,22 @@ var gTests = [
     affectsFullscreenMode: false,
     exitFunc: () => {
       gMessageManager.sendAsyncMessage("Test:ExitFullscreen");
-    }
+    },
   },
   {
     desc: "escape key",
     affectsFullscreenMode: false,
     exitFunc: () => {
       executeSoon(() => EventUtils.synthesizeKey("KEY_Escape"));
-    }
+    },
   },
   {
     desc: "F11 key",
     affectsFullscreenMode: true,
     exitFunc() {
       executeSoon(() => EventUtils.synthesizeKey("KEY_F11"));
-    }
-  }
+    },
+  },
 ];
 
 function checkState(expectedStates, contentStates) {
@@ -223,7 +229,7 @@ add_task(async function() {
       test.affectsFullscreenMode ? FS_CHANGE_BOTH : FS_CHANGE_DOM);
     checkState({
       inDOMFullscreen: false,
-      inFullscreen: !test.affectsFullscreenMode
+      inFullscreen: !test.affectsFullscreenMode,
     }, contentStates);
 
     /* Cleanup */

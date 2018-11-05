@@ -35,6 +35,7 @@ UNIFIED_SOURCES += [
     'XPCVariant.cpp',
     'XPCWrappedJS.cpp',
     'XPCWrappedJSClass.cpp',
+    'XPCWrappedJSIterator.cpp',
     'XPCWrappedNative.cpp',
     'XPCWrappedNativeInfo.cpp',
     'XPCWrappedNativeJSOps.cpp',
@@ -64,6 +65,3 @@ if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
 
 if CONFIG['NIGHTLY_BUILD']:
     DEFINES['ENABLE_WASM_GC'] = True
-
-if CONFIG['MOZ_ASAN'] and CONFIG['CC_TYPE'] == 'clang-cl':
-    AllowCompilerWarnings()  # workaround for bug 1090497

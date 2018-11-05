@@ -86,7 +86,7 @@ RemoteWebNavigation.prototype = {
         if (!principal || principal.isSystemPrincipal) {
           let attrs = {
             userContextId: this._browser.getAttribute("usercontextid") || 0,
-            privateBrowsingId: PrivateBrowsingUtils.isBrowserPrivate(this._browser) ? 1 : 0
+            privateBrowsingId: PrivateBrowsingUtils.isBrowserPrivate(this._browser) ? 1 : 0,
           };
           principal = Services.scriptSecurityManager.createCodebasePrincipal(uri, attrs);
         }
@@ -96,6 +96,7 @@ RemoteWebNavigation.prototype = {
         // reason (such as failing to parse the URI), just ignore it.
       }
     }
+
     this._sendMessage("WebNavigation:LoadURI", {
       uri: aURI,
       flags: aLoadFlags,
@@ -106,7 +107,7 @@ RemoteWebNavigation.prototype = {
       baseURI: aBaseURI ? aBaseURI.spec : null,
       triggeringPrincipal: aTriggeringPrincipal
                            ? Utils.serializePrincipal(aTriggeringPrincipal)
-                           : null,
+                           : Services.scriptSecurityManager.createNullPrincipal({}),
       requestTime: Services.telemetry.msSystemNow(),
     });
   },

@@ -23,11 +23,13 @@ const MOCK_STORAGE = [{
   "cc-number": "4929001587121045",
   "cc-exp-month": 4,
   "cc-exp-year": 2017,
+  "cc-type": "visa",
 }, {
   "cc-name": "Timothy Berners-Lee",
   "cc-number": "5103059495477870",
   "cc-exp-month": 12,
   "cc-exp-year": 2022,
+  "cc-type": "mastercard",
 }];
 
 const reducedMockRecord = {
@@ -148,8 +150,16 @@ add_task(async function check_search_result_for_pref_off() {
   await SpecialPowers.popPrefEnv();
 });
 
+let canTest;
+
 // Autofill the credit card from dropdown menu.
 add_task(async function check_fields_after_form_autofill() {
+  canTest = await canTestOSKeyStoreLogin();
+  if (!canTest) {
+    todo(canTest, "Cannot test OS key store login on official builds.");
+    return;
+  }
+
   await setInput("#cc-exp-year", 202);
 
   synthesizeKey("KEY_ArrowDown");
@@ -160,11 +170,18 @@ add_task(async function check_fields_after_form_autofill() {
   })));
 
   synthesizeKey("KEY_ArrowDown");
+  let osKeyStoreLoginShown = waitForOSKeyStoreLogin(true);
+  await new Promise(resolve => SimpleTest.executeSoon(resolve));
   await triggerAutofillAndCheckProfile(MOCK_STORAGE[1]);
+  await osKeyStoreLoginShown;
 });
 
 // Fallback to history search after autofill address.
 add_task(async function check_fallback_after_form_autofill() {
+  if (!canTest) {
+    return;
+  }
+
   await setInput("#cc-name", "", true);
   synthesizeKey("KEY_ArrowDown");
   await expectPopup();
@@ -173,6 +190,10 @@ add_task(async function check_fallback_after_form_autofill() {
 
 // Resume form autofill once all the autofilled fileds are changed.
 add_task(async function check_form_autofill_resume() {
+  if (!canTest) {
+    return;
+  }
+
   document.querySelector("#cc-name").blur();
   document.querySelector("#form1").reset();
 
@@ -197,6 +218,12 @@ add_task(async function check_form_autofill_resume() {
     <p><label>Card Number: <input id="cc-number" autocomplete="cc-number"></label></p>
     <p><label>Expiration month: <input id="cc-exp-month" autocomplete="cc-exp-month"></label></p>
     <p><label>Expiration year: <input id="cc-exp-year" autocomplete="cc-exp-year"></label></p>
+    <p><label>Card Type: <select id="cc-type" autocomplete="cc-type">
+      <option value="discover">Discover</option>
+      <option value="jcb">JCB</option>
+      <option value="visa">Visa</option>
+      <option value="mastercard">MasterCard</option>
+    </select></label></p>
     <p><label>CSC: <input id="cc-csc" autocomplete="cc-csc"></label></p>
   </form>
 </div>

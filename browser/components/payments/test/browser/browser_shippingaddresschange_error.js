@@ -131,12 +131,27 @@ add_task(async function test_show_field_specific_error_on_addresschange() {
       let errorFieldMap =
         Cu.waiveXrays(content.document.querySelector("address-form"))._errorFieldMap;
       for (let [errorName, errorValue] of Object.entries(shippingAddressErrors)) {
-        let field = content.document.querySelector(errorFieldMap[errorName] + "-container");
+        let fieldSelector = errorFieldMap[errorName];
+        let containerSelector = fieldSelector + "-container";
+        let container = content.document.querySelector(containerSelector);
         try {
-          is(field.querySelector(".error-text").textContent, errorValue,
+          is(container.querySelector(".error-text").textContent, errorValue,
              "Field specific error should be associated with " + errorName);
         } catch (ex) {
-          ok(false, `no field found for ${errorName}. selector= ${errorFieldMap[errorName]}`);
+          ok(false, `no container for ${errorName}. selector= ${containerSelector}`);
+        }
+        try {
+          let field = content.document.querySelector(fieldSelector);
+          let oldValue = field.value;
+          if (field.localName == "select") {
+            // Flip between empty and the selected entry so country fields won't change.
+            content.fillField(field, "");
+            content.fillField(field, oldValue);
+          } else {
+            content.fillField(field, field.value.split("").reverse().join(""));
+          }
+        } catch (ex) {
+          ok(false, `no field found for ${errorName}. selector= ${fieldSelector}`);
         }
       }
     });

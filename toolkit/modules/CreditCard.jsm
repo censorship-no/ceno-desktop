@@ -6,8 +6,23 @@
 
 var EXPORTED_SYMBOLS = ["CreditCard"];
 
-ChromeUtils.defineModuleGetter(this, "MasterPassword",
-                               "resource://formautofill/MasterPassword.jsm");
+ChromeUtils.defineModuleGetter(this, "OSKeyStore",
+                               "resource://formautofill/OSKeyStore.jsm");
+
+// The list of known and supported credit card network ids ("types")
+// This list mirrors the networks from dom/payments/BasicCardPayment.cpp
+// and is defined by https://www.w3.org/Payments/card-network-ids
+const SUPPORTED_NETWORKS = Object.freeze([
+  "amex",
+  "cartebancaire",
+  "diners",
+  "discover",
+  "jcb",
+  "mastercard",
+  "mir",
+  "unionpay",
+  "visa",
+]);
 
 class CreditCard {
   /**
@@ -16,6 +31,7 @@ class CreditCard {
    * @param {string} expirationString
    * @param {string|number} expirationMonth
    * @param {string|number} expirationYear
+   * @param {string} network
    * @param {string|number} ccv
    * @param {string} encryptedNumber
    */
@@ -25,8 +41,9 @@ class CreditCard {
     expirationString,
     expirationMonth,
     expirationYear,
+    network,
     ccv,
-    encryptedNumber
+    encryptedNumber,
   }) {
     this._name = name;
     this._unmodifiedNumber = number;
@@ -39,6 +56,9 @@ class CreditCard {
     } else {
       this.expirationMonth = expirationMonth;
       this.expirationYear = expirationYear;
+    }
+    if (network) {
+      this.network = network;
     }
   }
 
@@ -88,16 +108,26 @@ class CreditCard {
     if (value) {
       let normalizedNumber = value.replace(/[-\s]/g, "");
       // Based on the information on wiki[1], the shortest valid length should be
-      // 9 digits (Canadian SIN).
-      // [1] https://en.wikipedia.org/wiki/Social_Insurance_Number
-      normalizedNumber = normalizedNumber.match(/^\d{9,}$/) ?
+      // 12 digits (Maestro).
+      // [1] https://en.wikipedia.org/wiki/Payment_card_number
+      normalizedNumber = normalizedNumber.match(/^\d{12,}$/) ?
         normalizedNumber : null;
       this._number = normalizedNumber;
     }
   }
 
+  get network() {
+    return this._network;
+  }
+
+  set network(value) {
+    this._network = value || undefined;
+  }
+
   // Implements the Luhn checksum algorithm as described at
   // http://wikipedia.org/wiki/Luhn_algorithm
+  // Number digit lengths vary with network, but should fall within 12-19 range. [2]
+  // More details at https://en.wikipedia.org/wiki/Payment_card_number
   isValidNumber() {
     if (!this._number) {
       return false;
@@ -107,7 +137,7 @@ class CreditCard {
     let number = this._number.replace(/[\-\s]/g, "");
 
     let len = number.length;
-    if (len != 9 && len != 15 && len != 16) {
+    if (len < 12 || len > 19) {
       return false;
     }
 
@@ -178,7 +208,13 @@ class CreditCard {
 
     if (showNumbers) {
       if (this._encryptedNumber) {
-        label = await MasterPassword.decrypt(this._encryptedNumber);
+        try {
+          label = await OSKeyStore.decrypt(this._encryptedNumber);
+        } catch (ex) {
+          // Quietly recover from decryption error.
+          label = this._number;
+          Cu.reportError(ex);
+        }
       } else {
         label = this._number;
       }
@@ -292,4 +328,10 @@ class CreditCard {
     let creditCard = new CreditCard({number});
     return creditCard.isValidNumber();
   }
+
+  static isValidNetwork(network) {
+    return SUPPORTED_NETWORKS.includes(network);
+  }
 }
+CreditCard.SUPPORTED_NETWORKS = SUPPORTED_NETWORKS;
+

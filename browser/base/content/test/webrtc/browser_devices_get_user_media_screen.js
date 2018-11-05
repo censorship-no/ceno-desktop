@@ -10,6 +10,7 @@
 //       should use "expectUncaughtRejection" to flag individual failures.
 ChromeUtils.import("resource://testing-common/PromiseTestUtils.jsm", this);
 PromiseTestUtils.whitelistRejectionsGlobally(/aborted by the user agent/);
+ChromeUtils.import("resource:///modules/BrowserWindowTracker.jsm", this);
 
 const permissionError = "error: NotAllowedError: The request is not allowed " +
     "by the user agent or the platform in the current context.";
@@ -30,7 +31,7 @@ var gTests = [
     is(PopupNotifications.getNotification("webRTC-shareDevices").anchorID,
        "webRTC-shareScreen-notification-icon", "anchored to device icon");
     checkDeviceSelectors(false, false, true);
-    let notification = PopupNotifications.panel.firstChild;
+    let notification = PopupNotifications.panel.firstElementChild;
     let iconclass = notification.getAttribute("iconclass");
     ok(iconclass.includes("screen-icon"), "panel using screen icon");
 
@@ -86,7 +87,7 @@ var gTests = [
 
     let indicator = promiseIndicatorWindow();
     await promiseMessage("ok", () => {
-      PopupNotifications.panel.firstChild.button.click();
+      PopupNotifications.panel.firstElementChild.button.click();
     });
     await expectObserverCalled("getUserMedia:response:allow");
     await expectObserverCalled("recording-device-events");
@@ -113,7 +114,7 @@ var gTests = [
     await expectObserverCalled("getUserMedia:response:deny");
     SitePermissions.remove(null, "screen", gBrowser.selectedBrowser);
     await closeStream();
-  }
+  },
 },
 
 {
@@ -127,7 +128,7 @@ var gTests = [
     is(PopupNotifications.getNotification("webRTC-shareDevices").anchorID,
        "webRTC-shareScreen-notification-icon", "anchored to device icon");
     checkDeviceSelectors(false, false, true);
-    let notification = PopupNotifications.panel.firstChild;
+    let notification = PopupNotifications.panel.firstElementChild;
     let iconclass = notification.getAttribute("iconclass");
     ok(iconclass.includes("screen-icon"), "panel using screen icon");
 
@@ -200,7 +201,7 @@ var gTests = [
 
     let indicator = promiseIndicatorWindow();
     await promiseMessage("ok", () => {
-      PopupNotifications.panel.firstChild.button.click();
+      PopupNotifications.panel.firstElementChild.button.click();
     });
     await expectObserverCalled("getUserMedia:response:allow");
     await expectObserverCalled("recording-device-events");
@@ -210,7 +211,7 @@ var gTests = [
     await indicator;
     await checkSharingUI({screen: "Window"});
     await closeStream();
-  }
+  },
 },
 
 {
@@ -236,7 +237,7 @@ var gTests = [
     is(PopupNotifications.getNotification("webRTC-shareDevices").anchorID,
        "webRTC-shareScreen-notification-icon", "anchored to device icon");
     checkDeviceSelectors(false, false, true);
-    let notification = PopupNotifications.panel.firstChild;
+    let notification = PopupNotifications.panel.firstElementChild;
     let iconclass = notification.getAttribute("iconclass");
     ok(iconclass.includes("screen-icon"), "panel using screen icon");
 
@@ -285,7 +286,7 @@ var gTests = [
 
     let indicator = promiseIndicatorWindow();
     await promiseMessage("ok", () => {
-      PopupNotifications.panel.firstChild.button.click();
+      PopupNotifications.panel.firstElementChild.button.click();
     });
     await expectObserverCalled("getUserMedia:response:allow");
     await expectObserverCalled("recording-device-events");
@@ -295,7 +296,7 @@ var gTests = [
     await indicator;
     await checkSharingUI({screen: "Application"});
     await closeStream();
-  }
+  },
 },
 
 {
@@ -315,7 +316,7 @@ var gTests = [
        "webRTC-shareScreen-notification-icon", "anchored to device icon");
     checkDeviceSelectors(true, false, true);
     let iconclass =
-      PopupNotifications.panel.firstChild.getAttribute("iconclass");
+      PopupNotifications.panel.firstElementChild.getAttribute("iconclass");
     ok(iconclass.includes("screen-icon"), "panel using screen icon");
 
     let menulist =
@@ -336,7 +337,7 @@ var gTests = [
 
     let indicator = promiseIndicatorWindow();
     await promiseMessage("ok", () => {
-      PopupNotifications.panel.firstChild.button.click();
+      PopupNotifications.panel.firstElementChild.button.click();
     });
     await expectObserverCalled("getUserMedia:response:allow");
     await expectObserverCalled("recording-device-events");
@@ -347,7 +348,7 @@ var gTests = [
     await indicator;
     await checkSharingUI({audio: true, screen: "Screen"});
     await closeStream();
-  }
+  },
 },
 
 {
@@ -368,7 +369,7 @@ var gTests = [
     await checkNotSharing();
     SitePermissions.remove(null, "screen", gBrowser.selectedBrowser);
     SitePermissions.remove(null, "camera", gBrowser.selectedBrowser);
-  }
+  },
 },
 
 {
@@ -391,7 +392,7 @@ var gTests = [
                 .getItemAtIndex(2).doCommand();
       }
       await promiseMessage("ok", () => {
-        PopupNotifications.panel.firstChild.button.click();
+        PopupNotifications.panel.firstElementChild.button.click();
       });
       await expectObserverCalled("getUserMedia:response:allow");
       await expectObserverCalled("recording-device-events");
@@ -437,7 +438,7 @@ var gTests = [
 
     info("Stop the camera, this should stop everything.");
     await stopSharing("camera");
-  }
+  },
 },
 
 {
@@ -453,7 +454,7 @@ var gTests = [
 
     let indicator = promiseIndicatorWindow();
     await promiseMessage("ok", () => {
-      PopupNotifications.panel.firstChild.button.click();
+      PopupNotifications.panel.firstElementChild.button.click();
     });
     await expectObserverCalled("getUserMedia:response:allow");
     await expectObserverCalled("recording-device-events");
@@ -464,7 +465,7 @@ var gTests = [
     await checkSharingUI({screen: "Screen"});
 
     await reloadAndAssertClosedStreams();
-  }
+  },
 },
 
 {
@@ -480,7 +481,7 @@ var gTests = [
 
     let indicator = promiseIndicatorWindow();
     await promiseMessage("ok", () => {
-      PopupNotifications.panel.firstChild.button.click();
+      PopupNotifications.panel.firstElementChild.button.click();
     });
     await expectObserverCalled("getUserMedia:response:allow");
     await expectObserverCalled("recording-device-events");
@@ -506,7 +507,7 @@ var gTests = [
     await expectNoObserverCalled();
 
     await closeStream();
-  }
+  },
 },
 
 {
@@ -528,7 +529,7 @@ var gTests = [
 
     // Ensure that checking the 'Remember this decision' checkbox disables
     // 'Allow'.
-    let notification = PopupNotifications.panel.firstChild;
+    let notification = PopupNotifications.panel.firstElementChild;
     ok(notification.hasAttribute("warninghidden"), "warning message is hidden");
     let checkbox = notification.checkbox;
     ok(!!checkbox, "checkbox is present");
@@ -568,7 +569,7 @@ var gTests = [
     await expectObserverCalled("getUserMedia:request");
 
     // The 'remember' checkbox shouldn't be checked anymore.
-    notification = PopupNotifications.panel.firstChild;
+    notification = PopupNotifications.panel.firstElementChild;
     ok(notification.hasAttribute("warninghidden"), "warning message is hidden");
     checkbox = notification.checkbox;
     ok(!!checkbox, "checkbox is present");
@@ -581,8 +582,39 @@ var gTests = [
     await expectObserverCalled("getUserMedia:response:deny");
     await expectObserverCalled("recording-window-ended");
     SitePermissions.remove(uri, "screen", browser);
-  }
-}
+  },
+},
+
+{
+  desc: "Switching between menu options maintains correct main action state while window sharing",
+  run: async function checkDoorhangerState() {
+    let win = await BrowserTestUtils.openNewBrowserWindow();
+    await BrowserTestUtils.openNewForegroundTab(win.gBrowser, "about:newtab");
+    BrowserWindowTracker.orderedWindows[1].focus();
+
+    let promise = promisePopupNotificationShown("webRTC-shareDevices");
+    await promiseRequestDevice(false, true, null, "window");
+    await promise;
+    await expectObserverCalled("getUserMedia:request");
+
+    let menulist = document.getElementById("webRTC-selectWindow-menulist");
+    let notification = PopupNotifications.panel.firstElementChild;
+    let checkbox = notification.checkbox;
+
+    menulist.getItemAtIndex(2).doCommand();
+    checkbox.click();
+    ok(checkbox.checked, "checkbox now checked");
+    ok(notification.button.disabled, "Allow button is disabled");
+    ok(!notification.hasAttribute("warninghidden"), "warning message is shown");
+
+    menulist.getItemAtIndex(3).doCommand();
+    ok(checkbox.checked, "checkbox still checked");
+    ok(notification.button.disabled, "Allow button remains disabled");
+    ok(!notification.hasAttribute("warninghidden"), "warning message is still shown");
+
+    win.close();
+  },
+},
 
 ];
 

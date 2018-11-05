@@ -22,15 +22,14 @@ class SVGFEMergeNodeElement : public SVGFEMergeNodeElementBase
   friend nsresult (::NS_NewSVGFEMergeNodeElement(nsIContent **aResult,
                                                  already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 protected:
-  explicit SVGFEMergeNodeElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGFEMergeNodeElementBase(aNodeInfo)
+  explicit SVGFEMergeNodeElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGFEMergeNodeElementBase(std::move(aNodeInfo))
   {
   }
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual bool AttributeAffectsRendering(
           int32_t aNameSpaceID, nsAtom* aAttribute) const override;

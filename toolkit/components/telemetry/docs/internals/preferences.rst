@@ -106,7 +106,8 @@ Preferences
 
 ``toolkit.telemetry.log.level``
 
-  This sets the Telemetry logging verbosity per ``Log.jsm``, with ``Trace`` or ``0`` being the most verbose and the default being ``Warn``.
+  This sets the Telemetry logging verbosity per ``Log.jsm``. The available levels, in descending order of verbosity, are ``Trace``, ``Debug``, ``Config``, ``Info``, ``Warn``, ``Error`` and ``Fatal`` with the default being ``Warn``.
+
   By default logging goes only the console service.
 
 ``toolkit.telemetry.log.dump``
@@ -166,6 +167,12 @@ Preferences
 
   Override the ``channel`` value that is reported via Telemetry.
   This is useful for distinguishing different types of builds that otherwise still report as the same update channel.
+
+``toolkit.telemetry.ipcBatchTimeout``
+
+  How long, in milliseconds, we batch accumulations from child processes before
+  sending them to the parent process.
+  Default is 2000 (milliseconds).
 
 Data-choices notification
 -------------------------
@@ -257,6 +264,10 @@ The following prefs are for testing purpose only.
 ``toolkit.telemetry.testing.overridePreRelease``
 
   If true, allows recording opt-in Telemetry on the Release channel. Requires a restart.
+
+``toolkit.telemetry.untrustedModulesPing.frequency``
+
+  Interval, in seconds, between "untrustedModules" ping transmissions.
 
 ``toolkit.telemetry.healthping.enabled``
 

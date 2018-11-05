@@ -45,6 +45,10 @@ var FxAccountsConfig = {
     return this._buildURL("", {entrypoint, email});
   },
 
+  async promiseEmailFirstURI(entrypoint) {
+    return this._buildURL("", {entrypoint});
+  },
+
   async promiseForceSigninURI(entrypoint) {
     return this._buildURL("force_auth", {entrypoint}, true);
   },
@@ -218,6 +222,6 @@ var FxAccountsConfig = {
   // For test purposes, returns a Promise.
   getSignedInUser() {
     return fxAccounts.getSignedInUser();
-  }
+  },
 
 };

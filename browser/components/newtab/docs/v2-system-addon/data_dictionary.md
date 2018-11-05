@@ -183,7 +183,8 @@ Schema definitions/validations that can be used for tests can be found in `syste
 | `action` | [Required] Either `activity_stream_event`, `activity_stream_session`, or `activity_stream_performance`. | :one:
 | `addon_version` | [Required] Firefox build ID, i.e. `Services.appinfo.appBuildID`. | :one:
 | `client_id` | [Required] An identifier for this client. | :one:
-| `card_type` | [Optional] ("bookmark", "pocket", "trending", "pinned") | :one:
+| `card_type` | [Optional] ("bookmark", "pocket", "trending", "pinned", "search") | :one:
+| `search_vendor` | [Optional] the vendor of the search shortcut, one of ("google", "amazon", "wikipedia", "duckduckgo", "bing", etc.). This field only exists when `card_type = "search"` | :one:
 | `date` | [Auto populated by Onyx] The date in YYYY-MM-DD format. | :three:
 | `experiment_id` | [Optional] The unique identifier for a specific experiment. | :one:
 | `event_id` | [Required] An identifier shared by multiple performance pings that describe ane entire request flow. | :one:
@@ -222,6 +223,7 @@ and losing focus. | :one:
 | `rich_icon` | [Optional] Number of topsites that display a high quality favicon. | :one:
 | `no_image` | [Optional] Number of topsites that have no screenshot. | :one:
 | `topsites_pinned` | [Optional] Number of topsites that are pinned. | :one:
+| `topsites_search_shortcuts` | [Optional] Number of search shortcut topsites. | :one:
 | `visibility_event_rcvd_ts` | [Optional][Server Counter][Server Alert for too many omissions] DOMHighResTimeStamp of when the page itself receives an event that document.visibilityState == visible. | :one:
 | `tiles` | [Required] A list of tile objects for the Pocket articles. Each tile object mush have a ID, and optionally a "pos" property to indicate the tile position | :one:
 | `click` | [Optional] An integer to record the 0-based index when user clicks on a Pocket tile. | :one:
@@ -233,7 +235,8 @@ and losing focus. | :one:
 | `icon_type` | [Optional] ("tippytop", "rich_icon", "screenshot_with_icon", "screenshot", "no_image") | :one:
 | `region` | [Optional] A string maps to pref "browser.search.region", which is essentially the two letter ISO 3166-1 country code populated by the Firefox search service. Note that: 1). it reports "OTHER" for those regions with smaller Firefox user base (less than 10000) so that users cannot be uniquely identified; 2). it reports "UNSET" if this pref is missing; 3). it reports "EMPTY" if the value of this pref is an empty string. | :one:
 | `profile_creation_date` | [Optional] An integer to record the age of the Firefox profile as the total number of days since the UNIX epoch. | :one:
-|`message_id` | [required] A string identifier of the message in Activity Stream Router. | :one:
+| `message_id` | [required] A string identifier of the message in Activity Stream Router. | :one:
+| `has_flow_params` | [required] One of [true, false]. A boolean identifier that indicates if Firefox Accounts flow parameters are set or unset. | :one:
 
 **Where:**
 

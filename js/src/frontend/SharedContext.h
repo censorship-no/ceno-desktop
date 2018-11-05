@@ -14,10 +14,8 @@
 #include "ds/InlineTable.h"
 #include "frontend/ParseNode.h"
 #include "frontend/TokenStream.h"
-#include "gc/Zone.h"
 #include "vm/BytecodeUtil.h"
-#include "vm/EnvironmentObject.h"
-#include "vm/JSAtom.h"
+#include "vm/JSFunction.h"
 #include "vm/JSScript.h"
 
 namespace js {
@@ -323,7 +321,7 @@ class FunctionBox : public ObjectBox, public SharedContext
     void initWithEnclosingScope(Scope* enclosingScope);
 
   public:
-    ParseNode*      functionNode;           /* back pointer used by asm.js for error messages */
+    CodeNode*      functionNode;            /* back pointer used by asm.js for error messages */
     uint32_t        bufStart;
     uint32_t        bufEnd;
     uint32_t        startLine;
@@ -410,18 +408,22 @@ class FunctionBox : public ObjectBox, public SharedContext
                 uint32_t toStringStart, Directives directives, bool extraWarnings,
                 GeneratorKind generatorKind, FunctionAsyncKind asyncKind);
 
+#ifdef DEBUG
+    bool atomsAreKept();
+#endif
+
     MutableHandle<LexicalScope::Data*> namedLambdaBindings() {
-        MOZ_ASSERT(context->zone()->hasKeptAtoms());
+        MOZ_ASSERT(atomsAreKept());
         return MutableHandle<LexicalScope::Data*>::fromMarkedLocation(&namedLambdaBindings_);
     }
 
     MutableHandle<FunctionScope::Data*> functionScopeBindings() {
-        MOZ_ASSERT(context->zone()->hasKeptAtoms());
+        MOZ_ASSERT(atomsAreKept());
         return MutableHandle<FunctionScope::Data*>::fromMarkedLocation(&functionScopeBindings_);
     }
 
     MutableHandle<VarScope::Data*> extraVarScopeBindings() {
-        MOZ_ASSERT(context->zone()->hasKeptAtoms());
+        MOZ_ASSERT(atomsAreKept());
         return MutableHandle<VarScope::Data*>::fromMarkedLocation(&extraVarScopeBindings_);
     }
 
@@ -454,8 +456,9 @@ class FunctionBox : public ObjectBox, public SharedContext
         // If this FunctionBox is a lazy child of the function we're actually
         // compiling, then it is not the outermost SharedContext, so this
         // method should return nullptr."
-        if (isLazyFunctionWithoutEnclosingScope())
+        if (isLazyFunctionWithoutEnclosingScope()) {
             return nullptr;
+        }
 
         return enclosingScope_;
     }

@@ -27,6 +27,7 @@
 #include "nsISizeOfEventTarget.h"
 #include "nsIXPConnect.h"
 #include "nsIInputStream.h"
+#include "nsIContentSecurityPolicy.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
@@ -39,6 +40,7 @@
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
+#include "mozilla/dom/MimeType.h"
 #include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/dom/URLSearchParams.h"
@@ -202,7 +204,8 @@ public:
                  nsIGlobalObject* aGlobalObject,
                  nsIURI* aBaseURI = nullptr,
                  nsILoadGroup* aLoadGroup = nullptr,
-                 PerformanceStorage* aPerformanceStorage = nullptr)
+                 PerformanceStorage* aPerformanceStorage = nullptr,
+                 nsICSPEventListener* aCSPEventListener = nullptr)
   {
     MOZ_ASSERT(aPrincipal);
     mPrincipal = aPrincipal;
@@ -210,6 +213,7 @@ public:
     mBaseURI = aBaseURI;
     mLoadGroup = aLoadGroup;
     mPerformanceStorage = aPerformanceStorage;
+    mCSPEventListener = aCSPEventListener;
   }
 
   void InitParameters(bool aAnon, bool aSystem);
@@ -300,7 +304,7 @@ private:
   virtual ~XMLHttpRequestMainThread();
 
   nsresult MaybeSilentSendFailure(nsresult aRv);
-  nsresult SendInternal(const BodyExtractorBase* aBody);
+  nsresult SendInternal(const BodyExtractorBase* aBody, bool aBodyIsDocumentOrString = false);
 
   bool IsCrossSiteCORSRequest() const;
   bool IsDeniedCrossSiteCORSRequest();
@@ -480,7 +484,8 @@ public:
 
 protected:
   nsresult DetectCharset();
-  nsresult AppendToResponseText(const char * aBuffer, uint32_t aBufferLen);
+  nsresult AppendToResponseText(Span<const uint8_t> aBuffer,
+                                bool aLast = false);
   static nsresult StreamReaderFunc(nsIInputStream* in,
                                    void* closure,
                                    const char* fromRawSegment,
@@ -512,7 +517,7 @@ protected:
 
   nsresult OnRedirectVerifyCallback(nsresult result);
 
-  void SetTimerEventTarget(nsITimer* aTimer);
+  nsIEventTarget* GetTimerEventTarget();
 
   nsresult DispatchToMainThread(already_AddRefed<nsIRunnable> aRunnable);
 
@@ -544,6 +549,7 @@ protected:
   nsCOMPtr<nsIStreamListener> mXMLParserStreamListener;
 
   RefPtr<PerformanceStorage> mPerformanceStorage;
+  nsCOMPtr<nsICSPEventListener> mCSPEventListener;
 
   // used to implement getAllResponseHeaders()
   class nsHeaderVisitor : public nsIHttpHeaderVisitor
@@ -620,8 +626,6 @@ protected:
   // simply feed the new data into the decoder which will handle the second
   // part of the surrogate.
   mozilla::UniquePtr<mozilla::Decoder> mDecoder;
-
-  const Encoding* mResponseCharset;
 
   void MatchCharsetAndDecoderToResponseDocument();
 
@@ -762,6 +766,12 @@ protected:
   // When this is set to true, the event dispatching is suspended. This is
   // useful to change the correct state when XHR is working sync.
   bool mEventDispatchingSuspended;
+
+  // True iff mDecoder has processed the end of the stream.
+  // Used in lazy decoding to distinguish between having
+  // processed all the bytes but not the EOF and having
+  // processed all the bytes and the EOF.
+  bool mEofDecoded;
 
   // Our parse-end listener, if we are parsing.
   RefPtr<nsXHRParseEndListener> mParseEndListener;

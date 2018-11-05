@@ -19,6 +19,8 @@
 #include "nsIQuotaRequests.h"
 #include "nsPIDOMWindow.h"
 
+using namespace mozilla::dom::quota;
+
 namespace mozilla {
 namespace dom {
 
@@ -812,7 +814,6 @@ PersistentStoragePermissionRequest::GetTypes(nsIArray** aTypes)
 
   return nsContentPermissionUtils::CreatePermissionArray(
                                        NS_LITERAL_CSTRING("persistent-storage"),
-                                       NS_LITERAL_CSTRING("unused"),
                                        emptyOptions,
                                        aTypes);
 }

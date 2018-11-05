@@ -9,6 +9,7 @@
 var { Ci } = require("chrome");
 var Services = require("Services");
 var { DebuggerServer } = require("devtools/server/main");
+var { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
 
 loader.lazyRequireGetter(this, "RootActor", "devtools/server/actors/root", true);
@@ -25,20 +26,6 @@ loader.lazyImporter(this, "AddonManager", "resource://gre/modules/AddonManager.j
  */
 
 /**
- * Yield all windows of type |windowType|, from the oldest window to the
- * youngest, using nsIWindowMediator::getEnumerator. We're usually
- * interested in "navigator:browser" windows.
- */
-function* allAppShellDOMWindows(windowType) {
-  const e = Services.wm.getEnumerator(windowType);
-  while (e.hasMoreElements()) {
-    yield e.getNext();
-  }
-}
-
-exports.allAppShellDOMWindows = allAppShellDOMWindows;
-
-/**
  * Retrieve the window type of the top-level window |window|.
  */
 function appShellDOMWindowType(window) {
@@ -50,7 +37,7 @@ function appShellDOMWindowType(window) {
  * Send Debugger:Shutdown events to all "navigator:browser" windows.
  */
 function sendShutdownEvent() {
-  for (const win of allAppShellDOMWindows(DebuggerServer.chromeWindowType)) {
+  for (const win of Services.wm.getEnumerator(DebuggerServer.chromeWindowType)) {
     const evt = win.document.createEvent("Event");
     evt.initEvent("Debugger:Shutdown", true, false);
     win.document.documentElement.dispatchEvent(evt);
@@ -62,7 +49,7 @@ exports.sendShutdownEvent = sendShutdownEvent;
 /**
  * Construct a root actor appropriate for use in a server running in a
  * browser. The returned root actor:
- * - respects the factories registered with DebuggerServer.addGlobalActor,
+ * - respects the factories registered with ActorRegistry.addGlobalActor,
  * - uses a BrowserTabList to supply target actors for tabs,
  * - sends all navigator:browser window documents a Debugger:Shutdown event
  *   when it exits.
@@ -78,8 +65,8 @@ exports.createRootActor = function createRootActor(connection) {
     serviceWorkerRegistrationList:
       new ServiceWorkerRegistrationActorList(connection),
     processList: new ProcessActorList(),
-    globalActorFactories: DebuggerServer.globalActorFactories,
-    onShutdown: sendShutdownEvent
+    globalActorFactories: ActorRegistry.globalActorFactories,
+    onShutdown: sendShutdownEvent,
   });
 };
 
@@ -228,7 +215,7 @@ BrowserTabList.prototype._getSelectedBrowser = function(window) {
  */
 BrowserTabList.prototype._getBrowsers = function* () {
   // Iterate over all navigator:browser XUL windows.
-  for (const win of allAppShellDOMWindows(DebuggerServer.chromeWindowType)) {
+  for (const win of Services.wm.getEnumerator(DebuggerServer.chromeWindowType)) {
     // For each tab in this XUL window, ensure that we have an actor for
     // it, reusing existing actors where possible.
     for (const browser of this._getChildren(win)) {
@@ -331,7 +318,7 @@ BrowserTabList.prototype.getTab = function({ outerWindowID, tabId }) {
     if (window && window.isChromeWindow) {
       return Promise.reject({
         error: "forbidden",
-        message: "Window with outerWindowID '" + outerWindowID + "' is chrome"
+        message: "Window with outerWindowID '" + outerWindowID + "' is chrome",
       });
     }
     if (window) {
@@ -349,7 +336,7 @@ BrowserTabList.prototype.getTab = function({ outerWindowID, tabId }) {
     }
     return Promise.reject({
       error: "noTab",
-      message: "Unable to find tab with outerWindowID '" + outerWindowID + "'"
+      message: "Unable to find tab with outerWindowID '" + outerWindowID + "'",
     });
   } else if (typeof tabId == "number") {
     // Tabs OOP
@@ -362,7 +349,7 @@ BrowserTabList.prototype.getTab = function({ outerWindowID, tabId }) {
     }
     return Promise.reject({
       error: "noTab",
-      message: "Unable to find tab with tabId '" + tabId + "'"
+      message: "Unable to find tab with tabId '" + tabId + "'",
     });
   }
 
@@ -374,7 +361,7 @@ BrowserTabList.prototype.getTab = function({ outerWindowID, tabId }) {
   }
   return Promise.reject({
     error: "noTab",
-    message: "Unable to find any selected browser"
+    message: "Unable to find any selected browser",
   });
 };
 
@@ -391,7 +378,7 @@ Object.defineProperty(BrowserTabList.prototype, "onListChanged", {
     }
     this._onListChanged = v;
     this._checkListening();
-  }
+  },
 });
 
 /**
@@ -488,7 +475,7 @@ BrowserTabList.prototype._listenForEventsIf =
   function(shouldListen, guard, eventNames) {
     if (!shouldListen !== !this[guard]) {
       const op = shouldListen ? "addEventListener" : "removeEventListener";
-      for (const win of allAppShellDOMWindows(DebuggerServer.chromeWindowType)) {
+      for (const win of Services.wm.getEnumerator(DebuggerServer.chromeWindowType)) {
         for (const name of eventNames) {
           win[op](name, this, false);
         }
@@ -512,7 +499,7 @@ BrowserTabList.prototype._listenForMessagesIf =
   function(shouldListen, guard, messageNames) {
     if (!shouldListen !== !this[guard]) {
       const op = shouldListen ? "addMessageListener" : "removeMessageListener";
-      for (const win of allAppShellDOMWindows(DebuggerServer.chromeWindowType)) {
+      for (const win of Services.wm.getEnumerator(DebuggerServer.chromeWindowType)) {
         for (const name of messageNames) {
           win.messageManager[op](name, this);
         }
@@ -723,7 +710,7 @@ Object.defineProperty(BrowserAddonList.prototype, "onListChanged", {
     }
     this._onListChanged = v;
     this._adjustListener();
-  }
+  },
 });
 
 BrowserAddonList.prototype.onInstalled = function(addon) {

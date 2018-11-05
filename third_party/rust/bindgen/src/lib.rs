@@ -16,6 +16,8 @@
 // `quote!` nests quite deeply.
 #![recursion_limit="128"]
 
+#[macro_use]
+extern crate bitflags;
 extern crate cexpr;
 #[macro_use]
 #[allow(unused_extern_crates)]
@@ -94,48 +96,59 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
-/// A type used to indicate which kind of items do we have to generate.
-///
-/// TODO(emilio): Use `bitflags!`
-#[derive(Debug, Clone)]
-pub struct CodegenConfig {
-    /// Whether to generate functions.
-    pub functions: bool,
-    /// Whether to generate types.
-    pub types: bool,
-    /// Whether to generate constants.
-    pub vars: bool,
-    /// Whether to generate methods.
-    pub methods: bool,
-    /// Whether to generate constructors.
-    pub constructors: bool,
-    /// Whether to generate destructors.
-    pub destructors: bool,
+fn args_are_cpp(clang_args: &[String]) -> bool {
+    return clang_args
+        .windows(2)
+        .any(|w| w[0] == "-xc++" || w[1] == "-xc++" || w == &["-x", "c++"]);
+}
+
+bitflags! {
+    /// A type used to indicate which kind of items we have to generate.
+    pub struct CodegenConfig: u32 {
+        /// Whether to generate functions.
+        const FUNCTIONS = 1 << 0;
+        /// Whether to generate types.
+        const TYPES = 1 << 1;
+        /// Whether to generate constants.
+        const VARS = 1 << 2;
+        /// Whether to generate methods.
+        const METHODS = 1 << 3;
+        /// Whether to generate constructors
+        const CONSTRUCTORS = 1 << 4;
+        /// Whether to generate destructors.
+        const DESTRUCTORS = 1 << 5;
+    }
 }
 
 impl CodegenConfig {
-    /// Generate all kinds of items.
-    pub fn all() -> Self {
-        CodegenConfig {
-            functions: true,
-            types: true,
-            vars: true,
-            methods: true,
-            constructors: true,
-            destructors: true,
-        }
+    /// Returns true if functions should be generated.
+    pub fn functions(self) -> bool {
+        self.contains(CodegenConfig::FUNCTIONS)
     }
 
-    /// Generate nothing.
-    pub fn nothing() -> Self {
-        CodegenConfig {
-            functions: false,
-            types: false,
-            vars: false,
-            methods: false,
-            constructors: false,
-            destructors: false,
-        }
+    /// Returns true if types should be generated.
+    pub fn types(self) -> bool {
+        self.contains(CodegenConfig::TYPES)
+    }
+
+    /// Returns true if constants should be generated.
+    pub fn vars(self) -> bool {
+        self.contains(CodegenConfig::VARS)
+    }
+
+    /// Returns true if methds should be generated.
+    pub fn methods(self) -> bool {
+        self.contains(CodegenConfig::METHODS)
+    }
+
+    /// Returns true if constructors should be generated.
+    pub fn constructors(self) -> bool {
+        self.contains(CodegenConfig::CONSTRUCTORS)
+    }
+
+    /// Returns true if destructors should be generated.
+    pub fn destructors(self) -> bool {
+        self.contains(CodegenConfig::DESTRUCTORS)
     }
 }
 
@@ -284,6 +297,34 @@ impl Builder {
             })
             .count();
 
+        self.options
+            .blacklisted_functions
+            .get_items()
+            .iter()
+            .map(|item| {
+                output_vector.push("--blacklist-function".into());
+                output_vector.push(
+                    item.trim_left_matches("^")
+                        .trim_right_matches("$")
+                        .into(),
+                );
+            })
+            .count();
+
+        self.options
+            .blacklisted_items
+            .get_items()
+            .iter()
+            .map(|item| {
+                output_vector.push("--blacklist-item".into());
+                output_vector.push(
+                    item.trim_left_matches("^")
+                        .trim_right_matches("$")
+                        .into(),
+                );
+            })
+            .count();
+
         if !self.options.layout_tests {
             output_vector.push("--no-layout-tests".into());
         }
@@ -346,6 +387,14 @@ impl Builder {
             output_vector.push("--objc-extern-crate".into());
         }
 
+        if self.options.generate_block {
+            output_vector.push("--generate-block".into());
+        }
+
+        if self.options.block_extern_crate {
+            output_vector.push("--block-extern-crate".into());
+        }
+
         if self.options.builtins {
             output_vector.push("--builtins".into());
         }
@@ -373,7 +422,7 @@ impl Builder {
             output_vector.push("--disable-name-namespacing".into());
         }
 
-        if !self.options.codegen_config.functions {
+        if !self.options.codegen_config.functions() {
             output_vector.push("--ignore-functions".into());
         }
 
@@ -381,28 +430,28 @@ impl Builder {
 
         //Temporary placeholder for below 4 options
         let mut options: Vec<String> = Vec::new();
-        if self.options.codegen_config.functions {
+        if self.options.codegen_config.functions() {
             options.push("function".into());
         }
-        if self.options.codegen_config.types {
+        if self.options.codegen_config.types() {
             options.push("types".into());
         }
-        if self.options.codegen_config.vars {
+        if self.options.codegen_config.vars() {
             options.push("vars".into());
         }
-        if self.options.codegen_config.methods {
+        if self.options.codegen_config.methods() {
             options.push("methods".into());
         }
-        if self.options.codegen_config.constructors {
+        if self.options.codegen_config.constructors() {
             options.push("constructors".into());
         }
-        if self.options.codegen_config.destructors {
+        if self.options.codegen_config.destructors() {
             options.push("destructors".into());
         }
 
         output_vector.push(options.join(","));
 
-        if !self.options.codegen_config.methods {
+        if !self.options.codegen_config.methods() {
             output_vector.push("--ignore-methods".into());
         }
 
@@ -673,6 +722,19 @@ impl Builder {
         self
     }
 
+    /// Generate proper block signatures instead of void pointers.
+    pub fn generate_block(mut self, doit: bool) -> Self {
+        self.options.generate_block = doit;
+        self
+    }
+
+    /// Generate `#[macro_use] extern crate block;` instead of `use block;`
+    /// in the prologue of the files generated from apple block files
+    pub fn block_extern_crate(mut self, doit: bool) -> Self {
+        self.options.block_extern_crate = doit;
+        self
+    }
+
     /// Whether to use the clang-provided name mangling. This is true by default
     /// and probably needed for C++ features.
     ///
@@ -696,6 +758,21 @@ impl Builder {
     /// supported.
     pub fn blacklist_type<T: AsRef<str>>(mut self, arg: T) -> Builder {
         self.options.blacklisted_types.insert(arg);
+        self
+    }
+
+    /// Hide the given function from the generated bindings. Regular expressions
+    /// are supported.
+    pub fn blacklist_function<T: AsRef<str>>(mut self, arg: T) -> Builder {
+        self.options.blacklisted_functions.insert(arg);
+        self
+    }
+
+    /// Hide the given item from the generated bindings, regardless of
+    /// whether it's a type, function, module, etc. Regular
+    /// expressions are supported.
+    pub fn blacklist_item<T: AsRef<str>>(mut self, arg: T) -> Builder {
+        self.options.blacklisted_items.insert(arg);
         self
     }
 
@@ -1043,13 +1120,13 @@ impl Builder {
 
     /// Ignore functions.
     pub fn ignore_functions(mut self) -> Builder {
-        self.options.codegen_config.functions = false;
+        self.options.codegen_config.remove(CodegenConfig::FUNCTIONS);
         self
     }
 
     /// Ignore methods.
     pub fn ignore_methods(mut self) -> Builder {
-        self.options.codegen_config.methods = false;
+        self.options.codegen_config.remove(CodegenConfig::METHODS);
         self
     }
 
@@ -1150,7 +1227,7 @@ impl Builder {
                 || name_file.ends_with(".hh")
                 || name_file.ends_with(".h++")
         }
-        
+
         let clang = clang_sys::support::Clang::find(None, &[]).ok_or_else(|| {
             io::Error::new(io::ErrorKind::Other, "Cannot find clang executable")
         })?;
@@ -1160,9 +1237,7 @@ impl Builder {
         let mut wrapper_contents = String::new();
 
         // Whether we are working with C or C++ inputs.
-        let mut is_cpp = self.options.clang_args.windows(2).any(|w| {
-            w[0] == "-x=c++" || w[1] == "-x=c++" || w == &["-x", "c++"]
-        });
+        let mut is_cpp = args_are_cpp(&self.options.clang_args);
 
         // For each input header, add `#include "$header"`.
         for header in &self.input_headers {
@@ -1255,6 +1330,14 @@ struct BindgenOptions {
     /// The set of types that have been blacklisted and should not appear
     /// anywhere in the generated code.
     blacklisted_types: RegexSet,
+
+    /// The set of functions that have been blacklisted and should not appear
+    /// in the generated code.
+    blacklisted_functions: RegexSet,
+
+    /// The set of items, regardless of item-type, that have been
+    /// blacklisted and should not appear in the generated code.
+    blacklisted_items: RegexSet,
 
     /// The set of types that should be treated as opaque structures in the
     /// generated code.
@@ -1418,6 +1501,14 @@ struct BindgenOptions {
     /// generate '#[macro_use] extern crate objc;'
     objc_extern_crate: bool,
 
+    /// Instead of emitting 'use block;' to files generated from objective c files,
+    /// generate '#[macro_use] extern crate block;'
+    generate_block: bool,
+
+    /// Instead of emitting 'use block;' to files generated from objective c files,
+    /// generate '#[macro_use] extern crate block;'
+    block_extern_crate: bool,
+
     /// Whether to use the clang-provided name mangling. This is true and
     /// probably needed for C++ features.
     ///
@@ -1465,6 +1556,8 @@ impl BindgenOptions {
         self.whitelisted_types.build();
         self.whitelisted_functions.build();
         self.blacklisted_types.build();
+        self.blacklisted_functions.build();
+        self.blacklisted_items.build();
         self.opaque_types.build();
         self.bitfield_enums.build();
         self.constified_enums.build();
@@ -1494,9 +1587,11 @@ impl Default for BindgenOptions {
         let rust_target = RustTarget::default();
 
         BindgenOptions {
-            rust_target: rust_target,
+            rust_target,
             rust_features: rust_target.into(),
             blacklisted_types: Default::default(),
+            blacklisted_functions: Default::default(),
+            blacklisted_items: Default::default(),
             opaque_types: Default::default(),
             rustfmt_path: Default::default(),
             whitelisted_types: Default::default(),
@@ -1540,7 +1635,9 @@ impl Default for BindgenOptions {
             generate_comments: true,
             generate_inline_functions: false,
             whitelist_recursively: true,
+            generate_block: false,
             objc_extern_crate: false,
+            block_extern_crate: false,
             enable_mangling: true,
             prepend_enum_name: true,
             time_phases: false,
@@ -1621,8 +1718,7 @@ impl Bindings {
         if let Some(clang) = clang_sys::support::Clang::find(
             None,
             &clang_args_for_clang_sys,
-        )
-        {
+        ) {
             // If --target is specified, assume caller knows what they're doing
             // and don't mess with include paths for them
             let has_target_arg = options
@@ -1631,10 +1727,16 @@ impl Bindings {
                 .rposition(|arg| arg.starts_with("--target"))
                 .is_some();
             if !has_target_arg {
-                // TODO: distinguish C and C++ paths? C++'s should be enough, I
-                // guess.
-                if let Some(cpp_search_paths) = clang.cpp_search_paths {
-                    for path in cpp_search_paths.into_iter() {
+                // Whether we are working with C or C++ inputs.
+                let is_cpp = args_are_cpp(&options.clang_args);
+                let search_paths = if is_cpp {
+                  clang.cpp_search_paths
+                } else {
+                  clang.c_search_paths
+                };
+
+                if let Some(search_paths) = search_paths {
+                    for path in search_paths.into_iter() {
                         if let Ok(path) = path.into_os_string().into_string() {
                             options.clang_args.push("-isystem".to_owned());
                             options.clang_args.push(path);

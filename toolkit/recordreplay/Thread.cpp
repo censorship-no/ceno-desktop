@@ -125,7 +125,6 @@ Thread::InitializeThreads()
 
     if (i <= MaxRecordedThreadId) {
       thread->mEvents = gRecordingFile->OpenStream(StreamName::Event, i);
-      thread->mAsserts = gRecordingFile->OpenStream(StreamName::Assert, i);
     }
 
     DirectCreatePipe(&thread->mNotifyfd, &thread->mIdlefd);
@@ -209,7 +208,7 @@ static Atomic<size_t, SequentiallyConsistent, Behavior::DontPreserve> gNumNonRec
 /* static */ Thread*
 Thread::SpawnNonRecordedThread(Callback aStart, void* aArgument)
 {
-  if (IsMiddleman() || gInitializationFailureMessage) {
+  if (IsMiddleman()) {
     DirectSpawnThread(aStart, aArgument);
     return nullptr;
   }
@@ -235,14 +234,11 @@ Thread::SpawnThread(Thread* aThread)
 /* static */ NativeThreadId
 Thread::StartThread(Callback aStart, void* aArgument, bool aNeedsJoin)
 {
-  MOZ_ASSERT(IsRecordingOrReplaying());
-  MOZ_ASSERT(!AreThreadEventsPassedThrough());
-  MOZ_ASSERT(!AreThreadEventsDisallowed());
-
-  EnsureNotDivergedFromRecording();
   Thread* thread = Thread::Current();
-
-  RecordReplayAssert("StartThread");
+  RecordingEventSection res(thread);
+  if (!res.CanAccessEvents()) {
+    return 0;
+  }
 
   MonitorAutoLock lock(*gMonitor);
 
@@ -256,7 +252,7 @@ Thread::StartThread(Callback aStart, void* aArgument, bool aNeedsJoin)
       }
     }
     if (id >= MaxRecordedThreadId) {
-      child::ReportFatalError("Too many threads");
+      child::ReportFatalError(Nothing(), "Too many threads");
     }
     MOZ_RELEASE_ASSERT(id <= MaxRecordedThreadId);
   }
@@ -301,33 +297,6 @@ Thread::Join()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Thread Buffers
-///////////////////////////////////////////////////////////////////////////////
-
-char*
-Thread::TakeBuffer(size_t aSize)
-{
-  MOZ_ASSERT(mBuffer != (char*) 0x1);
-  if (aSize > mBufferCapacity) {
-    mBufferCapacity = aSize;
-    mBuffer = (char*) realloc(mBuffer, aSize);
-  }
-  char* buf = mBuffer;
-
-  // Poison the buffer in case this thread tries to use it again reentrantly.
-  mBuffer = (char*) 0x1;
-
-  return buf;
-}
-
-void
-Thread::RestoreBuffer(char* aBuf)
-{
-  MOZ_ASSERT(mBuffer == (char*) 0x1);
-  mBuffer = aBuf;
-}
-
-///////////////////////////////////////////////////////////////////////////////
 // Thread Public API Accessors
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -355,6 +324,13 @@ MOZ_EXPORT bool
 RecordReplayInterface_InternalAreThreadEventsPassedThrough()
 {
   MOZ_ASSERT(IsRecordingOrReplaying());
+
+  // If initialization fails, pass through all thread events until we're able
+  // to report the problem to the middleman and die.
+  if (gInitializationFailureMessage) {
+    return true;
+  }
+
   Thread* thread = Thread::Current();
   return !thread || thread->PassThroughEvents();
 }
@@ -381,44 +357,22 @@ RecordReplayInterface_InternalAreThreadEventsDisallowed()
   return thread && thread->AreEventsDisallowed();
 }
 
-MOZ_EXPORT void
-RecordReplayInterface_InternalBeginCaptureEventStacks()
-{
-  MOZ_ASSERT(IsRecordingOrReplaying());
-  Thread::Current()->BeginCaptureEventStacks();
-}
-
-MOZ_EXPORT void
-RecordReplayInterface_InternalEndCaptureEventStacks()
-{
-  MOZ_ASSERT(IsRecordingOrReplaying());
-  Thread::Current()->EndCaptureEventStacks();
-}
-
 } // extern "C"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Thread Coordination
 ///////////////////////////////////////////////////////////////////////////////
 
-// Whether all threads should attempt to idle.
-static Atomic<bool, SequentiallyConsistent, Behavior::DontPreserve> gThreadsShouldIdle;
-
-// Whether all threads are considered to be idle.
-static Atomic<bool, SequentiallyConsistent, Behavior::DontPreserve> gThreadsAreIdle;
-
 /* static */ void
 Thread::WaitForIdleThreads()
 {
   MOZ_RELEASE_ASSERT(CurrentIsMainThread());
 
-  MOZ_RELEASE_ASSERT(!gThreadsShouldIdle);
-  MOZ_RELEASE_ASSERT(!gThreadsAreIdle);
-  gThreadsShouldIdle = true;
-
   MonitorAutoLock lock(*gMonitor);
   for (size_t i = MainThreadId + 1; i <= MaxRecordedThreadId; i++) {
-    GetById(i)->mUnrecordedWaitNotified = false;
+    Thread* thread = GetById(i);
+    thread->mShouldIdle = true;
+    thread->mUnrecordedWaitNotified = false;
   }
   while (true) {
     bool done = true;
@@ -426,7 +380,15 @@ Thread::WaitForIdleThreads()
       Thread* thread = GetById(i);
       if (!thread->mIdle) {
         done = false;
-        if (thread->mUnrecordedWaitCallback && !thread->mUnrecordedWaitNotified) {
+
+        // Check if there is a callback we can invoke to get this thread to
+        // make progress. The mUnrecordedWaitOnlyWhenDiverged flag is used to
+        // avoid perturbing the behavior of threads that may or may not be
+        // waiting on an unrecorded resource, depending on whether they have
+        // diverged from the recording yet.
+        if (thread->mUnrecordedWaitCallback && !thread->mUnrecordedWaitNotified &&
+            (!thread->mUnrecordedWaitOnlyWhenDiverged ||
+             thread->WillDivergeFromRecordingSoon())) {
           // Set this flag before releasing the idle lock. Otherwise it's
           // possible the thread could call NotifyUnrecordedWait while we
           // aren't holding the lock, and we would set the flag afterwards
@@ -434,10 +396,11 @@ Thread::WaitForIdleThreads()
           thread->mUnrecordedWaitNotified = true;
 
           // Release the idle lock here to avoid any risk of deadlock.
+          std::function<void()> callback = thread->mUnrecordedWaitCallback;
           {
             MonitorAutoUnlock unlock(*gMonitor);
             AutoPassThroughThreadEvents pt;
-            thread->mUnrecordedWaitCallback();
+            callback();
           }
 
           // Releasing the global lock means that we need to start over
@@ -454,28 +417,26 @@ Thread::WaitForIdleThreads()
     MonitorAutoUnlock unlock(*gMonitor);
     WaitNoIdle();
   }
+}
 
-  gThreadsAreIdle = true;
+/* static */ void
+Thread::ResumeSingleIdleThread(size_t aId)
+{
+  GetById(aId)->mShouldIdle = false;
+  Notify(aId);
 }
 
 /* static */ void
 Thread::ResumeIdleThreads()
 {
   MOZ_RELEASE_ASSERT(CurrentIsMainThread());
-
-  MOZ_RELEASE_ASSERT(gThreadsAreIdle);
-  gThreadsAreIdle = false;
-
-  MOZ_RELEASE_ASSERT(gThreadsShouldIdle);
-  gThreadsShouldIdle = false;
-
   for (size_t i = MainThreadId + 1; i <= MaxRecordedThreadId; i++) {
-    Notify(i);
+    ResumeSingleIdleThread(i);
   }
 }
 
 void
-Thread::NotifyUnrecordedWait(const std::function<void()>& aCallback)
+Thread::NotifyUnrecordedWait(const std::function<void()>& aCallback, bool aOnlyWhenDiverged)
 {
   MonitorAutoLock lock(*gMonitor);
   if (mUnrecordedWaitCallback) {
@@ -488,10 +449,11 @@ Thread::NotifyUnrecordedWait(const std::function<void()>& aCallback)
   }
 
   mUnrecordedWaitCallback = aCallback;
+  mUnrecordedWaitOnlyWhenDiverged = aOnlyWhenDiverged;
 
   // The main thread might be able to make progress now by calling the routine
   // if it is waiting for idle replay threads.
-  if (gThreadsShouldIdle) {
+  if (mShouldIdle) {
     Notify(MainThreadId);
   }
 }
@@ -500,7 +462,8 @@ Thread::NotifyUnrecordedWait(const std::function<void()>& aCallback)
 Thread::MaybeWaitForCheckpointSave()
 {
   MonitorAutoLock lock(*gMonitor);
-  while (gThreadsShouldIdle) {
+  Thread* thread = Thread::Current();
+  while (thread->mShouldIdle) {
     MonitorAutoUnlock unlock(*gMonitor);
     Wait();
   }
@@ -509,9 +472,10 @@ Thread::MaybeWaitForCheckpointSave()
 extern "C" {
 
 MOZ_EXPORT void
-RecordReplayInterface_NotifyUnrecordedWait(const std::function<void()>& aCallback)
+RecordReplayInterface_NotifyUnrecordedWait(const std::function<void()>& aCallback,
+                                           bool aOnlyWhenDiverged)
 {
-  Thread::Current()->NotifyUnrecordedWait(aCallback);
+  Thread::Current()->NotifyUnrecordedWait(aCallback, aOnlyWhenDiverged);
 }
 
 MOZ_EXPORT void
@@ -557,7 +521,7 @@ Thread::Wait()
   }
 
   thread->mIdle = true;
-  if (gThreadsShouldIdle) {
+  if (thread->mShouldIdle) {
     // Notify the main thread that we just became idle.
     Notify(MainThreadId);
   }
@@ -572,7 +536,7 @@ Thread::Wait()
       RestoreThreadStack(thread->Id());
       Unreachable();
     }
-  } while (gThreadsShouldIdle);
+  } while (thread->mShouldIdle);
 
   thread->mIdle = false;
   thread->SetPassThrough(false);

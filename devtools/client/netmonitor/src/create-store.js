@@ -13,6 +13,7 @@ const prefs = require("./middleware/prefs");
 const thunk = require("./middleware/thunk");
 const recording = require("./middleware/recording");
 const throttling = require("./middleware/throttling");
+const eventTelemetry = require("./middleware/event-telemetry");
 
 // Reducers
 const rootReducer = require("./reducers/index");
@@ -25,17 +26,17 @@ const { UI, Columns } = require("./reducers/ui");
 /**
  * Configure state and middleware for the Network monitor tool.
  */
-function configureStore(connector) {
+function configureStore(connector, telemetry) {
   // Prepare initial state.
   const initialState = {
     filters: new Filters({
-      requestFilterTypes: getFilterState()
+      requestFilterTypes: getFilterState(),
     }),
     requests: new Requests(),
     sort: new Sort(),
     timingMarkers: new TimingMarkers(),
     ui: UI({
-      columns: getColumnState()
+      columns: getColumnState(),
     }),
   };
 
@@ -46,6 +47,7 @@ function configureStore(connector) {
     batching,
     recording(connector),
     throttling(connector),
+    eventTelemetry(connector, telemetry),
   );
 
   return createStore(rootReducer, initialState, middleware);

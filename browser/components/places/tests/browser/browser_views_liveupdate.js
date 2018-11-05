@@ -97,7 +97,9 @@ add_task(async function test() {
   // Open bookmarks sidebar.
   await withSidebarTree("bookmarks", async () => {
     // Add observers.
+    bookmarksObserver.handlePlacesEvents = bookmarksObserver.handlePlacesEvents.bind(bookmarksObserver);
     PlacesUtils.bookmarks.addObserver(bookmarksObserver);
+    PlacesUtils.observers.addListener(["bookmark-added"], bookmarksObserver.handlePlacesEvents);
     var addedBookmarks = [];
 
     // MENU
@@ -124,6 +126,7 @@ add_task(async function test() {
 
     // Remove observers.
     PlacesUtils.bookmarks.removeObserver(bookmarksObserver);
+    PlacesUtils.observers.removeListener(["bookmark-added"], bookmarksObserver.handlePlacesEvents);
   });
 
   // Collapse the personal toolbar if needed.
@@ -143,10 +146,10 @@ var bookmarksObserver = {
     Ci.nsINavBookmarkObserver,
   ]),
 
-  // nsINavBookmarkObserver
-  onItemAdded(itemId, folderId, index, itemType, uri, title, dataAdded, guid,
-              parentGuid) {
-    this._notifications.push(["assertItemAdded", parentGuid, guid, index]);
+  handlePlacesEvents(events) {
+    for (let {parentGuid, guid, index} of events) {
+      this._notifications.push(["assertItemAdded", parentGuid, guid, index]);
+    }
   },
 
   onItemRemoved(itemId, folderId, index, itemType, uri, guid, parentGuid) {
@@ -193,7 +196,7 @@ var bookmarksObserver = {
 
   async assertItemRemoved(views, guid) {
     for (let i = 0; i < views.length; i++) {
-      let [node, ] = searchItemInView(guid, views[i]);
+      let [node ] = searchItemInView(guid, views[i]);
       Assert.equal(node, null, "Should not have found the node");
     }
   },
@@ -230,7 +233,7 @@ var bookmarksObserver = {
       Assert.equal(node.title, newValue, "Node should have the correct new title");
       Assert.ok(valid, "Node element should have the correct label");
     }
-  }
+  },
 };
 
 /**
@@ -268,7 +271,7 @@ function getNodeForToolbarItem(itemGuid, validator) {
   var placesToolbarItems = document.getElementById("PlacesToolbarItems");
 
   function findNode(aContainer) {
-    var children = aContainer.childNodes;
+    var children = aContainer.children;
     for (var i = 0, staticNodes = 0; i < children.length; i++) {
       var child = children[i];
 
@@ -286,7 +289,7 @@ function getNodeForToolbarItem(itemGuid, validator) {
       // Don't search in queries, they could contain our item in a
       // different position.  Search only folders
       if (PlacesUtils.nodeIsFolder(child._placesNode)) {
-        var popup = child.lastChild;
+        var popup = child.lastElementChild;
         popup.openPopup();
         var foundNode = findNode(popup);
         popup.hidePopup();
@@ -311,7 +314,7 @@ function getNodeForMenuItem(itemGuid, validator) {
   var menu = document.getElementById("bookmarksMenu");
 
   function findNode(aContainer) {
-    var children = aContainer.childNodes;
+    var children = aContainer.children;
     for (var i = 0, staticNodes = 0; i < children.length; i++) {
       var child = children[i];
 
@@ -329,7 +332,7 @@ function getNodeForMenuItem(itemGuid, validator) {
       // Don't search in queries, they could contain our item in a
       // different position.  Search only folders
       if (PlacesUtils.nodeIsFolder(child._placesNode)) {
-        var popup = child.lastChild;
+        var popup = child.lastElementChild;
         fakeOpenPopup(popup);
         var foundNode = findNode(popup);
 
@@ -341,7 +344,7 @@ function getNodeForMenuItem(itemGuid, validator) {
     return [null, null, false];
   }
 
-  return findNode(menu.lastChild);
+  return findNode(menu.lastElementChild);
 }
 
 /**

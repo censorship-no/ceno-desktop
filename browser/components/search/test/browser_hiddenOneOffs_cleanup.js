@@ -9,7 +9,7 @@ function promiseNewEngine(basename) {
     Services.search.init({
       onInitComplete() {
         let url = getRootDirectory(gTestPath) + basename;
-        Services.search.addEngine(url, null, "", false, {
+        Services.search.addEngine(url, "", false, {
           onSuccess(engine) {
             info("Search engine added: " + basename);
             resolve(engine);
@@ -17,9 +17,9 @@ function promiseNewEngine(basename) {
           onError(errCode) {
             ok(false, "addEngine failed with error code " + errCode);
             reject();
-          }
+          },
         });
-      }
+      },
     });
   });
 }

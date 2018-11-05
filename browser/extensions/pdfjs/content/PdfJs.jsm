@@ -107,6 +107,12 @@ var PdfJs = {
     Services.ppmm.sharedData.set("pdfjs.enabled", this.checkEnabled());
   },
 
+  earlyInit() {
+    // Note: Please keep this in sync with the duplicated logic in
+    // nsBrowserGlue.js.
+    Services.ppmm.sharedData.set("pdfjs.enabled", this.checkEnabled());
+  },
+
   initPrefs: function initPrefs() {
     if (this._initialized) {
       return;
@@ -192,9 +198,7 @@ var PdfJs = {
     prefs.setCharPref(PREF_DISABLED_PLUGIN_TYPES, types.join(","));
 
     // Update the category manager in case the plugins are already loaded.
-    let categoryManager = Cc["@mozilla.org/categorymanager;1"];
-    categoryManager.getService(Ci.nsICategoryManager).
-                    deleteCategoryEntry("Gecko-Content-Viewers",
+    Services.catMan.deleteCategoryEntry("Gecko-Content-Viewers",
                                         PDF_CONTENT_TYPE,
                                         false);
   },
@@ -264,10 +268,6 @@ var PdfJs = {
    * @return {boolean} Whether or not it's enabled.
    */
   get enabled() {
-    if (!Services.policies.isAllowed("PDF.js")) {
-      return false;
-    }
-
     if (!Services.prefs.getBoolPref(PREF_ENABLED_CACHE_INITIALIZED, false)) {
       // If we just updated, and the cache hasn't been initialized, then we
       // can't assume a default state, and need to synchronously initialize

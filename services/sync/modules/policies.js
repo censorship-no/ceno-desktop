@@ -83,6 +83,18 @@ SyncScheduler.prototype = {
     Svc.Prefs.set("nextSync", Math.floor(value / 1000));
   },
 
+  get missedFxACommandsFetchInterval() {
+    return Services.prefs.getIntPref("identity.fxaccounts.commands.missed.fetch_interval");
+  },
+
+  get missedFxACommandsLastFetch() {
+    return Services.prefs.getIntPref("identity.fxaccounts.commands.missed.last_fetch", 0);
+  },
+
+  set missedFxACommandsLastFetch(val) {
+    Services.prefs.setIntPref("identity.fxaccounts.commands.missed.last_fetch", val);
+  },
+
   get syncInterval() {
     return this._syncInterval;
   },
@@ -470,8 +482,9 @@ SyncScheduler.prototype = {
   updateClientMode: function updateClientMode() {
     // Nothing to do if it's the same amount
     let numClients = this.numClients;
-    if (numClients == this.numClientsLastSync)
+    if (numClients == this.numClientsLastSync) {
       return;
+    }
 
     this._log.debug(`Client count: ${this.numClientsLastSync} -> ${numClients}`);
     this.numClientsLastSync = numClients;
@@ -534,6 +547,16 @@ SyncScheduler.prototype = {
     }
     Services.tm.dispatchToMainThread(() => {
       this.service.sync({engines, why});
+      const now = Math.round(new Date().getTime() / 1000);
+      // Only fetch missed messages in a "scheduled" sync so we don't race against
+      // the Push service reconnecting on a network link change for example.
+      if (why == "schedule" && now >= this.missedFxACommandsLastFetch + this.missedFxACommandsFetchInterval) {
+        fxAccounts.commands.fetchMissedRemoteCommands().then(() => {
+          this.missedFxACommandsLastFetch = now;
+        }).catch(e => {
+          this._log.error("Fetching missed remote commands failed.", e);
+        });
+      }
     });
   },
 
@@ -661,8 +684,9 @@ SyncScheduler.prototype = {
     this.globalScore = this.nextSync = 0;
 
     // Clear out any scheduled syncs
-    if (this.syncTimer)
+    if (this.syncTimer) {
       this.syncTimer.clear();
+    }
   },
 
 };

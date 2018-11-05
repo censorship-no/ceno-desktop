@@ -24,8 +24,8 @@ SVGScriptElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 
 nsSVGElement::StringInfo SVGScriptElement::sStringInfo[2] =
 {
-  { &nsGkAtoms::href, kNameSpaceID_None, false },
-  { &nsGkAtoms::href, kNameSpaceID_XLink, false }
+  { nsGkAtoms::href, kNameSpaceID_None, false },
+  { nsGkAtoms::href, kNameSpaceID_XLink, false }
 };
 
 //----------------------------------------------------------------------
@@ -38,9 +38,9 @@ NS_IMPL_ISUPPORTS_INHERITED(SVGScriptElement, SVGScriptElementBase,
 //----------------------------------------------------------------------
 // Implementation
 
-SVGScriptElement::SVGScriptElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+SVGScriptElement::SVGScriptElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                                    FromParser aFromParser)
-  : SVGScriptElementBase(aNodeInfo)
+  : SVGScriptElementBase(std::move(aNodeInfo))
   , ScriptElement(aFromParser)
 {
   AddMutationObserver(this);
@@ -54,17 +54,16 @@ SVGScriptElement::~SVGScriptElement()
 // nsINode methods
 
 nsresult
-SVGScriptElement::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                        bool aPreallocateChildren) const
+SVGScriptElement::Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const
 {
   *aResult = nullptr;
 
-  already_AddRefed<mozilla::dom::NodeInfo> ni = RefPtr<mozilla::dom::NodeInfo>(aNodeInfo).forget();
-  SVGScriptElement* it = new SVGScriptElement(ni, NOT_FROM_PARSER);
+  SVGScriptElement* it =
+    new SVGScriptElement(do_AddRef(aNodeInfo), NOT_FROM_PARSER);
 
   nsCOMPtr<nsINode> kungFuDeathGrip = it;
   nsresult rv1 = it->Init();
-  nsresult rv2 = const_cast<SVGScriptElement*>(this)->CopyInnerTo(it, aPreallocateChildren);
+  nsresult rv2 = const_cast<SVGScriptElement*>(this)->CopyInnerTo(it);
   NS_ENSURE_SUCCESS(rv1, rv1);
   NS_ENSURE_SUCCESS(rv2, rv2);
 

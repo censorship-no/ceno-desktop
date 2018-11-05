@@ -77,7 +77,7 @@ var TestRunner = {
         ok(false, error + "\n" + error.stack);
       });
     }
-  }
+  },
 };
 
 /**
@@ -107,7 +107,7 @@ function addTab(aURI, aCallback) {
 function navigateTo(aURI) {
   let browser = gBrowser.selectedBrowser;
   BrowserTestUtils.browserLoaded(browser).then(next);
-  browser.loadURI(aURI);
+  BrowserTestUtils.loadURI(browser, aURI);
 }
 
 /**

@@ -17,6 +17,7 @@
 #include "nsIWebProgress.h"
 #include "nsIWebProgressListener.h"
 #include "nsIWindowWatcher.h"
+#include "nsIXPConnect.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowWatcher.h"
@@ -72,8 +73,10 @@ public:
     // Check same origin.
     nsCOMPtr<nsIScriptSecurityManager> securityManager =
       nsContentUtils::GetSecurityManager();
+    bool isPrivateWin =
+      doc->NodePrincipal()->OriginAttributesRef().mPrivateBrowsingId > 0;
     nsresult rv = securityManager->CheckSameOriginURI(doc->GetOriginalURI(),
-                                                      mBaseURI, false);
+                                                      mBaseURI, false, isPrivateWin);
     if (NS_FAILED(rv)) {
       mPromise->Resolve(NS_OK, __func__);
       mPromise = nullptr;
@@ -130,7 +133,9 @@ public:
   NS_IMETHOD
   OnSecurityChange(nsIWebProgress* aWebProgress,
                    nsIRequest* aRequest,
-                   uint32_t aState) override
+                   uint32_t aOldState,
+                   uint32_t aState,
+                   const nsAString& aContentBlockingLogJSON) override
   {
     MOZ_ASSERT(false, "Unexpected notification.");
     return NS_OK;

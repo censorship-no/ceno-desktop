@@ -39,19 +39,18 @@ class SVGGradientElement : public SVGGradientElementBase
   friend class ::nsSVGGradientFrame;
 
 protected:
-  explicit SVGGradientElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGGradientElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override = 0;
 
 public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override = 0;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override = 0;
 
   // nsIContent
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   virtual nsSVGAnimatedTransformList*
     GetAnimatedTransformList(uint32_t aFlags = 0) override;
-  virtual nsAtom* GetTransformListAttrName() const override {
+  virtual nsStaticAtom* GetTransformListAttrName() const override {
     return nsGkAtoms::gradientTransform;
   }
 
@@ -90,12 +89,11 @@ class SVGLinearGradientElement : public SVGLinearGradientElementBase
                                       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 
 protected:
-  explicit SVGLinearGradientElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGLinearGradientElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedLength> X1();
@@ -124,12 +122,11 @@ class SVGRadialGradientElement : public SVGRadialGradientElementBase
                                       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 
 protected:
-  explicit SVGRadialGradientElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGRadialGradientElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedLength> Cx();

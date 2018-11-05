@@ -22,29 +22,82 @@ var log = {
 };
 
 var PaymentDialogUtils = {
-  getAddressLabel(address) {
+  getAddressLabel(address, addressFields = null) {
+    if (addressFields) {
+      let requestedFields = addressFields.trim().split(/\s+/);
+      return requestedFields.filter(f => f && address[f]).map(f => address[f]).join(", ") +
+        ` (${address.guid})`;
+    }
     return `${address.name} (${address.guid})`;
+  },
+
+  getCreditCardNetworks() {
+    // Shim for list of known and supported credit card network ids as exposed by
+    // toolkit/modules/CreditCard.jsm
+    return [
+      "amex",
+      "cartebancaire",
+      "diners",
+      "discover",
+      "jcb",
+      "mastercard",
+      "mir",
+      "unionpay",
+      "visa",
+    ];
   },
   isCCNumber(str) {
     return !!str.replace(/[-\s]/g, "").match(/^\d{9,}$/);
   },
   DEFAULT_REGION: "US",
-  supportedCountries: ["US", "CA"],
+  countries: new Map([["US", "United States"], ["CA", "Canada"], ["DE", "Germany"]]),
   getFormFormat(country) {
+    if (country == "DE") {
+      return {
+        addressLevel3Label: "",
+        addressLevel2Label: "city",
+        addressLevel1Label: "province",
+        postalCodeLabel: "postalCode",
+        fieldsOrder: [
+          {
+            fieldId: "name",
+            newLine: true,
+          },
+          {
+            fieldId: "organization",
+            newLine: true,
+          },
+          {
+            fieldId: "street-address",
+            newLine: true,
+          },
+          {fieldId: "postal-code"},
+          {fieldId: "address-level2"},
+        ],
+        postalCodePattern: "\\d{5}",
+        countryRequiredFields: ["street-address", "address-level2", "postal-code"],
+      };
+    }
+
     return {
-      "addressLevel1Label": country == "US" ? "state" : "province",
-      "postalCodeLabel": country == "US" ? "zip" : "postalCode",
-      "fieldsOrder": [
+      addressLevel3Label: "",
+      addressLevel2Label: "city",
+      addressLevel1Label: country == "US" ? "state" : "province",
+      postalCodeLabel: country == "US" ? "zip" : "postalCode",
+      fieldsOrder: [
         {fieldId: "name", newLine: true},
-        {fieldId: "organization", newLine: true},
         {fieldId: "street-address", newLine: true},
         {fieldId: "address-level2"},
         {fieldId: "address-level1"},
         {fieldId: "postal-code"},
+        {fieldId: "organization"},
       ],
       // The following values come from addressReferences.js and should not be changed.
       /* eslint-disable-next-line max-len */
-      "postalCodePattern": country == "US" ? "(\\d{5})(?:[ \\-](\\d{4}))?" : "[ABCEGHJKLMNPRSTVXY]\\d[ABCEGHJ-NPRSTV-Z] ?\\d[ABCEGHJ-NPRSTV-Z]\\d",
+      postalCodePattern: country == "US" ? "(\\d{5})(?:[ \\-](\\d{4}))?" : "[ABCEGHJKLMNPRSTVXY]\\d[ABCEGHJ-NPRSTV-Z] ?\\d[ABCEGHJ-NPRSTV-Z]\\d",
+      countryRequiredFields: country == "US" || country == "CA" ?
+        ["street-address", "address-level2", "address-level1", "postal-code"] :
+        ["street-address", "address-level2", "postal-code"],
     };
   },
   getDefaultPreferences() {
@@ -53,5 +106,8 @@ var PaymentDialogUtils = {
       saveAddressDefaultChecked: true,
     };
     return prefValues;
+  },
+  isOfficialBranding() {
+    return false;
   },
 };

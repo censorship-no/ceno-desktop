@@ -4,7 +4,7 @@
 
 //! Rust wrappers around the raw JS apis
 
-use ac::AutoCompartment;
+use ar::AutoRealm;
 use libc::c_uint;
 use std::cell::{Cell, UnsafeCell};
 use std::char;
@@ -196,8 +196,6 @@ impl Runtime {
 
             JS::SetWarningReporter(js_context, Some(report_warning));
 
-            JS_BeginRequest(js_context);
-
             Ok(Runtime {
                 cx: js_context,
             })
@@ -231,7 +229,7 @@ impl Runtime {
         };
         assert!(!ptr.is_null());
         unsafe {
-            let _ac = AutoCompartment::with_obj(self.cx(), glob.get());
+            let _ar = AutoRealm::with_obj(self.cx(), glob.get());
             let options = CompileOptionsWrapper::new(self.cx(), filename_cstr.as_ptr(), line_num);
 
             let mut srcBuf = JS::SourceBufferHolder {
@@ -256,7 +254,6 @@ impl Runtime {
 impl Drop for Runtime {
     fn drop(&mut self) {
         unsafe {
-            JS_EndRequest(self.cx);
             JS_DestroyContext(self.cx);
 
             CONTEXT.with(|context| {
@@ -620,7 +617,7 @@ impl GCMethods for JS::Value {
 // ___________________________________________________________________________
 // Implementations for various things in jsapi.rs
 
-impl Drop for JSAutoRealmAllowCCW {
+impl Drop for JSAutoRealm {
     fn drop(&mut self) {
         unsafe { JS::LeaveRealm(self.cx_, self.oldRealm_); }
     }

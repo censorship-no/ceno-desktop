@@ -23,15 +23,14 @@ class HTMLSummaryElement final : public nsGenericHTMLElement
 public:
   using NodeInfo = mozilla::dom::NodeInfo;
 
-  explicit HTMLSummaryElement(already_AddRefed<NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElement(aNodeInfo)
+  explicit HTMLSummaryElement(already_AddRefed<NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo))
   {
   }
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLSummaryElement, summary)
 
-  nsresult Clone(NodeInfo* aNodeInfo, nsINode** aResult,
-                 bool aPreallocateChildren) const override;
+  nsresult Clone(NodeInfo*, nsINode** aResult) const override;
 
   nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
 

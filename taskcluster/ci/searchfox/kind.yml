@@ -35,6 +35,8 @@ jobs:
             max-run-time: 36000
             env:
                 PERFHERDER_EXTRA_OPTIONS: searchfox
+                RUSTC_BOOTSTRAP: "1"
+                MOZSEARCH_PLATFORM: "linux"
         run:
             using: mozharness
             actions: [build]
@@ -48,6 +50,7 @@ jobs:
             - linux64-clang
             - linux64-node
             - linux64-rust
+            - linux64-cbindgen
 
     macosx64-searchfox/debug:
         description: "MacOS X x64 Debug Cross-compile Searchfox"
@@ -61,9 +64,11 @@ jobs:
             env:
                 TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
                 PERFHERDER_EXTRA_OPTIONS: searchfox
+                RUSTC_BOOTSTRAP: "1"
+                MOZSEARCH_PLATFORM: "macosx"
         run:
             using: mozharness
-            actions: [get-secrets build update]
+            actions: [get-secrets, build]
             config:
                 - builds/releng_base_firefox.py
                 - builds/releng_base_mac_64_cross_builds.py
@@ -80,8 +85,7 @@ jobs:
             - linux64-llvm-dsymutil
             - linux64-node
             - linux64-rust-macos
-
-    # NOTE: Windows Searchfox jobs aren't working quite yet (bug 1418415).
+            - linux64-cbindgen
 
     win64-searchfox/debug:
         description: "Win64 Searchfox Debug (clang-cl)"
@@ -92,10 +96,12 @@ jobs:
             platform: windows2012-64/debug
         worker-type: aws-provisioner-v1/gecko-{level}-b-win2012
         worker:
-            max-run-time: 7200
+            max-run-time: 36000
             env:
                 TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
                 PERFHERDER_EXTRA_OPTIONS: searchfox
+                RUSTC_BOOTSTRAP: "1"
+                MOZSEARCH_PLATFORM: "windows"
         run:
             using: mozharness
             options: [append-env-variables-from-configs]
@@ -109,3 +115,4 @@ jobs:
             - win64-clang-cl
             - win64-node
             - win64-rust
+            - win64-cbindgen

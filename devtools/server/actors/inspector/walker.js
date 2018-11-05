@@ -42,6 +42,8 @@ loader.lazyRequireGetter(this, "WalkerSearch", "devtools/server/actors/utils/wal
 loader.lazyServiceGetter(this, "eventListenerService",
   "@mozilla.org/eventlistenerservice;1", "nsIEventListenerService");
 
+loader.lazyRequireGetter(this, "ChromeUtils");
+
 // Minimum delay between two "new-mutations" events.
 const MUTATIONS_THROTTLING_DELAY = 100;
 // List of mutation types that should -not- be throttled.
@@ -83,7 +85,7 @@ const PSEUDO_SELECTORS = [
   [":enabled", 0],
   [":disabled", 0],
   [":checked", 1],
-  ["::selection", 0]
+  ["::selection", 0],
 ];
 
 const HELPER_SHEET = "data:text/css;charset=utf-8," + encodeURIComponent(`
@@ -186,9 +188,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
    *    enumerator of nsIEventListenerChange
    */
   _onEventListenerChange: function(changesEnum) {
-    const changes = changesEnum.enumerate();
-    while (changes.hasMoreElements()) {
-      const current = changes.getNext().QueryInterface(Ci.nsIEventListenerChange);
+    for (const current of changesEnum.enumerate(Ci.nsIEventListenerChange)) {
       const target = current.target;
 
       if (this._refMap.has(target)) {
@@ -196,7 +196,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
         const mutation = {
           type: "events",
           target: actor.actorID,
-          hasEventListeners: actor._hasEventListeners
+          hasEventListeners: actor._hasEventListeners,
         };
         this.queueMutation(mutation);
       }
@@ -208,7 +208,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
     return {
       actor: this.actorID,
       root: this.rootNode.form(),
-      traits: {}
+      traits: {},
     };
   },
 
@@ -350,10 +350,10 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
   },
 
   /**
-   * When a custom element is defined for one of the names currently watched, send a
-   * customElementDefined mutation for all the NodeActors using this tag name.
+   * When a custom element is defined, send a customElementDefined mutation for all the
+   * NodeActors using this tag name.
    */
-  onCustomElementDefined: function(actors) {
+  onCustomElementDefined: function({name, actors}) {
     actors.forEach(actor => this.queueMutation({
       target: actor.actorID,
       type: "customElementDefined",
@@ -405,7 +405,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
     const { nodes, newParents } = this.attachElements([node]);
     return {
       node: nodes[0],
-      newParents: newParents
+      newParents: newParents,
     };
   },
 
@@ -438,7 +438,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
 
     return {
       nodes: nodeActors,
-      newParents: [...newParents]
+      newParents: [...newParents],
     };
   },
 
@@ -521,10 +521,18 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
     // - more than one child
     // - unique child is not a text node
     // - unique child is a text node, but is too long to be inlined
+    // - we are a slot -> these are always represented on their own lines with
+    //                    a link to the original node.
+    const isAssignedSlot =
+      !!firstChild &&
+      node.rawNode.nodeName === "SLOT" &&
+      isDirectShadowHostChild(firstChild);
+
     if (!firstChild ||
         walker.nextSibling() ||
         firstChild.nodeType !== Node.TEXT_NODE ||
-        firstChild.nodeValue.length > gValueSummaryLength
+        firstChild.nodeValue.length > gValueSummaryLength ||
+        isAssignedSlot
         ) {
       return undefined;
     }
@@ -662,7 +670,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
     return {
       hasFirst,
       hasLast,
-      nodes: nodes.map(n => this._ref(n))
+      nodes: nodes.map(n => this._ref(n)),
     };
   },
 
@@ -997,7 +1005,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
 
     return {
       list: nodeList,
-      metadata: []
+      metadata: [],
     };
   },
 
@@ -1015,7 +1023,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
     const sugs = {
       classes: new Map(),
       tags: new Map(),
-      ids: new Map()
+      ids: new Map(),
     };
     let result = [];
     let nodes = null;
@@ -1087,7 +1095,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
             ...this.getSuggestionsForQuery(null, completing, "class")
                    .suggestions,
             ...this.getSuggestionsForQuery(null, completing, "id")
-                   .suggestions
+                   .suggestions,
           ];
         }
 
@@ -1150,7 +1158,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
 
     return {
       query: query,
-      suggestions: result
+      suggestions: result,
     };
   },
 
@@ -1159,7 +1167,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
    *
    * @param NodeActor node
    * @param string pseudo
-   *    A pseudoclass: ':hover', ':active', ':focus'
+   *    A pseudoclass: ':hover', ':active', ':focus', ':focus-within'
    * @param options
    *    Options object:
    *    `parents`: True if the pseudo-class should be added
@@ -1203,7 +1211,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
     this.queueMutation({
       target: node.actorID,
       type: "pseudoClassLock",
-      pseudoClassLocks: node.writePseudoClassLocks()
+      pseudoClassLocks: node.writePseudoClassLocks(),
     });
   },
 
@@ -1239,7 +1247,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
    *
    * @param NodeActor node
    * @param string pseudo
-   *    A pseudoclass: ':hover', ':active', ':focus'
+   *    A pseudoclass: ':hover', ':active', ':focus', ':focus-within'
    * @param options
    *    Options object:
    *    `parents`: True if the pseudo-class should be removed
@@ -1401,7 +1409,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
       for (const key in attributeModifications) {
         finalAttributeModifications.push({
           attributeName: key,
-          newValue: attributeModifications[key]
+          newValue: attributeModifications[key],
         });
       }
       node.modifyAttributes(finalAttributeModifications);
@@ -1813,7 +1821,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
       type: "inlineTextChild",
       target: parentActor.actorID,
       inlineTextChild:
-        inlineTextChild ? inlineTextChild.form() : undefined
+        inlineTextChild ? inlineTextChild.form() : undefined,
     });
   },
 
@@ -1826,7 +1834,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
 
     this.queueMutation({
       type: "slotchange",
-      target: targetActor.actorID
+      target: targetActor.actorID,
     });
   },
 
@@ -1846,7 +1854,15 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
   onFrameLoad: function({ window, isTopLevel }) {
     const { readyState } = window.document;
     if (readyState != "interactive" && readyState != "complete") {
-      window.addEventListener("DOMContentLoaded",
+      // The document is not loaded, so we want to register to fire again when the
+      // DOM has been loaded. To do this, we need to know if this is a XUL document.
+      // We listen for "DOMContentLoaded" on HTML documents, but XUL documents don't
+      // fire this event, so we fallback to the "load" event for XUL. Unfortunately,
+      // since the document isn't loaded yet, we can't check its namespace declaration
+      // to determine if it is XUL. Instead, we use ChromeUtils to see if the document
+      // object class is XULDocument.
+      const isXULDocument = (ChromeUtils.getClassName(window.document) == "XULDocument");
+      window.addEventListener(isXULDocument ? "load" : "DOMContentLoaded",
         this.onFrameLoad.bind(this, { window, isTopLevel }),
         { once: true });
       return;
@@ -1864,7 +1880,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
       this.rootNode = this.document();
       this.queueMutation({
         type: "newRoot",
-        target: this.rootNode.form()
+        target: this.rootNode.form(),
       });
       return;
     }
@@ -1884,7 +1900,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
       type: "childList",
       target: frameActor.actorID,
       added: [],
-      removed: []
+      removed: [],
     });
   },
 
@@ -1919,7 +1935,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
       this.queueMutation({
         target: this.rootNode.actorID,
         type: "unretained",
-        nodes: releasedOrphans
+        nodes: releasedOrphans,
       });
     }
 
@@ -1936,7 +1952,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
 
     this.queueMutation({
       type: "documentUnload",
-      target: documentActor.actorID
+      target: documentActor.actorID,
     });
 
     const walker = this.getDocumentWalker(doc);
@@ -1948,7 +1964,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
         type: "childList",
         target: this.getNode(parentNode).actorID,
         added: [],
-        removed: []
+        removed: [],
       });
     }
 

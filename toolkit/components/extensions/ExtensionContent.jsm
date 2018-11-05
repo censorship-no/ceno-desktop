@@ -13,16 +13,19 @@ ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
+  ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.jsm",
   LanguageDetector: "resource:///modules/translation/LanguageDetector.jsm",
   MessageChannel: "resource://gre/modules/MessageChannel.jsm",
   Schemas: "resource://gre/modules/Schemas.jsm",
-  TelemetryStopwatch: "resource://gre/modules/TelemetryStopwatch.jsm",
   WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(this, "styleSheetService",
                                    "@mozilla.org/content/style-sheet-service;1",
                                    "nsIStyleSheetService");
+
+XPCOMUtils.defineLazyServiceGetter(this, "processScript",
+                                   "@mozilla.org/webextensions/extension-process-script;1");
 
 const DocumentEncoder = Components.Constructor(
   "@mozilla.org/layout/documentEncoder;1?type=text/plain",
@@ -39,6 +42,7 @@ XPCOMUtils.defineLazyGlobalGetters(this, ["crypto", "TextEncoder"]);
 const {
   DefaultMap,
   DefaultWeakMap,
+  ExtensionError,
   getInnerWindowID,
   getWinUtils,
   promiseDocumentIdle,
@@ -62,11 +66,14 @@ const {
 
 XPCOMUtils.defineLazyGetter(this, "console", ExtensionCommon.getConsole);
 
+XPCOMUtils.defineLazyGetter(this, "isContentScriptProcess", () => {
+  return Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_CONTENT ||
+         !WebExtensionPolicy.useRemoteWebExtensions;
+});
 
 var DocumentManager;
 
 const CATEGORY_EXTENSION_SCRIPTS_CONTENT = "webextension-scripts-content";
-const CONTENT_SCRIPT_INJECTION_HISTOGRAM = "WEBEXT_CONTENT_SCRIPT_INJECTION_MS";
 
 var apiManager = new class extends SchemaAPIManager {
   constructor() {
@@ -78,7 +85,7 @@ var apiManager = new class extends SchemaAPIManager {
     if (!this.initialized) {
       this.initialized = true;
       this.initGlobal();
-      for (let [/* name */, value] of XPCOMUtils.enumerateCategoryEntries(CATEGORY_EXTENSION_SCRIPTS_CONTENT)) {
+      for (let {value} of Services.catMan.enumerateCategory(CATEGORY_EXTENSION_SCRIPTS_CONTENT)) {
         this.loadScript(value);
       }
     }
@@ -375,6 +382,10 @@ class Script {
   }
 
   async injectInto(window) {
+    if (!isContentScriptProcess) {
+      return;
+    }
+
     let context = this.extension.getContext(window);
     try {
       if (this.runAt === "document_end") {
@@ -469,30 +480,18 @@ class Script {
       }
     }
 
-    let scriptPromises = this.compileScripts();
-
-    let scripts = scriptPromises.map(promise => promise.script);
-    // If not all scripts are already available in the cache, block
-    // parsing and wait all promises to resolve.
-    if (!scripts.every(script => script)) {
-      let promise = Promise.all(scriptPromises);
-
-      // If we're supposed to inject at the start of the document load,
-      // and we haven't already missed that point, block further parsing
-      // until the scripts have been loaded.
-      let {document} = context.contentWindow;
-      if (this.runAt === "document_start" && document.readyState !== "complete") {
-        document.blockParsing(promise, {blockScriptCreated: false});
-      }
-
-      scripts = await promise;
+    let scripts = this.getCompiledScripts(context);
+    if (scripts instanceof Promise) {
+      scripts = await scripts;
     }
 
     let result;
 
+    const {extension} = context;
+
     // The evaluations below may throw, in which case the promise will be
     // automatically rejected.
-    TelemetryStopwatch.start(CONTENT_SCRIPT_INJECTION_HISTOGRAM, context);
+    ExtensionTelemetry.contentScriptInjection.stopwatchStart(extension, context);
     try {
       for (let script of scripts) {
         result = script.executeInGlobal(context.cloneScope);
@@ -502,13 +501,245 @@ class Script {
         result = Cu.evalInSandbox(this.matcher.jsCode, context.cloneScope, "latest");
       }
     } finally {
-      TelemetryStopwatch.finish(CONTENT_SCRIPT_INJECTION_HISTOGRAM, context);
+      ExtensionTelemetry.contentScriptInjection.stopwatchFinish(extension, context);
     }
 
     await cssPromise;
     return result;
   }
+
+  /**
+   *  Get the compiled scripts (if they are already precompiled and cached) or a promise which resolves
+   *  to the precompiled scripts (once they have been compiled and cached).
+   *
+   * @param {BaseContext} context
+   *        The document to block the parsing on, if the scripts are not yet precompiled and cached.
+   *
+   * @returns {Array<PreloadedScript> | Promise<Array<PreloadedScript>>}
+   *          Returns an array of preloaded scripts if they are already available, or a promise which
+   *          resolves to the array of the preloaded scripts once they are precompiled and cached.
+   */
+  getCompiledScripts(context) {
+    let scriptPromises = this.compileScripts();
+    let scripts = scriptPromises.map(promise => promise.script);
+
+    // If not all scripts are already available in the cache, block
+    // parsing and wait all promises to resolve.
+    if (!scripts.every(script => script)) {
+      let promise = Promise.all(scriptPromises);
+
+      // If we're supposed to inject at the start of the document load,
+      // and we haven't already missed that point, block further parsing
+      // until the scripts have been loaded.
+      const {document} = context.contentWindow;
+      if (this.runAt === "document_start" && document.readyState !== "complete") {
+        document.blockParsing(promise, {blockScriptCreated: false});
+      }
+
+      return promise;
+    }
+
+    return scripts;
+  }
 }
+
+// Represents a user script.
+class UserScript extends Script {
+  /**
+   * @param {BrowserExtensionContent} extension
+   * @param {WebExtensionContentScript|object} matcher
+   *        An object with a "matchesWindow" method and content script execution
+   *        details.
+   */
+  constructor(extension, matcher) {
+    super(extension, matcher);
+
+    // This is an opaque object that the extension provides, it is associated to
+    // the particular userScript and it is passed as a parameter to the custom
+    // userScripts APIs defined by the extension.
+    this.scriptMetadata = matcher.userScriptOptions.scriptMetadata;
+    this.apiScriptURL = extension.manifest.user_scripts && extension.manifest.user_scripts.api_script;
+
+    // Add the apiScript to the js scripts to compile.
+    if (this.apiScriptURL) {
+      this.js = [this.apiScriptURL].concat(this.js);
+    }
+
+    // WeakMap<ContentScriptContextChild, Sandbox>
+    this.sandboxes = new DefaultWeakMap((context) => {
+      return this.createSandbox(context);
+    });
+  }
+
+  async inject(context) {
+    const {extension} = context;
+
+    DocumentManager.lazyInit();
+
+    let scripts = this.getCompiledScripts(context);
+    if (scripts instanceof Promise) {
+      scripts = await scripts;
+    }
+
+    let apiScript, sandboxScripts;
+
+    if (this.apiScriptURL) {
+      [apiScript, ...sandboxScripts] = scripts;
+    } else {
+      sandboxScripts = scripts;
+    }
+
+    // Load and execute the API script once per context.
+    if (apiScript) {
+      context.executeAPIScript(apiScript);
+    }
+
+    // The evaluations below may throw, in which case the promise will be
+    // automatically rejected.
+    ExtensionTelemetry.userScriptInjection.stopwatchStart(extension, context);
+    try {
+      let userScriptSandbox = this.sandboxes.get(context);
+
+      context.callOnClose({
+        close: () => {
+          // Destroy the userScript sandbox when the related ContentScriptContextChild instance
+          // is being closed.
+          this.sandboxes.delete(context);
+          Cu.nukeSandbox(userScriptSandbox);
+        },
+      });
+
+      // Inject the custom API registered by the extension API script.
+      if (apiScript) {
+        this.injectUserScriptAPIs(userScriptSandbox, context);
+      }
+
+      for (let script of sandboxScripts) {
+        script.executeInGlobal(userScriptSandbox);
+      }
+    } finally {
+      ExtensionTelemetry.userScriptInjection.stopwatchFinish(extension, context);
+    }
+  }
+
+  createSandbox(context) {
+    const {contentWindow} = context;
+    const contentPrincipal = contentWindow.document.nodePrincipal;
+    const ssm = Services.scriptSecurityManager;
+
+    let principal;
+    if (ssm.isSystemPrincipal(contentPrincipal)) {
+      principal = ssm.createNullPrincipal(contentPrincipal.originAttributes);
+    } else {
+      principal = [contentPrincipal];
+    }
+
+    const sandbox = Cu.Sandbox(principal, {
+      sandboxName: `User Script registered by ${this.extension.policy.debugName}`,
+      sandboxPrototype: contentWindow,
+      sameZoneAs: contentWindow,
+      wantXrays: true,
+      wantGlobalProperties: ["XMLHttpRequest", "fetch"],
+      originAttributes: contentPrincipal.originAttributes,
+      metadata: {
+        "inner-window-id": context.innerWindowID,
+        addonId: this.extension.policy.id,
+      },
+    });
+
+    return sandbox;
+  }
+
+  injectUserScriptAPIs(userScriptScope, context) {
+    const {extension, scriptMetadata} = this;
+    const {userScriptAPIs, cloneScope: apiScope} = context;
+
+    if (!userScriptAPIs) {
+      return;
+    }
+
+    let clonedMetadata;
+
+    const UserScriptError = userScriptScope.Error;
+    const UserScriptPromise = userScriptScope.Promise;
+
+    const wrappedFnMap = new WeakMap();
+
+    function safeReturnCloned(res) {
+      try {
+        return Cu.cloneInto(res, userScriptScope);
+      } catch (err) {
+        Cu.reportError(
+          `userScripts API method wrapper for ${extension.policy.debugName}: ${err}`
+        );
+        throw new UserScriptError("Unable to clone object in the userScript sandbox");
+      }
+    }
+
+    function wrapUserScriptAPIMethod(fn, fnName) {
+      return Cu.exportFunction(function(...args) {
+        let fnArgs = Cu.cloneInto([], apiScope);
+
+        try {
+          for (let arg of args) {
+            if (typeof arg === "function") {
+              if (!wrappedFnMap.has(arg)) {
+                wrappedFnMap.set(arg, Cu.exportFunction(arg, apiScope));
+              }
+              fnArgs.push(wrappedFnMap.get(arg));
+            } else {
+              fnArgs.push(Cu.cloneInto(arg, apiScope));
+            }
+          }
+        } catch (err) {
+          Cu.reportError(`Error cloning userScriptAPIMethod parameters in ${fnName}: ${err}`);
+          throw new UserScriptError("Only serializable parameters are supported");
+        }
+
+        if (clonedMetadata === undefined) {
+          clonedMetadata = Cu.cloneInto(scriptMetadata, apiScope);
+        }
+
+        const res = runSafeSyncWithoutClone(fn, fnArgs, clonedMetadata, userScriptScope);
+
+        if (res instanceof context.Promise) {
+          return UserScriptPromise.resolve().then(async () => {
+            let value;
+            try {
+              value = await res;
+            } catch (err) {
+              if (err instanceof context.Error) {
+                throw new UserScriptError(err.message);
+              } else {
+                throw safeReturnCloned(err);
+              }
+            }
+            return safeReturnCloned(value);
+          });
+        }
+
+        return safeReturnCloned(res);
+      }, userScriptScope);
+    }
+
+    for (let key of Object.keys(userScriptAPIs)) {
+      Schemas.exportLazyGetter(userScriptScope, key, () => {
+        // Wrap the custom API methods exported to the userScript sandbox.
+        return wrapUserScriptAPIMethod(userScriptAPIs[key], key);
+      });
+    }
+  }
+}
+
+var contentScripts = new DefaultWeakMap(matcher => {
+  const extension = processScript.extensions.get(matcher.extension);
+
+  if ("userScriptOptions" in matcher) {
+    return new UserScript(extension, matcher);
+  }
+
+  return new Script(extension, matcher);
+});
 
 /**
  * An execution context for semi-privileged extension content scripts.
@@ -579,6 +810,12 @@ class ContentScriptContextChild extends BaseContext {
         originAttributes: attrs,
       });
 
+      // Preserve a copy of the original Error and Promise globals from the sandbox object,
+      // which are used in the WebExtensions internals (before any content script code had
+      // any chance to redefine them).
+      this.cloneScopePromise = this.sandbox.Promise;
+      this.cloneScopeError = this.sandbox.Error;
+
       // Preserve a copy of the original window's XMLHttpRequest and fetch
       // in a content object (fetch is manually binded to the window
       // to prevent it from raising a TypeError because content object is not
@@ -612,6 +849,14 @@ class ContentScriptContextChild extends BaseContext {
 
     Schemas.exportLazyGetter(this.sandbox, "browser", () => this.chromeObj);
     Schemas.exportLazyGetter(this.sandbox, "chrome", () => this.chromeObj);
+
+    // A set of exported API methods provided by the extension to the userScripts sandboxes.
+    this.userScriptAPIs = null;
+
+    // Keep track if the userScript API script has been already executed in this context
+    // (e.g. because there are more then one UserScripts that match the related webpage
+    // and so the UserScript apiScript has already been executed).
+    this.hasUserScriptAPIs = false;
   }
 
   injectAPI() {
@@ -628,6 +873,23 @@ class ContentScriptContextChild extends BaseContext {
 
   get cloneScope() {
     return this.sandbox;
+  }
+
+  setUserScriptAPIs(extCustomAPIs) {
+    if (this.userScriptAPIs) {
+      throw new ExtensionError("userScripts APIs may only be set once");
+    }
+
+    this.userScriptAPIs = extCustomAPIs;
+  }
+
+  async executeAPIScript(apiScript) {
+    // Execute the UserScript apiScript only once per context (e.g. more then one UserScripts
+    // match the same webpage and the apiScript has already been executed).
+    if (apiScript && !this.hasUserScriptAPIs) {
+      this.hasUserScriptAPIs = true;
+      apiScript.executeInGlobal(this.cloneScope);
+    }
   }
 
   addScript(script) {
@@ -653,6 +915,7 @@ class ContentScriptContextChild extends BaseContext {
       }
     }
     Cu.nukeSandbox(this.sandbox);
+
     this.sandbox = null;
   }
 }
@@ -782,7 +1045,8 @@ DocumentManager = {
 
 var ExtensionContent = {
   BrowserExtensionContent,
-  Script,
+
+  contentScripts,
 
   shutdownExtension(extension) {
     DocumentManager.shutdownExtension(extension);
@@ -880,14 +1144,14 @@ var ExtensionContent = {
     }
 
     if (!promises.length) {
-      if (options.frame_id) {
+      if (options.frameID) {
         return Promise.reject({message: `Frame not found, or missing host permission`});
       }
 
-      let frames = options.all_frames ? ", and any iframes" : "";
+      let frames = options.allFrames ? ", and any iframes" : "";
       return Promise.reject({message: `Missing host permission for the tab${frames}`});
     }
-    if (!options.all_frames && promises.length > 1) {
+    if (!options.allFrames && promises.length > 1) {
       return Promise.reject({message: `Internal error: Script matched multiple windows`});
     }
 
@@ -898,8 +1162,8 @@ var ExtensionContent = {
       // we try to send it back over the message manager.
       Cu.cloneInto(result, target);
     } catch (e) {
-      const {js} = options;
-      const fileName = js.length ? js[js.length - 1] : "<anonymous code>";
+      const {jsPaths} = options;
+      const fileName = jsPaths.length ? jsPaths[jsPaths.length - 1] : "<anonymous code>";
       const message = `Script '${fileName}' result is non-structured-clonable data`;
       return Promise.reject({message, fileName});
     }
@@ -915,13 +1179,46 @@ var ExtensionContent = {
     return WebNavigationFrames.getAllFrames(global.docShell);
   },
 
+  async receiveMessage(global, name, target, data, recipient) {
+    switch (name) {
+      case "Extension:Capture":
+        return this.handleExtensionCapture(global, data.width, data.height, data.options);
+      case "Extension:DetectLanguage":
+        return this.handleDetectLanguage(global, target);
+      case "Extension:Execute":
+        let policy = WebExtensionPolicy.getByID(recipient.extensionId);
+
+        let matcher = new WebExtensionContentScript(policy, data.options);
+
+        Object.assign(matcher, {
+          wantReturnValue: data.options.wantReturnValue,
+          removeCSS: data.options.removeCSS,
+          cssOrigin: data.options.cssOrigin,
+          jsCode: data.options.jsCode,
+        });
+
+        let script = contentScripts.get(matcher);
+
+        // Add the cssCode to the script, so that it can be converted into a cached URL.
+        await script.addCSSCode(data.options.cssCode);
+        delete data.options.cssCode;
+
+        return this.handleExtensionExecute(global, target, data.options, script);
+      case "WebNavigation:GetFrame":
+        return this.handleWebNavigationGetFrame(global, data.options);
+      case "WebNavigation:GetAllFrames":
+        return this.handleWebNavigationGetAllFrames(global);
+    }
+    return null;
+  },
+
   // Helpers
 
   * enumerateWindows(docShell) {
     let enum_ = docShell.getDocShellEnumerator(docShell.typeContent,
                                                docShell.ENUMERATE_FORWARDS);
 
-    for (let docShell of XPCOMUtils.IterSimpleEnumerator(enum_, Ci.nsIDocShell)) {
+    for (let docShell of enum_) {
       try {
         yield docShell.domWindow;
       } catch (e) {

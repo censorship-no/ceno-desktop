@@ -173,7 +173,7 @@ impl<'ctx> MonotoneFramework for CannotDeriveDefault<'ctx> {
 
         if item.is_opaque(self.ctx, &()) {
             let layout_can_derive = ty.layout(self.ctx).map_or(true, |l| {
-                l.opaque().can_trivially_derive_default()
+                l.opaque().can_trivially_derive_default(self.ctx)
             });
             return if layout_can_derive &&
                       !(ty.is_union() &&
@@ -204,6 +204,7 @@ impl<'ctx> MonotoneFramework for CannotDeriveDefault<'ctx> {
             TypeKind::Function(..) |
             TypeKind::Int(..) |
             TypeKind::Float(..) |
+            TypeKind::Vector(..) |
             TypeKind::Complex(..) => {
                 trace!("    simple type that can always derive Default");
                 ConstrainResult::Same
@@ -214,7 +215,6 @@ impl<'ctx> MonotoneFramework for CannotDeriveDefault<'ctx> {
             TypeKind::Reference(..) |
             TypeKind::NullPtr |
             TypeKind::Pointer(..) |
-            TypeKind::BlockPointer |
             TypeKind::ObjCId |
             TypeKind::ObjCSel |
             TypeKind::ObjCInterface(..) |
@@ -243,7 +243,8 @@ impl<'ctx> MonotoneFramework for CannotDeriveDefault<'ctx> {
 
             TypeKind::ResolvedTypeRef(t) |
             TypeKind::TemplateAlias(t, _) |
-            TypeKind::Alias(t) => {
+            TypeKind::Alias(t) |
+            TypeKind::BlockPointer(t) => {
                 if self.is_not_default(t) {
                     trace!(
                         "    aliases and type refs to T which cannot derive \
@@ -277,7 +278,7 @@ impl<'ctx> MonotoneFramework for CannotDeriveDefault<'ctx> {
                     }
 
                     if ty.layout(self.ctx).map_or(true, |l| {
-                        l.opaque().can_trivially_derive_default()
+                        l.opaque().can_trivially_derive_default(self.ctx)
                     })
                     {
                         trace!("    union layout can trivially derive Default");

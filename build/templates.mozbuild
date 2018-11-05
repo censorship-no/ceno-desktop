@@ -58,7 +58,11 @@ def AllowCompilerWarnings():
     COMPILE_FLAGS['WARNINGS_AS_ERRORS'] = []
 
 @template
-def RustLibrary(name, features=None, target_dir=None):
+def DisableCompilerWarnings():
+    COMPILE_FLAGS['WARNINGS_CFLAGS'] = []
+
+@template
+def RustLibrary(name, features=None, output_category=None):
     '''Template for Rust libraries.'''
     Library(name)
 
@@ -66,27 +70,35 @@ def RustLibrary(name, features=None, target_dir=None):
     # Some Rust build scripts compile C/C++ sources, don't error on warnings for them.
     AllowCompilerWarnings()
 
+    # And furthermore, don't even show warnings for them, so they don't regress
+    # the Compiler Warnings build metric
+    # <https://developer.mozilla.org/en-US/docs/Mozilla/Performance/Automated_Performance_Testing_and_Sheriffing/Build_Metrics#compiler_warnings>.
+    DisableCompilerWarnings()
+
     if features:
         RUST_LIBRARY_FEATURES = features
 
-    if target_dir:
-        RUST_LIBRARY_TARGET_DIR = target_dir
+    if output_category:
+        RUST_LIBRARY_OUTPUT_CATEGORY = output_category
 
 
 @template
-def SharedLibrary(name):
+def SharedLibrary(name, output_category=None):
     '''Template for shared libraries.'''
     Library(name)
 
     FORCE_SHARED_LIB = True
 
+    if output_category:
+        SHARED_LIBRARY_OUTPUT_CATEGORY = output_category
+
     Binary()
 
 
 @template
-def Framework(name):
+def Framework(name, output_category=None):
     '''Template for OSX Frameworks.'''
-    SharedLibrary(name)
+    SharedLibrary(name, output_category)
 
     IS_FRAMEWORK = True
 

@@ -32,12 +32,8 @@ const gCertificateDialogs = {
     // We don't test anything that calls this method yet.
     ok(false, "getPKCS12FilePassword() should not have been called");
   },
-  viewCert: (ctx, cert) => {
-    // This shouldn't be called for import methods.
-    ok(false, "viewCert() should not have been called");
-  },
 
-  QueryInterface: ChromeUtils.generateQI([Ci.nsICertificateDialogs])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsICertificateDialogs]),
 };
 
 // Implements nsIInterfaceRequestor. Mostly serves to mock nsIPrompt.
@@ -53,7 +49,7 @@ const gInterfaceRequestor = {
     }
 
     throw new Error(Cr.NS_ERROR_NO_INTERFACE);
-  }
+  },
 };
 
 function getCertAsByteArray(certPath) {
@@ -69,9 +65,7 @@ function getCertAsByteArray(certPath) {
 }
 
 function commonFindCertBy(propertyName, value) {
-  let certEnumerator = gCertDB.getCerts().getEnumerator();
-  while (certEnumerator.hasMoreElements()) {
-    let cert = certEnumerator.getNext().QueryInterface(Ci.nsIX509Cert);
+  for (let cert of gCertDB.getCerts().getEnumerator()) {
     if (cert[propertyName] == value) {
       return cert;
     }

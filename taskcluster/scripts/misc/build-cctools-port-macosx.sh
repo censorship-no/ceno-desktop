@@ -1,4 +1,9 @@
 #!/bin/bash
+
+# cctools sometimes needs to be rebuilt when clang is modified.
+# Until bug 1471905 is addressed, increase the following number
+# when a forced rebuild of cctools is necessary: 1
+
 set -x -e -v
 
 # This script is for building cctools (Apple's binutils) for Mac OS X on
@@ -26,8 +31,9 @@ mkdir -p $CROSSTOOLS_BUILD_DIR
 git clone --no-checkout $CROSSTOOL_PORT_REPOSITORY $CROSSTOOLS_SOURCE_DIR
 cd $CROSSTOOLS_SOURCE_DIR
 git checkout $CROSSTOOL_PORT_REV
-# Cherry pick a fix for LTO.
+# Cherry pick two fixes for LTO.
 git cherry-pick -n 82381f5038a340025ae145745ae5b325cd1b749a
+git cherry-pick -n 328c7371008a854af30823adcd4ec1e763054a1d
 echo "Building from commit hash `git rev-parse $CROSSTOOL_PORT_REV`..."
 
 # Fetch clang from tooltool

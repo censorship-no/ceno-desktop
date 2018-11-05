@@ -5,6 +5,9 @@
 Services.scriptloader.loadSubScript(new URL("head_webNavigation.js", gTestPath).href,
                                     this);
 
+SpecialPowers.pushPrefEnv({"set": [["security.allow_eval_with_system_principal",
+                                    true]]});
+
 async function clickContextMenuItem({pageElementSelector, contextMenuItemLabel}) {
   const contentAreaContextMenu = await openContextMenu(pageElementSelector);
   const item = contentAreaContextMenu.getElementsByAttribute("label", contextMenuItemLabel);
@@ -114,7 +117,7 @@ add_task(async function test_on_created_navigation_target_from_context_menu_subf
     extension,
     async openNavTarget() {
       await clickContextMenuItem({
-        pageElementSelector: function() {
+        pageElementSelector: () => {
           // This code runs as a framescript in the child process and it returns the
           // target link in the subframe.
           return this.content.frames[0]
@@ -136,7 +139,7 @@ add_task(async function test_on_created_navigation_target_from_context_menu_subf
     extension,
     async openNavTarget() {
       await clickContextMenuItem({
-        pageElementSelector: function() {
+        pageElementSelector: () => {
           // This code runs as a framescript in the child process and it returns the
           // target link in the subframe.
           return this.content.frames[0]

@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Imej gagal dimuatkan. Cuba URL lain.",
   "pocket_read_more": "Topik Popular:",
   "pocket_read_even_more": "Papar Kisah Selanjutnya",
+  "pocket_more_reccommendations": "Saranan Lain",
+  "pocket_how_it_works": "Cara pelaksanaan",
+  "pocket_cta_button": "Dapatkan Pocket",
+  "pocket_cta_text": "Simpan cerita yang anda suka dalam Pocket dan jana minda dengan bahan bacaan yang menarik.",
   "highlights_empty_state": "Mulakan melayar dan kami akan paparkan beberapa artikel, video dan halaman menarik lain yang sudah anda layari dan tandabuku di sini.",
   "topstories_empty_state": "Anda sudah di sini. Tapi sila datang lagi untuk mendapatkan lebih banyak berita hangat daripada {provider}. Tidak boleh tunggu? Pilih topik untuk mendapatkannya dari serata dunia.",
   "manual_migration_explanation2": "Cuba Firefox dengan tandabuku, sejarah dan kata laluan yang disimpan dalam pelayar lain.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Urus Seksyen",
   "section_menu_action_manage_webext": "Urus Ekstensi",
   "section_menu_action_add_topsite": "Tambah Laman Teratas",
+  "section_menu_action_add_search_engine": "Tambah Enjin Carian",
   "section_menu_action_move_up": "Pindah Atas",
   "section_menu_action_move_down": "Pindah Bawah",
   "section_menu_action_privacy_notice": "Notis Privasi",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Terma Perkhidmatan",
   "firstrun_privacy_notice": "Notis Privasi",
   "firstrun_continue_to_login": "Teruskan",
-  "firstrun_skip_login": "Langkau langkah ini"
+  "firstrun_skip_login": "Langkau langkah ini",
+  "context_menu_title": "Buka menu",
+  "pocket_learn_more": "Ketahui Selanjutnya"
 };

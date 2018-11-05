@@ -3,19 +3,160 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{BorderRadius, DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePixelScale};
-use api::{DevicePoint, DeviceRect, DeviceSize, LayoutPixel, LayoutPoint, LayoutRect, LayoutSize};
-use api::{WorldPixel, WorldRect};
-use euclid::{Point2D, Rect, Size2D, TypedPoint2D, TypedRect, TypedSize2D};
-use euclid::{TypedTransform2D, TypedTransform3D, TypedVector2D};
-use euclid::{HomogeneousVector};
+use api::{LayoutPixel, DeviceRect, WorldPixel, RasterRect};
+use euclid::{Point2D, Rect, Size2D, TypedPoint2D, TypedRect, TypedSize2D, Vector2D};
+use euclid::{TypedTransform2D, TypedTransform3D, TypedVector2D, TypedScale};
 use num_traits::Zero;
 use plane_split::{Clipper, Polygon};
-use std::{i32, f32};
+use std::{i32, f32, fmt};
 use std::borrow::Cow;
-
 
 // Matches the definition of SK_ScalarNearlyZero in Skia.
 const NEARLY_ZERO: f32 = 1.0 / 4096.0;
+
+// Represents an optimized transform where there is only
+// a scale and translation (which are guaranteed to maintain
+// an axis align rectangle under transformation). The
+// scaling is applied first, followed by the translation.
+// TODO(gw): We should try and incorporate F <-> T units here,
+//           but it's a bit tricky to do that now with the
+//           way the current clip-scroll tree works.
+#[derive(Debug, Clone, Copy)]
+pub struct ScaleOffset {
+    pub scale: Vector2D<f32>,
+    pub offset: Vector2D<f32>,
+}
+
+impl ScaleOffset {
+    pub fn identity() -> Self {
+        ScaleOffset {
+            scale: Vector2D::new(1.0, 1.0),
+            offset: Vector2D::zero(),
+        }
+    }
+
+    // Construct a ScaleOffset from a transform. Returns
+    // None if the matrix is not a pure scale / translation.
+    pub fn from_transform<F, T>(
+        m: &TypedTransform3D<f32, F, T>,
+    ) -> Option<ScaleOffset> {
+
+        // To check that we have a pure scale / translation:
+        // Every field must match an identity matrix, except:
+        //  - Any value present in tx,ty
+        //  - Any non-neg value present in sx,sy (avoid negative for reflection/rotation)
+
+        if m.m11 < 0.0 ||
+           m.m12.abs() > NEARLY_ZERO ||
+           m.m13.abs() > NEARLY_ZERO ||
+           m.m14.abs() > NEARLY_ZERO ||
+           m.m21.abs() > NEARLY_ZERO ||
+           m.m22 < 0.0 ||
+           m.m23.abs() > NEARLY_ZERO ||
+           m.m24.abs() > NEARLY_ZERO ||
+           m.m31.abs() > NEARLY_ZERO ||
+           m.m32.abs() > NEARLY_ZERO ||
+           (m.m33 - 1.0).abs() > NEARLY_ZERO ||
+           m.m34.abs() > NEARLY_ZERO ||
+           m.m43.abs() > NEARLY_ZERO ||
+           (m.m44 - 1.0).abs() > NEARLY_ZERO {
+            return None;
+        }
+
+        Some(ScaleOffset {
+            scale: Vector2D::new(m.m11, m.m22),
+            offset: Vector2D::new(m.m41, m.m42),
+        })
+    }
+
+    pub fn inverse(&self) -> Self {
+        ScaleOffset {
+            scale: Vector2D::new(
+                1.0 / self.scale.x,
+                1.0 / self.scale.y,
+            ),
+            offset: Vector2D::new(
+                -self.offset.x / self.scale.x,
+                -self.offset.y / self.scale.y,
+            ),
+        }
+    }
+
+    pub fn offset(&self, offset: Vector2D<f32>) -> Self {
+        self.accumulate(
+            &ScaleOffset {
+                scale: Vector2D::new(1.0, 1.0),
+                offset,
+            }
+        )
+    }
+
+    // Produce a ScaleOffset that includes both self
+    // and other. The 'self' ScaleOffset is applied
+    // after other.
+    pub fn accumulate(&self, other: &ScaleOffset) -> Self {
+        ScaleOffset {
+            scale: Vector2D::new(
+                self.scale.x * other.scale.x,
+                self.scale.y * other.scale.y,
+            ),
+            offset: Vector2D::new(
+                self.offset.x + self.scale.x * other.offset.x,
+                self.offset.y + self.scale.y * other.offset.y,
+            ),
+        }
+    }
+
+    pub fn map_rect<F, T>(&self, rect: &TypedRect<f32, F>) -> TypedRect<f32, T> {
+        TypedRect::new(
+            TypedPoint2D::new(
+                rect.origin.x * self.scale.x + self.offset.x,
+                rect.origin.y * self.scale.y + self.offset.y,
+            ),
+            TypedSize2D::new(
+                rect.size.width * self.scale.x,
+                rect.size.height * self.scale.y,
+            )
+        )
+    }
+
+    pub fn unmap_rect<F, T>(&self, rect: &TypedRect<f32, F>) -> TypedRect<f32, T> {
+        TypedRect::new(
+            TypedPoint2D::new(
+                (rect.origin.x - self.offset.x) / self.scale.x,
+                (rect.origin.y - self.offset.y) / self.scale.y,
+            ),
+            TypedSize2D::new(
+                rect.size.width / self.scale.x,
+                rect.size.height / self.scale.y,
+            )
+        )
+    }
+
+    pub fn to_transform<F, T>(&self) -> TypedTransform3D<f32, F, T> {
+        TypedTransform3D::row_major(
+            self.scale.x,
+            0.0,
+            0.0,
+            0.0,
+
+            0.0,
+            self.scale.y,
+            0.0,
+            0.0,
+
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+
+            self.offset.x,
+            self.offset.y,
+            0.0,
+            1.0,
+        )
+    }
+}
 
 // TODO: Implement these in euclid!
 pub trait MatrixHelpers<Src, Dst> {
@@ -24,7 +165,7 @@ pub trait MatrixHelpers<Src, Dst> {
     fn has_2d_inverse(&self) -> bool;
     fn exceeds_2d_scale(&self, limit: f64) -> bool;
     fn inverse_project(&self, target: &TypedPoint2D<f32, Dst>) -> Option<TypedPoint2D<f32, Src>>;
-    fn inverse_rect_footprint(&self, rect: &TypedRect<f32, Dst>) -> TypedRect<f32, Src>;
+    fn inverse_rect_footprint(&self, rect: &TypedRect<f32, Dst>) -> Option<TypedRect<f32, Src>>;
     fn transform_kind(&self) -> TransformedRectKind;
     fn is_simple_translation(&self) -> bool;
     fn is_simple_2d_translation(&self) -> bool;
@@ -64,7 +205,10 @@ impl<Src, Dst> MatrixHelpers<Src, Dst> for TypedTransform3D<f32, Src, Dst> {
     }
 
     fn has_perspective_component(&self) -> bool {
-         self.m14 != 0.0 || self.m24 != 0.0 || self.m34 != 0.0 || self.m44 != 1.0
+         self.m14.abs() > NEARLY_ZERO ||
+         self.m24.abs() > NEARLY_ZERO ||
+         self.m34.abs() > NEARLY_ZERO ||
+         (self.m44 - 1.0).abs() > NEARLY_ZERO
     }
 
     fn has_2d_inverse(&self) -> bool {
@@ -92,13 +236,13 @@ impl<Src, Dst> MatrixHelpers<Src, Dst> for TypedTransform3D<f32, Src, Dst> {
         m.inverse().map(|inv| TypedPoint2D::new(inv.m31, inv.m32))
     }
 
-    fn inverse_rect_footprint(&self, rect: &TypedRect<f32, Dst>) -> TypedRect<f32, Src> {
-        TypedRect::from_points(&[
-            self.inverse_project(&rect.origin).unwrap_or(TypedPoint2D::zero()),
-            self.inverse_project(&rect.top_right()).unwrap_or(TypedPoint2D::zero()),
-            self.inverse_project(&rect.bottom_left()).unwrap_or(TypedPoint2D::zero()),
-            self.inverse_project(&rect.bottom_right()).unwrap_or(TypedPoint2D::zero()),
-        ])
+    fn inverse_rect_footprint(&self, rect: &TypedRect<f32, Dst>) -> Option<TypedRect<f32, Src>> {
+        Some(TypedRect::from_points(&[
+            self.inverse_project(&rect.origin)?,
+            self.inverse_project(&rect.top_right())?,
+            self.inverse_project(&rect.bottom_left())?,
+            self.inverse_project(&rect.bottom_right())?,
+        ]))
     }
 
     fn transform_kind(&self) -> TransformedRectKind {
@@ -169,79 +313,6 @@ pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
     (b - a) * t + a
 }
 
-pub fn calculate_screen_bounding_rect(
-    transform: &LayoutToWorldFastTransform,
-    rect: &LayoutRect,
-    device_pixel_scale: DevicePixelScale,
-    screen_bounds: Option<&DeviceIntRect>,
-) -> Option<DeviceIntRect> {
-    debug!("calculate_screen_bounding_rect for {:?}", rect);
-    let homogens = [
-        transform.transform_point2d_homogeneous(&rect.origin),
-        transform.transform_point2d_homogeneous(&rect.top_right()),
-        transform.transform_point2d_homogeneous(&rect.bottom_left()),
-        transform.transform_point2d_homogeneous(&rect.bottom_right()),
-    ];
-    let max_rect = match screen_bounds {
-        Some(bounds) => bounds.to_f32(),
-        None => DeviceRect::max_rect(),
-    };
-
-    // Note: we only do the full frustum collision when the polygon approaches the camera plane.
-    // Otherwise, it will be clamped to the screen bounds anyway.
-    let world_rect = if homogens.iter().any(|h| h.w <= 0.0) {
-        debug!("transform {:?}", transform);
-        debug!("screen_bounds: {:?}", screen_bounds);
-        debug!("homogeneous points {:?}", homogens);
-
-        let mut clipper = Clipper::new();
-        clipper.add_frustum(
-            &transform.to_transform(),
-            screen_bounds.map(|b| b.to_f32() / device_pixel_scale),
-        );
-
-        let polygon = Polygon::from_rect(*rect, 1);
-        debug!("crossing detected for poly {:?}", polygon);
-        let results = clipper.clip(polygon);
-        debug!("clip results: {:?}", results);
-        if results.is_empty() {
-            return None
-        }
-
-        debug!("points:");
-        WorldRect::from_points(results
-            .into_iter()
-            // filter out parts behind the view plane
-            .flat_map(|poly| &poly.points)
-            .map(|p| {
-                let mut homo = transform.transform_point2d_homogeneous(&p.to_2d());
-                homo.w = homo.w.max(0.00000001); // avoid infinite values
-                debug!("\tpoint {:?} -> {:?} -> {:?}", p, homo, homo.to_point2d());
-                homo.to_point2d().unwrap()
-            })
-        )
-    } else {
-        // we just checked for all the points to be in positive hemisphere, so `unwrap` is valid
-        WorldRect::from_points(&[
-            homogens[0].to_point2d().unwrap(),
-            homogens[1].to_point2d().unwrap(),
-            homogens[2].to_point2d().unwrap(),
-            homogens[3].to_point2d().unwrap(),
-        ])
-    };
-
-    let result = (world_rect * device_pixel_scale)
-         .round_out()
-         .intersection(&max_rect)
-         .map(|r| r.to_i32());
-    if homogens.iter().any(|h| h.w <= 0.0) {
-        debug!("world rect {:?}", world_rect);
-        debug!("result {:?}", result);
-    }
-    result
-}
-
-
 #[repr(u32)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -293,24 +364,9 @@ pub fn extract_inner_rect_safe<U>(
     extract_inner_rect_impl(rect, radii, 1.0)
 }
 
-/// Consumes the old vector and returns a new one that may reuse the old vector's allocated
-/// memory.
-pub fn recycle_vec<T>(mut old_vec: Vec<T>) -> Vec<T> {
-    if old_vec.capacity() > 2 * old_vec.len() {
-        // Avoid reusing the buffer if it is a lot larger than it needs to be. This prevents
-        // a frame with exceptionally large allocations to cause subsequent frames to retain
-        // more memory than they need.
-        return Vec::with_capacity(old_vec.len());
-    }
-
-    old_vec.clear();
-
-    old_vec
-}
-
-
 #[cfg(test)]
 pub mod test {
+    use api::{LayoutTransform, LayoutVector3D};
     use super::*;
     use euclid::{Point2D, Angle, Transform3D};
     use std::f32::consts::PI;
@@ -325,19 +381,80 @@ pub mod test {
         // rotation by 60 degrees would imply scaling of X component by a factor of 2
         assert_eq!(m1.inverse_project(&p0), Some(Point2D::new(2.0, 2.0)));
     }
+
+    fn validate_convert(xref: &LayoutTransform) {
+        let so = ScaleOffset::from_transform(xref).unwrap();
+        let xf = so.to_transform();
+        assert!(xref.approx_eq(&xf));
+    }
+
+    #[test]
+    fn scale_offset_convert() {
+        let xref = LayoutTransform::create_translation(130.0, 200.0, 0.0);
+        validate_convert(&xref);
+
+        let xref = LayoutTransform::create_scale(13.0, 8.0, 1.0);
+        validate_convert(&xref);
+
+        let xref = LayoutTransform::create_scale(0.5, 0.5, 1.0)
+                        .pre_translate(LayoutVector3D::new(124.0, 38.0, 0.0));
+        validate_convert(&xref);
+
+        let xref = LayoutTransform::create_translation(50.0, 240.0, 0.0)
+                        .pre_mul(&LayoutTransform::create_scale(30.0, 11.0, 1.0));
+        validate_convert(&xref);
+    }
+
+    fn validate_inverse(xref: &LayoutTransform) {
+        let s0 = ScaleOffset::from_transform(xref).unwrap();
+        let s1 = s0.inverse().accumulate(&s0);
+        assert!((s1.scale.x - 1.0).abs() < NEARLY_ZERO &&
+                (s1.scale.y - 1.0).abs() < NEARLY_ZERO &&
+                s1.offset.x.abs() < NEARLY_ZERO &&
+                s1.offset.y.abs() < NEARLY_ZERO,
+                "{:?}",
+                s1);
+    }
+
+    #[test]
+    fn scale_offset_inverse() {
+        let xref = LayoutTransform::create_translation(130.0, 200.0, 0.0);
+        validate_inverse(&xref);
+
+        let xref = LayoutTransform::create_scale(13.0, 8.0, 1.0);
+        validate_inverse(&xref);
+
+        let xref = LayoutTransform::create_scale(0.5, 0.5, 1.0)
+                        .pre_translate(LayoutVector3D::new(124.0, 38.0, 0.0));
+        validate_inverse(&xref);
+
+        let xref = LayoutTransform::create_translation(50.0, 240.0, 0.0)
+                        .pre_mul(&LayoutTransform::create_scale(30.0, 11.0, 1.0));
+        validate_inverse(&xref);
+    }
+
+    fn validate_accumulate(x0: &LayoutTransform, x1: &LayoutTransform) {
+        let x = x0.pre_mul(x1);
+
+        let s0 = ScaleOffset::from_transform(x0).unwrap();
+        let s1 = ScaleOffset::from_transform(x1).unwrap();
+
+        let s = s0.accumulate(&s1).to_transform();
+
+        assert!(x.approx_eq(&s), "{:?}\n{:?}", x, s);
+    }
+
+    #[test]
+    fn scale_offset_accumulate() {
+        let x0 = LayoutTransform::create_translation(130.0, 200.0, 0.0);
+        let x1 = LayoutTransform::create_scale(7.0, 3.0, 1.0);
+
+        validate_accumulate(&x0, &x1);
+    }
 }
 
 pub trait MaxRect {
     fn max_rect() -> Self;
-}
-
-impl MaxRect for LayoutRect {
-    fn max_rect() -> Self {
-        LayoutRect::new(
-            LayoutPoint::new(f32::MIN / 2.0, f32::MIN / 2.0),
-            LayoutSize::new(f32::MAX, f32::MAX),
-        )
-    }
 }
 
 impl MaxRect for DeviceIntRect {
@@ -349,7 +466,7 @@ impl MaxRect for DeviceIntRect {
     }
 }
 
-impl MaxRect for DeviceRect {
+impl<U> MaxRect for TypedRect<f32, U> {
     fn max_rect() -> Self {
         // Having an unlimited bounding box is fine up until we try
         // to cast it to `i32`, where we get `-2147483648` for any
@@ -359,9 +476,9 @@ impl MaxRect for DeviceRect {
         // with explanation left as an exercise for the reader.
         const MAX_COORD: f32 = 1.0e9;
 
-        DeviceRect::new(
-            DevicePoint::new(-MAX_COORD, -MAX_COORD),
-            DeviceSize::new(2.0 * MAX_COORD, 2.0 * MAX_COORD),
+        TypedRect::new(
+            TypedPoint2D::new(-MAX_COORD, -MAX_COORD),
+            TypedSize2D::new(2.0 * MAX_COORD, 2.0 * MAX_COORD),
         )
     }
 }
@@ -452,18 +569,13 @@ impl<Src, Dst> FastTransform<Src, Dst> {
     }
 
     #[inline(always)]
-    pub fn has_perspective_component(&self) -> bool {
-        match *self {
-            FastTransform::Offset(..) => false,
-            FastTransform::Transform { ref transform, .. } => transform.has_perspective_component(),
-        }
-    }
-
-    #[inline(always)]
     pub fn is_backface_visible(&self) -> bool {
         match *self {
             FastTransform::Offset(..) => false,
-            FastTransform::Transform { ref transform, .. } => transform.is_backface_visible(),
+            FastTransform::Transform { inverse: None, .. } => false,
+            //TODO: fix this properly by taking "det|M33| * det|M34| > 0"
+            // see https://www.w3.org/Bugs/Public/show_bug.cgi?id=23014
+            FastTransform::Transform { inverse: Some(ref inverse), .. } => inverse.m33 < 0.0,
         }
     }
 
@@ -478,26 +590,6 @@ impl<Src, Dst> FastTransform<Src, Dst> {
         }
     }
 
-    #[inline(always)]
-    pub fn transform_point2d_homogeneous(&self, point: &TypedPoint2D<f32, Src>) -> HomogeneousVector<f32, Dst> {
-        match *self {
-            FastTransform::Offset(offset) => {
-                let new_point = *point + offset;
-                HomogeneousVector::new(new_point.x, new_point.y, 0.0, 1.0)
-            }
-            FastTransform::Transform { ref transform, .. } => transform.transform_point2d_homogeneous(point),
-        }
-    }
-
-    #[inline(always)]
-    pub fn transform_rect(&self, rect: &TypedRect<f32, Src>) -> Option<TypedRect<f32, Dst>> {
-        match *self {
-            FastTransform::Offset(offset) =>
-                Some(TypedRect::from_untyped(&rect.to_untyped().translate(&offset.to_untyped()))),
-            FastTransform::Transform { ref transform, .. } => transform.transform_rect(rect),
-        }
-    }
-
     pub fn unapply(&self, rect: &TypedRect<f32, Dst>) -> Option<TypedRect<f32, Src>> {
         match *self {
             FastTransform::Offset(offset) =>
@@ -505,7 +597,7 @@ impl<Src, Dst> FastTransform<Src, Dst> {
             FastTransform::Transform { inverse: Some(ref inverse), is_2d: true, .. }  =>
                 inverse.transform_rect(rect),
             FastTransform::Transform { ref transform, is_2d: false, .. } =>
-                Some(transform.inverse_rect_footprint(rect)),
+                transform.inverse_rect_footprint(rect),
             FastTransform::Transform { inverse: None, .. }  => None,
         }
     }
@@ -554,4 +646,130 @@ impl<Src, Dst> From<TypedVector2D<f32, Src>> for FastTransform<Src, Dst> {
 
 pub type LayoutFastTransform = FastTransform<LayoutPixel, LayoutPixel>;
 pub type LayoutToWorldFastTransform = FastTransform<LayoutPixel, WorldPixel>;
-pub type WorldToLayoutFastTransform = FastTransform<WorldPixel, LayoutPixel>;
+
+pub fn project_rect<F, T>(
+    transform: &TypedTransform3D<f32, F, T>,
+    rect: &TypedRect<f32, F>,
+    bounds: &TypedRect<f32, T>,
+) -> Option<TypedRect<f32, T>>
+ where F: fmt::Debug
+{
+    let homogens = [
+        transform.transform_point2d_homogeneous(&rect.origin),
+        transform.transform_point2d_homogeneous(&rect.top_right()),
+        transform.transform_point2d_homogeneous(&rect.bottom_left()),
+        transform.transform_point2d_homogeneous(&rect.bottom_right()),
+    ];
+
+    // Note: we only do the full frustum collision when the polygon approaches the camera plane.
+    // Otherwise, it will be clamped to the screen bounds anyway.
+    if homogens.iter().any(|h| h.w <= 0.0) {
+        let mut clipper = Clipper::new();
+        let polygon = Polygon::from_rect(*rect, 1);
+
+        let planes = match Clipper::frustum_planes(
+            transform,
+            Some(*bounds),
+        ) {
+            Ok(planes) => planes,
+            Err(..) => return None,
+        };
+
+        for plane in planes {
+            clipper.add(plane);
+        }
+
+        let results = clipper.clip(polygon);
+        if results.is_empty() {
+            return None
+        }
+
+        Some(TypedRect::from_points(results
+            .into_iter()
+            // filter out parts behind the view plane
+            .flat_map(|poly| &poly.points)
+            .map(|p| {
+                let mut homo = transform.transform_point2d_homogeneous(&p.to_2d());
+                homo.w = homo.w.max(0.00000001); // avoid infinite values
+                homo.to_point2d().unwrap()
+            })
+        ))
+    } else {
+        // we just checked for all the points to be in positive hemisphere, so `unwrap` is valid
+        Some(TypedRect::from_points(&[
+            homogens[0].to_point2d().unwrap(),
+            homogens[1].to_point2d().unwrap(),
+            homogens[2].to_point2d().unwrap(),
+            homogens[3].to_point2d().unwrap(),
+        ]))
+    }
+}
+
+pub fn raster_rect_to_device_pixels(
+    rect: RasterRect,
+    device_pixel_scale: DevicePixelScale,
+) -> DeviceRect {
+    let world_rect = rect * TypedScale::new(1.0);
+    let device_rect = world_rect * device_pixel_scale;
+    device_rect.round_out()
+}
+
+/// Run the first callback over all elements in the array. If the callback returns true,
+/// the element is removed from the array and moved to a second callback.
+///
+/// This is a simple implementation waiting for Vec::drain_filter to be stable.
+/// When that happens, code like:
+///
+/// let filter = |op| {
+///     match *op {
+///         Enum::Foo | Enum::Bar => true,
+///         Enum::Baz => false,
+///     }
+/// };
+/// drain_filter(
+///     &mut ops,
+///     filter,
+///     |op| {
+///         match op {
+///             Enum::Foo => { foo(); }
+///             Enum::Bar => { bar(); }
+///             Enum::Baz => { unreachable!(); }
+///         }
+///     },
+/// );
+///
+/// Can be rewritten as:
+///
+/// let filter = |op| {
+///     match *op {
+///         Enum::Foo | Enum::Bar => true,
+///         Enum::Baz => false,
+///     }
+/// };
+/// for op in ops.drain_filter(filter) {
+///     match op {
+///         Enum::Foo => { foo(); }
+///         Enum::Bar => { bar(); }
+///         Enum::Baz => { unreachable!(); }
+///     }
+/// }
+///
+/// See https://doc.rust-lang.org/std/vec/struct.Vec.html#method.drain_filter
+pub fn drain_filter<T, Filter, Action>(
+    vec: &mut Vec<T>,
+    mut filter: Filter,
+    mut action: Action,
+)
+where
+    Filter: FnMut(&mut T) -> bool,
+    Action: FnMut(T)
+{
+    let mut i = 0;
+    while i != vec.len() {
+        if filter(&mut vec[i]) {
+            action(vec.remove(i));
+        } else {
+            i += 1;
+        }
+    }
+}

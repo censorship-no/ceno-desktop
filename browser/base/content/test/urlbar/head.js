@@ -2,16 +2,14 @@
 
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-ChromeUtils.defineModuleGetter(this, "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "Preferences",
-  "resource://gre/modules/Preferences.jsm");
-ChromeUtils.defineModuleGetter(this, "HttpServer",
-  "resource://testing-common/httpd.js");
-ChromeUtils.defineModuleGetter(this, "SearchTestUtils",
-  "resource://testing-common/SearchTestUtils.jsm");
+XPCOMUtils.defineLazyModuleGetters(this, {
+  HttpServer: "resource://testing-common/httpd.js",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
+  Preferences: "resource://gre/modules/Preferences.jsm",
+  SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
+  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
+});
 
 SearchTestUtils.init(Assert, registerCleanupFunction);
 
@@ -62,7 +60,7 @@ function waitForDocLoadAndStopIt(aExpectedURL, aBrowser = gBrowser.selectedBrows
           stopContent(contentStopFromProgressListener, chan.originalURI.spec);
         }
       },
-      QueryInterface: ChromeUtils.generateQI(["nsISupportsWeakReference"])
+      QueryInterface: ChromeUtils.generateQI(["nsISupportsWeakReference"]),
     };
     wp.addProgressListener(progressListener, wp.NOTIFY_STATE_WINDOW);
 
@@ -278,7 +276,7 @@ function promisePageActionViewShown() {
 }
 
 function promisePageActionViewChildrenVisible(panelViewNode) {
-  return promiseNodeVisible(panelViewNode.firstChild.firstChild);
+  return promiseNodeVisible(panelViewNode.firstElementChild.firstElementChild);
 }
 
 function promiseNodeVisible(node) {
@@ -307,7 +305,7 @@ async function waitForAutocompleteResultAt(index) {
   let searchString = gURLBar.controller.searchString;
   await BrowserTestUtils.waitForCondition(
     () => gURLBar.popup.richlistbox.children.length > index &&
-          gURLBar.popup.richlistbox.children[index].getAttribute("ac-text") == searchString,
+          gURLBar.popup.richlistbox.children[index].getAttribute("ac-text") == searchString.trim(),
     `Waiting for the autocomplete result for "${searchString}" at [${index}] to appear`);
   // Ensure the addition is complete, for proper mouse events on the entries.
   await new Promise(resolve => window.requestIdleCallback(resolve, {timeout: 1000}));

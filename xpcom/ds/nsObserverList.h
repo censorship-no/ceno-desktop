@@ -14,7 +14,7 @@
 #include "nsIObserver.h"
 #include "nsIWeakReference.h"
 #include "nsHashKeys.h"
-#include "nsISimpleEnumerator.h"
+#include "nsSimpleEnumerator.h"
 #include "mozilla/Attributes.h"
 
 struct ObserverRef
@@ -51,6 +51,12 @@ public:
     MOZ_COUNT_CTOR(nsObserverList);
   }
 
+  nsObserverList(nsObserverList&& aOther)
+    : nsCharPtrHashKey(std::move(aOther))
+    , mObservers(std::move(aOther.mObservers))
+  {
+  }
+
   ~nsObserverList()
   {
     MOZ_COUNT_DTOR(nsObserverList);
@@ -75,16 +81,17 @@ private:
   nsTArray<ObserverRef> mObservers;
 };
 
-class nsObserverEnumerator final : public nsISimpleEnumerator
+class nsObserverEnumerator final : public nsSimpleEnumerator
 {
 public:
-  NS_DECL_ISUPPORTS
   NS_DECL_NSISIMPLEENUMERATOR
 
   explicit nsObserverEnumerator(nsObserverList* aObserverList);
 
+  const nsID& DefaultInterface() override { return NS_GET_IID(nsIObserver); }
+
 private:
-  ~nsObserverEnumerator() {}
+  ~nsObserverEnumerator() override = default;
 
   int32_t mIndex; // Counts up from 0
   nsCOMArray<nsIObserver> mObservers;

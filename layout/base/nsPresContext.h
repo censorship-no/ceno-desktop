@@ -658,29 +658,27 @@ public:
    */
   gfxSize ScreenSizeInchesForFontInflation(bool* aChanged = nullptr);
 
-  static int32_t AppUnitsPerCSSPixel() { return mozilla::AppUnitsPerCSSPixel(); }
   int32_t AppUnitsPerDevPixel() const;
-  static int32_t AppUnitsPerCSSInch() { return mozilla::AppUnitsPerCSSInch(); }
 
   static nscoord CSSPixelsToAppUnits(int32_t aPixels)
   { return NSToCoordRoundWithClamp(float(aPixels) *
-             float(AppUnitsPerCSSPixel())); }
+             float(mozilla::AppUnitsPerCSSPixel())); }
 
   static nscoord CSSPixelsToAppUnits(float aPixels)
   { return NSToCoordRoundWithClamp(aPixels *
-             float(AppUnitsPerCSSPixel())); }
+             float(mozilla::AppUnitsPerCSSPixel())); }
 
   static int32_t AppUnitsToIntCSSPixels(nscoord aAppUnits)
   { return NSAppUnitsToIntPixels(aAppUnits,
-             float(AppUnitsPerCSSPixel())); }
+             float(mozilla::AppUnitsPerCSSPixel())); }
 
   static float AppUnitsToFloatCSSPixels(nscoord aAppUnits)
   { return NSAppUnitsToFloatPixels(aAppUnits,
-             float(AppUnitsPerCSSPixel())); }
+             float(mozilla::AppUnitsPerCSSPixel())); }
 
   static double AppUnitsToDoubleCSSPixels(nscoord aAppUnits)
   { return NSAppUnitsToDoublePixels(aAppUnits,
-             double(AppUnitsPerCSSPixel())); }
+             double(mozilla::AppUnitsPerCSSPixel())); }
 
   nscoord DevPixelsToAppUnits(int32_t aPixels) const
   { return NSIntPixelsToAppUnits(aPixels, AppUnitsPerDevPixel()); }
@@ -710,7 +708,7 @@ public:
   mozilla::CSSToLayoutDeviceScale CSSToDevPixelScale() const
   {
     return mozilla::CSSToLayoutDeviceScale(
-        float(AppUnitsPerCSSPixel()) / float(AppUnitsPerDevPixel()));
+        float(mozilla::AppUnitsPerCSSPixel()) / float(AppUnitsPerDevPixel()));
   }
 
   // If there is a remainder, it is rounded to nearest app units.
@@ -1019,6 +1017,7 @@ public:
   void NotifyInvalidation(TransactionId aTransactionId, const nsIntRect& aRect);
   void NotifyDidPaintForSubtree(TransactionId aTransactionId = TransactionId{0},
                                 const mozilla::TimeStamp& aTimeStamp = mozilla::TimeStamp());
+  void NotifyRevokingDidPaint(TransactionId aTransactionId);
   void FireDOMPaintEvent(nsTArray<nsRect>* aList,
                          TransactionId aTransactionId,
                          mozilla::TimeStamp aTimeStamp = mozilla::TimeStamp());
@@ -1217,6 +1216,8 @@ protected:
   void UpdateCharSet(NotNull<const Encoding*> aCharSet);
 
   static bool NotifyDidPaintSubdocumentCallback(nsIDocument* aDocument, void* aData);
+  static bool NotifyRevokingDidPaintSubdocumentCallback(nsIDocument* aDocument, void* aData);
+
 
 public:
   // Used by the PresShell to force a reflow when some aspect of font info
@@ -1256,6 +1257,7 @@ protected:
   struct TransactionInvalidations {
     TransactionId mTransactionId;
     nsTArray<nsRect> mInvalidations;
+    bool mIsWaitingForPreviousTransaction = false;
   };
   TransactionInvalidations* GetInvalidations(TransactionId aTransactionId);
 
@@ -1503,23 +1505,6 @@ public:
   virtual void Detach() override;
 
   /**
-   * Ensure that NotifyDidPaintForSubtree is eventually called on this
-   * object after a timeout.
-   */
-  void EnsureEventualDidPaintEvent(TransactionId aTransactionId);
-
-  /**
-   * Cancels any pending eventual did paint timer for transaction
-   * ids up to and including aTransactionId.
-   */
-  void CancelDidPaintTimers(TransactionId aTransactionId);
-
-  /**
-   * Cancel all pending eventual did paint timers.
-   */
-  void CancelAllDidPaintTimers();
-
-  /**
    * Registers a plugin to receive geometry updates (position and clip
    * region) so it can update its widget.
    * Callers must call UnregisterPluginForGeometryUpdates before
@@ -1609,12 +1594,6 @@ protected:
   };
 
   friend class nsPresContext;
-
-  struct NotifyDidPaintTimer {
-    TransactionId mTransactionId;
-    nsCOMPtr<nsITimer> mTimer;
-  };
-  AutoTArray<NotifyDidPaintTimer, 4> mNotifyDidPaintTimers;
 
   nsCOMPtr<nsITimer> mApplyPluginGeometryTimer;
   nsTHashtable<nsRefPtrHashKey<nsIContent> > mRegisteredPlugins;

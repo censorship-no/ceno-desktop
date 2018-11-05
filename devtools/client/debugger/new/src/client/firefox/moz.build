@@ -7,9 +7,8 @@ DIRS += [
 
 ]
 
-DevToolsModules(
+DebuggerModules(
     'commands.js',
     'create.js',
     'events.js',
-    'fronts-device.js',
 )

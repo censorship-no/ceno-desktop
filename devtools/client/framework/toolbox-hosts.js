@@ -11,7 +11,6 @@ const promise = require("promise");
 const Services = require("Services");
 const {DOMHelpers} = require("resource://devtools/client/shared/DOMHelpers.jsm");
 
-loader.lazyRequireGetter(this, "AppConstants", "resource://gre/modules/AppConstants.jsm", true);
 loader.lazyRequireGetter(this, "gDevToolsBrowser", "devtools/client/framework/devtools-browser", true);
 
 /* A host should always allow this much space for the page to be displayed.
@@ -53,12 +52,12 @@ BottomHost.prototype = {
     const ownerDocument = gBrowser.ownerDocument;
     this._nbox = gBrowser.getNotificationBox(this.hostTab.linkedBrowser);
 
-    this._splitter = ownerDocument.createElement("splitter");
+    this._splitter = ownerDocument.createXULElement("splitter");
     this._splitter.setAttribute("class", "devtools-horizontal-splitter");
     // Avoid resizing notification containers
     this._splitter.setAttribute("resizebefore", "flex");
 
-    this.frame = ownerDocument.createElement("iframe");
+    this.frame = ownerDocument.createXULElement("iframe");
     this.frame.flex = 1; // Required to be able to shrink when the window shrinks
     this.frame.className = "devtools-toolbox-bottom-iframe";
     this.frame.height = Math.min(
@@ -116,7 +115,7 @@ BottomHost.prototype = {
     }
 
     return promise.resolve(null);
-  }
+  },
 };
 
 /**
@@ -141,10 +140,10 @@ class SidebarHost {
     this._browser = gBrowser.getBrowserContainer(this.hostTab.linkedBrowser);
     this._sidebar = gBrowser.getSidebarContainer(this.hostTab.linkedBrowser);
 
-    this._splitter = ownerDocument.createElement("splitter");
+    this._splitter = ownerDocument.createXULElement("splitter");
     this._splitter.setAttribute("class", "devtools-side-splitter");
 
-    this.frame = ownerDocument.createElement("iframe");
+    this.frame = ownerDocument.createXULElement("iframe");
     this.frame.flex = 1; // Required to be able to shrink when the window shrinks
     this.frame.className = "devtools-toolbox-side-iframe";
 
@@ -153,7 +152,13 @@ class SidebarHost {
       this._sidebar.clientWidth - MIN_PAGE_SIZE
     );
 
-    if (this.type == "right") {
+    // We should consider the direction when changing the dock position.
+    const topWindow = this.hostTab.ownerDocument.defaultView.top;
+    const topDoc = topWindow.document.documentElement;
+    const isLTR = topWindow.getComputedStyle(topDoc).direction === "ltr";
+
+    if (isLTR && this.type == "right" ||
+        !isLTR && this.type == "left") {
       this._sidebar.appendChild(this._splitter);
       this._sidebar.appendChild(this.frame);
     } else {
@@ -251,14 +256,6 @@ WindowHost.prototype = {
         win.removeEventListener("load", frameLoad, true);
         win.focus();
 
-        let key;
-        if (AppConstants.platform === "macosx") {
-          key = win.document.getElementById("toolbox-key-toggle-osx");
-        } else {
-          key = win.document.getElementById("toolbox-key-toggle");
-        }
-        key.removeAttribute("disabled");
-
         this.frame = win.document.getElementById("toolbox-iframe");
         this.emit("ready", this.frame);
         resolve(this.frame);
@@ -309,7 +306,7 @@ WindowHost.prototype = {
     }
 
     return promise.resolve(null);
-  }
+  },
 };
 
 /**
@@ -369,7 +366,7 @@ CustomHost.prototype = {
       this._sendMessageToTopWindow("close");
     }
     return promise.resolve(null);
-  }
+  },
 };
 
 /**
@@ -386,6 +383,6 @@ exports.Hosts = {
   "left": LeftHost,
   "right": RightHost,
   "window": WindowHost,
-  "custom": CustomHost
+  "custom": CustomHost,
 };
 

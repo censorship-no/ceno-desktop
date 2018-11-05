@@ -139,11 +139,7 @@ PuppetWidget::InfallibleCreate(nsIWidget* aParent,
   else {
     Resize(mBounds.X(), mBounds.Y(), mBounds.Width(), mBounds.Height(), false);
   }
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (obs) {
-    mMemoryPressureObserver = new MemoryPressureObserver(this);
-    obs->AddObserver(mMemoryPressureObserver, "memory-pressure", false);
-  }
+  mMemoryPressureObserver = MemoryPressureObserver::Create(this);
 }
 
 nsresult
@@ -193,9 +189,9 @@ PuppetWidget::Destroy()
   Base::Destroy();
   mPaintTask.Revoke();
   if (mMemoryPressureObserver) {
-    mMemoryPressureObserver->Remove();
+    mMemoryPressureObserver->Unregister();
+    mMemoryPressureObserver = nullptr;
   }
-  mMemoryPressureObserver = nullptr;
   mChild = nullptr;
   if (mLayerManager) {
     mLayerManager->Destroy();
@@ -429,6 +425,15 @@ PuppetWidget::DispatchInputEvent(WidgetInputEvent* aEvent)
     return nsEventStatus_eIgnore;
   }
 
+  if (nsCOMPtr<nsIPresShell> presShell = mTabChild->GetPresShell()) {
+    // Because the root resolution is conceptually at the parent/child process
+    // boundary, we need to apply that resolution here because we're sending
+    // the event from the child to the parent process.
+    LayoutDevicePoint pt(aEvent->mRefPoint);
+    pt = pt * presShell->GetResolution();
+    aEvent->mRefPoint = LayoutDeviceIntPoint::Round(pt);
+  }
+
   switch (aEvent->mClass) {
     case eWheelEventClass:
       Unused <<
@@ -575,7 +580,7 @@ PuppetWidget::SetConfirmedTargetAPZC(
 
 void
 PuppetWidget::UpdateZoomConstraints(const uint32_t& aPresShellId,
-                                    const FrameMetrics::ViewID& aViewId,
+                                    const ScrollableLayerGuid::ViewID& aViewId,
                                     const Maybe<ZoomConstraints>& aConstraints)
 {
   if (mTabChild) {
@@ -722,15 +727,35 @@ PuppetWidget::RequestIMEToCommitComposition(bool aCancel)
 }
 
 nsresult
-PuppetWidget::StartPluginIME(const mozilla::WidgetKeyboardEvent& aKeyboardEvent,
+PuppetWidget::StartPluginIME(const WidgetKeyboardEvent& aKeyboardEvent,
                              int32_t aPanelX, int32_t aPanelY,
                              nsString& aCommitted)
 {
+  DebugOnly<bool> propagationAlreadyStopped =
+    aKeyboardEvent.mFlags.mPropagationStopped;
+  DebugOnly<bool> immediatePropagationAlreadyStopped =
+    aKeyboardEvent.mFlags.mImmediatePropagationStopped;
   if (!mTabChild ||
       !mTabChild->SendStartPluginIME(aKeyboardEvent, aPanelX,
                                      aPanelY, &aCommitted)) {
     return NS_ERROR_FAILURE;
   }
+  // TabChild::SendStartPluginIME() sends back the keyboard event to the main
+  // process synchronously.  At this time, ParamTraits<WidgetEvent>::Write()
+  // marks the event as "posted to remote process".  However, this is not
+  // correct here since the event has been handled synchronously in the main
+  // process.  So, we adjust the cross process dispatching state here.
+  const_cast<WidgetKeyboardEvent&>(aKeyboardEvent).
+    ResetCrossProcessDispatchingState();
+  // Although it shouldn't occur in content process,
+  // ResetCrossProcessDispatchingState() may reset propagation state too
+  // if the event was posted to a remote process and we're waiting its
+  // result.  So, if you saw hitting the following assertions, you'd
+  // need to restore the propagation state too.
+  MOZ_ASSERT(propagationAlreadyStopped ==
+               aKeyboardEvent.mFlags.mPropagationStopped);
+  MOZ_ASSERT(immediatePropagationAlreadyStopped ==
+               aKeyboardEvent.mFlags.mImmediatePropagationStopped);
   return NS_OK;
 }
 
@@ -1137,36 +1162,15 @@ PuppetWidget::PaintNowIfNeeded()
   }
 }
 
-NS_IMPL_ISUPPORTS(PuppetWidget::MemoryPressureObserver, nsIObserver)
-
-NS_IMETHODIMP
-PuppetWidget::MemoryPressureObserver::Observe(nsISupports* aSubject,
-                                              const char* aTopic,
-                                              const char16_t* aData)
-{
-  if (!mWidget) {
-    return NS_OK;
-  }
-
-  if (strcmp("memory-pressure", aTopic) == 0 &&
-      !StringBeginsWith(nsDependentString(aData),
-                        NS_LITERAL_STRING("low-memory-ongoing"))) {
-    if (!mWidget->mVisible && mWidget->mLayerManager &&
-        XRE_IsContentProcess()) {
-      mWidget->mLayerManager->ClearCachedResources();
-    }
-  }
-  return NS_OK;
-}
-
 void
-PuppetWidget::MemoryPressureObserver::Remove()
+PuppetWidget::OnMemoryPressure(layers::MemoryPressureReason aWhy)
 {
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (obs) {
-    obs->RemoveObserver(this, "memory-pressure");
+  if (aWhy != MemoryPressureReason::LOW_MEMORY_ONGOING &&
+      !mVisible &&
+      mLayerManager &&
+      XRE_IsContentProcess()) {
+    mLayerManager->ClearCachedResources();
   }
-  mWidget = nullptr;
 }
 
 bool
@@ -1422,7 +1426,7 @@ PuppetWidget::EnableIMEForPlugin(bool aEnable)
 
 void
 PuppetWidget::ZoomToRect(const uint32_t& aPresShellId,
-                         const FrameMetrics::ViewID& aViewId,
+                         const ScrollableLayerGuid::ViewID& aViewId,
                          const CSSRect& aRect,
                          const uint32_t& aFlags)
 {
@@ -1570,6 +1574,49 @@ PuppetWidget::WillDispatchKeyboardEvent(
                 void* aData)
 {
   MOZ_ASSERT(aTextEventDispatcher == mTextEventDispatcher);
+}
+
+nsresult
+PuppetWidget::SetSystemFont(const nsCString& aFontName)
+{
+  if (!mTabChild) {
+    return NS_ERROR_FAILURE;
+  }
+
+  mTabChild->SendSetSystemFont(aFontName);
+  return NS_OK;
+}
+
+nsresult
+PuppetWidget::GetSystemFont(nsCString& aFontName)
+{
+  if (!mTabChild) {
+    return NS_ERROR_FAILURE;
+  }
+  mTabChild->SendGetSystemFont(&aFontName);
+  return NS_OK;
+}
+
+nsresult
+PuppetWidget::SetPrefersReducedMotionOverrideForTest(bool aValue)
+{
+  if (!mTabChild) {
+    return NS_ERROR_FAILURE;
+  }
+
+  mTabChild->SendSetPrefersReducedMotionOverrideForTest(aValue);
+  return NS_OK;
+}
+
+nsresult
+PuppetWidget::ResetPrefersReducedMotionOverrideForTest()
+{
+  if (!mTabChild) {
+    return NS_ERROR_FAILURE;
+  }
+
+  mTabChild->SendResetPrefersReducedMotionOverrideForTest();
+  return NS_OK;
 }
 
 } // namespace widget

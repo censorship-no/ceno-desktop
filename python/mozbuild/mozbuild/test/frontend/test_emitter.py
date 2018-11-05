@@ -190,7 +190,9 @@ class TestEmitterBasic(unittest.TestCase):
             'RCFILE': 'foo.rc',
             'RESFILE': 'bar.res',
             'RCINCLUDE': 'bar.rc',
-            'DEFFILE': 'baz.def',
+            'EXTRA_DEPS': [mozpath.join(mozpath.relpath(reader.config.topsrcdir,
+                                                        reader.config.topobjdir),
+                                        'baz.def')],
             'WIN32_EXE_LDFLAGS': ['-subsystem:console'],
         }
 
@@ -267,6 +269,7 @@ class TestEmitterBasic(unittest.TestCase):
             'OS_ARCH': 'WINNT',
             'GNU_CC': '',
             'MOZ_OPTIMIZE': '1',
+            'MOZ_DEBUG_LDFLAGS': ['-DEBUG'],
             'MOZ_DEBUG_SYMBOLS': '1',
             'MOZ_OPTIMIZE_FLAGS': [],
             'MOZ_OPTIMIZE_LDFLAGS': [],
@@ -281,10 +284,10 @@ class TestEmitterBasic(unittest.TestCase):
             'OS_ARCH': 'WINNT',
             'GNU_CC': '',
             'MOZ_DMD': '1',
+            'MOZ_DEBUG_LDFLAGS': ['-DEBUG'],
             'MOZ_DEBUG_SYMBOLS': '1',
             'MOZ_OPTIMIZE': '1',
             'MOZ_OPTIMIZE_FLAGS': [],
-            'OS_LDFLAGS': ['-Wl,-U_foo'],
         })
         sources, ldflags, lib, compile_flags = self.read_topsrcdir(reader)
         self.assertIsInstance(ldflags, ComputedFlags)
@@ -422,6 +425,13 @@ class TestEmitterBasic(unittest.TestCase):
         sources, ldflags, lib, flags = self.read_topsrcdir(reader)
         self.assertEqual(flags.flags['WARNINGS_AS_ERRORS'], [])
 
+    def test_disable_compiler_warnings(self):
+        reader = self.reader('disable-compiler-warnings', extra_substs={
+            'WARNINGS_CFLAGS': '-Wall',
+        })
+        sources, ldflags, lib, flags = self.read_topsrcdir(reader)
+        self.assertEqual(flags.flags['WARNINGS_CFLAGS'], [])
+
     def test_use_yasm(self):
         # When yasm is not available, this should raise.
         reader = self.reader('use-yasm')
@@ -449,7 +459,8 @@ class TestEmitterBasic(unittest.TestCase):
         self.maxDiff = None
         self.assertEqual(passthru.variables,
                          {'AS': 'yasm',
-                          'AS_DASH_C_FLAG': ''})
+                          'AS_DASH_C_FLAG': '',
+                          'ASOUTOPTION': '-o '})
         self.maxDiff = maxDiff
 
     def test_generated_files(self):
@@ -847,7 +858,7 @@ class TestEmitterBasic(unittest.TestCase):
         objs = [o for o in self.read_topsrcdir(reader)
                 if isinstance(o, TestManifest)]
 
-        self.assertEqual(len(objs), 9)
+        self.assertEqual(len(objs), 8)
 
         metadata = {
             'a11y.ini': {
@@ -865,13 +876,6 @@ class TestEmitterBasic(unittest.TestCase):
                     'test_browser.js': True,
                     'support1': False,
                     'support2': False,
-                },
-            },
-            'metro.ini': {
-                'flavor': 'metro-chrome',
-                'installs': {
-                    'metro.ini': False,
-                    'test_metro.js': True,
                 },
             },
             'mochitest.ini': {

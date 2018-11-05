@@ -32,6 +32,9 @@ PromptFactory.prototype = {
       case "contextmenu":
         this._handleContextMenu(aEvent);
         break;
+      case "DOMPopupBlocked":
+        this._handlePopupBlocked(aEvent);
+        break;
     }
   },
 
@@ -273,6 +276,21 @@ PromptFactory.prototype = {
     aEvent.preventDefault();
   },
 
+  _handlePopupBlocked: function(aEvent) {
+    const dwi = aEvent.requestingWindow;
+    const popupWindowURISpec = aEvent.popupWindowURI ? aEvent.popupWindowURI.spec : "about:blank";
+
+    let prompt = new PromptDelegate(aEvent.requestingWindow);
+    prompt.asyncShowPrompt({
+      type: "popup",
+      targetUri: popupWindowURISpec,
+    }, allowed => {
+      if (allowed && dwi) {
+        dwi.open(popupWindowURISpec, aEvent.popupWindowName, aEvent.popupWindowFeatures);
+      }
+    });
+  },
+
   /* ----------  nsIPromptFactory  ---------- */
   getPrompt: function(aDOMWin, aIID) {
     // Delegated to login manager here, which in turn calls back into us via nsIPromptService.
@@ -333,7 +351,7 @@ PromptFactory.prototype = {
   },
   asyncPromptAuth: function() {
     return this.callProxy("asyncPromptAuth", arguments);
-  }
+  },
 };
 
 function PromptDelegate(aDomWin) {
@@ -697,7 +715,7 @@ PromptDelegate.prototype = {
         }
         responded = true;
         aCallback.onAuthCancelled(aContext, /* userCancel */ false);
-      }
+      },
     };
   },
 
@@ -865,28 +883,17 @@ FilePickerDelegate.prototype = {
     return Services.io.newFileURI(this.file);
   },
 
-  _getEnumerator(aDOMFile) {
+  * _getEnumerator(aDOMFile) {
     if (!this._files) {
       throw Cr.NS_ERROR_NOT_AVAILABLE;
     }
-    return {
-      QueryInterface: ChromeUtils.generateQI([Ci.nsISimpleEnumerator]),
-      _owner: this,
-      _index: 0,
-      hasMoreElements: function() {
-        return this._index < this._owner._files.length;
-      },
-      getNext: function() {
-        let files = this._owner._files;
-        if (this._index >= files.length) {
-          throw Cr.NS_ERROR_FAILURE;
-        }
-        if (aDOMFile) {
-          return this._owner._getDOMFile(files[this._index++]);
-        }
-        return new FileUtils.File(files[this._index++]);
+
+    for (let file of this._files) {
+      if (aDOMFile) {
+        yield this._getDOMFile(file);
       }
-    };
+      yield new FileUtils.File(file);
+    }
   },
 
   get files() {

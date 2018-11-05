@@ -153,9 +153,7 @@ var UITour = {
     ["searchIcon", {
       query: (aDocument) => {
         let searchbar = aDocument.getElementById("searchbar");
-        return aDocument.getAnonymousElementByAttribute(searchbar,
-                                                        "anonid",
-                                                        "searchbar-search-button");
+        return searchbar.querySelector(".searchbar-search-button");
       },
       widgetName: "search-container",
     }],
@@ -199,7 +197,7 @@ var UITour = {
       widgetName: "urlbar-container",
     }],
     ["pageActionButton", {
-      query: "#pageActionButton"
+      query: "#pageActionButton",
     }],
     ["pageAction-bookmark", {
       query: (aDocument) => {
@@ -238,9 +236,9 @@ var UITour = {
       query: (aDocument) => {
         aDocument.ownerGlobal.BrowserPageActions.placeLazyActionsInPanel();
         return aDocument.getElementById("pageAction-urlbar-screenshots") ||
-               aDocument.getElementById("pageAction-panel-screenshots");
+               aDocument.getElementById("pageAction-panel-screenshots_mozilla_org");
       },
-    }]
+    }],
   ]),
 
   init() {
@@ -468,7 +466,9 @@ var UITour = {
           }
 
           // We want to replace the current tab.
-          browser.loadURI(url.href);
+          browser.loadURI(url.href, {
+            triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+          });
         });
         break;
       }
@@ -483,7 +483,9 @@ var UITour = {
           }
 
           // We want to replace the current tab.
-          browser.loadURI(url.href);
+          browser.loadURI(url.href, {
+            triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+          });
         });
         break;
       }
@@ -652,9 +654,7 @@ var UITour = {
       // The browser message manager is disconnected when the <browser> is
       // destroyed and we want to teardown at that point.
       case "message-manager-close": {
-        let winEnum = Services.wm.getEnumerator("navigator:browser");
-        while (winEnum.hasMoreElements()) {
-          let window = winEnum.getNext();
+        for (let window of Services.wm.getEnumerator("navigator:browser")) {
           if (window.closed)
             continue;
 
@@ -744,8 +744,8 @@ var UITour = {
         events: [
           [ "popuphidden", this.onPanelHidden ],
           [ "popuphiding", this.onAppMenuHiding ],
-          [ "ViewShowing", this.onAppMenuSubviewShowing ]
-        ]
+          [ "ViewShowing", this.onAppMenuSubviewShowing ],
+        ],
       },
       {
         name: "pageActionPanel",
@@ -753,16 +753,16 @@ var UITour = {
         events: [
           [ "popuphidden", this.onPanelHidden ],
           [ "popuphiding", this.onPageActionPanelHiding ],
-          [ "ViewShowing", this.onPageActionPanelSubviewShowing ]
-        ]
+          [ "ViewShowing", this.onPageActionPanelSubviewShowing ],
+        ],
       },
       {
         name: "controlCenter",
         node: aWindow.gIdentityHandler._identityPopup,
         events: [
           [ "popuphidden", this.onPanelHidden ],
-          [ "popuphiding", this.onControlCenterHiding ]
-        ]
+          [ "popuphiding", this.onControlCenterHiding ],
+        ],
       },
     ];
     for (let panel of panels) {
@@ -1142,7 +1142,7 @@ var UITour = {
 
       for (let button of aButtons) {
         let isButton = button.style != "text";
-        let el = document.createElement(isButton ? "button" : "label");
+        let el = document.createXULElement(isButton ? "button" : "label");
         el.setAttribute(isButton ? "label" : "value", button.label);
 
         if (isButton) {
@@ -1248,19 +1248,19 @@ var UITour = {
   showMenu(aWindow, aMenuName, aOpenCallback = null) {
     log.debug("showMenu:", aMenuName);
     function openMenuButton(aMenuBtn) {
-      if (!aMenuBtn || !aMenuBtn.boxObject || aMenuBtn.open) {
+      if (!aMenuBtn || !aMenuBtn.hasMenu() || aMenuBtn.open) {
         if (aOpenCallback)
           aOpenCallback();
         return;
       }
       if (aOpenCallback)
         aMenuBtn.addEventListener("popupshown", aOpenCallback, { once: true });
-      aMenuBtn.boxObject.openMenu(true);
+      aMenuBtn.openMenu(true);
     }
 
     if (aMenuName == "appMenu" || aMenuName == "pageActionPanel") {
       let menu = {
-        onPanelHidden: this.onPanelHidden
+        onPanelHidden: this.onPanelHidden,
       };
       if (aMenuName == "appMenu") {
         menu.node = aWindow.PanelUI.panel;
@@ -1344,8 +1344,9 @@ var UITour = {
   hideMenu(aWindow, aMenuName) {
     log.debug("hideMenu:", aMenuName);
     function closeMenuButton(aMenuBtn) {
-      if (aMenuBtn && aMenuBtn.boxObject)
-        aMenuBtn.boxObject.openMenu(false);
+      if (aMenuBtn && aMenuBtn.hasMenu()) {
+        aMenuBtn.openMenu(false);
+      }
     }
 
     if (aMenuName == "appMenu") {
@@ -1364,8 +1365,12 @@ var UITour = {
   },
 
   showNewTab(aWindow, aBrowser) {
-    aWindow.openLinkIn("about:newtab", "current", {targetBrowser: aBrowser});
     aWindow.gURLBar.focus();
+    let url = "about:newtab";
+    aWindow.openLinkIn(url, "current", {
+      targetBrowser: aBrowser,
+      triggeringPrincipal: Services.scriptSecurityManager.createCodebasePrincipal(Services.io.newURI(url), {}),
+    });
   },
 
   _hideAnnotationsForPanel(aEvent, aShouldClosePanel, aTargetPositionCallback) {
@@ -1461,7 +1466,7 @@ var UITour = {
             data = {
               searchEngineIdentifier: Services.search.defaultEngine.identifier,
               engines: engines.filter((engine) => engine.identifier)
-                              .map((engine) => TARGET_SEARCHENGINE_PREFIX + engine.identifier)
+                              .map((engine) => TARGET_SEARCHENGINE_PREFIX + engine.identifier),
             };
           } else {
             data = {engines: [], searchEngineIdentifier: ""};
@@ -1545,7 +1550,7 @@ var UITour = {
 
       // Expose Profile creation and last reset dates in weeks.
       const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
-      let profileAge = new ProfileAge(null, null);
+      let profileAge = await ProfileAge();
       let createdDate = await profileAge.created;
       let resetDate = await profileAge.reset;
       let createdWeeksAgo = Math.floor((Date.now() - createdDate) / ONE_WEEK);
@@ -1679,9 +1684,7 @@ var UITour = {
   },
 
   notify(eventName, params) {
-    let winEnum = Services.wm.getEnumerator("navigator:browser");
-    while (winEnum.hasMoreElements()) {
-      let window = winEnum.getNext();
+    for (let window of Services.wm.getEnumerator("navigator:browser")) {
       if (window.closed)
         continue;
 
@@ -1749,5 +1752,5 @@ const UITourHealthReport = {
         addClientId: true,
         addEnvironment: true,
       });
-  }
+  },
 };

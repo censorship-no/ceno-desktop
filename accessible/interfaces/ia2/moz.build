@@ -8,7 +8,7 @@ GeckoSharedLibrary('IA2Marshal', linkage=None)
 
 DEFINES['REGISTER_PROXY_DLL'] = True
 
-DEFFILE = SRCDIR + '/IA2Marshal.def'
+DEFFILE = 'IA2Marshal.def'
 
 OS_LIBS += [
     'uuid',
@@ -98,6 +98,3 @@ if CONFIG['CC_TYPE'] == 'clang-cl':
         '-Wno-missing-braces',
         '-Wno-unused-const-variable',
     ]
-
-if CONFIG['MOZ_PGO'] and CONFIG['CC_TYPE'] == 'clang-cl':
-    AllowCompilerWarnings()  # workaround for bug 1090497

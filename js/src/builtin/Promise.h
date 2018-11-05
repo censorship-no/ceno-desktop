@@ -15,19 +15,71 @@
 namespace js {
 
 enum PromiseSlots {
+    // Int32 value with PROMISE_FLAG_* flags below.
     PromiseSlot_Flags = 0,
+
+    // * if this promise is pending, reaction objects
+    //     * undefined if there's no reaction
+    //     * maybe-wrapped PromiseReactionRecord if there's only one reacion
+    //     * dense array if there are two or more more reactions
+    // * if this promise is fulfilled, the resolution value
+    // * if this promise is rejected, the reason for the rejection
     PromiseSlot_ReactionsOrResult,
+
+    // * if this promise is pending, resolve/reject functions.
+    //   This slot holds only the reject function. The resolve function is
+    //   reachable from the reject function's extended slot.
+    // * if this promise is either fulfilled or rejected, undefined
+    // * (special case) if this promise is the return value of an async function
+    //   invocation, the generator object for the function's internal generator
     PromiseSlot_RejectFunction,
     PromiseSlot_AwaitGenerator = PromiseSlot_RejectFunction,
+
+    // Promise object's debug info, which is created on demand.
+    // * if this promise has no debug info, undefined
+    // * if this promise contains only its process-unique ID, the ID's number
+    //   value
+    // * otherwise a PromiseDebugInfo object
     PromiseSlot_DebugInfo,
+
     PromiseSlots,
 };
 
+// This promise is either fulfilled or rejected.
+// If this flag is not set, this promise is pending.
 #define PROMISE_FLAG_RESOLVED  0x1
+
+// If this flag and PROMISE_FLAG_RESOLVED are set, this promise is fulfilled.
+// If only PROMISE_FLAG_RESOLVED is set, this promise is rejected.
 #define PROMISE_FLAG_FULFILLED 0x2
+
+// Indicates the promise has ever had a fulfillment or rejection handler;
+// used in unhandled rejection tracking.
 #define PROMISE_FLAG_HANDLED   0x4
+
+// This promise uses the default resolving functions.
+// The PromiseSlot_RejectFunction slot is not used.
 #define PROMISE_FLAG_DEFAULT_RESOLVING_FUNCTIONS 0x08
+
+// This promise is the return value of an async function invocation.
 #define PROMISE_FLAG_ASYNC    0x10
+
+// This promise knows how to propagate information required to keep track of
+// whether an activation behavior was in progress when the original promise in
+// the promise chain was created.  This is a concept defined in the HTML spec:
+// https://html.spec.whatwg.org/multipage/interaction.html#triggered-by-user-activation
+// It is used by the embedder in order to request SpiderMonkey to keep track of
+// this information in a Promise, and also to propagate it to newly created
+// promises while processing Promise#then.
+#define PROMISE_FLAG_REQUIRES_USER_INTERACTION_HANDLING 0x20
+
+// This flag indicates whether an activation behavior was in progress when the
+// original promise in the promise chain was created.  Activation behavior is a
+// concept defined by the HTML spec:
+// https://html.spec.whatwg.org/multipage/interaction.html#triggered-by-user-activation
+// This flag is only effective when the
+// PROMISE_FLAG_REQUIRES_USER_INTERACTION_HANDLING is set.
+#define PROMISE_FLAG_HAD_USER_INTERACTION_UPON_CREATION 0x40
 
 class AutoSetNewObjectMetadata;
 
@@ -54,8 +106,9 @@ class PromiseObject : public NativeObject
             MOZ_ASSERT(!(flags & PROMISE_FLAG_FULFILLED));
             return JS::PromiseState::Pending;
         }
-        if (flags & PROMISE_FLAG_FULFILLED)
+        if (flags & PROMISE_FLAG_FULFILLED) {
             return JS::PromiseState::Fulfilled;
+        }
         return JS::PromiseState::Rejected;
     }
     Value reactions() {
@@ -92,11 +145,28 @@ class PromiseObject : public NativeObject
         return resolutionTime() - allocationTime();
     }
     MOZ_MUST_USE bool dependentPromises(JSContext* cx, MutableHandle<GCVector<Value>> values);
+
+    // Return the process-unique ID of this promise. Only used by the debugger.
     uint64_t getID();
+
     bool isUnhandled() {
         MOZ_ASSERT(state() == JS::PromiseState::Rejected);
         return !(flags() & PROMISE_FLAG_HANDLED);
     }
+
+    bool requiresUserInteractionHandling() {
+        return (flags() & PROMISE_FLAG_REQUIRES_USER_INTERACTION_HANDLING);
+    }
+
+    void setRequiresUserInteractionHandling(bool state);
+
+    bool hadUserInteractionUponCreation() {
+        return (flags() & PROMISE_FLAG_HAD_USER_INTERACTION_UPON_CREATION);
+    }
+
+    void setHadUserInteractionUponCreation(bool state);
+
+    void copyUserInteractionFlagsFrom(PromiseObject& rhs);
 };
 
 /**
@@ -113,9 +183,18 @@ class PromiseObject : public NativeObject
 MOZ_MUST_USE JSObject*
 GetWaitForAllPromise(JSContext* cx, const JS::AutoObjectVector& promises);
 
+// Whether to create a promise as the return value of Promise#{then,catch}.
+// If the return value is known to be unused, and if the operation is known
+// to be unobservable, we can skip creating the promise.
 enum class CreateDependentPromise {
+    // The return value is not known to be unused.
     Always,
+
+    // The return value is known to be unused.
     SkipIfCtorUnobservable,
+
+    // The return value is known to be unused, and the operation is known
+    // to be unobservable.
     Never
 };
 
@@ -128,9 +207,11 @@ enum class CreateDependentPromise {
  * Note: In this case, the reactions pushed using this function contain a
  * `promise` field that can contain null. That field is only ever used by
  * devtools, which have to treat these reactions specially.
+ *
+ * Asserts that `promiseObj` is a, maybe wrapped, instance of Promise.
  */
 MOZ_MUST_USE bool
-OriginalPromiseThen(JSContext* cx, Handle<PromiseObject*> promise,
+OriginalPromiseThen(JSContext* cx, HandleObject promiseObj,
                     HandleValue onFulfilled, HandleValue onRejected,
                     MutableHandleObject dependent, CreateDependentPromise createDependent);
 
@@ -143,10 +224,20 @@ OriginalPromiseThen(JSContext* cx, Handle<PromiseObject*> promise,
 MOZ_MUST_USE JSObject*
 PromiseResolve(JSContext* cx, HandleObject constructor, HandleValue value);
 
+MOZ_MUST_USE bool
+RejectPromiseWithPendingError(JSContext* cx, Handle<PromiseObject*> promise);
 
+/**
+ * Create the promise object which will be used as the return value of an async
+ * function.
+ */
 MOZ_MUST_USE PromiseObject*
 CreatePromiseObjectForAsync(JSContext* cx, HandleValue generatorVal);
 
+/**
+ * Returns true if the given object is a promise created by
+ * CreatePromiseObjectForAsync function.
+ */
 MOZ_MUST_USE bool
 IsPromiseForAsync(JSObject* promise);
 
@@ -316,8 +407,9 @@ class MOZ_NON_TEMPORARY_CLASS PromiseLookup final
 
     // Purge the cache and all info associated with it.
     void purge() {
-        if (state_ == State::Initialized)
+        if (state_ == State::Initialized) {
             reset();
+        }
     }
 };
 

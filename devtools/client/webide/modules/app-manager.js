@@ -11,9 +11,8 @@ const {AppProjects} = require("devtools/client/webide/modules/app-projects");
 const TabStore = require("devtools/client/webide/modules/tab-store");
 const {AppValidator} = require("devtools/client/webide/modules/app-validator");
 const {ConnectionManager, Connection} = require("devtools/shared/client/connection-manager");
-const {getDeviceFront} = require("devtools/shared/fronts/device");
-const {getPreferenceFront} = require("devtools/shared/fronts/preference");
-const {RuntimeScanners, RuntimeTypes} = require("devtools/client/webide/modules/runtimes");
+const {RuntimeScanners} = require("devtools/client/webide/modules/runtimes");
+const {RuntimeTypes} = require("devtools/client/webide/modules/runtime-types");
 const {NetUtil} = require("resource://gre/modules/NetUtil.jsm");
 const Telemetry = require("devtools/client/shared/telemetry");
 
@@ -140,7 +139,7 @@ var AppManager = exports.AppManager = {
     }
   },
 
-  onConnectionChanged: function() {
+  onConnectionChanged: async function() {
     console.log("Connection status changed: " + this.connection.status);
 
     if (this.connection.status == Connection.Status.DISCONNECTED) {
@@ -149,12 +148,24 @@ var AppManager = exports.AppManager = {
 
     if (!this.connected) {
       this._listTabsResponse = null;
+      this.deviceFront = null;
+      this.preferenceFront = null;
+      this.perfFront = null;
     } else {
-      this.connection.client.listTabs().then((response) => {
-        this._listTabsResponse = response;
+      const response = await this.connection.client.listTabs();
+      this._listTabsResponse = response;
+      try {
+        this.deviceFront = await this.connection.client.mainRoot.getFront("device");
+        this.preferenceFront = await this.connection.client.mainRoot.getFront("preference");
+        this.perfFront = await this.connection.client.mainRoot.getFront("perf");
         this._recordRuntimeInfo();
-        this.update("runtime-global-actors");
-      });
+      } catch (e) {
+        // This may fail on <FF55 (because of lack of bug 1352157) but we will want to
+        // emit runtime-global-actors in order to call checkRuntimeVersion and display
+        // the compatibility popup.
+        console.error(e);
+      }
+      this.update("runtime-global-actors");
     }
 
     this.update("connection");
@@ -243,12 +254,12 @@ var AppManager = exports.AppManager = {
     if (this.selectedProject.type == "mainProcess") {
       // Fx >=39 exposes a ParentProcessTargetActor to debug the main process
       if (this.connection.client.mainRoot.traits.allowChromeProcess) {
-        return this.connection.client.getProcess()
+        return this.connection.client.mainRoot.getProcess(0)
                    .then(aResponse => {
                      return TargetFactory.forRemoteTab({
                        form: aResponse.form,
                        client: this.connection.client,
-                       chrome: true
+                       chrome: true,
                      });
                    });
       }
@@ -257,7 +268,6 @@ var AppManager = exports.AppManager = {
           form: this._listTabsResponse,
           client: this.connection.client,
           chrome: true,
-          isBrowsingContext: false
       });
     }
 
@@ -504,24 +514,6 @@ var AppManager = exports.AppManager = {
             this._listTabsResponse.consoleActor);
   },
 
-  get listTabsForm() {
-    return this._listTabsResponse;
-  },
-
-  get deviceFront() {
-    if (!this._listTabsResponse) {
-      return null;
-    }
-    return getDeviceFront(this.connection.client, this._listTabsResponse);
-  },
-
-  get preferenceFront() {
-    if (!this._listTabsResponse) {
-      return null;
-    }
-    return getPreferenceFront(this.connection.client, this._listTabsResponse);
-  },
-
   disconnectRuntime: function() {
     if (!this.connected) {
       return Promise.resolve();
@@ -610,7 +602,7 @@ var AppManager = exports.AppManager = {
         const appId = origin.host;
         const metadata = {
           origin: origin.spec,
-          manifestURL: project.location
+          manifestURL: project.location,
         };
         response = await self._appsFront.installHosted(appId,
                                             metadata,
@@ -658,7 +650,7 @@ var AppManager = exports.AppManager = {
       const validation = new AppValidator({
         type: project.type,
         // Build process may place the manifest in a non-root directory
-        location: packageDir
+        location: packageDir,
       });
 
       await validation.validate();
@@ -738,7 +730,7 @@ var AppManager = exports.AppManager = {
     this.runtimeList = {
       usb: [],
       wifi: [],
-      other: []
+      other: [],
     };
   },
 

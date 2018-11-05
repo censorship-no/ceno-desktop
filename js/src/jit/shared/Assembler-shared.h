@@ -104,6 +104,8 @@ struct Imm32
 
     explicit Imm32(int32_t value) : value(value)
     { }
+    explicit Imm32(FrameType type) : Imm32(int32_t(type))
+    { }
 
     static inline Imm32 ShiftOf(enum Scale s) {
         switch (s) {
@@ -885,10 +887,6 @@ class AssemblerShared
         return embedsNurseryPointers_;
     }
 
-    static bool canUseInSingleByteInstruction(Register reg) {
-        return true;
-    }
-
     void addCodeLabel(CodeLabel label) {
         propagateOOM(codeLabels_.append(label));
     }
@@ -917,7 +915,10 @@ class AssemblerShared
         enoughMemory_ &= callFarJumps_.append(jmp);
     }
     void append(const wasm::MemoryAccessDesc& access, uint32_t pcOffset) {
-        append(wasm::Trap::OutOfBounds, wasm::TrapSite(pcOffset, access.trapOffset()));
+        appendOutOfBoundsTrap(access.trapOffset(), pcOffset);
+    }
+    void appendOutOfBoundsTrap(wasm::BytecodeOffset trapOffset, uint32_t pcOffset) {
+        append(wasm::Trap::OutOfBounds, wasm::TrapSite(pcOffset, trapOffset));
     }
     void append(wasm::SymbolicAccess access) {
         enoughMemory_ &= symbolicAccesses_.append(access);

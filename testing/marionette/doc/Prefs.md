@@ -34,9 +34,16 @@ Sets the verbosity level of the Marionette logger repository.  Note
 that this preference does not control the verbosity of other loggers
 used in Firefox or Fennec.
 
-The available levels are, in descending order of severity, `trace`,
+The available levels are, in descending order of severity, `Trace`,
 `debug`, `config`, `info`, `warn`, `error`, and `fatal`.  The value
 is treated case-insensitively.
+
+
+`marionette.log.truncate`
+-------------------------
+
+Certain log messages that are known to be long, such as wire protocol
+dumps, are truncated.  This preference causes them not to be truncated.
 
 
 `marionette.port`

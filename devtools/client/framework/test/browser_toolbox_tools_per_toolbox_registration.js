@@ -18,8 +18,8 @@ var toolbox;
 var target;
 
 function test() {
-  addTab(TEST_URL).then(tab => {
-    target = TargetFactory.forTab(tab);
+  addTab(TEST_URL).then(async (tab) => {
+    target = await TargetFactory.forTab(tab);
 
     gDevTools.showToolbox(target)
       .then(toolboxRegister)
@@ -62,7 +62,7 @@ function toolboxRegister(aToolbox) {
         },
       };
     },
-    key: "t"
+    key: "t",
   });
 }
 
@@ -97,12 +97,7 @@ function testToolRegistered() {
 }
 
 function getAllBrowserWindows() {
-  const wins = [];
-  const enumerator = Services.wm.getEnumerator("navigator:browser");
-  while (enumerator.hasMoreElements()) {
-    wins.push(enumerator.getNext());
-  }
-  return wins;
+  return Array.from(Services.wm.getEnumerator("navigator:browser"));
 }
 
 function testUnregister() {
@@ -110,7 +105,7 @@ function testUnregister() {
   toolbox.removeAdditionalTool(TOOL_ID);
 
   Promise.all([
-    waitForToolInstanceDestroyed
+    waitForToolInstanceDestroyed,
   ]).then(toolboxToolUnregistered);
 }
 

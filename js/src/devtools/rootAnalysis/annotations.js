@@ -198,11 +198,6 @@ var ignoreFunctions = {
     // FIXME!
     "NS_DebugBreak": true,
 
-    // These are a little overzealous -- these destructors *can* GC if they end
-    // up wrapping a pending exception. See bug 898815 for the heavyweight fix.
-    "void js::AutoRealm::~AutoRealm(int32)" : true,
-    "void JSAutoRealmAllowCCW::~JSAutoRealmAllowCCW(int32)" : true,
-
     // Similar to heap snapshot mock classes, and GTests below. This posts a
     // synchronous runnable when a GTest fails, and we are pretty sure that the
     // particular runnable it posts can't even GC, but the analysis isn't
@@ -268,8 +263,11 @@ function isGTest(name)
 
 function ignoreGCFunction(mangled)
 {
-    assert(mangled in readableNames, mangled + " not in readableNames");
-    var fun = readableNames[mangled][0];
+    // Field calls will not be in readableNames
+    if (!(mangled in readableNames))
+        return false;
+
+    const fun = readableNames[mangled][0];
 
     if (fun in ignoreFunctions)
         return true;
@@ -345,31 +343,37 @@ function isUnsafeStorage(typeName)
     return typeName.startsWith('UniquePtr<');
 }
 
-function isSuppressConstructor(typeInfo, edgeType, varName)
+// If edgeType is a constructor type, return whatever limits it implies for its
+// scope (or zero if not matching).
+function isLimitConstructor(typeInfo, edgeType, varName)
 {
     // Check whether this could be a constructor
     if (edgeType.Kind != 'Function')
-        return false;
+        return 0;
     if (!('TypeFunctionCSU' in edgeType))
-        return false;
+        return 0;
     if (edgeType.Type.Kind != 'Void')
-        return false;
+        return 0;
 
     // Check whether the type is a known suppression type.
     var type = edgeType.TypeFunctionCSU.Type.Name;
-    if (!(type in typeInfo.GCSuppressors))
-        return false;
+    let limit = 0;
+    if (type in typeInfo.GCSuppressors)
+        limit = limit | LIMIT_CANNOT_GC;
 
     // And now make sure this is the constructor, not some other method on a
     // suppression type. varName[0] contains the qualified name.
     var [ mangled, unmangled ] = splitFunction(varName[0]);
-    if (mangled.search(/C\dE/) == -1)
-        return false; // Mangled names of constructors have C<num>E
+    if (mangled.search(/C\d[EI]/) == -1)
+        return 0; // Mangled names of constructors have C<num>E or C<num>I
     var m = unmangled.match(/([~\w]+)(?:<.*>)?\(/);
     if (!m)
-        return false;
+        return 0;
     var type_stem = type.replace(/\w+::/g, '').replace(/\<.*\>/g, '');
-    return m[1] == type_stem;
+    if (m[1] != type_stem)
+        return 0;
+
+    return limit;
 }
 
 // nsISupports subclasses' methods may be scriptable (or overridden
@@ -394,6 +398,12 @@ function isOverridableField(initialCSU, csu, field)
         return false;
     if (field == "GetThreadFromPRThread")
         return false;
+    if (field == "DocAddSizeOfIncludingThis")
+        return false;
+    if (field == "ConstructUbiNode")
+        return false;
+    if (initialCSU == 'nsIXPCScriptable' && field == "GetScriptableFlags")
+        return false;
     if (initialCSU == 'nsIXPConnectJSObjectHolder' && field == 'GetJSObject')
         return false;
     if (initialCSU == 'nsIXPConnect' && field == 'GetSafeJSContext')
@@ -416,4 +426,16 @@ function listNonGCPointers() {
         // Safe only because jsids are currently only made from pinned strings.
         'NPIdentifier',
     ];
+}
+
+function isJSNative(mangled)
+{
+    // _Z...E = function
+    // 9JSContext = JSContext*
+    // j = uint32
+    // PN2JS5Value = JS::Value*
+    //   P = pointer
+    //   N2JS = JS::
+    //   5Value = Value
+    return mangled.endsWith("P9JSContextjPN2JS5ValueE") && mangled.startsWith("_Z");
 }

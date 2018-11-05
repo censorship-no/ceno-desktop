@@ -13,9 +13,7 @@
 
 #include "mozilla/dom/XMLDocument.h"
 #include "mozilla/StyleSheet.h"
-#include "nsForwardReference.h"
 #include "nsIContent.h"
-#include "nsIDOMXULCommandDispatcher.h"
 #include "nsCOMArray.h"
 #include "nsIURI.h"
 #include "nsIStreamListener.h"
@@ -90,11 +88,7 @@ public:
     /**
      * Notify the XUL document that a subtree has been added
      */
-    nsresult AddSubtreeToDocument(nsIContent* aContent);
-    /**
-     * Notify the XUL document that a subtree has been removed
-     */
-    nsresult RemoveSubtreeFromDocument(nsIContent* aContent);
+    void AddSubtreeToDocument(nsIContent* aContent);
     /**
      * This is invoked whenever the prototype for this document is loaded
      * and should be walked, regardless of whether the XUL cache is
@@ -108,8 +102,7 @@ public:
     nsresult OnPrototypeLoadDone(bool aResumeWalk);
 
     // nsINode interface overrides
-    virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                           bool aPreallocateChildren) const override;
+    virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
     // nsICSSLoaderObserver
     NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet,
@@ -125,26 +118,11 @@ public:
      */
     void ResetDocumentDirection();
 
-    virtual nsIDocument::DocumentTheme GetDocumentLWTheme() override;
-    virtual nsIDocument::DocumentTheme ThreadSafeGetDocumentLWTheme() const override;
-
-    void ResetDocumentLWTheme() { mDocLWTheme = Doc_Theme_Uninitialized; }
-
     NS_IMETHOD OnScriptCompileComplete(JSScript* aScript, nsresult aStatus) override;
 
     NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(XULDocument, XMLDocument)
 
     void TraceProtos(JSTracer* aTrc);
-
-    // WebIDL API
-    nsIDOMXULCommandDispatcher* GetCommandDispatcher() const
-    {
-        return mCommandDispatcher;
-    }
-    void AddBroadcastListenerFor(Element& aBroadcaster, Element& aListener,
-                                 const nsAString& aAttr, ErrorResult& aRv);
-    void RemoveBroadcastListenerFor(Element& aBroadcaster, Element& aListener,
-                                    const nsAString& aAttr);
 
 protected:
     virtual ~XULDocument();
@@ -173,16 +151,7 @@ protected:
     nsresult ApplyPersistentAttributesToElements(const nsAString &aID,
                                                  nsCOMArray<Element>& aElements);
 
-    nsresult
-    AddElementToDocumentPre(Element* aElement);
-
-    nsresult
-    AddElementToDocumentPost(Element* aElement);
-
-    nsresult
-    ExecuteOnBroadcastHandlerFor(Element* aBroadcaster,
-                                 Element* aListener,
-                                 nsAtom* aAttr);
+    void AddElementToDocumentPost(Element* aElement);
 
     static void DirectionChanged(const char* aPrefName, XULDocument* aData);
 
@@ -221,15 +190,7 @@ protected:
      */
     bool                       mStillWalking;
 
-    nsCOMPtr<nsIDOMXULCommandDispatcher>     mCommandDispatcher; // [OWNER] of the focus tracker
-
     uint32_t mPendingSheets;
-
-    /**
-     * document lightweight theme for use with :-moz-lwtheme, :-moz-lwtheme-brighttext
-     * and :-moz-lwtheme-darktext
-     */
-    DocumentTheme                         mDocLWTheme;
 
     /**
      * Context stack, which maintains the state of the Builder and allows
@@ -312,82 +273,6 @@ protected:
 
 
 protected:
-    /* Declarations related to forward references.
-     *
-     * Forward references are declarations which are added to the temporary
-     * list (mForwardReferences) during the document (or overlay) load and
-     * are resolved later, when the document loading is almost complete.
-     */
-
-    /**
-     * The list of different types of forward references to resolve. After
-     * a reference is resolved, it is removed from this array (and
-     * automatically deleted)
-     */
-    nsTArray<nsAutoPtr<nsForwardReference> > mForwardReferences;
-
-    /** Indicates what kind of forward references are still to be processed. */
-    nsForwardReference::Phase mResolutionPhase;
-
-    /**
-     * Adds aRef to the mForwardReferences array. Takes the ownership of aRef.
-     */
-    nsresult AddForwardReference(nsForwardReference* aRef);
-
-    /**
-     * Resolve all of the document's forward references.
-     */
-    nsresult ResolveForwardReferences();
-
-    /**
-     * Used to resolve broadcaster references
-     */
-    class BroadcasterHookup : public nsForwardReference
-    {
-    protected:
-        XULDocument* mDocument;              // [WEAK]
-        RefPtr<Element> mObservesElement; // [OWNER]
-        bool mResolved;
-
-    public:
-        BroadcasterHookup(XULDocument* aDocument,
-                          Element* aObservesElement)
-            : mDocument(aDocument),
-              mObservesElement(aObservesElement),
-              mResolved(false)
-        {
-        }
-
-        virtual ~BroadcasterHookup();
-
-        virtual Phase GetPhase() override { return eHookup; }
-        virtual Result Resolve() override;
-    };
-
-    friend class BroadcasterHookup;
-
-
-    // The out params of FindBroadcaster only have values that make sense when
-    // the method returns NS_FINDBROADCASTER_FOUND.  In all other cases, the
-    // values of the out params should not be relied on (though *aListener and
-    // *aBroadcaster do need to be released if non-null, of course).
-    nsresult
-    FindBroadcaster(Element* aElement,
-                    Element** aListener,
-                    nsString& aBroadcasterID,
-                    nsString& aAttribute,
-                    Element** aBroadcaster);
-
-    nsresult
-    CheckBroadcasterHookup(Element* aElement,
-                           bool* aNeedsHookup,
-                           bool* aDidResolve);
-
-    void
-    SynchronizeBroadcastListener(Element *aBroadcaster,
-                                 Element *aListener,
-                                 const nsAString &aAttr);
-
     /**
      * The current prototype that we are walking to construct the
      * content model.
@@ -459,60 +344,8 @@ protected:
 
     friend class CachedChromeStreamListener;
 
-    /**
-     * A map from a broadcaster element to a list of listener elements.
-     */
-    PLDHashTable* mBroadcasterMap;
-
     bool mInitialLayoutComplete;
 
-    class nsDelayedBroadcastUpdate
-    {
-    public:
-      nsDelayedBroadcastUpdate(Element* aBroadcaster,
-                               Element* aListener,
-                               const nsAString &aAttr)
-      : mBroadcaster(aBroadcaster), mListener(aListener), mAttr(aAttr),
-        mSetAttr(false), mNeedsAttrChange(false) {}
-
-      nsDelayedBroadcastUpdate(Element* aBroadcaster,
-                               Element* aListener,
-                               nsAtom* aAttrName,
-                               const nsAString &aAttr,
-                               bool aSetAttr,
-                               bool aNeedsAttrChange)
-      : mBroadcaster(aBroadcaster), mListener(aListener), mAttr(aAttr),
-        mAttrName(aAttrName), mSetAttr(aSetAttr),
-        mNeedsAttrChange(aNeedsAttrChange) {}
-
-      nsDelayedBroadcastUpdate(const nsDelayedBroadcastUpdate& aOther)
-      : mBroadcaster(aOther.mBroadcaster), mListener(aOther.mListener),
-        mAttr(aOther.mAttr), mAttrName(aOther.mAttrName),
-        mSetAttr(aOther.mSetAttr), mNeedsAttrChange(aOther.mNeedsAttrChange) {}
-
-      nsCOMPtr<Element>       mBroadcaster;
-      nsCOMPtr<Element>       mListener;
-      // Note if mAttrName isn't used, this is the name of the attr, otherwise
-      // this is the value of the attribute.
-      nsString                mAttr;
-      RefPtr<nsAtom>       mAttrName;
-      bool                    mSetAttr;
-      bool                    mNeedsAttrChange;
-
-      class Comparator {
-        public:
-          static bool Equals(const nsDelayedBroadcastUpdate& a, const nsDelayedBroadcastUpdate& b) {
-            return a.mBroadcaster == b.mBroadcaster && a.mListener == b.mListener && a.mAttrName == b.mAttrName;
-          }
-      };
-    };
-
-    nsTArray<nsDelayedBroadcastUpdate> mDelayedBroadcasters;
-    nsTArray<nsDelayedBroadcastUpdate> mDelayedAttrChangeBroadcasts;
-    bool                               mHandlingDelayedAttrChange;
-    bool                               mHandlingDelayedBroadcasters;
-
-    void MaybeBroadcast();
 private:
     // helpers
 

@@ -436,14 +436,8 @@ var LoginManagerContent = {
   _fetchLoginsFromParentAndFillForm(form, window) {
     this._detectInsecureFormLikes(window);
 
-    const isPrivateWindow = PrivateBrowsingUtils.isContentWindowPrivate(window);
-
     let messageManager = window.docShell.messageManager;
-    messageManager.sendAsyncMessage("LoginStats:LoginEncountered",
-                                    {
-                                      isPrivateWindow,
-                                      isPwmgrEnabled: gEnabled,
-                                    });
+    messageManager.sendAsyncMessage("LoginStats:LoginEncountered");
 
     if (!gEnabled) {
       return;
@@ -700,7 +694,7 @@ var LoginManagerContent = {
 
       pwFields[pwFields.length] = {
                                     index: i,
-                                    element
+                                    element,
                                   };
     }
 
@@ -976,16 +970,20 @@ var LoginManagerContent = {
                               value: oldPasswordField.value } :
                             null;
 
-    // Make sure to pass the opener's top in case it was in a frame.
-    let openerTopWindow = win.opener ? win.opener.top : null;
+    // Make sure to pass the opener's top ID in case it was in a frame.
+    let openerTopWindowID = null;
+    if (win.opener) {
+      openerTopWindowID = win.opener.top.windowUtils.outerWindowID;
+    }
 
     messageManager.sendAsyncMessage("RemoteLogins:onFormSubmit",
                                     { hostname,
                                       formSubmitURL,
                                       usernameField: mockUsername,
                                       newPasswordField: mockPassword,
-                                      oldPasswordField: mockOldPassword },
-                                    { openerTopWindow });
+                                      oldPasswordField: mockOldPassword,
+                                      openerTopWindowID,
+                                    });
   },
 
   /**
@@ -1350,6 +1348,7 @@ var LoginManagerContent = {
     // If the element is not a proper form field, return null.
     if (ChromeUtils.getClassName(aField) !== "HTMLInputElement" ||
         (aField.type != "password" && !LoginHelper.isUsernameFieldType(aField)) ||
+        aField.nodePrincipal.isNullPrincipal ||
         !aField.ownerDocument) {
       return null;
     }
@@ -1576,7 +1575,7 @@ UserAutoCompleteResult.prototype = {
         Services.logins.removeLogin(removedLogin);
       }
     }
-  }
+  },
 };
 
 /**

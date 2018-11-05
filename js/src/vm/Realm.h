@@ -20,7 +20,6 @@
 
 #include "builtin/Array.h"
 #include "gc/Barrier.h"
-#include "gc/Zone.h"
 #include "js/UniquePtr.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/Compartment.h"
@@ -91,8 +90,9 @@ class NewProxyCache
     MOZ_ALWAYS_INLINE bool lookup(const Class* clasp, TaggedProto proto,
                                   ObjectGroup** group, Shape** shape) const
     {
-        if (!entries_)
+        if (!entries_) {
             return false;
+        }
         for (size_t i = 0; i < NumEntries; i++) {
             const Entry& entry = entries_[i];
             if (entry.group && entry.group->clasp() == clasp && entry.group->proto() == proto) {
@@ -107,11 +107,13 @@ class NewProxyCache
         MOZ_ASSERT(group && shape);
         if (!entries_) {
             entries_.reset(js_pod_calloc<Entry>(NumEntries));
-            if (!entries_)
+            if (!entries_) {
                 return;
+            }
         } else {
-            for (size_t i = NumEntries - 1; i > 0; i--)
+            for (size_t i = NumEntries - 1; i > 0; i--) {
                 entries_[i] = entries_[i - 1];
+            }
         }
         entries_[0].group = group;
         entries_[0].shape = shape;
@@ -292,7 +294,10 @@ class ObjectRealm
 
     js::LexicalEnvironmentObject*
     getOrCreateNonSyntacticLexicalEnvironment(JSContext* cx, js::HandleObject enclosing);
-    js::LexicalEnvironmentObject* getNonSyntacticLexicalEnvironment(JSObject* enclosing) const;
+    js::LexicalEnvironmentObject*
+    getOrCreateNonSyntacticLexicalEnvironment(JSContext* cx, js::HandleObject enclosing,
+                                              js::HandleObject key, js::HandleObject thisv);
+    js::LexicalEnvironmentObject* getNonSyntacticLexicalEnvironment(JSObject* key) const;
 };
 
 } // namespace js
@@ -315,7 +320,7 @@ class JS::Realm : public JS::shadow::Realm
     // Object group tables and other state in the realm. This is private to
     // enforce use of ObjectGroupRealm::get(group)/getForNewObject(cx).
     js::ObjectGroupRealm objectGroups_;
-    friend js::ObjectGroupRealm& js::ObjectGroupRealm::get(js::ObjectGroup* group);
+    friend js::ObjectGroupRealm& js::ObjectGroupRealm::get(const js::ObjectGroup* group);
     friend js::ObjectGroupRealm& js::ObjectGroupRealm::getForNewObject(JSContext* cx);
 
     // The global environment record's [[VarNames]] list that contains all
@@ -451,7 +456,7 @@ class JS::Realm : public JS::shadow::Realm
     Realm(JS::Compartment* comp, const JS::RealmOptions& options);
     ~Realm();
 
-    MOZ_MUST_USE bool init(JSContext* cx);
+    MOZ_MUST_USE bool init(JSContext* cx, JSPrincipals* principals);
     void destroy(js::FreeOp* fop);
     void clearTables();
 
@@ -500,6 +505,7 @@ class JS::Realm : public JS::shadow::Realm
     }
     void setIsSelfHostingRealm() {
         isSelfHostingRealm_ = true;
+        isSystem_ = true;
     }
 
     /* The global object for this realm.
@@ -662,8 +668,9 @@ class JS::Realm : public JS::shadow::Realm
         return principals_;
     }
     void setPrincipals(JSPrincipals* principals) {
-        if (principals_ == principals)
+        if (principals_ == principals) {
             return;
+        }
 
         // If we change principals, we need to unlink immediately this
         // realm from its PerformanceGroup. For one thing, the performance data
@@ -678,19 +685,6 @@ class JS::Realm : public JS::shadow::Realm
 
     bool isSystem() const {
         return isSystem_;
-    }
-    void setIsSystem(bool isSystem) {
-        if (isSystem_ == isSystem)
-            return;
-
-        // If we change `isSystem*(`, we need to unlink immediately this realm
-        // from its PerformanceGroup. For one thing, the performance data we
-        // collect should not be improperly associated to a group to which we
-        // do not belong anymore. For another thing, we use `isSystem()` as part
-        // of the key to map realms to a `PerformanceGroup`, so if we do not
-        // unlink now, this will be too late once we have updated `isSystem_`.
-        performanceMonitoring.unlink();
-        isSystem_ = isSystem;
     }
 
     // Used to approximate non-content code when reporting telemetry.
@@ -898,6 +892,9 @@ class MOZ_RAII AssertRealmUnchanged
     MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
+// AutoRealm can be used to enter the realm of a JSObject, JSScript or
+// ObjectGroup. It must not be used with cross-compartment wrappers, because
+// CCWs are not associated with a single realm.
 class AutoRealm
 {
     JSContext* const cx_;

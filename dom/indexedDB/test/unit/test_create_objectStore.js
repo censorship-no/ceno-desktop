@@ -22,7 +22,7 @@ function* testSteps()
     { name: "11", options: { keyPath: "foo", autoIncrement: true } },
     { name: "" },
     { name: null },
-    { name: undefined }
+    { name: undefined },
   ];
 
   let request = indexedDB.open(name, 1);
@@ -80,7 +80,7 @@ function* testSteps()
     is(objectStore.keyPath, info.options && info.options.keyPath ?
                             info.options.keyPath : null,
        "Bad keyPath");
-    if (objectStore.indexNames.length, 0, "Bad indexNames");
+    is(objectStore.indexNames.length, 0, "Bad indexNames");
 
     ok(event.target.transaction, "event has a transaction");
     ok(event.target.transaction.db === db, "transaction has the right db");

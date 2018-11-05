@@ -20,7 +20,7 @@ namespace dom {
 class SVGAnimateMotionElement final : public SVGAnimationElement
 {
 protected:
-  explicit SVGAnimateMotionElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGAnimateMotionElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   SVGMotionSMILAnimationFunction mAnimationFunction;
   friend nsresult
@@ -31,8 +31,7 @@ protected:
 
 public:
   // nsINode specializations
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // SVGAnimationElement
   virtual nsSMILAnimationFunction& AnimationFunction() override;
@@ -40,7 +39,7 @@ public:
                                       nsAtom **aLocalName) const override;
 
   // nsSVGElement
-  virtual nsAtom* GetPathDataAttrName() const override {
+  virtual nsStaticAtom* GetPathDataAttrName() const override {
     return nsGkAtoms::path;
   }
 

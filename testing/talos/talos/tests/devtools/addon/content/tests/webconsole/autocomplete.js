@@ -52,23 +52,28 @@ async function showAndHideAutoCompletePopup(jsterm) {
 }
 
 async function triggerAutocompletePopup(jsterm) {
-  jsterm.setInputValue("window.autocompleteTest.");
   const onPopupOpened = jsterm.autocompletePopup.once("popup-opened");
-  // setInputValue does not trigger the autocompletion; we need to call `complete` in
-  // order to display the popup.
-  jsterm.complete(jsterm.COMPLETE_HINT_ONLY);
+  setJsTermValueForCompletion(jsterm, "window.autocompleteTest.");
   await onPopupOpened;
 
   const onPopupUpdated = jsterm.once("autocomplete-updated");
-  jsterm.setInputValue("window.autocompleteTest.item9");
-  jsterm.complete(jsterm.COMPLETE_HINT_ONLY);
-
+  setJsTermValueForCompletion(jsterm, "window.autocompleteTest.item9");
   await onPopupUpdated;
 }
 
 function hideAutocompletePopup(jsterm) {
   let onPopUpClosed = jsterm.autocompletePopup.once("popup-closed");
-  jsterm.setInputValue("");
-  jsterm.complete(jsterm.COMPLETE_HINT_ONLY);
+  setJsTermValueForCompletion(jsterm, "");
   return onPopUpClosed;
 }
+
+function setJsTermValueForCompletion(jsterm, value) {
+  // setInputValue does not trigger the autocompletion;
+  // we need to call `updateAutocompletion` in order to display the popup. And since
+  // setInputValue sets lastInputValue and updateAutocompletion checks it to trigger
+  // the autocompletion request, we reset it.
+  jsterm.setInputValue(value);
+  jsterm.lastInputValue = null;
+  jsterm.updateAutocompletion();
+}
+

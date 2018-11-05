@@ -1,0 +1,7 @@
+commit 6cbd62e59e30f73b444be89ea71fd74275ac53a4
+Author: Shane Carr <shane@unicode.org>
+Date:   Mon Oct 29 23:52:44 2018 -0700
+
+    ICU-20246 Fixing another integer overflow in number parsing.
+    
+    (cherry picked from commit 53d8c8f3d181d87a6aa925b449b51c4a2c922a51)

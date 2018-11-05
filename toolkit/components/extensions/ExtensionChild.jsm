@@ -9,10 +9,9 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionChild"];
 
-/*
- * This file handles addon logic that is independent of the chrome process.
- * When addons run out-of-process, this is the main entry point.
- * Its primary function is managing addon globals.
+/**
+ * This file handles addon logic that is independent of the chrome process and
+ * may run in all web content and extension processes.
  *
  * Don't put contentscript logic here, use ExtensionContent.jsm instead.
  */
@@ -29,6 +28,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ExtensionPageChild: "resource://gre/modules/ExtensionPageChild.jsm",
   MessageChannel: "resource://gre/modules/MessageChannel.jsm",
   NativeApp: "resource://gre/modules/NativeMessaging.jsm",
+  PerformanceCounters: "resource://gre/modules/PerformanceCounters.jsm",
   PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
 });
 
@@ -37,6 +37,10 @@ XPCOMUtils.defineLazyGetter(
   () => Cc["@mozilla.org/webextensions/extension-process-script;1"]
           .getService().wrappedJSObject);
 
+// We're using the pref to avoid loading PerformanceCounters.jsm for nothing.
+XPCOMUtils.defineLazyPreferenceGetter(this, "gTimingEnabled",
+                                      "extensions.webextensions.enablePerformanceCounters",
+                                      false);
 ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm");
 ChromeUtils.import("resource://gre/modules/ExtensionUtils.jsm");
 
@@ -595,13 +599,12 @@ var ExtensionManager = {
 
 // Represents a browser extension in the content process.
 class BrowserExtensionContent extends EventEmitter {
-  constructor(data) {
+  constructor(policy) {
     super();
 
-    this.data = data;
-    this.id = data.id;
-    this.uuid = data.uuid;
-    this.instanceId = data.instanceId;
+    this.policy = policy;
+    this.instanceId = policy.instanceId;
+    this.optionalPermissions = policy.optionalPermissions;
 
     if (WebExtensionPolicy.isExtensionProcess) {
       Object.assign(this, this.getSharedData("extendedData"));
@@ -610,13 +613,7 @@ class BrowserExtensionContent extends EventEmitter {
     this.MESSAGE_EMIT_EVENT = `Extension:EmitEvent:${this.instanceId}`;
     Services.cpmm.addMessageListener(this.MESSAGE_EMIT_EVENT, this);
 
-    this.webAccessibleResources = data.webAccessibleResources.map(res => new MatchGlob(res));
-    this.permissions = data.permissions;
-    this.optionalPermissions = data.optionalPermissions;
-
     let restrictSchemes = !this.hasPermission("mozillaAddons");
-
-    this.whiteListedHosts = new MatchPatternSet(data.whiteListedHosts, {restrictSchemes, ignorePath: true});
 
     this.apiManager = this.getAPIManager();
 
@@ -638,48 +635,63 @@ class BrowserExtensionContent extends EventEmitter {
     /* eslint-disable mozilla/balanced-listeners */
     this.on("add-permissions", (ignoreEvent, permissions) => {
       if (permissions.permissions.length > 0) {
+        let perms = new Set(this.policy.permissions);
         for (let perm of permissions.permissions) {
-          this.permissions.add(perm);
+          perms.add(perm);
         }
+        this.policy.permissions = perms;
       }
 
       if (permissions.origins.length > 0) {
         let patterns = this.whiteListedHosts.patterns.map(host => host.pattern);
 
-        this.whiteListedHosts = new MatchPatternSet([...patterns, ...permissions.origins],
-                                                    {restrictSchemes, ignorePath: true});
-      }
-
-      if (this.policy) {
-        this.policy.permissions = Array.from(this.permissions);
-        this.policy.allowedOrigins = this.whiteListedHosts;
+        this.policy.allowedOrigins =
+          new MatchPatternSet([...patterns, ...permissions.origins],
+                              {restrictSchemes, ignorePath: true});
       }
     });
 
     this.on("remove-permissions", (ignoreEvent, permissions) => {
       if (permissions.permissions.length > 0) {
+        let perms = new Set(this.policy.permissions);
         for (let perm of permissions.permissions) {
-          this.permissions.delete(perm);
+          perms.delete(perm);
         }
+        this.policy.permissions = perms;
       }
 
       if (permissions.origins.length > 0) {
         let origins = permissions.origins.map(
           origin => new MatchPattern(origin, {ignorePath: true}).pattern);
 
-        this.whiteListedHosts = new MatchPatternSet(
+        this.policy.allowedOrigins = new MatchPatternSet(
           this.whiteListedHosts.patterns
               .filter(host => !origins.includes(host.pattern)));
-      }
-
-      if (this.policy) {
-        this.policy.permissions = Array.from(this.permissions);
-        this.policy.allowedOrigins = this.whiteListedHosts;
       }
     });
     /* eslint-enable mozilla/balanced-listeners */
 
     ExtensionManager.extensions.set(this.id, this);
+  }
+
+  get id() {
+    return this.policy.id;
+  }
+
+  get uuid() {
+    return this.policy.mozExtensionHostname;
+  }
+
+  get permissions() {
+    return new Set(this.policy.permissions);
+  }
+
+  get whiteListedHosts() {
+    return this.policy.allowedOrigins;
+  }
+
+  get webAccessibleResources() {
+    return this.policy.webAccessibleResources;
   }
 
   getSharedData(key, value) {
@@ -761,9 +773,20 @@ class BrowserExtensionContent extends EventEmitter {
   }
 
   hasPermission(perm) {
-    let match = /^manifest:(.*)/.exec(perm);
-    if (match) {
-      return this.manifest[match[1]] != null;
+    // If the permission is a "manifest property" permission, we check if the extension
+    // does have the required property in its manifest.
+    let manifest_ = "manifest:";
+    if (perm.startsWith(manifest_)) {
+      // Handle nested "manifest property" permission (e.g. as in "manifest:property.nested").
+      let value = this.manifest;
+      for (let prop of perm.substr(manifest_.length).split(".")) {
+        if (!value) {
+          break;
+        }
+        value = value[prop];
+      }
+
+      return value != null;
     }
     return this.permissions.has(perm);
   }
@@ -853,6 +876,39 @@ class ProxyAPIImplementation extends SchemaAPIInterface {
   hasListener(listener) {
     let map = this.childApiManager.listeners.get(this.path);
     return map.listeners.has(listener);
+  }
+}
+
+class ChildLocalAPIImplementation extends LocalAPIImplementation {
+  constructor(pathObj, name, childApiManager) {
+    super(pathObj, name, childApiManager.context);
+    this.childApiManagerId = childApiManager.id;
+  }
+
+  withTiming(callable) {
+    if (!gTimingEnabled) {
+      return callable();
+    }
+    let start = Cu.now() * 1000;
+    try {
+      return callable();
+    } finally {
+      let end = Cu.now() * 1000;
+      PerformanceCounters.storeExecutionTime(this.context.extension.id, this.name,
+                                             end - start, this.childApiManagerId);
+    }
+  }
+
+  callFunction(args) {
+    return this.withTiming(() => super.callFunction(args));
+  }
+
+  callFunctionNoReturn(args) {
+    return this.withTiming(() => super.callFunctionNoReturn(args));
+  }
+
+  callAsyncFunction(args, callback, requireUserInput) {
+    return this.withTiming(() => super.callAsyncFunction(args, callback, requireUserInput));
   }
 }
 
@@ -1052,9 +1108,6 @@ class ChildAPIManager {
         !allowedContexts.includes("content")) {
       return false;
     }
-    if (allowedContexts.includes("addon_parent_only")) {
-      return false;
-    }
 
     // Do not generate devtools APIs, unless explicitly allowed.
     if (this.context.envType === "devtools_child" &&
@@ -1068,6 +1121,12 @@ class ChildAPIManager {
       return false;
     }
 
+    // Do not generate content_only APIs, unless explicitly allowed.
+    if (this.context.envType !== "content_child" &&
+        allowedContexts.includes("content_only")) {
+      return false;
+    }
+
     return true;
   }
 
@@ -1076,7 +1135,7 @@ class ChildAPIManager {
     let obj = this.apiCan.findAPIPath(namespace);
 
     if (obj && name in obj) {
-      return new LocalAPIImplementation(obj, name, this.context);
+      return new ChildLocalAPIImplementation(obj, name, this);
     }
 
     return this.getFallbackImplementation(namespace, name);

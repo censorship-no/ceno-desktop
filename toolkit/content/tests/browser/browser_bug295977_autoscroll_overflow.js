@@ -86,13 +86,13 @@ body > div > div {width: 1000px;height: 1000px;}\
 <div style="height: 200%; border: 1px solid black;"></div>\
 </body></html>'},
     {elem: "r", expected: expectScrollNone, testwindow: true, middlemousepastepref: true},
-    {elem: "s", expected: expectScrollNone, testwindow: true, middlemousepastepref: true}
+    {elem: "s", expected: expectScrollNone, testwindow: true, middlemousepastepref: true},
   ];
 
   for (let test of allTests) {
     if (test.dataUri) {
       let loadedPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-      gBrowser.loadURI(test.dataUri);
+      BrowserTestUtils.loadURI(gBrowser, test.dataUri);
       await loadedPromise;
       continue;
      }

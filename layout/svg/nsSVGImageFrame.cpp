@@ -22,7 +22,6 @@
 #include "SVGImageContext.h"
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/SVGImageElement.h"
-#include "nsContentUtils.h"
 #include "nsIReflowCallback.h"
 #include "mozilla/Unused.h"
 
@@ -440,7 +439,7 @@ nsSVGImageFrame::ReflowSVG()
 
   if (!extent.IsEmpty()) {
     mRect = nsLayoutUtils::RoundGfxRectToAppRect(extent,
-              PresContext()->AppUnitsPerCSSPixel());
+              AppUnitsPerCSSPixel());
   } else {
     mRect.SetEmpty();
   }
@@ -502,7 +501,7 @@ nsSVGImageFrame::GetHitTestFlags()
 {
   uint16_t flags = 0;
 
-  switch (StyleUserInterface()->mPointerEvents) {
+  switch (StyleUI()->mPointerEvents) {
     case NS_STYLE_POINTER_EVENTS_NONE:
       break;
     case NS_STYLE_POINTER_EVENTS_VISIBLEPAINTED:
@@ -570,7 +569,12 @@ nsSVGImageListener::Notify(imgIRequest *aRequest, int32_t aType, const nsIntRect
 
   if (aType == imgINotificationObserver::SIZE_AVAILABLE) {
     // Called once the resource's dimensions have been obtained.
-    aRequest->GetImage(getter_AddRefs(mFrame->mImageContainer));
+    nsCOMPtr<imgIContainer> image;
+    aRequest->GetImage(getter_AddRefs(image));
+    if (image) {
+      image->SetAnimationMode(mFrame->PresContext()->ImageAnimationMode());
+      mFrame->mImageContainer = image.forget();
+    }
     mFrame->InvalidateFrame();
     nsLayoutUtils::PostRestyleEvent(
       mFrame->GetContent()->AsElement(), nsRestyleHint(0),

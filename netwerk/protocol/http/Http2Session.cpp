@@ -60,12 +60,6 @@ const uint8_t Http2Session::kMagicHello[] = {
   0x0d, 0x0a, 0x53, 0x4d, 0x0d, 0x0a, 0x0d, 0x0a
 };
 
-#define RETURN_SESSION_ERROR(o,x)  \
-do {                             \
-  (o)->mGoAwayReason = (x);      \
-  return NS_ERROR_ILLEGAL_VALUE; \
-  } while (0)
-
 Http2Session::Http2Session(nsISocketTransport *aSocketTransport, enum SpdyVersion version, bool attemptingEarlyData)
   : mSocketTransport(aSocketTransport)
   , mSegmentReader(nullptr)
@@ -121,6 +115,8 @@ Http2Session::Http2Session(nsISocketTransport *aSocketTransport, enum SpdyVersio
   , mTlsHandshakeFinished(false)
   , mCheckNetworkStallsWithTFO(false)
   , mLastRequestBytesSentTime(0)
+  , mPeerFailedHandshake(false)
+  , mTrrStreams(0)
 {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
@@ -166,6 +162,8 @@ Http2Session::Shutdown()
       CloseStream(stream, NS_ERROR_NET_PARTIAL_TRANSFER);
     } else if (mGoAwayReason == INADEQUATE_SECURITY) {
       CloseStream(stream, NS_ERROR_NET_INADEQUATE_SECURITY);
+    } else if (!mCleanShutdown) {
+      CloseStream(stream, NS_ERROR_NET_HTTP2_SENT_GOAWAY);
     } else {
       CloseStream(stream, NS_ERROR_ABORT);
     }
@@ -179,12 +177,32 @@ Http2Session::~Http2Session()
 
   Shutdown();
 
+  if (mTrrStreams) {
+    Telemetry::Accumulate(Telemetry::DNS_TRR_REQUEST_PER_CONN, mTrrStreams);
+  }
   Telemetry::Accumulate(Telemetry::SPDY_PARALLEL_STREAMS, mConcurrentHighWater);
   Telemetry::Accumulate(Telemetry::SPDY_REQUEST_PER_CONN, (mNextStreamID - 1) / 2);
   Telemetry::Accumulate(Telemetry::SPDY_SERVER_INITIATED_STREAMS,
                         mServerPushedResources);
   Telemetry::Accumulate(Telemetry::SPDY_GOAWAY_LOCAL, mClientGoAwayReason);
   Telemetry::Accumulate(Telemetry::SPDY_GOAWAY_PEER, mPeerGoAwayReason);
+  Telemetry::Accumulate(Telemetry::HTTP2_FAIL_BEFORE_SETTINGS, mPeerFailedHandshake);
+}
+
+inline nsresult
+Http2Session::SessionError(enum errorType reason)
+{
+  LOG3(("Http2Session::SessionError %p reason=0x%x mPeerGoAwayReason=0x%x",
+        this, reason, mPeerGoAwayReason));
+  mGoAwayReason = reason;
+
+  if (reason == INADEQUATE_SECURITY) {
+    // This one is special, as we have an error page just for this
+    return NS_ERROR_NET_INADEQUATE_SECURITY;
+  }
+
+  // We're the one sending a generic GOAWAY
+  return NS_ERROR_NET_HTTP2_SENT_GOAWAY;
 }
 
 void
@@ -398,6 +416,15 @@ Http2Session::RegisterStreamID(Http2Stream *stream, uint32_t aNewID)
       // long time we should check for stalls like bug 1395494.
       mCheckNetworkStallsWithTFO = true;
       mLastRequestBytesSentTime = PR_IntervalNow();
+    }
+  }
+
+  if (aNewID & 1) {
+    // don't count push streams here
+    MOZ_ASSERT(stream->Transaction(), "no transation for the stream!");
+    RefPtr<nsHttpConnectionInfo> ci(stream->Transaction()->ConnectionInfo());
+    if (ci && ci->GetTrrUsed()) {
+      IncrementTrrCounter();
     }
   }
   return aNewID;
@@ -1045,6 +1072,7 @@ Http2Session::CreatePriorityFrame(uint32_t streamID,
                                   uint32_t dependsOn,
                                   uint8_t weight)
 {
+  MOZ_ASSERT(streamID, "Priority on stream 0");
   char *packet = EnsureOutputBuffer(kFrameHeaderBytes + 5);
   CreateFrameHeader(packet, 5, FRAME_TYPE_PRIORITY, 0, streamID);
   mOutputQueueUsed += kFrameHeaderBytes + 5;
@@ -1292,7 +1320,7 @@ Http2Session::ParsePadding(uint8_t &paddingControlBytes, uint16_t &paddingLength
     LOG3(("Http2Session::ParsePadding %p stream 0x%x PROTOCOL_ERROR "
           "paddingLength %d > frame size %d\n",
           this, mInputFrameID, paddingLength, mInputFrameDataSize));
-    RETURN_SESSION_ERROR(this, PROTOCOL_ERROR);
+    return SessionError(PROTOCOL_ERROR);
   }
 
   return NS_OK;
@@ -1347,7 +1375,7 @@ Http2Session::RecvHeaders(Http2Session *self)
 
   if ((paddingControlBytes + priorityLen + paddingLength) > self->mInputFrameDataSize) {
     // This is fatal to the session
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   if (!self->mInputFrameDataStream) {
@@ -1384,7 +1412,7 @@ Http2Session::RecvHeaders(Http2Session *self)
     // Any header block after the first that does *not* end the stream is
     // illegal.
     LOG3(("Http2Session::Illegal Extra HeaderBlock %p 0x%X\n", self, self->mInputFrameID));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   // queue up any compression bytes
@@ -1502,12 +1530,12 @@ Http2Session::RecvPriority(Http2Session *self)
   if (self->mInputFrameDataSize != 5) {
     LOG3(("Http2Session::RecvPriority %p wrong length data=%d\n",
           self, self->mInputFrameDataSize));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   if (!self->mInputFrameID) {
     LOG3(("Http2Session::RecvPriority %p stream ID of 0.\n", self));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   nsresult rv = self->SetInputFrameDataStream(self->mInputFrameID);
@@ -1519,11 +1547,11 @@ Http2Session::RecvPriority(Http2Session *self)
   bool exclusive = !!(newPriorityDependency & 0x80000000);
   newPriorityDependency &= 0x7fffffff;
   uint8_t newPriorityWeight = *(self->mInputFrameBuffer.get() + kFrameHeaderBytes + 4);
-  if (self->mInputFrameDataStream) {
-    self->mInputFrameDataStream->SetPriorityDependency(newPriorityDependency,
-                                                       newPriorityWeight,
-                                                       exclusive);
-  }
+
+  // undefined what it means when the server sends a priority frame. ignore it.
+  LOG3(("Http2Session::RecvPriority %p 0x%X received dependency=0x%X "
+        "weight=%u exclusive=%d", self->mInputFrameDataStream, self->mInputFrameID,
+        newPriorityDependency, newPriorityWeight, exclusive));
 
   self->ResetDownstreamState();
   return NS_OK;
@@ -1537,12 +1565,12 @@ Http2Session::RecvRstStream(Http2Session *self)
   if (self->mInputFrameDataSize != 4) {
     LOG3(("Http2Session::RecvRstStream %p RST_STREAM wrong length data=%d",
           self, self->mInputFrameDataSize));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   if (!self->mInputFrameID) {
     LOG3(("Http2Session::RecvRstStream %p stream ID of 0.\n", self));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   self->mDownstreamRstReason = NetworkEndian::readUint32(
@@ -1573,7 +1601,7 @@ Http2Session::RecvSettings(Http2Session *self)
   if (self->mInputFrameID) {
     LOG3(("Http2Session::RecvSettings %p needs stream ID of 0. 0x%X\n",
           self, self->mInputFrameID));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   if (self->mInputFrameDataSize % 6) {
@@ -1581,7 +1609,7 @@ Http2Session::RecvSettings(Http2Session *self)
     // entry. So the payload must be a multiple of 6.
     LOG3(("Http2Session::RecvSettings %p SETTINGS wrong length data=%d",
           self, self->mInputFrameDataSize));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   self->mReceivedSettings = true;
@@ -1593,7 +1621,7 @@ Http2Session::RecvSettings(Http2Session *self)
 
   if ((self->mInputFrameFlags & kFlag_ACK) && self->mInputFrameDataSize) {
     LOG3(("Http2Session::RecvSettings %p ACK with non zero payload is err\n", self));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   for (uint32_t index = 0; index < numEntries; ++index) {
@@ -1642,7 +1670,7 @@ Http2Session::RecvSettings(Http2Session *self)
       {
         if ((value < kMaxFrameData) || (value >= 0x01000000)) {
           LOG3(("Received invalid max frame size 0x%X", value));
-          RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+          return self->SessionError(PROTOCOL_ERROR);
         }
         // We stick to the default for simplicity's sake, so nothing to change
       }
@@ -1696,7 +1724,7 @@ Http2Session::RecvPushPromise(Http2Session *self)
     if (promisedID <= self->mLastPushedID) {
       LOG3(("Http2Session::RecvPushPromise %p ID too low %u expected > %u.\n",
             self, promisedID, self->mLastPushedID));
-      RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+      return self->SessionError(PROTOCOL_ERROR);
     }
     self->mLastPushedID = promisedID;
   }
@@ -1717,7 +1745,7 @@ Http2Session::RecvPushPromise(Http2Session *self)
           "PROTOCOL_ERROR extra %d > frame size %d\n",
           self, promisedID, associatedID, (paddingControlBytes + promiseLen + paddingLength),
           self->mInputFrameDataSize));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   LOG3(("Http2Session::RecvPushPromise %p ID 0x%X assoc ID 0x%X "
@@ -1727,7 +1755,7 @@ Http2Session::RecvPushPromise(Http2Session *self)
 
   if (!associatedID || !promisedID || (promisedID & 1)) {
     LOG3(("Http2Session::RecvPushPromise %p ID invalid.\n", self));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   // confirm associated-to
@@ -1755,7 +1783,7 @@ Http2Session::RecvPushPromise(Http2Session *self)
     LOG3(("Http2Session::RecvPushPromise Push Recevied when Disabled\n"));
     if (self->mGoAwayOnPush) {
       LOG3(("Http2Session::RecvPushPromise sending GOAWAY"));
-      RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+      return self->SessionError(PROTOCOL_ERROR);
     }
     self->GenerateRstStream(REFUSED_STREAM_ERROR, promisedID);
   } else if (!(associatedID & 1)) {
@@ -1968,10 +1996,9 @@ Http2Session::RecvPushPromise(Http2Session *self)
   pushedStream->SetHTTPState(Http2Stream::RESERVED_BY_REMOTE);
   static_assert(Http2Stream::kWorstPriority >= 0,
                 "kWorstPriority out of range");
-  uint8_t priorityWeight = (nsISupportsPriority::PRIORITY_LOWEST + 1) -
-    (Http2Stream::kWorstPriority - Http2Stream::kNormalPriority);
-  pushedStream->SetPriority(Http2Stream::kWorstPriority);
-  self->GeneratePriority(promisedID, priorityWeight);
+  uint32_t priorityDependency = pushedStream->PriorityDependency();
+  uint8_t priorityWeight = pushedStream->PriorityWeight();
+  self->SendPriorityFrame(promisedID, priorityDependency, priorityWeight);
   self->ResetDownstreamState();
   return NS_OK;
 }
@@ -2148,13 +2175,13 @@ Http2Session::RecvPing(Http2Session *self)
   if (self->mInputFrameDataSize != 8) {
     LOG3(("Http2Session::RecvPing %p PING had wrong amount of data %d",
           self, self->mInputFrameDataSize));
-    RETURN_SESSION_ERROR(self, FRAME_SIZE_ERROR);
+    return self->SessionError(FRAME_SIZE_ERROR);
   }
 
   if (self->mInputFrameID) {
     LOG3(("Http2Session::RecvPing %p PING needs stream ID of 0. 0x%X\n",
           self, self->mInputFrameID));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   if (self->mInputFrameFlags & kFlag_ACK) {
@@ -2179,13 +2206,13 @@ Http2Session::RecvGoAway(Http2Session *self)
     // have the hex of all packets so there is no point in separately logging.
     LOG3(("Http2Session::RecvGoAway %p GOAWAY had wrong amount of data %d",
           self, self->mInputFrameDataSize));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   if (self->mInputFrameID) {
     LOG3(("Http2Session::RecvGoAway %p GOAWAY had non zero stream ID 0x%X\n",
           self, self->mInputFrameID));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   self->mShouldGoAway = true;
@@ -2260,7 +2287,7 @@ Http2Session::RecvWindowUpdate(Http2Session *self)
   if (self->mInputFrameDataSize != 4) {
     LOG3(("Http2Session::RecvWindowUpdate %p Window Update wrong length %d\n",
           self, self->mInputFrameDataSize));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   uint32_t delta = NetworkEndian::readUint32(
@@ -2315,7 +2342,7 @@ Http2Session::RecvWindowUpdate(Http2Session *self)
     if (delta == 0) {
       LOG3(("Http2Session::RecvWindowUpdate %p received 0 session window update",
             self));
-      RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+      return self->SessionError(PROTOCOL_ERROR);
     }
 
     int64_t oldRemoteWindow = self->mServerSessionWindow;
@@ -2326,7 +2353,7 @@ Http2Session::RecvWindowUpdate(Http2Session *self)
       // are 64 bit safe though.
       LOG3(("Http2Session::RecvWindowUpdate %p session window "
             "exceeds 2^31 - 1\n", self));
-      RETURN_SESSION_ERROR(self, FLOW_CONTROL_ERROR);
+      return self->SessionError(FLOW_CONTROL_ERROR);
     }
 
     if ((oldRemoteWindow <= 0) && (self->mServerSessionWindow > 0)) {
@@ -2374,7 +2401,7 @@ Http2Session::RecvContinuation(Http2Session *self)
   if (!self->mInputFrameDataStream) {
     LOG3(("Http2Session::RecvContination stream ID 0x%X not found.",
           self->mInputFrameID));
-    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    return self->SessionError(PROTOCOL_ERROR);
   }
 
   // continued headers
@@ -2951,7 +2978,7 @@ Http2Session::ReadyToProcessDataFrame(enum internalStateType newState)
   if (!mInputFrameID) {
     LOG3(("Http2Session::ReadyToProcessDataFrame %p data frame stream 0\n",
           this));
-    RETURN_SESSION_ERROR(this, PROTOCOL_ERROR);
+    return SessionError(PROTOCOL_ERROR);
   }
 
   nsresult rv = SetInputFrameDataStream(mInputFrameID);
@@ -3098,7 +3125,7 @@ Http2Session::WriteSegmentsAgain(nsAHttpSegmentWriter *writer,
         mInputFrameBuffer.get() + 1);
     if (totallyWastedByte || (mInputFrameDataSize > kMaxFrameData)) {
       LOG3(("Got frame too large 0x%02X%04X", totallyWastedByte, mInputFrameDataSize));
-      RETURN_SESSION_ERROR(this, PROTOCOL_ERROR);
+      return SessionError(PROTOCOL_ERROR);
     }
     mInputFrameType = *reinterpret_cast<uint8_t *>(mInputFrameBuffer.get() + kFrameLengthBytes);
     mInputFrameFlags = *reinterpret_cast<uint8_t *>(mInputFrameBuffer.get() + kFrameLengthBytes + kFrameTypeBytes);
@@ -3126,7 +3153,7 @@ Http2Session::WriteSegmentsAgain(nsAHttpSegmentWriter *writer,
         ((mInputFrameType != FRAME_TYPE_CONTINUATION) ||
          (mExpectedHeaderID != mInputFrameID))) {
       LOG3(("Expected CONINUATION OF HEADERS for ID 0x%X\n", mExpectedHeaderID));
-      RETURN_SESSION_ERROR(this, PROTOCOL_ERROR);
+      return SessionError(PROTOCOL_ERROR);
     }
 
     // if mExpectedPushPromiseID is non 0, it means this frame must be a
@@ -3136,13 +3163,28 @@ Http2Session::WriteSegmentsAgain(nsAHttpSegmentWriter *writer,
          (mExpectedPushPromiseID != mInputFrameID))) {
       LOG3(("Expected CONTINUATION of PUSH PROMISE for ID 0x%X\n",
             mExpectedPushPromiseID));
-      RETURN_SESSION_ERROR(this, PROTOCOL_ERROR);
+      return SessionError(PROTOCOL_ERROR);
     }
 
     if (mDownstreamState == BUFFERING_OPENING_SETTINGS &&
         mInputFrameType != FRAME_TYPE_SETTINGS) {
       LOG3(("First Frame Type Must Be Settings\n"));
-      RETURN_SESSION_ERROR(this, PROTOCOL_ERROR);
+      mPeerFailedHandshake = true;
+
+      // Don't allow any more h2 connections to this host
+      RefPtr<nsHttpConnectionInfo> ci = ConnectionInfo();
+      if (ci) {
+        gHttpHandler->BlacklistSpdy(ci);
+      }
+
+      // Go through and re-start all of our transactions with h2 disabled.
+      for (auto iter = mStreamTransactionHash.Iter(); !iter.Done(); iter.Next()) {
+        nsAutoPtr<Http2Stream>& stream = iter.Data();
+        stream->Transaction()->DisableSpdy();
+        CloseStream(stream, NS_ERROR_NET_RESET);
+      }
+      mStreamTransactionHash.Clear();
+      return SessionError(PROTOCOL_ERROR);
     }
 
     if (mInputFrameType != FRAME_TYPE_DATA) { // control frame
@@ -3202,7 +3244,7 @@ Http2Session::WriteSegmentsAgain(nsAHttpSegmentWriter *writer,
     if (1U + mPaddingLength > mInputFrameDataSize) {
       LOG3(("Http2Session::WriteSegments %p stream 0x%X padding too large for "
             "frame", this, mInputFrameID));
-      RETURN_SESSION_ERROR(this, PROTOCOL_ERROR);
+      return SessionError(PROTOCOL_ERROR);
     } else if (1U + mPaddingLength == mInputFrameDataSize) {
       // This frame consists entirely of padding, we can just discard it
       LOG3(("Http2Session::WriteSegments %p stream 0x%X frame with only padding",
@@ -3363,6 +3405,21 @@ Http2Session::WriteSegmentsAgain(nsAHttpSegmentWriter *writer,
           // Pushed streams are special on padding-only final data frames.
           // See bug 1409570 comments 6-8 for details.
           streamToCleanup->SetPushComplete();
+          Http2Stream *pushSink = streamToCleanup->GetConsumerStream();
+          if (pushSink) {
+            bool enqueueSink = true;
+            for (auto s : mPushesReadyForRead) {
+              if (s == pushSink) {
+                enqueueSink = false;
+                break;
+              }
+            }
+            if (enqueueSink) {
+              mPushesReadyForRead.Push(pushSink);
+              // No use trying to clean up, it won't do anything, anyway
+              streamToCleanup = nullptr;
+            }
+          }
         }
         CleanupStream(streamToCleanup, NS_OK, CANCEL_ERROR);
       }
@@ -3703,6 +3760,8 @@ Http2Session::Close(nsresult aReason)
     goAwayReason = NO_HTTP_ERROR;
   } else if (aReason == NS_ERROR_ILLEGAL_VALUE) {
     goAwayReason = PROTOCOL_ERROR;
+  } else if (mCleanShutdown) {
+    goAwayReason = NO_HTTP_ERROR;
   } else {
     goAwayReason = INTERNAL_ERROR;
   }
@@ -4124,16 +4183,18 @@ Http2Session::BufferOutput(const char *buf,
 bool // static
 Http2Session::ALPNCallback(nsISupports *securityInfo)
 {
-  if (!gHttpHandler->IsH2MandatorySuiteEnabled()) {
-    LOG3(("Http2Session::ALPNCallback Mandatory Cipher Suite Unavailable\n"));
-    return false;
-  }
-
   nsCOMPtr<nsISSLSocketControl> ssl = do_QueryInterface(securityInfo);
   LOG3(("Http2Session::ALPNCallback sslsocketcontrol=%p\n", ssl.get()));
   if (ssl) {
     int16_t version = ssl->GetSSLVersionOffered();
     LOG3(("Http2Session::ALPNCallback version=%x\n", version));
+
+    if (version == nsISSLSocketControl::TLS_VERSION_1_2 &&
+        !gHttpHandler->IsH2MandatorySuiteEnabled()) {
+      LOG3(("Http2Session::ALPNCallback Mandatory Cipher Suite Unavailable\n"));
+      return false;
+    }
+
     if (version >= nsISSLSocketControl::TLS_VERSION_1_2) {
       return true;
     }
@@ -4176,25 +4237,25 @@ Http2Session::ConfirmTLSProfile()
   LOG3(("Http2Session::ConfirmTLSProfile %p version=%x\n", this, version));
   if (version < nsISSLSocketControl::TLS_VERSION_1_2) {
     LOG3(("Http2Session::ConfirmTLSProfile %p FAILED due to lack of TLS1.2\n", this));
-    RETURN_SESSION_ERROR(this, INADEQUATE_SECURITY);
+    return SessionError(INADEQUATE_SECURITY);
   }
 
   uint16_t kea = ssl->GetKEAUsed();
   if (kea != ssl_kea_dh && kea != ssl_kea_ecdh) {
     LOG3(("Http2Session::ConfirmTLSProfile %p FAILED due to invalid KEA %d\n",
           this, kea));
-    RETURN_SESSION_ERROR(this, INADEQUATE_SECURITY);
+    return SessionError(INADEQUATE_SECURITY);
   }
 
   uint32_t keybits = ssl->GetKEAKeyBits();
   if (kea == ssl_kea_dh && keybits < 2048) {
     LOG3(("Http2Session::ConfirmTLSProfile %p FAILED due to DH %d < 2048\n",
           this, keybits));
-    RETURN_SESSION_ERROR(this, INADEQUATE_SECURITY);
+    return SessionError(INADEQUATE_SECURITY);
   } else if (kea == ssl_kea_ecdh && keybits < 224) { // see rfc7540 9.2.1.
     LOG3(("Http2Session::ConfirmTLSProfile %p FAILED due to ECDH %d < 224\n",
           this, keybits));
-    RETURN_SESSION_ERROR(this, INADEQUATE_SECURITY);
+    return SessionError(INADEQUATE_SECURITY);
   }
 
   int16_t macAlgorithm = ssl->GetMACAlgorithmUsed();
@@ -4202,7 +4263,7 @@ Http2Session::ConfirmTLSProfile()
         this, macAlgorithm));
   if (macAlgorithm != nsISSLSocketControl::SSL_MAC_AEAD) {
     LOG3(("Http2Session::ConfirmTLSProfile %p FAILED due to lack of AEAD\n", this));
-    RETURN_SESSION_ERROR(this, INADEQUATE_SECURITY);
+    return SessionError(INADEQUATE_SECURITY);
   }
 
   /* We are required to send SNI. We do that already, so no check is done
@@ -4591,6 +4652,12 @@ Http2Session::TopLevelOuterContentWindowIdChanged(uint64_t windowId)
   for (auto iter = mStreamTransactionHash.Iter(); !iter.Done(); iter.Next()) {
     iter.Data()->TopLevelOuterContentWindowIdChanged(windowId);
   }
+}
+
+void
+Http2Session::SetCleanShutdown(bool aCleanShutdown)
+{
+  mCleanShutdown = aCleanShutdown;
 }
 
 } // namespace net

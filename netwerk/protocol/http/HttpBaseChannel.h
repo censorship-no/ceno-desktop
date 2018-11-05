@@ -46,10 +46,12 @@
 #include "nsCOMArray.h"
 #include "mozilla/net/ChannelEventQueue.h"
 #include "mozilla/Move.h"
+#include "mozilla/Tuple.h"
 #include "nsIThrottledInputChannel.h"
 #include "nsTArray.h"
 #include "nsCOMPtr.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "nsStringEnumerator.h"
 
 #define HTTP_BASE_CHANNEL_IID \
 { 0x9d5cde03, 0xe6e9, 0x4612, \
@@ -69,6 +71,8 @@ class LogCollector;
 
 namespace net {
 extern mozilla::LazyLogModule gHttpLog;
+
+typedef nsTArray<Tuple<nsCString, nsCString>> ArrayOfStringPairs;
 
 /*
  * This class is a partial implementation of nsIHttpChannel.  It contains code
@@ -211,7 +215,8 @@ public:
   NS_IMETHOD GetTopLevelOuterContentWindowId(uint64_t *aWindowId) override;
   NS_IMETHOD SetTopLevelOuterContentWindowId(uint64_t aWindowId) override;
   NS_IMETHOD GetIsTrackingResource(bool* aIsTrackingResource) override;
-  NS_IMETHOD OverrideTrackingResource(bool aIsTracking) override;
+  NS_IMETHOD GetIsThirdPartyTrackingResource(bool* aIsTrackingResource) override;
+  NS_IMETHOD OverrideTrackingFlagsForDocumentCookieAccessor(nsIHttpChannel* aDocumentChannel) override;
 
   // nsIHttpChannelInternal
   NS_IMETHOD GetDocumentURI(nsIURI **aDocumentURI) override;
@@ -270,6 +275,7 @@ public:
   NS_IMETHOD SetLastRedirectFlags(uint32_t aValue) override;
   NS_IMETHOD GetNavigationStartTimeStamp(TimeStamp* aTimeStamp) override;
   NS_IMETHOD SetNavigationStartTimeStamp(TimeStamp aTimeStamp) override;
+  NS_IMETHOD CancelForTrackingProtection() override;
 
   inline void CleanRedirectCacheChainIfNecessary()
   {
@@ -320,11 +326,13 @@ public:
   void
   ClearConsoleReports() override;
 
-  class nsContentEncodings : public nsIUTF8StringEnumerator
+  class nsContentEncodings : public nsStringEnumeratorBase
     {
     public:
         NS_DECL_ISUPPORTS
         NS_DECL_NSIUTF8STRINGENUMERATOR
+
+        using nsStringEnumeratorBase::GetNext;
 
         nsContentEncodings(nsIHttpChannel* aChannel, const char* aEncodingHeader);
 
@@ -378,7 +386,7 @@ public: /* Necko internal use only... */
     // |EnsureUploadStreamIsCloneableComplete| to main thread.
     virtual void OnCopyComplete(nsresult aStatus);
 
-    void SetIsTrackingResource();
+    void SetIsTrackingResource(bool aIsThirdParty);
 
     const uint64_t& ChannelId() const
     {
@@ -451,6 +459,7 @@ protected:
   // bundle calling OMR observers and marking flag into one function
   inline void CallOnModifyRequestObservers() {
     gHttpHandler->OnModifyRequest(this);
+    MOZ_ASSERT(!mRequestObserversCalled);
     mRequestObserversCalled = true;
   }
 
@@ -547,8 +556,8 @@ protected:
   // The initiator type (for this resource) - how was the resource referenced in
   // the HTML file.
   nsString mInitiatorType;
-  // Holds the name of the preferred alt-data type.
-  nsCString mPreferredCachedAltDataType;
+  // Holds the name of the preferred alt-data type for each contentType.
+  ArrayOfStringPairs mPreferredCachedAltDataTypes;
   // Holds the name of the alternative data type the channel returned.
   nsCString mAvailableCachedAltDataType;
   nsString mIntegrityMetadata;
@@ -625,7 +634,8 @@ protected:
   // Use Release-Acquire ordering to ensure the OMT ODA is ignored while channel
   // is canceled on main thread.
   Atomic<bool, ReleaseAcquire> mCanceled;
-  Atomic<bool, ReleaseAcquire> mIsTrackingResource;
+  Atomic<bool, ReleaseAcquire> mIsFirstPartyTrackingResource;
+  Atomic<bool, ReleaseAcquire> mIsThirdPartyTrackingResource;
 
   uint32_t                          mLoadFlags;
   uint32_t                          mCaps;

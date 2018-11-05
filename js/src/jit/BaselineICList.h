@@ -75,8 +75,15 @@ namespace jit {
                                                  \
     _(Rest_Fallback)                             \
                                                  \
-    _(RetSub_Fallback)                           \
-    _(RetSub_Resume)
+    _(BinaryArith_Fallback)                      \
+                                                 \
+    _(Compare_Fallback)                          \
+                                                 \
+    _(GetProp_Fallback)                          \
+                                                 \
+    _(CacheIR_Regular)                           \
+    _(CacheIR_Monitored)                         \
+    _(CacheIR_Updated)                           \
 
 } // namespace jit
 } // namespace js

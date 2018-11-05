@@ -11,7 +11,6 @@
 
 let searchEngineDetails = [{
   alias: "g",
-  baseURL: "https://www.google.com/search?q=foo&ie=utf-8&oe=utf-8",
   codes: {
     context: "",
     keyword: "",
@@ -34,11 +33,10 @@ switch (region) {
 
 if (code) {
   let codes = searchEngineDetails[0].codes;
-  let suffix = `&client=${code}`;
-  codes.context = suffix;
-  codes.newTab = suffix;
-  codes.submission = suffix;
-  codes.keyword = `${suffix}-ab`;
+  codes.context = code;
+  codes.newTab = code;
+  codes.submission = code;
+  codes.keyword = `${code}-ab`;
 }
 
 function promiseContentSearchReady(browser) {
@@ -80,43 +78,42 @@ async function testSearchEngine(engineDetails) {
   Services.search.currentEngine = engine;
   engine.alias = engineDetails.alias;
 
-  let base = engineDetails.baseURL;
-
   // Test search URLs (including purposes).
   let url = engine.getSubmission("foo").uri.spec;
-  Assert.equal(url, base + engineDetails.codes.submission, "Check search URL for 'foo'");
+  let urlParams = new URLSearchParams(url.split("?")[1]);
+  Assert.equal(urlParams.get("q"), "foo", "Check search URL for 'foo'");
 
   let engineTests = [
     {
       name: "context menu search",
-      searchURL: base + engineDetails.codes.context,
+      code: engineDetails.codes.context,
       run() {
         // Simulate a contextmenu search
         // FIXME: This is a bit "low-level"...
-        BrowserSearch.loadSearch("foo", false, "contextmenu");
-      }
+        BrowserSearch._loadSearch("foo", false, "contextmenu", Services.scriptSecurityManager.getSystemPrincipal());
+      },
     },
     {
       name: "keyword search",
-      searchURL: base + engineDetails.codes.keyword,
+      code: engineDetails.codes.keyword,
       run() {
         gURLBar.value = "? foo";
         gURLBar.focus();
         EventUtils.synthesizeKey("KEY_Enter");
-      }
+      },
     },
     {
       name: "keyword search with alias",
-      searchURL: base + engineDetails.codes.keyword,
+      code: engineDetails.codes.keyword,
       run() {
         gURLBar.value = `${engineDetails.alias} foo`;
         gURLBar.focus();
         EventUtils.synthesizeKey("KEY_Enter");
-      }
+      },
     },
     {
       name: "search bar search",
-      searchURL: base + engineDetails.codes.submission,
+      code: engineDetails.codes.submission,
       async preTest() {
         await gCUITestUtils.addSearchBar();
       },
@@ -129,11 +126,11 @@ async function testSearchEngine(engineDetails) {
       postTest() {
         BrowserSearch.searchBar.value = "";
         gCUITestUtils.removeSearchBar();
-      }
+      },
     },
     {
       name: "new tab search",
-      searchURL: base + engineDetails.codes.newTab,
+      code: engineDetails.codes.newTab,
       async preTest(tab) {
         let browser = tab.linkedBrowser;
         await BrowserTestUtils.loadURI(browser, "about:newtab");
@@ -148,8 +145,8 @@ async function testSearchEngine(engineDetails) {
           input.value = "foo";
         });
         EventUtils.synthesizeKey("KEY_Enter");
-      }
-    }
+      },
+    },
   ];
 
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
@@ -167,7 +164,9 @@ async function testSearchEngine(engineDetails) {
 
     let receivedURI = await stateChangePromise;
 
-    Assert.equal(receivedURI, test.searchURL);
+    let receivedURLParams = new URLSearchParams(receivedURI.split("?")[1]);
+
+    Assert.equal(receivedURLParams.get("client"), test.code);
 
     if (test.postTest) {
       await test.postTest(tab);

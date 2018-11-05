@@ -1,9 +1,11 @@
+import {actionCreators as ac, actionTypes as at} from "common/Actions.jsm";
 import {Card, PlaceholderCard} from "content-src/components/Card/Card";
 import {FormattedMessage, injectIntl} from "react-intl";
-import {actionCreators as ac} from "common/Actions.jsm";
 import {CollapsibleSection} from "content-src/components/CollapsibleSection/CollapsibleSection";
 import {ComponentPerfTimer} from "content-src/components/ComponentPerfTimer/ComponentPerfTimer";
 import {connect} from "react-redux";
+import {MoreRecommendations} from "content-src/components/MoreRecommendations/MoreRecommendations";
+import {PocketLoggedInCta} from "content-src/components/PocketLoggedInCta/PocketLoggedInCta";
 import React from "react";
 import {Topics} from "content-src/components/Topics/Topics";
 import {TopSites} from "content-src/components/TopSites/TopSites";
@@ -38,7 +40,7 @@ export class Section extends React.PureComponent {
     if (this.needsImpressionStats(cards)) {
       props.dispatch(ac.ImpressionStats({
         source: props.eventSource,
-        tiles: cards.map(link => ({id: link.guid}))
+        tiles: cards.map(link => ({id: link.guid})),
       }));
       this.impressionCardGuids = cards.map(link => link.guid);
     }
@@ -76,6 +78,10 @@ export class Section extends React.PureComponent {
     }
   }
 
+  componentWillMount() {
+    this.sendNewTabRehydrated(this.props.initialized);
+  }
+
   componentDidMount() {
     if (this.props.rows.length && !this.props.pref.collapsed) {
       this.sendImpressionStatsOrAddListener();
@@ -101,6 +107,10 @@ export class Section extends React.PureComponent {
     }
   }
 
+  componentWillUpdate(nextProps) {
+    this.sendNewTabRehydrated(nextProps.initialized);
+  }
+
   componentWillUnmount() {
     if (this._onVisibilityChange) {
       this.props.document.removeEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
@@ -121,23 +131,45 @@ export class Section extends React.PureComponent {
     return false;
   }
 
+  // The NEW_TAB_REHYDRATED event is used to inform feeds that their
+  // data has been consumed e.g. for counting the number of tabs that
+  // have rendered that data.
+  sendNewTabRehydrated(initialized) {
+    if (initialized && !this.renderNotified) {
+      this.props.dispatch(ac.AlsoToMain({type: at.NEW_TAB_REHYDRATED, data: {}}));
+      this.renderNotified = true;
+    }
+  }
+
   render() {
     const {
-      id, eventSource, title, icon, rows,
-      emptyState, dispatch, compactCards,
-      contextMenuOptions, initialized, disclaimer,
-      pref, privacyNoticeURL, isFirst, isLast
+      id, eventSource, title, icon, rows, Pocket, topics,
+      emptyState, dispatch, compactCards, read_more_endpoint,
+      contextMenuOptions, initialized, learnMore,
+      pref, privacyNoticeURL, isFirst, isLast,
     } = this.props;
 
+    const waitingForSpoc = id === "topstories" && this.props.Pocket.waitingForSpoc;
     const maxCardsPerRow = compactCards ? CARDS_PER_ROW_COMPACT_WIDE : CARDS_PER_ROW_DEFAULT;
     const {numRows} = this;
     const maxCards = maxCardsPerRow * numRows;
     const maxCardsOnNarrow = CARDS_PER_ROW_DEFAULT * numRows;
 
-    // Show topics only for top stories and if it's not initialized yet (so
-    // content doesn't shift when it is loaded) or has loaded with topics
+    const {pocketCta, isUserLoggedIn} = Pocket || {};
+    const {useCta} = pocketCta || {};
+
+    // Don't display anything until we have a definitve result from Pocket,
+    // to avoid a flash of logged out state while we render.
+    const isPocketLoggedInDefined = (isUserLoggedIn === true || isUserLoggedIn === false);
+
+    const shouldShowPocketCta = (id === "topstories" &&
+      useCta && isUserLoggedIn === false);
+
+    // Show topics only for top stories and if it has loaded with topics.
+    // The classs .top-stories-bottom-container ensures content doesn't shift as things load.
     const shouldShowTopics = (id === "topstories" &&
-      (!this.props.topics || this.props.topics.length > 0));
+      (topics && topics.length > 0) &&
+      ((useCta && isUserLoggedIn === true) || (!useCta && isPocketLoggedInDefined)));
 
     const realRows = rows.slice(0, maxCards);
 
@@ -152,7 +184,13 @@ export class Section extends React.PureComponent {
         // On narrow viewports, we only show 3 cards per row. We'll mark the rest as
         // .hide-for-narrow to hide in CSS via @media query.
         const className = (i >= maxCardsOnNarrow) ? "hide-for-narrow" : "";
-        cards.push(link ? (
+        let usePlaceholder = !link;
+        // If we are in the third card and waiting for spoc,
+        // use the placeholder.
+        if (!usePlaceholder && i === 2 && waitingForSpoc) {
+          usePlaceholder = true;
+        }
+        cards.push(!usePlaceholder ? (
           <Card key={i}
             index={i}
             className={className}
@@ -170,7 +208,7 @@ export class Section extends React.PureComponent {
 
     const sectionClassName = [
       "section",
-      compactCards ? "compact-cards" : "normal-cards"
+      compactCards ? "compact-cards" : "normal-cards",
     ].join(" ");
 
     // <Section> <-- React component
@@ -180,13 +218,13 @@ export class Section extends React.PureComponent {
         title={title}
         id={id}
         eventSource={eventSource}
-        disclaimer={disclaimer}
         collapsed={this.props.pref.collapsed}
         showPrefName={(pref && pref.feed) || id}
         privacyNoticeURL={privacyNoticeURL}
         Prefs={this.props.Prefs}
         isFirst={isFirst}
         isLast={isLast}
+        learnMore={learnMore}
         dispatch={this.props.dispatch}
         isWebExtension={this.props.isWebExtension}>
 
@@ -204,7 +242,17 @@ export class Section extends React.PureComponent {
               </p>
             </div>
           </div>}
-        {shouldShowTopics && <Topics topics={this.props.topics} read_more_endpoint={this.props.read_more_endpoint} />}
+        {id === "topstories" &&
+          <div className="top-stories-bottom-container">
+            <div>
+              {shouldShowTopics && <Topics topics={this.props.topics} />}
+              {shouldShowPocketCta && <PocketLoggedInCta />}
+            </div>
+            <div>
+              {read_more_endpoint &&
+                <MoreRecommendations read_more_endpoint={read_more_endpoint} />}
+            </div>
+          </div>}
       </CollapsibleSection>
     </ComponentPerfTimer>);
   }
@@ -215,10 +263,10 @@ Section.defaultProps = {
   rows: [],
   emptyState: {},
   pref: {},
-  title: ""
+  title: "",
 };
 
-export const SectionIntl = connect(state => ({Prefs: state.Prefs}))(injectIntl(Section));
+export const SectionIntl = connect(state => ({Prefs: state.Prefs, Pocket: state.Pocket}))(injectIntl(Section));
 
 export class _Sections extends React.PureComponent {
   renderSections() {
@@ -232,7 +280,7 @@ export class _Sections extends React.PureComponent {
       const commonProps = {
         key: sectionId,
         isFirst: sections.length === 0,
-        isLast: sections.length === expectedCount - 1
+        isLast: sections.length === expectedCount - 1,
       };
       if (sectionId === "topsites" && showTopSites) {
         sections.push(<TopSites {...commonProps} />);

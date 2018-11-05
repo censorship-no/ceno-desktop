@@ -92,7 +92,7 @@ var gWebProgressListener = {
 
     let isSelectedTab = gNewTab.selected;
     setTimeout(delayed, 0, isSelectedTab);
-  }
+  },
 };
 
 function delayed(aIsSelectedTab) {
@@ -109,7 +109,7 @@ function delayed(aIsSelectedTab) {
 
   if (!aIsSelectedTab) {
     // If this was a background request, go on a foreground request.
-    gBrowser.selectedBrowser.loadURI(REDIRECT_FROM + "#FG");
+    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, REDIRECT_FROM + "#FG");
   } else {
     // Othrewise, nothing to do remains.
     finish();

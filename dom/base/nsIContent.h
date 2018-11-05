@@ -61,8 +61,8 @@ public:
   // If you're using the external API, the only thing you can know about
   // nsIContent is that it exists with an IID
 
-  explicit nsIContent(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : nsINode(aNodeInfo)
+  explicit nsIContent(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsINode(std::move(aNodeInfo))
   {
     MOZ_ASSERT(mNodeInfo);
     SetNodeIsContent();
@@ -797,6 +797,8 @@ protected:
     virtual void TraverseExtendedSlots(nsCycleCollectionTraversalCallback&);
     virtual void UnlinkExtendedSlots();
 
+    virtual size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+
     /**
      * The nearest enclosing content node with a binding that created us.
      * TODO(emilio): This should be an Element*.
@@ -861,6 +863,8 @@ protected:
       }
     }
 
+    // OwnsExtendedSlots returns true if we have no extended slots or if we
+    // have extended slots and own them.
     bool OwnsExtendedSlots() const
     {
       return !(mExtendedSlots & sNonOwningExtendedSlotsFlag);

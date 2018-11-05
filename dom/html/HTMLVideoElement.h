@@ -25,7 +25,7 @@ class HTMLVideoElement final : public HTMLMediaElement
 public:
   typedef mozilla::dom::NodeInfo NodeInfo;
 
-  explicit HTMLVideoElement(already_AddRefed<NodeInfo>& aNodeInfo);
+  explicit HTMLVideoElement(already_AddRefed<NodeInfo>&& aNodeInfo);
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLVideoElement, video)
 
@@ -46,8 +46,7 @@ public:
 
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
 
-  virtual nsresult Clone(NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(NodeInfo*, nsINode** aResult) const override;
 
   // Set size with the current video frame's height and width.
   // If there is no video frame, returns NS_ERROR_FAILURE.
@@ -156,9 +155,18 @@ protected:
 
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
-  virtual void WakeLockCreate() override;
-  virtual void WakeLockRelease() override;
-  void UpdateScreenWakeLock();
+  /**
+   * We create video wakelock when the video is playing and release it when
+   * video pauses. Note, the actual platform wakelock will automatically be
+   * released when the page is in the background, so we don't need to check the
+   * video's visibility by ourselves.
+   */
+  void WakeLockRelease() override;
+  void UpdateWakeLock() override;
+
+  bool ShouldCreateVideoWakeLock() const;
+  void CreateVideoWakeLockIfNeeded();
+  void ReleaseVideoWakeLockIfExists();
 
   RefPtr<WakeLock> mScreenWakeLock;
 

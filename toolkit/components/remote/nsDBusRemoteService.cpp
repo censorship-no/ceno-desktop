@@ -14,7 +14,6 @@
 #include "mozilla/ModuleUtils.h"
 #include "mozilla/Base64.h"
 #include "nsIServiceManager.h"
-#include "nsIWeakReference.h"
 #include "nsIWidget.h"
 #include "nsIAppShellService.h"
 #include "nsAppShellCID.h"
@@ -174,6 +173,7 @@ nsDBusRemoteService::Startup(const char* aAppName, const char* aProfileName)
     return NS_ERROR_FAILURE;
   }
   dbus_connection_set_exit_on_disconnect(mConnection, false);
+  dbus_connection_setup_with_g_main(mConnection, nullptr);
 
   mAppName = aAppName;
   ToLowerCase(mAppName);
@@ -220,9 +220,8 @@ nsDBusRemoteService::Startup(const char* aAppName, const char* aProfileName)
     return NS_ERROR_FAILURE;
   }
 
-  nsAutoCString pathName;
-  pathName = nsPrintfCString("/org/mozilla/%s/Remote", mAppName.get());
-  if (!dbus_connection_register_object_path(mConnection, pathName.get(),
+  mPathName = nsPrintfCString("/org/mozilla/%s/Remote", mAppName.get());
+  if (!dbus_connection_register_object_path(mConnection, mPathName.get(),
                                             &remoteHandlersTable, this)) {
     mConnection = nullptr;
     return NS_ERROR_FAILURE;
@@ -234,6 +233,8 @@ nsDBusRemoteService::Startup(const char* aAppName, const char* aProfileName)
 NS_IMETHODIMP
 nsDBusRemoteService::Shutdown()
 {
+  dbus_connection_unregister_object_path(mConnection, mPathName.get());
+
   // dbus_connection_unref() will be called by RefPtr here.
   mConnection = nullptr;
   return NS_OK;

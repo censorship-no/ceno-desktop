@@ -27,7 +27,7 @@ var clickTest = async function(tab) {
 };
 
 function loadURI(tab, url) {
-  tab.linkedBrowser.loadURI(url);
+  BrowserTestUtils.loadURI(tab.linkedBrowser, url);
   return BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 }
 
@@ -54,7 +54,7 @@ async function cacheObjectValue(browser) {
       info(`sending plugin.checkObjectValue(objectValue): ${result}`);
       sendAsyncMessage("Test:CheckObjectValueResult", {
         result,
-        exception
+        exception,
       });
     };
 
@@ -108,7 +108,7 @@ add_task(async function() {
     BrowserTestUtils.addTab(gBrowser, "about:blank", {skipAnimation: true}),
     BrowserTestUtils.addTab(gBrowser, "about:blank", {skipAnimation: true}),
     BrowserTestUtils.addTab(gBrowser, "about:blank", {skipAnimation: true}),
-    BrowserTestUtils.addTab(gBrowser, "about:blank", {skipAnimation: true})
+    BrowserTestUtils.addTab(gBrowser, "about:blank", {skipAnimation: true}),
   ];
 
   // Initially 0 1 2 3 4

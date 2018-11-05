@@ -13,6 +13,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/net/StunAddrsRequestChild.h"
 #include "nsIProtocolProxyCallback.h"
+#include "MediaTransportHandler.h"
 
 #include "TransceiverImpl.h"
 
@@ -22,13 +23,10 @@ namespace mozilla {
 class DataChannel;
 class PeerIdentity;
 namespace dom {
-struct RTCInboundRTPStreamStats;
-struct RTCOutboundRTPStreamStats;
 class MediaStreamTrack;
 }
 }
 
-#include "nricectxhandler.h"
 #include "nriceresolver.h"
 #include "nricemediastream.h"
 
@@ -50,59 +48,24 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
  public:
   explicit PeerConnectionMedia(PeerConnectionImpl *parent);
 
-  enum IceRestartState { ICE_RESTART_NONE,
-                         ICE_RESTART_PROVISIONAL,
-                         ICE_RESTART_COMMITTED
-  };
-
-  PeerConnectionImpl* GetPC() { return mParent; }
-  nsresult Init(const std::vector<NrIceStunServer>& stun_servers,
-                const std::vector<NrIceTurnServer>& turn_servers,
-                NrIceCtx::Policy policy);
+  nsresult Init(const dom::RTCConfiguration& aConfiguration);
   // WARNING: This destroys the object!
   void SelfDestruct();
-
-  RefPtr<NrIceCtxHandler> ice_ctx_hdlr() const { return mIceCtxHdlr; }
-  RefPtr<NrIceCtx> ice_ctx() const { return mIceCtxHdlr->ctx(); }
-
-  RefPtr<NrIceMediaStream> ice_media_stream(size_t i) const {
-    return mIceCtxHdlr->ctx()->GetStream(i);
-  }
-
-  size_t num_ice_media_streams() const {
-    return mIceCtxHdlr->ctx()->GetStreamCount();
-  }
 
   // Ensure ICE transports exist that we might need when offer/answer concludes
   void EnsureTransports(const JsepSession& aSession);
 
-  // Activate or remove ICE transports at the conclusion of offer/answer,
+  // Activate ICE transports at the conclusion of offer/answer,
   // or when rollback occurs.
-  nsresult ActivateOrRemoveTransports(const JsepSession& aSession,
-                                      const bool forceIceTcp);
-
-  // Update the transports on the TransceiverImpls
-  nsresult UpdateTransceiverTransports(const JsepSession& aSession);
+  nsresult UpdateTransports(const JsepSession& aSession,
+                            const bool forceIceTcp);
 
   // Start ICE checks.
   void StartIceChecks(const JsepSession& session);
 
-  bool IsIceRestarting() const;
-  IceRestartState GetIceRestartState() const;
-
-  // Begin ICE restart
-  void BeginIceRestart(const std::string& ufrag,
-                       const std::string& pwd);
-  // Commit ICE Restart - offer/answer complete, no rollback possible
-  void CommitIceRestart();
-  // Finalize ICE restart
-  void FinalizeIceRestart();
-  // Abort ICE restart
-  void RollbackIceRestart();
-
   // Process a trickle ICE candidate.
-  void AddIceCandidate(const std::string& candidate, const std::string& mid,
-                       uint32_t aMLine);
+  void AddIceCandidate(const std::string& candidate,
+                       const std::string& aTransportId);
 
   // Handle notifications of network online/offline events.
   void UpdateNetworkState(bool online);
@@ -122,12 +85,14 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
       RefPtr<TransceiverImpl>* aTransceiverImpl);
 
   void GetTransmitPipelinesMatching(
-      dom::MediaStreamTrack* aTrack,
+      const dom::MediaStreamTrack* aTrack,
       nsTArray<RefPtr<MediaPipeline>>* aPipelines);
 
   void GetReceivePipelinesMatching(
-      dom::MediaStreamTrack* aTrack,
+      const dom::MediaStreamTrack* aTrack,
       nsTArray<RefPtr<MediaPipeline>>* aPipelines);
+
+  std::string GetTransportIdMatching(const dom::MediaStreamTrack& aTrack) const;
 
   nsresult AddRIDExtension(dom::MediaStreamTrack& aRecvTrack,
                            unsigned short aExtensionId);
@@ -154,22 +119,6 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   const nsCOMPtr<nsIThread>& GetMainThread() const { return mMainThread; }
   const nsCOMPtr<nsIEventTarget>& GetSTSThread() const { return mSTSThread; }
 
-  static size_t GetTransportFlowIndex(int aStreamIndex, bool aRtcp)
-  {
-    return aStreamIndex * 2 + (aRtcp ? 1 : 0);
-  }
-
-  // Get a transport flow either RTP/RTCP for a particular stream
-  // A stream can be of audio/video/datachannel/budled(?) types
-  RefPtr<TransportFlow> GetTransportFlow(int aStreamIndex, bool aIsRtcp) {
-    int index_inner = GetTransportFlowIndex(aStreamIndex, aIsRtcp);
-
-    if (mTransportFlows.find(index_inner) == mTransportFlows.end())
-      return nullptr;
-
-    return mTransportFlows[index_inner];
-  }
-
   // Used by PCImpl in a couple of places. Might be good to move that code in
   // here.
   std::vector<RefPtr<TransceiverImpl>>& GetTransceivers()
@@ -177,32 +126,28 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
     return mTransceivers;
   }
 
-  // Add a transport flow
-  void AddTransportFlow(int aIndex, bool aRtcp,
-                        const RefPtr<TransportFlow> &aFlow);
-  void RemoveTransportFlow(int aIndex, bool aRtcp);
-  void ConnectDtlsListener_s(const RefPtr<TransportFlow>& aFlow);
-  void DtlsConnected_s(TransportLayer* aFlow,
-                       TransportLayer::State state);
-  static void DtlsConnected_m(const std::string& aParentHandle,
-                              bool aPrivacyRequested);
+  void AlpnNegotiated_s(const std::string& aAlpn);
+  static void AlpnNegotiated_m(const std::string& aParentHandle,
+                               const std::string& aAlpn);
 
   // ICE state signals
-  sigslot::signal2<NrIceCtx*, NrIceCtx::GatheringState>
+  sigslot::signal1<mozilla::dom::PCImplIceGatheringState>
       SignalIceGatheringStateChange;
-  sigslot::signal2<NrIceCtx*, NrIceCtx::ConnectionState>
+  sigslot::signal1<mozilla::dom::PCImplIceConnectionState>
       SignalIceConnectionStateChange;
-  // This passes a candidate:... attribute  and level
-  sigslot::signal2<const std::string&, uint16_t> SignalCandidate;
-  // This passes address, port, level of the default candidate.
+  // This passes a candidate:... attribute and transport id
+  // end-of-candidates is signaled with the empty string
+  sigslot::signal2<const std::string&, const std::string&> SignalCandidate;
+  // This passes address, port, transport id of the default candidate.
   sigslot::signal5<const std::string&, uint16_t,
-                   const std::string&, uint16_t, uint16_t>
+                   const std::string&, uint16_t, const std::string&>
       SignalUpdateDefaultCandidate;
-  sigslot::signal1<uint16_t>
-      SignalEndOfLocalCandidates;
 
   // TODO: Move to PeerConnectionImpl
   RefPtr<WebRtcCallWrapper> mCall;
+
+  // mtransport objects
+  RefPtr<MediaTransportHandler> mTransportHandler;
 
  private:
   void InitLocalAddrs(); // for stun local address IPC request
@@ -243,74 +188,35 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   void SelfDestruct_m();
 
   // Manage ICE transports.
-  void EnsureTransport_s(size_t aLevel, size_t aComponentCount);
-  void ActivateOrRemoveTransport_s(
-      size_t aMLine,
-      size_t aComponentCount,
-      const std::string& aUfrag,
-      const std::string& aPassword,
-      const std::vector<std::string>& aCandidateList);
-  void RemoveTransportsAtOrAfter_s(size_t aMLine);
-  nsresult UpdateTransportFlows(const JsepTransceiver& transceiver);
-  nsresult UpdateTransportFlow(size_t aLevel,
-                               bool aIsRtcp,
-                               const JsepTransport& aTransport);
+  void UpdateTransport(const JsepTransceiver& aTransceiver,
+                       bool aForceIceTcp);
 
   void GatherIfReady();
   void FlushIceCtxOperationQueueIfReady();
   void PerformOrEnqueueIceCtxOperation(nsIRunnable* runnable);
-  void EnsureIceGathering_s(bool aDefaultRouteOnly, bool aProxyOnly);
+  void EnsureIceGathering_s(bool aDefaultRouteOnly);
   void StartIceChecks_s(bool aIsControlling,
                         bool aIsOfferer,
                         bool aIsIceLite,
                         const std::vector<std::string>& aIceOptionsList);
 
-  void BeginIceRestart_s(RefPtr<NrIceCtx> new_ctx);
-  void FinalizeIceRestart_s();
-  void RollbackIceRestart_s();
   bool GetPrefDefaultAddressOnly() const;
-  bool GetPrefProxyOnly() const;
 
-  void ConnectSignals(NrIceCtx *aCtx, NrIceCtx *aOldCtx=nullptr);
-
-  // Process a trickle ICE candidate.
-  void AddIceCandidate_s(const std::string& aCandidate, const std::string& aMid,
-                         uint32_t aMLine);
-
-  void UpdateNetworkState_s(bool online);
+  void ConnectSignals();
 
   // ICE events
-  void IceGatheringStateChange_s(NrIceCtx* ctx,
-                               NrIceCtx::GatheringState state);
-  void IceConnectionStateChange_s(NrIceCtx* ctx,
-                                NrIceCtx::ConnectionState state);
-  void IceStreamReady_s(NrIceMediaStream *aStream);
-  void OnCandidateFound_s(NrIceMediaStream *aStream,
-                          const std::string& aCandidate);
-  void EndOfLocalCandidates(const std::string& aDefaultAddr,
-                            uint16_t aDefaultPort,
-                            const std::string& aDefaultRtcpAddr,
-                            uint16_t aDefaultRtcpPort,
-                            uint16_t aMLine);
-  void GetDefaultCandidates(const NrIceMediaStream& aStream,
-                            NrIceCandidate* aCandidate,
-                            NrIceCandidate* aRtcpCandidate);
+  void IceGatheringStateChange_s(dom::PCImplIceGatheringState aState);
+  void IceConnectionStateChange_s(dom::PCImplIceConnectionState aState);
+  void OnCandidateFound_s(
+      const std::string& aTransportId,
+      const MediaTransportHandler::CandidateInfo& aCandidateInfo);
 
-  void IceGatheringStateChange_m(NrIceCtx* ctx,
-                                 NrIceCtx::GatheringState state);
-  void IceConnectionStateChange_m(NrIceCtx* ctx,
-                                  NrIceCtx::ConnectionState state);
-  void OnCandidateFound_m(const std::string& aCandidateLine,
-                          const std::string& aDefaultAddr,
-                          uint16_t aDefaultPort,
-                          const std::string& aDefaultRtcpAddr,
-                          uint16_t aDefaultRtcpPort,
-                          uint16_t aMLine);
-  void EndOfLocalCandidates_m(const std::string& aDefaultAddr,
-                              uint16_t aDefaultPort,
-                              const std::string& aDefaultRtcpAddr,
-                              uint16_t aDefaultRtcpPort,
-                              uint16_t aMLine);
+  void IceGatheringStateChange_m(dom::PCImplIceGatheringState aState);
+  void IceConnectionStateChange_m(dom::PCImplIceConnectionState aState);
+  void OnCandidateFound_m(
+      const std::string& aTransportId,
+      const MediaTransportHandler::CandidateInfo& aCandidateInfo);
+
   bool IsIceCtxReady() const {
     return mProxyResolveCompleted && mLocalAddrsCompleted;
   }
@@ -322,18 +228,6 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   std::string mParentName;
 
   std::vector<RefPtr<TransceiverImpl>> mTransceivers;
-
-  // ICE objects
-  RefPtr<NrIceCtxHandler> mIceCtxHdlr;
-
-  // DNS
-  RefPtr<NrIceResolver> mDNSResolver;
-
-  // Transport flows: even is RTP, odd is RTCP
-  std::map<int, RefPtr<TransportFlow> > mTransportFlows;
-
-  // UUID Generator
-  UniquePtr<PCUuidGenerator> mUuidGen;
 
   // The main thread.
   nsCOMPtr<nsIThread> mMainThread;
@@ -354,10 +248,8 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   bool mProxyResolveCompleted;
 
   // Used to store the result of the request.
-  UniquePtr<NrIceProxyServer> mProxyServer;
-
-  // Used to track the state of ice restart
-  IceRestartState mIceRestartState;
+  std::string mProxyHost;
+  uint16_t mProxyPort;
 
   // Used to cancel incoming stun addrs response
   RefPtr<net::StunAddrsRequestChild> mStunAddrsRequest;

@@ -19,7 +19,7 @@ class HTMLSelectElement;
 class HTMLOptionElement final : public nsGenericHTMLElement
 {
 public:
-  explicit HTMLOptionElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLOptionElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   static already_AddRefed<HTMLOptionElement>
     Option(const GlobalObject& aGlobal,
@@ -83,10 +83,9 @@ public:
   // nsIContent
   virtual EventStates IntrinsicState() const override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  nsresult CopyInnerTo(mozilla::dom::Element* aDest, bool aPreallocateChildren);
+  nsresult CopyInnerTo(mozilla::dom::Element* aDest);
 
   bool Disabled() const
   {

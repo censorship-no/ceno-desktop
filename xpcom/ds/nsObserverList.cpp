@@ -8,7 +8,6 @@
 
 #include "nsAutoPtr.h"
 #include "nsCOMArray.h"
-#include "nsISimpleEnumerator.h"
 #include "xpcpublic.h"
 
 nsresult
@@ -25,7 +24,7 @@ nsObserverList::AddObserver(nsIObserver* anObserver, bool ownsWeak)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIWeakReference> weak = do_GetWeakReference(anObserver);
+  nsWeakPtr weak = do_GetWeakReference(anObserver);
   if (!weak) {
     return NS_NOINTERFACE;
   }
@@ -47,7 +46,7 @@ nsObserverList::RemoveObserver(nsIObserver* anObserver)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIWeakReference> observerRef = do_GetWeakReference(anObserver);
+  nsWeakPtr observerRef = do_GetWeakReference(anObserver);
   if (!observerRef) {
     return NS_ERROR_FAILURE;
   }
@@ -113,8 +112,6 @@ nsObserverList::NotifyObservers(nsISupports* aSubject,
   }
 }
 
-NS_IMPL_ISUPPORTS(nsObserverEnumerator, nsISimpleEnumerator)
-
 nsObserverEnumerator::nsObserverEnumerator(nsObserverList* aObserverList)
   : mIndex(0)
 {
@@ -132,8 +129,7 @@ NS_IMETHODIMP
 nsObserverEnumerator::GetNext(nsISupports** aResult)
 {
   if (mIndex == mObservers.Count()) {
-    NS_ERROR("Enumerating after HasMoreElements returned false.");
-    return NS_ERROR_UNEXPECTED;
+    return NS_ERROR_FAILURE;
   }
 
   NS_ADDREF(*aResult = mObservers[mIndex]);

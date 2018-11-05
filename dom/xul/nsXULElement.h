@@ -335,7 +335,7 @@ class nsXULElement : public nsStyledElement
 {
 protected:
     // Use Construct to construct elements instead of this constructor.
-    explicit nsXULElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+    explicit nsXULElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 public:
     using Element::Blur;
@@ -375,6 +375,9 @@ public:
     }
 #endif
 
+    bool HasMenu();
+    MOZ_CAN_RUN_SCRIPT void OpenMenu(bool aOpenFlag);
+
     virtual bool PerformAccesskey(bool aKeyCausesActivation,
                                   bool aIsTrustedEvent) override;
     void ClickWithInputSource(uint16_t aInputSource, bool aIsTrustedEvent);
@@ -391,8 +394,7 @@ public:
                                                 int32_t aModType) const override;
     NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
-    virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                           bool aPreallocateChildren) const override;
+    virtual nsresult Clone(mozilla::dom::NodeInfo*, nsINode** aResult) const override;
     virtual mozilla::EventStates IntrinsicState() const override;
 
     virtual void RecompileScriptEventListeners() override;
@@ -416,6 +418,11 @@ public:
                     mozilla::ErrorResult& aError)
     {
         SetAttr(aName, aValue, aError);
+    }
+    bool GetXULBoolAttr(nsAtom* aName) const
+    {
+        return AttrValueIs(kNameSpaceID_None, aName,
+                           NS_LITERAL_STRING("true"), eCaseMatters);
     }
     void SetXULBoolAttr(nsAtom* aName, bool aValue)
     {
@@ -685,8 +692,6 @@ protected:
     void SetDrawsInTitlebar(bool aState);
     void SetDrawsTitle(bool aState);
     void UpdateBrightTitlebarForeground(nsIDocument* aDocument);
-
-    void RemoveBroadcaster(const nsAString & broadcasterId);
 
 protected:
     void AddTooltipSupport();

@@ -125,6 +125,14 @@ public class Updater {
     void startUpdate(final int flags) {
         prefs.setLastAttemptDate();
 
+        if (!UpdateServiceHelper.isUpdaterEnabled(context)) {
+            if (DEBUG) {
+                Log.i(logtag, "Updater not enabled");
+            }
+            sendCheckUpdateResult(CheckUpdateResult.NOT_AVAILABLE);
+            return;
+        }
+
         NetworkInfo netInfo = connectivityManager.getActiveNetworkInfo();
         if (netInfo == null || !netInfo.isConnected()) {
             if (DEBUG) {
@@ -235,7 +243,7 @@ public class Updater {
 
         if (!AppConstants.Versions.preO) {
             builder.setChannelId(NotificationHelper.getInstance(context)
-                    .getNotificationChannel(NotificationHelper.Channel.DEFAULT).getId());
+                    .getNotificationChannel(NotificationHelper.Channel.UPDATER).getId());
         }
 
         NotificationManagerCompat.from(context)
@@ -278,7 +286,7 @@ public class Updater {
 
             if (!AppConstants.Versions.preO) {
                 builder.setChannelId(NotificationHelper.getInstance(context)
-                        .getNotificationChannel(NotificationHelper.Channel.DEFAULT).getId());
+                        .getNotificationChannel(NotificationHelper.Channel.UPDATER).getId());
             }
 
             notificationManager.notify(notificationId, builder.build());
@@ -320,7 +328,7 @@ public class Updater {
 
             if (!AppConstants.Versions.preO) {
                 builder.setChannelId(NotificationHelper.getInstance(context)
-                        .getNotificationChannel(NotificationHelper.Channel.DEFAULT).getId());
+                        .getNotificationChannel(NotificationHelper.Channel.UPDATER).getId());
             }
 
             notificationManager.notify(notificationId, builder.build());
@@ -455,10 +463,7 @@ public class Updater {
     private void showDownloadNotification(File downloadFile) {
 
         Intent notificationIntent = new Intent(UpdateServiceHelper.ACTION_APPLY_UPDATE);
-        notificationIntent.setClass(context, UserUpdatesReceiver.class);
-
         Intent cancelIntent = new Intent(UpdateServiceHelper.ACTION_CANCEL_DOWNLOAD);
-        cancelIntent.setClass(context, UserUpdatesReceiver.class);
 
         if (downloadFile != null)
             notificationIntent.putExtra(UpdateServiceHelper.EXTRA_PACKAGE_PATH_NAME, downloadFile.getAbsolutePath());
@@ -471,11 +476,12 @@ public class Updater {
                 .setContentText(shouldApplyImmediately ? "" : getString(R.string.updater_downloading_select))
                 .setSmallIcon(android.R.drawable.stat_sys_download)
                 .setContentIntent(contentIntent)
-                .setDeleteIntent(deleteIntent);
+                .setDeleteIntent(deleteIntent)
+                .setOnlyAlertOnce(true);
 
         if (!AppConstants.Versions.preO) {
             notifBuilder.setChannelId(NotificationHelper.getInstance(context)
-                    .getNotificationChannel(NotificationHelper.Channel.DEFAULT).getId());
+                    .getNotificationChannel(NotificationHelper.Channel.UPDATER).getId());
         }
 
         notifBuilder.setProgress(100, 0, true);
@@ -498,7 +504,7 @@ public class Updater {
 
         if (!AppConstants.Versions.preO) {
             builder.setChannelId(NotificationHelper.getInstance(context)
-                    .getNotificationChannel(NotificationHelper.Channel.DEFAULT).getId());
+                    .getNotificationChannel(NotificationHelper.Channel.UPDATER).getId());
         }
 
         notificationManager.notify(notificationId, builder.build());

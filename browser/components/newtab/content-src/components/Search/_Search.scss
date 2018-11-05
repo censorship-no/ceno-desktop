@@ -1,21 +1,89 @@
 .search-wrapper {
-  $search-height: 35px;
-  $search-icon-size: 18px;
-  $search-icon-padding: 8px;
-  $search-icon-width: 2 * $search-icon-padding + $search-icon-size;
-  $search-input-left-label-width: 35px;
-  $search-button-width: 36px;
+  $search-height: 48px;
+  $search-icon-size: 24px;
+  $search-icon-padding: 12px;
+  $search-icon-width: 2 * $search-icon-padding + $search-icon-size -2;
+  $search-button-width: 48px;
   $glyph-forward: url('chrome://browser/skin/forward.svg');
 
-  cursor: default;
-  display: flex;
-  height: $search-height;
-  margin-bottom: $section-spacing;
-  position: relative;
-  width: 100%;
+  padding: 34px 0 64px;
+
+  @media (max-height: 700px) {
+    & {
+      padding: 0 0 30px;
+    }
+  }
+
+  .only-search & {
+    padding: 0 0 64px;
+  }
+
+  .logo-and-wordmark {
+    $logo-size: 97px;
+    $wordmark-size: 142px;
+
+    align-items: center;
+    display: flex;
+    justify-content: center;
+    margin-bottom: 49px;
+
+    .logo {
+      background: url('chrome://branding/content/icon128.png') no-repeat center center;
+      background-size: $logo-size;
+      display: inline-block;
+      height: $logo-size;
+      width: $logo-size;
+    }
+
+    .wordmark {
+      background: url('#{$image-path}firefox-wordmark.svg') no-repeat center center;
+      background-size: $wordmark-size;
+      -moz-context-properties: fill;
+      display: inline-block;
+      fill: var(--newtab-search-wordmark-color);
+      height: $logo-size;
+      margin-inline-start: 15px;
+      width: $wordmark-size;
+    }
+
+    @media (max-width: $break-point-medium - 1) {
+      $logo-size-small: 64px;
+      $wordmark-small-size: 100px;
+
+      .logo {
+        background-size: $logo-size-small;
+        height: $logo-size-small;
+        width: $logo-size-small;
+      }
+
+      .wordmark {
+        background-size: $wordmark-small-size;
+        height: $logo-size-small;
+        width: $wordmark-small-size;
+      }
+    }
+  }
+
+  .search-inner-wrapper {
+    cursor: default;
+    display: flex;
+    height: $search-height;
+    margin: 0 auto;
+    position: relative;
+    width: $searchbar-width-small;
+
+    @media (min-width: $break-point-medium) {
+      width: $searchbar-width-medium;
+    }
+
+    @media (min-width: $break-point-large) {
+      width: $searchbar-width-large;
+    }
+  }
 
   input {
-    background: var(--newtab-textbox-background-color) var(--newtab-search-icon) $search-icon-padding center / $search-icon-size no-repeat;
+    background: var(--newtab-textbox-background-color) var(--newtab-search-icon) $search-icon-padding center no-repeat;
+    background-size: $search-icon-size;
     border: solid 1px var(--newtab-search-border-color);
     box-shadow: $shadow-secondary, 0 0 0 1px $black-15;
     font-size: 15px;
@@ -35,7 +103,7 @@
     box-shadow: $shadow-secondary, 0 0 0 1px $black-25;
   }
 
-  &:active input,
+  .search-inner-wrapper:active input,
   input:focus {
     border: $input-border-active;
     box-shadow: var(--newtab-textbox-focus-boxshadow);
@@ -65,6 +133,44 @@
 
     &:dir(rtl) {
       transform: scaleX(-1);
+    }
+  }
+}
+
+@media (min-height: 701px) {
+  .fixed-search {
+    main {
+      padding-top: 146px;
+    }
+
+    .search-wrapper {
+      $search-header-bar-height: 95px;
+      $search-height: 35px;
+      $search-icon-size: 16px;
+      $search-icon-padding: 16px;
+
+      background-color: var(--newtab-search-header-background-color);
+      border-bottom: solid 1px var(--newtab-border-secondary-color);
+      height: $search-header-bar-height;
+      left: 0;
+      padding: 30px 0;
+      position: fixed;
+      top: 0;
+      width: 100%;
+      z-index: 9;
+
+      .search-inner-wrapper {
+        height: $search-height;
+      }
+
+      input {
+        background-position-x: $search-icon-padding;
+        background-size: $search-icon-size;
+
+        &:dir(rtl) {
+          background-position-x: right $search-icon-padding;
+        }
+      }
     }
   }
 }
@@ -149,5 +255,11 @@
         color: var(--newtab-text-primary-color);
       }
     }
+  }
+
+  .contentSearchHeaderRow > td > img,
+  .contentSearchSuggestionRow > td > .historyIcon {
+    margin-inline-start: 7px;
+    margin-inline-end: 15px;
   }
 }

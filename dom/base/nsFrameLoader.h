@@ -32,7 +32,6 @@
 class nsIURI;
 class nsSubDocumentFrame;
 class nsView;
-class nsInProcessTabChildGlobal;
 class AutoResetInShow;
 class AutoResetInFrameSwap;
 class nsITabParent;
@@ -51,6 +50,7 @@ class OriginAttributes;
 namespace dom {
 class ChromeMessageSender;
 class ContentParent;
+class InProcessTabChildMessageManager;
 class MessageSender;
 class PBrowserParent;
 class ProcessMessageManager;
@@ -106,7 +106,7 @@ public:
   void DestroyDocShell();
   void DestroyComplete();
   nsIDocShell* GetExistingDocShell() { return mDocShell; }
-  nsInProcessTabChildGlobal* GetTabChildGlobal() const
+  mozilla::dom::InProcessTabChildMessageManager* GetTabChildMessageManager() const
   {
     return mChildMessageManager;
   }
@@ -130,10 +130,14 @@ public:
   /**
    * Loads the specified URI in this frame. Behaves identically to loadFrame,
    * except that this method allows specifying the URI to load.
+   *
+   * @param aURI The URI to load.
+   * @param aTriggeringPrincipal The triggering principal for the load. May be
+   *        null, in which case the node principal of the owner content will be
+   *        used.
    */
-  nsresult LoadURI(nsIURI* aURI, bool aOriginalSrc);
-
-  void AddProcessChangeBlockingPromise(mozilla::dom::Promise& aPromise, mozilla::ErrorResult& aRv);
+  nsresult LoadURI(nsIURI* aURI, nsIPrincipal* aTriggeringPrincipal,
+                   bool aOriginalSrc);
 
   /**
    * Destroy the frame loader and everything inside it. This will
@@ -160,14 +164,21 @@ public:
 
   void RequestNotifyAfterRemotePaint();
 
-  void RequestFrameLoaderClose(mozilla::ErrorResult& aRv);
-
   void RequestUpdatePosition(mozilla::ErrorResult& aRv);
 
   void Print(uint64_t aOuterWindowID,
              nsIPrintSettings* aPrintSettings,
              nsIWebProgressListener* aProgressListener,
              mozilla::ErrorResult& aRv);
+
+  already_AddRefed<mozilla::dom::Promise>
+  DrawSnapshot(double aX,
+               double aY,
+               double aW,
+               double aH,
+               double aScale,
+               const nsAString& aBackgroundColor,
+               mozilla::ErrorResult& aRv);
 
   void StartPersistence(uint64_t aOuterWindowID,
                         nsIWebBrowserPersistDocumentReceiver* aRecv,
@@ -341,7 +352,7 @@ public:
 
   // public because a callback needs these.
   RefPtr<mozilla::dom::ChromeMessageSender> mMessageManager;
-  RefPtr<nsInProcessTabChildGlobal> mChildMessageManager;
+  RefPtr<mozilla::dom::InProcessTabChildMessageManager> mChildMessageManager;
 
   virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override;
 
@@ -437,25 +448,6 @@ private:
   nsresult
   PopulateUserContextIdFromAttribute(mozilla::OriginAttributes& aAttr);
 
-  // Swap ourselves with the frameloader aOther, and notify chrome code with
-  // a BrowserChangedProcess event.
-  bool SwapBrowsersAndNotify(nsFrameLoader* aOther);
-
-  // Returns a promise which will be resolved once all of the blockers have
-  // resolved which were added during the BrowserWillChangeProcess event.
-  already_AddRefed<mozilla::dom::Promise> FireWillChangeProcessEvent();
-
-  /**
-   * Triggers a load of the given URI.
-   *
-   * @param aURI The URI to load.
-   * @param aTriggeringPrincipal The triggering principal for the load. May be
-   *        null, in which case the node principal of the owner content will be
-   *        used.
-   */
-  nsresult LoadURI(nsIURI* aURI, nsIPrincipal* aTriggeringPrincipal,
-                   bool aOriginalSrc);
-
   nsCOMPtr<nsIDocShell> mDocShell;
   nsCOMPtr<nsIURI> mURIToLoad;
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
@@ -486,10 +478,6 @@ private:
 
   // Holds the last known size of the frame.
   mozilla::ScreenIntSize mLazySize;
-
-  // A stack-maintained reference to an array of promises which are blocking
-  // grouped history navigation
-  nsTArray<RefPtr<mozilla::dom::Promise>>* mBrowserChangingProcessBlockers;
 
   RefPtr<mozilla::dom::ParentSHistory> mParentSHistory;
 

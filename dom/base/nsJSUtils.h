@@ -20,6 +20,7 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "js/Conversions.h"
+#include "js/StableStringChars.h"
 #include "nsString.h"
 
 class nsIScriptContext;
@@ -106,8 +107,7 @@ public:
    public:
 
     // Enter compartment in which the code would be executed.  The JSContext
-    // must come from an AutoEntryScript that has had
-    // TakeOwnershipOfErrorReporting() called on it.
+    // must come from an AutoEntryScript.
     ExecutionContext(JSContext* aCx, JS::Handle<JSObject*> aGlobal);
 
     ExecutionContext(const ExecutionContext&) = delete;
@@ -225,7 +225,7 @@ template<typename T>
 inline bool
 AssignJSString(JSContext *cx, T &dest, JSString *s)
 {
-  size_t len = js::GetStringLength(s);
+  size_t len = JS::GetStringLength(s);
   static_assert(js::MaxStringLength < (1 << 28),
                 "Shouldn't overflow here or in SetCapacity");
   if (MOZ_UNLIKELY(!dest.SetLength(len, mozilla::fallible))) {

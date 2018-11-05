@@ -30,7 +30,6 @@
 
     // Uniform inputs
     uniform mat4 uTransform;       // Orthographic projection
-    uniform float uDevicePixelRatio;
 
     // Attribute inputs
     in vec3 aPosition;
@@ -40,7 +39,7 @@
     // https://github.com/servo/webrender/pull/623
     // https://github.com/servo/servo/issues/13953
     // Do the division with unsigned ints because that's more efficient with D3D
-    #define get_fetch_uv(i, vpi)  ivec2(int(uint(vpi) * (uint(i) % uint(WR_MAX_VERTEX_TEXTURE_WIDTH/vpi))), int(uint(i) / uint(WR_MAX_VERTEX_TEXTURE_WIDTH/vpi)))
+    #define get_fetch_uv(i, vpi)  ivec2(int(vpi * (uint(i) % (WR_MAX_VERTEX_TEXTURE_WIDTH/vpi))), int(uint(i) / (WR_MAX_VERTEX_TEXTURE_WIDTH/vpi)))
 #endif
 
 //======================================================================================
@@ -57,7 +56,10 @@
         out vec4 oFragColor;
     #endif
 
-    #define EPSILON     0.0001
+    #define EPSILON                     0.0001
+
+    // "Show Overdraw" color. Premultiplied.
+    #define WR_DEBUG_OVERDRAW_COLOR     vec4(0.110, 0.077, 0.027, 0.125)
 
     float distance_to_line(vec2 p0, vec2 perp_dir, vec2 p) {
         vec2 dir_to_p0 = p0 - p;
@@ -111,6 +113,22 @@
             return 0.0;
         return 0.5 + dist * (0.8431027 * dist * dist - 1.14453603);
     }
+
+    /// Component-wise selection.
+    ///
+    /// The idea of using this is to ensure both potential branches are executed before
+    /// selecting the result, to avoid observable timing differences based on the condition.
+    ///
+    /// Example usage: color = if_then_else(LessThanEqual(color, vec3(0.5)), vec3(0.0), vec3(1.0));
+    ///
+    /// The above example sets each component to 0.0 or 1.0 independently depending on whether
+    /// their values are below or above 0.5.
+    ///
+    /// This is written as a macro in order to work with vectors of any dimension.
+    ///
+    /// Note: Some older android devices don't support mix with bvec. If we ever run into them
+    /// the only option we have is to polyfill it with a branch per component.
+    #define if_then_else(cond, then_branch, else_branch) mix(else_branch, then_branch, cond)
 #endif
 
 //======================================================================================

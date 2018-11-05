@@ -11,6 +11,8 @@ import math
 import textwrap
 import functools
 
+from perfecthash import PerfectHash
+
 from WebIDL import BuiltinTypes, IDLBuiltinType, IDLNullValue, IDLSequenceType, IDLType, IDLAttribute, IDLInterfaceMember, IDLUndefinedValue, IDLEmptySequenceValue, IDLDictionary
 from Configuration import NoSuchDescriptorError, getTypesFromDescriptor, getTypesFromDictionary, getTypesFromCallback, getAllTypes, Descriptor, MemberIsUnforgeable, iteratorNativeType
 
@@ -28,6 +30,11 @@ MAY_RESOLVE_HOOK_NAME = '_mayResolve'
 NEW_ENUMERATE_HOOK_NAME = '_newEnumerate'
 ENUM_ENTRY_VARIABLE_NAME = 'strings'
 INSTANCE_RESERVED_SLOTS = 1
+
+# This size is arbitrary. It is a power of 2 to make using it as a modulo
+# operand cheap, and is usually around 1/3-1/5th of the set size (sometimes
+# smaller for very large sets).
+GLOBAL_NAMES_PHF_SIZE=256
 
 
 def memberReservedSlot(member, descriptor):
@@ -102,6 +109,9 @@ def idlTypeNeedsCycleCollection(type):
         raise CycleCollectionUnsupported("Don't know whether to cycle-collect type %s" % type)
 
 
+# TryPreserveWrapper uses the addProperty hook to preserve the wrapper of
+# non-nsISupports cycle collected objects, so if wantsAddProperty is changed
+# to not cover that case then TryPreserveWrapper will need to be changed.
 def wantsAddProperty(desc):
     return (desc.concrete and desc.wrapperCache and not desc.isGlobal())
 
@@ -1683,6 +1693,10 @@ class CGAddPropertyHook(CGAbstractClassHook):
 
     def generate_code(self):
         assert self.descriptor.wrapperCache
+        # This hook is also called by TryPreserveWrapper on non-nsISupports
+        # cycle collected objects, so if addProperty is ever changed to do
+        # anything more or less than preserve the wrapper, TryPreserveWrapper
+        # will need to be changed.
         return dedent("""
             // We don't want to preserve if we don't have a wrapper, and we
             // obviously can't preserve if we're not initialized.
@@ -2966,13 +2980,20 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
         # if we don't need to create anything, why are we generating this?
         assert needInterfaceObject or needInterfacePrototypeObject
 
+        def maybecrash(reason):
+            if self.descriptor.name == "Document":
+                return 'MOZ_CRASH("Bug 1405521/1488480: %s");\n' % reason
+            return ""
+
         getParentProto = fill(
             """
             JS::${type}<JSObject*> parentProto(${getParentProto});
             if (!parentProto) {
+              $*{maybeCrash}
               return;
             }
             """,
+            maybeCrash=maybecrash("Can't get Node.prototype"),
             type=parentProtoType,
             getParentProto=getParentProto)
 
@@ -2980,9 +3001,11 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
             """
             JS::${type}<JSObject*> constructorProto(${getConstructorProto});
             if (!constructorProto) {
+              $*{maybeCrash}
               return;
             }
             """,
+            maybeCrash=maybecrash("Can't get Node"),
             type=constructorProtoType,
             getConstructorProto=getConstructorProto)
 
@@ -2998,7 +3021,12 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
                            for properties in idsToInit]
             idsInitedFlag = CGGeneric("static bool sIdsInited = false;\n")
             setFlag = CGGeneric("sIdsInited = true;\n")
-            initIdConditionals = [CGIfWrapper(CGGeneric("return;\n"), call)
+            initIdConditionals = [CGIfWrapper(CGGeneric(fill(
+                """
+                $*{maybeCrash}
+                return;
+                """,
+                maybeCrash=maybecrash("Can't init IDs"))), call)
                                   for call in initIdCalls]
             initIds = CGList([idsInitedFlag,
                               CGIfWrapper(CGList(initIdConditionals + [setFlag]),
@@ -3085,6 +3113,9 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
                                         ${name}, aDefineOnGlobal,
                                         ${unscopableNames},
                                         ${isGlobal});
+            if (protoCache && !*protoCache) {
+              $*{maybeCrash}
+            }
             """,
             protoClass=protoClass,
             parentProto=parentProto,
@@ -3099,7 +3130,8 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
             chromeProperties=chromeProperties,
             name='"' + self.descriptor.interface.identifier.name + '"' if needInterfaceObject else "nullptr",
             unscopableNames="unscopableNames" if self.haveUnscopables else "nullptr",
-            isGlobal=toStringBool(isGlobal))
+            isGlobal=toStringBool(isGlobal),
+            maybeCrash=maybecrash("dom::CreateInterfaceObjects failed for Document"))
 
         # If we fail after here, we must clear interface and prototype caches
         # using this code: intermediate failure must not expose the interface in
@@ -3201,10 +3233,12 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
                   JS::Rooted<JSObject*> holderProto(aCx, ${holderProto});
                   unforgeableHolder = JS_NewObjectWithoutMetadata(aCx, ${holderClass}, holderProto);
                   if (!unforgeableHolder) {
+                    $*{maybeCrash}
                     $*{failureCode}
                   }
                 }
                 """,
+                maybeCrash=maybecrash("Can't create unforgeable holder"),
                 holderProto=holderProto,
                 holderClass=holderClass,
                 failureCode=failureCode))
@@ -3489,36 +3523,39 @@ class CGConstructorEnabled(CGAbstractMethod):
         return body.define()
 
 
-def CreateBindingJSObject(descriptor, properties):
+def CreateBindingJSObject(descriptor, properties, failureCode = ""):
     objDecl = "BindingJSObjectCreator<%s> creator(aCx);\n" % descriptor.nativeType
 
     # We don't always need to root obj, but there are a variety
     # of cases where we do, so for simplicity, just always root it.
     if descriptor.proxy:
         if descriptor.interface.getExtendedAttribute('OverrideBuiltins'):
-            expandoValue = "JS::PrivateValue(&aObject->mExpandoAndGeneration)"
+            create = dedent(
+                """
+                aObject->mExpandoAndGeneration.expando.setUndefined();
+                JS::Rooted<JS::Value> expandoValue(aCx, JS::PrivateValue(&aObject->mExpandoAndGeneration));
+                creator.CreateProxyObject(aCx, &sClass.mBase, DOMProxyHandler::getInstance(),
+                                          proto, aObject, expandoValue, aReflector);
+                """)
         else:
-            expandoValue = "JS::UndefinedValue()"
-        create = fill(
-            """
-            JS::Rooted<JS::Value> expandoValue(aCx, ${expandoValue});
-            creator.CreateProxyObject(aCx, &sClass.mBase, DOMProxyHandler::getInstance(),
-                                      proto, aObject, expandoValue, aReflector);
-            if (!aReflector) {
-              return false;
-            }
-
-            """,
-            expandoValue=expandoValue)
+            create = dedent(
+                """
+                creator.CreateProxyObject(aCx, &sClass.mBase, DOMProxyHandler::getInstance(),
+                                          proto, aObject, JS::UndefinedHandleValue, aReflector);
+                """)
     else:
         create = dedent(
             """
             creator.CreateObject(aCx, sClass.ToJSClass(), proto, aObject, aReflector);
-            if (!aReflector) {
-              return false;
-            }
             """)
-    return objDecl + create
+    return objDecl + create + fill(
+        """
+        if (!aReflector) {
+          $*{failureCode}
+          return false;
+        }
+        """,
+        failureCode=failureCode)
 
 
 def InitUnforgeablePropertiesOnHolder(descriptor, properties, failureCode,
@@ -3537,12 +3574,22 @@ def InitUnforgeablePropertiesOnHolder(descriptor, properties, failureCode,
 
     unforgeables = []
 
+    if descriptor.name == "Document":
+        maybeCrash = dedent(
+            """
+            MOZ_CRASH("Bug 1405521/1488480: Can't define unforgeable attributes");
+            """);
+    else:
+        maybeCrash = "";
+
     defineUnforgeableAttrs = fill(
         """
         if (!DefineUnforgeableAttributes(aCx, ${holderName}, %s)) {
+          $*{maybeCrash}
           $*{failureCode}
         }
         """,
+        maybeCrash=maybeCrash,
         failureCode=failureCode,
         holderName=holderName)
     defineUnforgeableMethods = fill(
@@ -3688,14 +3735,15 @@ def SetImmutablePrototype(descriptor, failureCode):
         failureCode=failureCode)
 
 
-def DeclareProto():
+def DeclareProto(noProto = "", wrapFail = ""):
     """
     Declare the canonicalProto and proto we have for our wrapping operation.
     """
-    return dedent(
+    return fill(
         """
         JS::Handle<JSObject*> canonicalProto = GetProtoObjectHandle(aCx);
         if (!canonicalProto) {
+          $*{noProto}
           return false;
         }
         JS::Rooted<JSObject*> proto(aCx);
@@ -3706,13 +3754,16 @@ def DeclareProto():
           // to wrap the proto here.
           if (js::GetContextCompartment(aCx) != js::GetObjectCompartment(proto)) {
             if (!JS_WrapObject(aCx, &proto)) {
+              $*{wrapFail}
               return false;
             }
           }
         } else {
           proto = canonicalProto;
         }
-        """)
+        """,
+        noProto=noProto,
+        wrapFail=wrapFail)
 
 
 class CGWrapWithCacheMethod(CGAbstractMethod):
@@ -3739,6 +3790,47 @@ class CGWrapWithCacheMethod(CGAbstractMethod):
             return false;
             """)
 
+        isDocument = False
+        iface = self.descriptor.interface
+        while iface:
+            if iface.identifier.name == "Document":
+                isDocument = True
+                break
+            iface = iface.parent
+
+        if isDocument:
+            noGlobal = fill(
+                """
+                MOZ_CRASH("Looks like bug 1488480/1405521, with ${name} not having a global");
+                """,
+                name = self.descriptor.name)
+            noProto = fill(
+                """
+                MOZ_CRASH("Looks like bug 1488480/1405521, with ${name} not having a proto");
+                """,
+                name = self.descriptor.name)
+            protoWrapFail = fill(
+                """
+                MOZ_CRASH("Looks like bug 1488480/1405521, with ${name} failing to wrap a custom proto");
+                """,
+                name = self.descriptor.name)
+            createObjectFailed = fill(
+                """
+                MOZ_CRASH("Looks like bug 1488480/1405521, with ${name} failing to CreateObject/CreateProxyObject");
+                """,
+                name = self.descriptor.name)
+            expandoAllocFail = fill(
+                """
+                MOZ_CRASH("Looks like bug 1488480/1405521, with ${name} failing to EnsureExpandoObject or JS_InitializePropertiesFromCompatibleNativeObject");
+                """,
+                name = self.descriptor.name)
+        else:
+            noGlobal = ""
+            noProto = ""
+            protoWrapFail = ""
+            createObjectFailed = ""
+            expandoAllocFail = ""
+
         return fill(
             """
             static_assert(!IsBaseOf<NonRefcountedDOMObject, ${nativeType}>::value,
@@ -3754,6 +3846,7 @@ class CGWrapWithCacheMethod(CGAbstractMethod):
 
             JS::Rooted<JSObject*> global(aCx, FindAssociatedGlobal(aCx, aObject->GetParentObject()));
             if (!global) {
+              $*{noGlobal}
               return false;
             }
             MOZ_ASSERT(JS_IsGlobalObject(global));
@@ -3794,11 +3887,14 @@ class CGWrapWithCacheMethod(CGAbstractMethod):
 
             return true;
             """,
+            noGlobal=noGlobal,
             nativeType=self.descriptor.nativeType,
             assertInheritance=AssertInheritanceChain(self.descriptor),
-            declareProto=DeclareProto(),
-            createObject=CreateBindingJSObject(self.descriptor, self.properties),
+            declareProto=DeclareProto(noProto, protoWrapFail),
+            createObject=CreateBindingJSObject(self.descriptor, self.properties,
+                                               createObjectFailed),
             unforgeable=CopyUnforgeablePropertiesToInstance(self.descriptor,
+                                                            expandoAllocFail +
                                                             failureCode),
             slots=InitMemberSlots(self.descriptor, failureCode),
             setImmutablePrototype=SetImmutablePrototype(self.descriptor,
@@ -5910,12 +6006,13 @@ def getJSToNativeConversionInfo(type, descriptorProvider, failureCode=None,
         return handleJSObjectType(type, isMember, failureCode, exceptionCode, sourceDescription)
 
     if type.isDictionary():
-        # There are no nullable dictionary arguments or dictionary members
+        # There are no nullable dictionary-typed arguments or dictionary-typed
+        # dictionary members.
         assert(not type.nullable() or isCallbackReturnValue or
                (isMember and isMember != "Dictionary"))
-        # All optional dictionaries always have default values, so we
-        # should be able to assume not isOptional here.
-        assert not isOptional
+        # All optional dictionary-typed arguments always have default values,
+        # but dictionary-typed dictionary members can be optional.
+        assert not isOptional or isMember == "Dictionary"
         # In the callback return value case we never have to worry
         # about a default value; we always have a value.
         assert not isCallbackReturnValue or defaultValue is None
@@ -5996,7 +6093,8 @@ def getJSToNativeConversionInfo(type, descriptorProvider, failureCode=None,
             declArgs = None
 
         return JSToNativeConversionInfo(template, declType=declType,
-                                        declArgs=declArgs)
+                                        declArgs=declArgs,
+                                        dealWithOptional=isOptional)
 
     if type.isVoid():
         assert not isOptional
@@ -7206,7 +7304,20 @@ class CGCallGenerator(CGThing):
         if not static:
             call = CGWrapper(call, pre="%s->" % object)
         call = CGList([call, CGWrapper(args, pre="(", post=")")])
-        if resultConversion is not None:
+        if ((returnType is None or returnType.isVoid() or
+             resultOutParam is not None) and
+            # This check for TreeBoxObject is here due to bug 1434641.  Once
+            # nsITreeBoxObject is gone, it can go away.
+            descriptor.name != "TreeBoxObject"):
+            assert resultConversion is None
+            call = CGList([
+                CGWrapper(
+                    call,
+                    pre=("// NOTE: This assert does NOT call the function.\n"
+                         "static_assert(mozilla::IsVoid<decltype("),
+                    post=')>::value, "Should be returning void here");'),
+                call], "\n")
+        elif resultConversion is not None:
             call = CGList([resultConversion, CGWrapper(call, pre="(", post=")")])
         if resultVar is None and result is not None:
             needResultDecl = True
@@ -7579,9 +7690,15 @@ class CGPerSignatureCall(CGThing):
         elif needScopeObject(returnType, arguments, self.extendedAttributes,
                              descriptor.wrapperCache, True,
                              idlNode.getExtendedAttribute("StoreInSlot")):
-            needsUnwrap = True
-            needsUnwrappedVar = True
-            argsPre.append("unwrappedObj ? *unwrappedObj : obj")
+            # The scope object should always be from the relevant
+            # global.  Make sure to unwrap it as needed.
+            cgThings.append(CGGeneric(dedent(
+                """
+                JS::Rooted<JSObject*> unwrappedObj(cx, js::CheckedUnwrap(obj));
+                // Caller should have ensured that "obj" can be unwrapped already.
+                MOZ_DIAGNOSTIC_ASSERT(unwrappedObj);
+                """)))
+            argsPre.append("unwrappedObj")
 
         if needsUnwrap and needsUnwrappedVar:
             # We cannot assign into obj because it's a Handle, not a
@@ -11436,6 +11553,12 @@ class CGDOMJSProxyHandler_defineProperty(ClassMethod):
                 uint32_t index = GetArrayIndexFromId(cx, id);
                 if (IsArrayIndex(index)) {
                   *defined = true;
+                  // https://heycam.github.io/webidl/#legacy-platform-object-defineownproperty
+                  // Step 1.1.  The no-indexed-setter case is handled by step 1.2.
+                  if (!desc.isDataDescriptor()) {
+                    return opresult.failNotDataDescriptor();
+                  }
+
                   $*{callSetter}
                   return opresult.succeed();
                 }
@@ -13457,121 +13580,6 @@ class CGRegisterWorkletBindings(CGAbstractMethod):
         return CGList(lines, "\n").define()
 
 
-class CGSystemBindingInitIds(CGAbstractMethod):
-    def __init__(self):
-        CGAbstractMethod.__init__(self, None, 'SystemBindingInitIds', 'bool',
-                                  [Argument('JSContext*', 'aCx')])
-
-    def definition_body(self):
-        return dedent("""
-            MOZ_ASSERT(NS_IsMainThread());
-
-            if (!idsInited) {
-              // We can't use range-based for because we need the index to call IdString.
-              for (uint32_t i = 0; i < ArrayLength(properties); ++i) {
-                if (!properties[i].id.init(aCx, IdString(i))) {
-                  return false;
-                }
-              }
-              idsInited = true;
-            }
-
-            return true;
-            """)
-
-
-class CGResolveSystemBinding(CGAbstractMethod):
-    def __init__(self):
-        CGAbstractMethod.__init__(self, None, 'ResolveSystemBinding', 'bool',
-                                  [Argument('JSContext*', 'aCx'),
-                                   Argument('JS::Handle<JSObject*>', 'aObj'),
-                                   Argument('JS::Handle<jsid>', 'aId'),
-                                   Argument('bool*', 'aResolvedp')])
-
-    def definition_body(self):
-        return dedent("""
-            MOZ_ASSERT(NS_IsMainThread());
-            MOZ_ASSERT(idsInited);
-
-            if (JSID_IS_VOID(aId)) {
-              for (const auto& property : properties) {
-                if (!property.enabled || property.enabled(aCx, aObj)) {
-                  if (!property.define(aCx)) {
-                    return false;
-                  }
-                  *aResolvedp = true;
-                }
-              }
-              return true;
-            }
-
-            for (const auto& property : properties) {
-              if (property.id == aId) {
-                if (!property.enabled || property.enabled(aCx, aObj)) {
-                  if (!property.define(aCx)) {
-                    return false;
-                  }
-                  *aResolvedp = true;
-                  break;
-                }
-              }
-            }
-            return true;
-            """)
-
-
-class CGMayResolveAsSystemBindingName(CGAbstractMethod):
-    def __init__(self):
-        CGAbstractMethod.__init__(self, None, 'MayResolveAsSystemBindingName', 'bool',
-                                  [Argument('jsid', 'aId')])
-
-    def definition_body(self):
-        return dedent("""
-            MOZ_ASSERT(NS_IsMainThread());
-            MOZ_ASSERT(idsInited);
-
-            for (const auto& property : properties) {
-              if (aId == property.id) {
-                return true;
-              }
-            }
-            return false;
-            """)
-
-
-class CGGetSystemBindingNames(CGAbstractMethod):
-    def __init__(self):
-        CGAbstractMethod.__init__(self, None, 'GetSystemBindingNames', 'void',
-                                  [Argument('JSContext*', 'aCx'),
-                                   Argument('JS::Handle<JSObject*>', 'aObj'),
-                                   Argument('JS::AutoIdVector&', 'aNames'),
-                                   Argument('bool', 'aEnumerableOnly'),
-                                   Argument('mozilla::ErrorResult&', 'aRv')])
-
-    def definition_body(self):
-        return dedent("""
-            MOZ_ASSERT(NS_IsMainThread());
-
-            if (aEnumerableOnly) {
-              return;
-            }
-
-            if (!SystemBindingInitIds(aCx)) {
-              aRv.NoteJSContextException(aCx);
-              return;
-            }
-
-            for (const auto& property : properties) {
-              if (!property.enabled || property.enabled(aCx, aObj)) {
-                if (!aNames.append(property.id)) {
-                  aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-                  return;
-                }
-              }
-            }
-            """)
-
-
 def getGlobalNames(config):
     names = []
     for desc in config.getDescriptors(registersGlobalNamesOnWindow=True):
@@ -13579,47 +13587,82 @@ def getGlobalNames(config):
         names.extend((n.identifier.name, desc) for n in desc.interface.namedConstructors)
     return names
 
-class CGGlobalNamesString(CGGeneric):
+class CGGlobalNames(CGGeneric):
     def __init__(self, config):
-        globalNames = getGlobalNames(config)
         currentOffset = 0
         strings = []
-        for (name, _) in globalNames:
-            strings.append('/* %i */ "%s\\0"' % (currentOffset, name))
-            currentOffset += len(name) + 1 # Add trailing null.
+        entries = []
+        for name, desc in getGlobalNames(config):
+            # Add a string to the list.
+            offset = currentOffset
+            strings.append('/* %i */ "%s\\0"' % (offset, name))
+            currentOffset += len(name) + 1  # Add trailing null.
+
+            # Generate the entry declaration
+            # XXX(nika): mCreate & mEnabled require relocations. If we want to
+            # reduce those, we could move them into separate tables.
+            nativeEntry = fill("""
+                {
+                  /* mNameOffset */ ${nameOffset}, // "${name}"
+                  /* mNameLength */ ${nameLength},
+                  /* mConstructorId */ constructors::id::${realname},
+                  /* mCreate */ ${realname}_Binding::CreateInterfaceObjects,
+                  /* mEnabled */ ${enabled}
+                }
+                """,
+                nameOffset=offset,
+                nameLength=len(name),
+                name=name,
+                realname=desc.name,
+                enabled=("%s_Binding::ConstructorEnabled" % desc.name
+                         if desc.isExposedConditionally() else "nullptr"))
+
+            entries.append((name, nativeEntry))
+
+        # Unfortunately, when running tests, we may have no entries.
+        # PerfectHash will assert if we give it an empty set of entries, so we
+        # just generate a dummy value.
+        if len(entries) == 0:
+            CGGeneric.__init__(self, define=dedent('''
+                static_assert(false, "No WebIDL global name entries!");
+                '''))
+            return
+
+        # Build the perfect hash function.
+        phf = PerfectHash(entries, GLOBAL_NAMES_PHF_SIZE)
+
+        # Generate code for the PHF
+        phfCodegen = phf.codegen('WebIDLGlobalNameHash::sEntries',
+                                 'WebIDLNameTableEntry')
+        entries = phfCodegen.gen_entries(lambda e: e[1])
+        getter = phfCodegen.gen_jsflatstr_getter(
+            name='WebIDLGlobalNameHash::GetEntry',
+            return_type='const WebIDLNameTableEntry*',
+            # XXX(nika): It would be nice to have a length overload for
+            # JS_FlatStringEqualsAscii.
+            return_entry=dedent("""
+                if (JS_FlatStringEqualsAscii(aKey, sNames + entry.mNameOffset)) {
+                  return &entry;
+                }
+                return nullptr;
+                """))
+
         define = fill("""
             const uint32_t WebIDLGlobalNameHash::sCount = ${count};
 
             const char WebIDLGlobalNameHash::sNames[] =
               $*{strings}
 
+            $*{entries}
+
+            $*{getter}
+
             """,
-            count=len(globalNames),
-            strings="\n".join(strings) + ";\n")
-
+            count=len(phf.entries),
+            strings="\n".join(strings) + ";\n",
+            entries=entries,
+            getter=getter)
         CGGeneric.__init__(self, define=define)
-
-
-class CGRegisterGlobalNames(CGAbstractMethod):
-    def __init__(self, config):
-        CGAbstractMethod.__init__(self, None, 'RegisterWebIDLGlobalNames',
-                                  'void', [])
-        self.config = config
-
-    def definition_body(self):
-        def getCheck(desc):
-            if not desc.isExposedConditionally():
-                return "nullptr"
-            return "%s_Binding::ConstructorEnabled" % desc.name
-
-        define = ""
-        currentOffset = 0
-        for (name, desc) in getGlobalNames(self.config):
-            length = len(name)
-            define += "WebIDLGlobalNameHash::Register(%i, %i, %s_Binding::CreateInterfaceObjects, %s, constructors::id::%s);\n" % (
-                currentOffset, length, desc.name, getCheck(desc), desc.name)
-            currentOffset += length + 1 # Add trailing null.
-        return define
 
 
 def dependencySortObjects(objects, dependencyGetter, nameGetter):
@@ -13973,6 +14016,7 @@ class CGBindingRoot(CGThing):
                    callbacks)
         bindingHeaders["mozilla/dom/BindingUtils.h"] = hasCode
         bindingHeaders["mozilla/OwningNonNull.h"] = hasCode
+        bindingHeaders["mozilla/TypeTraits.h"] = hasCode
         bindingHeaders["mozilla/dom/BindingDeclarations.h"] = (
             not hasCode and enums)
 
@@ -17006,11 +17050,7 @@ class GlobalGenRoots():
     @staticmethod
     def RegisterBindings(config):
 
-        curr = CGList([CGGlobalNamesString(config), CGRegisterGlobalNames(config)])
-
-        # Wrap all of that in our namespaces.
-        curr = CGNamespace.build(['mozilla', 'dom'],
-                                 CGWrapper(curr, post='\n'))
+        curr = CGNamespace.build(['mozilla', 'dom'], CGGlobalNames(config))
         curr = CGWrapper(curr, post='\n')
 
         # Add the includes
@@ -17020,6 +17060,7 @@ class GlobalGenRoots():
                                                             register=True)]
         defineIncludes.append('mozilla/dom/WebIDLGlobalNameHash.h')
         defineIncludes.append('mozilla/dom/PrototypeList.h')
+        defineIncludes.append('mozilla/PerfectHash.h')
         defineIncludes.extend([CGHeaders.getDeclarationFilename(desc.interface)
                                for desc in config.getDescriptors(isNavigatorProperty=True,
                                                                  register=True)])
@@ -17103,70 +17144,6 @@ class GlobalGenRoots():
 
         # Add include guards.
         curr = CGIncludeGuard('RegisterWorkletBindings', curr)
-
-        # Done.
-        return curr
-
-    @staticmethod
-    def ResolveSystemBinding(config):
-        curr = CGList([], "\n")
-
-        descriptors = config.getDescriptors(hasInterfaceObject=True,
-                                            isExposedInSystemGlobals=True,
-                                            register=True)
-        properties = [desc.name for desc in descriptors]
-
-        curr.append(CGStringTable("IdString", properties, static=True))
-
-        initValues = []
-        for desc in descriptors:
-            bindingNS = toBindingNamespace(desc.name)
-            if desc.isExposedConditionally():
-                enabled = "%s::ConstructorEnabled" % bindingNS
-            else:
-                enabled = "nullptr"
-            define = "%s::GetConstructorObject" % bindingNS
-            initValues.append("{ %s, %s },\n" % (enabled, define))
-        curr.append(CGGeneric(fill("""
-            struct SystemProperty
-            {
-              WebIDLGlobalNameHash::ConstructorEnabled enabled;
-              ProtoGetter define;
-              PinnedStringId id;
-            };
-
-            static SystemProperty properties[] = {
-              $*{init}
-            };
-
-            static bool idsInited = false;
-            """,
-            init="".join(initValues))))
-
-        curr.append(CGSystemBindingInitIds())
-        curr.append(CGResolveSystemBinding())
-        curr.append(CGMayResolveAsSystemBindingName())
-        curr.append(CGGetSystemBindingNames())
-
-        # Wrap all of that in our namespaces.
-        curr = CGNamespace.build(['mozilla', 'dom'],
-                                 CGWrapper(curr, post='\n'))
-        curr = CGWrapper(curr, post='\n')
-
-        # Add the includes
-        defineIncludes = [CGHeaders.getDeclarationFilename(desc.interface)
-                          for desc in config.getDescriptors(hasInterfaceObject=True,
-                                                            register=True,
-                                                            isExposedInSystemGlobals=True)]
-        defineIncludes.append("nsThreadUtils.h")  # For NS_IsMainThread
-        defineIncludes.append("js/Id.h")  # For jsid
-        defineIncludes.append("mozilla/dom/WebIDLGlobalNameHash.h")
-
-        curr = CGHeaders([], [], [], [], [], defineIncludes,
-                         'ResolveSystemBinding', curr)
-
-        # Add include guards.
-        curr = CGIncludeGuard('ResolveSystemBinding', curr)
 
         # Done.
         return curr

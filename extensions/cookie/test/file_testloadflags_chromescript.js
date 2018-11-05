@@ -62,9 +62,7 @@ obs.prototype = {
 
 function getCookieCount(cs) {
   let count = 0;
-  let list = cs.enumerator;
-  while (list.hasMoreElements()) {
-    let cookie = list.getNext().QueryInterface(Ci.nsICookie);
+  for (let cookie of cs.enumerator) {
     info("cookie: " + cookie);
     info("cookie host " + cookie.host + " path " + cookie.path + " name " + cookie.name +
          " value " + cookie.value + " isSecure " + cookie.isSecure + " expires " + cookie.expires);
@@ -84,7 +82,8 @@ addMessageListener("init", ({ domain }) => {
   info(count + " cookies");
 
   cs.removeAll();
-  cs.add(domain, "", "oh", "hai", false, false, true, Math.pow(2, 62), {});
+  cs.add(domain, "", "oh", "hai", false, false, true, Math.pow(2, 62), {},
+         Ci.nsICookie2.SAMESITE_UNSET);
   is(cs.countCookiesFromHost(domain), 1, "number of cookies for domain " + domain);
 
   gObs = new obs();

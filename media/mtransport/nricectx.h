@@ -52,6 +52,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <string>
 #include <vector>
+#include <map>
 
 #include "sigslot.h"
 
@@ -67,6 +68,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "m_cpp_utils.h"
 #include "nricestunaddr.h"
+#include "nricemediastream.h"
 
 typedef struct nr_ice_ctx_ nr_ice_ctx;
 typedef struct nr_ice_peer_ctx_ nr_ice_peer_ctx;
@@ -203,7 +205,6 @@ class NrIceStats {
 };
 
 class NrIceCtx {
- friend class NrIceCtxHandler;
  public:
   enum ConnectionState { ICE_CTX_INIT,
                          ICE_CTX_CHECKING,
@@ -228,12 +229,22 @@ class NrIceCtx {
                 ICE_POLICY_ALL
   };
 
+  static RefPtr<NrIceCtx> Create(const std::string& name,
+                                 bool allow_loopback = false,
+                                 bool tcp_enabled = true,
+                                 bool allow_link_local = false,
+                                 NrIceCtx::Policy policy =
+                                   NrIceCtx::ICE_POLICY_ALL);
+
+  RefPtr<NrIceMediaStream> CreateStream(const std::string& id,
+                                        const std::string& name,
+                                        int components);
+  void DestroyStream(const std::string& id);
+
   // initialize ICE globals, crypto, and logging
   static void InitializeGlobals(bool allow_loopback = false,
                                 bool tcp_enabled = true,
                                 bool allow_link_local = false);
-  static std::string GetNewUfrag();
-  static std::string GetNewPwd();
 
   // static GetStunAddrs for use in parent process to support
   // sandboxing restrictions
@@ -241,7 +252,6 @@ class NrIceCtx {
   void SetStunAddrs(const nsTArray<NrIceStunAddr>& addrs);
 
   bool Initialize();
-  bool Initialize(const std::string& ufrag, const std::string& pwd);
 
   int SetNat(const RefPtr<TestNat>& aNat);
 
@@ -257,29 +267,26 @@ class NrIceCtx {
   // Testing only.
   void destroy_peer_ctx();
 
-  void SetStream(size_t index, NrIceMediaStream* stream);
-
-  RefPtr<NrIceMediaStream> GetStream(size_t index) {
-    if (index < streams_.size()) {
-      return streams_[index];
+  RefPtr<NrIceMediaStream> GetStream(const std::string& id) {
+    auto it = streams_.find(id);
+    if (it != streams_.end()) {
+      return it->second;
     }
     return nullptr;
   }
 
-  // Some might be null
-  size_t GetStreamCount() const
-  {
-    return streams_.size();
+  std::vector<RefPtr<NrIceMediaStream>> GetStreams() const {
+    std::vector<RefPtr<NrIceMediaStream>> result;
+    for (auto& idAndStream : streams_) {
+      result.push_back(idAndStream.second);
+    }
+    return result;
   }
 
   bool HasStreamsToConnect() const;
 
   // The name of the ctx
   const std::string& name() const { return name_; }
-
-  // Get ufrag and password.
-  std::string ufrag() const;
-  std::string pwd() const;
 
   // Current state
   ConnectionState connection_state() const {
@@ -399,7 +406,7 @@ private:
   bool offerer_;
   TimeStamp ice_start_time_;
   bool ice_controlling_set_;
-  std::vector<RefPtr<NrIceMediaStream> > streams_;
+  std::map<std::string, RefPtr<NrIceMediaStream> > streams_;
   nr_ice_ctx *ctx_;
   nr_ice_peer_ctx *peer_;
   nr_ice_handler_vtbl* ice_handler_vtbl_;  // Must be pointer

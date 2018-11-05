@@ -14,11 +14,10 @@ const ADDONS = [
       bootstrap: true,
       aboutURL: "chrome://test/content/about.xul",
       iconURL: "chrome://test/skin/icon.png",
-      icon64URL: "chrome://test/skin/icon64.png",
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
       name: "Test Addon 1",
       description: "Test Description",
@@ -26,16 +25,16 @@ const ADDONS = [
       homepageURL: "http://www.example.com",
       developer: [
         "Test Developer 1",
-        "Test Developer 2"
+        "Test Developer 2",
       ],
       translator: [
         "Test Translator 1",
-        "Test Translator 2"
+        "Test Translator 2",
       ],
       contributor: [
         "Test Contributor 1",
-        "Test Contributor 2"
-      ]
+        "Test Contributor 2",
+      ],
     },
 
     expected: {
@@ -45,8 +44,7 @@ const ADDONS = [
       optionsType: null,
       aboutURL: "chrome://test/content/about.xul",
       iconURL: "chrome://test/skin/icon.png",
-      icon64URL: "chrome://test/skin/icon64.png",
-      icons: {32: "chrome://test/skin/icon.png", 48: "chrome://test/skin/icon.png", 64: "chrome://test/skin/icon64.png"},
+      icons: {32: "chrome://test/skin/icon.png", 48: "chrome://test/skin/icon.png"},
       name: "Test Addon 1",
       description: "Test Description",
       creator: "Test Creator",
@@ -72,9 +70,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 2"
+      name: "Test Addon 2",
     },
 
     expected: {
@@ -95,9 +93,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 3"
+      name: "Test Addon 3",
     },
 
     expected: {
@@ -119,9 +117,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 4"
+      name: "Test Addon 4",
     },
 
     expected: {
@@ -141,9 +139,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "*"
+        maxVersion: "*",
       }],
-      name: "Test Addon 5"
+      name: "Test Addon 5",
     },
 
     expected: {
@@ -162,9 +160,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "0",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 6"
+      name: "Test Addon 6",
     },
 
     expected: {
@@ -183,9 +181,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "0",
-        maxVersion: "0"
+        maxVersion: "0",
       }],
-      name: "Test Addon 7"
+      name: "Test Addon 7",
     },
 
     expected: {
@@ -204,9 +202,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1.1",
-        maxVersion: "*"
+        maxVersion: "*",
       }],
-      name: "Test Addon 8"
+      name: "Test Addon 8",
     },
 
     expected: {
@@ -225,9 +223,9 @@ const ADDONS = [
       targetApplications: [{
         id: "toolkit@mozilla.org",
         minVersion: "1.9.2",
-        maxVersion: "1.9.*"
+        maxVersion: "1.9.*",
       }],
-      name: "Test Addon 9"
+      name: "Test Addon 9",
     },
 
     expected: {
@@ -246,9 +244,9 @@ const ADDONS = [
       targetApplications: [{
         id: "toolkit@mozilla.org",
         minVersion: "1.9.2.1",
-        maxVersion: "1.9.*"
+        maxVersion: "1.9.*",
       }],
-      name: "Test Addon 10"
+      name: "Test Addon 10",
     },
 
     expected: {
@@ -267,9 +265,9 @@ const ADDONS = [
       targetApplications: [{
         id: "toolkit@mozilla.org",
         minVersion: "1.9",
-        maxVersion: "1.9.2"
+        maxVersion: "1.9.2",
       }],
-      name: "Test Addon 11"
+      name: "Test Addon 11",
     },
 
     expected: {
@@ -288,9 +286,9 @@ const ADDONS = [
       targetApplications: [{
         id: "toolkit@mozilla.org",
         minVersion: "1.9",
-        maxVersion: "1.9.1.*"
+        maxVersion: "1.9.1.*",
       }],
-      name: "Test Addon 12"
+      name: "Test Addon 12",
     },
 
     expected: {
@@ -309,13 +307,13 @@ const ADDONS = [
       targetApplications: [{
         id: "toolkit@mozilla.org",
         minVersion: "1.9",
-        maxVersion: "1.9.*"
+        maxVersion: "1.9.*",
       }, {
         id: "xpcshell@tests.mozilla.org",
         minVersion: "0",
-        maxVersion: "0.5"
+        maxVersion: "0.5",
       }],
-      name: "Test Addon 13"
+      name: "Test Addon 13",
     },
 
     expected: {
@@ -334,13 +332,13 @@ const ADDONS = [
       targetApplications: [{
         id: "toolkit@mozilla.org",
         minVersion: "1.9",
-        maxVersion: "1.9.1"
+        maxVersion: "1.9.1",
       }, {
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 14"
+      name: "Test Addon 14",
     },
 
     expected: {
@@ -360,9 +358,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 15"
+      name: "Test Addon 15",
     },
 
     expected: {
@@ -384,9 +382,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 16"
+      name: "Test Addon 16",
     },
 
     expected: {
@@ -408,9 +406,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 17"
+      name: "Test Addon 17",
     },
 
     // An obsolete optionsType means the add-on isn't registered.
@@ -425,9 +423,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 18"
+      name: "Test Addon 18",
     },
     extraFiles: {"options.xul": ""},
 
@@ -450,9 +448,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 19"
+      name: "Test Addon 19",
     },
 
     expected: null,
@@ -467,9 +465,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 20"
+      name: "Test Addon 20",
     },
 
     // Even with a defined optionsURL optionsType is null by default.
@@ -493,9 +491,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 21"
+      name: "Test Addon 21",
     },
 
     expected: {
@@ -517,9 +515,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 22"
+      name: "Test Addon 22",
     },
 
     // An obsolete optionsType means the add-on isn't registered.
@@ -535,9 +533,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 23"
+      name: "Test Addon 23",
     },
     extraFiles: {"options.xul": ""},
 
@@ -553,9 +551,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 24"
+      name: "Test Addon 24",
     },
     extraFiles: {"options.xul": ""},
 
@@ -574,9 +572,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 25"
+      name: "Test Addon 25",
     },
 
     expected: {
@@ -594,9 +592,9 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
+        maxVersion: "1",
       }],
-      name: "Test Addon 26"
+      name: "Test Addon 26",
     },
     extraFiles: {"options.xul": ""},
     expected: null,
@@ -614,8 +612,8 @@ const ADDONS = [
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
-      }]
+        maxVersion: "1",
+      }],
     },
 
     expected: {
@@ -635,13 +633,13 @@ const ADDONS = [
       targetPlatforms: [
         "XPCShell",
         "WINNT_x86",
-        "XPCShell"
+        "XPCShell",
       ],
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
-      }]
+        maxVersion: "1",
+      }],
     },
 
     expected: {
@@ -660,13 +658,13 @@ const ADDONS = [
       name: "Test 3",
       targetPlatforms: [
         "WINNT",
-        "XPCShell_noarch-spidermonkey"
+        "XPCShell_noarch-spidermonkey",
       ],
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
-      }]
+        maxVersion: "1",
+      }],
     },
 
     expected: {
@@ -686,13 +684,13 @@ const ADDONS = [
       targetPlatforms: [
         "WINNT_noarch-spidermonkey",
         "Darwin",
-        "WINNT_noarch-spidermonkey"
+        "WINNT_noarch-spidermonkey",
       ],
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
-      }]
+        maxVersion: "1",
+      }],
     },
 
     expected: {
@@ -711,13 +709,13 @@ const ADDONS = [
       name: "Test 5",
       targetPlatforms: [
         "XPCShell",
-        "XPCShell_foo"
+        "XPCShell_foo",
       ],
       targetApplications: [{
         id: "xpcshell@tests.mozilla.org",
         minVersion: "1",
-        maxVersion: "1"
-      }]
+        maxVersion: "1",
+      }],
     },
 
     expected: {

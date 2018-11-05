@@ -70,12 +70,13 @@ nsUnknownContentTypeDialogProgressListener.prototype = {
   onLocationChange(aWebProgress, aRequest, aLocation, aFlags) {
   },
 
-  onSecurityChange(aWebProgress, aRequest, state) {
+  onSecurityChange(aWebProgress, aRequest, aOldState, aState,
+                   aContentBlockingLogJSON) {
   },
 
   onRefreshAttempted(aWebProgress, aURI, aDelay, aSameURI) {
     return true;
-  }
+  },
 };
 
 // /////////////////////////////////////////////////////////////////////////////
@@ -217,9 +218,7 @@ nsUnknownContentTypeDialog.prototype = {
       // because the original one is definitely gone (and nsIFilePicker doesn't like
       // a null parent):
       gDownloadLastDir = this._mDownloadDir;
-      let windowsEnum = Services.wm.getEnumerator("");
-      while (windowsEnum.hasMoreElements()) {
-        let someWin = windowsEnum.getNext();
+      for (let someWin of Services.wm.getEnumerator("")) {
         // We need to make sure we don't end up with this dialog, because otherwise
         // that's going to go away when the user clicks "Save", and that breaks the
         // windows file picker that's supposed to show up if we let the user choose
@@ -524,7 +523,7 @@ nsUnknownContentTypeDialog.prototype = {
       enableDialog: () => {
         this.mDialog.document.documentElement.getButton("accept").disabled = false;
       },
-      focusTarget: this.mDialog
+      focusTarget: this.mDialog,
     });
   },
 

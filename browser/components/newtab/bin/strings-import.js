@@ -7,7 +7,7 @@ const fetch = require("node-fetch");
 /* globals cd, ls, mkdir, rm, ShellString */
 require("shelljs/global");
 
-const {CENTRAL_LOCALES, DEFAULT_LOCALE} = require("./locales");
+const {CENTRAL_LOCALES, DEFAULT_LOCALE, LOCALES_SOURCE_DIRECTORY} = require("./locales");
 const L10N_CENTRAL = "https://hg.mozilla.org/l10n-central";
 const PROPERTIES_PATH = "raw-file/default/browser/chrome/browser/activity-stream/newtab.properties";
 const STRINGS_FILE = "strings.properties";
@@ -34,6 +34,22 @@ async function getLocales() {
   return locales;
 }
 
+// Pick a different string if the desired one is missing
+const transvision = {};
+async function cherryPickString(locale) {
+  const getTransvision = async string => {
+    if (!transvision[string]) {
+      const response = await fetch(`https://transvision.mozfr.org/api/v1/entity/gecko_strings/?id=${string}`);
+      transvision[string] = response.ok ? await response.json() : {};
+    }
+    return transvision[string];
+  };
+  const expectedKey = "section_menu_action_add_search_engine";
+  const expected = await getTransvision(`browser/chrome/browser/activity-stream/newtab.properties:${expectedKey}`);
+  const target = await getTransvision("browser/chrome/browser/search.properties:searchAddFoundEngine2");
+  return !expected[locale] && target[locale] ? `${expectedKey}=${target[locale]}\n` : "";
+}
+
 // Save the properties file to the locale's directory
 async function saveProperties(locale) {
   // Only save a file if the repository has the file
@@ -48,7 +64,8 @@ async function saveProperties(locale) {
   const text = await response.text();
   mkdir(locale);
   cd(locale);
-  ShellString(text).to(STRINGS_FILE);
+  // For now, detect if a string is missing to use a different one instead
+  ShellString(text + await cherryPickString(locale)).to(STRINGS_FILE);
   cd("..");
 
   // Indicate that we were successful in saving
@@ -57,9 +74,9 @@ async function saveProperties(locale) {
 
 // Replace and update each locale's strings
 async function updateLocales() {
-  console.log("Switching to and deleting existing l10n tree under: locales");
+  console.log(`Switching to and deleting existing l10n tree under: ${LOCALES_SOURCE_DIRECTORY}`);
 
-  cd("locales");
+  cd(LOCALES_SOURCE_DIRECTORY);
   ls().forEach(dir => {
     // Keep the default/source locale as it might have newer strings
     if (dir !== DEFAULT_LOCALE) {

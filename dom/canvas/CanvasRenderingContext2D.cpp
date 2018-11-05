@@ -253,7 +253,7 @@ CanvasRenderingContext2D::PatternIsOpaque(CanvasRenderingContext2D::Style aStyle
   }
 
   if (state.patternStyles[aStyle] && state.patternStyles[aStyle]->mSurface) {
-    return IsOpaqueFormat(state.patternStyles[aStyle]->mSurface->GetFormat());
+    return IsOpaque(state.patternStyles[aStyle]->mSurface->GetFormat());
   }
 
   // TODO: for gradient patterns we could check that all stops are opaque
@@ -958,36 +958,6 @@ private:
   CanvasRenderingContext2D* mContext;
 };
 
-class CanvasFilterChainObserver : public nsSVGFilterChainObserver
-{
-public:
-  CanvasFilterChainObserver(nsTArray<nsStyleFilter>& aFilters,
-                            Element* aCanvasElement,
-                            CanvasRenderingContext2D* aContext)
-    : nsSVGFilterChainObserver(aFilters, aCanvasElement)
-    , mContext(aContext)
-  {
-  }
-
-  virtual void OnRenderingChange() override
-  {
-    if (!mContext) {
-      MOZ_CRASH("GFX: This should never be called without a context");
-    }
-    // Refresh the cached FilterDescription in mContext->CurrentState().filter.
-    // If this filter is not at the top of the state stack, we'll refresh the
-    // wrong filter, but that's ok, because we'll refresh the right filter
-    // when we pop the state stack in CanvasRenderingContext2D::Restore().
-    RefPtr<CanvasRenderingContext2D> kungFuDeathGrip(mContext);
-    kungFuDeathGrip->UpdateFilter();
-  }
-
-  void DetachFromContext() { mContext = nullptr; }
-
-private:
-  CanvasRenderingContext2D* mContext;
-};
-
 NS_IMPL_CYCLE_COLLECTING_ADDREF(CanvasRenderingContext2D)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(CanvasRenderingContext2D)
 
@@ -1004,12 +974,13 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(CanvasRenderingContext2D)
     ImplCycleCollectionUnlink(tmp->mStyleStack[i].patternStyles[Style::FILL]);
     ImplCycleCollectionUnlink(tmp->mStyleStack[i].gradientStyles[Style::STROKE]);
     ImplCycleCollectionUnlink(tmp->mStyleStack[i].gradientStyles[Style::FILL]);
-    auto filterChainObserver =
-      static_cast<CanvasFilterChainObserver*>(tmp->mStyleStack[i].filterChainObserver.get());
-    if (filterChainObserver) {
-      filterChainObserver->DetachFromContext();
+    auto autoSVGFiltersObserver = tmp->mStyleStack[i].autoSVGFiltersObserver.get();
+    if (autoSVGFiltersObserver) {
+      // XXXjwatt: I don't think this call achieves anything.  See the comment
+      // that documents this function.
+      SVGObserverUtils::DetachFromCanvasContext(autoSVGFiltersObserver);
     }
-    ImplCycleCollectionUnlink(tmp->mStyleStack[i].filterChainObserver);
+    ImplCycleCollectionUnlink(tmp->mStyleStack[i].autoSVGFiltersObserver);
   }
   for (size_t x = 0 ; x < tmp->mHitRegionsOptions.Length(); x++) {
     RegionInfo& info = tmp->mHitRegionsOptions[x];
@@ -1028,7 +999,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(CanvasRenderingContext2D)
     ImplCycleCollectionTraverse(cb, tmp->mStyleStack[i].patternStyles[Style::FILL], "Fill CanvasPattern");
     ImplCycleCollectionTraverse(cb, tmp->mStyleStack[i].gradientStyles[Style::STROKE], "Stroke CanvasGradient");
     ImplCycleCollectionTraverse(cb, tmp->mStyleStack[i].gradientStyles[Style::FILL], "Fill CanvasGradient");
-    ImplCycleCollectionTraverse(cb, tmp->mStyleStack[i].filterChainObserver, "Filter Chain Observer");
+    ImplCycleCollectionTraverse(cb, tmp->mStyleStack[i].autoSVGFiltersObserver, "RAII SVG Filters Observer");
   }
   for (size_t x = 0 ; x < tmp->mHitRegionsOptions.Length(); x++) {
     RegionInfo& info = tmp->mHitRegionsOptions[x];
@@ -2639,7 +2610,8 @@ CreateDeclarationForServo(nsCSSPropertyID aProperty,
   RefPtr<URLExtraData> data =
     new URLExtraData(aDocument->GetDocBaseURI(),
                      aDocument->GetDocumentURI(),
-                     aDocument->NodePrincipal());
+                     aDocument->NodePrincipal(),
+                     aDocument->GetReferrerPolicy());
 
   ServoCSSParser::ParsingEnvironment env(data,
                                          aDocument->GetCompatibilityMode(),
@@ -2825,9 +2797,9 @@ CanvasRenderingContext2D::SetFilter(const nsAString& aFilter, ErrorResult& aErro
     CurrentState().filterString = aFilter;
     filterChain.SwapElements(CurrentState().filterChain);
     if (mCanvasElement) {
-      CurrentState().filterChainObserver =
-        new CanvasFilterChainObserver(CurrentState().filterChain,
-                                      mCanvasElement, this);
+      CurrentState().autoSVGFiltersObserver =
+        SVGObserverUtils::ObserveFiltersForCanvasContext(this, mCanvasElement,
+                                                   CurrentState().filterChain);
       UpdateFilter();
     }
   }
@@ -2850,7 +2822,7 @@ public:
   virtual float GetEmLength() const override
   {
     return NSAppUnitsToFloatPixels(mFont.size,
-                                   nsPresContext::AppUnitsPerCSSPixel());
+                                   AppUnitsPerCSSPixel());
   }
 
   virtual float GetExLength() const override
@@ -2862,7 +2834,7 @@ public:
     params.textPerf = mPresContext->GetTextPerfMetrics();
     RefPtr<nsFontMetrics> fontMetrics = dc->GetMetricsFor(mFont, params);
     return NSAppUnitsToFloatPixels(fontMetrics->XHeight(),
-                                   nsPresContext::AppUnitsPerCSSPixel());
+                                   AppUnitsPerCSSPixel());
   }
 
   virtual gfx::Size GetSize() const override
@@ -3741,7 +3713,7 @@ CanvasRenderingContext2D::SetFontInternal(const nsAString& aFont,
   // pixels to CSS pixels, to adjust for the difference in expectations from
   // other nsFontMetrics clients.
   resizedFont.size =
-    (fontStyle->mSize * c->AppUnitsPerDevPixel()) / nsPresContext::AppUnitsPerCSSPixel();
+    (fontStyle->mSize * c->AppUnitsPerDevPixel()) / AppUnitsPerCSSPixel();
 
   nsFontMetrics::Params params;
   params.language = fontStyle->mLanguage;
@@ -4106,7 +4078,7 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor : public nsBidiPresUtils::BidiProcess
   already_AddRefed<gfxPattern> GetPatternFor(Style aStyle)
   {
     const CanvasPattern* pat = mCtx->CurrentState().patternStyles[aStyle];
-    RefPtr<gfxPattern> pattern = new gfxPattern(pat->mSurface, Matrix());
+    RefPtr<gfxPattern> pattern = new gfxPattern(pat->mSurface, pat->mTransform);
     pattern->SetExtend(CvtCanvasRepeatToGfxRepeat(pat->mRepeat));
     return pattern.forget();
   }
@@ -5467,13 +5439,7 @@ CanvasRenderingContext2D::GetImageData(JSContext* aCx, double aSx,
 
   // Check only if we have a canvas element; if we were created with a docshell,
   // then it's special internal use.
-  if (mCanvasElement && mCanvasElement->IsWriteOnly() &&
-      // We could ask bindings for the caller type, but they already hand us a
-      // JSContext, and we're at least _somewhat_ perf-sensitive (so may not
-      // want to compute the caller type in the common non-write-only case), so
-      // let's just use what we have.
-      !nsContentUtils::CallerHasPermission(aCx, nsGkAtoms::all_urlsPermission))
-  {
+  if (mCanvasElement && !mCanvasElement->CallerCanRead(aCx)) {
     // XXX ERRMSG we need to report an error to developers here! (bug 329026)
     aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return nullptr;

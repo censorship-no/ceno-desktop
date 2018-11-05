@@ -12,7 +12,6 @@ const { Cu } = require("chrome");
 loader.lazyGetter(this, "OptionsPanel", () => require("devtools/client/framework/toolbox-options").OptionsPanel);
 loader.lazyGetter(this, "InspectorPanel", () => require("devtools/client/inspector/panel").InspectorPanel);
 loader.lazyGetter(this, "WebConsolePanel", () => require("devtools/client/webconsole/panel").WebConsolePanel);
-loader.lazyGetter(this, "DebuggerPanel", () => require("devtools/client/debugger/panel").DebuggerPanel);
 loader.lazyGetter(this, "NewDebuggerPanel", () => require("devtools/client/debugger/new/panel").DebuggerPanel);
 loader.lazyGetter(this, "StyleEditorPanel", () => require("devtools/client/styleeditor/panel").StyleEditorPanel);
 loader.lazyGetter(this, "CanvasDebuggerPanel", () => require("devtools/client/canvasdebugger/panel").CanvasDebuggerPanel);
@@ -26,11 +25,11 @@ loader.lazyGetter(this, "ScratchpadPanel", () => require("devtools/client/scratc
 loader.lazyGetter(this, "DomPanel", () => require("devtools/client/dom/panel").DomPanel);
 loader.lazyGetter(this, "AccessibilityPanel", () => require("devtools/client/accessibility/panel").AccessibilityPanel);
 loader.lazyGetter(this, "ApplicationPanel", () => require("devtools/client/application/panel").ApplicationPanel);
+loader.lazyGetter(this, "reloadAndRecordTab", () => require("devtools/client/webreplay/menu.js").reloadAndRecordTab);
+loader.lazyGetter(this, "reloadAndStopRecordingTab", () => require("devtools/client/webreplay/menu.js").reloadAndStopRecordingTab);
 
 // Other dependencies
 loader.lazyRequireGetter(this, "AccessibilityStartup", "devtools/client/accessibility/accessibility-startup", true);
-loader.lazyRequireGetter(this, "CommandUtils", "devtools/client/shared/developer-toolbar", true);
-loader.lazyRequireGetter(this, "CommandState", "devtools/shared/gcli/command-state", true);
 loader.lazyRequireGetter(this, "ResponsiveUIManager", "devtools/client/responsive.html/manager", true);
 loader.lazyImporter(this, "ScratchpadManager", "resource://devtools/client/scratchpad/scratchpad-manager.jsm");
 
@@ -62,7 +61,7 @@ Tools.options = {
 
   build: function(iframeWindow, toolbox) {
     return new OptionsPanel(iframeWindow, toolbox);
-  }
+  },
 };
 
 Tools.inspector = {
@@ -83,10 +82,6 @@ Tools.inspector = {
     return l10n("inspector.tooltip2", "Ctrl+Shift+") + l10n("inspector.commandkey");
   },
   inMenu: true,
-  commands: [
-    "devtools/client/responsive.html/commands",
-    "devtools/client/inspector/inspector-commands"
-  ],
 
   preventClosingOnKey: true,
   onkey: function(panel, toolbox) {
@@ -99,21 +94,13 @@ Tools.inspector = {
 
   build: function(iframeWindow, toolbox) {
     return new InspectorPanel(iframeWindow, toolbox);
-  }
+  },
 };
 Tools.webConsole = {
   id: "webconsole",
   accesskey: l10n("webConsoleCmd.accesskey"),
   ordinal: 2,
   url: "chrome://devtools/content/webconsole/index.html",
-  get browserConsoleUsesHTML() {
-    return Services.prefs.getBoolPref("devtools.browserconsole.html");
-  },
-  get browserConsoleURL() {
-    return this.browserConsoleUsesHTML ?
-      "chrome://devtools/content/webconsole/index.html" :
-      "chrome://devtools/content/webconsole/browserconsole.xul";
-  },
   icon: "chrome://devtools/skin/images/tool-webconsole.svg",
   label: l10n("ToolboxTabWebconsole.label"),
   menuLabel: l10n("MenuWebconsole.label"),
@@ -124,7 +111,6 @@ Tools.webConsole = {
     l10n("webconsole.commandkey"));
   },
   inMenu: true,
-  commands: "devtools/client/webconsole/console-commands",
 
   preventClosingOnKey: true,
   onkey: function(panel, toolbox) {
@@ -141,7 +127,7 @@ Tools.webConsole = {
   },
   build: function(iframeWindow, toolbox) {
     return new WebConsolePanel(iframeWindow, toolbox);
-  }
+  },
 };
 
 Tools.jsdebugger = {
@@ -149,7 +135,7 @@ Tools.jsdebugger = {
   accesskey: l10n("debuggerMenu.accesskey"),
   ordinal: 3,
   icon: "chrome://devtools/skin/images/tool-debugger.svg",
-  url: "chrome://devtools/content/debugger/index.xul",
+  url: "chrome://devtools/content/debugger/new/index.html",
   label: l10n("ToolboxDebugger.label"),
   panelLabel: l10n("ToolboxDebugger.panelLabel"),
   get tooltip() {
@@ -158,36 +144,13 @@ Tools.jsdebugger = {
     l10n("debugger.commandkey"));
   },
   inMenu: true,
-  commands: "devtools/client/debugger/debugger-commands",
-
   isTargetSupported: function() {
     return true;
   },
-
   build: function(iframeWindow, toolbox) {
-    return new DebuggerPanel(iframeWindow, toolbox);
-  }
+    return new NewDebuggerPanel(iframeWindow, toolbox);
+  },
 };
-
-function switchDebugger() {
-  if (Services.prefs.getBoolPref("devtools.debugger.new-debugger-frontend")) {
-    Tools.jsdebugger.url = "chrome://devtools/content/debugger/new/index.html";
-    Tools.jsdebugger.build = function(iframeWindow, toolbox) {
-      return new NewDebuggerPanel(iframeWindow, toolbox);
-    };
-  } else {
-    Tools.jsdebugger.url = "chrome://devtools/content/debugger/index.xul";
-    Tools.jsdebugger.build = function(iframeWindow, toolbox) {
-      return new DebuggerPanel(iframeWindow, toolbox);
-    };
-  }
-}
-switchDebugger();
-
-Services.prefs.addObserver(
-  "devtools.debugger.new-debugger-frontend",
-  { observe: switchDebugger }
-);
 
 Tools.styleEditor = {
   id: "styleeditor",
@@ -203,15 +166,13 @@ Tools.styleEditor = {
     "Shift+" + functionkey(l10n("styleeditor.commandkey")));
   },
   inMenu: true,
-  commands: "devtools/client/styleeditor/styleeditor-commands",
-
   isTargetSupported: function(target) {
     return target.hasActor("styleSheets");
   },
 
   build: function(iframeWindow, toolbox) {
     return new StyleEditorPanel(iframeWindow, toolbox);
-  }
+  },
 };
 
 Tools.shaderEditor = {
@@ -232,11 +193,11 @@ Tools.shaderEditor = {
     const { BrowserLoader } = Cu.import("resource://devtools/client/shared/browser-loader.js", {});
     const browserRequire = BrowserLoader({
       baseURI: "resource://devtools/client/shadereditor/",
-      window: iframeWindow
+      window: iframeWindow,
     }).require;
     const { ShaderEditorPanel } = browserRequire("devtools/client/shadereditor/panel");
     return new ShaderEditorPanel(toolbox);
-  }
+  },
 };
 
 Tools.canvasDebugger = {
@@ -257,7 +218,7 @@ Tools.canvasDebugger = {
 
   build: function(iframeWindow, toolbox) {
     return new CanvasDebuggerPanel(iframeWindow, toolbox);
-  }
+  },
 };
 
 Tools.performance = {
@@ -282,10 +243,13 @@ function switchPerformancePanel() {
       return new NewPerformancePanel(frame, target);
     };
     Tools.performance.isTargetSupported = function(target) {
-     // Root actors are lazily initialized, so we can't check if the target has
-     // the perf actor yet. Also this function is not async, so we can't initialize
-     // the actor yet.
-      return true;
+      // Root actors are lazily initialized, so we can't check if the target has
+      // the perf actor yet. Also this function is not async, so we can't initialize
+      // the actor yet.
+      // We don't display the new performance panel for remote context in the
+      // toolbox, because this has an overhead. Instead we should use WebIDE (or
+      // the coming about:debugging).
+      return target.isLocalTab;
     };
   } else {
     Tools.performance.url = "chrome://devtools/content/performance/index.xul";
@@ -320,7 +284,7 @@ Tools.memory = {
 
   build: function(frame, target) {
     return new MemoryPanel(frame, target);
-  }
+  },
 };
 
 Tools.netMonitor = {
@@ -345,7 +309,7 @@ Tools.netMonitor = {
 
   build: function(iframeWindow, toolbox) {
     return new NetMonitorPanel(iframeWindow, toolbox);
-  }
+  },
 };
 
 Tools.storage = {
@@ -371,7 +335,7 @@ Tools.storage = {
 
   build: function(iframeWindow, toolbox) {
     return new StoragePanel(iframeWindow, toolbox);
-  }
+  },
 };
 
 Tools.webAudioEditor = {
@@ -390,7 +354,7 @@ Tools.webAudioEditor = {
 
   build: function(iframeWindow, toolbox) {
     return new WebAudioEditorPanel(iframeWindow, toolbox);
-  }
+  },
 };
 
 Tools.scratchpad = {
@@ -403,15 +367,12 @@ Tools.scratchpad = {
   panelLabel: l10n("scratchpad.panelLabel"),
   tooltip: l10n("scratchpad.tooltip"),
   inMenu: false,
-  commands: "devtools/client/scratchpad/scratchpad-commands",
-
   isTargetSupported: function(target) {
     return target.hasActor("console");
   },
-
   build: function(iframeWindow, toolbox) {
     return new ScratchpadPanel(iframeWindow, toolbox);
-  }
+  },
 };
 
 Tools.dom = {
@@ -436,7 +397,7 @@ Tools.dom = {
 
   build: function(iframeWindow, toolbox) {
     return new DomPanel(iframeWindow, toolbox);
-  }
+  },
 };
 
 Tools.accessibility = {
@@ -465,7 +426,7 @@ Tools.accessibility = {
 
   buildToolStartup(toolbox) {
     return new AccessibilityStartup(toolbox);
-  }
+  },
 };
 
 Tools.application = {
@@ -486,7 +447,7 @@ Tools.application = {
 
   build: function(iframeWindow, toolbox) {
     return new ApplicationPanel(iframeWindow, toolbox);
-  }
+  },
 };
 
 var defaultTools = [
@@ -539,24 +500,38 @@ exports.ToolboxButtons = [
     description: l10n("toolbox.buttons.paintflashing"),
     isTargetSupported: target => target.isLocalTab,
     onClick(event, toolbox) {
-      CommandUtils.executeOnTarget(toolbox.target, "paintflashing toggle");
+      toolbox.togglePaintFlashing();
     },
     isChecked(toolbox) {
-      return CommandState.isEnabledForTarget(toolbox.target, "paintflashing");
+      return toolbox.isPaintFlashing;
     },
-    setup(toolbox, onChange) {
-      CommandState.on("changed", onChange);
-    },
-    teardown(toolbox, onChange) {
-      CommandState.off("changed", onChange);
-    }
   },
   { id: "command-button-scratchpad",
     description: l10n("toolbox.buttons.scratchpad"),
     isTargetSupported: target => target.isLocalTab,
     onClick(event, toolbox) {
       ScratchpadManager.openScratchpad();
-    }
+    },
+  },
+  {
+    id: "command-button-replay",
+    description: l10n("toolbox.buttons.replay"),
+    isTargetSupported: target =>
+      Services.prefs.getBoolPref("devtools.recordreplay.mvp.enabled")
+      && !target.canRewind
+      && target.isLocalTab,
+    onClick: () => reloadAndRecordTab(),
+    isChecked: () => false,
+  },
+  {
+    id: "command-button-stop-replay",
+    description: l10n("toolbox.buttons.stopReplay"),
+    isTargetSupported: target =>
+      Services.prefs.getBoolPref("devtools.recordreplay.mvp.enabled")
+      && target.canRewind
+      && target.isLocalTab,
+    onClick: () => reloadAndStopRecordingTab(),
+    isChecked: () => true,
   },
   { id: "command-button-responsive",
     description: l10n("toolbox.buttons.responsive",
@@ -565,8 +540,7 @@ exports.ToolboxButtons = [
     onClick(event, toolbox) {
       const tab = toolbox.target.tab;
       const browserWindow = tab.ownerDocument.defaultView;
-      ResponsiveUIManager.handleGcliCommand(browserWindow, tab,
-        "resize toggle", null);
+      ResponsiveUIManager.toggle(browserWindow, tab, { trigger: "toolbox" });
     },
     isChecked(toolbox) {
       if (!toolbox.target.tab) {
@@ -581,55 +555,49 @@ exports.ToolboxButtons = [
     teardown(toolbox, onChange) {
       ResponsiveUIManager.off("on", onChange);
       ResponsiveUIManager.off("off", onChange);
-    }
+    },
   },
   { id: "command-button-screenshot",
     description: l10n("toolbox.buttons.screenshot"),
-    isTargetSupported: target => target.isLocalTab,
-    onClick(event, toolbox) {
+    isTargetSupported: target => !target.chrome && target.hasActor("screenshot"),
+    async onClick(event, toolbox) {
       // Special case for screenshot button to check for clipboard preference
       const clipboardEnabled = Services.prefs
         .getBoolPref("devtools.screenshot.clipboard.enabled");
-      let args = "--fullpage --file";
+      const args = { fullpage: true, file: true };
       if (clipboardEnabled) {
-        args += " --clipboard";
+        args.clipboard = true;
       }
-      CommandUtils.executeOnTarget(toolbox.target, "screenshot " + args);
-    }
+      const screenshotFront = toolbox.target.getFront("screenshot");
+      await screenshotFront.captureAndSave(toolbox.win, args);
+    },
   },
-  { id: "command-button-rulers",
-    description: l10n("toolbox.buttons.rulers"),
-    isTargetSupported: target => target.isLocalTab,
-    onClick(event, toolbox) {
-      CommandUtils.executeOnTarget(toolbox.target, "rulers");
-    },
-    isChecked(toolbox) {
-      return CommandState.isEnabledForTarget(toolbox.target, "rulers");
-    },
-    setup(toolbox, onChange) {
-      CommandState.on("changed", onChange);
-    },
-    teardown(toolbox, onChange) {
-      CommandState.off("changed", onChange);
-    }
-  },
-  { id: "command-button-measure",
-    description: l10n("toolbox.buttons.measure"),
-    isTargetSupported: target => target.isLocalTab,
-    onClick(event, toolbox) {
-      CommandUtils.executeOnTarget(toolbox.target, "measure");
-    },
-    isChecked(toolbox) {
-      return CommandState.isEnabledForTarget(toolbox.target, "measure");
-    },
-    setup(toolbox, onChange) {
-      CommandState.on("changed", onChange);
-    },
-    teardown(toolbox, onChange) {
-      CommandState.off("changed", onChange);
-    }
-  },
+  createHighlightButton("RulersHighlighter", "rulers"),
+  createHighlightButton("MeasuringToolHighlighter", "measure"),
 ];
+
+function createHighlightButton(highlighterName, id) {
+  return {
+    id: `command-button-${id}`,
+    description: l10n(`toolbox.buttons.${id}`),
+    isTargetSupported: target => !target.chrome,
+    async onClick(event, toolbox) {
+      const highlighter =
+        await toolbox.highlighterUtils.getOrCreateHighlighterByType(highlighterName);
+      if (highlighter.isShown()) {
+        return highlighter.hide();
+      }
+      // Starting with FF63, higlighter's spec accept a null first argument.
+      // Still pass an empty object to fake a domnode front in order to support old
+      // servers.
+      return highlighter.show({});
+    },
+    isChecked(toolbox) {
+      const highlighter = toolbox.highlighterUtils.getKnownHighlighter(highlighterName);
+      return highlighter && highlighter.isShown();
+    },
+  };
+}
 
 /**
  * Lookup l10n string from a string bundle.

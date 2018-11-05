@@ -17,8 +17,8 @@ class HTMLTableElement;
 class HTMLTableCellElement final : public nsGenericHTMLElement
 {
 public:
-  explicit HTMLTableCellElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElement(aNodeInfo)
+  explicit HTMLTableCellElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo))
   {
     SetHasWeirdParserInsertionMode();
   }
@@ -147,8 +147,7 @@ public:
   // Get mapped attributes of ancestor table, if any
   nsMappedAttributes* GetMappedAttributesInheritedFromTable() const;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
 protected:
   virtual ~HTMLTableCellElement();

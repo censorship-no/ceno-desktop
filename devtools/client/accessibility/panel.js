@@ -19,7 +19,7 @@ const EVENTS = {
   // When the accessibility inspector has a new accessible front inspected.
   NEW_ACCESSIBLE_FRONT_INSPECTED: "Accessibility:NewAccessibleFrontInspected",
   // When the accessibility inspector is updated.
-  ACCESSIBILITY_INSPECTOR_UPDATED: "Accessibility:AccessibilityInspectorUpdated"
+  ACCESSIBILITY_INSPECTOR_UPDATED: "Accessibility:AccessibilityInspectorUpdated",
 };
 
 /**
@@ -39,7 +39,7 @@ function AccessibilityPanel(iframeWindow, toolbox, startup) {
   this.onAccessibilityInspectorUpdated =
     this.onAccessibilityInspectorUpdated.bind(this);
   this.updateA11YServiceDurationTimer = this.updateA11YServiceDurationTimer.bind(this);
-  this.updatePickerButton = this.updatePickerButton.bind(this);
+  this.forceUpdatePickerButton = this.forceUpdatePickerButton.bind(this);
 
   EventEmitter.decorate(this);
 }
@@ -59,11 +59,6 @@ AccessibilityPanel.prototype = {
       resolver = resolve;
     });
 
-    // Local monitoring needs to make the target remote.
-    if (!this.target.isRemote) {
-      await this.target.makeRemote();
-    }
-
     this._telemetry = new Telemetry();
     this.panelWin.gTelemetry = this._telemetry;
 
@@ -82,13 +77,16 @@ AccessibilityPanel.prototype = {
 
     await this._toolbox.initInspector();
     await this.startup.initAccessibility();
-    if (this.supportsLatestAccessibility) {
+    if (this.supports.enableDisable) {
       this.picker = new Picker(this);
     }
 
     this.updateA11YServiceDurationTimer();
     this.front.on("init", this.updateA11YServiceDurationTimer);
     this.front.on("shutdown", this.updateA11YServiceDurationTimer);
+
+    this.front.on("init", this.forceUpdatePickerButton);
+    this.front.on("shutdown", this.forceUpdatePickerButton);
 
     this.isReady = true;
     this.emit("ready");
@@ -135,16 +133,14 @@ AccessibilityPanel.prototype = {
     }
     // Alright reset the flag we are about to refresh the panel.
     this.shouldRefresh = false;
-    this.postContentMessage("initialize", this.front,
-                                          this.walker,
-                                          this.supportsLatestAccessibility);
+    this.postContentMessage("initialize", this.front, this.walker, this.supports);
   },
 
   updateA11YServiceDurationTimer() {
     if (this.front.enabled) {
-      this._telemetry.start(A11Y_SERVICE_DURATION, this, true);
+      this._telemetry.start(A11Y_SERVICE_DURATION, this);
     } else {
-      this._telemetry.finish(A11Y_SERVICE_DURATION, this, true);
+      this._telemetry.finish(A11Y_SERVICE_DURATION, this);
     }
   },
 
@@ -169,7 +165,7 @@ AccessibilityPanel.prototype = {
     const event = new this.panelWin.MessageEvent("devtools/chrome/message", {
       bubbles: true,
       cancelable: true,
-      data: { type, args }
+      data: { type, args },
     });
 
     this.panelWin.dispatchEvent(event);
@@ -177,6 +173,17 @@ AccessibilityPanel.prototype = {
 
   updatePickerButton() {
     this.picker && this.picker.updateButton();
+  },
+
+  forceUpdatePickerButton() {
+    // Only update picker button when the panel is selected.
+    if (!this.isVisible) {
+      return;
+    }
+
+    this.updatePickerButton();
+    // Calling setToolboxButtons to make sure toolbar is forced to re-render.
+    this._toolbox.component.setToolboxButtons(this._toolbox.toolbarButtons);
   },
 
   togglePicker(focus) {
@@ -199,8 +206,8 @@ AccessibilityPanel.prototype = {
     return this.startup.walker;
   },
 
-  get supportsLatestAccessibility() {
-    return this.startup._supportsLatestAccessibility;
+  get supports() {
+    return this.startup._supports;
   },
 
   /**
@@ -239,6 +246,9 @@ AccessibilityPanel.prototype = {
     if (this.front) {
       this.front.off("init", this.updateA11YServiceDurationTimer);
       this.front.off("shutdown", this.updateA11YServiceDurationTimer);
+
+      this.front.off("init", this.forceUpdatePickerButton);
+      this.front.off("shutdown", this.forceUpdatePickerButton);
     }
 
     this._telemetry = null;
@@ -248,7 +258,7 @@ AccessibilityPanel.prototype = {
     this.emit("destroyed");
 
     resolver();
-  }
+  },
 };
 
 // Exports from this module

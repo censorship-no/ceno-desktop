@@ -12,10 +12,12 @@ const { Toolbox } = require("devtools/client/framework/toolbox");
 const EXTENSION = "@reorder.test";
 
 const TEST_STARTING_ORDER = ["inspector", "webconsole", "jsdebugger", "styleeditor",
-                             "performance", "memory", "netmonitor", "storage", EXTENSION];
+                             "performance", "memory", "netmonitor", "storage",
+                             "accessibility", EXTENSION];
 
 add_task(async function() {
   const extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
     manifest: {
       devtools_page: "extension.html",
       applications: {
@@ -60,7 +62,7 @@ add_task(async function() {
   let dragTarget = EXTENSION;
   let dropTarget = "webconsole";
   let expectedOrder = ["inspector", EXTENSION, "webconsole", "jsdebugger", "styleeditor",
-                       "performance", "memory", "netmonitor", "storage"];
+                       "performance", "memory", "netmonitor", "storage", "accessibility"];
   prepareToolTabReorderTest(toolbox, TEST_STARTING_ORDER);
   await dndToolTab(toolbox, dragTarget, dropTarget);
   assertToolTabOrder(toolbox, expectedOrder);
@@ -73,16 +75,19 @@ add_task(async function() {
   await toolbox.selectTool("storage");
   dragTarget = "storage";
   dropTarget = "inspector";
-  expectedOrder = ["storage", "inspector", "webconsole", "jsdebugger",
-                   "styleeditor", "performance", "memory", "netmonitor", EXTENSION];
+  expectedOrder = ["storage", "inspector", "webconsole", "jsdebugger", "styleeditor",
+                   "performance", "memory", "netmonitor", "accessibility", EXTENSION];
   await dndToolTab(toolbox, dragTarget, dropTarget);
   assertToolTabPreferenceOrder(expectedOrder);
+  await resizeWindow(toolbox, originalWindowWidth, originalWindowHeight);
 
-  info("Test for saving the preference updated after destroying");
+  info("Test the preference after uninstalling extension");
+  prepareToolTabReorderTest(toolbox, TEST_STARTING_ORDER);
   await extension.unload();
-  const target = gDevTools.getTargetForTab(tab);
-  await gDevTools.closeToolbox(target);
-  await target.destroy();
-  assertToolTabPreferenceOrder(["storage", "inspector", "webconsole", "jsdebugger",
-                                "styleeditor", "performance", "memory", "netmonitor"]);
+  dragTarget = "webconsole";
+  dropTarget = "inspector";
+  expectedOrder = ["webconsole", "inspector", "jsdebugger", "styleeditor",
+                   "performance", "memory", "netmonitor", "storage", "accessibility"];
+  await dndToolTab(toolbox, dragTarget, dropTarget);
+  assertToolTabPreferenceOrder(expectedOrder);
 });

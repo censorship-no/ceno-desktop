@@ -1,6 +1,8 @@
 "use strict";
 
-ChromeUtils.import("resource://formautofill/FormAutofillContent.jsm");
+add_task(async function setup() {
+  ChromeUtils.import("resource://formautofill/FormAutofillContent.jsm");
+});
 
 const MOCK_DOC = MockDocument.createTestDocument("http://localhost:8080/test/",
                    `<form id="form1">
@@ -56,7 +58,7 @@ const TESTCASES = [
     description: "Trigger address saving",
     formValue: {
       "street-addr": "331 E. Evelyn Avenue",
-      "country": "USA",
+      "country": "US",
       "tel": "1-650-903-0800",
     },
     expectedResult: {
@@ -68,7 +70,7 @@ const TESTCASES = [
             "street-address": "331 E. Evelyn Avenue",
             "address-level1": "",
             "address-level2": "",
-            "country": "USA",
+            "country": "US",
             "email": "",
             "tel": "1-650-903-0800",
           },
@@ -107,7 +109,7 @@ const TESTCASES = [
     description: "Trigger address and credit card saving",
     formValue: {
       "street-addr": "331 E. Evelyn Avenue",
-      "country": "USA",
+      "country": "US",
       "tel": "1-650-903-0800",
       "cc-name": "John Doe",
       "cc-number": "5105105105105100",
@@ -123,7 +125,7 @@ const TESTCASES = [
             "street-address": "331 E. Evelyn Avenue",
             "address-level1": "",
             "address-level2": "",
-            "country": "USA",
+            "country": "US",
             "email": "",
             "tel": "1-650-903-0800",
           },
@@ -146,7 +148,7 @@ const TESTCASES = [
     description: "Profile saved with trimmed string",
     formValue: {
       "street-addr": "331 E. Evelyn Avenue  ",
-      "country": "USA",
+      "country": "US",
       "tel": "  1-650-903-0800",
     },
     expectedResult: {
@@ -158,7 +160,7 @@ const TESTCASES = [
             "street-address": "331 E. Evelyn Avenue",
             "address-level1": "",
             "address-level2": "",
-            "country": "USA",
+            "country": "US",
             "email": "",
             "tel": "1-650-903-0800",
           },
@@ -172,7 +174,7 @@ const TESTCASES = [
     description: "Eliminate the field that is empty after trimmed",
     formValue: {
       "street-addr": "331 E. Evelyn Avenue",
-      "country": "USA",
+      "country": "US",
       "email": "  ",
       "tel": "1-650-903-0800",
     },
@@ -185,7 +187,7 @@ const TESTCASES = [
             "street-address": "331 E. Evelyn Avenue",
             "address-level1": "",
             "address-level2": "",
-            "country": "USA",
+            "country": "US",
             "email": "",
             "tel": "1-650-903-0800",
           },
@@ -200,7 +202,7 @@ const TESTCASES = [
     formValue: {
       "address-level1": "CA",
       "street-addr": "331 E. Evelyn Avenue",
-      "country": "USA",
+      "country": "US",
     },
     expectedResult: {
       formSubmission: true,
@@ -211,7 +213,7 @@ const TESTCASES = [
             "address-level1": "CA",
             "address-level2": "",
             "street-address": "331 E. Evelyn Avenue",
-            "country": "USA",
+            "country": "US",
             "email": "",
             "tel": "",
           },
@@ -226,7 +228,7 @@ const TESTCASES = [
     formValue: {
       "address-level1": "ca",
       "street-addr": "331 E. Evelyn Avenue",
-      "country": "USA",
+      "country": "US",
     },
     expectedResult: {
       formSubmission: true,
@@ -237,7 +239,7 @@ const TESTCASES = [
             "address-level1": "CA",
             "address-level2": "",
             "street-address": "331 E. Evelyn Avenue",
-            "country": "USA",
+            "country": "US",
             "email": "",
             "tel": "",
           },
@@ -252,7 +254,7 @@ const TESTCASES = [
     formValue: {
       "address-level1": "AR",
       "street-addr": "331 E. Evelyn Avenue",
-      "country": "USA",
+      "country": "US",
     },
     expectedResult: {
       formSubmission: true,
@@ -263,7 +265,7 @@ const TESTCASES = [
             "address-level1": "AR",
             "address-level2": "",
             "street-address": "331 E. Evelyn Avenue",
-            "country": "USA",
+            "country": "US",
             "email": "",
             "tel": "",
           },
@@ -278,7 +280,7 @@ const TESTCASES = [
     formValue: {
       "address-level1": "US-CA",
       "street-addr": "331 E. Evelyn Avenue",
-      "country": "USA",
+      "country": "US",
     },
     expectedResult: {
       formSubmission: true,
@@ -289,7 +291,7 @@ const TESTCASES = [
             "address-level1": "CA",
             "address-level2": "",
             "street-address": "331 E. Evelyn Avenue",
-            "country": "USA",
+            "country": "US",
             "email": "",
             "tel": "",
           },
@@ -304,7 +306,7 @@ const TESTCASES = [
     formValue: {
       "address-level1": "US-AZ",
       "street-addr": "331 E. Evelyn Avenue",
-      "country": "USA",
+      "country": "US",
     },
     expectedResult: {
       formSubmission: true,
@@ -315,7 +317,7 @@ const TESTCASES = [
             "address-level1": "AZ",
             "address-level2": "",
             "street-address": "331 E. Evelyn Avenue",
-            "country": "USA",
+            "country": "US",
             "email": "",
             "tel": "",
           },
@@ -330,7 +332,7 @@ const TESTCASES = [
     formValue: {
       "address-level1": "Ariz",
       "street-addr": "331 E. Evelyn Avenue",
-      "country": "USA",
+      "country": "US",
     },
     expectedResult: {
       formSubmission: true,
@@ -341,7 +343,7 @@ const TESTCASES = [
             "address-level1": "Arizonac",
             "address-level2": "",
             "street-address": "331 E. Evelyn Avenue",
-            "country": "USA",
+            "country": "US",
             "email": "",
             "tel": "",
           },
@@ -356,7 +358,7 @@ const TESTCASES = [
     formValue: {
       "address-level1": ["AL", "AK", "AP"],
       "street-addr": "331 E. Evelyn Avenue",
-      "country": "USA",
+      "country": "US",
       "tel": "1-650-903-0800",
     },
     expectedResult: {
@@ -368,7 +370,7 @@ const TESTCASES = [
             "street-address": "331 E. Evelyn Avenue",
             "address-level1": "",
             "address-level2": "",
-            "country": "USA",
+            "country": "US",
             "tel": "1-650-903-0800",
             "email": "",
           },
@@ -383,7 +385,7 @@ const TESTCASES = [
     formValue: {
       "address-level1": "",
       "street-addr": "331 E. Evelyn Avenue",
-      "country": "USA",
+      "country": "US",
       "tel": "1-650-903-0800",
     },
     expectedResult: {
@@ -395,7 +397,7 @@ const TESTCASES = [
             "street-address": "331 E. Evelyn Avenue",
             "address-level1": "",
             "address-level2": "",
-            "country": "USA",
+            "country": "US",
             "tel": "1-650-903-0800",
             "email": "",
           },
@@ -582,7 +584,8 @@ TESTCASES.forEach(testcase => {
     FormAutofillContent.notify(form);
 
     Assert.equal(FormAutofillContent._onFormSubmit.called,
-                testcase.expectedResult.formSubmission);
+                 testcase.expectedResult.formSubmission,
+                 "Check expected onFormSubmit.called");
     if (FormAutofillContent._onFormSubmit.called) {
       Assert.deepEqual(FormAutofillContent._onFormSubmit.args[0][0],
                        testcase.expectedResult.records);

@@ -8,16 +8,20 @@ add_task(async function() {
   let input = "i-definitely-dont-exist.example.com";
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank", false);
   let browser = tab.linkedBrowser;
-  // NB: CPOW usage because new tab pages can be preloaded, in which case no
-  // load events fire.
-  await BrowserTestUtils.waitForCondition(() => browser.contentDocumentAsCPOW && !browser.contentDocumentAsCPOW.hidden);
+  // Note: Waiting on content document not being hidden because new tab pages can be preloaded,
+  // in which case no load events fire.
+  await ContentTask.spawn(browser, null, async () => {
+    await ContentTaskUtils.waitForCondition(() => {
+      return content.document && !content.document.hidden;
+    });
+  });
   let errorPageLoaded = BrowserTestUtils.waitForErrorPage(tab.linkedBrowser);
   gURLBar.value = input;
   gURLBar.select();
   EventUtils.sendKey("return");
   await errorPageLoaded;
   is(gURLBar.textValue, input, "Text is still in URL bar");
-  await BrowserTestUtils.switchTab(gBrowser, tab.previousSibling);
+  await BrowserTestUtils.switchTab(gBrowser, tab.previousElementSibling);
   await BrowserTestUtils.switchTab(gBrowser, tab);
   is(gURLBar.textValue, input, "Text is still in URL bar after tab switch");
   BrowserTestUtils.removeTab(tab);
@@ -32,9 +36,13 @@ add_task(async function() {
   await SpecialPowers.pushPrefEnv({set: [["keyword.enabled", false]]});
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank", false);
   let browser = tab.linkedBrowser;
-  // NB: CPOW usage because new tab pages can be preloaded, in which case no
-  // load events fire.
-  await BrowserTestUtils.waitForCondition(() => browser.contentDocumentAsCPOW && !browser.contentDocumentAsCPOW.hidden);
+  // Note: Waiting on content document not being hidden because new tab pages can be preloaded,
+  // in which case no load events fire.
+  await ContentTask.spawn(browser, null, async () => {
+    await ContentTaskUtils.waitForCondition(() => {
+      return content.document && !content.document.hidden;
+    });
+  });
   let errorPageLoaded = BrowserTestUtils.waitForErrorPage(tab.linkedBrowser);
   gURLBar.value = input;
   gURLBar.select();
@@ -42,7 +50,7 @@ add_task(async function() {
   await errorPageLoaded;
   is(gURLBar.textValue, input, "Text is still in URL bar");
   is(tab.linkedBrowser.userTypedValue, input, "Text still stored on browser");
-  await BrowserTestUtils.switchTab(gBrowser, tab.previousSibling);
+  await BrowserTestUtils.switchTab(gBrowser, tab.previousElementSibling);
   await BrowserTestUtils.switchTab(gBrowser, tab);
   is(gURLBar.textValue, input, "Text is still in URL bar after tab switch");
   is(tab.linkedBrowser.userTypedValue, input, "Text still stored on browser");

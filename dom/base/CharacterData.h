@@ -85,7 +85,6 @@ public:
 
   NS_DECL_ADDSIZEOFEXCLUDINGTHIS
 
-  explicit CharacterData(already_AddRefed<dom::NodeInfo>& aNodeInfo);
   explicit CharacterData(already_AddRefed<dom::NodeInfo>&& aNodeInfo);
 
   void MarkAsMaybeModifiedFrequently()
@@ -214,9 +213,7 @@ public:
     return false;
   }
 
-  nsresult Clone(dom::NodeInfo* aNodeInfo,
-                 nsINode** aResult,
-                 bool aPreallocateChildren) const override
+  nsresult Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const override
   {
     RefPtr<CharacterData> result = CloneDataNode(aNodeInfo, true);
     result.forget(aResult);

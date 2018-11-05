@@ -35,8 +35,8 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(SVGAnimationElement,
 //----------------------------------------------------------------------
 // Implementation
 
-SVGAnimationElement::SVGAnimationElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGAnimationElementBase(aNodeInfo),
+SVGAnimationElement::SVGAnimationElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  : SVGAnimationElementBase(std::move(aNodeInfo)),
     mHrefTarget(this)
 {
 }
@@ -185,7 +185,7 @@ SVGAnimationElement::BindToTree(nsIDocument* aDocument,
       UpdateHrefTarget(hrefStr);
     }
 
-    mTimedElement.BindToTree(aParent);
+    mTimedElement.BindToTree(*this);
   }
 
   AnimationNeedsResample();
@@ -234,7 +234,7 @@ SVGAnimationElement::ParseAttribute(int32_t aNamespaceID,
     // try to parse it.
     if (!foundMatch) {
       foundMatch =
-        mTimedElement.SetAttr(aAttribute, aValue, aResult, this, &rv);
+        mTimedElement.SetAttr(aAttribute, aValue, aResult, *this, &rv);
     }
 
     if (foundMatch) {
@@ -414,7 +414,11 @@ SVGAnimationElement::UpdateHrefTarget(const nsAString& aHrefStr)
   nsCOMPtr<nsIURI> baseURI = GetBaseURI();
   nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(targetURI),
                                             aHrefStr, OwnerDoc(), baseURI);
-  mHrefTarget.Reset(this, targetURI);
+  // Bug 1415044 to investigate which referrer we should use
+  mHrefTarget.Reset(this,
+                    targetURI,
+                    OwnerDoc()->GetDocumentURI(),
+                    OwnerDoc()->GetReferrerPolicy());
   AnimationTargetChanged();
 }
 

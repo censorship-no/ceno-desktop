@@ -7,8 +7,6 @@
 // Test the xpcshell-test debug support.  Ideally we should have this test
 // next to the xpcshell support code, but that's tricky...
 
-const {getDeviceFront} = require("devtools/shared/fronts/device");
-
 add_task(async function() {
   const testFile = do_get_file("xpcshell_debugging_script.js");
 
@@ -23,17 +21,15 @@ add_task(async function() {
   await client.connect();
 
   // Ensure that global actors are available. Just test the device actor.
-  const rootForm = await client.mainRoot.getRoot();
-  const deviceFront = await getDeviceFront(client, rootForm);
+  const deviceFront = await client.mainRoot.getFront("device");
   const desc = await deviceFront.getDescription();
   equal(desc.geckobuildid, Services.appinfo.platformBuildID, "device actor works");
 
   // Even though we have no tabs, getProcess gives us the chromeDebugger.
-  const response = await client.getProcess();
+  const response = await client.mainRoot.getProcess(0);
 
-  const actor = response.form.actor;
-  const [, tabClient] = await client.attachTab(actor);
-  const [, threadClient] = await tabClient.attachThread(null);
+  const { chromeDebugger } = response.form;
+  const [, threadClient] = await client.attachThread(chromeDebugger);
   const onResumed = new Promise(resolve => {
     threadClient.addOneTimeListener("paused", (event, packet) => {
       equal(packet.why.type, "breakpoint",

@@ -29,7 +29,7 @@ const kStringsRequiringFormatting = {
   quitCancelDownloadsAlertMsgMultiple: true,
   quitCancelDownloadsAlertMsgMacMultiple: true,
   offlineCancelDownloadsAlertMsgMultiple: true,
-  leavePrivateBrowsingWindowsCancelDownloadsAlertMsgMultiple2: true
+  leavePrivateBrowsingWindowsCancelDownloadsAlertMsgMultiple2: true,
 };
 
 /**
@@ -63,9 +63,7 @@ var DownloadUIHelper = {
 XPCOMUtils.defineLazyGetter(DownloadUIHelper, "strings", function() {
   let strings = {};
   let sb = Services.strings.createBundle(kStringBundleUrl);
-  let enumerator = sb.getSimpleEnumeration();
-  while (enumerator.hasMoreElements()) {
-    let string = enumerator.getNext().QueryInterface(Ci.nsIPropertyElement);
+  for (let string of sb.getSimpleEnumeration()) {
     let stringName = string.key;
     if (stringName in kStringsRequiringFormatting) {
       strings[stringName] = function() {
@@ -199,5 +197,5 @@ this.DownloadPrompter.prototype = {
     let rv = this._prompter.confirmEx(title, message, buttonFlags, okButton,
                                       cancelButton, null, null, {});
     return (rv == 1);
-  }
+  },
 };

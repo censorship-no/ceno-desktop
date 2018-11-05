@@ -4,8 +4,8 @@
 "use strict";
 
 const {
-  ConsoleAPIListener
-} = require("devtools/server/actors/webconsole/listeners");
+  ConsoleAPIListener,
+} = require("devtools/server/actors/webconsole/listeners/console-api");
 const EventEmitter = require("devtools/shared/event-emitter");
 const hasMethod = (target, method) =>
   method in target && typeof target[method] === "function";
@@ -75,7 +75,7 @@ const TESTS = {
         equal(message.arguments[0], "foo: bar");
         listener.destroy();
         done();
-      }
+      },
     });
 
     listener.init();
@@ -218,7 +218,7 @@ const TESTS = {
     emitter.emit("a");
     emitter.emit("*");
     equal(received.length, 3, "the listener was not called anymore");
-  }
+  },
 };
 
 /**

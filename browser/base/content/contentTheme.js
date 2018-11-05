@@ -12,7 +12,7 @@ function _isTextColorDark(r, g, b) {
 
 const inContentVariableMap = [
   ["--newtab-background-color", {
-    lwtProperty: "ntp_background"
+    lwtProperty: "ntp_background",
   }],
   ["--newtab-text-primary-color", {
     lwtProperty: "ntp_text",
@@ -27,8 +27,57 @@ const inContentVariableMap = [
       const {r, g, b, a} = rgbaChannels;
       if (!_isTextColorDark(r, g, b)) {
         element.setAttribute("lwt-newtab-brighttext", "true");
+      } else {
+        element.removeAttribute("lwt-newtab-brighttext");
       }
 
+      return `rgba(${r}, ${g}, ${b}, ${a})`;
+    },
+  }],
+  ["--lwt-sidebar-background-color", {
+    lwtProperty: "sidebar",
+    processColor(rgbaChannels) {
+      if (!rgbaChannels) {
+        return null;
+      }
+      const {r, g, b} = rgbaChannels;
+      // Drop alpha channel
+      return `rgb(${r}, ${g}, ${b})`;
+    },
+  }],
+  ["--lwt-sidebar-text-color", {
+    lwtProperty: "sidebar_text",
+    processColor(rgbaChannels, element) {
+      if (!rgbaChannels) {
+        element.removeAttribute("lwt-sidebar");
+        element.removeAttribute("lwt-sidebar-brighttext");
+        return null;
+      }
+
+      element.setAttribute("lwt-sidebar", "true");
+      const {r, g, b, a} = rgbaChannels;
+      if (!_isTextColorDark(r, g, b)) {
+        element.setAttribute("lwt-sidebar-brighttext", "true");
+      } else {
+        element.removeAttribute("lwt-sidebar-brighttext");
+      }
+
+      return `rgba(${r}, ${g}, ${b}, ${a})`;
+    },
+  }],
+  ["--lwt-sidebar-highlight-background-color", {
+    lwtProperty: "sidebar_highlight",
+  }],
+  ["--lwt-sidebar-highlight-text-color", {
+    lwtProperty: "sidebar_highlight_text",
+    processColor(rgbaChannels, element) {
+      if (!rgbaChannels) {
+        element.removeAttribute("lwt-sidebar-highlight");
+        return null;
+      }
+      element.setAttribute("lwt-sidebar-highlight", "true");
+
+      const {r, g, b, a} = rgbaChannels;
       return `rgba(${r}, ${g}, ${b}, ${a})`;
     },
   }],
@@ -58,7 +107,9 @@ const ContentThemeController = {
       if (!data) {
         data = {};
       }
-      this._setProperties(document.body, data);
+      // XUL documents don't have a body
+      const element = document.body ? document.body : document.documentElement;
+      this._setProperties(element, data);
     }
   },
 
@@ -90,7 +141,7 @@ const ContentThemeController = {
       let value = themeData[lwtProperty];
 
       if (processColor) {
-        value = processColor(value, document.body);
+        value = processColor(value, elem);
       } else if (value) {
         const {r, g, b, a} = value;
         value = `rgba(${r}, ${g}, ${b}, ${a})`;

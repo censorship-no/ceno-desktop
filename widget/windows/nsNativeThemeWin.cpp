@@ -5,6 +5,7 @@
 
 #include "nsNativeThemeWin.h"
 
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/Logging.h"
 #include "mozilla/RelativeLuminanceUtils.h"
@@ -28,7 +29,7 @@
 #include "nsGkAtoms.h"
 #include <malloc.h>
 #include "nsWindow.h"
-#include "nsIComboboxControlFrame.h"
+#include "nsComboboxControlFrame.h"
 #include "prinrval.h"
 #include "WinUtils.h"
 
@@ -139,6 +140,14 @@ GetCheckboxMargins(HANDLE theme, HDC hdc)
     GetThemeMargins(theme, hdc, MENU_POPUPCHECK, MCB_NORMAL,
                     TMT_CONTENTMARGINS, nullptr, &checkboxContent);
     return checkboxContent;
+}
+
+static COLORREF
+GetTextfieldFillColor(HANDLE theme, int32_t part, int32_t state)
+{
+    COLORREF color = {0};
+    GetThemeColor(theme, part, state, TMT_FILLCOLOR, &color);
+    return color;
 }
 
 static SIZE
@@ -704,12 +713,13 @@ nsresult nsNativeThemeWin::GetCachedMinimumWidgetSize(nsIFrame * aFrame, HANDLE 
     }
 
     case StyleAppearance::Menuarrow:
-    {
       // Use the width of the arrow glyph as padding. See the drawing
       // code for details.
       aResult->width *= 2;
       break;
-    }
+
+    default:
+      break;
   }
 
   ::ReleaseDC(nullptr, hdc);
@@ -728,6 +738,7 @@ mozilla::Maybe<nsUXThemeClass> nsNativeThemeWin::GetThemeClass(WidgetType aWidge
     case StyleAppearance::Checkbox:
     case StyleAppearance::Groupbox:
       return Some(eUXButton);
+    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::NumberInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::TextfieldMultiline:
@@ -825,8 +836,9 @@ mozilla::Maybe<nsUXThemeClass> nsNativeThemeWin::GetThemeClass(WidgetType aWidge
     case StyleAppearance::MozWinGlass:
     case StyleAppearance::MozWinBorderlessGlass:
       return Some(eUXWindowFrame);
+    default:
+      return Nothing();
   }
-  return Nothing();
 }
 
 HANDLE
@@ -948,6 +960,7 @@ nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame, WidgetType aWidgetType,
       // same as GBS_NORMAL don't bother supporting GBS_DISABLED.
       return NS_OK;
     }
+    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::NumberInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::TextfieldMultiline: {
@@ -1274,9 +1287,7 @@ nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame, WidgetType aWidgetType,
     }
     case StyleAppearance::Menulist: {
       nsIContent* content = aFrame->GetContent();
-      bool isHTML = content && content->IsHTMLElement();
-      bool isChrome = aFrame->GetContent()->IsInChromeDocument();
-      bool useDropBorder = isHTML || (isChrome && IsMenuListEditable(aFrame));
+      bool useDropBorder = content && content->IsHTMLElement();
       EventStates eventState = GetContentState(aFrame, aWidgetType);
 
       /* On Vista/Win7, we use CBP_DROPBORDER instead of DROPFRAME for HTML
@@ -1332,14 +1343,13 @@ nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame, WidgetType aWidgetType,
       }
 
       if (isHTML) {
-        nsIComboboxControlFrame* ccf = do_QueryFrame(aFrame);
+        nsComboboxControlFrame* ccf = do_QueryFrame(aFrame);
         isOpen = (ccf && ccf->IsDroppedDownOrHasParentPopup());
       }
       else
         isOpen = IsOpenButton(aFrame);
 
-      bool isChrome = aFrame->GetContent()->IsInChromeDocument();
-      if (isHTML || (isChrome && IsMenuListEditable(aFrame))) {
+      if (isHTML) {
         if (isOpen) {
           /* Hover is propagated, but we need to know whether we're hovering
            * just the combobox frame, not the dropdown frame. But, we can't get
@@ -1510,11 +1520,11 @@ nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame, WidgetType aWidgetType,
       aPart = -1;
       aState = 0;
       return NS_OK;
+    default:
+      aPart = 0;
+      aState = 0;
+      return NS_ERROR_FAILURE;
   }
-
-  aPart = 0;
-  aState = 0;
-  return NS_ERROR_FAILURE;
 }
 
 static bool
@@ -1545,6 +1555,27 @@ GetThemeDpiScaleFactor(nsIFrame* aFrame)
   return 1.0;
 }
 
+static bool
+IsScrollbarWidthThin(ComputedStyle* aStyle)
+{
+  auto scrollbarWidth = aStyle->StyleUIReset()->mScrollbarWidth;
+  return scrollbarWidth == StyleScrollbarWidth::Thin;
+}
+
+static bool
+IsScrollbarWidthThin(nsIFrame* aFrame)
+{
+  ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aFrame);
+  return IsScrollbarWidthThin(style);
+}
+
+static bool
+ShouldDrawCustomScrollbar(ComputedStyle* aStyle)
+{
+  return aStyle->StyleUI()->HasCustomScrollbars() ||
+    IsScrollbarWidthThin(aStyle);
+}
+
 NS_IMETHODIMP
 nsNativeThemeWin::DrawWidgetBackground(gfxContext* aContext,
                                        nsIFrame* aFrame,
@@ -1559,7 +1590,7 @@ nsNativeThemeWin::DrawWidgetBackground(gfxContext* aContext,
 
   if (IsWidgetScrollbarPart(aWidgetType)) {
     ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aFrame);
-    if (style->StyleUserInterface()->HasCustomScrollbars()) {
+    if (ShouldDrawCustomScrollbar(style)) {
       return DrawCustomScrollbarPart(aContext, aFrame, style,
                                      aWidgetType, aRect, aDirtyRect);
     }
@@ -1580,7 +1611,6 @@ nsNativeThemeWin::DrawWidgetBackground(gfxContext* aContext,
         // Nothing to draw, these areas are glass. Minimum dimensions
         // should be set, so xul content should be layed out correctly.
         return NS_OK;
-      break;
       case StyleAppearance::MozWindowButtonClose:
       case StyleAppearance::MozWindowButtonMinimize:
       case StyleAppearance::MozWindowButtonMaximize:
@@ -1589,7 +1619,6 @@ nsNativeThemeWin::DrawWidgetBackground(gfxContext* aContext,
         // through here and call the theme library we'll get aero
         // basic bitmaps. 
         return NS_OK;
-      break;
       case StyleAppearance::MozWinGlass:
       case StyleAppearance::MozWinBorderlessGlass:
         // Nothing to draw, this is the glass background.
@@ -1598,7 +1627,8 @@ nsNativeThemeWin::DrawWidgetBackground(gfxContext* aContext,
       case StyleAppearance::MozWindowButtonBoxMaximized:
         // We handle these through nsIWidget::UpdateThemeGeometries
         return NS_OK;
-      break;
+      default:
+        break;
     }
   }
 
@@ -1849,11 +1879,24 @@ RENDER_AGAIN:
     DrawThemeBGRTLAware(theme, hdc, part, state,
                         &widgetRect, &clipRect, IsFrameRTL(aFrame));
   }
-  else if (aWidgetType == StyleAppearance::NumberInput ||
+  else if (aWidgetType == StyleAppearance::MenulistTextfield ||
+           aWidgetType == StyleAppearance::NumberInput ||
            aWidgetType == StyleAppearance::Textfield ||
            aWidgetType == StyleAppearance::TextfieldMultiline) {
-    DrawThemeBackground(theme, hdc, part, state, &widgetRect, &clipRect);
-     if (state == TFS_EDITBORDER_DISABLED) {
+    if (aWidgetType == StyleAppearance::MenulistTextfield &&
+        state != TFS_EDITBORDER_FOCUSED) {
+      // We want 'menulist-textfield' to behave like 'textfield', except we
+      // don't want a border unless it's focused.  We have to handle the
+      // non-focused case manually here.
+      COLORREF color = GetTextfieldFillColor(theme, part, state);
+      HBRUSH brush = CreateSolidBrush(color);
+      ::FillRect(hdc, &widgetRect, brush);
+      DeleteObject(brush);
+    } else {
+      DrawThemeBackground(theme, hdc, part, state, &widgetRect, &clipRect);
+    }
+
+    if (state == TFS_EDITBORDER_DISABLED) {
       InflateRect(&widgetRect, -1, -1);
       ::FillRect(hdc, &widgetRect, reinterpret_cast<HBRUSH>(COLOR_BTNFACE+1));
     }
@@ -1962,61 +2005,8 @@ RENDER_AGAIN:
   return NS_OK;
 }
 
-static nscolor
-GetScrollbarFaceColorForAuto(ComputedStyle* aStyle)
-{
-  // Do we want to derive from scrollbar-track-color when possible?
-  DWORD sysColor = ::GetSysColor(COLOR_SCROLLBAR);
-  return NS_RGB(GetRValue(sysColor),
-                GetGValue(sysColor),
-                GetBValue(sysColor));
-}
-
-static nscolor
-GetScrollbarTrackColorForAuto(ComputedStyle* aStyle)
-{
-  // Fallback to background color for now. Do we want to derive from
-  // scrollbar-face-color somehow?
-  return aStyle->StyleBackground()->BackgroundColor(aStyle);
-}
-
-nscolor
-nsNativeThemeWin::GetWidgetAutoColor(ComputedStyle* aStyle, WidgetType aWidgetType)
-{
-  switch (aWidgetType) {
-    case StyleAppearance::Scrollbar:
-    case StyleAppearance::ScrollbarSmall:
-    case StyleAppearance::ScrollbarVertical:
-    case StyleAppearance::ScrollbarHorizontal:
-    case StyleAppearance::ScrollbarbuttonUp:
-    case StyleAppearance::ScrollbarbuttonDown:
-    case StyleAppearance::ScrollbarbuttonLeft:
-    case StyleAppearance::ScrollbarbuttonRight:
-      return GetScrollbarTrackColorForAuto(aStyle);
-
-    case StyleAppearance::ScrollbarthumbVertical:
-    case StyleAppearance::ScrollbarthumbHorizontal:
-      return GetScrollbarFaceColorForAuto(aStyle);
-
-    default:
-      return nsITheme::GetWidgetAutoColor(aStyle, aWidgetType);
-  }
-}
-
 static void
 ScaleForFrameDPI(LayoutDeviceIntMargin* aMargin, nsIFrame* aFrame)
-{
-  double themeScale = GetThemeDpiScaleFactor(aFrame);
-  if (themeScale != 1.0) {
-    aMargin->top = NSToIntRound(aMargin->top * themeScale);
-    aMargin->left = NSToIntRound(aMargin->left * themeScale);
-    aMargin->bottom = NSToIntRound(aMargin->bottom * themeScale);
-    aMargin->right = NSToIntRound(aMargin->right * themeScale);
-  }
-}
-
-static void
-ScaleForFrameDPI(nsIntMargin* aMargin, nsIFrame* aFrame)
 {
   double themeScale = GetThemeDpiScaleFactor(aFrame);
   if (themeScale != 1.0) {
@@ -2097,7 +2087,8 @@ nsNativeThemeWin::GetWidgetBorder(nsDeviceContext* aContext,
       result.left = 0;
   }
 
-  if (aFrame && (aWidgetType == StyleAppearance::NumberInput ||
+  if (aFrame && (aWidgetType == StyleAppearance::MenulistTextfield ||
+                 aWidgetType == StyleAppearance::NumberInput ||
                  aWidgetType == StyleAppearance::Textfield ||
                  aWidgetType == StyleAppearance::TextfieldMultiline)) {
     nsIContent* content = aFrame->GetContent();
@@ -2134,6 +2125,8 @@ nsNativeThemeWin::GetWidgetPadding(nsDeviceContext* aContext,
     case StyleAppearance::Radio:
       aResult->SizeTo(0, 0, 0, 0);
       return true;
+    default:
+      break;
   }
 
   bool ok = true;
@@ -2161,9 +2154,20 @@ nsNativeThemeWin::GetWidgetPadding(nsDeviceContext* aContext,
     // XXX Maximized windows have an offscreen offset equal to
     // the border padding. This should be addressed in nsWindow,
     // but currently can't be, see UpdateNonClientMargins.
-    if (aWidgetType == StyleAppearance::MozWindowTitlebarMaximized)
-      aResult->top = GetSystemMetrics(SM_CXFRAME)
-                   + GetSystemMetrics(SM_CXPADDEDBORDER);
+    if (aWidgetType == StyleAppearance::MozWindowTitlebarMaximized) {
+      nsIWidget* rootWidget = nullptr;
+      if (WinUtils::HasSystemMetricsForDpi()) {
+        rootWidget = aFrame->PresContext()->GetRootWidget();
+      }
+      if (rootWidget) {
+        double dpi = rootWidget->GetDPI();
+        aResult->top = WinUtils::GetSystemMetricsForDpi(SM_CXFRAME, dpi)
+                     + WinUtils::GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+      } else {
+        aResult->top = GetSystemMetrics(SM_CXFRAME)
+                     + GetSystemMetrics(SM_CXPADDEDBORDER);
+      }
+    }
     return ok;
   }
 
@@ -2184,7 +2188,8 @@ nsNativeThemeWin::GetWidgetPadding(nsDeviceContext* aContext,
     return ok;
   }
 
-  if (aWidgetType == StyleAppearance::NumberInput ||
+  if (aWidgetType == StyleAppearance::MenulistTextfield ||
+      aWidgetType == StyleAppearance::NumberInput ||
       aWidgetType == StyleAppearance::Textfield ||
       aWidgetType == StyleAppearance::TextfieldMultiline ||
       aWidgetType == StyleAppearance::Menulist)
@@ -2201,7 +2206,8 @@ nsNativeThemeWin::GetWidgetPadding(nsDeviceContext* aContext,
    * Instead, we add 2px padding for the contents and fix this. (Used to be 1px
    * added, see bug 430212)
    */
-  if (aWidgetType == StyleAppearance::NumberInput ||
+  if (aWidgetType == StyleAppearance::MenulistTextfield ||
+      aWidgetType == StyleAppearance::NumberInput ||
       aWidgetType == StyleAppearance::Textfield ||
       aWidgetType == StyleAppearance::TextfieldMultiline) {
     aResult->top = aResult->bottom = 2;
@@ -2343,6 +2349,7 @@ nsNativeThemeWin::GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* aF
 
   switch (aWidgetType) {
     case StyleAppearance::Groupbox:
+    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::NumberInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Toolbox:
@@ -2361,6 +2368,8 @@ nsNativeThemeWin::GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* aF
     case StyleAppearance::MozWinGlass:
     case StyleAppearance::MozWinBorderlessGlass:
       return NS_OK; // Don't worry about it.
+    default:
+      break;
   }
 
   if (aWidgetType == StyleAppearance::Menuitem && IsTopLevelMenu(aFrame))
@@ -2539,6 +2548,9 @@ nsNativeThemeWin::GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* aF
       aResult->height = GetSystemMetrics(SM_CYFRAME);
       *aIsOverridable = false;
       return rv;
+
+    default:
+      break;
   }
 
   int32_t part, state;
@@ -2741,6 +2753,29 @@ nsNativeThemeWin::ThemeGeometryTypeForWidget(nsIFrame* aFrame,
 nsITheme::Transparency
 nsNativeThemeWin::GetWidgetTransparency(nsIFrame* aFrame, WidgetType aWidgetType)
 {
+  if (IsWidgetScrollbarPart(aWidgetType)) {
+    ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aFrame);
+    if (ShouldDrawCustomScrollbar(style)) {
+      if (style->StyleUI()->mScrollbarTrackColor.MaybeTransparent()) {
+        return eTransparent;
+      }
+      // DrawCustomScrollbarPart doesn't draw the track background for
+      // widgets on it, and these widgets are thinner than the track,
+      // so we need to return transparent for them.
+      switch (aWidgetType) {
+        case StyleAppearance::ScrollbarthumbHorizontal:
+        case StyleAppearance::ScrollbarthumbVertical:
+        case StyleAppearance::ScrollbarbuttonUp:
+        case StyleAppearance::ScrollbarbuttonDown:
+        case StyleAppearance::ScrollbarbuttonLeft:
+        case StyleAppearance::ScrollbarbuttonRight:
+          return eTransparent;
+        default:
+          break;
+      }
+    }
+  }
+
   switch (aWidgetType) {
   case StyleAppearance::ScrollbarSmall:
   case StyleAppearance::Scrollbar:
@@ -2761,6 +2796,8 @@ nsNativeThemeWin::GetWidgetTransparency(nsIFrame* aFrame, WidgetType aWidgetType
   case StyleAppearance::ProgresschunkVertical:
   case StyleAppearance::Range:
     return eTransparent;
+  default:
+    break;
   }
 
   HANDLE theme = GetTheme(aWidgetType);
@@ -2874,8 +2911,9 @@ nsNativeThemeWin::ClassicThemeSupportsWidget(nsIFrame* aFrame,
     case StyleAppearance::MozWindowButtonBox:
     case StyleAppearance::MozWindowButtonBoxMaximized:
       return true;
+    default:
+      return false;
   }
-  return false;
 }
 
 LayoutDeviceIntMargin
@@ -3011,14 +3049,20 @@ nsNativeThemeWin::ClassicGetMinimumWidgetSize(nsIFrame* aFrame,
       break;
     case StyleAppearance::ScrollbarbuttonUp:
     case StyleAppearance::ScrollbarbuttonDown:
-      (*aResult).width = ::GetSystemMetrics(SM_CXVSCROLL);
-      (*aResult).height = ::GetSystemMetrics(SM_CYVSCROLL);
+      // For scrollbar-width:thin, we don't display the buttons.
+      if (!IsScrollbarWidthThin(aFrame)) {
+        (*aResult).width = ::GetSystemMetrics(SM_CXVSCROLL);
+        (*aResult).height = ::GetSystemMetrics(SM_CYVSCROLL);
+      }
       *aIsOverridable = false;
       break;
     case StyleAppearance::ScrollbarbuttonLeft:
     case StyleAppearance::ScrollbarbuttonRight:
-      (*aResult).width = ::GetSystemMetrics(SM_CXHSCROLL);
-      (*aResult).height = ::GetSystemMetrics(SM_CYHSCROLL);
+      // For scrollbar-width:thin, we don't display the buttons.
+      if (!IsScrollbarWidthThin(aFrame)) {
+        (*aResult).width = ::GetSystemMetrics(SM_CXHSCROLL);
+        (*aResult).height = ::GetSystemMetrics(SM_CYHSCROLL);
+      }
       *aIsOverridable = false;
       break;
     case StyleAppearance::ScrollbarVertical:
@@ -3095,8 +3139,14 @@ nsNativeThemeWin::ClassicGetMinimumWidgetSize(nsIFrame* aFrame,
       (*aResult).height = ::GetSystemMetrics(SM_CYVTHUMB);
       // Without theming, divide the thumb size by two in order to look more
       // native
-      if (!GetTheme(aWidgetType))
+      if (!GetTheme(aWidgetType)) {
         (*aResult).height >>= 1;
+      }
+      // If scrollbar-width is thin, divide the thickness by two to make
+      // it look more compact.
+      if (IsScrollbarWidthThin(aFrame)) {
+        aResult->width >>= 1;
+      }
       *aIsOverridable = false;
       break;
     case StyleAppearance::ScrollbarthumbHorizontal:
@@ -3104,8 +3154,14 @@ nsNativeThemeWin::ClassicGetMinimumWidgetSize(nsIFrame* aFrame,
       (*aResult).height = ::GetSystemMetrics(SM_CYHSCROLL);
       // Without theming, divide the thumb size by two in order to look more
       // native
-      if (!GetTheme(aWidgetType))
+      if (!GetTheme(aWidgetType)) {
         (*aResult).width >>= 1;
+      }
+      // If scrollbar-width is thin, divide the thickness by two to make
+      // it look more compact.
+      if (IsScrollbarWidthThin(aFrame)) {
+        aResult->height >>= 1;
+      }
       *aIsOverridable = false;
       break;
     case StyleAppearance::ScrollbarHorizontal:
@@ -3192,7 +3248,7 @@ nsresult nsNativeThemeWin::ClassicGetThemePartAndState(nsIFrame* aFrame, WidgetT
       else {
         if (contentState.HasAllStates(NS_EVENT_STATE_ACTIVE | NS_EVENT_STATE_HOVER)) {
           aState |= DFCS_PUSHED;
-          const nsStyleUserInterface *uiData = aFrame->StyleUserInterface();
+          const nsStyleUI *uiData = aFrame->StyleUI();
           // The down state is flat if the button is focusable
           if (uiData->mUserFocus == StyleUserFocus::Normal) {
             if (!aFrame->GetContent()->IsHTMLElement())
@@ -3364,7 +3420,7 @@ nsresult nsNativeThemeWin::ClassicGetThemePartAndState(nsIFrame* aFrame, WidgetT
       }
 
       if (isHTML) {
-        nsIComboboxControlFrame* ccf = do_QueryFrame(aFrame);
+        nsComboboxControlFrame* ccf = do_QueryFrame(aFrame);
         isOpen = (ccf && ccf->IsDroppedDownOrHasParentPopup());
       }
       else
@@ -3401,6 +3457,8 @@ nsresult nsNativeThemeWin::ClassicGetThemePartAndState(nsIFrame* aFrame, WidgetT
         case StyleAppearance::ScrollbarbuttonRight:
           aState = DFCS_SCROLLRIGHT;
           break;
+        default:
+          break;
       }
 
       if (IsDisabled(aFrame, contentState))
@@ -3425,6 +3483,8 @@ nsresult nsNativeThemeWin::ClassicGetThemePartAndState(nsIFrame* aFrame, WidgetT
         case StyleAppearance::InnerSpinButton:
         case StyleAppearance::SpinnerDownbutton:
           aState = DFCS_SCROLLDOWN;
+          break;
+        default:
           break;
       }
 
@@ -3490,8 +3550,9 @@ nsresult nsNativeThemeWin::ClassicGetThemePartAndState(nsIFrame* aFrame, WidgetT
                GetClassicWindowFrameButtonState(GetContentState(aFrame,
                                                                 aWidgetType));
       return NS_OK;
+    default:
+      return NS_ERROR_FAILURE;
   }
-  return NS_ERROR_FAILURE;
 }
 
 // Draw classic Windows tab
@@ -3743,8 +3804,12 @@ RENDER_AGAIN:
     case StyleAppearance::Listbox:
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistTextfield: {
-      // Draw inset edge
-      ::DrawEdge(hdc, &widgetRect, EDGE_SUNKEN, BF_RECT | BF_ADJUST);
+      // Paint the border, except for 'menulist-textfield' that isn't focused:
+      if (aWidgetType != StyleAppearance::MenulistTextfield || focused) {
+        // Draw inset edge
+        ::DrawEdge(hdc, &widgetRect, EDGE_SUNKEN, BF_RECT | BF_ADJUST);
+      }
+
       EventStates eventState = GetContentState(aFrame, aWidgetType);
 
       // Fill in background
@@ -4117,44 +4182,6 @@ nsNativeThemeWin::GetWidgetNativeDrawingFlags(WidgetType aWidgetType)
         gfxWindowsNativeDrawing::CAN_AXIS_ALIGNED_SCALE |
         gfxWindowsNativeDrawing::CANNOT_COMPLEX_TRANSFORM;
 
-    // need to check these others
-    case StyleAppearance::Range:
-    case StyleAppearance::RangeThumb:
-    case StyleAppearance::ScrollbarbuttonUp:
-    case StyleAppearance::ScrollbarbuttonDown:
-    case StyleAppearance::ScrollbarbuttonLeft:
-    case StyleAppearance::ScrollbarbuttonRight:
-    case StyleAppearance::ScrollbarthumbVertical:
-    case StyleAppearance::ScrollbarthumbHorizontal:
-    case StyleAppearance::ScrollbarVertical:
-    case StyleAppearance::ScrollbarHorizontal:
-    case StyleAppearance::Scrollcorner:
-    case StyleAppearance::ScaleHorizontal:
-    case StyleAppearance::ScaleVertical:
-    case StyleAppearance::ScalethumbHorizontal:
-    case StyleAppearance::ScalethumbVertical:
-    case StyleAppearance::InnerSpinButton:
-    case StyleAppearance::SpinnerUpbutton:
-    case StyleAppearance::SpinnerDownbutton:
-    case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
-    case StyleAppearance::Tooltip:
-    case StyleAppearance::Statusbar:
-    case StyleAppearance::Statusbarpanel:
-    case StyleAppearance::Resizerpanel:
-    case StyleAppearance::Resizer:
-    case StyleAppearance::Progressbar:
-    case StyleAppearance::ProgressbarVertical:
-    case StyleAppearance::Progresschunk:
-    case StyleAppearance::ProgresschunkVertical:
-    case StyleAppearance::Tab:
-    case StyleAppearance::Tabpanel:
-    case StyleAppearance::Tabpanels:
-    case StyleAppearance::Menubar:
-    case StyleAppearance::Menupopup:
-    case StyleAppearance::Menuitem:
-      break;
-
     // the dropdown button /almost/ renders correctly with scaling,
     // except that the graphic in the dropdown button (the downward arrow)
     // doesn't get scaled up.
@@ -4173,22 +4200,47 @@ nsNativeThemeWin::GetWidgetNativeDrawingFlags(WidgetType aWidgetType)
         gfxWindowsNativeDrawing::CANNOT_DRAW_TO_COLOR_ALPHA |
         gfxWindowsNativeDrawing::CANNOT_AXIS_ALIGNED_SCALE |
         gfxWindowsNativeDrawing::CANNOT_COMPLEX_TRANSFORM;
+
+    // need to check these others
+    default:
+      return
+        gfxWindowsNativeDrawing::CANNOT_DRAW_TO_COLOR_ALPHA |
+        gfxWindowsNativeDrawing::CANNOT_AXIS_ALIGNED_SCALE |
+        gfxWindowsNativeDrawing::CANNOT_COMPLEX_TRANSFORM;
   }
-
-  return
-    gfxWindowsNativeDrawing::CANNOT_DRAW_TO_COLOR_ALPHA |
-    gfxWindowsNativeDrawing::CANNOT_AXIS_ALIGNED_SCALE |
-    gfxWindowsNativeDrawing::CANNOT_COMPLEX_TRANSFORM;
-}
-
-static COLORREF
-ToColorRef(nscolor aColor)
-{
-  return RGB(NS_GET_R(aColor), NS_GET_G(aColor), NS_GET_B(aColor));
 }
 
 static nscolor
-GetScrollbarArrowColor(nscolor aTrackColor)
+GetScrollbarButtonColor(nscolor aTrackColor, EventStates aStates)
+{
+  // See numbers in GetScrollbarArrowColor.
+  // This function is written based on ratios between values listed there.
+
+  bool isActive = aStates.HasState(NS_EVENT_STATE_ACTIVE);
+  bool isHover = aStates.HasState(NS_EVENT_STATE_HOVER);
+  if (!isActive && !isHover) {
+    return aTrackColor;
+  }
+  float luminance = RelativeLuminanceUtils::Compute(aTrackColor);
+  if (isActive) {
+    if (luminance >= 0.18f) {
+      luminance *= 0.134f;
+    } else {
+      luminance /= 0.134f;
+      luminance = std::min(luminance, 1.0f);
+    }
+  } else {
+    if (luminance >= 0.18f) {
+      luminance *= 0.805f;
+    } else {
+      luminance /= 0.805f;
+    }
+  }
+  return RelativeLuminanceUtils::Adjust(aTrackColor, luminance);
+}
+
+static nscolor
+GetScrollbarArrowColor(nscolor aButtonColor)
 {
   // In Windows 10 scrollbar, there are several gray colors used:
   //
@@ -4203,7 +4255,7 @@ GetScrollbarArrowColor(nscolor aTrackColor)
   //
   // This function is written based on these values.
 
-  float luminance = RelativeLuminanceUtils::Compute(aTrackColor);
+  float luminance = RelativeLuminanceUtils::Compute(aButtonColor);
   // Color with luminance larger than 0.72 has contrast ratio over 4.6
   // to color with luminance of gray 96, so this value is chosen for
   // this range. It is the luminance of gray 221.
@@ -4211,15 +4263,50 @@ GetScrollbarArrowColor(nscolor aTrackColor)
     // ComputeRelativeLuminanceFromComponents(96). That function cannot
     // be constexpr because of std::pow.
     const float GRAY96_LUMINANCE = 0.117f;
-    return RelativeLuminanceUtils::Adjust(aTrackColor, GRAY96_LUMINANCE);
+    return RelativeLuminanceUtils::Adjust(aButtonColor, GRAY96_LUMINANCE);
   }
   // The contrast ratio of a color to black equals that to white when its
   // luminance is around 0.18, with a contrast ratio ~4.6 to both sides,
   // thus the value below. It's the lumanince of gray 118.
   if (luminance >= 0.18) {
-    return NS_RGB(0, 0, 0);
+    return NS_RGBA(0, 0, 0, NS_GET_A(aButtonColor));
   }
-  return NS_RGB(255, 255, 255);
+  return NS_RGBA(255, 255, 255, NS_GET_A(aButtonColor));
+}
+
+static nscolor
+AdjustScrollbarFaceColor(nscolor aFaceColor, EventStates aStates)
+{
+  // In Windows 10, scrollbar thumb has the following colors:
+  //
+  // State  | Color    | Luminance
+  // -------+----------+----------
+  // Normal | Gray 205 |     61.0%
+  // Hover  | Gray 166 |     38.1%
+  // Active | Gray 96  |     11.7%
+  //
+  // This function is written based on the ratios between the values.
+
+  bool isActive = aStates.HasState(NS_EVENT_STATE_ACTIVE);
+  bool isHover = aStates.HasState(NS_EVENT_STATE_HOVER);
+  if (!isActive && !isHover) {
+    return aFaceColor;
+  }
+  float luminance = RelativeLuminanceUtils::Compute(aFaceColor);
+  if (isActive) {
+    if (luminance >= 0.18f) {
+      luminance *= 0.192f;
+    } else {
+      luminance /= 0.192f;
+    }
+  } else {
+    if (luminance >= 0.18f) {
+      luminance *= 0.625f;
+    } else {
+      luminance /= 0.625f;
+    }
+  }
+  return RelativeLuminanceUtils::Adjust(aFaceColor, luminance);
 }
 
 // This tries to draw a Windows 10 style scrollbar with given colors.
@@ -4231,111 +4318,121 @@ nsNativeThemeWin::DrawCustomScrollbarPart(gfxContext* aContext,
                                           const nsRect& aRect,
                                           const nsRect& aClipRect)
 {
-  MOZ_ASSERT(!aStyle->StyleUserInterface()->mScrollbarFaceColor.IsAuto() ||
-             !aStyle->StyleUserInterface()->mScrollbarTrackColor.IsAuto());
+  EventStates eventStates = GetContentState(aFrame, aWidgetType);
 
-  gfxRect tr(aRect.X(), aRect.Y(), aRect.Width(), aRect.Height()),
-          dr(aClipRect.X(), aClipRect.Y(),
-             aClipRect.Width(), aClipRect.Height());
-
-  nscolor trackColor =
-    GetScrollbarTrackColor(aStyle, &GetScrollbarTrackColorForAuto);
-  HBRUSH dcBrush = (HBRUSH) GetStockObject(DC_BRUSH);
-
-  gfxFloat p2a = gfxFloat(aFrame->PresContext()->AppUnitsPerDevPixel());
-  tr.Scale(1.0 / p2a);
-  dr.Scale(1.0 / p2a);
-
+  gfxContextAutoSaveRestore autoSave(aContext);
   RefPtr<gfxContext> ctx = aContext;
+  gfxFloat p2a = gfxFloat(aFrame->PresContext()->AppUnitsPerDevPixel());
+  gfxRect clipRect =
+    ThebesRect(LayoutDevicePixel::FromAppUnits(aClipRect, p2a).ToUnknownRect());
+  ctx->Clip(clipRect);
+  gfxRect rect =
+    ThebesRect(LayoutDevicePixel::FromAppUnits(aRect, p2a).ToUnknownRect());
 
-  uint32_t flags = GetWidgetNativeDrawingFlags(aWidgetType);
-  gfxWindowsNativeDrawing nativeDrawing(ctx, dr, flags);
-
-  do {
-    HDC hdc = nativeDrawing.BeginNativeDrawing();
-    if (!hdc) {
-      return NS_ERROR_FAILURE;
+  const nsStyleUI* ui = aStyle->StyleUI();
+  nscolor trackColor = ui->mScrollbarTrackColor.IsAuto()
+    ? NS_RGB(240, 240, 240)
+    : ui->mScrollbarTrackColor.CalcColor(aStyle);
+  switch (aWidgetType) {
+    case StyleAppearance::ScrollbarHorizontal:
+    case StyleAppearance::ScrollbarVertical:
+    case StyleAppearance::Scrollcorner: {
+      ctx->SetColor(Color::FromABGR(trackColor));
+      ctx->Rectangle(rect);
+      ctx->Fill();
+      return NS_OK;
     }
+    default:
+      break;
+  }
 
-    RECT widgetRect;
-    nativeDrawing.TransformToNativeRect(tr, widgetRect);
-    ::SetDCBrushColor(hdc, ToColorRef(trackColor));
-    ::SelectObject(hdc, dcBrush);
-    ::FillRect(hdc, &widgetRect, dcBrush);
+  // Scrollbar thumb and button are two CSS pixels thinner than the track.
+  gfxRect bgRect = rect;
+  gfxFloat dev2css = round(AppUnitsPerCSSPixel() / p2a);
+  switch (aWidgetType) {
+    case StyleAppearance::ScrollbarthumbVertical:
+    case StyleAppearance::ScrollbarbuttonUp:
+    case StyleAppearance::ScrollbarbuttonDown:
+      bgRect.Deflate(dev2css, 0);
+      break;
+    case StyleAppearance::ScrollbarthumbHorizontal:
+    case StyleAppearance::ScrollbarbuttonLeft:
+    case StyleAppearance::ScrollbarbuttonRight:
+      bgRect.Deflate(0, dev2css);
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unknown widget type");
+  }
 
-    switch (aWidgetType) {
-      case StyleAppearance::ScrollbarthumbVertical:
-      case StyleAppearance::ScrollbarthumbHorizontal: {
-        // Scrollbar thumb is two CSS pixels thinner than the track.
-        gfxRect tr2 = tr;
-        gfxFloat dev2css = round(AppUnitsPerCSSPixel() / p2a);
-        if (aWidgetType == StyleAppearance::ScrollbarthumbVertical) {
-          tr2.Deflate(dev2css, 0);
-        } else {
-          tr2.Deflate(0, dev2css);
-        }
-        nativeDrawing.TransformToNativeRect(tr2, widgetRect);
-        nscolor faceColor =
-          GetScrollbarFaceColor(aStyle, &GetScrollbarFaceColorForAuto);
-        ::SetDCBrushColor(hdc, ToColorRef(faceColor));
-        ::FillRect(hdc, &widgetRect, dcBrush);
-        break;
-      }
-      case StyleAppearance::ScrollbarbuttonUp:
-      case StyleAppearance::ScrollbarbuttonDown:
-      case StyleAppearance::ScrollbarbuttonLeft:
-      case StyleAppearance::ScrollbarbuttonRight: {
-        // kPath is the path of scrollbar up arrow on Windows 10
-        // in a 17x17 area.
-        const LONG kSize = 17;
-        const POINT kPath[] = {
-          { 5, 9 }, { 8, 6 }, { 11, 9 }, { 11, 11 }, { 8, 8 }, { 5, 11 },
-        };
-        const size_t kCount = ArrayLength(kPath);
-        // Calculate necessary parameters for positioning the arrow.
-        LONG width = widgetRect.right - widgetRect.left;
-        LONG height = widgetRect.bottom - widgetRect.top;
-        LONG size = std::min(width, height);
-        LONG left = (width - size) / 2 + widgetRect.left;
-        LONG top = (height - size) / 2 + widgetRect.top;
-        float unit = float(size) / kSize;
-        POINT path[kCount];
-        // Flip the path for different direction, then resize and align
-        // it to the middle of the area.
-        for (size_t i = 0; i < kCount; i++) {
-          if (aWidgetType == StyleAppearance::ScrollbarbuttonUp) {
-            path[i] = kPath[i];
-          } else if (aWidgetType == StyleAppearance::ScrollbarbuttonDown) {
-            path[i].x = kPath[i].x;
-            path[i].y = kSize - kPath[i].y;
-          } else if (aWidgetType == StyleAppearance::ScrollbarbuttonLeft) {
-            path[i].x = kPath[i].y;
-            path[i].y = kPath[i].x;
-          } else {
-            path[i].x = kSize - kPath[i].y;
-            path[i].y = kPath[i].x;
-          }
-          path[i].x = left + (LONG) round(unit * path[i].x);
-          path[i].y = top + (LONG) round(unit * path[i].y);
-        }
-        // Paint the arrow.
-        COLORREF arrowColor = ToColorRef(GetScrollbarArrowColor(trackColor));
-        // XXX Somehow we need to paint with both pen and brush to get
-        //     the desired shape. Can we do so only with brush?
-        ::SetDCPenColor(hdc, arrowColor);
-        ::SetDCBrushColor(hdc, arrowColor);
-        ::SelectObject(hdc, GetStockObject(DC_PEN));
-        ::Polygon(hdc, path, kCount);
-        break;
-      }
-      default:
-        break;
+  switch (aWidgetType) {
+    case StyleAppearance::ScrollbarthumbVertical:
+    case StyleAppearance::ScrollbarthumbHorizontal: {
+      nscolor faceColor = ui->mScrollbarFaceColor.IsAuto()
+        ? NS_RGB(205, 205, 205)
+        : ui->mScrollbarFaceColor.CalcColor(aStyle);
+      faceColor = AdjustScrollbarFaceColor(faceColor, eventStates);
+      ctx->SetColor(Color::FromABGR(faceColor));
+      ctx->Rectangle(bgRect);
+      ctx->Fill();
+      break;
     }
+    case StyleAppearance::ScrollbarbuttonUp:
+    case StyleAppearance::ScrollbarbuttonDown:
+    case StyleAppearance::ScrollbarbuttonLeft:
+    case StyleAppearance::ScrollbarbuttonRight: {
+      nscolor buttonColor = GetScrollbarButtonColor(trackColor, eventStates);
+      ctx->SetColor(Color::FromABGR(buttonColor));
+      ctx->Rectangle(bgRect);
+      ctx->Fill();
 
-    nativeDrawing.EndNativeDrawing();
-  } while (nativeDrawing.ShouldRenderAgain());
-
-  nativeDrawing.PaintToContext();
+      // We use the path of scrollbar up arrow on Windows 10 which is
+      // in a 17x17 area.
+      const gfxFloat kSize = 17.0;
+      // Setup the transform matrix.
+      gfxFloat width = rect.Width();
+      gfxFloat height = rect.Height();
+      gfxFloat size = std::min(width, height);
+      gfxFloat left = (width - size) / 2.0 + rect.x;
+      gfxFloat top = (height - size) / 2.0 + rect.y;
+      gfxFloat scale = size / kSize;
+      gfxFloat rad = 0.0;
+      if (aWidgetType == StyleAppearance::ScrollbarbuttonRight) {
+        rad = M_PI / 2;
+      } else if (aWidgetType == StyleAppearance::ScrollbarbuttonDown) {
+        rad = M_PI;
+      } else if (aWidgetType == StyleAppearance::ScrollbarbuttonLeft) {
+        rad = -M_PI / 2;
+      }
+      gfx::Matrix mat = ctx->CurrentMatrix();
+      mat.PreTranslate(left, top);
+      mat.PreScale(scale, scale);
+      if (rad != 0.0) {
+        const gfxFloat kOffset = kSize / 2.0;
+        mat.PreTranslate(kOffset, kOffset);
+        mat.PreRotate(rad);
+        mat.PreTranslate(-kOffset, -kOffset);
+      }
+      ctx->SetMatrix(mat);
+      // The arrow should not have antialias applied.
+      ctx->SetAntialiasMode(gfx::AntialiasMode::NONE);
+      // Set the arrow path.
+      ctx->NewPath();
+      ctx->MoveTo(gfxPoint(5.0, 9.0));
+      ctx->LineTo(gfxPoint(8.5, 6.0));
+      ctx->LineTo(gfxPoint(12.0, 9.0));
+      ctx->LineTo(gfxPoint(12.0, 12.0));
+      ctx->LineTo(gfxPoint(8.5, 9.0));
+      ctx->LineTo(gfxPoint(5.0, 12.0));
+      ctx->ClosePath();
+      // And paint the arrow.
+      nscolor arrowColor = GetScrollbarArrowColor(buttonColor);
+      ctx->SetColor(Color::FromABGR(arrowColor));
+      ctx->Fill();
+      break;
+    }
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unknown widget type");
+  }
   return NS_OK;
 }
 
@@ -4346,16 +4443,18 @@ nsNativeThemeWin::DrawCustomScrollbarPart(gfxContext* aContext,
 // from nsWindow.cpp
 extern bool gDisableNativeTheme;
 
-nsresult NS_NewNativeTheme(nsISupports *aOuter, REFNSIID aIID, void **aResult)
+already_AddRefed<nsITheme>
+do_GetNativeTheme()
 {
   if (gDisableNativeTheme)
-    return NS_ERROR_NO_INTERFACE;
+    return nullptr;
 
-  if (aOuter)
-    return NS_ERROR_NO_AGGREGATION;
+  static nsCOMPtr<nsITheme> inst;
 
-  nsNativeThemeWin* theme = new nsNativeThemeWin();
-  if (!theme)
-    return NS_ERROR_OUT_OF_MEMORY;
-  return theme->QueryInterface(aIID, aResult);
+  if (!inst) {
+    inst = new nsNativeThemeWin();
+    ClearOnShutdown(&inst);
+  }
+
+  return do_AddRef(inst);
 }

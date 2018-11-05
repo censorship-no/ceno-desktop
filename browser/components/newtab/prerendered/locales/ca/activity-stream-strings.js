@@ -31,7 +31,7 @@ window.gActivityStreamStrings = {
   "menu_action_open_file": "Obre el fitxer",
   "menu_action_copy_download_link": "Copia l'enllaç de la baixada",
   "menu_action_go_to_download_page": "Vés a la pàgina de la baixada",
-  "menu_action_remove_download": "Suprimeix de l'historial",
+  "menu_action_remove_download": "Elimina de l'historial",
   "search_button": "Cerca",
   "search_header": "Cerca de {search_engine_name}",
   "search_web_placeholder": "Cerca al web",
@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "S'ha produït un error en carregar la imatge. Proveu un altre URL.",
   "pocket_read_more": "Temes populars:",
   "pocket_read_even_more": "Mostra més articles",
+  "pocket_more_reccommendations": "Més recomanacions",
+  "pocket_how_it_works": "Com funciona",
+  "pocket_cta_button": "Obtén el Pocket",
+  "pocket_cta_text": "Deseu els vostres articles preferits al Pocket i gaudiu d'altres recomanacions fascinants.",
   "highlights_empty_state": "Comenceu a navegar i aquí us mostrarem els millors articles, vídeos i altres pàgines que hàgiu visitat o afegit a les adreces d'interès recentment.",
   "topstories_empty_state": "Ja esteu al dia. Torneu més tard per veure més articles populars de {provider}. No podeu esperar? Trieu un tema popular per descobrir els articles més interessants de tot el web.",
   "manual_migration_explanation2": "Proveu el Firefox amb les adreces d'interès, l'historial i les contrasenyes d'un altre navegador.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Gestiona la secció",
   "section_menu_action_manage_webext": "Gestiona l'extensió",
   "section_menu_action_add_topsite": "Afegeix com a lloc principal",
+  "section_menu_action_add_search_engine": "Afegeix un motor de cerca",
   "section_menu_action_move_up": "Mou cap amunt",
   "section_menu_action_move_down": "Mou cap avall",
   "section_menu_action_privacy_notice": "Avís de privadesa",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Condicions del servei",
   "firstrun_privacy_notice": "Avís de privadesa",
   "firstrun_continue_to_login": "Continua",
-  "firstrun_skip_login": "Omet aquest pas"
+  "firstrun_skip_login": "Omet aquest pas",
+  "context_menu_title": "Open menu",
+  "pocket_learn_more": "Més informació"
 };

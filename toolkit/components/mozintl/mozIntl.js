@@ -22,7 +22,7 @@ const languageTagMatch = /^([a-z]{2,3}|[a-z]{4}|[a-z]{5,8})(?:[-_]([a-z]{4}))?(?
  */
 function getLocales(locales) {
   if (!locales) {
-    return Services.locale.getRegionalPrefsLocales();
+    return Services.locale.regionalPrefsLocales;
   }
   return locales;
 }
@@ -148,7 +148,7 @@ const threshold = {
   day: 6, // at least 6 days before using month.
   hour: 6, // at least 6 hours before using day.
   minute: 59, // at least 59 minutes before using hour.
-  second: 59 // at least 59 seconds before using minute.
+  second: 59, // at least 59 seconds before using minute.
 };
 
 class MozIntl {
@@ -199,19 +199,44 @@ class MozIntl {
     });
   }
 
+  getRegions(locales) {
+    if (locales !== undefined) {
+      throw new Error("First argument support not implemented yet");
+    }
+
+    if (!this._cache.hasOwnProperty("regionBundle")) {
+      const regionBundle = Services.strings.createBundle(
+        "chrome://global/locale/regionNames.properties");
+      this._cache.regionBundle = regionBundle;
+    }
+
+    if (!this._cache.hasOwnProperty("regionMap")) {
+      this._cache.regionMap = new Map([...this._cache.regionBundle.getSimpleEnumeration()].map(prop => {
+        prop.QueryInterface(Ci.nsIPropertyElement);
+        return [prop.key.toUpperCase(), prop.value];
+      }));
+    }
+
+    return this._cache.regionMap;
+  }
+
   getRegionDisplayNames(locales, regionCodes) {
     if (locales !== undefined) {
       throw new Error("First argument support not implemented yet");
     }
-    const regionBundle = Services.strings.createBundle(
-          "chrome://global/locale/regionNames.properties");
+
+    if (!this._cache.hasOwnProperty("regionBundle")) {
+      const regionBundle = Services.strings.createBundle(
+        "chrome://global/locale/regionNames.properties");
+      this._cache.regionBundle = regionBundle;
+    }
 
     return regionCodes.map(regionCode => {
       if (typeof regionCode !== "string") {
         throw new TypeError("All region codes must be strings.");
       }
       try {
-        return regionBundle.GetStringFromName(regionCode.toLowerCase());
+        return this._cache.regionBundle.GetStringFromName(regionCode.toLowerCase());
       } catch (e) {
         return regionCode.toUpperCase(); // Fall back to raw region subtag.
       }
@@ -244,11 +269,11 @@ class MozIntl {
         languageSubtag,
         scriptSubtag,
         regionSubtag,
-        variantSubtags
+        variantSubtags,
       ] = match;
 
       const displayName = [
-        this.getLanguageDisplayNames(locales, [languageSubtag])[0]
+        this.getLanguageDisplayNames(locales, [languageSubtag])[0],
       ];
 
       if (scriptSubtag) {
@@ -351,7 +376,7 @@ class MozIntl {
         const diff = {
           _: {},
           ms: date.getTime() - now.getTime(),
-          years: date.getFullYear() - now.getFullYear()
+          years: date.getFullYear() - now.getFullYear(),
         };
 
         defineCachedGetter(diff, "months", function() {
@@ -371,7 +396,7 @@ class MozIntl {
         });
 
         const absDiff = {
-          _: {}
+          _: {},
         };
 
         defineGetter(absDiff, "years", function() {

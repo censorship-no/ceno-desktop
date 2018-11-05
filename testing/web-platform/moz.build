@@ -4,11 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-WEB_PLATFORM_TESTS_MANIFESTS += [
-    ('meta/MANIFEST.json', 'tests/'),
-    ('mozilla/meta/MANIFEST.json', 'mozilla/tests/')
-]
-
 TEST_HARNESS_FILES['web-platform'] += [
     'mach_commands_base.py',
     'mach_test_package_commands.py',
@@ -151,13 +146,13 @@ with Files("tests/ambient-light/**"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
 
 with Files("tests/annotation-model/**"):
-    BUG_COMPONENT = ("Toolkit", "Places")
+    BUG_COMPONENT = ("Testing", "web-platform-tests")
 
 with Files("tests/annotation-protocol/**"):
-    BUG_COMPONENT = ("Toolkit", "Places")
+    BUG_COMPONENT = ("Testing", "web-platform-tests")
 
 with Files("tests/annotation-vocab/**"):
-    BUG_COMPONENT = ("Toolkit", "Places")
+    BUG_COMPONENT = ("Testing", "web-platform-tests")
 
 with Files("tests/apng/**"):
     BUG_COMPONENT = ("Core", "ImageLib")
@@ -221,10 +216,10 @@ with Files("tests/css/css-cascade/**"):
     BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
 
 with Files("tests/css/css-font-loading/**"):
-    BUG_COMPONENT = ("Core", "Layout: Text")
+    BUG_COMPONENT = ("Core", "Layout: Text and Fonts")
 
 with Files("tests/css/css-fonts/**"):
-    BUG_COMPONENT = ("Core", "Layout: Text")
+    BUG_COMPONENT = ("Core", "Layout: Text and Fonts")
 
 with Files("tests/css/css-paint-api/**"):
     BUG_COMPONENT = ("Core", "Layout: Web Painting")
@@ -232,7 +227,7 @@ with Files("tests/css/css-paint-api/**"):
 with Files("tests/css/css-scoping/**"):
     BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
 
-with Files("tests/css/css-timing/**"):
+with Files("tests/css/css-easing/**"):
     BUG_COMPONENT = ("Core", "Layout")
 
 with Files("tests/css/css-typed-om/**"):
@@ -574,7 +569,7 @@ with Files("tests/websockets/**"):
     BUG_COMPONENT = ("Core", "Networking: WebSockets")
 
 with Files("tests/webstorage/**"):
-    BUG_COMPONENT = ("Core", "DOM")
+    BUG_COMPONENT = ("Core", "DOM: Web Storage")
 
 with Files("tests/webusb/**"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")

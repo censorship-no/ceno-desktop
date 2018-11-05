@@ -18,9 +18,11 @@
 #include "frontend/ParseContext.h"
 #include "frontend/SharedContext.h"
 #include "js/TypeDecls.h"
-#include "vm/Scope.h"
 
 namespace js {
+
+class Scope;
+
 namespace frontend {
 
 // A scope that introduces bindings.
@@ -87,7 +89,7 @@ class EmitterScope : public Nestable<EmitterScope>
     MOZ_MUST_USE bool appendScopeNote(BytecodeEmitter* bce);
 
     MOZ_MUST_USE bool deadZoneFrameSlotRange(BytecodeEmitter* bce, uint32_t slotStart,
-                                             uint32_t slotEnd);
+                                             uint32_t slotEnd) const;
 
   public:
     explicit EmitterScope(BytecodeEmitter* bce);
@@ -104,7 +106,7 @@ class EmitterScope : public Nestable<EmitterScope>
     MOZ_MUST_USE bool enterEval(BytecodeEmitter* bce, EvalSharedContext* evalsc);
     MOZ_MUST_USE bool enterModule(BytecodeEmitter* module, ModuleSharedContext* modulesc);
     MOZ_MUST_USE bool enterWith(BytecodeEmitter* bce);
-    MOZ_MUST_USE bool deadZoneFrameSlots(BytecodeEmitter* bce);
+    MOZ_MUST_USE bool deadZoneFrameSlots(BytecodeEmitter* bce) const;
 
     MOZ_MUST_USE bool leave(BytecodeEmitter* bce, bool nonLocal = false);
 
@@ -125,8 +127,9 @@ class EmitterScope : public Nestable<EmitterScope>
 
     // The first frame slot used.
     uint32_t frameSlotStart() const {
-        if (EmitterScope* inFrame = enclosingInFrame())
+        if (EmitterScope* inFrame = enclosingInFrame()) {
             return inFrame->nextFrameSlot_;
+        }
         return 0;
     }
 

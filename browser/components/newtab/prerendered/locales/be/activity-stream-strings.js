@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Не ўдалося атрымаць відарыс. Паспрабуйце іншы URL.",
   "pocket_read_more": "Папулярныя тэмы:",
   "pocket_read_even_more": "Іншыя навіны",
+  "pocket_more_reccommendations": "Больш рэкамендацый",
+  "pocket_how_it_works": "Як гэта працуе",
+  "pocket_cta_button": "Атрымаць Pocket",
+  "pocket_cta_text": "Захоўвайце ўлюбёныя гісторыі ў Pocket, і сілкуйце свой розум добрай чытанкай.",
   "highlights_empty_state": "Пачніце агляданне, і мы пакажам вам тут некаторыя з найлепшых артыкулаў, відэаролікаў і іншых старонак, якія вы нядаўна наведалі або дадалі ў закладкі.",
   "topstories_empty_state": "Гатова. Праверце пазней, каб убачыць больш матэрыялаў ад {provider}. Не жадаеце чакаць? Выберыце папулярную тэму, каб знайсці больш цікавых матэрыялаў з усяго Інтэрнэту.",
   "manual_migration_explanation2": "Паспрабуйце Firefox з закладкамі, гісторыяй і паролямі з іншага браўзера.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Наладзіць раздзел",
   "section_menu_action_manage_webext": "Кіраваць пашырэннем",
   "section_menu_action_add_topsite": "Дадаць папулярны сайт",
+  "section_menu_action_add_search_engine": "Дадаць пашукавік",
   "section_menu_action_move_up": "Пасунуць вышэй",
   "section_menu_action_move_down": "Пасунуць ніжэй",
   "section_menu_action_privacy_notice": "Паведамленне аб прыватнасці",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "умовамі абслугоўвання",
   "firstrun_privacy_notice": "паведамленнем аб прыватнасці",
   "firstrun_continue_to_login": "Працягнуць",
-  "firstrun_skip_login": "Прапусціць гэты крок"
+  "firstrun_skip_login": "Прапусціць гэты крок",
+  "context_menu_title": "Адкрыць меню",
+  "pocket_learn_more": "Падрабязней"
 };

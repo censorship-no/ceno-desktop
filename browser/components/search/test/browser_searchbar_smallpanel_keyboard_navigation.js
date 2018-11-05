@@ -11,9 +11,8 @@ function getOpenSearchItems() {
   let os = [];
 
   let addEngineList =
-    document.getAnonymousElementByAttribute(oneOffsContainer, "anonid",
-                                            "add-engines");
-  for (let item = addEngineList.firstChild; item; item = item.nextSibling)
+    oneOffsContainer.querySelector(".search-add-engines");
+  for (let item = addEngineList.firstElementChild; item; item = item.nextElementSibling)
     os.push(item);
 
   return os;
@@ -28,10 +27,8 @@ add_task(async function init() {
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();
   });
-  textbox = searchbar._textbox;
-  searchIcon = document.getAnonymousElementByAttribute(
-    searchbar, "anonid", "searchbar-search-button"
-  );
+  textbox = searchbar.textbox;
+  searchIcon = searchbar.querySelector(".searchbar-search-button");
 
   await promiseNewEngine("testEngine.xml");
 
@@ -52,7 +49,7 @@ add_task(async function init() {
                                    });
     searchbar.FormHistory.update(addOps, {
       handleCompletion: resolve,
-      handleError: reject
+      handleError: reject,
     });
   });
 });
@@ -93,7 +90,7 @@ info("textbox.mController.searchString = " + textbox.mController.searchString);
     EventUtils.synthesizeKey("KEY_ArrowDown");
   }
 
-  is(textbox.selectedButton.getAttribute("anonid"), "search-settings",
+  ok(textbox.selectedButton.classList.contains("search-setting-button"),
      "the settings item should be selected");
   EventUtils.synthesizeKey("KEY_ArrowDown");
 
@@ -103,7 +100,7 @@ info("textbox.mController.searchString = " + textbox.mController.searchString);
 
   info("now test the up arrow key");
   EventUtils.synthesizeKey("KEY_ArrowUp");
-  is(textbox.selectedButton.getAttribute("anonid"), "search-settings",
+  ok(textbox.selectedButton.classList.contains("search-setting-button"),
      "the settings item should be selected");
 
   // cycle through the one-off items, the first one is already selected.
@@ -139,7 +136,7 @@ add_task(async function test_tab() {
 
   // One more <tab> selects the settings button.
   EventUtils.synthesizeKey("KEY_Tab");
-  is(textbox.selectedButton.getAttribute("anonid"), "search-settings",
+  ok(textbox.selectedButton.classList.contains("search-setting-button"),
      "the settings item should be selected");
 
   // Pressing tab again should close the panel...
@@ -167,7 +164,7 @@ add_task(async function test_shift_tab() {
 
   // Press up once to select the last button.
   EventUtils.synthesizeKey("KEY_ArrowUp");
-  is(textbox.selectedButton.getAttribute("anonid"), "search-settings",
+  ok(textbox.selectedButton.classList.contains("search-setting-button"),
      "the settings item should be selected");
 
   // Press up again to select the last one-off button.
@@ -259,7 +256,7 @@ add_task(async function test_alt_up() {
 
   // Cleanup for the next test.
   EventUtils.synthesizeKey("KEY_ArrowDown");
-  is(textbox.selectedButton.getAttribute("anonid"), "search-settings",
+  ok(textbox.selectedButton.classList.contains("search-setting-button"),
      "the settings item should be selected");
   EventUtils.synthesizeKey("KEY_ArrowDown");
   ok(!textbox.selectedButton, "no one-off should be selected anymore");
@@ -315,7 +312,7 @@ add_task(async function test_open_search() {
 
   // Pressing up once selects the setting button...
   EventUtils.synthesizeKey("KEY_ArrowUp");
-  is(textbox.selectedButton.getAttribute("anonid"), "search-settings",
+  ok(textbox.selectedButton.classList.contains("search-setting-button"),
      "the settings item should be selected");
 
   // ...and then pressing up selects open search engines.
@@ -342,7 +339,7 @@ add_task(async function test_open_search() {
 
   // Pressing down on the last engine item selects the settings button.
   EventUtils.synthesizeKey("KEY_ArrowDown");
-  is(textbox.selectedButton.getAttribute("anonid"), "search-settings",
+  ok(textbox.selectedButton.classList.contains("search-setting-button"),
      "the settings item should be selected");
 
   promise = promiseEvent(searchPopup, "popuphidden");

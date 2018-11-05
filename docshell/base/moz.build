@@ -61,7 +61,7 @@ XPIDL_MODULE = 'docshell'
 EXPORTS += [
     'nsCTooltipTextProvider.h',
     'nsDocShell.h',
-    'nsDocShellLoadInfo.h',
+    'nsDocShellLoadState.h',
     'nsDocShellLoadTypes.h',
     'nsDocShellTreeOwner.h',
     'nsILinkHandler.h',
@@ -76,17 +76,19 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.dom += [
     'BrowsingContext.h',
+    'ChromeBrowsingContext.h'
 ]
 
 UNIFIED_SOURCES += [
     'BrowsingContext.cpp',
+    'ChromeBrowsingContext.cpp',
     'LoadContext.cpp',
     'nsAboutRedirector.cpp',
     'nsDefaultURIFixup.cpp',
     'nsDocShell.cpp',
     'nsDocShellEditorData.cpp',
     'nsDocShellEnumerator.cpp',
-    'nsDocShellLoadInfo.cpp',
+    'nsDocShellLoadState.cpp',
     'nsDocShellTreeOwner.cpp',
     'nsDSURIContentListener.cpp',
     'nsPingListener.cpp',
@@ -108,6 +110,7 @@ LOCAL_INCLUDES += [
     '/netwerk/base',
     '/netwerk/protocol/viewsource',
     '/toolkit/components/browser',
+    '/toolkit/components/find',
     '/tools/profiler',
 ]
 

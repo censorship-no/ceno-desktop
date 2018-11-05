@@ -33,7 +33,7 @@ add_task(async function testCategoryLogs() {
   console.warn("bug851231-warn");
   console.error("bug851231-error", foobar);
   console.debug("bug851231-debug");
-  console.dir(document);
+  console.dir({ "bug851231-dir": 1 });
   testTrace();
   console.timeEnd("foobarTimer");
 
@@ -44,7 +44,7 @@ add_task(async function testCategoryLogs() {
   await checkMessageExists(hud, "bug851231-warn");
   await checkMessageExists(hud, "bug851231-error");
   await checkMessageExists(hud, "bug851231-debug");
-  await checkMessageExists(hud, "XULDocument");
+  await checkMessageExists(hud, "bug851231-dir");
   await checkMessageExists(hud, "console.trace()");
   await checkMessageExists(hud, "foobarTimer");
 
@@ -64,7 +64,7 @@ add_task(async function testFilter() {
   // Enable the error category and disable the log category.
   await setFilterState(hud, {
     error: true,
-    log: false
+    log: false,
   });
 
   const shouldBeVisible = "Should be visible";

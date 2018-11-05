@@ -31,7 +31,6 @@
 const { Cu } = require("chrome");
 
 loader.lazyRequireGetter(this, "gDevToolsBrowser", "devtools/client/framework/devtools-browser", true);
-loader.lazyRequireGetter(this, "CommandUtils", "devtools/client/shared/developer-toolbar", true);
 loader.lazyRequireGetter(this, "TargetFactory", "devtools/client/framework/target", true);
 loader.lazyRequireGetter(this, "ResponsiveUIManager", "devtools/client/responsive.html/manager", true);
 loader.lazyRequireGetter(this, "openDocLink", "devtools/client/shared/link", true);
@@ -42,12 +41,16 @@ loader.lazyImporter(this, "ScratchpadManager", "resource://devtools/client/scrat
 exports.menuitems = [
   { id: "menu_devToolbox",
     l10nKey: "devToolboxMenuItem",
-    oncommand(event) {
-      const window = event.target.ownerDocument.defaultView;
-      gDevToolsBrowser.toggleToolboxCommand(window.gBrowser, Cu.now());
+    async oncommand(event) {
+      try {
+        const window = event.target.ownerDocument.defaultView;
+        await gDevToolsBrowser.toggleToolboxCommand(window.gBrowser, Cu.now());
+      } catch (e) {
+        console.error(`Exception while opening the toolbox: ${e}\n${e.stack}`);
+      }
     },
     keyId: "toggleToolbox",
-    checkbox: true
+    checkbox: true,
   },
   { id: "menu_devtools_separator",
     separator: true },
@@ -73,7 +76,7 @@ exports.menuitems = [
     oncommand(event) {
       const window = event.target.ownerDocument.defaultView;
       gDevToolsBrowser.openContentProcessToolbox(window.gBrowser);
-    }
+    },
   },
   { id: "menu_browserConsole",
     l10nKey: "browserConsoleCmd",
@@ -88,21 +91,25 @@ exports.menuitems = [
     oncommand(event) {
       const window = event.target.ownerDocument.defaultView;
       ResponsiveUIManager.toggle(window, window.gBrowser.selectedTab, {
-        trigger: "menu"
+        trigger: "menu",
       });
     },
     keyId: "responsiveDesignMode",
-    checkbox: true
+    checkbox: true,
   },
   { id: "menu_eyedropper",
     l10nKey: "eyedropper",
-    oncommand(event) {
+    async oncommand(event) {
       const window = event.target.ownerDocument.defaultView;
-      const target = TargetFactory.forTab(window.gBrowser.selectedTab);
-
-      CommandUtils.executeOnTarget(target, "eyedropper --frommenu");
+      const target = await TargetFactory.forTab(window.gBrowser.selectedTab);
+      await target.attach();
+    // Temporary fix for bug #1493131 - inspector has a different life cycle
+    // than most other fronts because it is closely related to the toolbox.
+    // TODO: replace with getFront once inspector is separated from the toolbox
+      const inspectorFront = await target.getInspector();
+      inspectorFront.pickColorFromPage({copyOnSelect: true, fromMenu: true});
     },
-    checkbox: true
+    checkbox: true,
   },
   { id: "menu_scratchpad",
     l10nKey: "scratchpad",
@@ -117,7 +124,7 @@ exports.menuitems = [
     oncommand(event) {
       const window = event.target.ownerDocument.defaultView;
       gDevToolsBrowser.openAboutDebugging(window.gBrowser, "workers");
-    }
+    },
   },
   { id: "menu_devtools_connect",
     l10nKey: "devtoolsConnect",
@@ -125,15 +132,15 @@ exports.menuitems = [
     oncommand(event) {
       const window = event.target.ownerDocument.defaultView;
       gDevToolsBrowser.openConnectScreen(window.gBrowser);
-    }
+    },
   },
   { separator: true,
-    id: "devToolsEndSeparator"
+    id: "devToolsEndSeparator",
   },
   { id: "getMoreDevtools",
     l10nKey: "getMoreDevtoolsCmd",
     oncommand(event) {
       openDocLink("https://addons.mozilla.org/firefox/collections/mozilla/webdeveloper/");
-    }
+    },
   },
 ];

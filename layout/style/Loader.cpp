@@ -64,6 +64,7 @@
 #include "mozilla/dom/SRICheck.h"
 
 #include "mozilla/Encoding.h"
+#include "mozilla/Logging.h"
 
 using namespace mozilla::dom;
 
@@ -96,11 +97,6 @@ using namespace mozilla::dom;
  *                     determination.
  */
 
-namespace mozilla {
-namespace css {
-
-#include "mozilla/Logging.h"
-
 static mozilla::LazyLogModule sCssLoaderLog("nsCSSLoader");
 
 static mozilla::LazyLogModule gSriPRLog("SRI");
@@ -132,6 +128,22 @@ static const char* const gStateStrings[] = {
   "eSheetComplete"
 };
 
+namespace mozilla {
+
+URIPrincipalReferrerPolicyAndCORSModeHashKey::
+URIPrincipalReferrerPolicyAndCORSModeHashKey(css::SheetLoadData* aLoadData)
+  : nsURIHashKey(aLoadData->mURI)
+  , mPrincipal(aLoadData->mLoaderPrincipal)
+  , mCORSMode(aLoadData->mSheet->GetCORSMode())
+  , mReferrerPolicy(aLoadData->mSheet->GetReferrerPolicy())
+{
+  MOZ_COUNT_CTOR(URIPrincipalReferrerPolicyAndCORSModeHashKey);
+}
+} // namespace mozilla
+
+namespace mozilla {
+namespace css {
+
 /********************************
  * SheetLoadData implementation *
  ********************************/
@@ -142,6 +154,7 @@ SheetLoadData::SheetLoadData(Loader* aLoader,
                              const nsAString& aTitle,
                              nsIURI* aURI,
                              StyleSheet* aSheet,
+                             bool aSyncLoad,
                              nsIStyleSheetLinkingElement* aOwningElement,
                              IsAlternate aIsAlternate,
                              MediaMatched aMediaMatches,
@@ -156,7 +169,7 @@ SheetLoadData::SheetLoadData(Loader* aLoader,
   , mSheet(aSheet)
   , mNext(nullptr)
   , mPendingChildren(0)
-  , mSyncLoad(false)
+  , mSyncLoad(aSyncLoad)
   , mIsNonDocumentSheet(false)
   , mIsLoading(false)
   , mIsBeingParsed(false)
@@ -558,6 +571,25 @@ SheetLoadData::GetReferrerURI()
   return uri.forget();
 }
 
+void
+SheetLoadData::SetReferrerPolicyFromHeader(nsIChannel* aChannel)
+{
+  net::ReferrerPolicy policy =
+    nsContentUtils::GetReferrerPolicyFromChannel(aChannel);
+  if (policy == net::RP_Unset ||
+      policy == mSheet->GetReferrerPolicy()) {
+    return;
+  }
+
+  URIPrincipalReferrerPolicyAndCORSModeHashKey oldKey(mURI,
+                                                      mLoaderPrincipal,
+                                                      mSheet->GetCORSMode(),
+                                                      mSheet->GetReferrerPolicy());
+
+  mSheet->SetReferrerPolicy(policy);
+  mLoader->UpdateLoadingData(&oldKey, this);
+}
+
 static nsresult
 VerifySheetIntegrity(const SRIMetadata& aMetadata,
                      nsIChannel* aChannel,
@@ -604,7 +636,7 @@ SheetLoadData::VerifySheetReadyToParse(nsresult aStatus,
                                        const nsACString& aBytes2,
                                        nsIChannel* aChannel)
 {
-  LOG(("SheetLoadData::OnStreamComplete"));
+  LOG(("SheetLoadData::VerifySheetReadyToParse"));
   NS_ASSERTION(!mLoader->mSyncCallback, "Synchronous callback from necko");
 
   if (mIsCancelled) {
@@ -785,6 +817,7 @@ SheetLoadData::VerifySheetReadyToParse(nsresult aStatus,
       csp->LogViolationDetails(
         nsIContentSecurityPolicy::VIOLATION_TYPE_REQUIRE_SRI_FOR_STYLE,
         nullptr, // triggering element
+        nullptr, // nsICSPEventListener
         NS_ConvertUTF8toUTF16(spec), EmptyString(),
         0, 0, EmptyString(), EmptyString());
       return NS_OK;
@@ -813,6 +846,8 @@ SheetLoadData::VerifySheetReadyToParse(nsresult aStatus,
       return NS_OK;
     }
   }
+
+  SetReferrerPolicyFromHeader(aChannel);
 
   // Enough to set the URIs on mSheet, since any sibling datas we have share
   // the same mInner as mSheet and will thus get the same URI.
@@ -850,6 +885,20 @@ Loader::IsAlternateSheet(const nsAString& aTitle, bool aHasAlternateRel)
   }
 
   return IsAlternate::Yes;
+}
+
+void
+Loader::UpdateLoadingData(URIPrincipalReferrerPolicyAndCORSModeHashKey* aOldKey,
+                          SheetLoadData* aData)
+{
+  MOZ_ASSERT(mSheets, "Must have sheets!");
+  MOZ_ASSERT(aData->mIsLoading, "data must be loading");
+
+  DebugOnly<bool> removed = mSheets->mLoadingDatas.Remove(aOldKey);
+  MOZ_ASSERT(removed, "Can't find data to remove!!!");
+
+  URIPrincipalReferrerPolicyAndCORSModeHashKey newKey(aData);
+  mSheets->mLoadingDatas.Put(&newKey, aData);
 }
 
 nsresult
@@ -1373,10 +1422,8 @@ Loader::LoadSheet(SheetLoadData* aLoadData,
 
   SheetLoadData* existingData = nullptr;
 
-  URIPrincipalReferrerPolicyAndCORSModeHashKey key(aLoadData->mURI,
-                                     aLoadData->mLoaderPrincipal,
-                                     aLoadData->mSheet->GetCORSMode(),
-                                     aLoadData->mSheet->GetReferrerPolicy());
+  URIPrincipalReferrerPolicyAndCORSModeHashKey key(aLoadData);
+
   if (aSheetState == eSheetLoading) {
     mSheets->mLoadingDatas.Get(&key, &existingData);
     NS_ASSERTION(existingData, "CreateSheet lied about the state");
@@ -1717,10 +1764,7 @@ Loader::DoSheetComplete(SheetLoadData* aLoadData, LoadDataArray& aDatasToNotify)
     LOG_URI("  Finished loading: '%s'", aLoadData->mURI);
     // Remove the data from the list of loading datas
     if (aLoadData->mIsLoading) {
-      URIPrincipalReferrerPolicyAndCORSModeHashKey key(aLoadData->mURI,
-                                         aLoadData->mLoaderPrincipal,
-                                         aLoadData->mSheet->GetCORSMode(),
-                                         aLoadData->mSheet->GetReferrerPolicy());
+      URIPrincipalReferrerPolicyAndCORSModeHashKey key(aLoadData);
 #ifdef DEBUG
       SheetLoadData *loadingData;
       NS_ASSERTION(
@@ -1805,10 +1849,7 @@ Loader::DoSheetComplete(SheetLoadData* aLoadData, LoadDataArray& aDatasToNotify)
     }
     else {
 #endif
-      URIPrincipalReferrerPolicyAndCORSModeHashKey key(aLoadData->mURI,
-                                         aLoadData->mLoaderPrincipal,
-                                         aLoadData->mSheet->GetCORSMode(),
-                                         aLoadData->mSheet->GetReferrerPolicy());
+      URIPrincipalReferrerPolicyAndCORSModeHashKey key(aLoadData);
       NS_ASSERTION(sheet->IsComplete(),
                    "Should only be caching complete sheets");
       mSheets->mCompleteSheets.Put(&key, sheet);
@@ -1900,6 +1941,7 @@ Loader::LoadInlineStyle(const SheetInfo& aInfo,
                                           aInfo.mTitle,
                                           nullptr,
                                           sheet,
+                                          false,
                                           owningElement,
                                           isAlternate,
                                           matched,
@@ -1959,6 +2001,12 @@ Loader::LoadStyleLink(const SheetInfo& aInfo, nsICSSLoaderObserver* aObserver)
     context = mDocument;
   }
 
+  bool syncLoad = aInfo.mContent &&
+                  aInfo.mContent->IsInUAWidget() &&
+                  IsChromeURI(aInfo.mURI);
+  LOG(("  Link sync load: '%s'", syncLoad ? "true" : "false"));
+  MOZ_ASSERT_IF(syncLoad, !aObserver);
+
   nsresult rv = CheckContentPolicy(loadingPrincipal, principal, aInfo.mURI, context, false);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     // Don't fire the error event if our document is loaded as data.  We're
@@ -1984,7 +2032,7 @@ Loader::LoadStyleLink(const SheetInfo& aInfo, nsICSSLoaderObserver* aObserver)
   rv = CreateSheet(aInfo,
                    principal,
                    eAuthorSheetFeatures,
-                   false,
+                   syncLoad,
                    state,
                    &sheet);
   if (NS_FAILED(rv)) {
@@ -2024,6 +2072,7 @@ Loader::LoadStyleLink(const SheetInfo& aInfo, nsICSSLoaderObserver* aObserver)
                                           aInfo.mTitle,
                                           aInfo.mURI,
                                           sheet,
+                                          syncLoad,
                                           owningElement,
                                           isAlternate,
                                           matched,
@@ -2038,14 +2087,12 @@ Loader::LoadStyleLink(const SheetInfo& aInfo, nsICSSLoaderObserver* aObserver)
              "These should better match!");
 
   // If we have to parse and it's a non-blocking non-inline sheet, defer it.
-  if (state == eSheetNeedsParser &&
+  if (!syncLoad &&
+      state == eSheetNeedsParser &&
       mSheets->mLoadingDatas.Count() != 0 &&
       !result.ShouldBlock()) {
     LOG(("  Deferring sheet load"));
-    URIPrincipalReferrerPolicyAndCORSModeHashKey key(data->mURI,
-                                                     data->mLoaderPrincipal,
-                                                     data->mSheet->GetCORSMode(),
-                                                     data->mSheet->GetReferrerPolicy());
+    URIPrincipalReferrerPolicyAndCORSModeHashKey key(data);
     mSheets->mPendingDatas.Put(&key, data);
 
     data->mMustNotify = true;
@@ -2058,7 +2105,9 @@ Loader::LoadStyleLink(const SheetInfo& aInfo, nsICSSLoaderObserver* aObserver)
     return Err(rv);
   }
 
-  data->mMustNotify = true;
+  if (!syncLoad) {
+    data->mMustNotify = true;
+  }
   return result;
 }
 
@@ -2396,6 +2445,7 @@ Loader::PostLoadEvent(nsIURI* aURI,
                       EmptyString(), // title doesn't matter here
                       aURI,
                       aSheet,
+                      false,
                       aElement,
                       aWasAlternate,
                       aMediaMatched,
@@ -2521,15 +2571,11 @@ Loader::HasPendingLoads()
     mDatasToNotifyOn != 0;
 }
 
-nsresult
+void
 Loader::AddObserver(nsICSSLoaderObserver* aObserver)
 {
   MOZ_ASSERT(aObserver, "Must have observer");
-  if (mObservers.AppendElementUnlessExists(aObserver)) {
-    return NS_OK;
-  }
-
-  return NS_ERROR_OUT_OF_MEMORY;
+  mObservers.AppendElementUnlessExists(aObserver);
 }
 
 void

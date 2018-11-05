@@ -37,12 +37,9 @@ FirefoxProfileMigrator.prototype = Object.create(MigratorPrototype);
 
 FirefoxProfileMigrator.prototype._getAllProfiles = function() {
   let allProfiles = new Map();
-  let profiles =
-    Cc["@mozilla.org/toolkit/profile-service;1"]
-      .getService(Ci.nsIToolkitProfileService)
-      .profiles;
-  while (profiles.hasMoreElements()) {
-    let profile = profiles.getNext().QueryInterface(Ci.nsIToolkitProfile);
+  let profileService = Cc["@mozilla.org/toolkit/profile-service;1"]
+      .getService(Ci.nsIToolkitProfileService);
+  for (let profile of profileService.profiles) {
     let rootDir = profile.rootDir;
 
     if (rootDir.exists() && rootDir.isReadable() &&
@@ -221,11 +218,17 @@ FirefoxProfileMigrator.prototype._getResourcesInternal = function(sourceProfileD
         file.copyTo(currentProfileDir, "");
       }
       // And record the fact a migration (ie, a reset) happened.
-      let timesAccessor = new ProfileAge(currentProfileDir.path);
-      timesAccessor.recordProfileReset().then(
-        () => aCallback(true),
-        () => aCallback(false)
-      );
+      let recordMigration = async () => {
+        try {
+          let profileTimes = await ProfileAge(currentProfileDir.path);
+          await profileTimes.recordProfileReset();
+          aCallback(true);
+        } catch (e) {
+          aCallback(false);
+        }
+      };
+
+      recordMigration();
     },
   };
   let telemetry = {

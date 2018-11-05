@@ -9,11 +9,14 @@ const kAboutPagesRegistered = Promise.all([
     Ci.nsIAboutModule.URI_MUST_LOAD_IN_CHILD | Ci.nsIAboutModule.ALLOW_SCRIPT),
   BrowserTestUtils.registerAboutPage(
     registerCleanupFunction, "test-about-principal-parent", kParentPage,
-    Ci.nsIAboutModule.ALLOW_SCRIPT)
+    Ci.nsIAboutModule.ALLOW_SCRIPT),
 ]);
 
 add_task(async function test_principal_click() {
   await kAboutPagesRegistered;
+  await SpecialPowers.pushPrefEnv({
+    "set": [["csp.skip_about_page_has_csp_assert", true]],
+  });
   await BrowserTestUtils.withNewTab("about:test-about-principal-parent", async function(browser) {
     let loadPromise = BrowserTestUtils.browserLoaded(browser, false, "about:test-about-principal-child");
     let myLink = browser.contentDocument.getElementById("aboutchildprincipal");
@@ -44,7 +47,7 @@ add_task(async function test_principal_click() {
 add_task(async function test_principal_ctrl_click() {
   await kAboutPagesRegistered;
   await SpecialPowers.pushPrefEnv({
-    "set": [["security.sandbox.content.level", 1]],
+    "set": [["security.sandbox.content.level", 1], ["csp.skip_about_page_has_csp_assert", true]],
   });
 
   await BrowserTestUtils.withNewTab("about:test-about-principal-parent", async function(browser) {
@@ -81,7 +84,7 @@ add_task(async function test_principal_ctrl_click() {
 add_task(async function test_principal_right_click_open_link_in_new_tab() {
   await kAboutPagesRegistered;
   await SpecialPowers.pushPrefEnv({
-    "set": [["security.sandbox.content.level", 1]],
+    "set": [["security.sandbox.content.level", 1], ["csp.skip_about_page_has_csp_assert", true]],
   });
 
   await BrowserTestUtils.withNewTab("about:test-about-principal-parent", async function(browser) {

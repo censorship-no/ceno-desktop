@@ -17,20 +17,21 @@ if (Utils.MozBuildApp === "mobile/android") {
 
 const GECKOVIEW_MESSAGE = {
   ACTIVATE: "GeckoView:AccessibilityActivate",
-  VIEW_FOCUSED: "GeckoView:AccessibilityViewFocused",
-  LONG_PRESS: "GeckoView:AccessibilityLongPress",
   BY_GRANULARITY: "GeckoView:AccessibilityByGranularity",
+  CLIPBOARD: "GeckoView:AccessibilityClipboard",
+  CURSOR_TO_FOCUSED: "GeckoView:AccessibilityCursorToFocused",
+  EXPLORE_BY_TOUCH: "GeckoView:AccessibilityExploreByTouch",
+  LONG_PRESS: "GeckoView:AccessibilityLongPress",
   NEXT: "GeckoView:AccessibilityNext",
   PREVIOUS: "GeckoView:AccessibilityPrevious",
   SCROLL_BACKWARD: "GeckoView:AccessibilityScrollBackward",
   SCROLL_FORWARD: "GeckoView:AccessibilityScrollForward",
-  EXPLORE_BY_TOUCH: "GeckoView:AccessibilityExploreByTouch",
+  SELECT: "GeckoView:AccessibilitySelect",
   SET_SELECTION: "GeckoView:AccessibilitySetSelection",
-  CLIPBOARD: "GeckoView:AccessibilityClipboard",
+  VIEW_FOCUSED: "GeckoView:AccessibilityViewFocused",
 };
 
 const ACCESSFU_MESSAGE = {
-  PRESENT: "AccessFu:Present",
   DOSCROLL: "AccessFu:DoScroll",
 };
 
@@ -56,19 +57,13 @@ var AccessFu = {
     this._enabled = true;
 
     ChromeUtils.import("resource://gre/modules/accessibility/Utils.jsm");
-    ChromeUtils.import("resource://gre/modules/accessibility/Presentation.jsm");
-
-    // Check for output notification
-    this._notifyOutputPref =
-      new PrefCache("accessibility.accessfu.notify_output");
 
     Services.obs.addObserver(this, "remote-browser-shown");
     Services.obs.addObserver(this, "inprocess-browser-shown");
     Services.ww.registerNotification(this);
 
-    let windows = Services.wm.getEnumerator(null);
-    while (windows.hasMoreElements()) {
-      this._attachWindow(windows.getNext());
+    for (let win of Services.wm.getEnumerator(null)) {
+      this._attachWindow(win);
     }
 
     Logger.info("AccessFu:Enabled");
@@ -88,12 +83,9 @@ var AccessFu = {
     Services.obs.removeObserver(this, "inprocess-browser-shown");
     Services.ww.unregisterNotification(this);
 
-    let windows = Services.wm.getEnumerator(null);
-    while (windows.hasMoreElements()) {
-      this._detachWindow(windows.getNext());
+    for (let win of Services.wm.getEnumerator(null)) {
+      this._detachWindow(win);
     }
-
-    delete this._notifyOutputPref;
 
     if (this.doneCallback) {
       this.doneCallback();
@@ -109,9 +101,6 @@ var AccessFu = {
     });
 
     switch (aMessage.name) {
-      case ACCESSFU_MESSAGE.PRESENT:
-        this._output(aMessage.json, aMessage.target);
-        break;
       case ACCESSFU_MESSAGE.DOSCROLL:
         this.Input.doScroll(aMessage.json, aMessage.target);
         break;
@@ -156,38 +145,6 @@ var AccessFu = {
     }
   },
 
-  _output: function _output(aPresentationData, aBrowser) {
-    if (!aPresentationData) {
-      // Either no android events to send or a string used for testing only.
-      return;
-    }
-
-    if (!Utils.isAliveAndVisible(Utils.AccService.getAccessibleFor(aBrowser))) {
-      return;
-    }
-
-    let win = aBrowser.ownerGlobal;
-
-    for (let evt of aPresentationData) {
-      if (typeof evt == "string") {
-        continue;
-      }
-
-      if (win.WindowEventDispatcher) {
-        // desktop mochitests don't have this.
-        win.WindowEventDispatcher.sendRequest({
-          ...evt,
-          type: "GeckoView:AccessibilityEvent"
-        });
-      }
-    }
-
-    if (this._notifyOutputPref.value) {
-      Services.obs.notifyObservers(null, "accessibility-output",
-                                   JSON.stringify(aPresentationData));
-    }
-  },
-
   onEvent(event, data, callback) {
     switch (event) {
       case GECKOVIEW_MESSAGE.SETTINGS:
@@ -220,11 +177,8 @@ var AccessFu = {
       case GECKOVIEW_MESSAGE.SCROLL_BACKWARD:
         this.Input.androidScroll("backward");
         break;
-      case GECKOVIEW_MESSAGE.VIEW_FOCUSED:
-        this._focused = data.gainFocus;
-        if (this._focused) {
-          this.autoMove({ forcePresent: true, noOpIfOnScreen: true });
-        }
+      case GECKOVIEW_MESSAGE.CURSOR_TO_FOCUSED:
+        this.autoMove({ moveToFocused: true });
         break;
       case GECKOVIEW_MESSAGE.BY_GRANULARITY:
         this.Input.moveByGranularity(data);
@@ -237,6 +191,9 @@ var AccessFu = {
         break;
       case GECKOVIEW_MESSAGE.CLIPBOARD:
         this.Input.clipboard(data);
+        break;
+      case GECKOVIEW_MESSAGE.SELECT:
+        this.Input.selectCurrent(data);
         break;
     }
   },
@@ -279,10 +236,6 @@ var AccessFu = {
     mm.sendAsyncMessage("AccessFu:AutoMove", aOptions);
   },
 
-  announce: function announce(aAnnouncement) {
-    this._output(Presentation.announce(aAnnouncement), Utils.getCurrentBrowser());
-  },
-
   // So we don't enable/disable twice
   _enabled: false,
 
@@ -304,7 +257,7 @@ var AccessFu = {
       bounds = bounds.scale(1 / devicePixelRatio, 1 / devicePixelRatio);
       bounds = bounds.translate(-mozInnerScreenX, -mozInnerScreenY);
       return bounds.expandToIntegers();
-    }
+    },
 };
 
 var Input = {
@@ -348,6 +301,11 @@ var Input = {
     mm.sendAsyncMessage("AccessFu:Activate", { offset: 0 });
   },
 
+  selectCurrent: function selectCurrent(aData) {
+    let mm = Utils.getMessageManager();
+    mm.sendAsyncMessage("AccessFu:Select", aData);
+  },
+
   doScroll: function doScroll(aDetails, aBrowser) {
     let horizontal = aDetails.horizontal;
     let page = aDetails.page;
@@ -357,6 +315,6 @@ var Input = {
     winUtils.sendWheelEvent(p.x, p.y,
       horizontal ? page : 0, horizontal ? 0 : page, 0,
       win.WheelEvent.DOM_DELTA_PAGE, 0, 0, 0, 0);
-  }
+  },
 };
 AccessFu.Input = Input;

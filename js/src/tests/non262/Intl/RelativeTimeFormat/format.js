@@ -89,6 +89,18 @@ addIntlExtras(Intl);
   assertEq(rtf.format(1, "year"), "next year");
 }
 
+{
+  // Plural specifier
+  rtf = new Intl.RelativeTimeFormat("en-US");
+  assertEq(rtf.format(1, "seconds"), "in 1 second");
+  assertEq(rtf.format(1, "minutes"), "in 1 minute");
+  assertEq(rtf.format(1, "hours"), "in 1 hour");
+  assertEq(rtf.format(1, "days"), "in 1 day");
+  assertEq(rtf.format(1, "weeks"), "in 1 week");
+  assertEq(rtf.format(1, "months"), "in 1 month");
+  assertEq(rtf.format(1, "years"), "in 1 year");
+}
+
 rtf = new Intl.RelativeTimeFormat("de", {numeric: "auto"});
 assertEq(rtf.format(-1, "day"), "gestern");
 assertEq(rtf.format(1, "day"), "morgen");
@@ -99,10 +111,10 @@ assertEq(rtf.format(1, "day"), "غدًا");
 
 
 rtf = new Intl.RelativeTimeFormat("en-US");
-assertEq(rtf.format(Infinity, "year"), "in ∞ years");
-assertEq(rtf.format(-Infinity, "year"), "∞ years ago");
 
 var weirdValueCases = [
+  Infinity,
+  -Infinity,
   NaN,
   "word",
   [0,2],
@@ -110,7 +122,7 @@ var weirdValueCases = [
 ];
 
 for (let c of weirdValueCases) {
-  assertEq(rtf.format(c, "year"), "in NaN years");
+  assertThrowsInstanceOf(() => rtf.format(c, "year"), RangeError);
 };
 
 var weirdUnitCases = [
@@ -125,7 +137,7 @@ var weirdUnitCases = [
 ];
 
 for (let u of weirdUnitCases) {
-  assertThrows(function() {
+  assertThrowsInstanceOf(function() {
     var rtf = new Intl.RelativeTimeFormat("en-US");
     rtf.format(1, u);
   }, RangeError);

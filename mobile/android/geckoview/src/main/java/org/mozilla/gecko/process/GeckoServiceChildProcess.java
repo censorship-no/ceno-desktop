@@ -61,6 +61,7 @@ public class GeckoServiceChildProcess extends Service {
                              final String[] args,
                              final Bundle extras,
                              final int flags,
+                             final String crashHandlerService,
                              final ParcelFileDescriptor prefsPfd,
                              final ParcelFileDescriptor prefMapPfd,
                              final ParcelFileDescriptor ipcPfd,
@@ -74,8 +75,10 @@ public class GeckoServiceChildProcess extends Service {
                 sProcessManager = procMan;
             }
 
-            final int prefsFd = prefsPfd.detachFd();
-            final int prefMapFd = prefMapPfd.detachFd();
+            final int prefsFd = prefsPfd != null ?
+                                prefsPfd.detachFd() : -1;
+            final int prefMapFd = prefMapPfd != null ?
+                                  prefMapPfd.detachFd() : -1;
             final int ipcFd = ipcPfd.detachFd();
             final int crashReporterFd = crashReporterPfd != null ?
                                         crashReporterPfd.detachFd() : -1;
@@ -85,8 +88,31 @@ public class GeckoServiceChildProcess extends Service {
             ThreadUtils.postToUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    if (GeckoThread.initChildProcess(args, extras, flags, prefsFd, prefMapFd, ipcFd,
-                                                     crashReporterFd, crashAnnotationFd)) {
+                    if (crashHandlerService != null) {
+                        try {
+                            @SuppressWarnings("unchecked")
+                            final Class<? extends Service> crashHandler = (Class<? extends Service>) Class.forName(crashHandlerService);
+
+                            // Native crashes are reported through pipes, so we don't have to
+                            // do anything special for that.
+                            GeckoAppShell.setCrashHandlerService(crashHandler);
+                            GeckoAppShell.ensureCrashHandling(crashHandler);
+                        } catch (ClassNotFoundException e) {
+                            Log.w(LOGTAG, "Couldn't find crash handler service " + crashHandlerService);
+                        }
+                    }
+
+                    final GeckoThread.InitInfo info = new GeckoThread.InitInfo();
+                    info.args = args;
+                    info.extras = extras;
+                    info.flags = flags;
+                    info.prefsFd = prefsFd;
+                    info.prefMapFd = prefMapFd;
+                    info.ipcFd = ipcFd;
+                    info.crashFd = crashReporterFd;
+                    info.crashAnnotationFd = crashAnnotationFd;
+
+                    if (GeckoThread.init(info)) {
                         GeckoThread.launch();
                     }
                 }

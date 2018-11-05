@@ -96,7 +96,6 @@ class PromiseDocumentFlushedResolver;
 
 namespace mozilla {
 class AbstractThread;
-class ThrottledEventQueue;
 namespace dom {
 class BarProp;
 struct ChannelPixelLayout;
@@ -126,6 +125,7 @@ class SpeechSynthesis;
 class TabGroup;
 class Timeout;
 class U2F;
+class VisualViewport;
 class VRDisplay;
 enum class VRDisplayEventReason : uint8_t;
 class VREventObserver;
@@ -133,6 +133,7 @@ class WakeLock;
 #if defined(MOZ_WIDGET_ANDROID)
 class WindowOrientationObserver;
 #endif
+struct WindowPostMessageOptions;
 class Worklet;
 namespace cache {
 class CacheStorage;
@@ -393,7 +394,7 @@ public:
   // Inner windows only.
   void RefreshRealmPrincipal();
 
-  // For accessing protected field mFullScreen
+  // For accessing protected field mFullscreen
   friend class FullscreenTransitionTask;
 
   // Inner windows only.
@@ -559,12 +560,16 @@ public:
   // false for only resetting the timestamp.
   void ResetVRTelemetry(bool aUpdate);
 
+  void StartVRActivity();
+  void StopVRActivity();
+
   // Update the VR displays for this window
   bool UpdateVRDisplays(nsTArray<RefPtr<mozilla::dom::VRDisplay>>& aDisplays);
 
   // Inner windows only.
   // Called to inform that the set of active VR displays has changed.
   void NotifyActiveVRDisplaysChanged();
+  void NotifyPresentationGenerationChanged(uint32_t aDisplayID);
 
   void DispatchVRDisplayActivate(uint32_t aDisplayID,
                                  mozilla::dom::VRDisplayEventReason aReason);
@@ -732,6 +737,10 @@ public:
                       const mozilla::dom::Sequence<JSObject*>& aTransfer,
                       nsIPrincipal& aSubjectPrincipal,
                       mozilla::ErrorResult& aError);
+  void PostMessageMoz(JSContext* aCx, JS::Handle<JS::Value> aMessage,
+                      const mozilla::dom::WindowPostMessageOptions& aOptions,
+                      nsIPrincipal& aSubjectPrincipal,
+                      mozilla::ErrorResult& aError);
   int32_t SetTimeout(JSContext* aCx, mozilla::dom::Function& aFunction,
                      int32_t aTimeout,
                      const mozilla::dom::Sequence<JS::Value>& aArguments,
@@ -763,6 +772,7 @@ public:
   already_AddRefed<nsICSSDeclaration>
     GetComputedStyle(mozilla::dom::Element& aElt, const nsAString& aPseudoElt,
                      mozilla::ErrorResult& aError) override;
+  mozilla::dom::VisualViewport* VisualViewport();
   already_AddRefed<mozilla::dom::MediaQueryList> MatchMedia(
     const nsAString& aQuery,
     mozilla::dom::CallerType aCallerType,
@@ -813,6 +823,19 @@ public:
   {
     return GetScrollY(aError);
   }
+
+  int32_t GetScreenLeft(mozilla::dom::CallerType aCallerType,
+                        mozilla::ErrorResult& aError)
+  {
+    return GetScreenX(aCallerType, aError);
+  }
+
+  int32_t GetScreenTop(mozilla::dom::CallerType aCallerType,
+                       mozilla::ErrorResult& aError)
+  {
+    return GetScreenY(aCallerType, aError);
+  }
+
   void GetScreenX(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
                   mozilla::dom::CallerType aCallerType,
                   mozilla::ErrorResult& aError);
@@ -875,7 +898,7 @@ public:
   int32_t GetScrollMaxY(mozilla::ErrorResult& aError);
   bool GetFullScreen(mozilla::ErrorResult& aError);
   bool GetFullScreen() override;
-  void SetFullScreen(bool aFullScreen, mozilla::ErrorResult& aError);
+  void SetFullScreen(bool aFullscreen, mozilla::ErrorResult& aError);
   bool Find(const nsAString& aString, bool aCaseSensitive, bool aBackwards,
             bool aWrapAround, bool aWholeWord, bool aSearchInFrames,
             bool aShowDialog, mozilla::ErrorResult& aError);
@@ -908,15 +931,6 @@ public:
                     const mozilla::dom::ImageBitmapSource& aImage,
                     int32_t aSx, int32_t aSy, int32_t aSw, int32_t aSh,
                     mozilla::ErrorResult& aRv);
-
-  already_AddRefed<mozilla::dom::Promise>
-  CreateImageBitmap(JSContext* aCx,
-                    const mozilla::dom::ImageBitmapSource& aImage,
-                    int32_t aOffset, int32_t aLength,
-                    mozilla::dom::ImageBitmapFormat aFormat,
-                    const mozilla::dom::Sequence<mozilla::dom::ChannelPixelLayout>& aLayout,
-                    mozilla::ErrorResult& aRv);
-
 
   // ChromeWindow bits.  Do NOT call these unless your window is in
   // fact chrome.
@@ -1080,7 +1094,7 @@ protected:
   // Object Management
   virtual ~nsGlobalWindowInner();
 
-  void FreeInnerObjects();
+  void FreeInnerObjects(bool aForDocumentOpen = false);
 
   // Only to be called on an inner window.
   // aDocument must not be null.
@@ -1211,7 +1225,12 @@ public:
 public:
   virtual already_AddRefed<nsPIWindowRoot> GetTopWindowRoot() override;
 
-  // Get the parent principal, returns null if this is a toplevel window.
+  // Get the toplevel principal, returns null if this is a toplevel window.
+  nsIPrincipal* GetTopLevelPrincipal();
+
+  // Get the parent principal, returns null if this or the parent are not a
+  // toplevel window. This is mainly used to determine the anti-tracking storage
+  // area.
   nsIPrincipal* GetTopLevelStorageAreaPrincipal();
 
 protected:
@@ -1386,6 +1405,8 @@ protected:
   RefPtr<mozilla::dom::Location> mLocation;
   RefPtr<nsHistory>           mHistory;
   RefPtr<mozilla::dom::CustomElementRegistry> mCustomElements;
+
+  RefPtr<mozilla::dom::VisualViewport> mVisualViewport;
 
   nsCOMPtr<nsIPrincipal> mDocumentPrincipal;
   // mTabChild is only ever populated in the content process.

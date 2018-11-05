@@ -567,7 +567,7 @@ class Marionette(object):
     CONTEXT_CHROME = "chrome"  # non-browser content: windows, dialogs, etc.
     CONTEXT_CONTENT = "content"  # browser content: iframes, divs, etc.
     DEFAULT_STARTUP_TIMEOUT = 120
-    DEFAULT_SHUTDOWN_TIMEOUT = 120  # Firefox will kill hanging threads after 60s
+    DEFAULT_SHUTDOWN_TIMEOUT = 70  # By default Firefox will kill hanging threads after 60s
 
     # Bug 1336953 - Until we can remove the socket timeout parameter it has to be
     # set a default value which is larger than the longest timeout as defined by the
@@ -614,6 +614,7 @@ class Marionette(object):
         self.baseurl = baseurl
         self._test_name = None
         self.crashed = 0
+        self.is_shutting_down = False
 
         if socket_timeout is None:
             self.socket_timeout = self.DEFAULT_SOCKET_TIMEOUT
@@ -624,6 +625,8 @@ class Marionette(object):
             self.startup_timeout = self.DEFAULT_STARTUP_TIMEOUT
         else:
             self.startup_timeout = int(startup_timeout)
+
+        self.shutdown_timeout = self.DEFAULT_SHUTDOWN_TIMEOUT
 
         if self.bin:
             self.instance = GeckoInstance.create(
@@ -686,11 +689,13 @@ class Marionette(object):
         finally:
             s.close()
 
-    def raise_for_port(self, timeout=None):
+    def raise_for_port(self, timeout=None, check_process_status=True):
         """Raise socket.timeout if no connection can be established.
 
-        :param timeout: Timeout in seconds for the server to be ready.
-
+        :param timeout: Optional timeout in seconds for the server to be ready.
+        :param check_process_status: Optional, if `True` the process will be
+            continuously checked if it has exited, and the connection
+            attempt will be aborted.
         """
         if timeout is None:
             timeout = self.DEFAULT_STARTUP_TIMEOUT
@@ -708,7 +713,7 @@ class Marionette(object):
         connected = False
         while datetime.datetime.now() < timeout_time:
             # If the instance we want to connect to is not running return immediately
-            if runner is not None and not runner.is_running():
+            if check_process_status and runner is not None and not runner.is_running():
                 break
 
             try:
@@ -722,6 +727,10 @@ class Marionette(object):
             time.sleep(poll_interval)
 
         if not connected:
+            # There might have been a startup crash of the application
+            if runner is not None and self.check_for_crash() > 0:
+                raise IOError('Process crashed (Exit code: {})'.format(runner.wait(0)))
+
             raise socket.timeout("Timed out waiting for connection on {0}:{1}!".format(
                 self.host, self.port))
 
@@ -740,9 +749,8 @@ class Marionette(object):
         :returns: Full response from the server, or if `key` is given,
             the value of said key in the response.
         """
-
         if not self.session_id and name != "WebDriver:NewSession":
-            raise errors.MarionetteException("Please start a session")
+            raise errors.InvalidSessionIdException("Please start a session")
 
         try:
             msg = self.client.request(name, params)
@@ -810,7 +818,7 @@ class Marionette(object):
         else:
             # Somehow the socket disconnected. Give the application some time to shutdown
             # itself before killing the process.
-            returncode = self.instance.runner.wait(timeout=self.DEFAULT_SHUTDOWN_TIMEOUT)
+            returncode = self.instance.runner.wait(timeout=self.shutdown_timeout)
 
             if returncode is None:
                 message = ('Process killed because the connection to Marionette server is '
@@ -1091,30 +1099,39 @@ class Marionette(object):
 
         cause = None
         if in_app:
-            if callback is not None:
-                if not callable(callback):
-                    raise ValueError("Specified callback '{}' is not callable".format(callback))
+            if callback is not None and not callable(callback):
+                raise ValueError("Specified callback '{}' is not callable".format(callback))
 
-                self._send_message("Marionette:AcceptConnections",
-                                   {"value": False})
-                callback()
-            else:
-                cause = self._request_in_app_shutdown()
+            # Block Marionette from accepting new connections
+            self._send_message("Marionette:AcceptConnections",
+                               {"value": False})
 
-            self.delete_session(send_request=False)
+            try:
+                self.is_shutting_down = True
+                if callback is not None:
+                    callback()
+                else:
+                    cause = self._request_in_app_shutdown()
 
-            # Give the application some time to shutdown
-            returncode = self.instance.runner.wait(timeout=self.DEFAULT_SHUTDOWN_TIMEOUT)
+            except IOError:
+                # A possible IOError should be ignored at this point, given that
+                # quit() could have been called inside of `using_context`,
+                # which wants to reset the context but fails sending the message.
+                pass
+
+            returncode = self.instance.runner.wait(timeout=self.shutdown_timeout)
             if returncode is None:
-                # This will force-close the application without sending any other message.
+                # The process did not shutdown itself, so force-closing it.
                 self.cleanup()
 
-                message = ("Process killed because a requested application quit did not happen "
-                           "within {}s. Check gecko.log for errors.")
-                raise IOError(message.format(self.DEFAULT_SHUTDOWN_TIMEOUT))
+                message = "Process still running {}s after quit request"
+                raise IOError(message.format(self.shutdown_timeout))
+
+            self.is_shutting_down = False
+            self.delete_session(send_request=False)
 
         else:
-            self.delete_session()
+            self.delete_session(send_request=False)
             self.instance.close(clean=clean)
 
         if cause not in (None, "shutdown"):
@@ -1147,26 +1164,53 @@ class Marionette(object):
             if clean:
                 raise ValueError("An in_app restart cannot be triggered with the clean flag set")
 
-            if callback is not None:
-                if not callable(callback):
-                    raise ValueError("Specified callback '{}' is not callable".format(callback))
+            if callback is not None and not callable(callback):
+                raise ValueError("Specified callback '{}' is not callable".format(callback))
 
-                self._send_message("Marionette:AcceptConnections",
-                                   {"value": False})
-                callback()
-            else:
-                cause = self._request_in_app_shutdown("eRestart")
-
-            self.delete_session(send_request=False)
+            # Block Marionette from accepting new connections
+            self._send_message("Marionette:AcceptConnections",
+                               {"value": False})
 
             try:
-                timeout = self.DEFAULT_SHUTDOWN_TIMEOUT + self.DEFAULT_STARTUP_TIMEOUT
-                self.raise_for_port(timeout=timeout)
+                self.is_shutting_down = True
+                if callback is not None:
+                    callback()
+                else:
+                    cause = self._request_in_app_shutdown("eRestart")
+
+            except IOError:
+                # A possible IOError should be ignored at this point, given that
+                # restart() could have been called inside of `using_context`,
+                # which wants to reset the context but fails sending the message.
+                pass
+
+            try:
+                # Wait for a new Marionette connection to appear while the
+                # process restarts itself.
+                self.raise_for_port(timeout=self.shutdown_timeout,
+                                    check_process_status=False)
             except socket.timeout:
-                if self.instance.runner.returncode is not None:
-                    exc, val, tb = sys.exc_info()
+                exc, val, tb = sys.exc_info()
+
+                if self.instance.runner.returncode is None:
+                    # The process is still running, which means the shutdown
+                    # request was not correct or the application ignored it.
+                    # Allow Marionette to accept connections again.
+                    self._send_message("acceptConnections", {"value": True})
+
+                    message = "Process still running {}s after restart request"
+                    reraise(exc, message.format(self.shutdown_timeout), tb)
+
+                else:
+                    # The process shutdown but didn't start again.
                     self.cleanup()
-                    reraise(exc, "Requested restart of the application was aborted", tb)
+                    msg = "Process unexpectedly quit without restarting (exit code: {})"
+                    reraise(exc, msg.format(self.instance.runner.returncode), tb)
+
+            finally:
+                self.is_shutting_down = False
+
+            self.delete_session(send_request=False)
 
         else:
             self.delete_session()
@@ -1209,6 +1253,9 @@ class Marionette(object):
         :param timeout: Optional timeout in seconds for the server to be ready.
         :returns: A dictionary of the capabilities offered.
         """
+        if capabilities is None:
+            capabilities = {"strictFileInteractability": True}
+
         if timeout is None:
             timeout = self.startup_timeout
 
@@ -1232,31 +1279,16 @@ class Marionette(object):
             self.socket_timeout)
         self.protocol, _ = self.client.connect()
 
-        body = capabilities
-        if body is None:
-            body = {}
-
-        # Duplicate capabilities object so the body we end up
-        # sending looks like this:
-        #
-        #     {acceptInsecureCerts: true, {capabilities: {acceptInsecureCerts: true}}}
-        #
-        # We do this because geckodriver sends the capabilities at the
-        # top-level, and after bug 1388424 removed support for overriding
-        # the session ID, we also do this with this client.  However,
-        # because this client is used with older Firefoxen (through upgrade
-        # tests et al.) we need to preserve backwards compatibility until
-        # Firefox 60.
-        if "capabilities" not in body and capabilities is not None:
-            body["capabilities"] = dict(capabilities)
-
-        resp = self._send_message("WebDriver:NewSession",
-                                  body)
+        resp = self._send_message("WebDriver:NewSession", capabilities)
         self.session_id = resp["sessionId"]
         self.session = resp["capabilities"]
         # fallback to processId can be removed in Firefox 55
         self.process_id = self.session.get("moz:processID", self.session.get("processId"))
         self.profile = self.session.get("moz:profile")
+
+        timeout = self.session.get("moz:shutdownTimeout")
+        if timeout is not None:
+            self.shutdown_timeout = timeout / 1000 + 10
 
         return self.session
 
@@ -1277,7 +1309,10 @@ class Marionette(object):
         """
         try:
             if send_request:
-                self._send_message("WebDriver:DeleteSession")
+                try:
+                    self._send_message("WebDriver:DeleteSession")
+                except errors.InvalidSessionIdException:
+                    pass
         finally:
             self.process_id = None
             self.profile = None
@@ -1886,6 +1921,19 @@ class Marionette(object):
         :returns: A list of cookies for the current domain.
         """
         return self._send_message("WebDriver:GetCookies")
+
+    def save_screenshot(self, fh, element=None, highlights=None,
+                        full=True, scroll=True):
+        """Takes a screenhot of a web element or the current frame and
+        saves it in the filehandle.
+
+        It is a wrapper around screenshot()
+        :param fh: The filehandle to save the screenshot at.
+
+        The rest of the parameters are defined like in screenshot()
+        """
+        data = self.screenshot(element, highlights, "binary", full, scroll)
+        fh.write(data)
 
     def screenshot(self, element=None, highlights=None, format="base64",
                    full=True, scroll=True):

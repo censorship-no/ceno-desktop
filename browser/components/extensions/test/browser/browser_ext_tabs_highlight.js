@@ -26,7 +26,7 @@ add_task(async function test_highlighted() {
         let highlightedTabs = await browser.tabs.query({currentWindow: true, highlighted: true});
         browser.test.assertEq(
           highlightedIndices.concat(activeIndex).sort((a, b) => a - b).join(),
-          highlightedTabs.map(tab => tab.index).sort((a, b) => a - b).join(),
+          highlightedTabs.map(tab => tab.index).join(),
           "Check tabs.query with highlighted:true provides the expected tabs");
       }
 
@@ -67,6 +67,9 @@ add_task(async function test_highlighted() {
       await testHighlighted(2, []);
 
       browser.test.assertEq(3, window.tabs.length, "Returned window should be populated");
+
+      window = await browser.tabs.highlight({tabs: 2, populate: false});
+      browser.test.assertFalse("tabs" in window, "Returned window shouldn't be populated");
 
       browser.test.notifyPass("test-finished");
     },

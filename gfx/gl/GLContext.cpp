@@ -111,6 +111,8 @@ static const char* const sExtensionNames[] = {
     "GL_ARB_shader_texture_lod",
     "GL_ARB_sync",
     "GL_ARB_texture_compression",
+    "GL_ARB_texture_compression_bptc",
+    "GL_ARB_texture_compression_rgtc",
     "GL_ARB_texture_float",
     "GL_ARB_texture_non_power_of_two",
     "GL_ARB_texture_rectangle",
@@ -146,7 +148,9 @@ static const char* const sExtensionNames[] = {
     "GL_EXT_sRGB_write_control",
     "GL_EXT_shader_texture_lod",
     "GL_EXT_texture3D",
+    "GL_EXT_texture_compression_bptc",
     "GL_EXT_texture_compression_dxt1",
+    "GL_EXT_texture_compression_rgtc",
     "GL_EXT_texture_compression_s3tc",
     "GL_EXT_texture_compression_s3tc_srgb",
     "GL_EXT_texture_filter_anisotropic",
@@ -264,37 +268,12 @@ GLContext::ChooseDebugFlags(const CreateContextFlags createFlags)
 
 GLContext::GLContext(CreateContextFlags flags, const SurfaceCaps& caps,
                      GLContext* sharedContext, bool isOffscreen, bool useTLSIsCurrent)
-  : mImplicitMakeCurrent(false),
-    mUseTLSIsCurrent(ShouldUseTLSIsCurrent(useTLSIsCurrent)),
+  : mUseTLSIsCurrent(ShouldUseTLSIsCurrent(useTLSIsCurrent)),
     mIsOffscreen(isOffscreen),
-    mContextLost(false),
-    mVersion(0),
-    mProfile(ContextProfile::Unknown),
-    mShadingLanguageVersion(0),
-    mVendor(GLVendor::Other),
-    mRenderer(GLRenderer::Other),
-    mTopError(LOCAL_GL_NO_ERROR),
     mDebugFlags(ChooseDebugFlags(flags)),
     mSharedContext(sharedContext),
-    mSymbols{},
-    mCaps(caps),
-    mScreen(nullptr),
-    mLockedSurface(nullptr),
-    mMaxTextureSize(0),
-    mMaxCubeMapTextureSize(0),
-    mMaxTextureImageSize(0),
-    mMaxRenderbufferSize(0),
-    mMaxSamples(0),
-    mNeedsTextureSizeChecks(false),
-    mNeedsFlushBeforeDeleteFB(false),
-    mTextureAllocCrashesOnMapFailure(false),
-    mNeedsCheckAfterAttachTextureToFb(false),
-    mWorkAroundDriverBugs(true),
-    mSyncGLCallCount(0),
-    mHeavyGLCallsSinceLastFlush(false)
+    mCaps(caps)
 {
-    mMaxViewportDims[0] = 0;
-    mMaxViewportDims[1] = 0;
     mOwningThreadId = PlatformThread::CurrentId();
     MOZ_ALWAYS_TRUE( sCurrentContext.init() );
     sCurrentContext.set(0);

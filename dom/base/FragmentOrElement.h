@@ -153,7 +153,7 @@ protected:
    * Copy attributes and state to another element
    * @param aDest the object to copy to
    */
-  nsresult CopyInnerTo(FragmentOrElement* aDest, bool aPreallocateChildren);
+  nsresult CopyInnerTo(FragmentOrElement* aDest);
 
 public:
   /**
@@ -173,6 +173,8 @@ public:
 
     void TraverseExtendedSlots(nsCycleCollectionTraversalCallback&) final;
     void UnlinkExtendedSlots() final;
+
+    size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const final;
 
     /**
      * SMIL Overridde style rules (for SMIL animation of CSS properties)

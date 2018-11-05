@@ -8,6 +8,7 @@
 #define mozilla_dom_BindingUtils_h__
 
 #include "jsfriendapi.h"
+#include "js/CharacterEncoding.h"
 #include "js/Wrapper.h"
 #include "js/Conversions.h"
 #include "mozilla/ArrayUtils.h"
@@ -1312,12 +1313,12 @@ inline bool
 EnumValueNotFound<true>(JSContext* cx, JS::HandleString str, const char* type,
                         const char* sourceDescription)
 {
-  JSAutoByteString deflated;
-  if (!deflated.encodeUtf8(cx, str)) {
+  JS::UniqueChars deflated = JS_EncodeStringToUTF8(cx, str);
+  if (!deflated) {
     return false;
   }
   return ThrowErrorMessage(cx, MSG_INVALID_ENUM_VALUE, sourceDescription,
-                           deflated.ptr(), type);
+                           deflated.get(), type);
 }
 
 template<typename CharT>
@@ -1404,16 +1405,16 @@ GetParentPointer(const ParentObject& aObject)
 }
 
 template <typename T>
-inline bool
-GetUseXBLScope(T* aParentObject)
+inline mozilla::dom::ReflectionScope
+GetReflectionScope(T* aParentObject)
 {
-  return false;
+  return mozilla::dom::ReflectionScope::Content;
 }
 
-inline bool
-GetUseXBLScope(const ParentObject& aParentObject)
+inline mozilla::dom::ReflectionScope
+GetReflectionScope(const ParentObject& aParentObject)
 {
-  return aParentObject.mUseXBLScope;
+  return aParentObject.mReflectionScope;
 }
 
 template<class T>
@@ -1476,7 +1477,7 @@ UpdateWrapper(T* p, void*, JSObject* obj, const JSObject* old)
 // This operation will return false only for non-nsISupports cycle-collected
 // objects, because we cannot determine if they are wrappercached or not.
 bool
-TryPreserveWrapper(JSObject* obj);
+TryPreserveWrapper(JS::Handle<JSObject*> obj);
 
 // Can only be called with a DOM JSClass.
 bool
@@ -1667,7 +1668,7 @@ struct WrapNativeHelper<T, false>
 template<typename T>
 static inline JSObject*
 FindAssociatedGlobal(JSContext* cx, T* p, nsWrapperCache* cache,
-                     bool useXBLScope = false)
+                     mozilla::dom::ReflectionScope scope = mozilla::dom::ReflectionScope::Content)
 {
   if (!p) {
     return JS::CurrentGlobalOrNull(cx);
@@ -1683,21 +1684,41 @@ FindAssociatedGlobal(JSContext* cx, T* p, nsWrapperCache* cache,
   // the JSContext.
   obj = JS::GetNonCCWObjectGlobal(obj);
 
-  if (!useXBLScope) {
-    return obj;
+  switch (scope) {
+    case mozilla::dom::ReflectionScope::XBL: {
+      // If scope is set to XBLScope, it means that the canonical reflector for this
+      // native object should live in the content XBL scope. Note that we never put
+      // anonymous content inside an add-on scope.
+      if (xpc::IsInContentXBLScope(obj)) {
+        return obj;
+      }
+      JS::Rooted<JSObject*> rootedObj(cx, obj);
+      JSObject* xblScope = xpc::GetXBLScope(cx, rootedObj);
+      MOZ_ASSERT_IF(xblScope, JS_IsGlobalObject(xblScope));
+      MOZ_ASSERT(JS::ObjectIsNotGray(xblScope));
+      return xblScope;
+    }
+
+    case mozilla::dom::ReflectionScope::UAWidget: {
+      // If scope is set to UAWidgetScope, it means that the canonical reflector
+      // for this native object should live in the UA widget scope.
+      if (xpc::IsInUAWidgetScope(obj)) {
+        return obj;
+      }
+      JS::Rooted<JSObject*> rootedObj(cx, obj);
+      JSObject* uaWidgetScope = xpc::GetUAWidgetScope(cx, rootedObj);
+      MOZ_ASSERT_IF(uaWidgetScope, JS_IsGlobalObject(uaWidgetScope));
+      MOZ_ASSERT(JS::ObjectIsNotGray(uaWidgetScope));
+      return uaWidgetScope;
+    }
+
+    case ReflectionScope::Content:
+      return obj;
   }
 
-  // If useXBLScope is true, it means that the canonical reflector for this
-  // native object should live in the content XBL scope. Note that we never put
-  // anonymous content inside an add-on scope.
-  if (xpc::IsInContentXBLScope(obj)) {
-    return obj;
-  }
-  JS::Rooted<JSObject*> rootedObj(cx, obj);
-  JSObject* xblScope = xpc::GetXBLScope(cx, rootedObj);
-  MOZ_ASSERT_IF(xblScope, JS_IsGlobalObject(xblScope));
-  MOZ_ASSERT(JS::ObjectIsNotGray(xblScope));
-  return xblScope;
+  MOZ_CRASH("Unknown ReflectionScope variant");
+
+  return nullptr;
 }
 
 // Finding of the associated global for an object, when we don't want to
@@ -1706,7 +1727,7 @@ template<typename T>
 static inline JSObject*
 FindAssociatedGlobal(JSContext* cx, const T& p)
 {
-  return FindAssociatedGlobal(cx, GetParentPointer(p), GetWrapperCache(p), GetUseXBLScope(p));
+  return FindAssociatedGlobal(cx, GetParentPointer(p), GetWrapperCache(p), GetReflectionScope(p));
 }
 
 // Specialization for the case of nsIGlobalObject, since in that case
@@ -1721,7 +1742,9 @@ FindAssociatedGlobal(JSContext* cx, nsIGlobalObject* const& p)
 
   JSObject* global = p->GetGlobalJSObject();
   if (!global) {
-    return nullptr;
+    // nsIGlobalObject doesn't have a JS object anymore,
+    // fallback to the current global.
+    return JS::CurrentGlobalOrNull(cx);
   }
 
   MOZ_ASSERT(JS_IsGlobalObject(global));
@@ -2799,7 +2822,6 @@ public:
       js::SetProxyReservedSlot(aReflector, DOM_OBJECT_SLOT, JS::PrivateValue(aNative));
       mNative = aNative;
       mReflector = aReflector;
-      RecordReplayRegisterDeferredFinalize<T>(aNative);
     }
 
     if (size_t mallocBytes = BindingJSObjectMallocBytes(aNative)) {
@@ -2817,7 +2839,6 @@ public:
       js::SetReservedSlot(aReflector, DOM_OBJECT_SLOT, JS::PrivateValue(aNative));
       mNative = aNative;
       mReflector = aReflector;
-      RecordReplayRegisterDeferredFinalize<T>(aNative);
     }
 
     if (size_t mallocBytes = BindingJSObjectMallocBytes(aNative)) {
@@ -2828,8 +2849,10 @@ public:
   void
   InitializationSucceeded()
   {
-    void* dummy;
-    mNative.forget(&dummy);
+    T* pointer;
+    mNative.forget(&pointer);
+    RecordReplayRegisterDeferredFinalize<T>(pointer);
+
     mReflector = nullptr;
   }
 
@@ -2845,15 +2868,23 @@ private:
     OwnedNative&
     operator=(T* aNative)
     {
+      mNative = aNative;
       return *this;
     }
 
     // This signature sucks, but it's the only one that will make a nsRefPtr
     // just forget about its pointer without warning.
     void
-    forget(void**)
+    forget(T** aResult)
     {
+      *aResult = mNative;
+      mNative = nullptr;
     }
+
+    // Keep track of the pointer for use in InitializationSucceeded().
+    // The caller (or, after initialization succeeds, the JS object) retains
+    // ownership of the object.
+    T* mNative;
   };
 
   JS::Rooted<JSObject*> mReflector;
@@ -2972,9 +3003,9 @@ RecordReplayRegisterDeferredFinalize(T* aObject)
   DeferredFinalizer<T>::RecordReplayRegisterDeferredFinalize(aObject);
 }
 
-// This returns T's CC participant if it participates in CC or null if it
-// doesn't. This also returns null for classes that don't inherit from
-// nsISupports (QI should be used to get the participant for those).
+// This returns T's CC participant if it participates in CC and does not inherit
+// from nsISupports. Otherwise, it returns null. QI should be used to get the
+// participant if T inherits from nsISupports.
 template<class T, bool isISupports=IsBaseOf<nsISupports, T>::value>
 class GetCCParticipant
 {
@@ -2998,7 +3029,7 @@ public:
   Get()
   {
     // Passing int() here will try to call the GetHelper that takes an int as
-    // its firt argument. If T doesn't participate in CC then substitution for
+    // its first argument. If T doesn't participate in CC then substitution for
     // the second argument (with a default value) will fail and because of
     // SFINAE the next best match (the variant taking a double) will be called.
     return GetHelper<T>(int());
@@ -3073,7 +3104,6 @@ struct CreateGlobalOptions<nsGlobalWindowInner>
 {
   static constexpr ProtoAndIfaceCache::Kind ProtoAndIfaceCacheKind =
     ProtoAndIfaceCache::WindowLike;
-  static bool PostCreateGlobal(JSContext* aCx, JS::Handle<JSObject*> aGlobal);
 };
 
 // The return value is true if we created and successfully performed our part of
@@ -3091,9 +3121,7 @@ CreateGlobal(JSContext* aCx, T* aNative, nsWrapperCache* aCache,
              JS::MutableHandle<JSObject*> aGlobal)
 {
   aOptions.creationOptions().setTrace(CreateGlobalOptions<T>::TraceGlobal);
-  if (xpc::SharedMemoryEnabled()) {
-    aOptions.creationOptions().setSharedMemoryAndAtomicsEnabled(true);
-  }
+  xpc::SetPrefableRealmOptions(aOptions);
 
   aGlobal.set(JS_NewGlobalObject(aCx, aClass, aPrincipal,
                                  JS::DontFireOnNewGlobalHook, aOptions));

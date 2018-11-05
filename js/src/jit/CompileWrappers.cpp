@@ -107,6 +107,12 @@ CompileRuntime::mainContextPtr()
     return runtime()->mainContextFromAnyThread();
 }
 
+uint32_t*
+CompileRuntime::addressOfTenuredAllocCount()
+{
+    return runtime()->mainContextFromAnyThread()->addressOfTenuredAllocCount();
+}
+
 const void*
 CompileRuntime::addressOfJitStackLimit()
 {
@@ -214,6 +220,12 @@ CompileZone::addressOfStringNurseryCurrentEnd()
     return zone()->runtimeFromAnyThread()->gc.addressOfStringNurseryCurrentEnd();
 }
 
+uint32_t*
+CompileZone::addressOfNurseryAllocCount()
+{
+    return zone()->runtimeFromAnyThread()->gc.addressOfNurseryAllocCount();
+}
+
 bool
 CompileZone::canNurseryAllocateStrings()
 {
@@ -310,6 +322,9 @@ JitCompileOptions::JitCompileOptions()
   : cloneSingletons_(false),
     profilerSlowAssertionsEnabled_(false),
     offThreadCompilationAvailable_(false)
+#ifdef ENABLE_WASM_GC
+    , wasmGcEnabled_(false)
+#endif
 {
 }
 
@@ -319,4 +334,7 @@ JitCompileOptions::JitCompileOptions(JSContext* cx)
     profilerSlowAssertionsEnabled_ = cx->runtime()->geckoProfiler().enabled() &&
                                      cx->runtime()->geckoProfiler().slowAssertionsEnabled();
     offThreadCompilationAvailable_ = OffThreadCompilationAvailable(cx);
+#ifdef ENABLE_WASM_GC
+    wasmGcEnabled_ = cx->options().wasmGc();
+#endif
 }

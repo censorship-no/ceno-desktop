@@ -94,7 +94,8 @@ const DEFAULT_THEME_ID = "default-theme@mozilla.org";
 const PENDING_INSTALL_METADATA =
     ["syncGUID", "targetApplications", "userDisabled", "softDisabled",
      "existingAddonID", "sourceURI", "releaseNotesURI", "installDate",
-     "updateDate", "applyBackgroundUpdates", "compatibilityOverrides"];
+     "updateDate", "applyBackgroundUpdates", "compatibilityOverrides",
+     "installTelemetryInfo"];
 
 const COMPATIBLE_BY_DEFAULT_TYPES = {
   extension: true,
@@ -114,9 +115,9 @@ const PROP_JSON_FIELDS = ["id", "syncGUID", "version", "type",
                           "strictCompatibility", "locales", "targetApplications",
                           "targetPlatforms", "signedState",
                           "seen", "dependencies", "hasEmbeddedWebExtension",
-                          "userPermissions", "icons", "iconURL", "icon64URL",
+                          "userPermissions", "icons", "iconURL",
                           "blocklistState", "blocklistURL", "startupData",
-                          "previewImage"];
+                          "previewImage", "hidden", "installTelemetryInfo"];
 
 const LEGACY_TYPES = new Set([
   "extension",
@@ -288,6 +289,8 @@ class AddonInternal {
     this.seen = true;
     this.skinnable = false;
     this.startupData = null;
+    this._hidden = false;
+    this.installTelemetryInfo = null;
 
     this.inDatabase = false;
 
@@ -344,7 +347,7 @@ class AddonInternal {
      */
     const locales = [].concat(...this.locales.map(loc => loc.locales));
 
-    let requestedLocales = Services.locale.getRequestedLocales();
+    let requestedLocales = Services.locale.requestedLocales;
 
     /**
      * If en-US is not in the list, add it as the last fallback.
@@ -416,7 +419,12 @@ class AddonInternal {
   }
 
   get hidden() {
-    return this.location.isSystem;
+    return this.location.isSystem ||
+           (this._hidden && this.signedState == AddonManager.SIGNEDSTATE_PRIVILEGED);
+  }
+
+  set hidden(val) {
+    this._hidden = val;
   }
 
   get disabled() {
@@ -526,13 +534,8 @@ class AddonInternal {
   }
 
   async updateBlocklistState(options = {}) {
-    let {applySoftBlock = true, oldAddon = null, updateDatabase = true} = options;
+    let {applySoftBlock = true, updateDatabase = true} = options;
 
-    if (oldAddon) {
-      this.userDisabled = oldAddon.userDisabled;
-      this.softDisabled = oldAddon.softDisabled;
-      this.blocklistState = oldAddon.blocklistState;
-    }
     let oldState = this.blocklistState;
 
     let entry = await this.findBlocklistEntry();
@@ -571,16 +574,16 @@ class AddonInternal {
     }
   }
 
-  async setUserDisabled(val) {
+  async setUserDisabled(val, allowSystemAddons = false) {
     if (val == (this.userDisabled || this.softDisabled)) {
       return;
     }
 
     if (this.inDatabase) {
-      // hidden and system add-ons should not be user disabled,
-      // as there is no UI to re-enable them.
-      if (this.hidden) {
-        throw new Error(`Cannot disable hidden add-on ${this.id}`);
+      // System add-ons should not be user disabled, as there is no UI to
+      // re-enable them.
+      if (this.location.isSystem && !allowSystemAddons) {
+        throw new Error(`Cannot disable system add-on ${this.id}`);
       }
       await XPIDatabase.updateAddonDisabledState(this, val);
     } else {
@@ -677,6 +680,14 @@ class AddonInternal {
 
     return permissions;
   }
+
+  propagateDisabledState(oldAddon) {
+    if (oldAddon) {
+      this.userDisabled = oldAddon.userDisabled;
+      this.softDisabled = oldAddon.softDisabled;
+      this.blocklistState = oldAddon.blocklistState;
+    }
+  }
 }
 
 /**
@@ -706,6 +717,21 @@ AddonWrapper = class {
   markAsSeen() {
     addonFor(this).seen = true;
     XPIDatabase.saveChanges();
+  }
+
+  get installTelemetryInfo() {
+    const addon = addonFor(this);
+    if (!addon.installTelemetryInfo && addon.location) {
+      if (addon.location.isSystem) {
+        return {source: "system-addon"};
+      }
+
+      if (addon.location.isTemporary) {
+        return {source: "temporary-addon"};
+      }
+    }
+
+    return addon.installTelemetryInfo;
   }
 
   get type() {
@@ -781,10 +807,6 @@ AddonWrapper = class {
     return AddonManager.getPreferredIconURL(this, 48);
   }
 
-  get icon64URL() {
-    return AddonManager.getPreferredIconURL(this, 64);
-  }
-
   get icons() {
     let addon = addonFor(this);
     let icons = {};
@@ -805,10 +827,6 @@ AddonWrapper = class {
     if (canUseIconURLs && addon.iconURL) {
       icons[32] = addon.iconURL;
       icons[48] = addon.iconURL;
-    }
-
-    if (canUseIconURLs && addon.icon64URL) {
-      icons[64] = addon.icon64URL;
     }
 
     Object.freeze(icons);
@@ -848,7 +866,7 @@ AddonWrapper = class {
       return val;
 
     XPIDatabase.setAddonProperties(addon, {
-      applyBackgroundUpdates: val
+      applyBackgroundUpdates: val,
     });
     AddonManagerPrivate.callAddonListeners("onPropertyChanged", this, ["applyBackgroundUpdates"]);
 
@@ -957,12 +975,14 @@ AddonWrapper = class {
     return addon.softDisabled || addon.userDisabled;
   }
 
-  enable() {
-    return addonFor(this).setUserDisabled(false);
+  enable(options = {}) {
+    const {allowSystemAddons = false} = options;
+    return addonFor(this).setUserDisabled(false, allowSystemAddons);
   }
 
-  disable() {
-    return addonFor(this).setUserDisabled(true);
+  disable(options = {}) {
+    const {allowSystemAddons = false} = options;
+    return addonFor(this).setUserDisabled(true, allowSystemAddons);
   }
 
   set softDisabled(val) {
@@ -1557,7 +1577,7 @@ this.XPIDatabase = {
 
       let changes = {
         enabled: [],
-        disabled: []
+        disabled: [],
       };
 
       for (let addon of addons) {
@@ -2184,7 +2204,7 @@ this.XPIDatabase = {
     this.setAddonProperties(aAddon, {
       userDisabled: aUserDisabled,
       appDisabled,
-      softDisabled: aSoftDisabled
+      softDisabled: aSoftDisabled,
     });
 
     let wrapper = aAddon.wrapper;
@@ -2424,7 +2444,18 @@ this.XPIDatabaseReconcile = {
     // appDisabled depends on whether the add-on is a foreignInstall so update
     aNewAddon.appDisabled = !XPIDatabase.isUsableAddon(aNewAddon);
 
+    if (aLocation.isSystem) {
+      const pref = `extensions.${aId.split("@")[0]}.enabled`;
+      aNewAddon.userDisabled = !Services.prefs.getBoolPref(pref, true);
+    }
+
     if (isDetectedInstall && aNewAddon.foreignInstall) {
+      // Add the installation source info for the sideloaded extension.
+      aNewAddon.installTelemetryInfo = {
+        source: aLocation.name,
+        method: "sideload",
+      };
+
       // If the add-on is a foreign install and is in a scope where add-ons
       // that were dropped in should default to disabled then disable it
       let disablingScopes = Services.prefs.getIntPref(PREF_EM_AUTO_DISABLED_SCOPES, 0);
@@ -2706,7 +2737,7 @@ this.XPIDatabaseReconcile = {
       for (let [id, oldAddon] of dbAddons) {
         // Check if the add-on is still installed
         let xpiState = location.get(id);
-        if (xpiState) {
+        if (xpiState && !xpiState.missing) {
           let newAddon = this.updateExistingAddon(oldAddon, xpiState,
                                                   findManifest(location, id),
                                                   aUpdateCompatibility, aSchemaChange);
@@ -2724,7 +2755,7 @@ this.XPIDatabaseReconcile = {
       }
 
       for (let [id, xpiState] of location) {
-        if (locationAddons.has(id))
+        if (locationAddons.has(id) || xpiState.missing)
           continue;
         let newAddon = findManifest(location, id);
         let addon = this.addMetadata(location, id, xpiState, newAddon,

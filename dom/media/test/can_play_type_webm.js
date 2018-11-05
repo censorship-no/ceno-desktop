@@ -35,21 +35,9 @@ async function check_webm(v, enabled) {
     return pref;
   }
 
-  function isWindows32() {
-    return navigator.userAgent.includes("Windows") &&
-           !navigator.userAgent.includes("Win64");
-  }
-
-  function isAndroid() {
-    return navigator.userAgent.includes("Android");
-  }
-
-  const haveAv1 = getPref("media.av1.enabled");
-  check("video/webm; codecs=\"av1\"", haveAv1 ? "probably" : "");
-
   await SpecialPowers.pushPrefEnv({"set": [["media.av1.enabled", true]]});
-  // AV1 is disabled on Windows 32 bits (bug 1475564) and Android (bug 1368843)
-  check("video/webm; codecs=\"av1\"", (isWindows32() || isAndroid()) ? "" : "probably");
+  // AV1 is disabled on Windows 32 bits (bug 1475564)
+  check("video/webm; codecs=\"av1\"", isWindows32() ? "" : "probably");
 
   await SpecialPowers.pushPrefEnv({"set": [["media.av1.enabled", false]]});
   check("video/webm; codecs=\"av1\"", "");

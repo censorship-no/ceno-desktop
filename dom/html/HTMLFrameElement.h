@@ -19,7 +19,7 @@ class HTMLFrameElement final : public nsGenericHTMLFrameElement
 public:
   using nsGenericHTMLFrameElement::SwapFrameLoaders;
 
-  explicit HTMLFrameElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+  explicit HTMLFrameElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                             FromParser aFromParser = NOT_FROM_PARSER);
 
   // nsISupports
@@ -34,8 +34,7 @@ public:
                               const nsAString& aValue,
                               nsIPrincipal* aMaybeScriptedPrincipal,
                               nsAttrValue& aResult) override;
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL API
   void GetFrameBorder(DOMString& aFrameBorder) const
@@ -112,6 +111,8 @@ public:
 
   using nsGenericHTMLFrameElement::GetContentDocument;
   using nsGenericHTMLFrameElement::GetContentWindow;
+
+  NS_FORWARD_NSIFRAMELOADEROWNER(nsGenericHTMLFrameElement::)
 
 protected:
   virtual ~HTMLFrameElement();

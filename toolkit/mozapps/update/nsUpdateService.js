@@ -15,7 +15,6 @@ ChromeUtils.import("resource://gre/modules/AppConstants.jsm", this);
 XPCOMUtils.defineLazyGlobalGetters(this, ["DOMParser", "XMLHttpRequest"]);
 
 const UPDATESERVICE_CID = Components.ID("{B3C290A6-3943-4B89-8BBE-C01EB7B3B311}");
-const UPDATESERVICE_CONTRACTID = "@mozilla.org/updates/update-service;1";
 
 const PREF_APP_UPDATE_ALTWINDOWTYPE        = "app.update.altwindowtype";
 const PREF_APP_UPDATE_AUTO                 = "app.update.auto";
@@ -190,6 +189,9 @@ const APPID_TO_TOPIC = {
 // A var is used for the delay so tests can set a smaller value.
 var gSaveUpdateXMLDelay = 2000;
 var gUpdateMutexHandle = null;
+// The permissions of the update directory should be fixed no more than once per
+// session
+var gUpdateDirPermissionFixAttempted = false;
 
 ChromeUtils.defineModuleGetter(this, "UpdateUtils",
                                "resource://gre/modules/UpdateUtils.jsm");
@@ -661,7 +663,10 @@ function readStatusFile(dir) {
 function writeStatusFile(dir, state) {
   let statusFile = dir.clone();
   statusFile.append(FILE_UPDATE_STATUS);
-  writeStringToFile(statusFile, state);
+  let success = writeStringToFile(statusFile, state);
+  if (!success) {
+    handleCriticalWriteFailure(statusFile.path);
+  }
 }
 
 /**
@@ -682,7 +687,10 @@ function writeStatusFile(dir, state) {
 function writeVersionFile(dir, version) {
   let versionFile = dir.clone();
   versionFile.append(FILE_UPDATE_VERSION);
-  writeStringToFile(versionFile, version);
+  let success = writeStringToFile(versionFile, version);
+  if (!success) {
+    handleCriticalWriteFailure(versionFile.path);
+  }
 }
 
 /**
@@ -812,42 +820,22 @@ function cleanupActiveUpdate() {
 }
 
 /**
- * An enumeration of items in a JS array.
- * @constructor
- */
-function ArrayEnumerator(aItems) {
-  this._index = 0;
-  if (aItems) {
-    for (var i = 0; i < aItems.length; ++i) {
-      if (!aItems[i])
-        aItems.splice(i, 1);
-    }
-  }
-  this._contents = aItems;
-}
-
-ArrayEnumerator.prototype = {
-  _index: 0,
-  _contents: [],
-
-  hasMoreElements: function ArrayEnumerator_hasMoreElements() {
-    return this._index < this._contents.length;
-  },
-
-  getNext: function ArrayEnumerator_getNext() {
-    return this._contents[this._index++];
-  }
-};
-
-/**
  * Writes a string of text to a file.  A newline will be appended to the data
  * written to the file.  This function only works with ASCII text.
+ * @param file An nsIFile indicating what file to write to.
+ * @param text A string containing the text to write to the file.
+ * @return true on success, false on failure.
  */
 function writeStringToFile(file, text) {
-  let fos = FileUtils.openSafeFileOutputStream(file);
-  text += "\n";
-  fos.write(text, text.length);
-  FileUtils.closeSafeFileOutputStream(fos);
+  try {
+    let fos = FileUtils.openSafeFileOutputStream(file);
+    text += "\n";
+    fos.write(text, text.length);
+    FileUtils.closeSafeFileOutputStream(fos);
+  } catch (e) {
+    return false;
+  }
+  return true;
 }
 
 function readStringFromInputStream(inputStream) {
@@ -1055,6 +1043,8 @@ function pingStateAndStatusCodes(aUpdate, aStartup, aStatus) {
       case STATE_PENDING_ELEVATE:
         stateCode = 13;
         break;
+      // Note: Do not use stateCode 14 here. It is defined in
+      // UpdateTelemetry.jsm
       default:
         stateCode = 1;
     }
@@ -1068,6 +1058,101 @@ function pingStateAndStatusCodes(aUpdate, aStartup, aStatus) {
     }
   }
   AUSTLMY.pingStateCode(suffix, stateCode);
+}
+
+/**
+ * This function should be called whenever we fail to write to a file required
+ * for update to function. This function will, if possible, attempt to fix the
+ * file permissions. If the file permissions cannot be fixed, the user will be
+ * prompted to reinstall.
+ *
+ * All functionality happens asynchronously.
+ *
+ * Returns false if the permission-fixing process cannot be started. Since this
+ * is asynchronous, a true return value does not mean that the permissions were
+ * actually fixed.
+ *
+ * @param path A string representing the path that could not be written. This
+ *             value will only be used for logging purposes.
+ */
+function handleCriticalWriteFailure(path) {
+  LOG("Unable to write to critical update file: " + path);
+
+  let updateManager = Cc["@mozilla.org/updates/update-manager;1"].
+                      getService(Ci.nsIUpdateManager);
+
+  let update = updateManager.activeUpdate;
+  if (update) {
+    let patch = update.selectedPatch;
+    let patchType = AUSTLMY.PATCH_UNKNOWN;
+    if (patch.type == "complete") {
+      patchType = AUSTLMY.PATCH_COMPLETE;
+    } else if (patch.type == "partial") {
+      patchType = AUSTLMY.PATCH_PARTIAL;
+    }
+    if (update.state == STATE_DOWNLOADING) {
+      if (!patch.downloadWriteFailureTelemetrySent) {
+        AUSTLMY.pingDownloadCode(patchType, AUSTLMY.DWNLD_ERR_WRITE_FAILURE);
+        patch.downloadWriteFailureTelemetrySent = true;
+      }
+    } else if (!patch.applyWriteFailureTelemetrySent) {
+      // It's not ideal to hardcode AUSTLMY.STARTUP below (it could be
+      // AUSTLMY.STAGE). But staging is not used anymore and neither value
+      // really makes sense for this code. For the other codes it indicates when
+      // that code was read from the update status file, but this code was never
+      // read from the update status file.
+      let suffix = patchType + "_" + AUSTLMY.STARTUP;
+      AUSTLMY.pingStateCode(suffix, AUSTLMY.STATE_WRITE_FAILURE);
+      patch.applyWriteFailureTelemetrySent = true;
+    }
+  } else {
+    let updateServiceInstance = UpdateServiceFactory.createInstance();
+    let request = updateServiceInstance.backgroundChecker._request;
+    if (!request.checkWriteFailureTelemetrySent) {
+      let pingSuffix = updateServiceInstance._pingSuffix;
+      AUSTLMY.pingCheckCode(pingSuffix, AUSTLMY.CHK_ERR_WRITE_FAILURE);
+      request.checkWriteFailureTelemetrySent = true;
+    }
+  }
+
+  if (!gUpdateDirPermissionFixAttempted) {
+    // Currently, we only have a mechanism for fixing update directory permissions
+    // on Windows.
+    if (AppConstants.platform != "win") {
+      LOG("There is currently no implementation for fixing update directory " +
+          "permissions on this platform");
+      return false;
+    }
+    LOG("Attempting to fix update directory permissions");
+    try {
+      Cc["@mozilla.org/updates/update-processor;1"].
+        createInstance(Ci.nsIUpdateProcessor).
+        fixUpdateDirectoryPerms(shouldUseService());
+    } catch (e) {
+      LOG("Attempt to fix update directory permissions failed. Exception: " + e);
+      return false;
+    }
+    gUpdateDirPermissionFixAttempted = true;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * This is a convenience function for calling the above function depending on a
+ * boolean success value.
+ *
+ * @param wroteSuccessfully A boolean representing whether or not the write was
+ *                          successful. When this is true, this function does
+ *                          nothing.
+ * @param path A string representing the path to the file that the operation
+ *             attempted to write to. This value is only used for logging
+ *             purposes.
+ */
+function handleCriticalWriteResult(wroteSuccessfully, path) {
+  if (!wroteSuccessfully) {
+    handleCriticalWriteFailure(path);
+  }
 }
 
 /**
@@ -1155,10 +1240,16 @@ UpdatePatch.prototype = {
    * See nsIPropertyBag.idl
    */
   get enumerator() {
-    var properties = [];
-    for (var p in this._properties)
-      properties.push(this._properties[p].data);
-    return new ArrayEnumerator(properties);
+    return this.enumerate();
+  },
+
+  * enumerate() {
+    for (var p in this._properties) {
+      let prop = this.properties[p].data;
+      if (prop) {
+        yield prop;
+      }
+    }
   },
 
   /**
@@ -1196,7 +1287,7 @@ UpdatePatch.prototype = {
 
   QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdatePatch,
                                           Ci.nsIPropertyBag,
-                                          Ci.nsIWritablePropertyBag])
+                                          Ci.nsIWritablePropertyBag]),
 };
 
 /**
@@ -1476,11 +1567,16 @@ Update.prototype = {
    * See nsIPropertyBag.idl
    */
   get enumerator() {
-    var properties = [];
-    for (let p in this._properties) {
-      properties.push(this._properties[p].data);
+    return this.enumerate();
+  },
+
+  * enumerate() {
+    for (var p in this._properties) {
+      let prop = this.properties[p].data;
+      if (prop) {
+        yield prop;
+      }
     }
-    return new ArrayEnumerator(properties);
   },
 
   /**
@@ -1497,7 +1593,7 @@ Update.prototype = {
 
   QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdate,
                                           Ci.nsIPropertyBag,
-                                          Ci.nsIWritablePropertyBag])
+                                          Ci.nsIWritablePropertyBag]),
 };
 
 const UpdateServiceFactory = {
@@ -1507,7 +1603,7 @@ const UpdateServiceFactory = {
       throw Cr.NS_ERROR_NO_AGGREGATION;
     return this._instance == null ? this._instance = new UpdateService() :
                                     this._instance;
-  }
+  },
 };
 
 /**
@@ -2466,18 +2562,12 @@ UpdateService.prototype = {
   },
 
   classID: UPDATESERVICE_CID,
-  classInfo: XPCOMUtils.generateCI({classID: UPDATESERVICE_CID,
-                                    contractID: UPDATESERVICE_CONTRACTID,
-                                    interfaces: [Ci.nsIApplicationUpdateService,
-                                                 Ci.nsITimerCallback,
-                                                 Ci.nsIObserver],
-                                    flags: Ci.nsIClassInfo.SINGLETON}),
 
   _xpcom_factory: UpdateServiceFactory,
   QueryInterface: ChromeUtils.generateQI([Ci.nsIApplicationUpdateService,
                                           Ci.nsIUpdateCheckListener,
                                           Ci.nsITimerCallback,
-                                          Ci.nsIObserver])
+                                          Ci.nsIObserver]),
 };
 
 /**
@@ -2555,7 +2645,7 @@ UpdateManager.prototype = {
         value: updates,
         writable: true,
         configurable: true,
-        enumerable: true
+        enumerable: true,
       });
     }
   },
@@ -2575,9 +2665,15 @@ UpdateManager.prototype = {
       return updates;
     }
 
-    var fileStream = Cc["@mozilla.org/network/file-input-stream;1"].
+    let fileStream = Cc["@mozilla.org/network/file-input-stream;1"].
                      createInstance(Ci.nsIFileInputStream);
-    fileStream.init(file, FileUtils.MODE_RDONLY, FileUtils.PERMS_FILE, 0);
+    try {
+      fileStream.init(file, FileUtils.MODE_RDONLY, FileUtils.PERMS_FILE, 0);
+    } catch (e) {
+      LOG("UpdateManager:_loadXMLFileIntoArray - error initializing file " +
+          "stream. Exception: " + e);
+      return updates;
+    }
     try {
       var parser = new DOMParser();
       var doc = parser.parseFromStream(fileStream, "UTF-8",
@@ -2630,7 +2726,7 @@ UpdateManager.prototype = {
       value: updates,
       writable: true,
       configurable: true,
-      enumerable: true
+      enumerable: true,
     });
     return this._updates;
   },
@@ -2674,14 +2770,28 @@ UpdateManager.prototype = {
    *          An array of nsIUpdate objects
    * @param   fileName
    *          The file name in the updates directory to write to.
+   * @return  true on success, false on error
    */
   _writeUpdatesToXMLFile: async function UM__writeUpdatesToXMLFile(updates, fileName) {
-    let file = getUpdateFile([fileName]);
+    let file;
+    try {
+      file = getUpdateFile([fileName]);
+    } catch (e) {
+      LOG("UpdateManager:_writeUpdatesToXMLFile - Unable to get XML file - " +
+          "Exception: " + e);
+      return false;
+    }
     if (updates.length == 0) {
       LOG("UpdateManager:_writeUpdatesToXMLFile - no updates to write. " +
           "removing file: " + file.path);
-      await OS.File.remove(file.path, {ignoreAbsent: true});
-      return;
+      try {
+        await OS.File.remove(file.path, {ignoreAbsent: true});
+      } catch (e) {
+        LOG("UpdateManager:_writeUpdatesToXMLFile - Delete file exception: " +
+            e);
+        return false;
+      }
+      return true;
     }
 
     const EMPTY_UPDATES_DOCUMENT_OPEN = "<?xml version=\"1.0\"?><updates xmlns=\"http://www.mozilla.org/2005/app-update\">";
@@ -2701,7 +2811,9 @@ UpdateManager.prototype = {
       await OS.File.setPermissions(file.path, {unixMode: FileUtils.PERMS_FILE});
     } catch (e) {
       LOG("UpdateManager:_writeUpdatesToXMLFile - Exception: " + e);
+      return false;
     }
+    return true;
   },
 
   _updatesXMLSaver: null,
@@ -2737,13 +2849,19 @@ UpdateManager.prototype = {
     // the lifetime of an active update and the file should always be updated
     // when saveUpdates is called.
     this._writeUpdatesToXMLFile(this._activeUpdate ? [this._activeUpdate] : [],
-                                FILE_ACTIVE_UPDATE_XML);
+                                FILE_ACTIVE_UPDATE_XML).then(
+      wroteSuccessfully => handleCriticalWriteResult(wroteSuccessfully,
+                                                     FILE_ACTIVE_UPDATE_XML)
+    );
     // The update history stored in the updates.xml file should only need to be
     // updated when an active update has been added to it in which case
     // |_updatesDirty| will be true.
     if (this._updatesDirty) {
       this._updatesDirty = false;
-      this._writeUpdatesToXMLFile(this._updates, FILE_UPDATES_XML);
+      this._writeUpdatesToXMLFile(this._updates, FILE_UPDATES_XML).then(
+        wroteSuccessfully => handleCriticalWriteResult(wroteSuccessfully,
+                                                       FILE_UPDATES_XML)
+      );
     }
   },
 
@@ -2847,7 +2965,7 @@ UpdateManager.prototype = {
   },
 
   classID: Components.ID("{093C2356-4843-4C65-8709-D7DBCBBE7DFB}"),
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdateManager, Ci.nsIObserver])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdateManager, Ci.nsIObserver]),
 };
 
 /**
@@ -3070,6 +3188,22 @@ Checker.prototype = {
   onLoad: function UC_onLoad(event) {
     LOG("Checker:onLoad - request completed downloading document");
     Services.prefs.clearUserPref("security.pki.mitm_canary_issuer");
+    // Check whether there is a mitm, i.e. check whether the root cert is
+    // built-in or not.
+    try {
+      let sslStatus = request.channel.QueryInterface(Ci.nsIRequest)
+                        .securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
+      if (sslStatus && sslStatus.succeededCertChain) {
+        let rootCert = null;
+        for (rootCert of XPCOMUtils.IterSimpleEnumerator(sslStatus.succeededCertChain.getEnumerator(),
+                                                         Ci.nsIX509Cert));
+        if (rootCert) {
+          Services.prefs.setStringPref("security.pki.mitm_detected", !rootCert.isBuiltInRoot);
+        }
+      }
+    } catch (e) {
+      LOG("Checker:onLoad - Getting sslStatus failed.");
+    }
 
     try {
       // Analyze the resulting DOM and determine the set of updates.
@@ -3115,15 +3249,13 @@ Checker.prototype = {
 
     // Set MitM pref.
     try {
-      var sslStatus = request.channel.QueryInterface(Ci.nsIRequest)
-                        .securityInfo.QueryInterface(Ci.nsITransportSecurityInfo)
-                        .SSLStatus.QueryInterface(Ci.nsISSLStatus);
-      if (sslStatus && sslStatus.serverCert && sslStatus.serverCert.issuerName) {
+      var secInfo = request.channel.securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
+      if (secInfo.serverCert && secInfo.serverCert.issuerName) {
         Services.prefs.setStringPref("security.pki.mitm_canary_issuer",
-                                     sslStatus.serverCert.issuerName);
+                                     secInfo.serverCert.issuerName);
       }
     } catch (e) {
-      LOG("Checker:onError - Getting sslStatus failed.");
+      LOG("Checker:onError - Getting secInfo failed.");
     }
 
     // If we can't find an error string specific to this status code,
@@ -3155,7 +3287,7 @@ Checker.prototype = {
   },
 
   classID: Components.ID("{898CDC9B-E43F-422F-9CC4-2F6291B415A3}"),
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdateChecker])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdateChecker]),
 };
 
 /**
@@ -3535,6 +3667,7 @@ Downloader.prototype = {
    * @param   status
    *          Status code containing the reason for the cessation.
    */
+   /* eslint-disable-next-line complexity */
   onStopRequest: function Downloader_onStopRequest(request, context, status) {
     if (request instanceof Ci.nsIIncrementalDownload)
       LOG("Downloader:onStopRequest - original URI spec: " + request.URI.spec +
@@ -3555,6 +3688,7 @@ Downloader.prototype = {
                                             DEFAULT_SOCKET_MAX_ERRORS);
     // Prevent the preference from setting a value greater than 20.
     maxFail = Math.min(maxFail, 20);
+    let permissionFixingInProgress = false;
     LOG("Downloader:onStopRequest - status: " + status + ", " +
         "current fail: " + this.updateService._consecutiveSocketErrors + ", " +
         "max fail: " + maxFail + ", " +
@@ -3629,7 +3763,18 @@ Downloader.prototype = {
       deleteActiveUpdate = false;
     } else if (status != Cr.NS_BINDING_ABORTED &&
                status != Cr.NS_ERROR_ABORT) {
-      LOG("Downloader:onStopRequest - non-verification failure");
+      if (status == Cr.NS_ERROR_FILE_ACCESS_DENIED ||
+          status == Cr.NS_ERROR_FILE_READ_ONLY) {
+        LOG("Downloader:onStopRequest - permission error");
+        // This will either fix the permissions, or asynchronously show the
+        // reinstall prompt if it cannot fix them.
+        let patchFile = getUpdatesDir().clone();
+        patchFile.append(FILE_UPDATE_MAR);
+        permissionFixingInProgress = handleCriticalWriteFailure(patchFile.path);
+      } else {
+        LOG("Downloader:onStopRequest - non-verification failure");
+      }
+
       let dwnldCode = AUSTLMY.DWNLD_ERR_BINDING_ABORTED;
       if (status == Cr.NS_ERROR_ABORT) {
         dwnldCode = AUSTLMY.DWNLD_ERR_ABORT;
@@ -3692,7 +3837,7 @@ Downloader.prototype = {
         }
       }
 
-      if (allFailed) {
+      if (allFailed && !permissionFixingInProgress) {
         if (Services.prefs.getBoolPref(PREF_APP_UPDATE_DOORHANGER, false)) {
           let downloadAttempts = Services.prefs.getIntPref(PREF_APP_UPDATE_DOWNLOAD_ATTEMPTS, 0);
           downloadAttempts++;
@@ -3723,7 +3868,8 @@ Downloader.prototype = {
                          createInstance(Ci.nsIUpdatePrompt);
           prompter.showUpdateError(this._update);
         }
-
+      }
+      if (allFailed) {
         // Prevent leaking the update object (bug 454964).
         this._update = null;
       }
@@ -3800,7 +3946,7 @@ Downloader.prototype = {
 
   QueryInterface: ChromeUtils.generateQI([Ci.nsIRequestObserver,
                                           Ci.nsIProgressEventSink,
-                                          Ci.nsIInterfaceRequestor])
+                                          Ci.nsIInterfaceRequestor]),
 };
 
 /**
@@ -3976,7 +4122,7 @@ UpdatePrompt.prototype = {
             this.service.removeObserver(this, "quit-application");
             break;
         }
-      }
+      },
     };
 
     // bug 534090 - show the UI for update available notifications when the
@@ -4048,7 +4194,7 @@ UpdatePrompt.prototype = {
               Services.obs.removeObserver(this, "quit-application");
               break;
           }
-        }
+        },
       };
       idleService.addIdleObserver(observer, IDLE_TIME);
       Services.obs.addObserver(observer, "quit-application");
@@ -4094,7 +4240,7 @@ UpdatePrompt.prototype = {
   classDescription: "Update Prompt",
   contractID: "@mozilla.org/updates/update-prompt;1",
   classID: Components.ID("{27ABA825-35B5-4018-9FDD-F99250A0E722}"),
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdatePrompt])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIUpdatePrompt]),
 };
 
 var components = [UpdateService, Checker, UpdatePrompt, UpdateManager];

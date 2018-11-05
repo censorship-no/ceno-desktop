@@ -15,12 +15,15 @@
 #include "frontend/ParseContext.h"
 #include "frontend/Parser.h"
 #include "fuzz-tests/tests.h"
+#include "js/CompileOptions.h"
 #include "vm/Interpreter.h"
 
 #include "vm/JSContext-inl.h"
 
 using UsedNameTracker = js::frontend::UsedNameTracker;
 using namespace js;
+
+using JS::CompileOptions;
 
 // These are defined and pre-initialized by the harness (in tests.cpp).
 extern JS::PersistentRootedObject gGlobal;
@@ -33,6 +36,8 @@ testBinASTReaderInit(int *argc, char ***argv) {
 
 static int
 testBinASTReaderFuzz(const uint8_t* buf, size_t size) {
+    using namespace js::frontend;
+
     auto gcGuard = mozilla::MakeScopeExit([&] {
         JS::PrepareForFullGC(gCx);
         JS::NonIncrementalGC(gCx, GC_NORMAL, JS::gcreason::API);
@@ -50,16 +55,22 @@ testBinASTReaderFuzz(const uint8_t* buf, size_t size) {
         return 0;
     }
 
-    js::frontend::UsedNameTracker binUsedNames(gCx);
-    if (!binUsedNames.init()) {
+    UsedNameTracker binUsedNames(gCx);
+
+    Directives directives(false);
+    GlobalSharedContext globalsc(gCx, ScopeKind::Global, directives, false);
+
+    RootedScriptSourceObject sourceObj(gCx, frontend::CreateScriptSourceObject(gCx, options,
+                                               mozilla::Nothing()));
+    if (!sourceObj) {
         ReportOutOfMemory(gCx);
         return 0;
     }
-
-    js::frontend::BinASTParser<js::frontend::BinTokenReaderTester> reader(gCx, gCx->tempLifoAlloc(), binUsedNames, options);
+    BinASTParser<js::frontend::BinTokenReaderMultipart> reader(gCx, gCx->tempLifoAlloc(),
+                                                               binUsedNames, options, sourceObj);
 
     // Will be deallocated once `reader` goes out of scope.
-    auto binParsed = reader.parse(binSource);
+    auto binParsed = reader.parse(&globalsc, binSource);
     RootedValue binExn(gCx);
     if (binParsed.isErr()) {
         js::GetAndClearException(gCx, &binExn);

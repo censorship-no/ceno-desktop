@@ -11,6 +11,8 @@ import shutil
 import subprocess
 import zipfile
 
+from zipfile import ZipFile
+
 import mozpack.path as mozpath
 
 from mozfile import TemporaryDirectory
@@ -413,12 +415,12 @@ class MachCommands(MachCommandBase):
 
         return 0
 
-    @SubCommand('android', 'archive-geckoview-coverage-artifacts',
-                """Archive compiled geckoview classfiles to be used later in generating code
+    @SubCommand('android', 'archive-coverage-artifacts',
+                """Archive compiled classfiles to be used later in generating code
         coverage reports. See https://firefox-source-docs.mozilla.org/mobile/android/fennec/testcoverage.html""")  # NOQA: E501
     @CommandArgument('args', nargs=argparse.REMAINDER)
-    def android_archive_geckoview_classfiles(self, args):
-        self.gradle(self.substs['GRADLE_ANDROID_ARCHIVE_GECKOVIEW_COVERAGE_ARTIFACTS_TASKS'] +
+    def android_archive_classfiles(self, args):
+        self.gradle(self.substs['GRADLE_ANDROID_ARCHIVE_COVERAGE_ARTIFACTS_TASKS'] +
                     ["--continue"] + args, verbose=True)
 
         return 0
@@ -432,7 +434,37 @@ class MachCommands(MachCommandBase):
             self.substs['GRADLE_ANDROID_ARCHIVE_GECKOVIEW_TASKS'] + ["--continue"] + args,
             verbose=True)
 
-        return ret
+        if ret != 0:
+            return ret
+
+        # The zip archive is passed along in CI to ship geckoview onto a maven repo
+        _craft_maven_zip_archive(self.topobjdir)
+
+        return 0
+
+    @SubCommand('android', 'build-geckoview_example',
+                """Build geckoview_example """)
+    @CommandArgument('args', nargs=argparse.REMAINDER)
+    def android_build_geckoview_example(self, args):
+        self.gradle(self.substs['GRADLE_ANDROID_BUILD_GECKOVIEW_EXAMPLE_TASKS'] + args,
+                    verbose=True)
+
+        print('Execute `mach android install-geckoview_example` '
+              'to push the geckoview_example and test APKs to a device.')
+
+        return 0
+
+    @SubCommand('android', 'install-geckoview_example',
+                """Install geckoview_example """)
+    @CommandArgument('args', nargs=argparse.REMAINDER)
+    def android_install_geckoview_example(self, args):
+        self.gradle(self.substs['GRADLE_ANDROID_INSTALL_GECKOVIEW_EXAMPLE_TASKS'] + args,
+                    verbose=True)
+
+        print('Execute `mach android build-geckoview_example` '
+              'to just build the geckoview_example and test APKs.')
+
+        return 0
 
     @SubCommand('android', 'geckoview-docs',
                 """Create GeckoView javadoc and optionally upload to Github""")
@@ -580,6 +612,26 @@ class MachCommands(MachCommandBase):
         pass
 
 
+def _get_maven_archive_abs_and_relative_paths(maven_folder):
+    for subdir, _, files in os.walk(maven_folder):
+        for file in files:
+            full_path = os.path.join(subdir, file)
+            relative_path = os.path.relpath(full_path, maven_folder)
+
+            # maven-metadata is intended to be generated on the real maven server
+            if 'maven-metadata.xml' not in relative_path:
+                yield full_path, relative_path
+
+
+def _craft_maven_zip_archive(topobjdir):
+    geckoview_folder = os.path.join(topobjdir, 'gradle/build/mobile/android/geckoview')
+    maven_folder = os.path.join(geckoview_folder, 'maven')
+
+    with ZipFile(os.path.join(geckoview_folder, 'target.maven.zip'), 'w') as target_zip:
+        for abs, rel in _get_maven_archive_abs_and_relative_paths(maven_folder):
+            target_zip.write(abs, arcname=rel)
+
+
 @CommandProvider
 class AndroidEmulatorCommands(MachCommandBase):
     """
@@ -659,47 +711,4 @@ class AndroidEmulatorCommands(MachCommandBase):
             else:
                 self.log(logging.WARN, "emulator", {},
                          "Unable to retrieve Android emulator return code.")
-        return 0
-
-
-@CommandProvider
-class AutophoneCommands(MachCommandBase):
-    """
-       Run autophone, https://wiki.mozilla.org/Auto-tools/Projects/Autophone.
-
-       If necessary, autophone is cloned from github, installed, and configured.
-    """
-    @Command('autophone', category='devenv',
-             conditions=[],
-             description='Run autophone.')
-    @CommandArgument('--clean', action='store_true',
-                     help='Delete an existing autophone installation.')
-    @CommandArgument('--verbose', action='store_true',
-                     help='Log informative status messages.')
-    def autophone(self, clean=False, verbose=False):
-        import platform
-        from mozrunner.devices.autophone import AutophoneRunner
-
-        if platform.system() == "Windows":
-            # Autophone is normally run on Linux or OSX.
-            self.log(logging.ERROR, "autophone", {},
-                     "This mach command is not supported on Windows!")
-            return -1
-
-        runner = AutophoneRunner(self, verbose)
-        runner.load_config()
-        if clean:
-            runner.reset_to_clean()
-            return 0
-        if not runner.setup_directory():
-            return 1
-        if not runner.install_requirements():
-            runner.save_config()
-            return 2
-        if not runner.configure():
-            runner.save_config()
-            return 3
-        runner.save_config()
-        runner.launch_autophone()
-        runner.command_prompts()
         return 0

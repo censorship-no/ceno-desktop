@@ -20,7 +20,7 @@ function waitUntilScreenshot() {
           resolve(download.target.path);
           list.removeView(view);
         });
-      }
+      },
     };
 
     await list.addView(view);
@@ -34,7 +34,7 @@ addRDMTask(TEST_URL, async function({ ui: {toolWindow} }) {
   await waitUntilState(store, state => state.viewports.length == 1);
 
   info("Click the screenshot button");
-  const screenshotButton = document.getElementById("global-screenshot-button");
+  const screenshotButton = document.getElementById("screenshot-button");
   screenshotButton.click();
 
   const whenScreenshotSucceeded = waitUntilScreenshot();

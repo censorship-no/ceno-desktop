@@ -38,7 +38,12 @@ AutoInitializeImageLib::AutoInitializeImageLib()
   sImageLibInitialized = true;
 
   // Force sRGB to be consistent with reftests.
-  Preferences::SetBool("gfx.color_management.force_srgb", true);
+  nsresult rv = Preferences::SetBool("gfx.color_management.force_srgb", true);
+  EXPECT_TRUE(rv == NS_OK);
+
+  // Ensure WebP is enabled to run decoder tests.
+  rv = Preferences::SetBool("image.webp.enabled", true);
+  EXPECT_TRUE(rv == NS_OK);
 
   // Ensure that ImageLib services are initialized.
   nsCOMPtr<imgITools> imgTools = do_CreateInstance("@mozilla.org/image/tools;1");
@@ -50,15 +55,7 @@ AutoInitializeImageLib::AutoInitializeImageLib()
   // Depending on initialization order, it is possible that our pref changes
   // have not taken effect yet because there are pending gfx-related events on
   // the main thread.
-  nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
-  EXPECT_TRUE(mainThread != nullptr);
-
-  bool processed;
-  do {
-    processed = false;
-    nsresult rv = mainThread->ProcessNextEvent(false, &processed);
-    EXPECT_TRUE(NS_SUCCEEDED(rv));
-  } while (processed);
+  SpinPendingEvents();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -96,6 +93,20 @@ AutoInitializeImageLib::AutoInitializeImageLib()
   if (!((a) < (b))) {                 \
     return rv;                        \
   }
+
+void
+SpinPendingEvents()
+{
+  nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
+  EXPECT_TRUE(mainThread != nullptr);
+
+  bool processed;
+  do {
+    processed = false;
+    nsresult rv = mainThread->ProcessNextEvent(false, &processed);
+    EXPECT_TRUE(NS_SUCCEEDED(rv));
+  } while (processed);
+}
 
 already_AddRefed<nsIInputStream>
 LoadFile(const char* aRelativePath)
@@ -195,20 +206,21 @@ RectIsSolidColor(SourceSurface* aSurface,
   uint8_t* data = mapping.GetData();
   ASSERT_TRUE_OR_RETURN(data != nullptr, false);
 
+  BGRAColor pmColor = aColor.Premultiply();
   int32_t rowLength = mapping.GetStride();
   for (int32_t row = rect.Y(); row < rect.YMost(); ++row) {
     for (int32_t col = rect.X(); col < rect.XMost(); ++col) {
       int32_t i = row * rowLength + col * 4;
       if (aFuzz != 0) {
-        ASSERT_LE_OR_RETURN(abs(aColor.mBlue - data[i + 0]), aFuzz, false);
-        ASSERT_LE_OR_RETURN(abs(aColor.mGreen - data[i + 1]), aFuzz, false);
-        ASSERT_LE_OR_RETURN(abs(aColor.mRed - data[i + 2]), aFuzz, false);
-        ASSERT_LE_OR_RETURN(abs(aColor.mAlpha - data[i + 3]), aFuzz, false);
+        ASSERT_LE_OR_RETURN(abs(pmColor.mBlue - data[i + 0]), aFuzz, false);
+        ASSERT_LE_OR_RETURN(abs(pmColor.mGreen - data[i + 1]), aFuzz, false);
+        ASSERT_LE_OR_RETURN(abs(pmColor.mRed - data[i + 2]), aFuzz, false);
+        ASSERT_LE_OR_RETURN(abs(pmColor.mAlpha - data[i + 3]), aFuzz, false);
       } else {
-        ASSERT_EQ_OR_RETURN(aColor.mBlue,  data[i + 0], false);
-        ASSERT_EQ_OR_RETURN(aColor.mGreen, data[i + 1], false);
-        ASSERT_EQ_OR_RETURN(aColor.mRed,   data[i + 2], false);
-        ASSERT_EQ_OR_RETURN(aColor.mAlpha, data[i + 3], false);
+        ASSERT_EQ_OR_RETURN(pmColor.mBlue,  data[i + 0], false);
+        ASSERT_EQ_OR_RETURN(pmColor.mGreen, data[i + 1], false);
+        ASSERT_EQ_OR_RETURN(pmColor.mRed,   data[i + 2], false);
+        ASSERT_EQ_OR_RETURN(pmColor.mAlpha, data[i + 3], false);
       }
     }
   }
@@ -300,6 +312,7 @@ CreateTrivialDecoder()
   auto sourceBuffer = MakeNotNull<RefPtr<SourceBuffer>>();
   RefPtr<Decoder> decoder =
     DecoderFactory::CreateAnonymousDecoder(decoderType, sourceBuffer, Nothing(),
+                                           DefaultDecoderFlags(),
                                            DefaultSurfaceFlags());
   return decoder.forget();
 }
@@ -323,7 +336,20 @@ CheckGeneratedImage(Decoder* aDecoder,
 {
   RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
   RefPtr<SourceSurface> surface = currentFrame->GetSourceSurface();
-  const IntSize surfaceSize = surface->GetSize();
+  CheckGeneratedSurface(surface, aRect,
+                        BGRAColor::Green(),
+                        BGRAColor::Transparent(),
+                        aFuzz);
+}
+
+void
+CheckGeneratedSurface(SourceSurface* aSurface,
+                      const IntRect& aRect,
+                      const BGRAColor& aInnerColor,
+                      const BGRAColor& aOuterColor,
+                      uint8_t aFuzz /* = 0 */)
+{
+  const IntSize surfaceSize = aSurface->GetSize();
 
   // This diagram shows how the surface is divided into regions that the code
   // below tests for the correct content. The output rect is the bounds of the
@@ -337,30 +363,30 @@ CheckGeneratedImage(Decoder* aDecoder,
   // |             E             |
   // +---------------------------+
 
-  // Check that the output rect itself is green. (Region 'C'.)
-  EXPECT_TRUE(RectIsSolidColor(surface, aRect, BGRAColor::Green(), aFuzz));
+  // Check that the output rect itself is the inner color. (Region 'C'.)
+  EXPECT_TRUE(RectIsSolidColor(aSurface, aRect, aInnerColor, aFuzz));
 
-  // Check that the area above the output rect is transparent. (Region 'A'.)
-  EXPECT_TRUE(RectIsSolidColor(surface,
+  // Check that the area above the output rect is the outer color. (Region 'A'.)
+  EXPECT_TRUE(RectIsSolidColor(aSurface,
                                IntRect(0, 0, surfaceSize.width, aRect.Y()),
-                               BGRAColor::Transparent(), aFuzz));
+                               aOuterColor, aFuzz));
 
-  // Check that the area to the left of the output rect is transparent. (Region 'B'.)
-  EXPECT_TRUE(RectIsSolidColor(surface,
+  // Check that the area to the left of the output rect is the outer color. (Region 'B'.)
+  EXPECT_TRUE(RectIsSolidColor(aSurface,
                                IntRect(0, aRect.Y(), aRect.X(), aRect.YMost()),
-                               BGRAColor::Transparent(), aFuzz));
+                               aOuterColor, aFuzz));
 
-  // Check that the area to the right of the output rect is transparent. (Region 'D'.)
+  // Check that the area to the right of the output rect is the outer color. (Region 'D'.)
   const int32_t widthOnRight = surfaceSize.width - aRect.XMost();
-  EXPECT_TRUE(RectIsSolidColor(surface,
+  EXPECT_TRUE(RectIsSolidColor(aSurface,
                                IntRect(aRect.XMost(), aRect.Y(), widthOnRight, aRect.YMost()),
-                               BGRAColor::Transparent(), aFuzz));
+                               aOuterColor, aFuzz));
 
-  // Check that the area below the output rect is transparent. (Region 'E'.)
+  // Check that the area below the output rect is the outer color. (Region 'E'.)
   const int32_t heightBelow = surfaceSize.height - aRect.YMost();
-  EXPECT_TRUE(RectIsSolidColor(surface,
+  EXPECT_TRUE(RectIsSolidColor(aSurface,
                                IntRect(0, aRect.YMost(), surfaceSize.width, heightBelow),
-                               BGRAColor::Transparent(), aFuzz));
+                               aOuterColor, aFuzz));
 }
 
 void
@@ -549,6 +575,16 @@ ImageTestCase GreenIconTestCase()
                        TEST_CASE_IS_TRANSPARENT);
 }
 
+ImageTestCase GreenWebPTestCase()
+{
+  return ImageTestCase("green.webp", "image/webp", IntSize(100, 100));
+}
+
+ImageTestCase GreenWebPIccSrgbTestCase()
+{
+  return ImageTestCase("green.icc_srgb.webp", "image/webp", IntSize(100, 100));
+}
+
 ImageTestCase GreenFirstFrameAnimatedGIFTestCase()
 {
   return ImageTestCase("first-frame-green.gif", "image/gif", IntSize(100, 100),
@@ -558,6 +594,30 @@ ImageTestCase GreenFirstFrameAnimatedGIFTestCase()
 ImageTestCase GreenFirstFrameAnimatedPNGTestCase()
 {
   return ImageTestCase("first-frame-green.png", "image/png", IntSize(100, 100),
+                       TEST_CASE_IS_TRANSPARENT | TEST_CASE_IS_ANIMATED);
+}
+
+ImageTestCase GreenFirstFrameAnimatedWebPTestCase()
+{
+  return ImageTestCase("first-frame-green.webp", "image/webp", IntSize(100, 100),
+                       TEST_CASE_IS_ANIMATED);
+}
+
+ImageTestCase BlendAnimatedGIFTestCase()
+{
+  return ImageTestCase("blend.gif", "image/gif", IntSize(100, 100),
+                       TEST_CASE_IS_ANIMATED);
+}
+
+ImageTestCase BlendAnimatedPNGTestCase()
+{
+  return ImageTestCase("blend.png", "image/png", IntSize(100, 100),
+                       TEST_CASE_IS_TRANSPARENT | TEST_CASE_IS_ANIMATED);
+}
+
+ImageTestCase BlendAnimatedWebPTestCase()
+{
+  return ImageTestCase("blend.webp", "image/webp", IntSize(100, 100),
                        TEST_CASE_IS_TRANSPARENT | TEST_CASE_IS_ANIMATED);
 }
 
@@ -695,6 +755,12 @@ ImageTestCase DownscaledIconTestCase()
 {
   return ImageTestCase("downscaled.icon", "image/icon", IntSize(100, 100),
                        IntSize(20, 20), TEST_CASE_IS_TRANSPARENT);
+}
+
+ImageTestCase DownscaledWebPTestCase()
+{
+  return ImageTestCase("downscaled.webp", "image/webp", IntSize(100, 100),
+                       IntSize(20, 20));
 }
 
 ImageTestCase DownscaledTransparentICOWithANDMaskTestCase()

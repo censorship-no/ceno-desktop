@@ -9,9 +9,10 @@
 #include "mozilla/LinkedList.h"
 #include "nsWrapperCache.h"
 
-#include "WebGLFramebufferAttachable.h"
+#include "CacheInvalidator.h"
 #include "WebGLObjectModel.h"
 #include "WebGLStrongTypes.h"
+#include "WebGLTexture.h"
 
 namespace mozilla {
 namespace webgl {
@@ -23,23 +24,18 @@ class WebGLRenderbuffer final
     , public WebGLRefCountedObject<WebGLRenderbuffer>
     , public LinkedListElement<WebGLRenderbuffer>
     , public WebGLRectangleObject
-    , public WebGLFramebufferAttachable
+    , public CacheInvalidator
 {
-    friend class WebGLContext;
     friend class WebGLFramebuffer;
     friend class WebGLFBAttachPoint;
 
 public:
     const GLuint mPrimaryRB;
+    bool mHasBeenBound = false;
 protected:
     const bool mEmulatePackedDepthStencil;
     GLuint mSecondaryRB;
-    const webgl::FormatUsageInfo* mFormat;
-    GLsizei mSamples;
-
-    WebGLImageDataStatus mImageDataStatus;
-
-    bool mHasBeenBound;
+    webgl::ImageInfo mImageInfo;
 
 public:
     NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLRenderbuffer)
@@ -49,42 +45,27 @@ public:
 
     void Delete();
 
-    bool HasUninitializedImageData() const {
-        MOZ_ASSERT(mImageDataStatus != WebGLImageDataStatus::NoImageData);
-        return mImageDataStatus == WebGLImageDataStatus::UninitializedImageData;
-    }
-
-    bool IsDefined() const {
-        if (!mFormat) {
-            MOZ_ASSERT(!mWidth && !mHeight);
-            return false;
-        }
-        return true;
-    }
-
-    GLsizei Samples() const { return mSamples; }
-
-    const webgl::FormatUsageInfo* Format() const { return mFormat; }
-
-    int64_t MemoryUsage() const;
+    const auto& ImageInfo() const { return mImageInfo; }
 
     WebGLContext* GetParentObject() const {
         return mContext;
     }
 
-    void RenderbufferStorage(const char* funcName, uint32_t samples,
-                             GLenum internalFormat, uint32_t width, uint32_t height);
+    void RenderbufferStorage(uint32_t samples, GLenum internalFormat, uint32_t width,
+                             uint32_t height);
     // Only handles a subset of `pname`s.
     GLint GetRenderbufferParameter(RBTarget target, RBParam pname) const;
 
     virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> givenProto) override;
+
+    auto MemoryUsage() const { return mImageInfo.MemoryUsage(); }
 
 protected:
     ~WebGLRenderbuffer() {
         DeleteOnce();
     }
 
-    void DoFramebufferRenderbuffer(FBTarget target, GLenum attachment) const;
+    void DoFramebufferRenderbuffer(GLenum attachment) const;
     GLenum DoRenderbufferStorage(uint32_t samples, const webgl::FormatUsageInfo* format,
                                  uint32_t width, uint32_t height);
 };

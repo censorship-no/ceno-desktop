@@ -18,7 +18,7 @@ loader.lazyRequireGetter(this, "gDevTools", "devtools/client/framework/devtools"
 loader.lazyRequireGetter(this, "KeyCodes", "devtools/client/shared/keycodes", true);
 loader.lazyRequireGetter(this, "Editor", "devtools/client/sourceeditor/editor");
 loader.lazyRequireGetter(this, "Telemetry", "devtools/client/shared/telemetry");
-loader.lazyRequireGetter(this, "processScreenshot", "devtools/shared/webconsole/screenshot-helper");
+loader.lazyRequireGetter(this, "saveScreenshot", "devtools/shared/screenshot/save");
 
 const l10n = require("devtools/client/webconsole/webconsole-l10n");
 
@@ -37,14 +37,14 @@ const { connect } = require("devtools/client/shared/vendor/react-redux");
 // History Modules
 const {
   getHistory,
-  getHistoryValue
+  getHistoryValue,
 } = require("devtools/client/webconsole/selectors/history");
 const historyActions = require("devtools/client/webconsole/actions/history");
 
 // Constants used for defining the direction of JSTerm input history navigation.
 const {
   HISTORY_BACK,
-  HISTORY_FORWARD
+  HISTORY_FORWARD,
 } = require("devtools/client/webconsole/constants");
 
 /**
@@ -90,12 +90,6 @@ class JSTerm extends Component {
     this.hud = hud;
     this.hudId = this.hud.hudId;
 
-    /**
-     * Stores the data for the last completion.
-     * @type object
-     */
-    this.lastCompletion = { value: null };
-
     this._keyPress = this._keyPress.bind(this);
     this._inputEventHandler = this._inputEventHandler.bind(this);
     this._blurEventHandler = this._blurEventHandler.bind(this);
@@ -132,15 +126,11 @@ class JSTerm extends Component {
      */
     this.lastInputValue = "";
 
+    this.currentAutoCompletionRequestId = null;
+
     this.autocompletePopup = null;
     this.inputNode = null;
     this.completeNode = null;
-
-    this.COMPLETE_FORWARD = 0;
-    this.COMPLETE_BACKWARD = 1;
-    this.COMPLETE_HINT_ONLY = 2;
-    this.COMPLETE_PAGEUP = 3;
-    this.COMPLETE_PAGEDOWN = 4;
 
     this._telemetry = new Telemetry();
 
@@ -153,8 +143,8 @@ class JSTerm extends Component {
       onSelect: this.onAutocompleteSelect.bind(this),
       onClick: this.acceptProposedCompletion.bind(this),
       listId: "webConsole_autocompletePopupListBox",
-      position: "top",
-      autoSelect: true
+      position: "bottom",
+      autoSelect: true,
     };
 
     const doc = this.hud.document;
@@ -166,9 +156,44 @@ class JSTerm extends Component {
 
     if (this.props.codeMirrorEnabled) {
       if (this.node) {
+        const onArrowUp = () => {
+          let inputUpdated;
+          if (this.autocompletePopup.isOpen) {
+            this.autocompletePopup.selectPreviousItem();
+            return null;
+          }
+
+          if (this.canCaretGoPrevious()) {
+            inputUpdated = this.historyPeruse(HISTORY_BACK);
+          }
+
+          if (!inputUpdated) {
+            return "CodeMirror.Pass";
+          }
+          return null;
+        };
+
+        const onArrowDown = () => {
+          let inputUpdated;
+          if (this.autocompletePopup.isOpen) {
+            this.autocompletePopup.selectNextItem();
+            return null;
+          }
+
+          if (this.canCaretGoNext()) {
+            inputUpdated = this.historyPeruse(HISTORY_FORWARD);
+          }
+
+          if (!inputUpdated) {
+            return "CodeMirror.Pass";
+          }
+          return null;
+        };
+
         this.editor = new Editor({
           autofocus: true,
           enableCodeFolding: false,
+          autoCloseBrackets: false,
           gutters: [],
           lineWrapping: true,
           mode: Editor.modes.js,
@@ -178,18 +203,14 @@ class JSTerm extends Component {
           extraKeys: {
             "Enter": () => {
               // No need to handle shift + Enter as it's natively handled by CodeMirror.
-              if (
-                !this.autocompletePopup.isOpen &&
-                !Debugger.isCompilableUnit(this.getInputValue())
-              ) {
+
+              const hasSuggestion = this.hasAutocompletionSuggestion();
+              if (!hasSuggestion && !Debugger.isCompilableUnit(this.getInputValue())) {
                 // incomplete statement
                 return "CodeMirror.Pass";
               }
 
-              if (
-                this.autocompletePopup.isOpen
-                && this.autocompletePopup.selectedIndex > -1
-              ) {
+              if (hasSuggestion) {
                 return this.acceptProposedCompletion();
               }
 
@@ -198,81 +219,50 @@ class JSTerm extends Component {
             },
 
             "Tab": () => {
-              // Generate a completion and accept the first proposed value.
-              if (
-                this.complete(this.COMPLETE_HINT_ONLY) &&
-                this.lastCompletion &&
-                this.acceptProposedCompletion()
-              ) {
-                return false;
-              }
-
               if (this.hasEmptyInput()) {
                 this.editor.codeMirror.getInputField().blur();
                 return false;
               }
 
-              if (!this.editor.somethingSelected()) {
+              const isSomethingSelected = this.editor.somethingSelected();
+              const hasSuggestion = this.hasAutocompletionSuggestion();
+
+              if (hasSuggestion && !isSomethingSelected) {
+                this.acceptProposedCompletion();
+                return false;
+              }
+
+              if (!isSomethingSelected) {
                 this.insertStringAtCursor("\t");
                 return false;
               }
 
-              // Input is not empty and some text is selected, let the editor handle this.
+              // Something is selected, let the editor handle the indent.
               return true;
             },
 
-            "Up": () => {
-              let inputUpdated;
-              if (this.autocompletePopup.isOpen) {
-                inputUpdated = this.complete(this.COMPLETE_BACKWARD);
-              } else if (this.canCaretGoPrevious()) {
-                inputUpdated = this.historyPeruse(HISTORY_BACK);
-              }
+            "Up": onArrowUp,
+            "Cmd-Up": onArrowUp,
 
-              if (!inputUpdated) {
-                return "CodeMirror.Pass";
-              }
-              return null;
-            },
-
-            "Down": () => {
-              let inputUpdated;
-              if (this.autocompletePopup.isOpen) {
-                inputUpdated = this.complete(this.COMPLETE_FORWARD);
-              } else if (this.canCaretGoNext()) {
-                inputUpdated = this.historyPeruse(HISTORY_FORWARD);
-              }
-
-              if (!inputUpdated) {
-                return "CodeMirror.Pass";
-              }
-              return null;
-            },
+            "Down": onArrowDown,
+            "Cmd-Down": onArrowDown,
 
             "Left": () => {
-              if (this.autocompletePopup.isOpen || this.lastCompletion.value) {
+              if (this.autocompletePopup.isOpen || this.getAutoCompletionText()) {
                 this.clearCompletion();
               }
               return "CodeMirror.Pass";
             },
 
             "Right": () => {
-              const haveSuggestion =
-                this.autocompletePopup.isOpen || this.lastCompletion.value;
-
-              if (
-                haveSuggestion &&
-                this.complete(this.COMPLETE_HINT_ONLY) &&
-                this.lastCompletion.value &&
-                this.acceptProposedCompletion()
-              ) {
+              // We only want to complete on Right arrow if the completion text is
+              // displayed.
+              if (this.getAutoCompletionText()) {
+                this.acceptProposedCompletion();
                 return null;
               }
 
-              if (this.autocompletePopup.isOpen) {
-                this.clearCompletion();
-              }
-
+              this.clearCompletion();
               return "CodeMirror.Pass";
             },
 
@@ -310,25 +300,38 @@ class JSTerm extends Component {
 
             "PageUp": () => {
               if (this.autocompletePopup.isOpen) {
-                this.complete(this.COMPLETE_PAGEUP);
-                return null;
+                this.autocompletePopup.selectPreviousPageItem();
+              } else {
+                this.hud.outputScroller.scrollTop = Math.max(
+                  0,
+                  this.hud.outputScroller.scrollTop - this.hud.outputScroller.clientHeight
+                );
               }
 
-              return "CodeMirror.Pass";
+              return null;
             },
 
             "PageDown": () => {
               if (this.autocompletePopup.isOpen) {
-                this.complete(this.COMPLETE_PAGEDOWN);
-                return null;
+                this.autocompletePopup.selectNextPageItem();
+              } else {
+                this.hud.outputScroller.scrollTop = Math.min(
+                  this.hud.outputScroller.scrollHeight,
+                  this.hud.outputScroller.scrollTop + this.hud.outputScroller.clientHeight
+                );
               }
 
-              return "CodeMirror.Pass";
+              return null;
             },
 
             "Home": () => {
               if (this.autocompletePopup.isOpen) {
-                this.autocompletePopup.selectedIndex = 0;
+                this.autocompletePopup.selectItemAtIndex(0);
+                return null;
+              }
+
+              if (!this.getInputValue()) {
+                this.hud.outputScroller.scrollTop = 0;
                 return null;
               }
 
@@ -337,8 +340,22 @@ class JSTerm extends Component {
 
             "End": () => {
               if (this.autocompletePopup.isOpen) {
-                this.autocompletePopup.selectedIndex =
-                  this.autocompletePopup.itemCount - 1;
+                this.autocompletePopup.selectItemAtIndex(
+                  this.autocompletePopup.itemCount - 1);
+                return null;
+              }
+
+              if (!this.getInputValue()) {
+                this.hud.outputScroller.scrollTop = this.hud.outputScroller.scrollHeight;
+                return null;
+              }
+
+              return "CodeMirror.Pass";
+            },
+
+            "Ctrl-Space": () => {
+              if (!this.autocompletePopup.isOpen) {
+                this.updateAutocompletion(true);
                 return null;
               }
 
@@ -346,10 +363,13 @@ class JSTerm extends Component {
             },
 
             "Esc": false,
-          }
+            "Cmd-F": false,
+            "Ctrl-F": false,
+          },
         });
 
         this.editor.on("changes", this._inputEventHandler);
+        this.editor.on("beforeChange", this._onBeforeChange);
         this.editor.appendToLocalElement(this.node);
         const cm = this.editor.codeMirror;
         cm.on("paste", (_, event) => this.props.onPaste(event));
@@ -376,7 +396,7 @@ class JSTerm extends Component {
 
     // Update the character and chevron width needed for the popup offset calculations.
     this._inputCharWidth = this._getInputCharWidth();
-    this._chevronWidth = this.editor ? null : this._getChevronWidth();
+    this._paddingInlineStart = this.editor ? null : this._getInputPaddingInlineStart();
 
     this.hud.window.addEventListener("blur", this._blurEventHandler);
     this.lastInputValue && this.setInputValue(this.lastInputValue);
@@ -417,17 +437,25 @@ class JSTerm extends Component {
    * The JavaScript evaluation response handler.
    *
    * @private
-   * @param object response
+   * @param {Object} response
    *        The message received from the server.
    */
   async _executeResultCallback(response) {
     if (!this.hud) {
       return null;
     }
+
     if (response.error) {
       console.error("Evaluation error " + response.error + ": " + response.message);
       return null;
     }
+
+    // If the evaluation was a top-level await expression that was rejected, there will
+    // be an uncaught exception reported, so we don't want need to print anything here.
+    if (response.topLevelAwaitRejected === true) {
+      return null;
+    }
+
     let errorMessage = response.exceptionMessage;
 
     // Wrap thrown strings in Error objects, so `throw "foo"` outputs "Error: foo"
@@ -447,7 +475,7 @@ class JSTerm extends Component {
           this.props.clearHistory();
           break;
         case "inspectObject":
-          this.inspectObjectActor(helperResult.object);
+          this.hud.inspectObjectActor(helperResult.object);
           break;
         case "error":
           try {
@@ -464,7 +492,7 @@ class JSTerm extends Component {
           break;
         case "screenshotOutput":
           const { args, value } = helperResult;
-          const results = await processScreenshot(this.hud.window, args, value);
+          const results = await saveScreenshot(this.hud.window, args, value);
           this.screenshotNotify(results);
           // early return as screenshot notify has dispatched all necessary messages
           return null;
@@ -483,16 +511,6 @@ class JSTerm extends Component {
     }
 
     return null;
-  }
-
-  inspectObjectActor(objectActor) {
-    this.hud.consoleOutput.dispatchMessageAdd({
-      helperResult: {
-        type: "inspectObject",
-        object: objectActor
-      }
-    }, true);
-    return this.hud.consoleOutput;
   }
 
   screenshotNotify(results) {
@@ -532,18 +550,28 @@ class JSTerm extends Component {
     const { ConsoleCommand } = require("devtools/client/webconsole/types");
     const cmdMessage = new ConsoleCommand({
       messageText: executeString,
+      timeStamp: Date.now(),
     });
     this.hud.proxy.dispatchMessageAdd(cmdMessage);
+
+    let mappedExpressionRes = null;
+    try {
+      mappedExpressionRes = await this.hud.owner.getMappedExpression(executeString);
+    } catch (e) {
+      console.warn("Error when calling getMappedExpression", e);
+    }
+
+    executeString = mappedExpressionRes ? mappedExpressionRes.expression : executeString;
 
     const options = {
       frame: this.SELECTED_FRAME,
       selectedNodeActor,
+      mapped: mappedExpressionRes ? mappedExpressionRes.mapped : null,
     };
 
-    const mappedString = await this.hud.owner.getMappedExpression(executeString);
     // Even if requestEvaluation rejects (because of webConsoleClient.evaluateJSAsync),
     // we still need to pass the error response to executeResultCallback.
-    const onEvaluated = this.requestEvaluation(mappedString, options)
+    const onEvaluated = this.requestEvaluation(executeString, options)
       .then(res => res, res => res);
     const response = await onEvaluated;
     return this._executeResultCallback(response);
@@ -569,6 +597,8 @@ class JSTerm extends Component {
    *        - selectedNodeActor: tells the NodeActor ID of the current selection
    *        in the Inspector, if such a selection exists. This is used by
    *        helper functions that can evaluate on the current selection.
+   *        - mapped: basically getMappedExpression().mapped. An object that indicates
+   *        which modifications were done to the input entered by the user.
    * @return object
    *         A promise object that is resolved when the server response is
    *         received.
@@ -577,7 +607,7 @@ class JSTerm extends Component {
     // Send telemetry event. If we are in the browser toolbox we send -1 as the
     // toolbox session id.
     this.props.serviceContainer.recordTelemetryEvent("execute_js", {
-      "lines": str.split(/\n/).length
+      "lines": str.split(/\n/).length,
     });
 
     let frameActor = null;
@@ -585,14 +615,10 @@ class JSTerm extends Component {
       frameActor = this.getFrameActor(options.frame);
     }
 
-    const evalOptions = {
-      bindObjectActor: options.bindObjectActor,
+    return this.webConsoleClient.evaluateJSAsync(str, null, {
       frameActor,
-      selectedNodeActor: options.selectedNodeActor,
-      selectedObjectActor: options.selectedObjectActor,
-    };
-
-    return this.webConsoleClient.evaluateJSAsync(str, null, evalOptions);
+      ...options,
+    });
   }
 
   /**
@@ -640,25 +666,27 @@ class JSTerm extends Component {
    * @returns void
    */
   resizeInput() {
-    if (this.props.codeMirrorEnabled) {
+    if (this.props.codeMirrorEnabled || !this.inputNode) {
       return;
     }
 
-    if (!this.inputNode) {
-      return;
-    }
-
-    const inputNode = this.inputNode;
+    const {inputNode, completeNode} = this;
 
     // Reset the height so that scrollHeight will reflect the natural height of
     // the contents of the input field.
     inputNode.style.height = "auto";
+    const minHeightBackup = inputNode.style.minHeight;
+    inputNode.style.minHeight = "unset";
+    completeNode.style.height = "auto";
 
     // Now resize the input field to fit its contents.
     const scrollHeight = inputNode.scrollHeight;
 
     if (scrollHeight > 0) {
-      inputNode.style.height = (scrollHeight + this.inputBorderSize) + "px";
+      const pxHeight = (scrollHeight + this.inputBorderSize) + "px";
+      inputNode.style.height = pxHeight;
+      inputNode.style.minHeight = minHeightBackup;
+      completeNode.style.height = pxHeight;
     }
   }
 
@@ -671,13 +699,27 @@ class JSTerm extends Component {
    *        The new value to set.
    * @returns void
    */
-  setInputValue(newValue = "") {
+  setInputValue(newValue) {
+    newValue = newValue || "";
+    this.lastInputValue = newValue;
+
     if (this.props.codeMirrorEnabled) {
       if (this.editor) {
-        this.editor.setText(newValue);
-        // Set the cursor at the end of the input.
-        this.editor.setCursor({line: this.editor.getDoc().lineCount(), ch: 0});
-        this.editor.setAutoCompletionText();
+        // In order to get the autocomplete popup to work properly, we need to set the
+        // editor text and the cursor in the same operation. If we don't, the text change
+        // is done before the cursor is moved, and the autocompletion call to the server
+        // sends an erroneous query.
+        this.editor.codeMirror.operation(() => {
+          this.editor.setText(newValue);
+
+          // Set the cursor at the end of the input.
+          const lines = newValue.split("\n");
+          this.editor.setCursor({
+            line: lines.length - 1,
+            ch: lines[lines.length - 1].length,
+          });
+          this.editor.setAutoCompletionText();
+        });
       }
     } else {
       if (!this.inputNode) {
@@ -688,7 +730,6 @@ class JSTerm extends Component {
       this.completeNode.value = "";
     }
 
-    this.lastInputValue = newValue;
     this.resizeInput();
     this.emit("set-input-value");
   }
@@ -714,6 +755,16 @@ class JSTerm extends Component {
   }
 
   /**
+   * Even handler for the "beforeChange" event fired by codeMirror. This event is fired
+   * when codeMirror is about to make a change to its DOM representation.
+   */
+  _onBeforeChange() {
+    // clear the completionText before the change is done to prevent a visual glitch.
+    // See Bug 1491776.
+    this.setAutoCompletionText("");
+  }
+
+  /**
    * The inputNode "input" and "keyup" event handler.
    * @private
    */
@@ -721,7 +772,7 @@ class JSTerm extends Component {
     const value = this.getInputValue();
     if (this.lastInputValue !== value) {
       this.resizeInput();
-      this.complete(this.COMPLETE_HINT_ONLY);
+      this.updateAutocompletion();
       this.lastInputValue = value;
     }
   }
@@ -747,6 +798,7 @@ class JSTerm extends Component {
     const inputNode = this.inputNode;
     const inputValue = this.getInputValue();
     let inputUpdated = false;
+
     if (event.ctrlKey) {
       switch (event.charCode) {
         case 101:
@@ -804,6 +856,13 @@ class JSTerm extends Component {
         default:
           break;
       }
+
+      if (event.key === " " && !this.autocompletePopup.isOpen) {
+        // Open the autocompletion popup on Ctrl-Space (if it wasn't displayed).
+        this.updateAutocompletion(true);
+        event.preventDefault();
+      }
+
       return;
     } else if (event.keyCode == KeyCodes.DOM_VK_RETURN) {
       if (!this.autocompletePopup.isOpen && (
@@ -824,9 +883,7 @@ class JSTerm extends Component {
         break;
 
       case KeyCodes.DOM_VK_RETURN:
-        if (
-            this.autocompletePopup.isOpen &&
-            this.autocompletePopup.selectedIndex > -1) {
+        if (this.hasAutocompletionSuggestion()) {
           this.acceptProposedCompletion();
         } else {
           this.execute();
@@ -836,7 +893,8 @@ class JSTerm extends Component {
 
       case KeyCodes.DOM_VK_UP:
         if (this.autocompletePopup.isOpen) {
-          inputUpdated = this.complete(this.COMPLETE_BACKWARD);
+          this.autocompletePopup.selectPreviousItem();
+          event.preventDefault();
         } else if (this.canCaretGoPrevious()) {
           inputUpdated = this.historyPeruse(HISTORY_BACK);
         }
@@ -847,7 +905,8 @@ class JSTerm extends Component {
 
       case KeyCodes.DOM_VK_DOWN:
         if (this.autocompletePopup.isOpen) {
-          inputUpdated = this.complete(this.COMPLETE_FORWARD);
+          this.autocompletePopup.selectNextItem();
+          event.preventDefault();
         } else if (this.canCaretGoNext()) {
           inputUpdated = this.historyPeruse(HISTORY_FORWARD);
         }
@@ -858,7 +917,7 @@ class JSTerm extends Component {
 
       case KeyCodes.DOM_VK_PAGE_UP:
         if (this.autocompletePopup.isOpen) {
-          inputUpdated = this.complete(this.COMPLETE_PAGEUP);
+          this.autocompletePopup.selectPreviousPageItem();
         } else {
           this.hud.outputScroller.scrollTop =
             Math.max(0,
@@ -871,7 +930,7 @@ class JSTerm extends Component {
 
       case KeyCodes.DOM_VK_PAGE_DOWN:
         if (this.autocompletePopup.isOpen) {
-          inputUpdated = this.complete(this.COMPLETE_PAGEDOWN);
+          this.autocompletePopup.selectNextPageItem();
         } else {
           this.hud.outputScroller.scrollTop =
             Math.min(this.hud.outputScroller.scrollHeight,
@@ -884,7 +943,7 @@ class JSTerm extends Component {
 
       case KeyCodes.DOM_VK_HOME:
         if (this.autocompletePopup.isOpen) {
-          this.autocompletePopup.selectedIndex = 0;
+          this.autocompletePopup.selectItemAtIndex(0);
           event.preventDefault();
         } else if (inputValue.length <= 0) {
           this.hud.outputScroller.scrollTop = 0;
@@ -894,42 +953,33 @@ class JSTerm extends Component {
 
       case KeyCodes.DOM_VK_END:
         if (this.autocompletePopup.isOpen) {
-          this.autocompletePopup.selectedIndex =
-            this.autocompletePopup.itemCount - 1;
+          this.autocompletePopup.selectItemAtIndex(this.autocompletePopup.itemCount - 1);
           event.preventDefault();
         } else if (inputValue.length <= 0) {
-          this.hud.outputScroller.scrollTop =
-            this.hud.outputScroller.scrollHeight;
+          this.hud.outputScroller.scrollTop = this.hud.outputScroller.scrollHeight;
           event.preventDefault();
         }
         break;
 
       case KeyCodes.DOM_VK_LEFT:
-        if (this.autocompletePopup.isOpen || this.lastCompletion.value) {
+        if (this.autocompletePopup.isOpen || this.getAutoCompletionText()) {
           this.clearCompletion();
         }
         break;
 
       case KeyCodes.DOM_VK_RIGHT:
-        const haveSuggestion = this.autocompletePopup.isOpen || this.lastCompletion.value;
-        if (
-          haveSuggestion &&
-          this.complete(this.COMPLETE_HINT_ONLY) &&
-          this.lastCompletion.value &&
-          this.acceptProposedCompletion()
-        ) {
+        // We only want to complete on Right arrow if the completion text is
+        // displayed.
+        if (this.getAutoCompletionText()) {
+          this.acceptProposedCompletion();
           event.preventDefault();
         }
-        if (this.autocompletePopup.isOpen) {
-          this.clearCompletion();
-        }
+        this.clearCompletion();
         break;
 
       case KeyCodes.DOM_VK_TAB:
-        // Generate a completion and accept the first proposed value.
-        if (this.complete(this.COMPLETE_HINT_ONLY) &&
-            this.lastCompletion &&
-            this.acceptProposedCompletion()) {
+        if (this.hasAutocompletionSuggestion()) {
+          this.acceptProposedCompletion();
           event.preventDefault();
         } else if (!this.hasEmptyInput()) {
           if (!event.shiftKey) {
@@ -1053,169 +1103,98 @@ class JSTerm extends Component {
   }
 
   /**
-   * Completes the current typed text in the inputNode. Completion is performed
-   * only if the selection/cursor is at the end of the string. If no completion
-   * is found, the current inputNode value and cursor/selection stay.
    *
-   * @param int type possible values are
-   *    - this.COMPLETE_FORWARD: If there is more than one possible completion
-   *          and the input value stayed the same compared to the last time this
-   *          function was called, then the next completion of all possible
-   *          completions is used. If the value changed, then the first possible
-   *          completion is used and the selection is set from the current
-   *          cursor position to the end of the completed text.
-   *          If there is only one possible completion, then this completion
-   *          value is used and the cursor is put at the end of the completion.
-   *    - this.COMPLETE_BACKWARD: Same as this.COMPLETE_FORWARD but if the
-   *          value stayed the same as the last time the function was called,
-   *          then the previous completion of all possible completions is used.
-   *    - this.COMPLETE_PAGEUP: Scroll up one page if available or select the
-   *          first item.
-   *    - this.COMPLETE_PAGEDOWN: Scroll down one page if available or select
-   *          the last item.
-   *    - this.COMPLETE_HINT_ONLY: If there is more than one possible
-   *          completion and the input value stayed the same compared to the
-   *          last time this function was called, then the same completion is
-   *          used again. If there is only one possible completion, then
-   *          the this.getInputValue() is set to this value and the selection
-   *          is set from the current cursor position to the end of the
-   *          completed text.
-   * @param function callback
-   *        Optional function invoked when the autocomplete properties are
-   *        updated.
-   * @returns boolean true if there existed a completion for the current input,
-   *          or false otherwise.
+   * @param {Boolean} force: True to not perform any check before trying to show the
+   *                         autocompletion popup. Defaults to false.
    */
-  complete(type, callback) {
+  async updateAutocompletion(force = false) {
     const inputValue = this.getInputValue();
-    const frameActor = this.getFrameActor(this.SELECTED_FRAME);
-    // If the inputNode has no value, then don't try to complete on it.
-    if (!inputValue) {
-      this.clearCompletion();
-      callback && callback(this);
-      this.emit("autocomplete-updated");
-      return false;
-    }
-
     const {editor, inputNode} = this;
-    // Only complete if the selection is empty.
-    if (
-      (inputNode && inputNode.selectionStart != inputNode.selectionEnd) ||
-      (editor && editor.getSelection())
-    ) {
-      this.clearCompletion();
-      this.callback && callback(this);
-      this.emit("autocomplete-updated");
-      return false;
-    }
-
-    // Update the completion results.
-    if (this.lastCompletion.value != inputValue || frameActor != this._lastFrameActorId) {
-      this._updateCompletionResult(type, callback);
-      return false;
-    }
-
-    const popup = this.autocompletePopup;
-    let accepted = false;
-
-    if (type != this.COMPLETE_HINT_ONLY && popup.itemCount == 1) {
-      this.acceptProposedCompletion();
-      accepted = true;
-    } else if (type == this.COMPLETE_BACKWARD) {
-      popup.selectPreviousItem();
-    } else if (type == this.COMPLETE_FORWARD) {
-      popup.selectNextItem();
-    } else if (type == this.COMPLETE_PAGEUP) {
-      popup.selectPreviousPageItem();
-    } else if (type == this.COMPLETE_PAGEDOWN) {
-      popup.selectNextPageItem();
-    }
-
-    callback && callback(this);
-    this.emit("autocomplete-updated");
-    return accepted || popup.itemCount > 0;
-  }
-
-  /**
-   * Update the completion result. This operation is performed asynchronously by
-   * fetching updated results from the content process.
-   *
-   * @private
-   * @param int type
-   *        Completion type. See this.complete() for details.
-   * @param function [callback]
-   *        Optional, function to invoke when completion results are received.
-   */
-  _updateCompletionResult(type, callback) {
-    const value = this.getInputValue();
     const frameActor = this.getFrameActor(this.SELECTED_FRAME);
-    if (this.lastCompletion.value == value && frameActor == this._lastFrameActorId) {
+
+    const cursor = this.getSelectionStart();
+
+    // Complete if:
+    // - `force` is true OR
+    //   - The input is not empty
+    //   - AND there is not text selected
+    //   - AND the input or frameActor are different from previous completion
+    //   - AND there is not an alphanumeric (+ "_" and "$") right after the cursor
+    if (!force && (
+      !inputValue ||
+      (inputNode && inputNode.selectionStart != inputNode.selectionEnd) ||
+      (editor && editor.getSelection()) ||
+      (
+        !force &&
+        this.lastInputValue === inputValue &&
+        frameActor === this._lastFrameActorId
+      ) ||
+      /^[a-zA-Z0-9_$]/.test(inputValue.substring(cursor))
+    )) {
+      this.clearCompletion();
+      this.emit("autocomplete-updated");
       return;
     }
 
-    const requestId = gSequenceId();
-    const cursor = this.getSelectionStart();
-    const input = value.substring(0, cursor);
-    const cache = this._autocompleteCache;
+    const input = this.getInputValueBeforeCursor();
 
     // If the current input starts with the previous input, then we already
     // have a list of suggestions and we just need to filter the cached
-    // suggestions. When the current input ends with a non-alphanumeric
-    // character we ask the server again for suggestions.
+    // suggestions. When the current input ends with a non-alphanumeric character we ask
+    // the server again for suggestions.
 
     // Check if last character is non-alphanumeric
     if (!/[a-zA-Z0-9]$/.test(input) || frameActor != this._lastFrameActorId) {
       this._autocompleteQuery = null;
       this._autocompleteCache = null;
     }
+
     if (this._autocompleteQuery && input.startsWith(this._autocompleteQuery)) {
       let filterBy = input;
-      // Find the last non-alphanumeric other than "_", ":", or "$" if it exists.
-      const lastNonAlpha = input.match(/[^a-zA-Z0-9_$:][a-zA-Z0-9_$:]*$/);
-      // If input contains non-alphanumerics, use the part after the last one
-      // to filter the cache.
-      if (lastNonAlpha) {
-        filterBy = input.substring(input.lastIndexOf(lastNonAlpha) + 1);
+      if (this._autocompleteCache.isElementAccess) {
+        // if we're performing an element access, we can simply retrieve whatever comes
+        // after the last opening bracket.
+        filterBy = input.substring(input.lastIndexOf("[") + 1);
+      } else {
+        // Find the last non-alphanumeric other than "_", ":", or "$" if it exists.
+        const lastNonAlpha = input.match(/[^a-zA-Z0-9_$:][a-zA-Z0-9_$:]*$/);
+        // If input contains non-alphanumerics, use the part after the last one
+        // to filter the cache.
+        if (lastNonAlpha) {
+          filterBy = input.substring(input.lastIndexOf(lastNonAlpha) + 1);
+        }
       }
 
-      const newList = cache.sort().filter(l => l.startsWith(filterBy));
+      const stripWrappingQuotes = s => s.replace(/^['"`](.+(?=['"`]$))['"`]$/g, "$1");
+      const filterByLc = filterBy.toLocaleLowerCase();
+      const looseMatching = !filterBy || filterBy[0].toLocaleLowerCase() === filterBy[0];
+      const needStripQuote = this._autocompleteCache.isElementAccess
+        && !/^[`"']/.test(filterBy);
+      const newList = this._autocompleteCache.matches.filter(l => {
+        if (needStripQuote) {
+          l = stripWrappingQuotes(l);
+        }
 
-      this.lastCompletion = {
-        requestId: null,
-        completionType: type,
-        value: null,
-      };
+        if (looseMatching) {
+          return l.toLocaleLowerCase().startsWith(filterByLc);
+        }
 
-      const response = { matches: newList, matchProp: filterBy };
-      this._receiveAutocompleteProperties(null, callback, response);
+        return l.startsWith(filterBy);
+      });
+
+      this._receiveAutocompleteProperties(null, {
+        matches: newList,
+        matchProp: filterBy,
+        isElementAccess: this._autocompleteCache.isElementAccess,
+      });
       return;
     }
+    const requestId = gSequenceId();
     this._lastFrameActorId = frameActor;
+    this.currentAutoCompletionRequestId = requestId;
 
-    this.lastCompletion = {
-      requestId: requestId,
-      completionType: type,
-      value: null,
-    };
-
-    const autocompleteCallback =
-      this._receiveAutocompleteProperties.bind(this, requestId, callback);
-
-    this.webConsoleClient.autocomplete(
-      input, cursor, autocompleteCallback, frameActor);
-  }
-
-  getInputValueBeforeCursor() {
-    if (this.editor) {
-      return this.editor.getDoc().getRange({line: 0, ch: 0}, this.editor.getCursor());
-    }
-
-    if (this.inputNode) {
-      const cursor = this.inputNode.selectionStart;
-      return this.getInputValue().substring(0, cursor);
-    }
-
-    return null;
+    const message = await this.webConsoleClient.autocomplete(input, cursor, frameActor);
+    this._receiveAutocompleteProperties(requestId, message);
   }
 
   /**
@@ -1225,102 +1204,141 @@ class JSTerm extends Component {
    *
    * @param number requestId
    *        Request ID.
-   * @param function [callback=null]
-   *        Optional, function to invoke when the completion result is received.
    * @param object message
    *        The JSON message which holds the completion results received from
    *        the content process.
    */
-  _receiveAutocompleteProperties(requestId, callback, message) {
-    const inputValue = this.getInputValue();
-    if (this.lastCompletion.value == inputValue ||
-        requestId != this.lastCompletion.requestId) {
+  _receiveAutocompleteProperties(requestId, message) {
+    if (this.currentAutoCompletionRequestId !== requestId) {
       return;
     }
+    this.currentAutoCompletionRequestId = null;
+
     // Cache whatever came from the server if the last char is
-    // alphanumeric or '.'
+    // alphanumeric, '.' or '['.
     const inputUntilCursor = this.getInputValueBeforeCursor();
 
-    if (requestId != null && /[a-zA-Z0-9.]$/.test(inputUntilCursor)) {
-      this._autocompleteCache = message.matches;
+    if (requestId != null && /[a-zA-Z0-9.\[]$/.test(inputUntilCursor)) {
+      this._autocompleteCache = {
+        matches: message.matches,
+        matchProp: message.matchProp,
+        isElementAccess: message.isElementAccess,
+      };
       this._autocompleteQuery = inputUntilCursor;
     }
 
-    const matches = message.matches;
-    const lastPart = message.matchProp;
+    const {matches, matchProp, isElementAccess} = message;
     if (!matches.length) {
       this.clearCompletion();
-      callback && callback(this);
       this.emit("autocomplete-updated");
       return;
     }
 
-    const popup = this.autocompletePopup;
-    const items = matches.map(match => ({ preLabel: lastPart, label: match }));
-    popup.setItems(items);
-
-    const completionType = this.lastCompletion.completionType;
-    this.lastCompletion = {
-      value: inputValue,
-      matchProp: lastPart,
-    };
+    const items = matches.map(label => {
+      let preLabel = label.substring(0, matchProp.length);
+      // If the user is performing an element access, and if they did not typed a quote,
+      // then we need to adjust the preLabel to match the quote from the label + what
+      // the user entered.
+      if (isElementAccess && /^['"`]/.test(matchProp) === false) {
+        preLabel = label.substring(0, matchProp.length + 1);
+      }
+      return {preLabel, label, isElementAccess};
+    });
 
     if (items.length > 0) {
+      const {preLabel, label} = items[0];
+      let suffix = label.substring(preLabel.length);
+      if (isElementAccess) {
+        if (!matchProp) {
+          suffix = label;
+        }
+        const inputAfterCursor = this.getInputValue().substring(inputUntilCursor.length);
+        // If there's not a bracket after the cursor, add it to the completionText.
+        if (!inputAfterCursor.trimLeft().startsWith("]")) {
+          suffix = suffix + "]";
+        }
+      }
+      this.setAutoCompletionText(suffix);
+    }
+
+    const popup = this.autocompletePopup;
+    // We don't want to trigger the onSelect callback since we already set the completion
+    // text a few lines above.
+    popup.setItems(items, 0, {
+      preventSelectCallback: true,
+    });
+
+    const minimumAutoCompleteLength = 2;
+
+    // We want to show the autocomplete popup if:
+    // - there are at least 2 matching results
+    // - OR, if there's 1 result, but whose label does not start like the input (this can
+    //   happen with insensitive search: `num` will match `Number`).
+    // - OR, if there's 1 result, but we can't show the completionText (because there's
+    // some text after the cursor), unless the text in the popup is the same as the input.
+    if (items.length >= minimumAutoCompleteLength
+      || (items.length === 1 && items[0].preLabel !== matchProp)
+      || (
+        items.length === 1
+        && !this.canDisplayAutoCompletionText()
+        && items[0].label !== matchProp
+      )
+    ) {
       let popupAlignElement;
       let xOffset;
       let yOffset;
 
       if (this.editor) {
         popupAlignElement = this.node.querySelector(".CodeMirror-cursor");
-        // We need to show the popup at the ".".
-        xOffset = -1 * lastPart.length * this._inputCharWidth;
+        // We need to show the popup at the "." or "[".
+        xOffset = -1 * matchProp.length * this._inputCharWidth;
         yOffset = 5;
       } else if (this.inputNode) {
         const offset = inputUntilCursor.length -
           (inputUntilCursor.lastIndexOf("\n") + 1) -
-          lastPart.length;
-        xOffset = (offset * this._inputCharWidth) + this._chevronWidth;
-        popupAlignElement = this.inputNode;
+          matchProp.length;
+        xOffset = (offset * this._inputCharWidth) + this._paddingInlineStart;
+        // We use completeNode as the popup anchor as its height never exceeds the
+        // content size, whereas it can be the case for inputNode (when there's no message
+        // in the output, it takes the whole height).
+        popupAlignElement = this.completeNode;
       }
 
       if (popupAlignElement) {
-        popup.openPopup(popupAlignElement, xOffset, yOffset);
+        popup.openPopup(popupAlignElement, xOffset, yOffset, 0, {
+          preventSelectCallback: true,
+        });
       }
-    } else if (items.length === 0 && popup.isOpen) {
+    } else if (items.length < minimumAutoCompleteLength && popup.isOpen) {
       popup.hidePopup();
     }
 
-    if (items.length == 1) {
-      popup.selectedIndex = 0;
-    }
-
-    this.onAutocompleteSelect();
-
-    if (completionType != this.COMPLETE_HINT_ONLY && popup.itemCount == 1) {
-      this.acceptProposedCompletion();
-    } else if (completionType == this.COMPLETE_BACKWARD) {
-      popup.selectPreviousItem();
-    } else if (completionType == this.COMPLETE_FORWARD) {
-      popup.selectNextItem();
-    }
-
-    callback && callback(this);
     this.emit("autocomplete-updated");
   }
 
   onAutocompleteSelect() {
-    // Render the suggestion only if the cursor is at the end of the input.
-    if (this.getSelectionStart() != this.getInputValue().length) {
-      return;
-    }
+    const {selectedItem} = this.autocompletePopup;
+    if (selectedItem) {
+      const {preLabel, label, isElementAccess} = selectedItem;
+      let suffix = label.substring(preLabel.length);
 
-    const currentItem = this.autocompletePopup.selectedItem;
-    if (currentItem && this.lastCompletion.value) {
-      const suffix =
-        currentItem.label.substring(this.lastCompletion.matchProp.length);
-      this.updateCompleteNode(suffix);
+      // If the user is performing an element access, we need to check if we should add
+      // starting and ending quotes, as well as a closing bracket.
+      if (isElementAccess) {
+        const inputBeforeCursor = this.getInputValueBeforeCursor();
+        if (inputBeforeCursor.trim().endsWith("[")) {
+          suffix = label;
+        }
+
+        const inputAfterCursor = this.getInputValue().substring(inputBeforeCursor.length);
+        // If there's no closing bracket after the cursor, add it to the completionText.
+        if (!inputAfterCursor.trimLeft().startsWith("]")) {
+          suffix = suffix + "]";
+        }
+      }
+      this.setAutoCompletionText(suffix);
     } else {
-      this.updateCompleteNode("");
+      this.setAutoCompletionText("");
     }
   }
 
@@ -1329,8 +1347,7 @@ class JSTerm extends Component {
    * if needed.
    */
   clearCompletion() {
-    this.lastCompletion = { value: null };
-    this.updateCompleteNode("");
+    this.setAutoCompletionText("");
     if (this.autocompletePopup) {
       this.autocompletePopup.clearItems();
 
@@ -1350,72 +1367,166 @@ class JSTerm extends Component {
 
   /**
    * Accept the proposed input completion.
-   *
-   * @return boolean
-   *         True if there was a selected completion item and the input value
-   *         was updated, false otherwise.
    */
   acceptProposedCompletion() {
-    let updated = false;
+    let completionText = this.getAutoCompletionText();
+    let numberOfCharsToReplaceCharsBeforeCursor;
 
-    const currentItem = this.autocompletePopup.selectedItem;
-    if (currentItem && this.lastCompletion.value) {
-      this.insertStringAtCursor(
-        currentItem.label.substring(this.lastCompletion.matchProp.length)
-      );
+    // If the autocompletion popup is open, we always get the selected element from there,
+    // since the autocompletion text might not be enough (e.g. `dOcUmEn` should
+    // autocomplete to `document`, but the autocompletion text only shows `t`).
+    if (this.autocompletePopup.isOpen && this.autocompletePopup.selectedItem) {
+      const {selectedItem} = this.autocompletePopup;
+      const {label, preLabel, isElementAccess} = selectedItem;
 
-      updated = true;
+      completionText = label;
+      numberOfCharsToReplaceCharsBeforeCursor = preLabel.length;
+
+      // If the user is performing an element access, we need to check if we should add
+      // starting and ending quotes, as well as a closing bracket.
+      if (isElementAccess) {
+        const inputBeforeCursor = this.getInputValueBeforeCursor();
+        const lastOpeningBracketIndex = inputBeforeCursor.lastIndexOf("[");
+        if (lastOpeningBracketIndex > -1) {
+          numberOfCharsToReplaceCharsBeforeCursor =
+            inputBeforeCursor.substring(lastOpeningBracketIndex + 1).length;
+        }
+
+        const inputAfterCursor = this.getInputValue().substring(inputBeforeCursor.length);
+        // If there's not a bracket after the cursor, add it.
+        if (!inputAfterCursor.trimLeft().startsWith("]")) {
+          completionText = completionText + "]";
+        }
+      }
     }
 
     this.clearCompletion();
 
-    return updated;
+    if (completionText) {
+      this.insertStringAtCursor(completionText, numberOfCharsToReplaceCharsBeforeCursor);
+    }
+  }
+
+  getInputValueBeforeCursor() {
+    if (this.editor) {
+      return this.editor.getDoc().getRange({line: 0, ch: 0}, this.editor.getCursor());
+    }
+
+    if (this.inputNode) {
+      const cursor = this.inputNode.selectionStart;
+      return this.getInputValue().substring(0, cursor);
+    }
+
+    return null;
   }
 
   /**
    * Insert a string into the console at the cursor location,
    * moving the cursor to the end of the string.
    *
-   * @param string str
+   * @param {string} str
+   * @param {int} numberOfCharsToReplaceCharsBeforeCursor - defaults to 0
    */
-  insertStringAtCursor(str) {
+  insertStringAtCursor(str, numberOfCharsToReplaceCharsBeforeCursor = 0) {
     const value = this.getInputValue();
-    const prefix = this.getInputValueBeforeCursor();
+    let prefix = this.getInputValueBeforeCursor();
     const suffix = value.replace(prefix, "");
+
+    if (numberOfCharsToReplaceCharsBeforeCursor) {
+      prefix =
+        prefix.substring(0, prefix.length - numberOfCharsToReplaceCharsBeforeCursor);
+    }
 
     // We need to retrieve the cursor before setting the new value.
     const editorCursor = this.editor && this.editor.getCursor();
+
+    const scrollPosition = this.inputNode ? this.inputNode.parentElement.scrollTop : null;
 
     this.setInputValue(prefix + str + suffix);
 
     if (this.inputNode) {
       const newCursor = prefix.length + str.length;
       this.inputNode.selectionStart = this.inputNode.selectionEnd = newCursor;
+      this.inputNode.parentElement.scrollTop = scrollPosition;
     } else if (this.editor) {
       // Set the cursor on the same line it was already at, after the autocompleted text
       this.editor.setCursor({
         line: editorCursor.line,
-        ch: editorCursor.ch + str.length
+        ch: editorCursor.ch + str.length - numberOfCharsToReplaceCharsBeforeCursor,
       });
     }
   }
 
   /**
-   * Update the node that displays the currently selected autocomplete proposal.
+   * Set the autocompletion text of the input.
    *
    * @param string suffix
    *        The proposed suffix for the inputNode value.
    */
-  updateCompleteNode(suffix) {
+  setAutoCompletionText(suffix) {
+    if (suffix && !this.canDisplayAutoCompletionText()) {
+      suffix = "";
+    }
+
     if (this.completeNode) {
-      // completion prefix = input, with non-control chars replaced by spaces
-      const prefix = suffix ? this.getInputValue().replace(/[\S]/g, " ") : "";
-      this.completeNode.value = prefix + suffix;
+      const lines = this.getInputValueBeforeCursor().split("\n");
+      const lastLine = lines[lines.length - 1];
+      const prefix = ("\n".repeat(lines.length - 1)) + lastLine.replace(/[\S]/g, " ");
+      this.completeNode.value = suffix ? prefix + suffix : "";
     }
 
     if (this.editor) {
       this.editor.setAutoCompletionText(suffix);
     }
+  }
+
+  getAutoCompletionText() {
+    if (this.completeNode) {
+      // Remove the spaces we set to align with the input value.
+      return this.completeNode.value.replace(/^\s+/gm, "");
+    }
+
+    if (this.editor) {
+      return this.editor.getAutoCompletionText();
+    }
+
+    return null;
+  }
+
+  /**
+   * Indicate if the input has an autocompletion suggestion, i.e. that there is either
+   * something in the autocompletion text or that there's a selected item in the
+   * autocomplete popup.
+   */
+  hasAutocompletionSuggestion() {
+    // We can have cases where the popup is opened but we can't display the autocompletion
+    // text.
+    return this.getAutoCompletionText() || (
+      this.autocompletePopup.isOpen &&
+      Number.isInteger(this.autocompletePopup.selectedIndex) &&
+      this.autocompletePopup.selectedIndex > -1
+    );
+  }
+
+  /**
+   * Returns a boolean indicating if we can display an autocompletion text in the input,
+   * i.e. if there is no characters displayed on the same line of the cursor and after it.
+   */
+  canDisplayAutoCompletionText() {
+    if (this.editor) {
+      const { ch, line } = this.editor.getCursor();
+      const lineContent = this.editor.getLine(line);
+      const textAfterCursor = lineContent.substring(ch);
+      return textAfterCursor === "";
+    }
+
+    if (this.inputNode) {
+      const value = this.getInputValue();
+      const textAfterCursor = value.substring(this.inputNode.selectionStart);
+      return textAfterCursor.split("\n")[0] === "";
+    }
+
+    return false;
   }
 
   /**
@@ -1444,7 +1555,7 @@ class JSTerm extends Component {
     WebConsoleUtils.copyTextStyles(this.inputNode, tempLabel);
     tempLabel.textContent = "x";
     doc.documentElement.appendChild(tempLabel);
-    const width = tempLabel.offsetWidth;
+    const width = tempLabel.getBoundingClientRect().width;
     tempLabel.remove();
     return width;
   }
@@ -1455,17 +1566,16 @@ class JSTerm extends Component {
    *
    * @returns {Number|null}: Width of the icon, or null if the input does not exist.
    */
-  _getChevronWidth() {
+  _getInputPaddingInlineStart() {
     if (!this.inputNode) {
       return null;
     }
-
-   // Calculate the width of the chevron placed at the beginning of the input
-    // box. Remove 4 more pixels to accommodate the padding of the popup.
+   // Calculate the width of the chevron placed at the beginning of the input box.
     const doc = this.hud.document;
-    return doc.defaultView
+
+    return new Number(doc.defaultView
       .getComputedStyle(this.inputNode)
-      .paddingLeft.replace(/[^0-9.]/g, "") - 4;
+      .paddingInlineStart.replace(/[^0-9.]/g, ""));
   }
 
   onContextMenu(e) {
@@ -1479,8 +1589,6 @@ class JSTerm extends Component {
   }
 
   destroy() {
-    this.clearCompletion();
-
     this.webConsoleClient.clearNetworkRequests();
     if (this.hud.outputNode) {
       // We do this because it's much faster than letting React handle the ConsoleOutput
@@ -1528,7 +1636,7 @@ class JSTerm extends Component {
     }
 
     const {
-      onPaste
+      onPaste,
     } = this.props;
 
     return (

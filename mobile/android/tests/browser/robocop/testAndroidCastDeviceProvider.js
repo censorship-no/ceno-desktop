@@ -8,10 +8,7 @@
 
 "use strict";
 
-/* eslint-disable mozilla/use-chromeutils-import */
-
-Cu.import("resource://gre/modules/Messaging.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 
 // event name
 const TOPIC_ANDROID_CAST_DEVICE_ADDED   = "AndroidCastDevice:Added";
@@ -51,7 +48,7 @@ function TestDescription(aType, aTcpAddress, aTcpPort) {
 }
 
 TestDescription.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationChannelDescription]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationChannelDescription]),
 };
 
 function TestControlChannelListener(aRole) {
@@ -91,7 +88,7 @@ TestControlChannelListener.prototype = {
   onOffer: function(aOffer) { this._isOnOfferCalledResolve(); },
   onAnswer: function(aAnswer) { this._isOnAnswerCalledResolve(); },
   onIceCandidate: function(aCandidate) { this._isOnIceCandidateCalledResolve(); },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationControlChannelListener])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationControlChannelListener]),
 };
 
 function deviceManagement() {
@@ -118,8 +115,8 @@ function deviceManagement() {
       delete this.devices[aDevice.id];
       this._isRemoveDeviceCalledResolve();
     },
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationDeviceListener,
-                                           Ci.nsISupportsWeakReference]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationDeviceListener,
+                                            Ci.nsISupportsWeakReference]),
     count: function() {
       let cnt = 0;
       for (let key in this.devices) {
@@ -143,7 +140,7 @@ function deviceManagement() {
       this.isRemoveDeviceCalled = new Promise((aResolve) => {
         this._isRemoveDeviceCalledResolve = aResolve;
       });
-    }
+    },
   };
   listener.reset();
   // Should be no device.
@@ -153,7 +150,7 @@ function deviceManagement() {
   provider.listener = listener;
   let device = {
     uuid: "chromecast",
-    friendlyName: "chromecast"
+    friendlyName: "chromecast",
   };
 
   // Sync device from Android.
@@ -204,8 +201,8 @@ function presentationLaunchAndTerminate() {
     addDevice: function(aDevice) { this.devices[aDevice.id] = aDevice; },
     updateDevice: function(aDevice) { this.devices[aDevice.id] = aDevice; },
     removeDevice: function(aDevice) { delete this.devices[aDevice.id]; },
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationDeviceListener,
-                                           Ci.nsISupportsWeakReference]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIPresentationDeviceListener,
+                                            Ci.nsISupportsWeakReference]),
     onSessionRequest: function(aDeviceId, aUrl, aPresentationId, aControlChannel) {
       receiverControlChannel = aControlChannel;
       receiverControlChannel.listener = receiverControlChannelListener;
@@ -214,13 +211,13 @@ function presentationLaunchAndTerminate() {
       receiverControlChannel = aControlChannel;
       receiverControlChannel.listener = receiverControlChannelListener;
     },
-    getDevice: function(aDeviceId) { return this.devices[aDeviceId]; }
+    getDevice: function(aDeviceId) { return this.devices[aDeviceId]; },
   };
   provider.listener = listener;
 
   let device = {
     uuid: "chromecast",
-    friendlyName: "chromecast"
+    friendlyName: "chromecast",
   };
 
   // Add and get the device.
@@ -274,7 +271,7 @@ function presentationLaunchAndTerminate() {
       let candidate = {
         candidate: "1 1 UDP 1 127.0.0.1 34567 type host",
         sdpMid: "helloworld",
-        sdpMLineIndex: 1
+        sdpMLineIndex: 1,
       };
       try {
         controllerControlChannel.sendIceCandidate(JSON.stringify(candidate));

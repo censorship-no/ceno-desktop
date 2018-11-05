@@ -22,8 +22,8 @@ class SVGFETileElement : public SVGFETileElementBase
   friend nsresult (::NS_NewSVGFETileElement(nsIContent **aResult,
                                             already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 protected:
-  explicit SVGFETileElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGFETileElementBase(aNodeInfo)
+  explicit SVGFETileElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGFETileElementBase(std::move(aNodeInfo))
   {
   }
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
@@ -41,8 +41,7 @@ public:
   virtual nsSVGString& GetResultImageName() override { return mStringAttributes[RESULT]; }
   virtual void GetSourceImageNames(nsTArray<nsSVGStringInfo>& aSources) override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedString> In1();

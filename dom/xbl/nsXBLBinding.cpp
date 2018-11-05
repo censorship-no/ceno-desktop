@@ -52,7 +52,6 @@
 #include "mozilla/DeferredFinalize.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/ShadowRoot.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -104,7 +103,6 @@ static const JSClass gPrototypeJSClass = {
 nsXBLBinding::nsXBLBinding(nsXBLPrototypeBinding* aBinding)
   : mMarkedForDeath(false)
   , mUsingContentXBLScope(false)
-  , mIsShadowRootBinding(false)
   , mPrototypeBinding(aBinding)
   , mBoundElement(nullptr)
 {
@@ -113,26 +111,9 @@ nsXBLBinding::nsXBLBinding(nsXBLPrototypeBinding* aBinding)
   NS_ADDREF(mPrototypeBinding->XBLDocumentInfo());
 }
 
-// Constructor used by web components.
-nsXBLBinding::nsXBLBinding(ShadowRoot* aShadowRoot, nsXBLPrototypeBinding* aBinding)
-  : mMarkedForDeath(false),
-    mUsingContentXBLScope(false),
-    mIsShadowRootBinding(true),
-    mPrototypeBinding(aBinding),
-    mContent(aShadowRoot),
-    mBoundElement(nullptr)
+nsXBLBinding::~nsXBLBinding()
 {
-  NS_ASSERTION(mPrototypeBinding, "Must have a prototype binding!");
-  // Grab a ref to the document info so the prototype binding won't die
-  NS_ADDREF(mPrototypeBinding->XBLDocumentInfo());
-}
-
-nsXBLBinding::~nsXBLBinding(void)
-{
-  if (mContent && !mIsShadowRootBinding) {
-    // It is unnecessary to uninstall anonymous content in a shadow tree
-    // because the ShadowRoot itself is a DocumentFragment and does not
-    // need any additional cleanup.
+  if (mContent) {
     nsXBLBinding::UnbindAnonymousContent(mContent->OwnerDoc(), mContent);
   }
   nsXBLDocumentInfo* info = mPrototypeBinding->XBLDocumentInfo();
@@ -144,7 +125,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsXBLBinding)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXBLBinding)
   // XXX Probably can't unlink mPrototypeBinding->XBLDocumentInfo(), because
   //     mPrototypeBinding is weak.
-  if (tmp->mContent && !tmp->mIsShadowRootBinding) {
+  if (tmp->mContent) {
     nsXBLBinding::UnbindAnonymousContent(tmp->mContent->OwnerDoc(),
                                          tmp->mContent);
   }
@@ -224,9 +205,11 @@ nsXBLBinding::BindAnonymousContent(nsIContent* aAnonParent,
     }
 
 #ifdef MOZ_XUL
-    // To make XUL templates work (and other goodies that happen when
-    // an element is added to a XUL document), we need to notify the
-    // XUL document using its special API.
+    // To make other goodies that happen when an element is added to a XUL
+    // document work, we need to notify the XUL document using its special API.
+    //
+    // FIXME(emilio): Is this needed anymore? Do we really use <linkset> or
+    // <link> from XBL stuff?
     if (doc && doc->IsXULDocument()) {
       doc->AsXULDocument()->AddSubtreeToDocument(child);
     }
@@ -242,18 +225,10 @@ nsXBLBinding::UnbindAnonymousContent(nsIDocument* aDocument,
   nsAutoScriptBlocker scriptBlocker;
   // Hold a strong ref while doing this, just in case.
   nsCOMPtr<nsIContent> anonParent = aAnonParent;
-#ifdef MOZ_XUL
-  const bool isXULDocument = aDocument && aDocument->IsXULDocument();
-#endif
   for (nsIContent* child = aAnonParent->GetFirstChild();
        child;
        child = child->GetNextSibling()) {
     child->UnbindFromTree(true, aNullParent);
-#ifdef MOZ_XUL
-    if (isXULDocument) {
-      aDocument->AsXULDocument()->RemoveSubtreeFromDocument(child);
-    }
-#endif
   }
 }
 
@@ -365,9 +340,11 @@ nsXBLBinding::GenerateAnonymousContent()
           point->AppendInsertedChild(child, false);
         } else {
           NodeInfo *ni = child->NodeInfo();
-          if (ni->NamespaceID() != kNameSpaceID_XUL ||
-              (!ni->Equals(nsGkAtoms::_template) &&
-               !ni->Equals(nsGkAtoms::observes))) {
+          if (!child->TextIsOnlyWhitespace() &&
+              (ni->NamespaceID() != kNameSpaceID_XUL ||
+               (!ni->Equals(nsGkAtoms::_template) &&
+                !ni->Equals(nsGkAtoms::observes)))
+          ) {
             // Compatibility hack. For some reason the original XBL
             // implementation dropped the content of a binding if any child of
             // the bound element didn't match any of the <children> in the
@@ -419,9 +396,7 @@ nsXBLBinding::GenerateAnonymousContent()
 
     // Conserve space by wiping the attributes off the clone.
     //
-    // FIXME(emilio): It'd be nice to make `mContent` a `RefPtr<Element>`, but
-    // as of right now it can also be a ShadowRoot (we don't enter in this
-    // codepath though). Move Shadow DOM outside XBL and then fix that.
+    // FIXME(emilio): It'd be nice to make `mContent` a `RefPtr<Element>`.
     if (mContent)
       mContent->AsElement()->UnsetAttr(namespaceID, name, false);
   }
@@ -802,7 +777,7 @@ nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocumen
 
     // Update the anonymous content.
     // XXXbz why not only for style bindings?
-    if (mContent && !mIsShadowRootBinding) {
+    if (mContent) {
       nsXBLBinding::UnbindAnonymousContent(aOldDocument, mContent);
     }
 
@@ -1003,7 +978,8 @@ nsXBLBinding::DoInitJSClass(JSContext *cx,
   // to create and define it.
   JS::Rooted<JSObject*> proto(cx);
   JS::Rooted<JS::PropertyDescriptor> desc(cx);
-  if (!JS_GetOwnUCPropertyDescriptor(cx, holder, aClassName.get(), &desc)) {
+  if (!JS_GetOwnUCPropertyDescriptor(cx, holder, aClassName.get(),
+                                     aClassName.Length(), &desc)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
   *aNew = !desc.object();

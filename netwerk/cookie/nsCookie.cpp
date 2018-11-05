@@ -3,10 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/Encoding.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "nsAutoPtr.h"
 #include "nsCookie.h"
-#include "nsUTF8ConverterService.h"
 #include <stdlib.h>
 
 /******************************************************************************
@@ -97,9 +97,8 @@ nsCookie::Create(const nsACString &aName,
 {
   // Ensure mValue contains a valid UTF-8 sequence. Otherwise XPConnect will
   // truncate the string after the first invalid octet.
-  RefPtr<nsUTF8ConverterService> converter = new nsUTF8ConverterService();
   nsAutoCString aUTF8Value;
-  converter->ConvertStringToUTF8(aValue, "UTF-8", false, true, 1, aUTF8Value);
+  UTF_8_ENCODING->DecodeWithoutBOMHandling(aValue, aUTF8Value);
 
   // find the required string buffer size, adding 4 for the terminating nulls
   const uint32_t stringLength = aName.Length() + aUTF8Value.Length() +
@@ -166,8 +165,6 @@ NS_IMETHODIMP nsCookie::GetIsSession(bool *aIsSession)   { *aIsSession = IsSessi
 NS_IMETHODIMP nsCookie::GetIsDomain(bool *aIsDomain)     { *aIsDomain = IsDomain();   return NS_OK; }
 NS_IMETHODIMP nsCookie::GetIsSecure(bool *aIsSecure)     { *aIsSecure = IsSecure();   return NS_OK; }
 NS_IMETHODIMP nsCookie::GetIsHttpOnly(bool *aHttpOnly)   { *aHttpOnly = IsHttpOnly(); return NS_OK; }
-NS_IMETHODIMP nsCookie::GetStatus(nsCookieStatus *aStatus) { *aStatus = 0;              return NS_OK; }
-NS_IMETHODIMP nsCookie::GetPolicy(nsCookiePolicy *aPolicy) { *aPolicy = 0;              return NS_OK; }
 NS_IMETHODIMP nsCookie::GetCreationTime(int64_t *aCreation){ *aCreation = CreationTime(); return NS_OK; }
 NS_IMETHODIMP nsCookie::GetLastAccessed(int64_t *aTime)    { *aTime = LastAccessed();   return NS_OK; }
 NS_IMETHODIMP nsCookie::GetSameSite(int32_t *aSameSite)    { *aSameSite = SameSite();   return NS_OK; }

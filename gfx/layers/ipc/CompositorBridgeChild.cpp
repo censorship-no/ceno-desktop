@@ -92,6 +92,7 @@ CompositorBridgeChild::CompositorBridgeChild(CompositorManagerChild *aManager)
   , mProcessToken(0)
   , mSectionAllocator(nullptr)
   , mPaintLock("CompositorBridgeChild.mPaintLock")
+  , mTotalAsyncPaints(0)
   , mOutstandingAsyncPaints(0)
   , mOutstandingAsyncEndTransaction(false)
   , mIsDelayingForAsyncPaints(false)
@@ -225,7 +226,7 @@ CompositorBridgeChild::ShutDown()
 }
 
 bool
-CompositorBridgeChild::LookupCompositorFrameMetrics(const FrameMetrics::ViewID aId,
+CompositorBridgeChild::LookupCompositorFrameMetrics(const ScrollableLayerGuid::ViewID aId,
                                                     FrameMetrics& aFrame)
 {
   SharedFrameMetricsData* data = mFrameMetricsTable.Get(aId);
@@ -274,7 +275,9 @@ CompositorBridgeChild::InitForWidget(uint64_t aProcessToken,
 /*static*/ CompositorBridgeChild*
 CompositorBridgeChild::Get()
 {
-  // This is only expected to be used in child processes.
+  // This is only expected to be used in child processes. While the parent
+  // process does have CompositorBridgeChild instances, it has _multiple_ (one
+  // per window), and therefore there is no global singleton available.
   MOZ_ASSERT(!XRE_IsParentProcess());
   return sCompositorBridge;
 }
@@ -645,7 +648,7 @@ CompositorBridgeChild::SharedFrameMetricsData::CopyFrameMetrics(FrameMetrics* aF
   mMutex->Unlock();
 }
 
-FrameMetrics::ViewID
+ScrollableLayerGuid::ViewID
 CompositorBridgeChild::SharedFrameMetricsData::GetViewID()
 {
   const FrameMetrics* frame =
@@ -1094,9 +1097,7 @@ CompositorBridgeChild::WillEndTransaction()
 
 PWebRenderBridgeChild*
 CompositorBridgeChild::AllocPWebRenderBridgeChild(const wr::PipelineId& aPipelineId,
-                                                  const LayoutDeviceIntSize&,
-                                                  TextureFactoryIdentifier*,
-                                                  wr::IdNamespace *aIdNamespace)
+                                                  const LayoutDeviceIntSize&)
 {
   WebRenderBridgeChild* child = new WebRenderBridgeChild(aPipelineId);
   child->AddIPDLReference();
@@ -1183,6 +1184,53 @@ CompositorBridgeChild::FlushAsyncPaints()
   }
 }
 
+void
+CompositorBridgeChild::NotifyBeginAsyncPaint(PaintTask* aTask)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  MonitorAutoLock lock(mPaintLock);
+
+  if (mTotalAsyncPaints == 0) {
+    mAsyncTransactionBegin = TimeStamp::Now();
+  }
+  mTotalAsyncPaints += 1;
+
+  // We must not be waiting for paints or buffer copying to complete yet. This
+  // would imply we started a new paint without waiting for a previous one, which
+  // could lead to incorrect rendering or IPDL deadlocks.
+  MOZ_ASSERT(!mIsDelayingForAsyncPaints);
+
+  mOutstandingAsyncPaints++;
+
+  // Mark texture clients that they are being used for async painting, and
+  // make sure we hold them alive on the main thread.
+  for (auto& client : aTask->mClients) {
+    client->AddPaintThreadRef();
+    mTextureClientsForAsyncPaint.AppendElement(client);
+  };
+}
+
+// Must only be called from the paint thread. Notifies the CompositorBridge
+// that the paint thread has finished an asynchronous paint request.
+bool
+CompositorBridgeChild::NotifyFinishedAsyncWorkerPaint(PaintTask* aTask)
+{
+  MOZ_ASSERT(PaintThread::Get()->IsOnPaintWorkerThread());
+
+  MonitorAutoLock lock(mPaintLock);
+  mOutstandingAsyncPaints--;
+
+  for (auto& client : aTask->mClients) {
+    client->DropPaintThreadRef();
+  };
+  aTask->DropTextureClients();
+
+  // If the main thread has completed queuing work and this was the
+  // last paint, then it is time to end the layer transaction and sync
+  return mOutstandingAsyncEndTransaction && mOutstandingAsyncPaints == 0;
+}
+
 bool
 CompositorBridgeChild::NotifyBeginAsyncEndLayerTransaction(SyncObjectClient* aSyncObject)
 {
@@ -1198,7 +1246,7 @@ CompositorBridgeChild::NotifyBeginAsyncEndLayerTransaction(SyncObjectClient* aSy
 void
 CompositorBridgeChild::NotifyFinishedAsyncEndLayerTransaction()
 {
-  MOZ_ASSERT(PaintThread::IsOnPaintThread());
+  MOZ_ASSERT(PaintThread::Get()->IsOnPaintWorkerThread());
 
   if (mOutstandingAsyncSyncObject) {
     mOutstandingAsyncSyncObject->Synchronize();
@@ -1206,6 +1254,13 @@ CompositorBridgeChild::NotifyFinishedAsyncEndLayerTransaction()
   }
 
   MonitorAutoLock lock(mPaintLock);
+
+  if (mTotalAsyncPaints > 0) {
+    float tenthMs = (TimeStamp::Now() - mAsyncTransactionBegin).ToMilliseconds() * 10;
+    Telemetry::Accumulate(Telemetry::GFX_OMTP_PAINT_TASK_COUNT, int32_t(mTotalAsyncPaints));
+    Telemetry::Accumulate(Telemetry::GFX_OMTP_PAINT_TIME, int32_t(tenthMs));
+    mTotalAsyncPaints = 0;
+  }
 
   // Since this should happen after ALL paints are done and
   // at the end of a transaction, this should always be true.
@@ -1231,7 +1286,7 @@ CompositorBridgeChild::ResumeIPCAfterAsyncPaint()
 {
   // Note: the caller is responsible for holding the lock.
   mPaintLock.AssertCurrentThreadOwns();
-  MOZ_ASSERT(PaintThread::IsOnPaintThread());
+  MOZ_ASSERT(PaintThread::Get()->IsOnPaintWorkerThread());
   MOZ_ASSERT(mOutstandingAsyncPaints == 0);
   MOZ_ASSERT(!mOutstandingAsyncEndTransaction);
   MOZ_ASSERT(mIsDelayingForAsyncPaints);

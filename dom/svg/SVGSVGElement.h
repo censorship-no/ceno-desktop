@@ -78,7 +78,7 @@ class SVGSVGElement final : public SVGSVGElementBase
   friend class mozilla::dom::SVGView;
 
 protected:
-  SVGSVGElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+  SVGSVGElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                 FromParser aFromParser);
   virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
 
@@ -107,8 +107,7 @@ public:
   virtual bool IsEventAttributeNameInternal(nsAtom* aName) override;
 
   // nsINode methods:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedLength> X();

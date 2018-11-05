@@ -12,16 +12,16 @@
 <window id="SiteDataSettingsDialog" windowtype="Browser:SiteDataSettings"
         data-l10n-id="site-data-settings-window"
         data-l10n-attrs="title"
-        class="windowDialog"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         style="width: 45em;"
         onload="gSiteDataSettings.init();"
         onkeypress="gSiteDataSettings.onKeyPress(event);"
         persist="screenX screenY width height">
 
-  <link rel="localization" href="branding/brand.ftl"/>
-  <link rel="localization" href="browser/preferences/siteDataSettings.ftl"/>
-  <script type="application/javascript" src="chrome://global/content/l10n.js"></script>
+  <linkset>
+    <link rel="localization" href="branding/brand.ftl"/>
+    <link rel="localization" href="browser/preferences/siteDataSettings.ftl"/>
+  </linkset>
 
   <script src="chrome://browser/content/preferences/siteDataSettings.js"/>
 

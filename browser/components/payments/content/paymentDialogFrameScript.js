@@ -26,6 +26,8 @@ ChromeUtils.defineModuleGetter(this, "FormAutofill",
                                "resource://formautofill/FormAutofill.jsm");
 ChromeUtils.defineModuleGetter(this, "FormAutofillUtils",
                                "resource://formautofill/FormAutofillUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "AppConstants",
+                               "resource://gre/modules/AppConstants.jsm");
 
 const SAVE_CREDITCARD_DEFAULT_PREF = "dom.payments.defaults.saveCreditCard";
 const SAVE_ADDRESS_DEFAULT_PREF = "dom.payments.defaults.saveAddress";
@@ -74,10 +76,15 @@ let PaymentFrameScript = {
     let waivedContent = Cu.waiveXrays(content);
     let PaymentDialogUtils = {
       DEFAULT_REGION: FormAutofill.DEFAULT_REGION,
-      supportedCountries: FormAutofill.supportedCountries,
+      countries: FormAutofill.countries,
 
-      getAddressLabel(address) {
-        return FormAutofillUtils.getAddressLabel(address);
+      getAddressLabel(address, addressFields = null) {
+        return FormAutofillUtils.getAddressLabel(address, addressFields);
+      },
+
+      getCreditCardNetworks() {
+        let networks = FormAutofillUtils.getCreditCardNetworks();
+        return Cu.cloneInto(networks, waivedContent);
       },
 
       isCCNumber(value) {
@@ -96,7 +103,11 @@ let PaymentFrameScript = {
           saveAddressDefaultChecked:
             Services.prefs.getBoolPref(SAVE_ADDRESS_DEFAULT_PREF, false),
         }, waivedContent);
-        return prefValues;
+        return Cu.cloneInto(prefValues, waivedContent);
+      },
+
+      isOfficialBranding() {
+        return AppConstants.MOZILLA_OFFICIAL;
       },
     };
     waivedContent.PaymentDialogUtils = Cu.cloneInto(PaymentDialogUtils, waivedContent, {

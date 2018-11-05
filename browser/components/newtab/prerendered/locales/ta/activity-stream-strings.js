@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "படத்தை ஏற்றுவதில் தோல்வி. வேறு URL ஐ முயற்சிக்கவும்.",
   "pocket_read_more": "பிரபலமான தலைப்புகள்:",
   "pocket_read_even_more": "இன்னும் கதைகளைப் பார்க்கவும்",
+  "pocket_more_reccommendations": "More Recommendations",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "Get Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "உலாவலைத் தொடங்கவும், மேலும் நாங்கள் சில சிறந்த கட்டுரைகள், காணொளிகள், மற்றும் நீங்கள் சமீபத்தில் பார்த்த அல்லது புத்தகக்குறியிட்ட பக்கங்களை இங்கே காட்டுவோம்.",
   "topstories_empty_state": "நீங்கள் முடித்துவிட்டீர்கள். {provider} இலிருந்து கூடுதல் கதைகளுக்கு பின்னர் பாருங்கள். காத்திருக்க முடியவில்லையா? இணையத்திலிருந்து கூடுதலான கதைகளைக் கண்டுபிடிக்க பிரபலமான தலைப்பைத் தேர்ந்தெடுங்கள்.",
   "manual_migration_explanation2": "மற்றொரு உலாவியின் புத்தகக்குறிகள், வரலாறு மற்றும் கடவுச்சொற்களுடன் பயர்பாக்சை முயற்சித்துப் பாருங்கள்.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "பகுதியை நிர்வகி",
   "section_menu_action_manage_webext": "நீட்சிகளை நிர்வகி",
   "section_menu_action_add_topsite": "முதன்மை தளத்தைச் சேர்",
+  "section_menu_action_add_search_engine": "தேடும் பொறியைச் சேர்",
   "section_menu_action_move_up": "மேலே நகர்த்து",
   "section_menu_action_move_down": "கீழே நகர்த்து",
   "section_menu_action_privacy_notice": "தனியுரிமை அறிவிப்பு",
@@ -101,5 +106,6 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "சேவையின் விதிமுறைகள்",
   "firstrun_privacy_notice": "தனியுரிமை அறிவிப்பு",
   "firstrun_continue_to_login": "தொடர்க",
-  "firstrun_skip_login": "இந்த படிநிலையைத் தவிர்"
+  "firstrun_skip_login": "இந்த படிநிலையைத் தவிர்",
+  "context_menu_title": "Open menu"
 };

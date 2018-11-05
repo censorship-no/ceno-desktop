@@ -109,15 +109,17 @@ class Requirement
         MOZ_ASSERT(newRequirement.kind() != Requirement::MUST_REUSE_INPUT);
 
         if (newRequirement.kind() == Requirement::FIXED) {
-            if (kind() == Requirement::FIXED)
+            if (kind() == Requirement::FIXED) {
                 return newRequirement.allocation() == allocation();
+            }
             *this = newRequirement;
             return true;
         }
 
         MOZ_ASSERT(newRequirement.kind() == Requirement::REGISTER);
-        if (kind() == Requirement::FIXED)
+        if (kind() == Requirement::FIXED) {
             return allocation().isRegister();
+        }
 
         *this = newRequirement;
         return true;
@@ -381,10 +383,12 @@ class LiveRange : public TempObject
     // Comparator for use in range splay trees.
     static int compare(LiveRange* v0, LiveRange* v1) {
         // LiveRange includes 'from' but excludes 'to'.
-        if (v0->to() <= v1->from())
+        if (v0->to() <= v1->from()) {
             return -1;
-        if (v0->from() >= v1->to())
+        }
+        if (v0->from() >= v1->to()) {
             return 1;
+        }
         return 0;
     }
 };
@@ -614,7 +618,6 @@ typedef js::Vector<CodePosition, 4, SystemAllocPolicy> SplitPositionVector;
 
 class BacktrackingAllocator : protected RegisterAllocator
 {
-    friend class C1Spewer;
     friend class JSONSpewer;
 
     // This flag is set when testing new allocator modifications.
@@ -671,10 +674,12 @@ class BacktrackingAllocator : protected RegisterAllocator
 
         // Comparator for use in splay tree.
         static int compare(CallRange* v0, CallRange* v1) {
-            if (v0->range.to <= v1->range.from)
+            if (v0->range.to <= v1->range.from) {
                 return -1;
-            if (v0->range.from >= v1->range.to)
+            }
+            if (v0->range.from >= v1->range.to) {
                 return 1;
+            }
             return 0;
         }
     };
@@ -790,35 +795,42 @@ class BacktrackingAllocator : protected RegisterAllocator
 
     MOZ_MUST_USE bool moveInput(LInstruction* ins, LiveRange* from, LiveRange* to,
                                 LDefinition::Type type) {
-        if (from->bundle()->allocation() == to->bundle()->allocation())
+        if (from->bundle()->allocation() == to->bundle()->allocation()) {
             return true;
+        }
         LMoveGroup* moves = getInputMoveGroup(ins);
         return addMove(moves, from, to, type);
     }
 
     MOZ_MUST_USE bool moveAfter(LInstruction* ins, LiveRange* from, LiveRange* to,
                                 LDefinition::Type type) {
-        if (from->bundle()->allocation() == to->bundle()->allocation())
+        if (from->bundle()->allocation() == to->bundle()->allocation()) {
             return true;
+        }
         LMoveGroup* moves = getMoveGroupAfter(ins);
         return addMove(moves, from, to, type);
     }
 
     MOZ_MUST_USE bool moveAtExit(LBlock* block, LiveRange* from, LiveRange* to,
                                  LDefinition::Type type) {
-        if (from->bundle()->allocation() == to->bundle()->allocation())
+        if (from->bundle()->allocation() == to->bundle()->allocation()) {
             return true;
+        }
         LMoveGroup* moves = block->getExitMoveGroup(alloc());
         return addMove(moves, from, to, type);
     }
 
     MOZ_MUST_USE bool moveAtEntry(LBlock* block, LiveRange* from, LiveRange* to,
                                   LDefinition::Type type) {
-        if (from->bundle()->allocation() == to->bundle()->allocation())
+        if (from->bundle()->allocation() == to->bundle()->allocation()) {
             return true;
+        }
         LMoveGroup* moves = block->getEntryMoveGroup(alloc());
         return addMove(moves, from, to, type);
     }
+
+    MOZ_MUST_USE bool moveAtEdge(LBlock* predecessor, LBlock* successor, LiveRange* from,
+                                 LiveRange* to, LDefinition::Type type);
 
     // Debugging methods.
     void dumpAllocations();

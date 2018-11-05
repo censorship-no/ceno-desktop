@@ -14,16 +14,17 @@ import {_TopSites as TopSites} from "content-src/components/TopSites/TopSites";
 
 const perfSvc = {
   mark() {},
-  getMostRecentAbsMarkStartByName() {}
+  getMostRecentAbsMarkStartByName() {},
 };
 
 const DEFAULT_PROPS = {
+  Prefs: {values: {}},
   TopSites: {initialized: true, rows: []},
   TopSitesRows: TOP_SITES_DEFAULT_ROWS,
   topSiteIconType: () => "no_image",
   dispatch() {},
   intl: {formatMessage: x => x},
-  perfSvc
+  perfSvc,
 };
 
 const DEFAULT_BLOB_URL = "blob://test";
@@ -104,10 +105,11 @@ describe("<TopSites>", () => {
             "screenshot": 0,
             "tippytop": 0,
             "rich_icon": 0,
-            "no_image": 0
+            "no_image": 0,
           },
-          topsites_pinned: 0
-        }
+          topsites_pinned: 0,
+          topsites_search_shortcuts: 0,
+        },
       }));
     });
     it("should correctly count TopSite images - just screenshot", () => {
@@ -125,10 +127,11 @@ describe("<TopSites>", () => {
             "screenshot": 1,
             "tippytop": 0,
             "rich_icon": 0,
-            "no_image": 0
+            "no_image": 0,
           },
-          topsites_pinned: 0
-        }
+          topsites_pinned: 0,
+          topsites_search_shortcuts: 0,
+        },
       }));
     });
     it("should correctly count TopSite images - custom_screenshot", () => {
@@ -146,10 +149,11 @@ describe("<TopSites>", () => {
             "screenshot": 0,
             "tippytop": 0,
             "rich_icon": 0,
-            "no_image": 0
+            "no_image": 0,
           },
-          topsites_pinned: 0
-        }
+          topsites_pinned: 0,
+          topsites_search_shortcuts: 0,
+        },
       }));
     });
     it("should correctly count TopSite images - screenshot + favicon", () => {
@@ -167,10 +171,11 @@ describe("<TopSites>", () => {
             "screenshot": 0,
             "tippytop": 0,
             "rich_icon": 0,
-            "no_image": 0
+            "no_image": 0,
           },
-          topsites_pinned: 0
-        }
+          topsites_pinned: 0,
+          topsites_search_shortcuts: 0,
+        },
       }));
     });
     it("should correctly count TopSite images - rich_icon", () => {
@@ -188,10 +193,11 @@ describe("<TopSites>", () => {
             "screenshot": 0,
             "tippytop": 0,
             "rich_icon": 1,
-            "no_image": 0
+            "no_image": 0,
           },
-          topsites_pinned: 0
-        }
+          topsites_pinned: 0,
+          topsites_search_shortcuts: 0,
+        },
       }));
     });
     it("should correctly count TopSite images - tippytop", () => {
@@ -209,10 +215,11 @@ describe("<TopSites>", () => {
             "screenshot": 0,
             "tippytop": 2,
             "rich_icon": 0,
-            "no_image": 1
+            "no_image": 1,
           },
-          topsites_pinned: 0
-        }
+          topsites_pinned: 0,
+          topsites_search_shortcuts: 0,
+        },
       }));
     });
     it("should correctly count TopSite images - no image", () => {
@@ -230,10 +237,11 @@ describe("<TopSites>", () => {
             "screenshot": 0,
             "tippytop": 0,
             "rich_icon": 0,
-            "no_image": 1
+            "no_image": 1,
           },
-          topsites_pinned: 0
-        }
+          topsites_pinned: 0,
+          topsites_search_shortcuts: 0,
+        },
       }));
     });
     it("should correctly count pinned Top Sites", () => {
@@ -251,10 +259,33 @@ describe("<TopSites>", () => {
             "screenshot": 0,
             "tippytop": 0,
             "rich_icon": 0,
-            "no_image": 3
+            "no_image": 3,
           },
-          topsites_pinned: 2
-        }
+          topsites_pinned: 2,
+          topsites_search_shortcuts: 0,
+        },
+      }));
+    });
+    it("should correctly count search shortcut Top Sites", () => {
+      const rows = [{searchTopSite: true}, {searchTopSite: true}];
+      sandbox.stub(DEFAULT_PROPS.TopSites, "rows").value(rows);
+      wrapper.instance()._dispatchTopSitesStats();
+
+      assert.calledOnce(DEFAULT_PROPS.dispatch);
+      assert.calledWithExactly(DEFAULT_PROPS.dispatch, ac.AlsoToMain({
+        type: at.SAVE_SESSION_PERF_DATA,
+        data: {
+          topsites_icon_stats: {
+            "custom_screenshot": 0,
+            "screenshot_with_icon": 0,
+            "screenshot": 0,
+            "tippytop": 0,
+            "rich_icon": 0,
+            "no_image": 2,
+          },
+          topsites_pinned: 0,
+          topsites_search_shortcuts: 2,
+        },
       }));
     });
     it("should only count visible top sites on wide layout", () => {
@@ -273,10 +304,11 @@ describe("<TopSites>", () => {
             "screenshot": 0,
             "tippytop": 0,
             "rich_icon": 0,
-            "no_image": 8
+            "no_image": 8,
           },
-          topsites_pinned: 0
-        }
+          topsites_pinned: 0,
+          topsites_search_shortcuts: 0,
+        },
       }));
     });
     it("should only count visible top sites on normal layout", () => {
@@ -294,10 +326,11 @@ describe("<TopSites>", () => {
             "screenshot": 0,
             "tippytop": 0,
             "rich_icon": 0,
-            "no_image": 6
+            "no_image": 6,
           },
-          topsites_pinned: 0
-        }
+          topsites_pinned: 0,
+          topsites_search_shortcuts: 0,
+        },
       }));
     });
   });
@@ -311,7 +344,7 @@ describe("<TopSiteLink>", () => {
     globals = new GlobalOverrider();
     url = {
       createObjectURL: globals.sandbox.stub().returns(DEFAULT_BLOB_URL),
-      revokeObjectURL: globals.sandbox.spy()
+      revokeObjectURL: globals.sandbox.spy(),
     };
     globals.set("URL", url);
     link = {url: "https://foo.com", screenshot: "foo.jpg", hostname: "foo"};
@@ -321,6 +354,11 @@ describe("<TopSiteLink>", () => {
     link.url = "https://www.foobar.org";
     const wrapper = shallow(<TopSiteLink link={link} />);
     assert.propertyVal(wrapper.find("a").props(), "href", "https://www.foobar.org");
+  });
+  it("should not add the url to the href if it a search shortcut", () => {
+    link.searchTopSite = true;
+    const wrapper = shallow(<TopSiteLink link={link} />);
+    assert.isFalse(wrapper.find("a").props().href);
   });
   it("should have rtl direction automatically set for text", () => {
     const wrapper = shallow(<TopSiteLink link={link} />);
@@ -458,7 +496,7 @@ describe("<TopSiteLink>", () => {
             this.prevented = true;
           },
           target: {blur() {}},
-          type
+          type,
         };
         wrapper.simulate(type, event);
         return event;
@@ -510,7 +548,7 @@ describe("<TopSite>", () => {
   });
 
   it("should render a TopSite", () => {
-    const wrapper = shallow(<TopSite link={link} />);
+    const wrapper = shallowWithIntl(<TopSite link={link} />);
     assert.ok(wrapper.exists());
   });
 
@@ -518,45 +556,45 @@ describe("<TopSite>", () => {
     link.url = "https://www.foobar.org";
     link.hostname = "foobar";
     link.eTLD = "org";
-    const wrapper = shallow(<TopSite link={link} />);
+    const wrapper = shallowWithIntl(<TopSite link={link} />);
 
     assert.equal(wrapper.find(TopSiteLink).props().title, "foobar");
   });
 
   it("should have .active class, on top-site-outer if context menu is open", () => {
-    const wrapper = shallow(<TopSite link={link} index={1} activeIndex={1} />);
+    const wrapper = shallowWithIntl(<TopSite link={link} index={1} activeIndex={1} />);
     wrapper.setState({showContextMenu: true});
 
     assert.equal(wrapper.find(TopSiteLink).props().className.trim(), "active");
   });
   it("should not add .active class, on top-site-outer if context menu is closed", () => {
-    const wrapper = shallow(<TopSite link={link} index={1} />);
+    const wrapper = shallowWithIntl(<TopSite link={link} index={1} />);
     wrapper.setState({showContextMenu: false, activeTile: 1});
     assert.equal(wrapper.find(TopSiteLink).props().className, "");
   });
   it("should render a context menu button", () => {
-    const wrapper = shallow(<TopSite link={link} />);
+    const wrapper = shallowWithIntl(<TopSite link={link} />);
     assert.equal(wrapper.find(".context-menu-button").length, 1);
   });
   it("should render a link menu when button is clicked", () => {
-    const wrapper = shallow(<TopSite link={link} />);
+    const wrapper = shallowWithIntl(<TopSite link={link} />);
     let button = wrapper.find(".context-menu-button");
     assert.equal(wrapper.find(LinkMenu).length, 0);
     button.simulate("click", {preventDefault: () => {}});
     assert.equal(wrapper.find(LinkMenu).length, 1);
   });
   it("should not render a link menu by default", () => {
-    const wrapper = shallow(<TopSite link={link} />);
+    const wrapper = shallowWithIntl(<TopSite link={link} />);
     assert.equal(wrapper.find(LinkMenu).length, 0);
   });
   it("should pass onUpdate, site, options, and index to LinkMenu", () => {
-    const wrapper = shallow(<TopSite link={link} />);
+    const wrapper = shallowWithIntl(<TopSite link={link} />);
     wrapper.find(".context-menu-button").simulate("click", {preventDefault: () => {}});
     const linkMenuProps = wrapper.find(LinkMenu).props();
     ["onUpdate", "site", "index", "options"].forEach(prop => assert.property(linkMenuProps, prop));
   });
   it("should pass through the correct menu options to LinkMenu", () => {
-    const wrapper = shallow(<TopSite link={link} />);
+    const wrapper = shallowWithIntl(<TopSite link={link} />);
     wrapper.find(".context-menu-button").simulate("click", {preventDefault: () => {}});
     const linkMenuProps = wrapper.find(LinkMenu).props();
     assert.deepEqual(linkMenuProps.options,
@@ -566,7 +604,7 @@ describe("<TopSite>", () => {
   describe("#onLinkClick", () => {
     it("should call dispatch when the link is clicked", () => {
       const dispatch = sinon.stub();
-      const wrapper = shallow(<TopSite link={link} index={3} dispatch={dispatch} />);
+      const wrapper = shallowWithIntl(<TopSite link={link} index={3} dispatch={dispatch} />);
 
       wrapper.find(TopSiteLink).simulate("click", {preventDefault() {}});
 
@@ -574,7 +612,7 @@ describe("<TopSite>", () => {
     });
     it("should dispatch a UserEventAction with the right data", () => {
       const dispatch = sinon.stub();
-      const wrapper = shallow(<TopSite link={Object.assign({}, link, {iconType: "rich_icon", isPinned: true})} index={3} dispatch={dispatch} />);
+      const wrapper = shallowWithIntl(<TopSite link={Object.assign({}, link, {iconType: "rich_icon", isPinned: true})} index={3} dispatch={dispatch} />);
 
       wrapper.find(TopSiteLink).simulate("click", {preventDefault() {}});
 
@@ -587,9 +625,32 @@ describe("<TopSite>", () => {
       assert.propertyVal(action.data.value, "card_type", "pinned");
       assert.propertyVal(action.data.value, "icon_type", "rich_icon");
     });
+    it("should dispatch a UserEventAction with the right data for search top site", () => {
+      const dispatch = sinon.stub();
+      const siteInfo = {
+        iconType: "tippytop",
+        isPinned: true,
+        searchTopSite: true,
+        hostname: "google",
+        label: "@google",
+      };
+      const wrapper = shallowWithIntl(<TopSite link={Object.assign({}, link, siteInfo)} index={3} dispatch={dispatch} />);
+
+      wrapper.find(TopSiteLink).simulate("click", {preventDefault() {}});
+
+      const [action] = dispatch.firstCall.args;
+      assert.isUserEventAction(action);
+
+      assert.propertyVal(action.data, "event", "CLICK");
+      assert.propertyVal(action.data, "source", "TOP_SITES");
+      assert.propertyVal(action.data, "action_position", 3);
+      assert.propertyVal(action.data.value, "card_type", "search");
+      assert.propertyVal(action.data.value, "icon_type", "tippytop");
+      assert.propertyVal(action.data.value, "search_vendor", "google");
+    });
     it("should dispatch OPEN_LINK with the right data", () => {
       const dispatch = sinon.stub();
-      const wrapper = shallow(<TopSite link={Object.assign({}, link, {typedBonus: true})} index={3} dispatch={dispatch} />);
+      const wrapper = shallowWithIntl(<TopSite link={Object.assign({}, link, {typedBonus: true})} index={3} dispatch={dispatch} />);
 
       wrapper.find(TopSiteLink).simulate("click", {preventDefault() {}});
 
@@ -654,7 +715,7 @@ describe("<TopSiteForm>", () => {
   describe("#previewButton", () => {
     beforeEach(() => setup({
       site: {customScreenshotURL: "http://foo.com"},
-      previewResponse: null
+      previewResponse: null,
     }));
 
     it("should render the preview button on invalid urls", () => {
@@ -678,7 +739,7 @@ describe("<TopSiteForm>", () => {
     beforeEach(() => {
       setup({
         site: {customScreenshotURL: "http://foo.com", url: "http://foo.com"},
-        previewResponse: null
+        previewResponse: null,
       });
     });
 
@@ -697,16 +758,20 @@ describe("<TopSiteForm>", () => {
       assert.calledTwice(wrapper.props().dispatch);
       assert.calledWith(wrapper.props().dispatch, ac.AlsoToMain({
         type: at.PREVIEW_REQUEST,
-        data: {url: "http://screenshot"}
+        data: {url: "http://screenshot"},
       }));
       assert.calledWith(wrapper.props().dispatch, ac.UserEvent({
         event: "PREVIEW_REQUEST",
-        source: "TOP_SITES"
+        source: "TOP_SITES",
       }));
     });
   });
 
   describe("#TopSiteLink", () => {
+    beforeEach(() => {
+      setup();
+    });
+
     it("should display a TopSiteLink preview", () => {
       assert.equal(wrapper.find(TopSiteLink).length, 1);
     });
@@ -725,6 +790,13 @@ describe("<TopSiteForm>", () => {
       wrapper.setProps({previewResponse: ""});
 
       assert.equal(wrapper.find(".top-site-icon").length, 0);
+    });
+
+    it("should render the search icon when searchTopSite is true", () => {
+      wrapper.setProps({site: {tippyTopIcon: "bar", searchTopSite: true}});
+
+      assert.equal(wrapper.find(".rich-icon").getDOMNode().style["background-image"], "url(\"bar\")");
+      assert.isTrue(wrapper.find(".search-topsite").exists());
     });
   });
 
@@ -768,7 +840,7 @@ describe("<TopSiteForm>", () => {
         {
           data: {site: {label: "a label", url: "http://valid.com"}, index: -1},
           meta: {from: "ActivityStream:Content", to: "ActivityStream:Main"},
-          type: at.TOP_SITES_PIN
+          type: at.TOP_SITES_PIN,
         }
       );
       assert.calledWith(
@@ -776,7 +848,7 @@ describe("<TopSiteForm>", () => {
         {
           data: {action_position: -1, source: "TOP_SITES", event: "TOP_SITES_EDIT"},
           meta: {from: "ActivityStream:Content", to: "ActivityStream:Main"},
-          type: at.TELEMETRY_USER_EVENT
+          type: at.TELEMETRY_USER_EVENT,
         }
       );
     });
@@ -788,7 +860,7 @@ describe("<TopSiteForm>", () => {
         {
           data: {site: {url: "http://valid.com"}, index: -1},
           meta: {from: "ActivityStream:Content", to: "ActivityStream:Main"},
-          type: at.TOP_SITES_PIN
+          type: at.TOP_SITES_PIN,
         }
       );
     });
@@ -843,7 +915,7 @@ describe("<TopSiteForm>", () => {
         {
           data: {site: {label: "baz", url: "https://foo.bar", customScreenshotURL: "http://foo"}, index: 7},
           meta: {from: "ActivityStream:Content", to: "ActivityStream:Main"},
-          type: at.TOP_SITES_PIN
+          type: at.TOP_SITES_PIN,
         }
       );
       assert.calledWith(
@@ -851,7 +923,7 @@ describe("<TopSiteForm>", () => {
         {
           data: {action_position: 7, source: "TOP_SITES", event: "TOP_SITES_EDIT"},
           meta: {from: "ActivityStream:Content", to: "ActivityStream:Main"},
-          type: at.TELEMETRY_USER_EVENT
+          type: at.TELEMETRY_USER_EVENT,
         }
       );
     });
@@ -865,7 +937,7 @@ describe("<TopSiteForm>", () => {
         {
           data: {site: {label: "baz", url: "https://foo.bar", customScreenshotURL: null}, index: 7},
           meta: {from: "ActivityStream:Content", to: "ActivityStream:Main"},
-          type: at.TOP_SITES_PIN
+          type: at.TOP_SITES_PIN,
         }
       );
     });
@@ -879,7 +951,7 @@ describe("<TopSiteForm>", () => {
         {
           data: {site: {label: "baz", url: "https://foo.bar", customScreenshotURL: "http://foo"}, index: -1},
           meta: {from: "ActivityStream:Content", to: "ActivityStream:Main"},
-          type: at.TOP_SITES_PIN
+          type: at.TOP_SITES_PIN,
         }
       );
     });
@@ -891,7 +963,7 @@ describe("<TopSiteForm>", () => {
         {
           data: {site: {url: "https://foo.bar", customScreenshotURL: "http://foo"}, index: 7},
           meta: {from: "ActivityStream:Content", to: "ActivityStream:Main"},
-          type: at.TOP_SITES_PIN
+          type: at.TOP_SITES_PIN,
         }
       );
     });
@@ -1013,7 +1085,7 @@ describe("<TopSiteList>", () => {
       draggedIndex: 1,
       draggedSite: site2,
       draggedTitle: "bar",
-      topSitesPreview: []
+      topSitesPreview: [],
     });
     wrapper.setProps({TopSites: {rows: [site2, site1]}});
     assert.deepEqual(instance.state, TopSiteList.DEFAULT_STATE);
@@ -1032,12 +1104,12 @@ describe("<TopSiteList>", () => {
     assert.calledWith(dispatch, {
       data: {draggedFromIndex: 7, index: 3, site: {label: "foo", url: "https://foo.com", customScreenshotURL: "foo"}},
       meta: {from: "ActivityStream:Content", to: "ActivityStream:Main"},
-      type: "TOP_SITES_INSERT"
+      type: "TOP_SITES_INSERT",
     });
     assert.calledWith(dispatch, {
       data: {action_position: 3, event: "DROP", source: "TOP_SITES"},
       meta: {from: "ActivityStream:Content", to: "ActivityStream:Main"},
-      type: "TELEMETRY_USER_EVENT"
+      type: "TELEMETRY_USER_EVENT",
     });
   });
   it("should make a topSitesPreview onDragEnter", () => {
@@ -1047,7 +1119,7 @@ describe("<TopSiteList>", () => {
     instance.setState({
       draggedIndex: 4,
       draggedSite: site,
-      draggedTitle: "foo"
+      draggedTitle: "foo",
     });
     const draggedSite = Object.assign({}, site, {isPinned: true, isDragged: true});
     instance.onDragEvent({type: "dragenter"}, 2);
@@ -1064,7 +1136,7 @@ describe("<TopSiteList>", () => {
     instance.setState({
       draggedIndex: 0,
       draggedSite: site1,
-      draggedTitle: "foo"
+      draggedTitle: "foo",
     });
     let draggedSite = Object.assign({}, site1, {isPinned: true, isDragged: true});
     assert.deepEqual(instance._makeTopSitesPreview(1), [site2, draggedSite, site3, null, null, null, null, null]);
@@ -1083,7 +1155,7 @@ describe("<TopSiteList>", () => {
     instance.setState({
       draggedIndex: 1,
       draggedSite: site2,
-      draggedTitle: "bar"
+      draggedTitle: "bar",
     });
     draggedSite = Object.assign({}, site2, {isPinned: true, isDragged: true});
     assert.deepEqual(instance._makeTopSitesPreview(0), [draggedSite, site1, site3, null, null, null, null, null]);

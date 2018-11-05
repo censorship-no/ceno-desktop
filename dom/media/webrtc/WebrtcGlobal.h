@@ -228,6 +228,7 @@ struct ParamTraits<mozilla::dom::RTCIceCandidateStats>
     WriteParam(aMsg, aParam.mComponentId);
     WriteParam(aMsg, aParam.mIpAddress);
     WriteParam(aMsg, aParam.mMozLocalTransport);
+    WriteParam(aMsg, aParam.mRelayProtocol);
     WriteParam(aMsg, aParam.mPortNumber);
     WriteParam(aMsg, aParam.mTransport);
     WriteRTCStats(aMsg, aParam);
@@ -240,6 +241,7 @@ struct ParamTraits<mozilla::dom::RTCIceCandidateStats>
         !ReadParam(aMsg, aIter, &(aResult->mComponentId)) ||
         !ReadParam(aMsg, aIter, &(aResult->mIpAddress)) ||
         !ReadParam(aMsg, aIter, &(aResult->mMozLocalTransport)) ||
+        !ReadParam(aMsg, aIter, &(aResult->mRelayProtocol)) ||
         !ReadParam(aMsg, aIter, &(aResult->mPortNumber)) ||
         !ReadParam(aMsg, aIter, &(aResult->mTransport)) ||
         !ReadRTCStats(aMsg, aIter, aResult)) {
@@ -292,6 +294,7 @@ static void WriteRTCRtpStreamStats(
     WriteParam(aMsg, aParam.mIsRemote);
     WriteParam(aMsg, aParam.mMediaTrackId);
     WriteParam(aMsg, aParam.mMediaType);
+    WriteParam(aMsg, aParam.mKind);
     WriteParam(aMsg, aParam.mRemoteId);
     WriteParam(aMsg, aParam.mSsrc);
     WriteParam(aMsg, aParam.mTransportId);
@@ -309,6 +312,7 @@ static bool ReadRTCRtpStreamStats(
       !ReadParam(aMsg, aIter, &(aResult->mIsRemote)) ||
       !ReadParam(aMsg, aIter, &(aResult->mMediaTrackId)) ||
       !ReadParam(aMsg, aIter, &(aResult->mMediaType)) ||
+      !ReadParam(aMsg, aIter, &(aResult->mKind)) ||
       !ReadParam(aMsg, aIter, &(aResult->mRemoteId)) ||
       !ReadParam(aMsg, aIter, &(aResult->mSsrc)) ||
       !ReadParam(aMsg, aIter, &(aResult->mTransportId))) {

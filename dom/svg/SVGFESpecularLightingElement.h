@@ -24,15 +24,14 @@ class SVGFESpecularLightingElement : public SVGFESpecularLightingElementBase
   friend nsresult (::NS_NewSVGFESpecularLightingElement(nsIContent **aResult,
                                                         already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 protected:
-  explicit SVGFESpecularLightingElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGFESpecularLightingElementBase(aNodeInfo)
+  explicit SVGFESpecularLightingElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGFESpecularLightingElementBase(std::move(aNodeInfo))
   {
   }
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual FilterPrimitiveDescription
     GetPrimitiveDescription(nsSVGFilterInstance* aInstance,

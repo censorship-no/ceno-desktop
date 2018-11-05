@@ -7,6 +7,7 @@
 #ifndef MOZILLA_GFX_VR_VRMANAGERCHILD_H
 #define MOZILLA_GFX_VR_VRMANAGERCHILD_H
 
+#include "mozilla/dom/WindowBinding.h" // For FrameRequestCallback
 #include "mozilla/gfx/PVRManagerChild.h"
 #include "mozilla/ipc/SharedMemory.h"   // for SharedMemory, etc
 #include "ThreadSafeRefcountingWithMainThreadDestruction.h"
@@ -41,6 +42,8 @@ public:
   void AddListener(dom::VREventObserver* aObserver);
   // Indicate that an observer should no longer receive VR events.
   void RemoveListener(dom::VREventObserver* aObserver);
+  void StartActivity();
+  void StopActivity();
 
   bool GetVRDisplays(nsTArray<RefPtr<VRDisplayClient> >& aDisplays);
   bool RefreshVRDisplaysWithCallback(uint64_t aWindowId);
@@ -69,6 +72,7 @@ public:
     int32_t *aHandle);
   void CancelFrameRequestCallback(int32_t aHandle);
   void RunFrameRequestCallbacks();
+  void NotifyPresentationGenerationChanged(uint32_t aDisplayID);
 
   void UpdateDisplayInfo(nsTArray<VRDisplayInfo>& aDisplayUpdates);
   void FireDOMVRDisplayMountedEvent(uint32_t aDisplayID);
@@ -115,6 +119,7 @@ private:
   void FireDOMVRDisplayPresentChangeEventInternal(uint32_t aDisplayID);
   void FireDOMVRDisplayConnectEventsForLoadInternal(uint32_t aDisplayID,
                                                     dom::VREventObserver* aObserver);
+  void NotifyPresentationGenerationChangedInternal(uint32_t aDisplayID);
 
   nsTArray<RefPtr<VRDisplayClient> > mDisplays;
   bool mDisplaysInitialized;

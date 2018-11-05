@@ -65,6 +65,7 @@ function openContextMenu(aMessage) {
                               loginFillInfo: data.loginFillInfo,
                               parentAllowsMixedContent: data.parentAllowsMixedContent,
                               userContextId: data.userContextId,
+                              webExtContextData: data.webExtContextData,
                             };
 
   let popup = browser.ownerDocument.getElementById("contentAreaContextMenu");
@@ -108,6 +109,7 @@ nsContextMenu.prototype = {
       let subject = {
         menu: aXulMenu,
         tab: gBrowser ? gBrowser.getTabForBrowser(this.browser) : undefined,
+        timeStamp: this.timeStamp,
         isContentSelected: this.isContentSelected,
         inFrame: this.inFrame,
         isTextSelected: this.isTextSelected,
@@ -127,12 +129,15 @@ nsContextMenu.prototype = {
         linkUrl: this.linkURL,
         selectionText: this.isTextSelected ? this.selectionInfo.fullText : undefined,
         frameId: this.frameOuterWindowID,
+        webExtBrowserType: this.webExtBrowserType,
+        webExtContextData: gContextMenuContentData ? gContextMenuContentData.webExtContextData : undefined,
       };
       subject.wrappedJSObject = subject;
       Services.obs.notifyObservers(subject, "on-build-contextmenu");
     }
 
-    this.isFrameImage = document.getElementById("isFrameImage");
+    this.viewFrameSourceElement =
+         document.getElementById("context-viewframesource");
     this.ellipsis = "\u2026";
     try {
       this.ellipsis = Services.prefs.getComplexValue("intl.ellipsis",
@@ -163,8 +168,9 @@ nsContextMenu.prototype = {
     }
 
     this.shouldDisplay = context.shouldDisplay;
+    this.timeStamp = context.timeStamp;
 
-    // Assign what's _possibly_ needed from `context` sent by ContextMenu.jsm
+    // Assign what's _possibly_ needed from `context` sent by ContextMenuChild.jsm
     // Keep this consistent with the similar code in ContextMenu's _setContext
     this.bgImageURL          = context.bgImageURL;
     this.imageDescURL        = context.imageDescURL;
@@ -372,9 +378,6 @@ nsContextMenu.prototype = {
 
     this.showItem("context-reload", stopReloadItem == "reload");
     this.showItem("context-stop", stopReloadItem == "stop");
-
-    // XXX: Stop is determined in browser.js; the canStop broadcaster is broken
-    // this.setItemAttrFromNode( "context-stop", "disabled", "canStop" );
   },
 
   initLeaveDOMFullScreenItems: function CM_initLeaveFullScreenItem() {
@@ -503,7 +506,6 @@ nsContextMenu.prototype = {
                   !(this.isContentSelected || this.onTextInput || this.onLink ||
                     this.onImage || this.onVideo || this.onAudio ||
                     this.onCanvas || this.inWebExtBrowser));
-    bookmarkPage.setAttribute("tooltiptext", bookmarkPage.getAttribute("buttontooltiptext"));
 
     this.showItem("context-bookmarklink", (this.onLink && !this.onMailtoLink &&
                                            !this.onMozExtLink) || this.onPlainTextLink);
@@ -533,9 +535,9 @@ nsContextMenu.prototype = {
     // Hide menu entries for images, show otherwise
     if (this.inFrame) {
       if (BrowserUtils.mimeTypeIsTextBased(this.target.ownerDocument.contentType))
-        this.isFrameImage.removeAttribute("hidden");
+        this.viewFrameSourceElement.removeAttribute("hidden");
       else
-        this.isFrameImage.setAttribute("hidden", "true");
+        this.viewFrameSourceElement.setAttribute("hidden", "true");
     }
 
     // BiDi UI
@@ -807,7 +809,8 @@ nsContextMenu.prototype = {
       const sm = Services.scriptSecurityManager;
       try {
         let targetURI = this.linkURI;
-        sm.checkSameOriginURI(referrerURI, targetURI, false);
+        let isPrivateWin = this.browser.contentPrincipal.originAttributes.privateBrowsingId > 0;
+        sm.checkSameOriginURI(referrerURI, targetURI, false, isPrivateWin);
         persistAllowMixedContentInChildTab = true;
       } catch (e) { }
     }
@@ -830,6 +833,7 @@ nsContextMenu.prototype = {
     let referrer = gContextMenuContentData.referrer;
     openLinkIn(gContextMenuContentData.docLocation, "tab",
                { charset: gContextMenuContentData.charSet,
+                 triggeringPrincipal: this.browser.contentPrincipal,
                  referrerURI: referrer ? makeURI(referrer) : null });
   },
 
@@ -845,6 +849,7 @@ nsContextMenu.prototype = {
     let referrer = gContextMenuContentData.referrer;
     openLinkIn(gContextMenuContentData.docLocation, "window",
                { charset: gContextMenuContentData.charSet,
+                 triggeringPrincipal: this.browser.contentPrincipal,
                  referrerURI: referrer ? makeURI(referrer) : null });
   },
 
@@ -855,7 +860,6 @@ nsContextMenu.prototype = {
                      Ci.nsIScriptSecurityManager.DISALLOW_SCRIPT);
     let referrer = gContextMenuContentData.referrer;
     openWebLinkIn(gContextMenuContentData.docLocation, "current", {
-      disallowInheritPrincipal: true,
       referrerURI: referrer ? makeURI(referrer) : null,
       triggeringPrincipal: this.browser.contentPrincipal,
     });
@@ -913,8 +917,7 @@ nsContextMenu.prototype = {
     urlSecurityCheck(this.imageDescURL,
                      this.principal,
                      Ci.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-    openUILink(this.imageDescURL, e, { disallowInheritPrincipal: true,
-                                       referrerURI: gContextMenuContentData.documentURIObject,
+    openUILink(this.imageDescURL, e, { referrerURI: gContextMenuContentData.documentURIObject,
                                        triggeringPrincipal: this.principal,
     });
   },
@@ -952,16 +955,14 @@ nsContextMenu.prototype = {
     let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
     if (this.onCanvas) {
       this._canvasToBlobURL(this.target).then(function(blobURL) {
-        openUILink(blobURL, e, { disallowInheritPrincipal: true,
-                                 referrerURI,
+        openUILink(blobURL, e, { referrerURI,
                                  triggeringPrincipal: systemPrincipal});
       }, Cu.reportError);
     } else {
       urlSecurityCheck(this.mediaURL,
                        this.principal,
                        Ci.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-      openUILink(this.mediaURL, e, { disallowInheritPrincipal: true,
-                                     referrerURI,
+      openUILink(this.mediaURL, e, { referrerURI,
                                      forceAllowDataURI: true,
                                      triggeringPrincipal: this.principal,
       });
@@ -1018,8 +1019,7 @@ nsContextMenu.prototype = {
                      this.principal,
                      Ci.nsIScriptSecurityManager.DISALLOW_SCRIPT);
 
-    openUILink(this.bgImageURL, e, { disallowInheritPrincipal: true,
-                                     referrerURI: gContextMenuContentData.documentURIObject,
+    openUILink(this.bgImageURL, e, { referrerURI: gContextMenuContentData.documentURIObject,
                                      triggeringPrincipal: this.principal,
     });
   },
@@ -1142,7 +1142,7 @@ nsContextMenu.prototype = {
                                                            aOffset, aCount) {
         this.extListener.onDataAvailable(aRequest, aContext, aInputStream,
                                          aOffset, aCount);
-      }
+      },
     };
 
     function callbacks() {}
@@ -1158,7 +1158,7 @@ nsContextMenu.prototype = {
           channel.cancel(NS_ERROR_SAVE_LINK_AS_TIMEOUT);
         }
         throw Cr.NS_ERROR_NO_INTERFACE;
-      }
+      },
     };
 
     // if it we don't have the headers after a short time, the user
@@ -1168,7 +1168,7 @@ nsContextMenu.prototype = {
     timerCallback.prototype = {
       notify: function sLA_timer_notify(aTimer) {
         channel.cancel(NS_ERROR_SAVE_LINK_AS_TIMEOUT);
-      }
+      },
     };
 
     // setting up a new channel for 'right click - save link as ...'
@@ -1344,16 +1344,6 @@ nsContextMenu.prototype = {
     }
   },
 
-  // Set context menu attribute according to like attribute of another node
-  // (such as a broadcaster).
-  setItemAttrFromNode(aItem_id, aAttr, aOther_id) {
-    var elem = document.getElementById(aOther_id);
-    if (elem && elem.getAttribute(aAttr) == "true")
-      this.setItemAttr(aItem_id, aAttr, "true");
-    else
-      this.setItemAttr(aItem_id, aAttr, null);
-  },
-
   // Temporary workaround for DOM api not yet implemented by XUL nodes.
   cloneNode(aItem) {
     // Create another element like the one we're cloning.
@@ -1502,6 +1492,7 @@ nsContextMenu.prototype = {
 
     // Store searchTerms in context menu item so we know what to search onclick
     menuItem.searchTerms = selectedText;
+    menuItem.principal = this.principal;
 
     // Copied to alert.js' prefillAlertInfo().
     // If the JS character after our truncation point is a trail surrogate,
@@ -1515,7 +1506,7 @@ nsContextMenu.prototype = {
     }
 
     // format "Search <engine> for <selection>" string to show in menu
-    let engineName = Services.search.currentEngine.name;
+    let engineName = Services.search.defaultEngine.name;
     var menuLabel = gNavigatorBundle.getFormattedString("contextMenuSearch",
                                                         [engineName,
                                                          selectedText]);

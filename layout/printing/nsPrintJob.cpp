@@ -1153,8 +1153,6 @@ nsPrintJob::EnumerateDocumentNames(uint32_t* aCount,
 
   int32_t     numDocs = mPrt->mPrintDocList.Length();
   char16_t** array   = (char16_t**) moz_xmalloc(numDocs * sizeof(char16_t*));
-  if (!array)
-    return NS_ERROR_OUT_OF_MEMORY;
 
   for (int32_t i=0;i<numDocs;i++) {
     nsPrintObject* po = mPrt->mPrintDocList.ElementAt(i);
@@ -1699,7 +1697,7 @@ nsPrintJob::ReconstructAndReflow(bool doSetPixelScale)
     po->mPresContext->SetPageScale(po->mZoomRatio);
 
     // Calculate scale factor from printer to screen
-    float printDPI = float(printData->mPrintDC->AppUnitsPerCSSInch()) /
+    float printDPI = float(AppUnitsPerCSSInch()) /
                        float(printData->mPrintDC->AppUnitsPerDevPixel());
     po->mPresContext->SetPrintPreviewScale(mScreenDPI / printDPI);
 
@@ -2118,7 +2116,9 @@ nsPrintJob::OnStatusChange(nsIWebProgress* aWebProgress,
 NS_IMETHODIMP
 nsPrintJob::OnSecurityChange(nsIWebProgress* aWebProgress,
                              nsIRequest* aRequest,
-                             uint32_t aState)
+                             uint32_t aState,
+                             uint32_t aOldState,
+                             const nsAString& aContentBlockingLogJSON)
 {
   MOZ_ASSERT_UNREACHABLE("notification excluded in AddProgressListener(...)");
   return NS_OK;
@@ -2388,7 +2388,7 @@ nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO)
   aPO->mPresContext->SetIsRootPaginatedDocument(documentIsTopLevel);
   aPO->mPresContext->SetPageScale(aPO->mZoomRatio);
   // Calculate scale factor from printer to screen
-  float printDPI = float(printData->mPrintDC->AppUnitsPerCSSInch()) /
+  float printDPI = float(AppUnitsPerCSSInch()) /
                      float(printData->mPrintDC->AppUnitsPerDevPixel());
   aPO->mPresContext->SetPrintPreviewScale(mScreenDPI / printDPI);
 

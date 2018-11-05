@@ -204,11 +204,7 @@ nsViewSourceChannel::BuildViewSourceURI(nsIURI * aURI, nsIURI ** aResult)
         return rv;
     }
 
-    return NS_NewURI(aResult,
-                     /* XXX Gross hack -- NS_NewURI goes into an infinite loop on
-                     non-flat specs.  See bug 136980 */
-                     nsAutoCString(NS_LITERAL_CSTRING("view-source:") + spec),
-                     nullptr);
+    return NS_NewURI(aResult, NS_LITERAL_CSTRING("view-source:") + spec);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -838,10 +834,17 @@ nsViewSourceChannel::GetIsTrackingResource(bool* aIsTrackingResource)
 }
 
 NS_IMETHODIMP
-nsViewSourceChannel::OverrideTrackingResource(bool aIsTracking)
+nsViewSourceChannel::GetIsThirdPartyTrackingResource(bool* aIsTrackingResource)
 {
   return !mHttpChannel ? NS_ERROR_NULL_POINTER :
-      mHttpChannel->OverrideTrackingResource(aIsTracking);
+      mHttpChannel->GetIsThirdPartyTrackingResource(aIsTrackingResource);
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::OverrideTrackingFlagsForDocumentCookieAccessor(nsIHttpChannel* aDocumentChannel)
+{
+  return !mHttpChannel ? NS_ERROR_NULL_POINTER :
+      mHttpChannel->OverrideTrackingFlagsForDocumentCookieAccessor(aDocumentChannel);
 }
 
 NS_IMETHODIMP
@@ -1142,4 +1145,13 @@ nsViewSourceChannel::LogBlockedCORSRequest(const nsAString& aMessage,
     return NS_ERROR_UNEXPECTED;
   }
   return mHttpChannel->LogBlockedCORSRequest(aMessage, aCategory);
+}
+
+const nsTArray<mozilla::Tuple<nsCString, nsCString>>&
+nsViewSourceChannel::PreferredAlternativeDataTypes()
+{
+    if (mCacheInfoChannel) {
+        return mCacheInfoChannel->PreferredAlternativeDataTypes();
+    }
+    return mEmptyArray;
 }

@@ -170,6 +170,32 @@ var History = Object.freeze({
   },
 
   /**
+   * Fetches all pages which have one or more of the specified annotations.
+   *
+   * @param annotations: An array of strings containing the annotation names to
+   *                     find.
+   * @return (Promise)
+   *      A promise resolved once the operation is complete.
+   * @resolves (Map)
+   *      A Map containing the annotations, pages and their contents, e.g.
+   *      Map("anno1" => [{page, content}, {page, content}]), "anno2" => ....);
+   * @rejects (Error) XXX
+   *      Rejects if the insert was unsuccessful.
+   */
+  fetchAnnotatedPages(annotations) {
+    // See if options exists and make sense
+    if (!annotations || !Array.isArray(annotations)) {
+      throw new TypeError("annotations should be an Array and not null");
+    }
+    if (annotations.some(name => typeof name !== "string")) {
+      throw new TypeError("all annotation values should be strings");
+    }
+
+    return PlacesUtils.promiseDBConnection()
+                      .then(db => fetchAnnotatedPages(db, annotations));
+  },
+
+  /**
    * Adds a number of visits for a single page.
    *
    * Any change may be observed through nsINavHistoryObserver
@@ -760,8 +786,8 @@ function convertForUpdatePlaces(pageInfo) {
  * Convert a list of strings or numbers to its SQL
  * representation as a string.
  */
-function sqlList(list) {
-  return list.map(JSON.stringify).join();
+function sqlList(list, prefix = "", suffix = "") {
+  return list.map(str => `${prefix}"${str}"${suffix}`).join();
 }
 
 /**
@@ -1030,7 +1056,7 @@ var fetch = async function(db, guidOrURL, options) {
           guid: row.getResultByName("guid"),
           url: new URL(row.getResultByName("url")),
           frecency: row.getResultByName("frecency"),
-          title: row.getResultByName("title") || ""
+          title: row.getResultByName("title") || "",
         };
         placeId = row.getResultByName("id");
       }
@@ -1065,6 +1091,41 @@ var fetch = async function(db, guidOrURL, options) {
     ));
   }
   return pageInfo;
+};
+
+// Inner implementation of History.fetchAnnotatedPages.
+var fetchAnnotatedPages = async function(db, annotations) {
+  let result = new Map();
+  let rows = await db.execute(`
+    SELECT n.name, h.url, a.content FROM moz_anno_attributes n
+    JOIN moz_annos a ON n.id = a.anno_attribute_id
+    JOIN moz_places h ON h.id = a.place_id
+    WHERE n.name IN (${new Array(annotations.length).fill("?").join(",")})
+  `, annotations);
+
+  for (let row of rows) {
+    let uri;
+    try {
+      uri = new URL(row.getResultByName("url"));
+    } catch (ex) {
+      Cu.reportError("Invalid URL read from database in fetchAnnotatedPages");
+      continue;
+    }
+
+    let anno = {
+      uri,
+      content: row.getResultByName("content"),
+    };
+    let annoName = row.getResultByName("name");
+    let pageAnnos = result.get(annoName);
+    if (!pageAnnos) {
+      pageAnnos = [];
+      result.set(annoName, pageAnnos);
+    }
+    pageAnnos.push(anno);
+  }
+
+  return result;
 };
 
 // Inner implementation of History.removeVisitsByFilter.
@@ -1124,7 +1185,7 @@ var removeVisitsByFilter = async function(db, filter, onResult = null) {
        if (onResult) {
          onResultData.push({
            date: new Date(row.getResultByName("date")),
-           transition: row.getResultByName("visit_type")
+           transition: row.getResultByName("visit_type"),
          });
        }
      }
@@ -1256,7 +1317,7 @@ var removeByFilter = async function(db, filter, onResult = null) {
           guid,
           title: row.getResultByName("title"),
           frecency: row.getResultByName("frecency"),
-          url: new URL(url)
+          url: new URL(url),
         });
       }
     });
@@ -1291,7 +1352,7 @@ var remove = async function(db, {guids, urls}, onResult = null) {
     `SELECT id, url, url_hash, guid, foreign_count, title, frecency
      FROM moz_places
      WHERE guid IN (${ sqlList(guids) })
-        OR (url_hash IN (${ urls.map(u => "hash(" + JSON.stringify(u) + ")").join(",") })
+        OR (url_hash IN (${ sqlList(urls, "hash(", ")") })
             AND url IN (${ sqlList(urls) }))
     `;
 
@@ -1320,7 +1381,7 @@ var remove = async function(db, {guids, urls}, onResult = null) {
         guid,
         title: row.getResultByName("title"),
         frecency: row.getResultByName("frecency"),
-        url: new URL(url)
+        url: new URL(url),
       });
     }
   });
@@ -1376,7 +1437,7 @@ function mergeUpdateInfoIntoPageInfo(updateInfo, pageInfo = {}) {
       return {
         date: PlacesUtils.toDate(visit.visitDate),
         transition: visit.transitionType,
-        referrer: (visit.referrerURI) ? new URL(visit.referrerURI.spec) : null
+        referrer: (visit.referrerURI) ? new URL(visit.referrerURI.spec) : null,
       };
     });
   }
@@ -1397,7 +1458,7 @@ var insert = function(db, pageInfo) {
       },
       handleCompletion: () => {
         resolve(pageInfo);
-      }
+      },
     });
   });
 };
@@ -1433,32 +1494,40 @@ var insertMany = function(db, pageInfos, onResult, onError) {
         } else {
           reject({message: "No items were added to history."});
         }
-      }
+      },
     }, true);
   });
 };
 
 // Inner implementation of History.update.
 var update = async function(db, pageInfo) {
-  let updateFragments = [];
-  let whereClauseFragment = "";
-  let baseParams = {};
-  let params = {};
-
-  // Prefer GUID over url if it's present
+  // Check for page existence first; we can skip most of the work if it doesn't
+  // exist and anyway we'll need the place id multiple times later.
+  // Prefer GUID over url if it's present.
+  let id;
   if (typeof pageInfo.guid === "string") {
-    whereClauseFragment = "guid = :guid";
-    baseParams.guid = pageInfo.guid;
+    let rows = await db.executeCached(
+      "SELECT id FROM moz_places WHERE guid = :guid",
+      {guid: pageInfo.guid}
+    );
+    id = rows.length ? rows[0].getResultByName("id") : null;
   } else {
-    whereClauseFragment = "url_hash = hash(:url) AND url = :url";
-    baseParams.url = pageInfo.url.href;
+    let rows = await db.executeCached(
+      "SELECT id FROM moz_places WHERE url_hash = hash(:url) AND url = :url",
+    {url: pageInfo.url.href});
+    id = rows.length ? rows[0].getResultByName("id") : null;
+  }
+  if (!id) {
+    return;
   }
 
-  if (pageInfo.description || pageInfo.description === null) {
+  let updateFragments = [];
+  let params = {};
+  if ("description" in pageInfo) {
     updateFragments.push("description");
     params.description = pageInfo.description;
   }
-  if (pageInfo.previewImageURL || pageInfo.previewImageURL === null) {
+  if ("previewImageURL" in pageInfo) {
     updateFragments.push("preview_image_url");
     params.preview_image_url = pageInfo.previewImageURL ? pageInfo.previewImageURL.href : null;
   }
@@ -1468,9 +1537,9 @@ var update = async function(db, pageInfo) {
     await db.execute(`
       UPDATE moz_places
       SET ${updateFragments.map(v => `${v} = :${v}`).join(", ")}
-      WHERE ${whereClauseFragment}
+      WHERE id = :id
         AND (${updateFragments.map(v => `IFNULL(${v}, "") <> IFNULL(:${v}, "")`).join(" OR ")})
-    `, {...baseParams, ...params});
+    `, {id, ...params});
   }
 
   if (pageInfo.annotations) {
@@ -1502,12 +1571,12 @@ var update = async function(db, pageInfo) {
             INSERT OR REPLACE INTO moz_annos
               (place_id, anno_attribute_id, content, flags,
                expiration, type, dateAdded, lastModified)
-            VALUES ((SELECT id FROM moz_places WHERE ${whereClauseFragment}),
+            VALUES (:id,
                     (SELECT id FROM moz_anno_attributes WHERE name = :anno_name),
                     :content, 0, :expiration, :type, :date_added,
                     :last_modified)
           `, {
-            ...baseParams,
+            id,
             anno_name: anno,
             content,
             expiration: PlacesUtils.annotations.EXPIRE_NEVER,
@@ -1525,10 +1594,10 @@ var update = async function(db, pageInfo) {
         // It will be cleaned up by expiration.
         await db.execute(`
           DELETE FROM moz_annos
-          WHERE place_id = (SELECT id FROM moz_places WHERE ${whereClauseFragment})
+          WHERE place_id = :id
           AND anno_attribute_id =
             (SELECT id FROM moz_anno_attributes WHERE name = :anno_name)
-        `, { ...baseParams, anno_name: anno });
+        `, { id, anno_name: anno });
       }
     });
   }

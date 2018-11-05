@@ -196,6 +196,12 @@ GPUProcessManager::DisableGPUProcess(const char* aMessage)
   // crash, then we need to tell the content processes again, because they
   // need to rebind to the UI process.
   HandleProcessLost();
+
+  // On Windows, always fallback to software.
+  // The assumption is that something in the graphics driver is crashing.
+#if XP_WIN
+  FallbackToSoftware("GPU Process is disabled, fallback to software solution.");
+#endif
 }
 
 bool
@@ -380,12 +386,11 @@ GPUProcessManager::OnProcessLaunchComplete(GPUProcessHost* aHost)
   mGPUChild->SendInitVsyncBridge(std::move(vsyncParent));
 
   CrashReporter::AnnotateCrashReport(
-    NS_LITERAL_CSTRING("GPUProcessStatus"),
-    NS_LITERAL_CSTRING("Running"));
+    CrashReporter::Annotation::GPUProcessStatus, NS_LITERAL_CSTRING("Running"));
 
   CrashReporter::AnnotateCrashReport(
-    NS_LITERAL_CSTRING("GPUProcessLaunchCount"),
-    nsPrintfCString("%d", mNumProcessAttempts));
+    CrashReporter::Annotation::GPUProcessLaunchCount,
+    static_cast<int>(mNumProcessAttempts));
 }
 
 static bool
@@ -502,24 +507,26 @@ GPUProcessManager::OnRemoteProcessDeviceReset(GPUProcessHost* aHost)
   if (ShouldLimitDeviceResets(mDeviceResetCount, delta)) {
     DestroyProcess();
     DisableGPUProcess("GPU processed experienced too many device resets");
-
-    // Reaches the limited TDR attempts, fallback to software solution.
-    gfxConfig::SetFailed(Feature::HW_COMPOSITING,
-      FeatureStatus::Blocked,
-      "Too many attemps of D3D11 creation, fallback to software solution.");
-    gfxConfig::SetFailed(Feature::D3D11_COMPOSITING,
-      FeatureStatus::Blocked,
-      "Too many attemps of D3D11 creation, fallback to software solution.");
-    gfxConfig::SetFailed(Feature::DIRECT2D,
-      FeatureStatus::Blocked,
-      "Too many attemps of D3D11 creation, fallback to software solution.");
-
     HandleProcessLost();
     return;
   }
 
   RebuildRemoteSessions();
   NotifyListenersOnCompositeDeviceReset();
+}
+
+void
+GPUProcessManager::FallbackToSoftware(const char* aMessage)
+{
+  gfxConfig::SetFailed(Feature::HW_COMPOSITING,
+    FeatureStatus::Blocked,
+    aMessage);
+  gfxConfig::SetFailed(Feature::D3D11_COMPOSITING,
+    FeatureStatus::Blocked,
+    aMessage);
+  gfxConfig::SetFailed(Feature::DIRECT2D,
+    FeatureStatus::Blocked,
+    aMessage);
 }
 
 void
@@ -727,7 +734,7 @@ GPUProcessManager::DestroyProcess()
   }
 
   CrashReporter::AnnotateCrashReport(
-    NS_LITERAL_CSTRING("GPUProcessStatus"),
+    CrashReporter::Annotation::GPUProcessStatus,
     NS_LITERAL_CSTRING("Destroyed"));
 }
 

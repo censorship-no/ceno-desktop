@@ -137,7 +137,7 @@ public:
 
   enum class FromClone { no, yes };
 
-  HTMLInputElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+  HTMLInputElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                    mozilla::dom::FromParser aFromParser,
                    FromClone aFromClone = FromClone::no);
 
@@ -168,7 +168,7 @@ public:
   NS_IMETHOD SaveState() override;
   virtual bool RestoreState(PresState* aState) override;
   virtual bool AllowDrop() override;
-  virtual bool IsDisabledForEvents(EventMessage aMessage) override;
+  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
 
   virtual void FieldSetDisabledChanged(bool aNotify) override;
 
@@ -277,8 +277,7 @@ public:
    */
   HTMLInputElement* GetSelectedRadioButton() const;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLInputElement,
                                            nsGenericHTMLFormElementWithState)
@@ -847,8 +846,12 @@ public:
    * know the current state of the picker or to update the input box on changes.
    */
   void GetDateTimeInputBoxValue(DateTimeValue& aValue);
-  void UpdateDateTimeInputBox(const DateTimeValue& aValue);
-  void SetDateTimePickerState(bool aOpen);
+
+  /*
+   * This allows chrome JavaScript to dispatch event to the inner datetimebox
+   * anonymous element or access nsIDateTimeInputArea implmentation.
+   */
+  Element* GetDateTimeBoxElement();
 
   /*
    * The following functions are called from datetime input box XBL to control

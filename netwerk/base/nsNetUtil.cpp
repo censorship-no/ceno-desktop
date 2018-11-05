@@ -19,6 +19,7 @@
 #include "mozilla/Telemetry.h"
 #include "nsCategoryCache.h"
 #include "nsContentUtils.h"
+#include "nsFileStreams.h"
 #include "nsHashKeys.h"
 #include "nsHttp.h"
 #include "nsIAsyncStreamCopier.h"
@@ -43,12 +44,12 @@
 #include "nsINode.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsIOfflineCacheUpdate.h"
-#include "nsIPersistentProperties2.h"
+#include "nsPersistentProperties.h"
 #include "nsIPrivateBrowsingChannel.h"
 #include "nsIPropertyBag2.h"
 #include "nsIProtocolProxyService.h"
-#include "nsIRedirectChannelRegistrar.h"
-#include "nsIRequestObserverProxy.h"
+#include "mozilla/net/RedirectChannelRegistrar.h"
+#include "nsRequestObserverProxy.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsISensitiveInfoHiddenURI.h"
 #include "nsISimpleStreamListener.h"
@@ -59,7 +60,7 @@
 #include "nsIIncrementalStreamLoader.h"
 #include "nsIStreamTransportService.h"
 #include "nsStringStream.h"
-#include "nsISyncStreamListener.h"
+#include "nsSyncStreamListener.h"
 #include "nsITransport.h"
 #include "nsIURIWithSpecialOrigin.h"
 #include "nsIURLParser.h"
@@ -69,6 +70,7 @@
 #include "plstr.h"
 #include "nsINestedURI.h"
 #include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/net/HttpBaseChannel.h"
 #include "nsIScriptError.h"
@@ -1185,16 +1187,15 @@ nsresult
 NS_NewSyncStreamListener(nsIStreamListener **result,
                          nsIInputStream    **stream)
 {
-    nsresult rv;
-    nsCOMPtr<nsISyncStreamListener> listener =
-        do_CreateInstance(NS_SYNCSTREAMLISTENER_CONTRACTID, &rv);
-    if (NS_SUCCEEDED(rv)) {
-        rv = listener->GetInputStream(stream);
+    nsCOMPtr<nsISyncStreamListener> listener = nsSyncStreamListener::Create();
+    if (listener) {
+        nsresult rv = listener->GetInputStream(stream);
         if (NS_SUCCEEDED(rv)) {
             listener.forget(result);
         }
+        return rv;
     }
-    return rv;
+    return NS_ERROR_FAILURE;
 }
 
 nsresult
@@ -1226,14 +1227,10 @@ NS_NewRequestObserverProxy(nsIRequestObserver **result,
                            nsIRequestObserver  *observer,
                            nsISupports         *context)
 {
-    nsresult rv;
-    nsCOMPtr<nsIRequestObserverProxy> proxy =
-        do_CreateInstance(NS_REQUESTOBSERVERPROXY_CONTRACTID, &rv);
+    nsCOMPtr<nsIRequestObserverProxy> proxy = new nsRequestObserverProxy();
+    nsresult rv = proxy->Init(observer, context);
     if (NS_SUCCEEDED(rv)) {
-        rv = proxy->Init(observer, context);
-        if (NS_SUCCEEDED(rv)) {
-            proxy.forget(result);
-        }
+        proxy.forget(result);
     }
     return rv;
 }
@@ -1513,13 +1510,10 @@ NS_NewLocalFileStream(nsIFileStream **result,
                       int32_t         perm          /* = -1 */,
                       int32_t         behaviorFlags /* = 0 */)
 {
-    nsresult rv;
-    nsCOMPtr<nsIFileStream> stream =
-        do_CreateInstance(NS_LOCALFILESTREAM_CONTRACTID, &rv);
+    nsCOMPtr<nsIFileStream> stream = new nsFileStream();
+    nsresult rv = stream->Init(file, ioFlags, perm, behaviorFlags);
     if (NS_SUCCEEDED(rv)) {
-        rv = stream->Init(file, ioFlags, perm, behaviorFlags);
-        if (NS_SUCCEEDED(rv))
-            stream.forget(result);
+        stream.forget(result);
     }
     return rv;
 }
@@ -2031,9 +2025,7 @@ NS_LoadPersistentPropertiesFromURISpec(nsIPersistentProperties **outResult,
     rv = channel->Open2(getter_AddRefs(in));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsCOMPtr<nsIPersistentProperties> properties =
-      do_CreateInstance(NS_PERSISTENTPROPERTIES_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIPersistentProperties> properties = new nsPersistentProperties();
     rv = properties->Load(in);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -2757,11 +2749,9 @@ NS_LinkRedirectChannels(uint32_t channelId,
                         nsIParentChannel *parentChannel,
                         nsIChannel **_result)
 {
-  nsresult rv;
-
   nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
-      do_GetService("@mozilla.org/redirectchannelregistrar;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
+      RedirectChannelRegistrar::GetOrCreate();
+  MOZ_ASSERT(registrar);
 
   return registrar->LinkChannels(channelId,
                                  parentChannel,
@@ -2983,7 +2973,8 @@ NS_ShouldSecureUpgrade(nsIURI* aURI,
   nsresult rv = aURI->SchemeIs("https", &isHttps);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!isHttps) {
+  if (!isHttps &&
+      !nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackURL(aURI)) {
     if (aLoadInfo) {
       // If any of the documents up the chain to the root document makes use of
       // the CSP directive 'upgrade-insecure-requests', then it's time to fulfill
@@ -2995,7 +2986,7 @@ NS_ShouldSecureUpgrade(nsIURI* aURI,
         nsAutoCString scheme;
         aURI->GetScheme(scheme);
         // append the additional 's' for security to the scheme :-)
-        scheme.AppendASCII("s");
+        scheme.AppendLiteral("s");
         NS_ConvertUTF8toUTF16 reportSpec(aURI->GetSpecOrDefault());
         NS_ConvertUTF8toUTF16 reportScheme(scheme);
 

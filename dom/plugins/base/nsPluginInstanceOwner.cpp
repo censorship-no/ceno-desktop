@@ -66,7 +66,6 @@ using mozilla::DefaultXDisplay;
 
 #include "nsContentCID.h"
 #include "nsWidgetsCID.h"
-static NS_DEFINE_CID(kWidgetCID, NS_CHILD_CID);
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 
 #ifdef XP_WIN
@@ -438,10 +437,10 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(const char *aURL,
   nsAutoString unitarget;
   if ((0 == PL_strcmp(aTarget, "newwindow")) ||
       (0 == PL_strcmp(aTarget, "_new"))) {
-    unitarget.AssignASCII("_blank");
+    unitarget.AssignLiteral("_blank");
   }
   else if (0 == PL_strcmp(aTarget, "_current")) {
-    unitarget.AssignASCII("_self");
+    unitarget.AssignLiteral("_self");
   }
   else {
     unitarget.AssignASCII(aTarget); // XXX could this be nonascii?
@@ -465,7 +464,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(const char *aURL,
 
     rv = sis->SetData((char *)aHeadersData, aHeadersDataLen);
     NS_ENSURE_SUCCESS(rv, rv);
-    headersDataStream = do_QueryInterface(sis);
+    headersDataStream = sis;
   }
 
   int32_t blockPopups =
@@ -1030,7 +1029,7 @@ NPBool nsPluginInstanceOwner::ConvertPointPuppet(PuppetWidget *widget,
 
   nsPresContext* presContext = pluginFrame->PresContext();
   CSSToLayoutDeviceScale scaleFactor(
-    double(nsPresContext::AppUnitsPerCSSPixel()) /
+    double(AppUnitsPerCSSPixel()) /
     presContext->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom());
 
   PuppetWidget *puppetWidget = static_cast<PuppetWidget*>(widget);
@@ -1139,7 +1138,7 @@ NPBool nsPluginInstanceOwner::ConvertPointNoPuppet(nsIWidget *widget,
   }
 
   nsPresContext* presContext = pluginFrame->PresContext();
-  double scaleFactor = double(nsPresContext::AppUnitsPerCSSPixel())/
+  double scaleFactor = double(AppUnitsPerCSSPixel())/
     presContext->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom();
 
   nsCOMPtr<nsIScreen> screen = widget->GetWidgetScreen();
@@ -1949,7 +1948,7 @@ TranslateToNPCocoaEvent(WidgetGUIEvent* anEvent, nsIFrame* aObjectFrame)
     nsPresContext* presContext = aObjectFrame->PresContext();
     // Plugin event coordinates need to be translated from device pixels
     // into "display pixels" in HiDPI modes.
-    double scaleFactor = double(nsPresContext::AppUnitsPerCSSPixel())/
+    double scaleFactor = double(AppUnitsPerCSSPixel())/
       aObjectFrame->PresContext()->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom();
     size_t intScaleFactor = ceil(scaleFactor);
     nsIntPoint ptPx(presContext->AppUnitsToDevPixels(pt.x) / intScaleFactor,
@@ -2983,7 +2982,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::CreateWidget(void)
 
     if (!mWidget) {
       // native (single process)
-      mWidget = do_CreateInstance(kWidgetCID, &rv);
+      mWidget = nsIWidget::CreateChildWindow();
       nsWidgetInitData initData;
       initData.mWindowType = eWindowType_plugin;
       initData.mUnicode = false;
@@ -3300,7 +3299,7 @@ nsPluginInstanceOwner::GetContentsScaleFactor(double *result)
   nsCOMPtr<nsIContent> content = do_QueryReferent(mContent);
   nsIPresShell* presShell = nsContentUtils::FindPresShellForDocument(content->OwnerDoc());
   if (presShell) {
-    scaleFactor = double(nsPresContext::AppUnitsPerCSSPixel())/
+    scaleFactor = double(AppUnitsPerCSSPixel())/
       presShell->GetPresContext()->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom();
   }
 #endif

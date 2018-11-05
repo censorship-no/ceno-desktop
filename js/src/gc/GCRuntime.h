@@ -64,6 +64,7 @@ struct SweepAction
     virtual ~SweepAction() {}
     virtual IncrementalProgress run(Args... args) = 0;
     virtual void assertFinished() const = 0;
+    virtual bool shouldSkip() { return false; }
 };
 
 class ChunkPool
@@ -194,8 +195,9 @@ class ChainedIter
     }
     T get() const {
         MOZ_ASSERT(!done());
-        if (!iter0_.done())
+        if (!iter0_.done()) {
             return iter0_.get();
+        }
         MOZ_ASSERT(!iter1_.done());
         return iter1_.get();
     }
@@ -206,7 +208,7 @@ class ChainedIter
 
 typedef HashMap<Value*, const char*, DefaultHasher<Value*>, SystemAllocPolicy> RootedValueMap;
 
-using AllocKinds = mozilla::EnumSet<AllocKind>;
+using AllocKinds = mozilla::EnumSet<AllocKind, uint32_t>;
 
 // A singly linked list of zones.
 class ZoneList
@@ -298,6 +300,7 @@ class GCRuntime
     }
     void getZealBits(uint32_t* zealBits, uint32_t* frequency, uint32_t* nextScheduled);
     void setZeal(uint8_t zeal, uint32_t frequency);
+    void unsetZeal(uint8_t zeal);
     bool parseAndSetZeal(const char* str);
     void setNextScheduled(uint32_t count);
     void verifyPreBarriers();
@@ -382,11 +385,13 @@ class GCRuntime
     bool updateMallocCounter(size_t nbytes) {
         mallocCounter.update(nbytes);
         TriggerKind trigger = mallocCounter.shouldTriggerGC(tunables);
-        if (MOZ_LIKELY(trigger == NoTrigger) || trigger <= mallocCounter.triggered())
+        if (MOZ_LIKELY(trigger == NoTrigger) || trigger <= mallocCounter.triggered()) {
             return false;
+        }
 
-        if (!triggerGC(JS::gcreason::TOO_MUCH_MALLOC))
+        if (!triggerGC(JS::gcreason::TOO_MUCH_MALLOC)) {
             return false;
+        }
 
         // Even though this method may be called off the main thread it is safe
         // to access mallocCounter here since triggerGC() will return false in
@@ -589,9 +594,9 @@ class GCRuntime
                                            SliceBudget& budget,
                                            JS::gcreason::Reason reason);
     bool shouldRepeatForDeadZone(JS::gcreason::Reason reason);
-    IncrementalResult incrementalCollectSlice(SliceBudget& budget,
-                                              JS::gcreason::Reason reason,
-                                              AutoGCSession& session);
+    IncrementalResult incrementalSlice(SliceBudget& budget,
+                                       JS::gcreason::Reason reason,
+                                       AutoGCSession& session);
     MOZ_MUST_USE bool shouldCollectNurseryForSlice(bool nonincrementalByAPI,
         SliceBudget& budget);
 
@@ -610,10 +615,11 @@ class GCRuntime
     void traceRuntimeCommon(JSTracer* trc, TraceOrMarkRuntime traceOrMark);
     void maybeDoCycleCollection();
     void markCompartments();
-    IncrementalProgress drainMarkStack(SliceBudget& sliceBudget, gcstats::PhaseKind phase);
-    template <class CompartmentIterT> void markWeakReferences(gcstats::PhaseKind phase);
+    IncrementalProgress markUntilBudgetExhaused(SliceBudget& sliceBudget, gcstats::PhaseKind phase);
+    void drainMarkStack();
+    template <class ZoneIterT> void markWeakReferences(gcstats::PhaseKind phase);
     void markWeakReferencesInCurrentGroup(gcstats::PhaseKind phase);
-    template <class ZoneIterT, class CompartmentIterT> void markGrayReferences(gcstats::PhaseKind phase);
+    template <class ZoneIterT> void markGrayReferences(gcstats::PhaseKind phase);
     void markBufferedGrayRoots(JS::Zone* zone);
     void markGrayReferencesInCurrentGroup(gcstats::PhaseKind phase);
     void markAllWeakReferences(gcstats::PhaseKind phase);
@@ -624,10 +630,8 @@ class GCRuntime
     MOZ_MUST_USE bool findInterZoneEdges();
     void getNextSweepGroup();
     IncrementalProgress endMarkingSweepGroup(FreeOp* fop, SliceBudget& budget);
+    void markIncomingCrossCompartmentPointers(MarkColor color);
     IncrementalProgress beginSweepingSweepGroup(FreeOp* fop, SliceBudget& budget);
-#ifdef JS_GC_ZEAL
-    IncrementalProgress maybeYieldForSweepingZeal(FreeOp* fop, SliceBudget& budget);
-#endif
     bool shouldReleaseObservedTypes();
     void sweepDebuggerOnMainThread(FreeOp* fop);
     void sweepJitDataOnMainThread(FreeOp* fop);
@@ -648,6 +652,7 @@ class GCRuntime
     void startDecommit();
     void queueZonesForBackgroundSweep(ZoneList& zones);
     void maybeStartBackgroundSweep(AutoLockHelperThreadState& lock);
+    void sweepFromBackgroundThread(AutoLockHelperThreadState& lock);
     void sweepBackgroundThings(ZoneList& zones, LifoAlloc& freeBlocks);
     void assertBackgroundSweepingFinished();
     bool shouldCompact();
@@ -1022,6 +1027,9 @@ class GCRuntime
     }
     const void* addressOfStringNurseryCurrentEnd() {
         return nursery_.refNoCheck().addressOfCurrentStringEnd();
+    }
+    uint32_t* addressOfNurseryAllocCount() {
+        return stats().addressOfAllocsSinceMinorGCNursery();
     }
 
     void minorGC(JS::gcreason::Reason reason,

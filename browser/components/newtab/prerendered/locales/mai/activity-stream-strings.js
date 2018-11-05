@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "छवि लोड करए मे असफल. दोसर URL सँ कोसिस करू.",
   "pocket_read_more": "लोकप्रिय विषय:",
   "pocket_read_even_more": "बेसी स्टोरी देखाबू",
+  "pocket_more_reccommendations": "More Recommendations",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "Get Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "ब्राउजिंग आरंभ करू, आओर हम अहाँक किछु बढियाँ नवीन आर्टिकिल, वीडियो, आओर आन पेज देखाएब, जकरा अङाँ हाले में विजिट कएलहुँ अथवा एतय बुकमार्क कएलहुँ.",
   "topstories_empty_state": "अहाँ आखिर धरि पहुँचि गेलहु, {provider} सँ बाद में फिनु टॉप स्टोरी देखू. इंतजार नहि कए सकब? अधिक बढिया स्टोरी वेब सँ पाबै लेल एकटा लेकप्रिय टॉपिक चुनू.",
   "manual_migration_explanation2": "बुकमार्क, इतिहास आओर पासवर्ड सँग Firefox केँ आन ब्राउजर सँग आजमाबू. ",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "खंड प्रबंधित करू",
   "section_menu_action_manage_webext": "Manage Extension",
   "section_menu_action_add_topsite": "टॉप साइट जोड़ू",
+  "section_menu_action_add_search_engine": "Add Search Engine",
   "section_menu_action_move_up": "उप्पर जाउ",
   "section_menu_action_move_down": "नीच्चाँ जाउ",
   "section_menu_action_privacy_notice": "गोपनीयता सूचना",
@@ -101,5 +106,6 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Terms of Service",
   "firstrun_privacy_notice": "Privacy Notice",
   "firstrun_continue_to_login": "Continue",
-  "firstrun_skip_login": "Skip this step"
+  "firstrun_skip_login": "Skip this step",
+  "context_menu_title": "Open menu"
 };

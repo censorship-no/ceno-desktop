@@ -25,6 +25,7 @@
 class nsIGlobalObject;
 
 namespace mozilla {
+
 namespace dom {
 
 class AnyCallback;
@@ -50,12 +51,24 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Promise)
   MOZ_DECLARE_WEAKREFERENCE_TYPENAME(Promise)
 
+  enum PropagateUserInteraction
+  {
+    eDontPropagateUserInteraction,
+    ePropagateUserInteraction
+  };
+
   // Promise creation tries to create a JS reflector for the Promise, so is
   // fallible.  Furthermore, we don't want to do JS-wrapping on a 0-refcount
   // object, so we addref before doing that and return the addrefed pointer
   // here.
+  // Pass ePropagateUserInteraction for aPropagateUserInteraction if you want
+  // the promise resolve handler to be called as if we were handling user
+  // input events in case we are currently handling user input events.
   static already_AddRefed<Promise>
-  Create(nsIGlobalObject* aGlobal, ErrorResult& aRv);
+  Create(nsIGlobalObject* aGlobal,
+         ErrorResult& aRv,
+         PropagateUserInteraction aPropagateUserInteraction =
+           eDontPropagateUserInteraction);
 
   // Reports a rejected Promise by sending an error report.
   static void ReportRejectedPromise(JSContext* aCx, JS::HandleObject aPromise);
@@ -115,9 +128,15 @@ public:
   // Do the equivalent of Promise.resolve in the compartment of aGlobal.  The
   // compartment of aCx is ignored.  Errors are reported on the ErrorResult; if
   // aRv comes back !Failed(), this function MUST return a non-null value.
+  // Pass ePropagateUserInteraction for aPropagateUserInteraction if you want
+  // the promise resolve handler to be called as if we were handling user
+  // input events in case we are currently handling user input events.
   static already_AddRefed<Promise>
   Resolve(nsIGlobalObject* aGlobal, JSContext* aCx,
-          JS::Handle<JS::Value> aValue, ErrorResult& aRv);
+          JS::Handle<JS::Value> aValue,
+          ErrorResult& aRv,
+          PropagateUserInteraction aPropagateUserInteraction =
+            eDontPropagateUserInteraction);
 
   // Do the equivalent of Promise.reject in the compartment of aGlobal.  The
   // compartment of aCx is ignored.  Errors are reported on the ErrorResult; if
@@ -129,9 +148,14 @@ public:
   // Do the equivalent of Promise.all in the current compartment of aCx.  Errors
   // are reported on the ErrorResult; if aRv comes back !Failed(), this function
   // MUST return a non-null value.
+  // Pass ePropagateUserInteraction for aPropagateUserInteraction if you want
+  // the promise resolve handler to be called as if we were handling user
+  // input events in case we are currently handling user input events.
   static already_AddRefed<Promise>
   All(JSContext* aCx, const nsTArray<RefPtr<Promise>>& aPromiseList,
-      ErrorResult& aRv);
+      ErrorResult& aRv,
+      PropagateUserInteraction aPropagateUserInteraction =
+        eDontPropagateUserInteraction);
 
   void
   Then(JSContext* aCx,
@@ -141,6 +165,43 @@ public:
        AnyCallback* aResolveCallback, AnyCallback* aRejectCallback,
        JS::MutableHandle<JS::Value> aRetval,
        ErrorResult& aRv);
+
+  template <typename Callback, typename... Args>
+  using IsHandlerCallback =
+      IsSame<already_AddRefed<Promise>,
+             decltype(DeclVal<Callback>()(
+                (JSContext*)(nullptr),
+                DeclVal<JS::Handle<JS::Value>>(),
+                DeclVal<Args>()...))>;
+
+  template <typename Callback, typename... Args>
+  using ThenResult = typename EnableIf<
+    IsHandlerCallback<Callback, Args...>::value,
+    Result<RefPtr<Promise>, nsresult>>::Type;
+
+  // Similar to the JavaScript Then() function. Accepts a single lambda function
+  // argument, which it attaches as a native resolution handler, and returns a
+  // new promise which resolves with that handler's return value, or propagates
+  // any rejections from this promise.
+  //
+  // Any additional arguments passed after the callback function are stored and
+  // passed as additional arguments to the function when it is called. These
+  // values will participate in cycle collection for the promise handler, and
+  // therefore may safely form reference cycles with the promise chain.
+  //
+  // Any strong references required by the callback should be passed in this
+  // manner, rather than using lambda capture, lambda captures do not support
+  // cycle collection, and can easily lead to leaks.
+  //
+  // Does not currently support rejection handlers.
+  template <typename Callback, typename... Args>
+  ThenResult<Callback, Args...>
+  ThenWithCycleCollectedArgs(Callback&& aOnResolve, Args&&... aArgs);
+
+  Result<RefPtr<Promise>, nsresult>
+  ThenWithoutCycleCollection(
+    const std::function<already_AddRefed<Promise>(JSContext*,
+                                                  JS::HandleValue)>& aCallback);
 
   JSObject* PromiseObj() const
   {
@@ -155,9 +216,14 @@ public:
 
   // Create a dom::Promise from a given SpiderMonkey Promise object.
   // aPromiseObj MUST be in the compartment of aGlobal's global JS object.
+  // Pass ePropagateUserInteraction for aPropagateUserInteraction if you want
+  // the promise resolve handler to be called as if we were handling user
+  // input events in case we are currently handling user input events.
   static already_AddRefed<Promise>
   CreateFromExisting(nsIGlobalObject* aGlobal,
-                     JS::Handle<JSObject*> aPromiseObj);
+                     JS::Handle<JSObject*> aPromiseObj,
+                     PropagateUserInteraction aPropagateUserInteraction =
+                       eDontPropagateUserInteraction);
 
   enum class PromiseState {
     Pending,
@@ -179,7 +245,13 @@ protected:
 
   // Do JS-wrapping after Promise creation.  Passing null for aDesiredProto will
   // use the default prototype for the sort of Promise we have.
-  void CreateWrapper(JS::Handle<JSObject*> aDesiredProto, ErrorResult& aRv);
+  // Pass ePropagateUserInteraction for aPropagateUserInteraction if you want
+  // the promise resolve handler to be called as if we were handling user
+  // input events in case we are currently handling user input events.
+  void CreateWrapper(JS::Handle<JSObject*> aDesiredProto,
+                     ErrorResult& aRv,
+                     PropagateUserInteraction aPropagateUserInteraction =
+                       eDontPropagateUserInteraction);
 
 private:
   template <typename T>
@@ -199,6 +271,8 @@ private:
   }
 
   void HandleException(JSContext* aCx);
+
+  bool MaybePropagateUserInputEventHandling();
 
   RefPtr<nsIGlobalObject> mGlobal;
 

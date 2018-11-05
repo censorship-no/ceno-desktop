@@ -187,6 +187,33 @@ this.management = class extends ExtensionAPI {
           });
         },
 
+        async install({url, hash}) {
+          let listener = {
+            onDownloadEnded(install) {
+              if (install.addon.appDisabled || install.addon.type !== "theme") {
+                install.cancel();
+                return false;
+              }
+            },
+          };
+
+          let telemetryInfo = {
+            source: "extension",
+            method: "management-webext-api",
+          };
+          let install = await AddonManager.getInstallForURL(url, "application/x-xpinstall", hash,
+                                                            null, null, null, null, telemetryInfo);
+          install.addListener(listener);
+          try {
+            await install.install();
+          } catch (e) {
+            Cu.reportError(e);
+            throw new ExtensionError("Incompatible addon");
+          }
+          await install.addon.enable();
+          return {id: install.addon.id};
+        },
+
         async getSelf() {
           let addon = await AddonManager.getAddonByID(extension.id);
           return getExtensionInfoForAddon(extension, addon);

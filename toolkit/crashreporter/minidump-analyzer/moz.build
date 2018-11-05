@@ -5,11 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 if CONFIG['OS_TARGET'] != 'Android':
-    if CONFIG['OS_TARGET'] == 'WINNT':
-        # We need mozglue on Windows for access to DLL services
-        GeckoProgram(name='minidump-analyzer', linkage=None)
-    else:
-        Program('minidump-analyzer')
+    GeckoProgram(name='minidump-analyzer', linkage=None)
 
     if CONFIG['OS_TARGET'] == 'Darwin':
         DIST_SUBDIR = 'crashreporter.app/Contents/MacOS'
@@ -59,6 +55,3 @@ if CONFIG['OS_TARGET'] != 'WINNT':
     DisableStlWrapping()
 
 include('/toolkit/crashreporter/crashreporter.mozbuild')
-
-if CONFIG['MOZ_PGO'] and CONFIG['CC_TYPE'] == 'clang-cl':
-    AllowCompilerWarnings()  # workaround for bug 1090497

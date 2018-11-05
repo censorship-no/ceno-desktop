@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Dh’fhàillig luchdadh an deilbh. Feuch URL eile.",
   "pocket_read_more": "Cuspairean fèillmhor:",
   "pocket_read_even_more": "Seall barrachd sgeul",
+  "pocket_more_reccommendations": "Barrachd mholaidhean",
+  "pocket_how_it_works": "Mar a dh’obraicheas e",
+  "pocket_cta_button": "Faigh Pocket",
+  "pocket_cta_text": "Sàbhail na sgeulachdan as fhearr leat ann am Pocket is faigh toileachas inntinn san leughadh.",
   "highlights_empty_state": "Tòisich air brabhsadh is seallaidh sinn dhut an-seo cuid dhe na h-artaigilean, videothan is duilleagan eile air an do thadhail thu no a chuir thu ris na comharran-lìn o chionn ghoirid.",
   "topstories_empty_state": "Sin na naidheachdan uile o {provider} an-dràsta ach bidh barrachd ann a dh’aithghearr. No thoir sùil air cuspair air a bheil fèill mhòr is leugh na tha a’ dol mun cuairt air an lìon an-dràsta.",
   "manual_migration_explanation2": "Feuch Firefox leis na comharran-lìn, an eachdraidh ’s na faclan-faire o bhrabhsair eile.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Stiùirich an earrann",
   "section_menu_action_manage_webext": "Stiùirich an leudachan",
   "section_menu_action_add_topsite": "Cuir ris brod làraich",
+  "section_menu_action_add_search_engine": "Cuir einnsean-luirg ris",
   "section_menu_action_move_up": "Gluais suas",
   "section_menu_action_move_down": "Gluais sìos",
   "section_menu_action_privacy_notice": "Sanas prìobhaideachd",
@@ -96,10 +101,12 @@ window.gActivityStreamStrings = {
   "firstrun_form_header": "Cuir a-steach am post-d agad",
   "firstrun_form_sub_header": "a leantainn air adhart gu sioncronachadh Firefox.",
   "firstrun_email_input_placeholder": "Post-d",
-  "firstrun_invalid_input": "Valid email required",
+  "firstrun_invalid_input": "Tha feum air post-d dligheach",
   "firstrun_extra_legal_links": "Ma leanas tu air adhart, bidh tu ag aontachadh ri {terms} agus {privacy}.",
   "firstrun_terms_of_service": "teirmichean na seirbheise",
   "firstrun_privacy_notice": "aithris na prìobhaideachd",
   "firstrun_continue_to_login": "Lean air adhart",
-  "firstrun_skip_login": "Leum seachad air seo"
+  "firstrun_skip_login": "Leum seachad air seo",
+  "context_menu_title": "Fosgail an clàr-taice",
+  "pocket_learn_more": "Barrachd fiosrachaidh"
 };

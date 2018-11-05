@@ -21,7 +21,7 @@ typedef SVGPolyElement SVGPolygonElementBase;
 class SVGPolygonElement final : public SVGPolygonElementBase
 {
 protected:
-  explicit SVGPolygonElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGPolygonElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
   friend nsresult (::NS_NewSVGPolygonElement(nsIContent **aResult,
                                              already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
@@ -31,8 +31,7 @@ public:
   virtual void GetMarkPoints(nsTArray<nsSVGMark> *aMarks) override;
   virtual already_AddRefed<Path> BuildPath(PathBuilder* aBuilder) override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };
 
 } // namespace dom

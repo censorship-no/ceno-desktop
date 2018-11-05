@@ -12,7 +12,7 @@ add_task(async function() {
  */
 add_task(async function() {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {leaveOpen: true});
-  await evaluateSearchResults("cookies", ["siteDataGroup"]);
+  await evaluateSearchResults("cookies", ["siteDataGroup", "trackingGroup"]);
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
@@ -30,6 +30,6 @@ add_task(async function() {
 
 add_task(async function() {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {leaveOpen: true});
-  await evaluateSearchResults("third-party", "siteDataGroup");
+  await evaluateSearchResults("third-party", ["siteDataGroup", "trackingGroup"]);
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });

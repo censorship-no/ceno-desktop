@@ -148,6 +148,7 @@ public:
     uint32_t       TailBlockingTotalMax() { return mTailTotalMax; }
 
     uint32_t       ThrottlingReadLimit() { return mThrottleVersion == 1 ? 0 : mThrottleReadLimit; }
+    int32_t        SendWindowSize() { return mSendWindowSize * 1024; }
 
     // TCP Keepalive configuration values.
 
@@ -502,6 +503,8 @@ private:
     uint32_t mThrottleHoldTime;
     uint32_t mThrottleMaxTime;
 
+    int32_t mSendWindowSize;
+
     bool mUrgentStartEnabled;
     bool mTailBlockingEnabled;
     uint32_t mTailDelayQuantum;
@@ -731,6 +734,11 @@ private:
 
 public:
     MOZ_MUST_USE nsresult NewChannelId(uint64_t& channelId);
+
+    void BlacklistSpdy(const nsHttpConnectionInfo *ci);
+    MOZ_MUST_USE bool IsSpdyBlacklisted(const nsHttpConnectionInfo *ci);
+private:
+    nsTHashtable<nsCStringHashKey> mBlacklistedSpdyOrigins;
 };
 
 extern StaticRefPtr<nsHttpHandler> gHttpHandler;

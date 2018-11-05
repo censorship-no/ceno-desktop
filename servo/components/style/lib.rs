@@ -67,6 +67,8 @@ extern crate matches;
 pub extern crate nsstring;
 #[cfg(feature = "gecko")]
 extern crate num_cpus;
+#[macro_use]
+extern crate num_derive;
 extern crate num_integer;
 extern crate num_traits;
 extern crate ordered_float;
@@ -82,6 +84,7 @@ pub extern crate servo_arc;
 #[cfg(feature = "servo")]
 #[macro_use]
 extern crate servo_atoms;
+#[cfg(feature = "servo")] extern crate servo_channel;
 #[cfg(feature = "servo")]
 extern crate servo_config;
 #[cfg(feature = "servo")]
@@ -128,15 +131,13 @@ pub mod font_face;
 pub mod font_metrics;
 #[cfg(feature = "gecko")]
 #[allow(unsafe_code)]
-pub mod gecko;
-#[cfg(feature = "gecko")]
-#[allow(unsafe_code)]
 pub mod gecko_bindings;
 pub mod hash;
 pub mod invalidation;
 #[allow(missing_docs)] // TODO.
 pub mod logical_geometry;
 pub mod matching;
+#[macro_use]
 pub mod media_queries;
 pub mod parallel;
 pub mod parser;
@@ -157,6 +158,7 @@ pub mod thread_state;
 pub mod timer;
 pub mod traversal;
 pub mod traversal_flags;
+pub mod use_counters;
 #[macro_use]
 #[allow(non_camel_case_types)]
 pub mod values;
@@ -189,6 +191,10 @@ pub use html5ever::Namespace;
 pub mod properties {
     include!(concat!(env!("OUT_DIR"), "/properties.rs"));
 }
+
+#[cfg(feature = "gecko")]
+#[allow(unsafe_code)]
+pub mod gecko;
 
 // uses a macro from properties
 #[cfg(feature = "servo")]

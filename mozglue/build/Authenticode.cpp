@@ -245,7 +245,7 @@ SignedBinary::VerifySignature(const wchar_t* aFilePath)
 
     CERT_STRONG_SIGN_PARA policy = {sizeof(policy)};
     policy.dwInfoChoice = CERT_STRONG_SIGN_OID_INFO_CHOICE;
-    policy.pszOID = szOID_CERT_STRONG_SIGN_OS_CURRENT;
+    policy.pszOID = const_cast<char*>(szOID_CERT_STRONG_SIGN_OS_CURRENT); // -Wwritable-strings
 
     if (!pCryptCATAdminAcquireContext2(&rawCatAdmin, nullptr,
                                        BCRYPT_SHA256_ALGORITHM, &policy, 0)) {
@@ -265,7 +265,8 @@ SignedBinary::VerifySignature(const wchar_t* aFilePath)
 
   // Now we need to hash the file at aFilePath.
   // Since we're hashing this file, let's open it with a sequential scan hint.
-  HANDLE rawFile = ::CreateFileW(aFilePath, GENERIC_READ, FILE_SHARE_READ,
+  HANDLE rawFile = ::CreateFileW(aFilePath, GENERIC_READ,
+                                 FILE_SHARE_READ | FILE_SHARE_DELETE | FILE_SHARE_WRITE,
                                  nullptr, OPEN_EXISTING,
                                  FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
   if (rawFile == INVALID_HANDLE_VALUE) {

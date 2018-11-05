@@ -58,7 +58,7 @@ TRR::Notify(nsITimer *aTimer)
 // convert a given host request to a DOH 'body'
 //
 nsresult
-TRR::DohEncode(nsCString &aBody)
+TRR::DohEncode(nsCString &aBody, bool aDisableECS)
 {
   aBody.Truncate();
   // Header
@@ -72,8 +72,9 @@ TRR::DohEncode(nsCString &aBody)
   aBody += '\0'; // ANCOUNT
   aBody += '\0';
   aBody += '\0'; // NSCOUNT
-  aBody += '\0';
+
   aBody += '\0'; // ARCOUNT
+  aBody += aDisableECS ? 1 : '\0';   // ARCOUNT low byte for EDNS(0)
 
   // Question
 
@@ -114,6 +115,39 @@ TRR::DohEncode(nsCString &aBody)
   aBody += '\0'; // upper 8 bit CLASS
   aBody += kDNS_CLASS_IN;  // IN - "the Internet"
 
+  if (aDisableECS) {
+    // EDNS(0) is RFC 6891, ECS is RFC 7871
+    aBody += '\0'; // NAME       | domain name  | MUST be 0 (root domain)      |
+    aBody += '\0';
+    aBody += 41;   // TYPE       | u_int16_t    | OPT (41)                     |
+    aBody += 16;   // CLASS      | u_int16_t    | requestor's UDP payload size |
+    aBody += '\0'; // advertise 4K (high-byte: 16 | low-byte: 0), ignored by DoH
+    aBody += '\0'; // TTL        | u_int32_t    | extended RCODE and flags     |
+    aBody += '\0';
+    aBody += '\0';
+    aBody += '\0';
+
+    aBody += '\0'; // upper 8 bit RDLEN
+    aBody += 8;    // RDLEN      | u_int16_t    | length of all RDATA          |
+
+    // RDATA      | octet stream | {attribute,value} pairs      |
+    // The RDATA is just the ECS option setting zero subnet prefix
+
+    aBody += '\0'; // upper 8 bit OPTION-CODE ECS
+    aBody += 8;    // OPTION-CODE, 2 octets, for ECS is 8
+
+    aBody += '\0'; // upper 8 bit OPTION-LENGTH
+    aBody += 4;    // OPTION-LENGTH, 2 octets, contains the length of the payload
+                   // after OPTION-LENGTH
+    aBody += '\0'; // upper 8 bit FAMILY. IANA Address Family Numbers registry, not the
+                   // AF_* constants!
+    aBody += 1;    // FAMILY (Ipv4), 2 octets
+
+    aBody += '\0'; // SOURCE PREFIX-LENGTH      |     SCOPE PREFIX-LENGTH       |
+    aBody += '\0';
+
+    // ADDRESS, minimum number of octets == nothing because zero bits
+  }
   return NS_OK;
 }
 
@@ -134,7 +168,8 @@ TRR::SendHTTPRequest()
   // This is essentially the "run" method - created from nsHostResolver
   MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
 
-  if ((mType != TRRTYPE_A) && (mType != TRRTYPE_AAAA) && (mType != TRRTYPE_NS)) {
+  if ((mType != TRRTYPE_A) && (mType != TRRTYPE_AAAA) && (mType != TRRTYPE_NS) &&
+      (mType != TRRTYPE_TXT)) {
     // limit the calling interface because nsHostResolver has explicit slots for
     // these types
     return NS_ERROR_FAILURE;
@@ -142,7 +177,9 @@ TRR::SendHTTPRequest()
 
   if ((mType == TRRTYPE_A) || (mType == TRRTYPE_AAAA)) {
     // let NS resolves skip the blacklist check
-    if (gTRRService->IsTRRBlacklisted(mHost, mPB, true)) {
+    MOZ_ASSERT(mRec);
+
+    if (gTRRService->IsTRRBlacklisted(mHost, mOriginSuffix, mPB, true)) {
       if (mType == TRRTYPE_A) {
         // count only blacklist for A records to avoid double counts
         Telemetry::Accumulate(Telemetry::DNS_TRR_BLACKLISTED, true);
@@ -163,12 +200,13 @@ TRR::SendHTTPRequest()
   bool useGet = gTRRService->UseGET();
   nsAutoCString body;
   nsCOMPtr<nsIURI> dnsURI;
+  bool disableECS = gTRRService->DisableECS();
 
   LOG(("TRR::SendHTTPRequest resolve %s type %u\n", mHost.get(), mType));
 
   if (useGet) {
     nsAutoCString tmp;
-    rv = DohEncode(tmp);
+    rv = DohEncode(tmp, disableECS);
     NS_ENSURE_SUCCESS(rv, rv);
 
     /* For GET requests, the outgoing packet needs to be Base64url-encoded and
@@ -179,11 +217,12 @@ TRR::SendHTTPRequest()
 
     nsAutoCString uri;
     gTRRService->GetURI(uri);
-    uri.Append(NS_LITERAL_CSTRING("?ct&dns="));
+    uri.Append(NS_LITERAL_CSTRING("?dns="));
     uri.Append(body);
+    LOG(("TRR::SendHTTPRequest GET dns=%s\n", body.get()));
     rv = NS_NewURI(getter_AddRefs(dnsURI), uri);
   } else {
-    rv = DohEncode(body);
+    rv = DohEncode(body, disableECS);
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsAutoCString uri;
@@ -216,7 +255,7 @@ TRR::SendHTTPRequest()
   }
 
   rv = httpChannel->SetRequestHeader(NS_LITERAL_CSTRING("Accept"),
-                                     NS_LITERAL_CSTRING("application/dns-udpwireformat"),
+                                     NS_LITERAL_CSTRING("application/dns-message"),
                                      false);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -258,14 +297,14 @@ TRR::SendHTTPRequest()
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = uploadChannel->ExplicitSetUploadStream(uploadStream,
-                                                NS_LITERAL_CSTRING("application/dns-udpwireformat"),
+                                                NS_LITERAL_CSTRING("application/dns-message"),
                                                 streamLength,
                                                 NS_LITERAL_CSTRING("POST"), false);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // set the *default* response content type
-  if (NS_FAILED(httpChannel->SetContentType(NS_LITERAL_CSTRING("application/dns-udpwireformat")))) {
+  if (NS_FAILED(httpChannel->SetContentType(NS_LITERAL_CSTRING("application/dns-message")))) {
     LOG(("TRR::SendHTTPRequest: couldn't set content-type!\n"));
   }
   if (NS_SUCCEEDED(httpChannel->AsyncOpen2(this))) {
@@ -395,6 +434,7 @@ TRR::ReceivePush(nsIHttpChannel *pushed, nsHostRecord *pushedRec)
   RefPtr<nsHostRecord> hostRecord;
   nsresult rv;
   rv = mHostResolver->GetHostRecord(mHost,
+                                    pushedRec->type,
                                     pushedRec->flags, pushedRec->af,
                                     pushedRec->pb,
                                     pushedRec->originSuffix,
@@ -727,6 +767,34 @@ TRR::DohDecode(nsCString &aHost)
           LOG(("TRR::DohDecode CNAME - ignoring another entry\n"));
         }
         break;
+      case TRRTYPE_TXT:
+      {
+        // TXT record RRDATA sections are a series of character-strings
+        // each character string is a length byte followed by that many data bytes
+        nsAutoCString txt;
+        unsigned int txtIndex = index;
+        uint16_t available = RDLENGTH;
+
+        while (available > 0) {
+          uint8_t characterStringLen = mResponse[txtIndex++];
+          available--;
+          if (characterStringLen > available) {
+            LOG(("TRR::DohDecode MALFORMED TXT RECORD\n"));
+            break;
+          }
+          txt.Append((const char *)(&mResponse[txtIndex]), characterStringLen);
+          txtIndex += characterStringLen;
+          available -= characterStringLen;
+        }
+
+        mTxt.AppendElement(txt);
+        if (mTxtTtl > TTL) {
+          mTxtTtl = TTL;
+        }
+        LOG(("TRR::DohDecode TXT host %s => %s\n",
+             host.get(), txt.get()));
+        break;
+      }
       default:
         // skip unknown record types
         LOG(("TRR unsupported TYPE (%u) RDLENGTH %u\n", TYPE, RDLENGTH));
@@ -812,7 +880,8 @@ TRR::DohDecode(nsCString &aHost)
   }
 
   if ((mType != TRRTYPE_NS) && mCname.IsEmpty() &&
-      !mDNS.mAddresses.getFirst()) {
+      !mDNS.mAddresses.getFirst() &&
+      mTxt.IsEmpty()) {
     // no entries were stored!
     LOG(("TRR: No entries were stored!\n"));
     return NS_ERROR_FAILURE;
@@ -823,29 +892,34 @@ TRR::DohDecode(nsCString &aHost)
 nsresult
 TRR::ReturnData()
 {
-  // create and populate an AddrInfo instance to pass on
-  nsAutoPtr<AddrInfo> ai(new AddrInfo(mHost, mType));
-  DOHaddr *item;
-  uint32_t ttl = AddrInfo::NO_TTL_DATA;
-  while ((item = static_cast<DOHaddr*>(mDNS.mAddresses.popFirst()))) {
-    PRNetAddr prAddr;
-    NetAddrToPRNetAddr(&item->mNet, &prAddr);
-    auto *addrElement = new NetAddrElement(&prAddr);
-    ai->AddAddress(addrElement);
-    if (item->mTtl < ttl) {
-      // While the DNS packet might return individual TTLs for each address,
-      // we can only return one value in the AddrInfo class so pick the
-      // lowest number.
-      ttl = item->mTtl;
+  if (mType != TRRTYPE_TXT) {
+    // create and populate an AddrInfo instance to pass on
+    nsAutoPtr<AddrInfo> ai(new AddrInfo(mHost, mType));
+    DOHaddr *item;
+    uint32_t ttl = AddrInfo::NO_TTL_DATA;
+    while ((item = static_cast<DOHaddr*>(mDNS.mAddresses.popFirst()))) {
+      PRNetAddr prAddr;
+      NetAddrToPRNetAddr(&item->mNet, &prAddr);
+      auto *addrElement = new NetAddrElement(&prAddr);
+      ai->AddAddress(addrElement);
+      if (item->mTtl < ttl) {
+        // While the DNS packet might return individual TTLs for each address,
+        // we can only return one value in the AddrInfo class so pick the
+        // lowest number.
+        ttl = item->mTtl;
+      }
     }
+    ai->ttl = ttl;
+    if (!mHostResolver) {
+      return NS_ERROR_FAILURE;
+    }
+    (void)mHostResolver->CompleteLookup(mRec, NS_OK, ai.forget(), mPB,
+                                        mOriginSuffix);
+    mHostResolver = nullptr;
+    mRec = nullptr;
+  } else {
+    (void)mHostResolver->CompleteLookupByType(mRec, NS_OK, &mTxt, mTxtTtl, mPB);
   }
-  ai->ttl = ttl;
-  if (!mHostResolver) {
-    return NS_ERROR_FAILURE;
-  }
-  (void)mHostResolver->CompleteLookup(mRec, NS_OK, ai.forget(), mPB);
-  mHostResolver = nullptr;
-  mRec = nullptr;
   return NS_OK;
 }
 
@@ -855,11 +929,18 @@ TRR::FailData(nsresult error)
   if (!mHostResolver) {
     return NS_ERROR_FAILURE;
   }
-  // create and populate an TRR AddrInfo instance to pass on to signal that
-  // this comes from TRR
-  AddrInfo *ai = new AddrInfo(mHost, mType);
 
-  (void)mHostResolver->CompleteLookup(mRec, error, ai, mPB);
+  if (mType == TRRTYPE_TXT) {
+    (void)mHostResolver->CompleteLookupByType(mRec, error,
+                                              nullptr, 0, mPB);
+  } else {
+    // create and populate an TRR AddrInfo instance to pass on to signal that
+    // this comes from TRR
+    AddrInfo *ai = new AddrInfo(mHost, mType);
+
+    (void)mHostResolver->CompleteLookup(mRec, error, ai, mPB, mOriginSuffix);
+  }
+
   mHostResolver = nullptr;
   mRec = nullptr;
   return NS_OK;
@@ -872,7 +953,8 @@ TRR::On200Response()
   nsresult rv = DohDecode(mHost);
 
   if (NS_SUCCEEDED(rv)) {
-    if (!mDNS.mAddresses.getFirst() && !mCname.IsEmpty()) {
+    if (!mDNS.mAddresses.getFirst() && !mCname.IsEmpty() &&
+        mType != TRRTYPE_TXT) {
       nsCString cname = mCname;
       LOG(("TRR: check for CNAME record for %s within previous response\n",
            cname.get()));
@@ -919,6 +1001,10 @@ TRR::OnStopRequest(nsIRequest *aRequest,
   nsCOMPtr<nsIChannel> channel;
   channel.swap(mChannel);
 
+  // Bad content is still considered "okay" if the HTTP response is okay
+  gTRRService->TRRIsOkay(NS_SUCCEEDED(aStatusCode) ? TRRService::OKAY_NORMAL :
+                         TRRService::OKAY_BAD);
+
   // if status was "fine", parse the response and pass on the answer
   if (!mFailed && NS_SUCCEEDED(aStatusCode)) {
     nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest);
@@ -929,9 +1015,8 @@ TRR::OnStopRequest(nsIRequest *aRequest,
     nsAutoCString contentType;
     httpChannel->GetContentType(contentType);
     if (contentType.Length() &&
-        !contentType.LowerCaseEqualsLiteral("application/dns-udpwireformat")) {
-      // try and parse missing content-types, but otherwise require udpwireformat
-      LOG(("TRR:OnStopRequest %p %s %d should fail due to content type %s\n",
+        !contentType.LowerCaseEqualsLiteral("application/dns-message")) {
+      LOG(("TRR:OnStopRequest %p %s %d wrong content type %s\n",
            this, mHost.get(), mType, contentType.get()));
       FailData(NS_ERROR_UNEXPECTED);
       return NS_OK;
@@ -1056,6 +1141,7 @@ TRR::Cancel()
     LOG(("TRR: %p canceling Channel %p %s %d\n", this,
          mChannel.get(), mHost.get(), mType));
     mChannel->Cancel(NS_ERROR_ABORT);
+    gTRRService->TRRIsOkay(TRRService::OKAY_TIMEOUT);
   }
 }
 

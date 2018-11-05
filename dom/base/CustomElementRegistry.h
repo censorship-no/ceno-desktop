@@ -41,6 +41,8 @@ struct LifecycleCallbackArgs
   nsString oldValue;
   nsString newValue;
   nsString namespaceURI;
+
+  size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
 };
 
 struct LifecycleAdoptedCallbackArgs
@@ -56,6 +58,7 @@ public:
                         nsIDocument::ElementCallbackType aCallbackType,
                         CallbackFunction* aCallback);
   void Traverse(nsCycleCollectionTraversalCallback& aCb) const;
+  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
   void Call();
   void SetArgs(LifecycleCallbackArgs& aArgs)
   {
@@ -126,12 +129,16 @@ struct CustomElementData
 
   void SetCustomElementDefinition(CustomElementDefinition* aDefinition);
   CustomElementDefinition* GetCustomElementDefinition();
-  nsAtom* GetCustomElementType();
+  nsAtom* GetCustomElementType() const
+  {
+    return mType;
+  }
 
   void Traverse(nsCycleCollectionTraversalCallback& aCb) const;
   void Unlink();
+  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
 
-  nsAtom* GetIs(Element* aElement)
+  nsAtom* GetIs(const Element* aElement) const
   {
     // If mType isn't the same as name atom, this is a customized built-in
     // element, which has 'is' value set.
@@ -157,6 +164,7 @@ struct CustomElementDefinition
 
   CustomElementDefinition(nsAtom* aType,
                           nsAtom* aLocalName,
+                          int32_t aNamespaceID,
                           Function* aConstructor,
                           nsTArray<RefPtr<nsAtom>>&& aObservedAttributes,
                           UniquePtr<LifecycleCallbacks>&& aCallbacks);
@@ -167,6 +175,9 @@ struct CustomElementDefinition
 
   // The localname to (e.g. <button is=type> -- this would be button).
   RefPtr<nsAtom> mLocalName;
+
+  // The namespace for this custom element
+  int32_t mNamespaceID;
 
   // The custom element constructor.
   RefPtr<CustomElementConstructor> mConstructor;
@@ -179,6 +190,18 @@ struct CustomElementDefinition
 
   // A construction stack. Use nullptr to represent an "already constructed marker".
   nsTArray<RefPtr<Element>> mConstructionStack;
+
+  // See step 6.1.10 of https://dom.spec.whatwg.org/#concept-create-element
+  // which set up the prefix after a custom element is created. However, In Gecko,
+  // the prefix isn't allowed to be changed in NodeInfo, so we store the prefix
+  // information here and propagate to where NodeInfo is assigned to a custom
+  // element instead.
+  nsTArray<RefPtr<nsAtom>> mPrefixStack;
+
+  // This basically is used for distinguishing the custom element constructor
+  // is invoked from document.createElement or directly from JS, i.e.
+  // `new CustomElementConstructor()`.
+  uint32_t mConstructionDepth = 0;
 
   bool IsCustomBuiltIn()
   {
@@ -204,6 +227,7 @@ public:
   virtual ~CustomElementReaction() = default;
   virtual void Invoke(Element* aElement, ErrorResult& aRv) = 0;
   virtual void Traverse(nsCycleCollectionTraversalCallback& aCb) const = 0;
+  virtual size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const = 0;
 
   bool IsUpgradeReaction()
   {
@@ -395,11 +419,22 @@ private:
 
 public:
   /**
+   * Returns whether there's a definition that is likely to match this type
+   * atom. This is not exact, so should only be used for optimization, but it's
+   * good enough to prove that the chrome code doesn't need an XBL binding.
+   */
+  bool IsLikelyToBeCustomElement(nsAtom* aTypeAtom) const
+  {
+    return mCustomDefinitions.GetWeak(aTypeAtom) ||
+      mElementCreationCallbacks.GetWeak(aTypeAtom);
+  }
+
+  /**
    * Looking up a custom element definition.
    * https://html.spec.whatwg.org/#look-up-a-custom-element-definition
    */
   CustomElementDefinition* LookupCustomElementDefinition(
-    nsAtom* aNameAtom, nsAtom* aTypeAtom);
+    nsAtom* aNameAtom, int32_t aNameSpaceID, nsAtom* aTypeAtom);
 
   CustomElementDefinition* LookupCustomElementDefinition(
     JSContext* aCx, JSObject *aConstructor) const;
@@ -420,10 +455,7 @@ public:
    * To allow native code to call methods of chrome-implemented custom elements,
    * a helper method may be defined in the custom element called
    * 'getCustomInterfaceCallback'. This method takes an IID and returns an
-   * object which implements an XPCOM interface. If there is no
-   * getCustomInterfaceCallback or the callback doesn't return an object,
-   * QueryInterface is called on aElement to see if this interface is
-   * implemented directly.
+   * object which implements an XPCOM interface.
    *
    * This returns null if aElement is not from a chrome document.
    */
@@ -554,6 +586,8 @@ private:
     private:
       CustomElementRegistry* mRegistry;
   };
+
+  int32_t InferNamespace(JSContext* aCx, JS::Handle<JSObject*> constructor);
 
 public:
   nsISupports* GetParentObject() const;

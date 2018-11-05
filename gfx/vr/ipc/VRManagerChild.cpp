@@ -118,7 +118,7 @@ VRManagerChild::InitSameProcess()
   sVRManagerChildSingleton = new VRManagerChild();
   sVRManagerParentSingleton = VRManagerParent::CreateSameProcess();
   sVRManagerChildSingleton->Open(sVRManagerParentSingleton->GetIPCChannel(),
-                                 VRListenerThreadHolder::Loop(),
+                                 CompositorThreadHolder::Loop(),
                                  mozilla::ipc::ChildSide);
 }
 
@@ -443,6 +443,15 @@ VRManagerChild::RunFrameRequestCallbacks()
 }
 
 void
+VRManagerChild::NotifyPresentationGenerationChanged(uint32_t aDisplayID) {
+  nsContentUtils::AddScriptRunner(NewRunnableMethod<uint32_t>(
+    "gfx::VRManagerChild::NotifyPresentationGenerationChangedInternal",
+    this,
+    &VRManagerChild::NotifyPresentationGenerationChangedInternal,
+    aDisplayID));
+}
+
+void
 VRManagerChild::FireDOMVRDisplayMountedEvent(uint32_t aDisplayID)
 {
   nsContentUtils::AddScriptRunner(NewRunnableMethod<uint32_t>(
@@ -555,6 +564,15 @@ VRManagerChild::FireDOMVRDisplayConnectEventsForLoadInternal(uint32_t aDisplayID
 }
 
 void
+VRManagerChild::NotifyPresentationGenerationChangedInternal(uint32_t aDisplayID) {
+  nsTArray<RefPtr<dom::VREventObserver>> listeners;
+  listeners = mListeners;
+  for (auto& listener : listeners) {
+    listener->NotifyPresentationGenerationChanged(aDisplayID);
+  }
+}
+
+void
 VRManagerChild::FireDOMVRDisplayConnectEventsForLoad(dom::VREventObserver* aObserver)
 {
   // We need to fire the VRDisplayConnect event when a page is loaded
@@ -598,6 +616,25 @@ VRManagerChild::RemoveListener(dom::VREventObserver* aObserver)
   if (mListeners.IsEmpty()) {
     Unused << SendSetHaveEventListener(false);
   }
+}
+
+void
+VRManagerChild::StartActivity()
+{
+  Unused << SendStartActivity();
+}
+
+void
+VRManagerChild::StopActivity()
+{
+  for (auto& listener : mListeners) {
+    if (!listener->GetStopActivityStatus()) {
+      // We are still showing VR in the active window.
+      return;
+    }
+  }
+
+  Unused << SendStopActivity();
 }
 
 void

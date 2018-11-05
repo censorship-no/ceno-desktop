@@ -262,14 +262,20 @@ Element implements GeometryUtils;
 // https://fullscreen.spec.whatwg.org/#api
 partial interface Element {
   [Throws, Func="nsDocument::IsUnprefixedFullscreenEnabled", NeedsCallerType]
-  void requestFullscreen();
+  Promise<void> requestFullscreen();
   [Throws, BinaryName="requestFullscreen", NeedsCallerType]
-  void mozRequestFullScreen();
+  Promise<void> mozRequestFullScreen();
+
+  // Events handlers
+  [Func="nsDocument::IsUnprefixedFullscreenEnabled"]
+  attribute EventHandler onfullscreenchange;
+  [Func="nsDocument::IsUnprefixedFullscreenEnabled"]
+  attribute EventHandler onfullscreenerror;
 };
 
 // https://w3c.github.io/pointerlock/#extensions-to-the-element-interface
 partial interface Element {
-  [NeedsCallerType]
+  [NeedsCallerType, Pref="dom.pointer-lock.enabled"]
   void requestPointerLock();
 };
 

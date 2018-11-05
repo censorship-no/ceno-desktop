@@ -68,7 +68,7 @@ static gAccessibles = 0;
 MsaaIdGenerator AccessibleWrap::sIDGen;
 StaticAutoPtr<nsTArray<AccessibleWrap::HandlerControllerData>> AccessibleWrap::sHandlerControllers;
 
-static const VARIANT kVarChildIdSelf = {VT_I4};
+static const VARIANT kVarChildIdSelf = {{{VT_I4}}};
 
 static const int32_t kIEnumVariantDisconnected = -1;
 
@@ -476,7 +476,7 @@ AccessibleWrap::get_accRole(
   uint32_t msaaRole = 0;
 
 #define ROLE(_geckoRole, stringRole, atkRole, macRole, \
-             _msaaRole, ia2Role, nameRule) \
+             _msaaRole, ia2Role, androidClass, nameRule) \
   case roles::_geckoRole: \
     msaaRole = _msaaRole; \
     break;
@@ -1426,7 +1426,7 @@ GetProxiedAccessibleInSubtree(const DocAccessibleParent* aDoc,
     MOZ_ASSERT(tab);
     DocAccessibleParent* topLevelDoc = tab->GetTopLevelDocAccessible();
     MOZ_ASSERT(topLevelDoc && topLevelDoc->IsTopLevel());
-    VARIANT docId = {VT_I4};
+    VARIANT docId = {{{VT_I4}}};
     docId.lVal = docWrapperChildId;
     RefPtr<IDispatch> disp = GetProxiedAccessibleInSubtree(topLevelDoc, docId);
     if (!disp) {
@@ -1770,7 +1770,7 @@ AccessibleWrap::InvalidateHandlers()
     if (hr == CO_E_OBJNOTCONNECTED || hr == kErrorServerDied) {
       sHandlerControllers->RemoveElement(controller);
     } else {
-      NS_WARN_IF(FAILED(hr));
+      Unused << NS_WARN_IF(FAILED(hr));
     }
   }
 }

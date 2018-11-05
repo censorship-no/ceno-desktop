@@ -464,7 +464,7 @@ void set_relative_reloc(Elf_Rela *rel, Elf *elf, unsigned int value) {
     rel->r_addend = value;
 }
 
-void maybe_split_segment(Elf *elf, ElfSegment *segment, bool fill)
+void maybe_split_segment(Elf *elf, ElfSegment *segment)
 {
     std::list<ElfSection *>::iterator it = segment->begin();
     for (ElfSection *last = *(it++); it != segment->end(); last = *(it++)) {
@@ -484,44 +484,11 @@ void maybe_split_segment(Elf *elf, ElfSegment *segment, bool fill)
             phdr.p_memsz = (unsigned int)-1;
             ElfSegment *newSegment = new ElfSegment(&phdr);
             elf->insertSegmentAfter(segment, newSegment);
-            ElfSection *section = *it;
             for (; it != segment->end(); ++it) {
                 newSegment->addSection(*it);
             }
             for (it = newSegment->begin(); it != newSegment->end(); ++it) {
                 segment->removeSection(*it);
-            }
-            // Fill the virtual address space gap left between the two PT_LOADs
-            // with a new PT_LOAD with no permissions. This avoids the linker
-            // (especially bionic's) filling the gap with anonymous memory,
-            // which breakpad doesn't like.
-            // /!\ running strip on a elfhacked binary will break this filler
-            // PT_LOAD.
-            if (!fill)
-                break;
-            // Insert dummy segment to normalize the entire Elf with the header
-            // sizes adjusted, before inserting a filler segment.
-            {
-              memset(&phdr, 0, sizeof(phdr));
-              ElfSegment dummySegment(&phdr);
-              elf->insertSegmentAfter(segment, &dummySegment);
-              elf->normalize();
-              elf->removeSegment(&dummySegment);
-            }
-            ElfSection *previous = section->getPrevious();
-            phdr.p_type = PT_LOAD;
-            phdr.p_vaddr = (previous->getAddr() + previous->getSize() + segment->getAlign() - 1) & ~(segment->getAlign() - 1);
-            phdr.p_paddr = phdr.p_vaddr + segment->getVPDiff();
-            phdr.p_flags = 0;
-            phdr.p_align = 0;
-            phdr.p_filesz = (section->getAddr() & ~(newSegment->getAlign() - 1)) - phdr.p_vaddr;
-            phdr.p_memsz = phdr.p_filesz;
-            if (phdr.p_filesz) {
-                newSegment = new ElfSegment(&phdr);
-                assert(newSegment->isElfHackFillerSegment());
-                elf->insertSegmentAfter(segment, newSegment);
-            } else {
-                elf->normalize();
             }
             break;
         }
@@ -767,7 +734,7 @@ malformed:
 }
 
 template <typename Rel_Type>
-int do_relocation_section(Elf *elf, unsigned int rel_type, unsigned int rel_type2, bool force, bool fill)
+int do_relocation_section(Elf *elf, unsigned int rel_type, unsigned int rel_type2, bool force)
 {
     ElfDynamic_Section *dyn = elf->getDynSection();
     if (dyn == nullptr) {
@@ -1079,8 +1046,11 @@ int do_relocation_section(Elf *elf, unsigned int rel_type, unsigned int rel_type
     relhackcode->insertBefore(first_executable);
 
     // Don't try further if we can't gain from the relocation section size change.
+    // We account for the fact we're going to split the PT_LOAD before the injected
+    // code section, so the overhead of the page alignment for section needs to be
+    // accounted for.
     size_t align = first_executable->getSegmentByType(PT_LOAD)->getAlign();
-    size_t new_size = relhack->getSize() + relhackcode->getSize();
+    size_t new_size = relhack->getSize() + section->getSize() + relhackcode->getSize() + (relhackcode->getAddr() & (align - 1));
     if (!force && (new_size >= old_size || old_size - new_size < align)) {
         fprintf(stderr, "No gain. Skipping\n");
         return -1;
@@ -1106,7 +1076,7 @@ int do_relocation_section(Elf *elf, unsigned int rel_type, unsigned int rel_type
     if (eh_frame_hdr && (!eh_frame || strcmp(eh_frame->getName(), ".eh_frame"))) {
         throw std::runtime_error("Expected to find an .eh_frame section adjacent to .eh_frame_hdr");
     }
-    if (eh_frame && first->getAddr() > relhack->getAddr() && second->getAddr() < relhackcode->getAddr()) {
+    if (eh_frame && first->getAddr() > relhack->getAddr() && second->getAddr() < first_executable->getAddr()) {
         // The distance between both sections needs to be preserved because eh_frame_hdr
         // contains relative offsets to eh_frame. Well, they could be relocated too, but
         // it's not worth the effort for the few number of bytes this would save.
@@ -1133,7 +1103,7 @@ int do_relocation_section(Elf *elf, unsigned int rel_type, unsigned int rel_type
     // Adjust PT_LOAD segments
     for (ElfSegment *segment = elf->getSegmentByType(PT_LOAD); segment;
          segment = elf->getSegmentByType(PT_LOAD, segment)) {
-        maybe_split_segment(elf, segment, fill);
+        maybe_split_segment(elf, segment);
     }
 
     // Ensure Elf sections will be at their final location.
@@ -1164,7 +1134,7 @@ static inline int backup_file(const char *name)
     return rename(name, fname.c_str());
 }
 
-void do_file(const char *name, bool backup = false, bool force = false, bool fill = false)
+void do_file(const char *name, bool backup = false, bool force = false)
 {
     std::ifstream file(name, std::ios::in|std::ios::binary);
     Elf elf(file);
@@ -1187,13 +1157,13 @@ void do_file(const char *name, bool backup = false, bool force = false, bool fil
     int exit = -1;
     switch (elf.getMachine()) {
     case EM_386:
-        exit = do_relocation_section<Elf_Rel>(&elf, R_386_RELATIVE, R_386_32, force, fill);
+        exit = do_relocation_section<Elf_Rel>(&elf, R_386_RELATIVE, R_386_32, force);
         break;
     case EM_X86_64:
-        exit = do_relocation_section<Elf_Rela>(&elf, R_X86_64_RELATIVE, R_X86_64_64, force, fill);
+        exit = do_relocation_section<Elf_Rela>(&elf, R_X86_64_RELATIVE, R_X86_64_64, force);
         break;
     case EM_ARM:
-        exit = do_relocation_section<Elf_Rel>(&elf, R_ARM_RELATIVE, R_ARM_ABS32, force, fill);
+        exit = do_relocation_section<Elf_Rel>(&elf, R_ARM_RELATIVE, R_ARM_ABS32, force);
         break;
     }
     if (exit == 0) {
@@ -1236,21 +1206,19 @@ void undo_file(const char *name, bool backup = false)
         return;
     }
 
+    // When both elfhack sections are in the same segment, try to merge
+    // the segment that contains them both and the following segment.
+    // When the elfhack sections are in separate segments, try to merge
+    // those segments.
     ElfSegment *first = data->getSegmentByType(PT_LOAD);
     ElfSegment *second = text->getSegmentByType(PT_LOAD);
-    if (first != second) {
-        fprintf(stderr, elfhack_data " and " elfhack_text " not in the same segment. Skipping\n");
-        return;
+    if (first == second) {
+        second = elf.getSegmentByType(PT_LOAD, first);
     }
-    second = elf.getSegmentByType(PT_LOAD, first);
-    ElfSegment *filler = nullptr;
-    // If the second PT_LOAD is a filler from elfhack --fill, check the third.
-    if (second->isElfHackFillerSegment()) {
-        filler = second;
-        second = elf.getSegmentByType(PT_LOAD, filler);
-    }
+
+    // Only merge the segments when their flags match.
     if (second->getFlags() != first->getFlags()) {
-        fprintf(stderr, "Couldn't identify elfhacked PT_LOAD segments. Skipping\n");
+        fprintf(stderr, "Couldn't merge PT_LOAD segments. Skipping\n");
         return;
     }
     // Move sections from the second PT_LOAD to the first, and remove the
@@ -1260,8 +1228,7 @@ void undo_file(const char *name, bool backup = false)
         first->addSection(*section);
 
     elf.removeSegment(second);
-    if (filler)
-        elf.removeSegment(filler);
+    elf.normalize();
 
     if (backup && backup_file(name) != 0) {
         fprintf(stderr, "Couln't create backup file\n");
@@ -1278,7 +1245,6 @@ int main(int argc, char *argv[])
     bool backup = false;
     bool force = false;
     bool revert = false;
-    bool fill = false;
     char *lastSlash = rindex(argv[0], '/');
     if (lastSlash != nullptr)
         rundir = strndup(argv[0], lastSlash - argv[0]);
@@ -1289,12 +1255,10 @@ int main(int argc, char *argv[])
             backup = true;
         else if (strcmp(argv[arg], "-r") == 0)
             revert = true;
-        else if (strcmp(argv[arg], "--fill") == 0)
-            fill = true;
         else if (revert) {
             undo_file(argv[arg], backup);
         } else
-            do_file(argv[arg], backup, force, fill);
+            do_file(argv[arg], backup, force);
     }
 
     free(rundir);

@@ -63,15 +63,17 @@ nsBox::EndXULLayout(nsBoxLayoutState& aState)
 }
 
 bool nsBox::gGotTheme = false;
-nsITheme* nsBox::gTheme = nullptr;
+StaticRefPtr<nsITheme> nsBox::gTheme;
 
 nsBox::nsBox(ClassID aID)
   : nsIFrame(aID)
 {
   MOZ_COUNT_CTOR(nsBox);
   if (!gGotTheme) {
-    gGotTheme = true;
-    CallGetService("@mozilla.org/chrome/chrome-native-theme;1", &gTheme);
+    gTheme = do_GetNativeTheme();
+    if (gTheme) {
+      gGotTheme = true;
+    }
   }
 }
 
@@ -86,7 +88,7 @@ nsBox::~nsBox()
 nsBox::Shutdown()
 {
   gGotTheme = false;
-  NS_IF_RELEASE(gTheme);
+  gTheme = nullptr;
 }
 
 nsresult
@@ -522,6 +524,23 @@ nsIFrame::AddXULPrefSize(nsIFrame* aBox, nsSize& aSize, bool &aWidthSet, bool &a
     return (aWidthSet && aHeightSet);
 }
 
+// This returns the scrollbar width we want to use when either native
+// theme is disabled, or the native theme claims that it doesn't support
+// scrollbar.
+static nscoord
+GetScrollbarWidthNoTheme(nsIFrame* aBox)
+{
+    ComputedStyle* scrollbarStyle = nsLayoutUtils::StyleForScrollbar(aBox);
+    switch (scrollbarStyle->StyleUIReset()->mScrollbarWidth) {
+      default:
+      case StyleScrollbarWidth::Auto:
+        return 12 * AppUnitsPerCSSPixel();
+      case StyleScrollbarWidth::Thin:
+        return 6 * AppUnitsPerCSSPixel();
+      case StyleScrollbarWidth::None:
+        return 0;
+    }
+}
 
 bool
 nsIFrame::AddXULMinSize(nsBoxLayoutState& aState, nsIFrame* aBox, nsSize& aSize,
@@ -547,6 +566,19 @@ nsIFrame::AddXULMinSize(nsBoxLayoutState& aState, nsIFrame* aBox, nsSize& aSize,
         if (size.height) {
           aSize.height = aState.PresContext()->DevPixelsToAppUnits(size.height);
           aHeightSet = true;
+        }
+      } else {
+        switch (display->mAppearance) {
+          case StyleAppearance::ScrollbarVertical:
+            aSize.width = GetScrollbarWidthNoTheme(aBox);
+            aWidthSet = true;
+            break;
+          case StyleAppearance::ScrollbarHorizontal:
+            aSize.height = GetScrollbarWidthNoTheme(aBox);
+            aHeightSet = true;
+            break;
+          default:
+            break;
         }
       }
     }

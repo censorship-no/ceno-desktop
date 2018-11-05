@@ -51,6 +51,7 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
 
   setColorPickerContent(color) {
     const { doc } = this.tooltip;
+    this.tooltip.panel.innerHTML = "";
 
     const container = doc.createElementNS(XHTML_NS, "div");
     container.id = "spectrum-tooltip";
@@ -60,7 +61,8 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
     container.appendChild(node);
 
     const widget = new Spectrum(node, color);
-    this.tooltip.setContent(container, { width: 218, height: 224 });
+    this.tooltip.panel.appendChild(container);
+    this.tooltip.setContentSize({ width: 218, height: 224 });
 
     widget.inspector = this.inspector;
 
@@ -174,7 +176,7 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
     // resolves. Flip the flag early to avoid issues with onTooltipHidden().
     this.eyedropperOpen = true;
 
-    inspector.pickColorFromPage(toolbox, {copyOnSelect: false}).then(() => {
+    inspector.pickColorFromPage({copyOnSelect: false}).then(() => {
       // close the colorpicker tooltip so that only the eyedropper is open.
       this.hide();
 

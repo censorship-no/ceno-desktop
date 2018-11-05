@@ -12,8 +12,6 @@ var {
   ExtensionError,
 } = ExtensionUtils;
 
-var XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-
 const EXECUTE_PAGE_ACTION = "_execute_page_action";
 const EXECUTE_BROWSER_ACTION = "_execute_browser_action";
 const EXECUTE_SIDEBAR_ACTION = "_execute_sidebar_action";
@@ -154,7 +152,7 @@ this.commands = class extends ExtensionAPI {
    */
   registerKeysToDocument(window, commands) {
     let doc = window.document;
-    let keyset = doc.createElementNS(XUL_NS, "keyset");
+    let keyset = doc.createXULElement("keyset");
     keyset.id = `ext-keyset-id-${this.id}`;
     if (this.keysetsMap.has(window)) {
       this.keysetsMap.get(window).remove();
@@ -162,6 +160,17 @@ this.commands = class extends ExtensionAPI {
     let sidebarKey;
     commands.forEach((command, name) => {
       if (command.shortcut) {
+        let parts = command.shortcut.split("+");
+
+        // The key is always the last element.
+        let key = parts.pop();
+
+        if (/^[0-9]$/.test(key)) {
+          let shortcutWithNumpad = command.shortcut.replace(/[0-9]$/, "Numpad$&");
+          let numpadKeyElement = this.buildKey(doc, name, shortcutWithNumpad);
+          keyset.appendChild(numpadKeyElement);
+        }
+
         let keyElement = this.buildKey(doc, name, command.shortcut);
         keyset.appendChild(keyElement);
         if (name == EXECUTE_SIDEBAR_ACTION) {
@@ -232,7 +241,7 @@ this.commands = class extends ExtensionAPI {
    * @returns {Document} The newly created Key element.
    */
   buildKeyFromShortcut(doc, name, shortcut) {
-    let keyElement = doc.createElementNS(XUL_NS, "key");
+    let keyElement = doc.createXULElement("key");
 
     let parts = shortcut.split("+");
 
@@ -241,7 +250,10 @@ this.commands = class extends ExtensionAPI {
 
     // The modifiers are the remaining elements.
     keyElement.setAttribute("modifiers", this.getModifiersAttribute(parts));
-    if (name == EXECUTE_SIDEBAR_ACTION) {
+
+    // A keyElement with key "NumpadX" is created above and isn't from the
+    // manifest. The id will be set on the keyElement with key "X" only.
+    if (name == EXECUTE_SIDEBAR_ACTION && !chromeKey.startsWith("Numpad")) {
       let id = `ext-key-id-${this.id}-sidebar-action`;
       keyElement.setAttribute("id", id);
     }
@@ -271,7 +283,7 @@ this.commands = class extends ExtensionAPI {
    * @returns {string} The constructed value for the Key's 'keycode' attribute.
    */
   getKeycodeAttribute(chromeKey) {
-    if (/[0-9]/.test(chromeKey)) {
+    if (/^[0-9]$/.test(chromeKey)) {
       return `VK_${chromeKey}`;
     }
     return `VK${chromeKey.replace(/([A-Z])/g, "_$&").toUpperCase()}`;
@@ -361,6 +373,7 @@ this.commands = class extends ExtensionAPI {
         onCommand: new EventManager({
           context,
           name: "commands.onCommand",
+          inputHandling: true,
           register: fire => {
             let listener = (eventName, commandName) => {
               fire.async(commandName);

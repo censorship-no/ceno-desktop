@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Нисам успео да учитам слику. Пробајте са другим URL-ом.",
   "pocket_read_more": "Популарне теме:",
   "pocket_read_even_more": "Погледајте још прича",
+  "pocket_more_reccommendations": "Још препорука",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "Преузмите Pocket",
+  "pocket_cta_text": "Сачувајте приче које волите у Pocket и напуните свој ум фасцинантним причама.",
   "highlights_empty_state": "Почните са коришћењем веба а ми ћемо вам овде приказивати неке од одличних чланака, видео записа и других страница које сте скоро посетили.",
   "topstories_empty_state": "Вратите се касније за нове вести {provider}. Не можете дочекати? Изаберите популарну тему да пронађете још занимљивих вести из света.",
   "manual_migration_explanation2": "Пробајте FIrefox са коришћењем забелешки, историјата и лозинки из другог прегледача.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Управљај секцијом",
   "section_menu_action_manage_webext": "Управљај екстензијама",
   "section_menu_action_add_topsite": "Додај омиљени сајт",
+  "section_menu_action_add_search_engine": "Додај претраживач",
   "section_menu_action_move_up": "Помери горе",
   "section_menu_action_move_down": "Помери доле",
   "section_menu_action_privacy_notice": "Обавештење о приватности",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "услове коришћења",
   "firstrun_privacy_notice": "обавештење о приватности",
   "firstrun_continue_to_login": "Настави",
-  "firstrun_skip_login": "Прескочи овај корак"
+  "firstrun_skip_login": "Прескочи овај корак",
+  "context_menu_title": "Open menu",
+  "pocket_learn_more": "Сазнајте више"
 };

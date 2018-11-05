@@ -4,6 +4,8 @@
 
 "use strict";
 
+// This is loaded into chrome windows with the subscript loader. Wrap in
+// a block to prevent accidentally leaking globals onto `window`.
 {
 
 class MozDeck extends MozXULElement {
@@ -22,14 +24,14 @@ class MozDeck extends MozXULElement {
 
   set selectedPanel(val) {
     var selectedIndex = -1;
-    for (var panel = val; panel != null; panel = panel.previousSibling)
+    for (var panel = val; panel != null; panel = panel.previousElementSibling)
       ++selectedIndex;
     this.selectedIndex = selectedIndex;
     return val;
   }
 
   get selectedPanel() {
-    return this.childNodes[this.selectedIndex];
+    return this.children[this.selectedIndex];
   }
 }
 
@@ -38,7 +40,7 @@ customElements.define("deck", MozDeck);
 class MozDropmarker extends MozXULElement {
   connectedCallback() {
     // Only create the image the first time we are connected
-    if (!this.firstChild) {
+    if (!this.firstElementChild) {
       let image = document.createXULElement("image");
       image.classList.add("dropmarker-icon");
       this.appendChild(image);
@@ -47,5 +49,23 @@ class MozDropmarker extends MozXULElement {
 }
 
 customElements.define("dropmarker", MozDropmarker);
+
+class MozCommandSet extends MozXULElement {
+  connectedCallback() {
+    if (this.getAttribute("commandupdater") === "true") {
+      const events = this.getAttribute("events") || "*";
+      const targets = this.getAttribute("targets") || "*";
+      document.commandDispatcher.addCommandUpdater(this, events, targets);
+    }
+  }
+
+  disconnectedCallback() {
+    if (this.getAttribute("commandupdater") === "true") {
+      document.commandDispatcher.removeCommandUpdater(this);
+    }
+  }
+}
+
+customElements.define("commandset", MozCommandSet);
 
 }

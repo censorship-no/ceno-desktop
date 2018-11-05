@@ -72,7 +72,7 @@ CompositorAnimationStorage::GetOMTAValue(const uint64_t& aId) const
       // nsStyleTransformMatrix::ProcessTranslatePart which is called from
       // nsDisplayTransform::GetResultingTransformMatrix)
       double devPerCss =
-        double(scale) / double(nsDeviceContext::AppUnitsPerCSSPixel());
+        double(scale) / double(AppUnitsPerCSSPixel());
       transform._41 *= devPerCss;
       transform._42 *= devPerCss;
       transform._43 *= devPerCss;
@@ -554,15 +554,26 @@ AnimationHelper::SetAnimations(
 {
   for (uint32_t i = 0; i < aAnimations.Length(); i++) {
     Animation& animation = aAnimations[i];
-    // Adjust fill mode to fill forwards so that if the main thread is delayed
-    // in clearing this animation we don't introduce flicker by jumping back to
-    // the old underlying value
+    // Adjust fill mode so that if the main thread is delayed in clearing
+    // this animation we don't introduce flicker by jumping back to the old
+    // underlying value.
     switch (static_cast<dom::FillMode>(animation.fillMode())) {
       case dom::FillMode::None:
-        animation.fillMode() = static_cast<uint8_t>(dom::FillMode::Forwards);
+        if (animation.playbackRate() > 0) {
+          animation.fillMode() = static_cast<uint8_t>(dom::FillMode::Forwards);
+        } else if (animation.playbackRate() < 0) {
+          animation.fillMode() = static_cast<uint8_t>(dom::FillMode::Backwards);
+        }
         break;
       case dom::FillMode::Backwards:
-        animation.fillMode() = static_cast<uint8_t>(dom::FillMode::Both);
+        if (animation.playbackRate() > 0) {
+          animation.fillMode() = static_cast<uint8_t>(dom::FillMode::Both);
+        }
+        break;
+      case dom::FillMode::Forwards:
+        if (animation.playbackRate() < 0) {
+          animation.fillMode() = static_cast<uint8_t>(dom::FillMode::Both);
+        }
         break;
       default:
         break;

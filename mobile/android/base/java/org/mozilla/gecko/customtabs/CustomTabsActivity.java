@@ -9,7 +9,6 @@ import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.ResolveInfo;
-import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
@@ -39,8 +38,6 @@ import org.mozilla.gecko.DoorHangerPopup;
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.FormAssistPopup;
 import org.mozilla.gecko.GeckoApplication;
-import org.mozilla.gecko.GeckoSharedPrefs;
-import org.mozilla.gecko.preferences.GeckoPreferences;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.SnackbarBuilder;
 import org.mozilla.gecko.Telemetry;
@@ -59,12 +56,12 @@ import org.mozilla.gecko.util.PackageUtil;
 import org.mozilla.gecko.webapps.WebApps;
 import org.mozilla.gecko.widget.ActionModePresenter;
 import org.mozilla.gecko.widget.GeckoPopupMenu;
-import org.mozilla.geckoview.GeckoResponse;
+import org.mozilla.geckoview.AllowOrDeny;
 import org.mozilla.geckoview.GeckoResult;
-import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
 import org.mozilla.geckoview.GeckoView;
+import org.mozilla.geckoview.WebRequestError;
 
 import java.util.List;
 
@@ -156,18 +153,6 @@ public class CustomTabsActivity extends AppCompatActivity
     }
 
     @Override
-    public void onResume() {
-        mGeckoSession.setActive(true);
-        super.onResume();
-    }
-
-    @Override
-    public void onPause() {
-        mGeckoSession.setActive(false);
-        super.onPause();
-    }
-
-    @Override
     public void onDestroy() {
         mGeckoSession.close();
         mTextSelection.destroy();
@@ -189,15 +174,6 @@ public class CustomTabsActivity extends AppCompatActivity
     public void onRequestPermissionsResult(final int requestCode, final String[] permissions,
                                            final int[] grantResults) {
         Permissions.onRequestPermissionsResult(this, permissions, grantResults);
-    }
-
-    @Override
-    public void onConfigurationChanged(Configuration newConfig) {
-        super.onConfigurationChanged(newConfig);
-
-        if (mPromptService != null) {
-            mPromptService.changePromptOrientation(newConfig.orientation);
-        }
     }
 
     private void sendTelemetry() {
@@ -609,18 +585,17 @@ public class CustomTabsActivity extends AppCompatActivity
     }
 
     @Override
-    public GeckoResult<Boolean> onLoadRequest(final GeckoSession session, final String urlStr,
-                                              final int target,
-                                              final int flags) {
-        if (target != GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
-            return GeckoResult.fromValue(false);
+    public GeckoResult<AllowOrDeny> onLoadRequest(final GeckoSession session,
+                                                  final LoadRequest request) {
+        if (request.target != GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
+            return GeckoResult.fromValue(AllowOrDeny.ALLOW);
         }
 
-        final Uri uri = Uri.parse(urlStr);
+        final Uri uri = Uri.parse(request.uri);
         if (uri == null) {
             // We can't handle this, so deny it.
-            Log.w(LOGTAG, "Failed to parse URL for navigation: " + urlStr);
-            return GeckoResult.fromValue(true);
+            Log.w(LOGTAG, "Failed to parse URL for navigation: " + request.uri);
+            return GeckoResult.fromValue(AllowOrDeny.DENY);
         }
 
         // Always use Fennec for these schemes.
@@ -633,7 +608,7 @@ public class CustomTabsActivity extends AppCompatActivity
             try {
                 startActivity(intent);
             } catch (ActivityNotFoundException e) {
-                Log.w(LOGTAG, "No activity handler found for: " + urlStr);
+                Log.w(LOGTAG, "No activity handler found for: " + request.uri);
             }
         } else {
             final Intent intent = new Intent(Intent.ACTION_VIEW);
@@ -641,11 +616,11 @@ public class CustomTabsActivity extends AppCompatActivity
             try {
                 startActivity(intent);
             } catch (ActivityNotFoundException e) {
-                Log.w(LOGTAG, "No activity handler found for: " + urlStr);
+                Log.w(LOGTAG, "No activity handler found for: " + request.uri);
             }
         }
 
-        return GeckoResult.fromValue(true);
+        return GeckoResult.fromValue(AllowOrDeny.DENY);
     }
 
     @Override
@@ -654,8 +629,10 @@ public class CustomTabsActivity extends AppCompatActivity
         throw new IllegalStateException("Unexpected new session");
     }
 
-    public void onLoadError(final GeckoSession session, final String urlStr,
-                            final int category, final int error) {
+    @Override
+    public GeckoResult<String> onLoadError(final GeckoSession session, final String urlStr,
+                                           final WebRequestError error) {
+        return null;
     }
 
     /* GeckoSession.ProgressDelegate */

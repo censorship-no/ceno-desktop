@@ -32,9 +32,7 @@ ChildSHistory::~ChildSHistory()
 int32_t
 ChildSHistory::Count()
 {
-  int32_t count;
-  mHistory->GetCount(&count);
-  return count;
+  return mHistory->GetCount();
 }
 
 int32_t
@@ -65,9 +63,6 @@ ChildSHistory::CanGo(int32_t aOffset)
 void
 ChildSHistory::Go(int32_t aOffset, ErrorResult& aRv)
 {
-  // XXX(nika): Should we turn Go(-1) and Go(1) to call GoForward and GoBack?
-  // They technically fire different change events but I couldn't find anyone
-  // who cares, so I'm inclined not to.
   CheckedInt<int32_t> index = Index();
   index += aOffset;
   if (!index.isValid()) {
@@ -85,18 +80,6 @@ ChildSHistory::EvictLocalContentViewers()
 
 nsISHistory*
 ChildSHistory::LegacySHistory()
-{
-  return mHistory;
-}
-
-nsISHistoryInternal*
-ChildSHistory::LegacySHistoryInternal()
-{
-  return mHistory;
-}
-
-nsIWebNavigation*
-ChildSHistory::LegacySHistoryWebNav()
 {
   return mHistory;
 }
@@ -132,7 +115,7 @@ ChildSHistory::WrapObject(JSContext* cx, JS::Handle<JSObject*> aGivenProto)
 nsISupports*
 ChildSHistory::GetParentObject() const
 {
-  // We want to get the TabChildGlobal, which is the
+  // We want to get the TabChildMessageManager, which is the
   // messageManager on mDocShell.
   RefPtr<ContentFrameMessageManager> mm;
   if (mDocShell) {

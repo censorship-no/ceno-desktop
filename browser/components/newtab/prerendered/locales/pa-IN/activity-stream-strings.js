@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "ਚਿੱਤਰ ਲੋਡ ਕਰਨ ਤੋਂ ਅਸਫ਼ਲ ਰਿਹਾ। ਕਿਸੇ ਵੱਖਰੇ URL ਨਾਲ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
   "pocket_read_more": "ਪ੍ਰਸਿੱਧ ਵਿਸ਼ੇ:",
   "pocket_read_even_more": "ਹੋਰ ਕਹਾਣੀਆਂ ਵੇਖੋ",
+  "pocket_more_reccommendations": "More Recommendations",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "Get Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "Start browsing, and we’ll show some of the great articles, videos, and other pages you’ve recently visited or bookmarked here.",
   "topstories_empty_state": "You’ve caught up. Check back later for more top stories from {provider}. Can’t wait? Select a popular topic to find more great stories from around the web.",
   "manual_migration_explanation2": "Try Firefox with the bookmarks, history and passwords from another browser.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "ਸੈਕਸ਼ਨ ਦਾ ਪ੍ਰਬੰਧ ਕਰੋ",
   "section_menu_action_manage_webext": "ਇਕਸਟੈਨਸ਼ਨਾਂ ਦਾ ਇੰਤਜ਼ਾਮ",
   "section_menu_action_add_topsite": "ਚੋਟੀ ਦੀਆਂ ਸਾਈਟਾਂ ਜੋੜੋ",
+  "section_menu_action_add_search_engine": "ਖੋਜ ਇੰਜਣ ਜੋੜੋ",
   "section_menu_action_move_up": "ਉੱਤੇ ਭੇਜੋ",
   "section_menu_action_move_down": "ਹੇਠਾਂ ਭੇਜੋ",
   "section_menu_action_privacy_notice": "ਨਿੱਜੀ ਨੋਟਿਸ",
@@ -101,5 +106,6 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "ਸੇਵਾ ਦੀਆਂ ਸ਼ਰਤਾਂ",
   "firstrun_privacy_notice": "ਪਰਦੇਦਾਰੀ ਦਾ ਨੋਟਿਸ",
   "firstrun_continue_to_login": "ਜਾਰੀ ਰੱਖੋ",
-  "firstrun_skip_login": "ਇਹ ਪਗ਼ ਛੱਡੋ"
+  "firstrun_skip_login": "ਇਹ ਪਗ਼ ਛੱਡੋ",
+  "context_menu_title": "Open menu"
 };

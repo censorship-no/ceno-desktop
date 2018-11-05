@@ -36,9 +36,7 @@ this.ASRouterTriggerListeners = new Map([
         Services.ww.registerNotification(this);
 
         // Add listeners to all existing browser windows
-        const winEnum = Services.wm.getEnumerator("navigator:browser");
-        while (winEnum.hasMoreElements()) {
-          let win = winEnum.getNext();
+        for (let win of Services.wm.getEnumerator("navigator:browser")) {
           if (win.closed || PrivateBrowsingUtils.isWindowPrivate(win)) {
             continue;
           }
@@ -59,9 +57,7 @@ this.ASRouterTriggerListeners = new Map([
       if (this._initialized) {
         Services.ww.unregisterNotification(this);
 
-        const winEnum = Services.wm.getEnumerator("navigator:browser");
-        while (winEnum.hasMoreElements()) {
-          let win = winEnum.getNext();
+        for (let win of Services.wm.getEnumerator("navigator:browser")) {
           if (win.closed || PrivateBrowsingUtils.isWindowPrivate(win)) {
             continue;
           }
@@ -77,11 +73,15 @@ this.ASRouterTriggerListeners = new Map([
 
     onLocationChange(aBrowser, aWebProgress, aRequest, aLocationURI, aFlags) {
       const location = aLocationURI ? aLocationURI.spec : "";
-      if (location && aWebProgress.isTopLevel) {
+      // Some websites trigger redirect events after they finish loading even
+      // though the location remains the same. This results in onLocationChange
+      // events to be fired twice.
+      const isSameDocument = !!(aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT);
+      if (location && aWebProgress.isTopLevel && !isSameDocument) {
         try {
           const host = (new URL(location)).hostname;
           if (this._hosts.has(host)) {
-            this._triggerHandler(aBrowser.messageManager, {id: "openURL", param: host});
+            this._triggerHandler(aBrowser, {id: "openURL", param: host});
           }
         } catch (e) {} // Couldn't parse location URL
       }
@@ -111,8 +111,8 @@ this.ASRouterTriggerListeners = new Map([
           }
           break;
       }
-    }
-  }]
+    },
+  }],
 ]);
 
 const EXPORTED_SYMBOLS = ["ASRouterTriggerListeners"];

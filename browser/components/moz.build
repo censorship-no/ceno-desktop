@@ -44,6 +44,7 @@ DIRS += [
     'newtab',
     'originattributes',
     'places',
+    'pocket',
     'preferences',
     'privatebrowsing',
     'resistfingerprinting',
@@ -52,13 +53,17 @@ DIRS += [
     'shell',
     'syncedtabs',
     'uitour',
+    'urlbar',
     'translation',
 ]
 
 DIRS += ['build']
 
 if CONFIG['NIGHTLY_BUILD']:
-    DIRS += ['payments']
+    DIRS += [
+        'aboutconfig',
+        'payments',
+    ]
 
 XPIDL_SOURCES += [
     'nsIBrowserHandler.idl',
@@ -66,11 +71,8 @@ XPIDL_SOURCES += [
 
 XPIDL_MODULE = 'browsercompsbase'
 
-EXTRA_PP_COMPONENTS += [
-    'BrowserComponents.manifest',
-]
-
 EXTRA_COMPONENTS += [
+    'BrowserComponents.manifest',
     'nsBrowserContentHandler.js',
     'nsBrowserGlue.js',
     'tests/startupRecorder.js',

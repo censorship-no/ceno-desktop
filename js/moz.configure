@@ -369,6 +369,18 @@ set_define('JS_JITSPEW',
 set_config('JS_JITSPEW',
            depends_if('--enable-jitspew')(lambda _: True))
 
+# When enabled, masm will generate assumeUnreachable calls that act as
+# assertions in the generated code. This option is worth disabling when you
+# have to track mutated values through the generated code, to avoid constantly
+# dumping registers on and off the stack.
+js_option('--enable-masm-verbose',
+          default=depends(when=moz_debug)(lambda: True),
+          help='Enable MacroAssembler verbosity of generated code.')
+set_define('JS_MASM_VERBOSE',
+           depends_if('--enable-masm-verbose')(lambda _: True))
+set_config('JS_MASM_VERBOSE',
+           depends_if('--enable-masm-verbose')(lambda _: True))
+
 
 js_option('--enable-more-deterministic', env='JS_MORE_DETERMINISTIC',
           help='Enable changes that make the shell more deterministic')
@@ -431,9 +443,10 @@ with only_when('--enable-compile-environment'):
 
     @depends(enable_fuzzing,
              enable_aflfuzzer,
-             c_compiler)
-    def enable_libfuzzer(fuzzing, afl, c_compiler):
-        if fuzzing and not afl and c_compiler.type == 'clang':
+             c_compiler,
+             target)
+    def enable_libfuzzer(fuzzing, afl, c_compiler, target):
+        if fuzzing and not afl and c_compiler.type == 'clang' and target.os != 'Android':
             return True
 
     @depends(enable_fuzzing,
@@ -448,9 +461,11 @@ with only_when('--enable-compile-environment'):
 
     set_config('LIBFUZZER', enable_libfuzzer)
     set_define('LIBFUZZER', enable_libfuzzer)
+    add_old_configure_assignment('LIBFUZZER', enable_libfuzzer)
 
     set_config('FUZZING_INTERFACES', enable_fuzzing_interfaces)
     set_define('FUZZING_INTERFACES', enable_fuzzing_interfaces)
+    add_old_configure_assignment('FUZZING_INTERFACES', enable_fuzzing_interfaces)
 
 # Enable pipeline operator
 # ===================================================
@@ -482,13 +497,14 @@ set_config('JS_BUILD_BINAST', enable_build_binast)
 
 # Experimental support for wasm code generation with Cranelift
 # ==============================================================
+
+@depends(milestone.is_nightly)
+def default_cranelift(is_nightly):
+    return is_nightly
+
 js_option('--enable-cranelift',
+          default=default_cranelift,
           help='Enable Cranelift code generator for wasm')
 
-@depends('--enable-cranelift')
-def enable_cranelift(value):
-    if value:
-        return True
-
-set_config('MOZ_WASM_CRANELIFT', enable_cranelift)
-set_define('MOZ_WASM_CRANELIFT', enable_cranelift)
+set_config('ENABLE_WASM_CRANELIFT', depends_if('--enable-cranelift')(lambda x: True))
+set_define('ENABLE_WASM_CRANELIFT', depends_if('--enable-cranelift')(lambda x: True))

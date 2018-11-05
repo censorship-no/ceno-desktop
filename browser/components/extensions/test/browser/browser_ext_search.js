@@ -2,35 +2,50 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(async function test_search() {
-  const TEST_ID = "test_search@tests.mozilla.com";
-  const SEARCH_TERM = "test";
-  const SEARCH_URL = "https://localhost/?q={searchTerms}";
+const SEARCH_TERM = "test";
+const SEARCH_URL = "https://localhost/?q={searchTerms}";
 
-  async function background() {
-    browser.browserAction.onClicked.addListener(tab => {
-      browser.search.search("Search Test", "test", tab.id); // Can't use SEARCH_TERM here
-    });
-    browser.tabs.onUpdated.addListener(async function(tabId, info, changedTab) {
-      if (changedTab.url == "about:blank") {
-        // Ignore events related to the initial tab open.
-        return;
-      }
-      if (info.status === "complete") {
-        await browser.tabs.remove(tabId);
-        browser.test.sendMessage("searchLoaded", changedTab.url);
-      }
-    });
-    await browser.tabs.create({url: "about:blank"});
+add_task(async function test_search() {
+  async function background(SEARCH_TERM) {
+    function awaitSearchResult() {
+      return new Promise(resolve => {
+        async function listener(tabId, info, changedTab) {
+          if (changedTab.url == "about:blank") {
+            // Ignore events related to the initial tab open.
+            return;
+          }
+
+          if (info.status === "complete") {
+            browser.tabs.onUpdated.removeListener(listener);
+            await browser.tabs.remove(tabId);
+            resolve({tabId, url: changedTab.url});
+          }
+        }
+
+        browser.tabs.onUpdated.addListener(listener);
+      });
+    }
+
     let engines = await browser.search.get();
     browser.test.sendMessage("engines", engines);
+
+    // Search with no tabId
+    browser.search.search({query: SEARCH_TERM + "1", engine: "Search Test"});
+    let result = await awaitSearchResult();
+    browser.test.sendMessage("searchLoaded", result.url);
+
+    // Search with tabId
+    let tab = await browser.tabs.create({});
+    browser.search.search({query: SEARCH_TERM + "2", engine: "Search Test",
+                           tabId: tab.id});
+    result = await awaitSearchResult();
+    browser.test.assertEq(result.tabId, tab.id, "Page loaded in right tab");
+    browser.test.sendMessage("searchLoaded", result.url);
   }
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: ["search", "tabs"],
-      name: TEST_ID,
-      "browser_action": {},
       "chrome_settings_overrides": {
         "search_provider": {
           "name": "Search Test",
@@ -38,7 +53,7 @@ add_task(async function test_search() {
         },
       },
     },
-    background,
+    background: `(${background})("${SEARCH_TERM}")`,
     useAddonManager: "temporary",
   });
   await extension.startup();
@@ -49,48 +64,65 @@ add_task(async function test_search() {
   let defaultEngine = addonEngines.filter(engine => engine.isDefault === true);
   is(defaultEngine.length, 1, "One default engine");
   is(defaultEngine[0].name, Services.search.currentEngine.name, "Default engine is correct");
-  await clickBrowserAction(extension);
+
   let url = await extension.awaitMessage("searchLoaded");
-  is(url, SEARCH_URL.replace("{searchTerms}", SEARCH_TERM), "Loaded page matches search");
+  is(url, SEARCH_URL.replace("{searchTerms}", SEARCH_TERM + "1"), "Loaded page matches search");
+
+  url = await extension.awaitMessage("searchLoaded");
+  is(url, SEARCH_URL.replace("{searchTerms}", SEARCH_TERM + "2"), "Loaded page matches search");
+
   await extension.unload();
 });
 
-add_task(async function test_search_notab() {
-  const TEST_ID = "test_search@tests.mozilla.com";
-  const SEARCH_TERM = "test";
-  const SEARCH_URL = "https://localhost/?q={searchTerms}";
-
-  async function background() {
-    browser.browserAction.onClicked.addListener(_ => {
-      browser.tabs.onUpdated.addListener(async (tabId, info, changedTab) => {
-        if (info.status === "complete") {
-          await browser.tabs.remove(tabId);
-          browser.test.sendMessage("searchLoaded", changedTab.url);
-        }
-      });
-      browser.search.search("Search Test", "test"); // Can't use SEARCH_TERM here
-    });
-  }
-
+add_task(async function test_search_default_engine() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      permissions: ["search", "tabs"],
-      name: TEST_ID,
-      "browser_action": {},
-      "chrome_settings_overrides": {
-        "search_provider": {
-          "name": "Search Test",
-          "search_url": SEARCH_URL,
-        },
-      },
+      permissions: ["search"],
     },
-    background,
+    background() {
+      browser.test.onMessage.addListener((msg, tabId) => {
+        browser.test.assertEq(msg, "search");
+        browser.search.search({query: "searchTermForDefaultEngine", tabId});
+      });
+      browser.test.sendMessage("extension-origin", browser.runtime.getURL("/"));
+    },
     useAddonManager: "temporary",
   });
-  await extension.startup();
 
-  await clickBrowserAction(extension);
-  let url = await extension.awaitMessage("searchLoaded");
-  is(url, SEARCH_URL.replace("{searchTerms}", SEARCH_TERM), "Loaded page matches search");
+  // Use another extension to intercept and block the search request,
+  // so that there is no outbound network activity that would kill the test.
+  // This method also allows us to verify that:
+  // 1) the search appears as a normal request in the webRequest API.
+  // 2) the request is associated with the triggering extension.
+  let extensionWithObserver = ExtensionTestUtils.loadExtension({
+    manifest: {permissions: ["webRequest", "webRequestBlocking", "*://*/*"]},
+    async background() {
+      let tab = await browser.tabs.create({url: "about:blank"});
+      browser.webRequest.onBeforeRequest.addListener(details => {
+        browser.test.log(`Intercepted request ${JSON.stringify(details)}`);
+        browser.tabs.remove(tab.id).then(() => {
+          browser.test.sendMessage("detectedSearch", details);
+        });
+        return {cancel: true};
+      }, {
+        tabId: tab.id,
+        types: ["main_frame"],
+        urls: ["*://*/*"],
+      }, ["blocking"]);
+      browser.test.sendMessage("ready", tab.id);
+    },
+  });
+  await extension.startup();
+  const EXPECTED_ORIGIN = await extension.awaitMessage("extension-origin");
+
+  await extensionWithObserver.startup();
+  let tabId = await extensionWithObserver.awaitMessage("ready");
+
+  extension.sendMessage("search", tabId);
+  let requestDetails = await extensionWithObserver.awaitMessage("detectedSearch");
   await extension.unload();
+  await extensionWithObserver.unload();
+
+  ok(requestDetails.url.includes("searchTermForDefaultEngine"), `Expected search term in ${requestDetails.url}`);
+  is(requestDetails.originUrl, EXPECTED_ORIGIN, "Search request's should be associated with the originating extension.");
 });

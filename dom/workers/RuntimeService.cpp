@@ -9,6 +9,7 @@
 #include "nsAutoPtr.h"
 #include "nsIChannel.h"
 #include "nsIContentSecurityPolicy.h"
+#include "nsICookieService.h"
 #include "nsIDocument.h"
 #include "nsIDOMChromeWindow.h"
 #include "nsIEffectiveTLDService.h"
@@ -28,7 +29,9 @@
 #include "mozilla/ipc/BackgroundChild.h"
 #include "GeckoProfiler.h"
 #include "jsfriendapi.h"
+#include "js/LocaleSensitive.h"
 #include "mozilla/AbstractThread.h"
+#include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Atomics.h"
@@ -296,6 +299,9 @@ LoadContextOptions(const char* aPrefName, void* /* aClosure */)
                 .setWasm(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm")))
                 .setWasmBaseline(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_baselinejit")))
                 .setWasmIon(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_ionjit")))
+#ifdef ENABLE_WASM_CRANELIFT
+                .setWasmForceCranelift(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_cranelift")))
+#endif
 #ifdef ENABLE_WASM_GC
                 .setWasmGc(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_gc")))
 #endif
@@ -309,7 +315,6 @@ LoadContextOptions(const char* aPrefName, void* /* aClosure */)
 #ifdef FUZZING
                 .setFuzzing(GetWorkerPref<bool>(NS_LITERAL_CSTRING("fuzzing.enabled")))
 #endif
-                .setStreams(GetWorkerPref<bool>(NS_LITERAL_CSTRING("streams")))
                 .setExtraWarnings(GetWorkerPref<bool>(NS_LITERAL_CSTRING("strict")));
 
   nsCOMPtr<nsIXULRuntime> xr = do_GetService("@mozilla.org/xre/runtime;1");
@@ -910,7 +915,7 @@ InitJSContextForWorker(WorkerPrivate* aWorkerPrivate, JSContext* aWorkerCx)
 }
 
 static bool
-PreserveWrapper(JSContext *cx, JSObject *obj)
+PreserveWrapper(JSContext *cx, JS::HandleObject obj)
 {
     MOZ_ASSERT(cx);
     MOZ_ASSERT(obj);
@@ -2021,6 +2026,10 @@ RuntimeService::Cleanup()
 {
   AssertIsOnMainThread();
 
+  if (!mShuttingDown) {
+    Shutdown();
+  }
+
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
   NS_WARNING_ASSERTION(obs, "Failed to get observer service?!");
 
@@ -2268,7 +2277,8 @@ RuntimeService::PropagateFirstPartyStorageAccessGranted(nsPIDOMWindowInner* aWin
 {
   AssertIsOnMainThread();
   MOZ_ASSERT(aWindow);
-  MOZ_ASSERT(StaticPrefs::privacy_restrict3rdpartystorage_enabled());
+  MOZ_ASSERT(StaticPrefs::network_cookie_cookieBehavior() ==
+               nsICookieService::BEHAVIOR_REJECT_TRACKER);
 
   nsTArray<WorkerPrivate*> workers;
   GetWorkersForWindow(aWindow, workers);
@@ -2666,6 +2676,7 @@ LogViolationDetailsRunnable::MainThreadRun()
     if (mWorkerPrivate->GetReportCSPViolations()) {
       csp->LogViolationDetails(nsIContentSecurityPolicy::VIOLATION_TYPE_EVAL,
                                nullptr, // triggering element
+                               mWorkerPrivate->CSPEventListener(),
                                mFileName, mScriptSample, mLineNum, mColumnNum,
                                EmptyString(), EmptyString());
     }
@@ -2752,12 +2763,9 @@ WorkerThreadPrimaryRunnable::Run()
       PROFILER_SET_JS_CONTEXT(cx);
 
       {
-        JSAutoRequest ar(cx);
-
         mWorkerPrivate->DoRunLoop(cx);
         // The AutoJSAPI in DoRunLoop should have reported any exceptions left
-        // on cx.  Note that we still need the JSAutoRequest above because
-        // AutoJSAPI on workers does NOT enter a request!
+        // on cx.
         MOZ_ASSERT(!JS_IsExceptionPending(cx));
       }
 
@@ -2881,7 +2889,8 @@ void
 PropagateFirstPartyStorageAccessGrantedToWorkers(nsPIDOMWindowInner* aWindow)
 {
   AssertIsOnMainThread();
-  MOZ_ASSERT(StaticPrefs::privacy_restrict3rdpartystorage_enabled());
+  MOZ_ASSERT(StaticPrefs::network_cookie_cookieBehavior() ==
+               nsICookieService::BEHAVIOR_REJECT_TRACKER);
 
   RuntimeService* runtime = RuntimeService::GetService();
   if (runtime) {

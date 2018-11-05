@@ -61,6 +61,21 @@ private:
                                 nsIIDNService    *aIDN,
                                 nsACString       &aACE);
 
+    nsresult AsyncResolveInternal(const nsACString        &aHostname,
+                                  uint16_t                 type,
+                                  uint32_t                 flags,
+                                  nsIDNSListener          *aListener,
+                                  nsIEventTarget          *target_,
+                                  const mozilla::OriginAttributes  &aOriginAttributes,
+                                  nsICancelable          **result);
+
+    nsresult CancelAsyncResolveInternal(const nsACString       &aHostname,
+                                        uint16_t                aType,
+                                        uint32_t                aFlags,
+                                        nsIDNSListener         *aListener,
+                                        nsresult                aReason,
+                                        const mozilla::OriginAttributes &aOriginAttributes);
+
     nsresult ResolveInternal(const nsACString &aHostname,
                              uint32_t flags,
                              const mozilla::OriginAttributes &aOriginAttributes,
@@ -69,7 +84,7 @@ private:
     RefPtr<nsHostResolver>  mResolver;
     nsCOMPtr<nsIIDNService>   mIDN;
 
-    // mLock protects access to mResolver and mIPv4OnlyDomains
+    // mLock protects access to mResolver, mLocalDomains and mIPv4OnlyDomains
     mozilla::Mutex            mLock;
 
     // mIPv4OnlyDomains is a comma-separated list of domains for which only

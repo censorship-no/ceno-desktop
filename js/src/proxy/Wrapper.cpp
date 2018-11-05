@@ -25,8 +25,9 @@ using namespace js;
 bool
 Wrapper::finalizeInBackground(const Value& priv) const
 {
-    if (!priv.isObject())
+    if (!priv.isObject()) {
         return true;
+    }
 
     /*
      * Make the 'background-finalized-ness' of the wrapper the same as the
@@ -170,8 +171,9 @@ ForwardingProxyHandler::call(JSContext* cx, HandleObject proxy, const CallArgs& 
     RootedValue target(cx, proxy->as<ProxyObject>().private_());
 
     InvokeArgs iargs(cx);
-    if (!FillArgumentsFromArraylike(cx, iargs, args))
+    if (!FillArgumentsFromArraylike(cx, iargs, args)) {
         return false;
+    }
 
     return js::Call(cx, target, args.thisv(), iargs, args.rval());
 }
@@ -188,12 +190,14 @@ ForwardingProxyHandler::construct(JSContext* cx, HandleObject proxy, const CallA
     }
 
     ConstructArgs cargs(cx);
-    if (!FillArgumentsFromArraylike(cx, cargs, args))
+    if (!FillArgumentsFromArraylike(cx, cargs, args)) {
         return false;
+    }
 
     RootedObject obj(cx);
-    if (!Construct(cx, target, cargs, args.newTarget(), &obj))
+    if (!Construct(cx, target, cargs, args.newTarget(), &obj)) {
         return false;
+    }
 
     args.rval().setObject(*obj);
     return true;
@@ -335,15 +339,24 @@ Wrapper::wrappedObject(JSObject* wrapper)
     MOZ_ASSERT(wrapper->is<WrapperObject>());
     JSObject* target = wrapper->as<ProxyObject>().target();
 
-    // Eagerly unmark gray wrapper targets so we can assert that we don't create
-    // black to gray edges. An incremental GC will eventually mark the targets
-    // of black wrappers black but while it is in progress we can observe gray
-    // targets. Expose rather than returning a gray object in this case.
     if (target) {
-        if (wrapper->isMarkedBlack())
-            MOZ_ASSERT(JS::ObjectIsNotGray(target));
-        if (!wrapper->isMarkedGray())
+        // A cross-compartment wrapper should never wrap a CCW. We rely on this
+        // in the wrapper handlers (we use AutoRealm on our return value, and
+        // AutoRealm cannot be used with CCWs).
+        MOZ_ASSERT_IF(IsCrossCompartmentWrapper(wrapper),
+                      !IsCrossCompartmentWrapper(target));
+
+        // An incremental GC will eventually mark the targets of black wrappers
+        // black but while it is in progress we can observe gray targets.
+        MOZ_ASSERT_IF(!wrapper->runtimeFromMainThread()->gc.isIncrementalGCInProgress() &&
+                      wrapper->isMarkedBlack(),
+                      JS::ObjectIsNotGray(target));
+
+        // Unmark wrapper targets that should be black in case an incremental GC
+        // hasn't marked them the correct color yet.
+        if (!wrapper->isMarkedGray()) {
             JS::ExposeObjectToActiveJS(target);
+        }
     }
 
     return target;
@@ -353,14 +366,16 @@ JS_FRIEND_API(JSObject*)
 js::UncheckedUnwrapWithoutExpose(JSObject* wrapped)
 {
     while (true) {
-        if (!wrapped->is<WrapperObject>() || MOZ_UNLIKELY(IsWindowProxy(wrapped)))
+        if (!wrapped->is<WrapperObject>() || MOZ_UNLIKELY(IsWindowProxy(wrapped))) {
             break;
+        }
         wrapped = wrapped->as<WrapperObject>().target();
 
         // This can be called from Wrapper::weakmapKeyDelegate() on a wrapper
         // whose referent has been moved while it is still unmarked.
-        if (wrapped)
+        if (wrapped) {
             wrapped = MaybeForwarded(wrapped);
+        }
     }
     return wrapped;
 }
@@ -381,8 +396,9 @@ js::UncheckedUnwrap(JSObject* wrapped, bool stopAtWindowProxy, unsigned* flagsp)
         flags |= Wrapper::wrapperHandler(wrapped)->flags();
         wrapped = Wrapper::wrappedObject(wrapped);
     }
-    if (flagsp)
+    if (flagsp) {
         *flagsp = flags;
+    }
     return wrapped;
 }
 
@@ -392,8 +408,9 @@ js::CheckedUnwrap(JSObject* obj, bool stopAtWindowProxy)
     while (true) {
         JSObject* wrapper = obj;
         obj = UnwrapOneChecked(obj, stopAtWindowProxy);
-        if (!obj || obj == wrapper)
+        if (!obj || obj == wrapper) {
             return obj;
+        }
     }
 }
 

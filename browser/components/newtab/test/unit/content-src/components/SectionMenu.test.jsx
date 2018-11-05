@@ -16,7 +16,7 @@ const DEFAULT_PROPS = {
   collapsed: false,
   onUpdate: () => {},
   visible: false,
-  dispatch: () => {}
+  dispatch: () => {},
 };
 
 describe("<SectionMenu>", () => {
@@ -90,6 +90,11 @@ describe("<SectionMenu>", () => {
     const {options} = wrapper.find(ContextMenu).props();
     assert.equal(options[0].id, "section_menu_action_add_topsite");
   });
+  it("should show Add Search Engine option", () => {
+    wrapper = shallowWithIntl(<SectionMenu {...DEFAULT_PROPS} extraOptions={["AddSearchShortcut"]} />);
+    const {options} = wrapper.find(ContextMenu).props();
+    assert.equal(options[0].id, "section_menu_action_add_search_engine");
+  });
   it("should show Privacy Notice option if privacyNoticeURL is passed", () => {
     wrapper = shallowWithIntl(<SectionMenu {...DEFAULT_PROPS} privacyNoticeURL="https://mozilla.org/privacy" />);
     const {options} = wrapper.find(ContextMenu).props();
@@ -144,7 +149,7 @@ describe("<SectionMenu>", () => {
       section_menu_action_expand_section: {id: DEFAULT_PROPS.id, value: {collapsed: false}},
       section_menu_action_manage_section: undefined,
       section_menu_action_add_topsite: {index: -1},
-      section_menu_action_privacy_notice: {url: DEFAULT_PROPS.privacyNoticeURL}
+      section_menu_action_privacy_notice: {url: DEFAULT_PROPS.privacyNoticeURL},
     };
     const {options} = shallowWithIntl(<SectionMenu {...DEFAULT_PROPS} dispatch={dispatch} options={propOptions} />)
       .find(ContextMenu).props();

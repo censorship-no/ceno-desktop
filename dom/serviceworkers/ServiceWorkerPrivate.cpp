@@ -28,7 +28,6 @@
 #include "mozilla/JSObjectHolder.h"
 #include "mozilla/dom/Client.h"
 #include "mozilla/dom/ClientIPCTypes.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/FetchUtil.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/dom/InternalHeaders.h"
@@ -41,6 +40,7 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/Unused.h"
 
 using namespace mozilla;
@@ -514,7 +514,11 @@ public:
     nsCOMPtr<nsIGlobalObject> sgo = aWorkerPrivate->GlobalScope();
     ErrorResult rv;
     mData->Read(aCx, &messageData, rv);
-    if (NS_WARN_IF(rv.Failed())) {
+
+    // If deserialization fails, we will fire a messageerror event
+    bool deserializationFailed = rv.ErrorCodeIs(NS_ERROR_DOM_DATA_CLONE_ERR);
+
+    if (!deserializationFailed && NS_WARN_IF(rv.Failed())) {
       return true;
     }
 
@@ -528,14 +532,22 @@ public:
     init.mBubbles = false;
     init.mCancelable = false;
 
-    init.mData = messageData;
-    init.mPorts = ports;
+    // On a messageerror event, we disregard ports:
+    // https://w3c.github.io/ServiceWorker/#service-worker-postmessage
+    if (!deserializationFailed) {
+      init.mData = messageData;
+      init.mPorts = ports;
+    }
+
     init.mSource.SetValue().SetAsClient() =
       new Client(sgo, mClientInfoAndState);
 
+    rv = NS_OK;
     RefPtr<EventTarget> target = aWorkerPrivate->GlobalScope();
     RefPtr<ExtendableMessageEvent> extendableEvent =
-      ExtendableMessageEvent::Constructor(target, NS_LITERAL_STRING("message"),
+      ExtendableMessageEvent::Constructor(target,
+                                          deserializationFailed ? NS_LITERAL_STRING("messageerror") :
+                                                                  NS_LITERAL_STRING("message"),
                                           init, rv);
     if (NS_WARN_IF(rv.Failed())) {
       rv.SuppressException();
@@ -1587,11 +1599,11 @@ private:
     nsresult rv = mInterceptedChannel->GetChannel(getter_AddRefs(channel));
     NS_ENSURE_SUCCESS(rv, false);
 
-    nsAutoCString alternativeDataType;
     nsCOMPtr<nsICacheInfoChannel> cic = do_QueryInterface(channel);
-    if (cic &&
-        NS_SUCCEEDED(cic->GetPreferredAlternativeDataType(alternativeDataType)) &&
-        !alternativeDataType.IsEmpty()) {
+    if (cic && !cic->PreferredAlternativeDataTypes().IsEmpty()) {
+      // TODO: the internal request probably needs all the preferred types.
+      nsAutoCString alternativeDataType;
+      alternativeDataType.Assign(mozilla::Get<0>(cic->PreferredAlternativeDataTypes()[0]));
       internalReq->SetPreferredAlternativeDataType(alternativeDataType);
     }
 
@@ -1933,7 +1945,7 @@ ServiceWorkerPrivate::TerminateWorker()
   mIdleWorkerTimer->Cancel();
   mIdleKeepAliveToken = nullptr;
   if (mWorkerPrivate) {
-    if (DOMPrefs::ServiceWorkersTestingEnabled()) {
+    if (StaticPrefs::dom_serviceWorkers_testing_enabled()) {
       nsCOMPtr<nsIObserverService> os = services::GetObserverService();
       if (os) {
         os->NotifyObservers(nullptr, "service-worker-shutdown", nullptr);
@@ -1941,7 +1953,7 @@ ServiceWorkerPrivate::TerminateWorker()
     }
 
     Unused << NS_WARN_IF(!mWorkerPrivate->Cancel());
-    mWorkerPrivate = nullptr;
+    RefPtr<WorkerPrivate> workerPrivate(mWorkerPrivate.forget());
     mSupportsArray.Clear();
 
     // Any pending events are never going to fire on this worker.  Cancel
@@ -2029,7 +2041,7 @@ ServiceWorkerPrivate::GetDebugger(nsIWorkerDebugger** aResult)
 
   MOZ_ASSERT(mWorkerPrivate);
 
-  nsCOMPtr<nsIWorkerDebugger> debugger = do_QueryInterface(mWorkerPrivate->Debugger());
+  nsCOMPtr<nsIWorkerDebugger> debugger = mWorkerPrivate->Debugger();
   debugger.forget(aResult);
 
   return NS_OK;

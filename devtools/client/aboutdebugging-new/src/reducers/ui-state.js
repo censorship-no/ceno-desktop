@@ -5,21 +5,57 @@
 "use strict";
 
 const {
+  ADB_ADDON_STATUS_UPDATED,
+  DEBUG_TARGET_COLLAPSIBILITY_UPDATED,
+  NETWORK_LOCATIONS_UPDATED,
   PAGE_SELECTED,
-  PAGES
+  USB_RUNTIMES_SCAN_START,
+  USB_RUNTIMES_SCAN_SUCCESS,
 } = require("../constants");
 
-function UiState() {
+function UiState(locations = [], debugTargetCollapsibilities = {},
+                 networkEnabled = false, wifiEnabled = false) {
   return {
-    selectedPage: PAGES.THIS_FIREFOX
+    adbAddonStatus: null,
+    debugTargetCollapsibilities,
+    isScanningUsb: false,
+    networkEnabled,
+    networkLocations: locations,
+    selectedPage: null,
+    wifiEnabled,
   };
 }
 
 function uiReducer(state = UiState(), action) {
   switch (action.type) {
+    case ADB_ADDON_STATUS_UPDATED: {
+      const { adbAddonStatus } = action;
+      return Object.assign({}, state, { adbAddonStatus });
+    }
+
+    case DEBUG_TARGET_COLLAPSIBILITY_UPDATED: {
+      const { isCollapsed, key } = action;
+      const debugTargetCollapsibilities = new Map(state.debugTargetCollapsibilities);
+      debugTargetCollapsibilities.set(key, isCollapsed);
+      return Object.assign({}, state, { debugTargetCollapsibilities });
+    }
+
+    case NETWORK_LOCATIONS_UPDATED: {
+      const { locations } = action;
+      return Object.assign({}, state, { networkLocations: locations });
+    }
+
     case PAGE_SELECTED: {
       const { page } = action;
-      return { selectedPage: page };
+      return Object.assign({}, state, { selectedPage: page });
+    }
+
+    case USB_RUNTIMES_SCAN_START: {
+      return Object.assign({}, state, { isScanningUsb: true });
+    }
+
+    case USB_RUNTIMES_SCAN_SUCCESS: {
+      return Object.assign({}, state, { isScanningUsb: false });
     }
 
     default:

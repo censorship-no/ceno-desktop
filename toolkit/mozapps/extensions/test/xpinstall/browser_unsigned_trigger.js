@@ -15,11 +15,11 @@ function test() {
     "Unsigned XPI": {
       URL: TESTROOT + "unsigned.xpi",
       IconURL: TESTROOT + "icon.png",
-      toString() { return this.URL; }
-    }
+      toString() { return this.URL; },
+    },
   }));
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "installtrigger.html?" + triggers);
 }
 
 function confirm_install(panel) {

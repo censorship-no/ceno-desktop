@@ -19,7 +19,31 @@ class EditAutofillForm {
   loadRecord(record = {}) {
     for (let field of this._elements.form.elements) {
       let value = record[field.id];
-      field.value = typeof(value) == "undefined" ? "" : value;
+      value = typeof(value) == "undefined" ? "" : value;
+
+      if (record.guid) {
+        field.value = value;
+      } else if (field.localName == "select") {
+        this.setDefaultSelectedOptionByValue(field, value);
+      } else {
+        // Use .defaultValue instead of .value to avoid setting the `dirty` flag
+        // which triggers form validation UI.
+        field.defaultValue = value;
+      }
+    }
+    if (!record.guid) {
+      // Reset the dirty value flag and validity state.
+      this._elements.form.reset();
+    }
+
+    for (let field of this._elements.form.elements) {
+      this.updatePopulatedState(field);
+    }
+  }
+
+  setDefaultSelectedOptionByValue(select, value) {
+    for (let option of select.options) {
+      option.defaultSelected = option.value == value;
     }
   }
 
@@ -43,15 +67,24 @@ class EditAutofillForm {
    */
   handleEvent(event) {
     switch (event.type) {
-      case "input": {
-        this.handleInput(event);
-        break;
-      }
       case "change": {
         this.handleChange(event);
         break;
       }
+      case "input": {
+        this.handleInput(event);
+        break;
+      }
     }
+  }
+
+  /**
+   * Handle change events
+   *
+   * @param  {DOMEvent} event
+   */
+  handleChange(event) {
+    this.updatePopulatedState(event.target);
   }
 
   /**
@@ -68,8 +101,18 @@ class EditAutofillForm {
     this._elements.form.addEventListener("input", this);
   }
 
-  // An interface to be inherited.
-  handleChange(event) {}
+  /**
+   * Set the field-populated attribute if the field has a value.
+   *
+   * @param {DOMElement} field The field that will be checked for a value.
+   */
+  updatePopulatedState(field) {
+    let span = field.parentNode.querySelector(".label-text");
+    if (!span) {
+      return;
+    }
+    span.toggleAttribute("field-populated", !!field.value.trim());
+  }
 }
 
 class EditAddress extends EditAutofillForm {
@@ -79,16 +122,20 @@ class EditAddress extends EditAutofillForm {
    * @param {object} config
    * @param {string[]} config.DEFAULT_REGION
    * @param {function} config.getFormFormat Function to return form layout info for a given country.
-   * @param {string[]} config.supportedCountries
+   * @param {string[]} config.countries
+   * @param {boolean} [config.noValidate=undefined] Whether to validate the form
    */
   constructor(elements, record, config) {
     super(elements);
 
     Object.assign(this, config);
+    let {form} = this._elements;
     Object.assign(this._elements, {
-      addressLevel1Label: this._elements.form.querySelector("#address-level1-container > span"),
-      postalCodeLabel: this._elements.form.querySelector("#postal-code-container > span"),
-      country: this._elements.form.querySelector("#country"),
+      addressLevel3Label: form.querySelector("#address-level3-container > .label-text"),
+      addressLevel2Label: form.querySelector("#address-level2-container > .label-text"),
+      addressLevel1Label: form.querySelector("#address-level1-container > .label-text"),
+      postalCodeLabel: form.querySelector("#postal-code-container > .label-text"),
+      country: form.querySelector("#country"),
     });
 
     this.populateCountries();
@@ -97,20 +144,60 @@ class EditAddress extends EditAutofillForm {
     this.loadRecord(record);
     this.attachEventListeners();
 
-    if (config.novalidate) {
-      this.form.setAttribute("novalidate", "true");
-    }
+    form.noValidate = !!config.noValidate;
   }
 
   loadRecord(record) {
     this._record = record;
     if (!record) {
       record = {
-        country: this.supportedCountries.find(supported => supported == this.DEFAULT_REGION),
+        country: this.DEFAULT_REGION,
       };
     }
     super.loadRecord(record);
     this.formatForm(record.country);
+  }
+
+  /**
+   * `mailing-address` is a special attribute token to indicate mailing fields + country.
+   *
+   * @param {object[]} mailingFieldsOrder - `fieldsOrder` from `getFormFormat`
+   * @param {string} addressFields - white-space-separated string of requested address fields to show
+   * @returns {object[]} in the same structure as `mailingFieldsOrder` but including non-mail fields
+   */
+  static computeVisibleFields(mailingFieldsOrder, addressFields) {
+    if (addressFields) {
+      let requestedFieldClasses = addressFields.trim().split(/\s+/);
+      let fieldClasses = [];
+      if (requestedFieldClasses.includes("mailing-address")) {
+        fieldClasses = fieldClasses.concat(mailingFieldsOrder);
+        // `country` isn't part of the `mailingFieldsOrder` so add it when filling a mailing-address
+        requestedFieldClasses.splice(requestedFieldClasses.indexOf("mailing-address"), 1,
+                                     "country");
+      }
+
+      for (let fieldClassName of requestedFieldClasses) {
+        fieldClasses.push({
+          fieldId: fieldClassName,
+          newLine: fieldClassName == "name",
+        });
+      }
+      return fieldClasses;
+    }
+
+    // This is the default which is shown in the management interface and includes all fields.
+    return mailingFieldsOrder.concat([
+      {
+        fieldId: "country",
+      },
+      {
+        fieldId: "tel",
+      },
+      {
+        fieldId: "email",
+        newLine: true,
+      },
+    ]);
   }
 
   /**
@@ -119,29 +206,66 @@ class EditAddress extends EditAutofillForm {
    * @param  {string} country
    */
   formatForm(country) {
-    const {addressLevel1Label, postalCodeLabel, fieldsOrder, postalCodePattern} =
-      this.getFormFormat(country);
+    const {
+      addressLevel3Label,
+      addressLevel2Label,
+      addressLevel1Label,
+      postalCodeLabel,
+      fieldsOrder: mailingFieldsOrder,
+      postalCodePattern,
+      countryRequiredFields,
+    } = this.getFormFormat(country);
+    this._elements.addressLevel3Label.dataset.localization = addressLevel3Label;
+    this._elements.addressLevel2Label.dataset.localization = addressLevel2Label;
     this._elements.addressLevel1Label.dataset.localization = addressLevel1Label;
     this._elements.postalCodeLabel.dataset.localization = postalCodeLabel;
-    this.arrangeFields(fieldsOrder);
+    let addressFields = this._elements.form.dataset.addressFields;
+    let extraRequiredFields = this._elements.form.dataset.extraRequiredFields;
+    let fieldClasses = EditAddress.computeVisibleFields(mailingFieldsOrder, addressFields);
+    let requiredFields = new Set(countryRequiredFields);
+    if (extraRequiredFields) {
+      for (let extraRequiredField of extraRequiredFields.trim().split(/\s+/)) {
+        requiredFields.add(extraRequiredField);
+      }
+    }
+    this.arrangeFields(fieldClasses, requiredFields);
     this.updatePostalCodeValidation(postalCodePattern);
   }
 
-  arrangeFields(fieldsOrder) {
+  /**
+   * Update address field visibility and order based on libaddressinput data.
+   *
+   * @param {object[]} fieldsOrder array of objects with `fieldId` and optional `newLine` properties
+   * @param {Set} requiredFields Set of `fieldId` strings that mark which fields are required
+   */
+  arrangeFields(fieldsOrder, requiredFields) {
     let fields = [
       "name",
       "organization",
       "street-address",
+      "address-level3",
       "address-level2",
       "address-level1",
       "postal-code",
+      "country",
+      "tel",
+      "email",
     ];
     let inputs = [];
     for (let i = 0; i < fieldsOrder.length; i++) {
       let {fieldId, newLine} = fieldsOrder[i];
+
       let container = this._elements.form.querySelector(`#${fieldId}-container`);
       let containerInputs = [...container.querySelectorAll("input, textarea, select")];
-      containerInputs.forEach(function(input) { input.disabled = false; });
+      containerInputs.forEach(function(input) {
+        input.disabled = false;
+        // libaddressinput doesn't list 'country' or 'name' as required.
+        // The additional-name field should never get marked as required.
+        input.required = (fieldId == "country" ||
+                          fieldId == "name" ||
+                          requiredFields.has(fieldId)) &&
+                         input.id != "additional-name";
+      });
       inputs.push(...containerInputs);
       container.style.display = "flex";
       container.style.order = i;
@@ -174,21 +298,26 @@ class EditAddress extends EditAutofillForm {
 
   populateCountries() {
     let fragment = document.createDocumentFragment();
-    for (let country of this.supportedCountries) {
+    // Sort countries by their visible names.
+    let countries = [...this.countries.entries()].sort((e1, e2) => e1[1].localeCompare(e2[1]));
+    for (let country of countries) {
       let option = new Option();
-      option.value = country;
-      option.dataset.localizationRegion = country.toLowerCase();
+      option.value = country[0];
+      option.dataset.localizationRegion = country[0].toLowerCase();
       fragment.appendChild(option);
     }
     this._elements.country.appendChild(fragment);
   }
 
   handleChange(event) {
-    this.formatForm(event.target.value);
+    if (event.target == this._elements.country) {
+      this.formatForm(event.target.value);
+    }
+    super.handleChange(event);
   }
 
   attachEventListeners() {
-    this._elements.country.addEventListener("change", this);
+    this._elements.form.addEventListener("change", this);
     super.attachEventListeners();
   }
 }
@@ -200,6 +329,7 @@ class EditCreditCard extends EditAutofillForm {
    * @param {object} addresses in an object with guid keys for the billing address picker.
    * @param {object} config
    * @param {function} config.isCCNumber Function to determine if a string is a valid CC number.
+   * @param {function} config.getSupportedNetworks Function to get the list of card networks
    */
   constructor(elements, record, addresses, config) {
     super(elements);
@@ -209,7 +339,9 @@ class EditCreditCard extends EditAutofillForm {
     Object.assign(this._elements, {
       ccNumber: this._elements.form.querySelector("#cc-number"),
       invalidCardNumberStringElement: this._elements.form.querySelector("#invalidCardNumberString"),
+      month: this._elements.form.querySelector("#cc-exp-month"),
       year: this._elements.form.querySelector("#cc-exp-year"),
+      ccType: this._elements.form.querySelector("#cc-type"),
       billingAddress: this._elements.form.querySelector("#billingAddressGUID"),
       billingAddressRow: this._elements.form.querySelector(".billingAddressRow"),
     });
@@ -224,9 +356,16 @@ class EditCreditCard extends EditAutofillForm {
     this._addresses = addresses;
     this.generateBillingAddressOptions();
     if (!preserveFieldValues) {
+      // Re-populating the networks will reset the selected option.
+      this.populateNetworks();
       // Re-generating the years will reset the selected option.
       this.generateYears();
       super.loadRecord(record);
+
+      // Resetting the form in the super.loadRecord won't clear custom validity
+      // state so reset it here. Since the cc-number field is disabled upon editing
+      // we don't need to recaclulate its validity here.
+      this._elements.ccNumber.setCustomValidity("");
     }
   }
 
@@ -256,6 +395,23 @@ class EditCreditCard extends EditAutofillForm {
     }
   }
 
+  populateNetworks() {
+    // Clear the list
+    this._elements.ccType.textContent = "";
+    let frag = document.createDocumentFragment();
+    // include an empty first option
+    frag.appendChild(new Option("", ""));
+
+    let supportedNetworks = this.getSupportedNetworks();
+    for (let id of supportedNetworks) {
+      let option = new Option();
+      option.value = id;
+      option.dataset.localization = "cardNetwork." + id;
+      frag.appendChild(option);
+    }
+    this._elements.ccType.appendChild(frag);
+  }
+
   generateBillingAddressOptions() {
     let billingAddressGUID = this._record && this._record.billingAddressGUID;
 
@@ -275,7 +431,7 @@ class EditCreditCard extends EditAutofillForm {
   }
 
   attachEventListeners() {
-    this._elements.ccNumber.addEventListener("change", this);
+    this._elements.form.addEventListener("change", this);
     super.attachEventListeners();
   }
 

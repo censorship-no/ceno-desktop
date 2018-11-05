@@ -28,15 +28,15 @@ typedef SVGFEUnstyledElement SVGComponentTransferFunctionElementBase;
 class SVGComponentTransferFunctionElement : public SVGComponentTransferFunctionElementBase
 {
 protected:
-  explicit SVGComponentTransferFunctionElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGComponentTransferFunctionElementBase(aNodeInfo)
+  explicit SVGComponentTransferFunctionElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGComponentTransferFunctionElementBase(std::move(aNodeInfo))
   {
   }
 
   virtual ~SVGComponentTransferFunctionElement() {}
 
 public:
-  typedef gfx::AttributeMap AttributeMap;
+  typedef gfx::ComponentTransferAttributes ComponentTransferAttributes;
 
   // interfaces:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_SVG_FE_COMPONENT_TRANSFER_FUNCTION_ELEMENT_CID)
@@ -48,7 +48,7 @@ public:
 
   virtual int32_t GetChannel() = 0;
 
-  AttributeMap ComputeAttributes();
+  void ComputeAttributes(int32_t aChannel, ComponentTransferAttributes& aAttributes);
 
   // WebIDL
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override = 0;
@@ -95,14 +95,13 @@ class SVGFEFuncRElement : public SVGComponentTransferFunctionElement
   friend nsresult (::NS_NewSVGFEFuncRElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 protected:
-  explicit SVGFEFuncRElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGComponentTransferFunctionElement(aNodeInfo) {}
+  explicit SVGFEFuncRElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
 public:
   virtual int32_t GetChannel() override { return 0; }
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 };
@@ -121,14 +120,13 @@ class SVGFEFuncGElement : public SVGComponentTransferFunctionElement
   friend nsresult (::NS_NewSVGFEFuncGElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 protected:
-  explicit SVGFEFuncGElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGComponentTransferFunctionElement(aNodeInfo) {}
+  explicit SVGFEFuncGElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
 public:
   virtual int32_t GetChannel() override { return 1; }
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 };
@@ -147,14 +145,13 @@ class SVGFEFuncBElement : public SVGComponentTransferFunctionElement
   friend nsresult (::NS_NewSVGFEFuncBElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 protected:
-  explicit SVGFEFuncBElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGComponentTransferFunctionElement(aNodeInfo) {}
+  explicit SVGFEFuncBElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
 public:
   virtual int32_t GetChannel() override { return 2; }
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 };
@@ -173,14 +170,13 @@ class SVGFEFuncAElement : public SVGComponentTransferFunctionElement
   friend nsresult (::NS_NewSVGFEFuncAElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 protected:
-  explicit SVGFEFuncAElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGComponentTransferFunctionElement(aNodeInfo) {}
+  explicit SVGFEFuncAElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
 public:
   virtual int32_t GetChannel() override { return 3; }
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 };

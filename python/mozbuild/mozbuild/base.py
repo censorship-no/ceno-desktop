@@ -11,7 +11,11 @@ import multiprocessing
 import os
 import subprocess
 import sys
-import which
+try:
+    from shutil import which
+except ImportError:
+    # shutil.which is not available in Python 2.7
+    import which
 
 from mach.mixin.process import ProcessExecutionMixin
 from mozversioncontrol import (
@@ -312,6 +316,13 @@ class MozbuildObject(ProcessExecutionMixin):
             pass
 
         return get_repository_object(self.topsrcdir)
+
+    def reload_config_environment(self):
+        '''Force config.status to be re-read and return the new value
+        of ``self.config_environment``.
+        '''
+        self._config_environment = None
+        return self.config_environment
 
     def mozbuild_reader(self, config_mode='build', vcs_revision=None,
                         vcs_check_clean=True):
@@ -880,6 +891,11 @@ class MachCommandConditions(object):
         if hasattr(cls, 'substs'):
             return cls.substs.get('MOZ_WIDGET_TOOLKIT') == 'android'
         return False
+
+    @staticmethod
+    def is_firefox_or_android(cls):
+        """Must have a Firefox or Android build."""
+        return MachCommandConditions.is_firefox(cls) or MachCommandConditions.is_android(cls)
 
     @staticmethod
     def is_hg(cls):

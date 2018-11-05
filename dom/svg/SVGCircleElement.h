@@ -21,7 +21,7 @@ typedef SVGGeometryElement SVGCircleElementBase;
 class SVGCircleElement final : public SVGCircleElementBase
 {
 protected:
-  explicit SVGCircleElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGCircleElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
   friend nsresult (::NS_NewSVGCircleElement(nsIContent **aResult,
                                             already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
@@ -36,8 +36,7 @@ public:
                                  const Matrix* aToNonScalingStrokeSpace = nullptr) override;
   virtual already_AddRefed<Path> BuildPath(PathBuilder* aBuilder) override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedLength> Cx();

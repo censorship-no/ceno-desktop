@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Ezin da irudia kargatu. Saiatu beste URL batekin.",
   "pocket_read_more": "Gai ezagunak:",
   "pocket_read_even_more": "Ikusi istorio gehiago",
+  "pocket_more_reccommendations": "Gomendio gehiago",
+  "pocket_how_it_works": "Nola dabilen",
+  "pocket_cta_button": "Eskuratu Pocket",
+  "pocket_cta_text": "Gorde gogoko dituzun istorioak Pocket-en eta piztu zure gogoa irakurgai erakargarriekin.",
   "highlights_empty_state": "Hasi nabigatzen eta azkenaldian bisitatutako edo laster-marka egindako aparteko artikulu, bideo eta orriak erakutsiko ditugu.",
   "topstories_empty_state": "Egunean zaude jada. Etorri berriro geroago {provider} hornitzailearen istorio ezagun gehiagorako. Ezin duzu itxaron? Hautatu gai ezagun bat webeko istorio gehiago aurkitzeko.",
   "manual_migration_explanation2": "Probatu Firefox beste nabigatzaile batetik ekarritako laster-marka, historia eta pasahitzekin.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Kudeatu atala",
   "section_menu_action_manage_webext": "Kudeatu hedapena",
   "section_menu_action_add_topsite": "Gehitu maiz erabilitako gunea",
+  "section_menu_action_add_search_engine": "Gehitu bilaketa-motorra",
   "section_menu_action_move_up": "Eraman gora",
   "section_menu_action_move_down": "Eraman behera",
   "section_menu_action_privacy_notice": "Pribatutasun-oharra",
@@ -96,10 +101,12 @@ window.gActivityStreamStrings = {
   "firstrun_form_header": "Idatzi zure helbide elektronikoa",
   "firstrun_form_sub_header": "Firefox Sync-ekin jarraitzeko.",
   "firstrun_email_input_placeholder": "Helbide elektronikoa",
-  "firstrun_invalid_input": "Valid email required",
+  "firstrun_invalid_input": "Baliozko helbide elektronikoa behar da",
   "firstrun_extra_legal_links": "Jarraitzearekin bat, {terms} eta {privacy} onartzen dituzu.",
   "firstrun_terms_of_service": "Zerbitzu-baldintzak",
   "firstrun_privacy_notice": "Pribatutasun-oharra",
   "firstrun_continue_to_login": "Jarraitu",
-  "firstrun_skip_login": "Saltatu urrats hau"
+  "firstrun_skip_login": "Saltatu urrats hau",
+  "context_menu_title": "Open menu",
+  "pocket_learn_more": "Argibide gehiago"
 };

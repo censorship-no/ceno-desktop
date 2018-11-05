@@ -21,6 +21,7 @@
 #include "mozilla/net/ReferrerPolicy.h"
 
 class nsIConsoleReportCollector;
+class nsICSPEventListener;
 class nsIDocument;
 class nsIEventTarget;
 class nsIOutputStream;
@@ -113,11 +114,14 @@ public:
               PerformanceStorage* aPerformanceStorage,
               bool aIsTrackingFetch);
 
-  nsresult Fetch(AbortSignal* aSignal,
+  nsresult Fetch(AbortSignalImpl* aSignalImpl,
                  FetchDriverObserver* aObserver);
 
   void
   SetDocument(nsIDocument* aDocument);
+
+  void
+  SetCSPEventListener(nsICSPEventListener* aCSPEventListener);
 
   void
   SetClientInfo(const ClientInfo& aClientInfo);
@@ -144,6 +148,7 @@ private:
   nsCOMPtr<nsIOutputStream> mPipeOutputStream;
   RefPtr<FetchDriverObserver> mObserver;
   nsCOMPtr<nsIDocument> mDocument;
+  nsCOMPtr<nsICSPEventListener> mCSPEventListener;
   Maybe<ClientInfo> mClientInfo;
   Maybe<ServiceWorkerDescriptor> mController;
   nsCOMPtr<nsIChannel> mChannel;

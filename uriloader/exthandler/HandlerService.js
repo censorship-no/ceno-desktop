@@ -88,7 +88,7 @@ HandlerService.prototype = {
 
     try {
       prefsDefaultHandlersVersion = Number(prefsDefaultHandlersVersion.data);
-      let locale = Services.locale.getAppLocaleAsLangTag();
+      let locale = Services.locale.appLocaleAsLangTag;
 
       let defaultHandlersVersion =
           this._store.data.defaultHandlersVersion[locale] || 0;
@@ -213,11 +213,14 @@ HandlerService.prototype = {
           get: function(target, name) {
             return target[name] || target._handlerInfo[name];
           },
+          set: function(target, name, value) {
+            target._handlerInfo[name] = value;
+          },
         },
       );
       handlers.appendElement(handler);
     }
-    return handlers.enumerate();
+    return handlers.enumerate(Ci.nsIHandlerInfo);
   },
 
   // nsIHandlerService
@@ -252,9 +255,7 @@ HandlerService.prototype = {
     if (handlerInfo.preferredApplicationHandler) {
       handlers.push(handlerInfo.preferredApplicationHandler);
     }
-    let enumerator = handlerInfo.possibleApplicationHandlers.enumerate();
-    while (enumerator.hasMoreElements()) {
-      let handler = enumerator.getNext().QueryInterface(Ci.nsIHandlerApp);
+    for (let handler of handlerInfo.possibleApplicationHandlers.enumerate(Ci.nsIHandlerApp)) {
       // If the caller stored duplicate handlers, we save them only once.
       if (!handlers.some(h => h.equals(handler))) {
         handlers.push(handler);
@@ -276,10 +277,9 @@ HandlerService.prototype = {
     }
 
     if (this._isMIMEInfo(handlerInfo)) {
-      let extEnumerator = handlerInfo.getFileExtensions();
       let extensions = storedHandlerInfo.extensions || [];
-      while (extEnumerator.hasMore()) {
-        let extension = extEnumerator.getNext().toLowerCase();
+      for (let extension of handlerInfo.getFileExtensions()) {
+        extension = extension.toLowerCase();
         // If the caller stored duplicate extensions, we save them only once.
         if (!extensions.includes(extension)) {
           extensions.push(extension);

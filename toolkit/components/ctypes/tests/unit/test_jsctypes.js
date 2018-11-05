@@ -214,8 +214,13 @@ function run_test() {
   library = ctypes.open(unicodefile.path);
   run_void_tests(library);
   library.close();
-  if (copy)
-    unicodefile.remove(false);
+  if (copy) {
+    // Tolerate remove() failure because Firefox may have the DLL open
+    // for examination.
+    try {
+      unicodefile.remove(false);
+    } catch (e) {}
+  }
 }
 
 function run_abstract_class_tests() {
@@ -1735,7 +1740,7 @@ function run_PointerType_tests() {
          [new Int32Array(c_arraybuffer), ctypes.int32_t],
          [new Uint32Array(c_arraybuffer), ctypes.uint32_t],
          [new Float32Array(c_arraybuffer), ctypes.float32_t],
-         [new Float64Array(c_arraybuffer), ctypes.float64_t]
+         [new Float64Array(c_arraybuffer), ctypes.float64_t],
         ];
 
   if (typeof SharedArrayBuffer !== "undefined") {

@@ -87,9 +87,7 @@ this.ScratchpadManager = {
     // such objects are not primitive-values-only anymore so they
     // can leak.
 
-    const enumerator = Services.wm.getEnumerator("devtools:scratchpad");
-    while (enumerator.hasMoreElements()) {
-      const win = enumerator.getNext();
+    for (const win of Services.wm.getEnumerator("devtools:scratchpad")) {
       if (!win.closed && win.Scratchpad.initialized) {
         this._scratchpads.push(clone(win.Scratchpad.getState()));
       }
@@ -137,7 +135,7 @@ this.ScratchpadManager = {
    */
   createUid: function SPM_createUid() {
     return JSON.stringify(this._nextUid++);
-  }
+  },
 };
 
 /**
@@ -165,5 +163,5 @@ var ShutdownObserver = {
 
   uninit() {
     Services.obs.removeObserver(this, "quit-application-granted");
-  }
+  },
 };

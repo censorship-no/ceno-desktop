@@ -80,13 +80,13 @@ with Files("mochitest/geolocation/**"):
     BUG_COMPONENT = ("Core", "Geolocation")
 
 with Files("mochitest/localstorage/**"):
-    BUG_COMPONENT = ("Core", "DOM")
+    BUG_COMPONENT = ("Core", "DOM: Web Storage")
 
 with Files("mochitest/orientation/**"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
 
 with Files("mochitest/orientation/*507902*"):
-    BUG_COMPONENT = ("Core", "Layout: Images")
+    BUG_COMPONENT = ("Core", "Layout: Images, Video, and HTML Frames")
 
 with Files("mochitest/pointerlock/**"):
     BUG_COMPONENT = ("Core", "DOM")
@@ -95,10 +95,10 @@ with Files("mochitest/script/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
 with Files("mochitest/sessionstorage/**"):
-    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+    BUG_COMPONENT = ("Core", "DOM: Web Storage")
 
 with Files("mochitest/storageevent/**"):
-    BUG_COMPONENT = ("Core", "DOM")
+    BUG_COMPONENT = ("Core", "DOM: Web Storage")
 
 with Files("mochitest/webcomponents/**"):
     BUG_COMPONENT = ("Core", "DOM")
@@ -162,6 +162,7 @@ MOCHITEST_MANIFESTS += [
     'mochitest/gamepad/mochitest.ini',
     'mochitest/general/mochitest.ini',
     'mochitest/geolocation/mochitest.ini',
+    'mochitest/keyhandling/mochitest.ini',
     'mochitest/localstorage/mochitest.ini',
     'mochitest/orientation/mochitest.ini',
     'mochitest/pointerlock/mochitest.ini',
@@ -177,6 +178,7 @@ MOCHITEST_CHROME_MANIFESTS += [
     'mochitest/chrome/chrome.ini',
     'mochitest/general/chrome.ini',
     'mochitest/geolocation/chrome.ini',
+    'mochitest/keyhandling/chrome.ini',
     'mochitest/localstorage/chrome.ini',
     'mochitest/sessionstorage/chrome.ini',
     'mochitest/webcomponents/chrome.ini',

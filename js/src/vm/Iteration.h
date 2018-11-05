@@ -15,7 +15,6 @@
 #include "mozilla/MemoryReporting.h"
 
 #include "gc/Barrier.h"
-#include "vm/JSContext.h"
 #include "vm/ReceiverGuard.h"
 #include "vm/Stack.h"
 
@@ -310,7 +309,7 @@ struct NativeIterator
         prev_ = nullptr;
     }
 
-    static NativeIterator* allocateSentinel(JSContext* maybecx);
+    static NativeIterator* allocateSentinel(JSContext* cx);
 
     void trace(JSTracer* trc);
 
@@ -425,9 +424,6 @@ IteratorMore(JSContext* cx, HandleObject iterobj, MutableHandleValue rval);
  */
 extern JSObject*
 CreateIterResultObject(JSContext* cx, HandleValue value, bool done);
-
-bool
-IsPropertyIterator(HandleValue v);
 
 enum class IteratorKind { Sync, Async };
 

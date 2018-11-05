@@ -27,12 +27,12 @@ function test_audio_in_browser() {
   var audio = get_audio_element();
   return {
     computedVolume: audio.computedVolume,
-    computedMuted: audio.computedMuted
+    computedMuted: audio.computedMuted,
   };
 }
 
 async function test_on_browser(url, browser) {
-  browser.loadURI(url);
+  BrowserTestUtils.loadURI(browser, url);
   await wait_for_event(browser, "DOMAudioPlaybackStarted");
 
   var result = await ContentTask.spawn(browser, null, test_audio_in_browser);
@@ -51,7 +51,7 @@ async function test_on_browser(url, browser) {
 }
 
 async function test_visibility(url, browser) {
-  browser.loadURI(url);
+  BrowserTestUtils.loadURI(browser, url);
   await wait_for_event(browser, "DOMAudioPlaybackStarted");
 
   var result = await ContentTask.spawn(browser, null, test_audio_in_browser);
@@ -76,7 +76,7 @@ async function test_visibility(url, browser) {
 
 add_task(async function() {
   await SpecialPowers.pushPrefEnv({"set": [
-    ["media.useAudioChannelService.testing", true]
+    ["media.useAudioChannelService.testing", true],
   ]});
 });
 

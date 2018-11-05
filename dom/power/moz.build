@@ -10,6 +10,7 @@ with Files("**"):
 XPIDL_SOURCES += [
     'nsIDOMWakeLockListener.idl',
     'nsIPowerManagerService.idl',
+    'nsIWakeLock.idl',
 ]
 
 XPIDL_MODULE = 'dom_power'
@@ -20,7 +21,6 @@ EXPORTS.mozilla.dom += [
 
 EXPORTS.mozilla.dom.power += [
     'PowerManagerService.h',
-    'Types.h',
 ]
 
 UNIFIED_SOURCES += [

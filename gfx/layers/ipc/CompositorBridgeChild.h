@@ -20,8 +20,8 @@
 #include "nsCOMPtr.h"                   // for nsCOMPtr
 #include "nsHashKeys.h"                 // for nsUint64HashKey
 #include "nsISupportsImpl.h"            // for NS_INLINE_DECL_REFCOUNTING
+#include "nsIWeakReferenceUtils.h"
 #include "ThreadSafeRefcountingWithMainThreadDestruction.h"
-#include "nsWeakReference.h"
 
 #include <unordered_map>
 
@@ -72,10 +72,10 @@ public:
 
   /**
    * Lookup the FrameMetrics shared by the compositor process with the
-   * associated FrameMetrics::ViewID. The returned FrameMetrics is used
+   * associated ScrollableLayerGuid::ViewID. The returned FrameMetrics is used
    * in progressive paint calculations.
    */
-  bool LookupCompositorFrameMetrics(const FrameMetrics::ViewID aId, FrameMetrics&);
+  bool LookupCompositorFrameMetrics(const ScrollableLayerGuid::ViewID aId, FrameMetrics&);
 
   static CompositorBridgeChild* Get();
 
@@ -210,9 +210,7 @@ public:
   void WillEndTransaction();
 
   PWebRenderBridgeChild* AllocPWebRenderBridgeChild(const wr::PipelineId& aPipelineId,
-                                                    const LayoutDeviceIntSize&,
-                                                    TextureFactoryIdentifier*,
-                                                    wr::IdNamespace*) override;
+                                                    const LayoutDeviceIntSize&) override;
   bool DeallocPWebRenderBridgeChild(PWebRenderBridgeChild* aActor) override;
 
   wr::MaybeExternalImageId GetNextExternalImageId() override;
@@ -226,47 +224,11 @@ public:
 
   // Must only be called from the main thread. Notifies the CompositorBridge
   // that the paint thread is going to begin painting asynchronously.
-  template<typename CapturedState>
-  void NotifyBeginAsyncPaint(CapturedState& aState)
-  {
-    MOZ_ASSERT(NS_IsMainThread());
-
-    MonitorAutoLock lock(mPaintLock);
-
-    // We must not be waiting for paints or buffer copying to complete yet. This
-    // would imply we started a new paint without waiting for a previous one, which
-    // could lead to incorrect rendering or IPDL deadlocks.
-    MOZ_ASSERT(!mIsDelayingForAsyncPaints);
-
-    mOutstandingAsyncPaints++;
-
-    // Mark texture clients that they are being used for async painting, and
-    // make sure we hold them alive on the main thread.
-    aState->ForEachTextureClient([this] (auto aClient) {
-      aClient->AddPaintThreadRef();
-      mTextureClientsForAsyncPaint.AppendElement(aClient);
-    });
-  }
+  void NotifyBeginAsyncPaint(PaintTask* aTask);
 
   // Must only be called from the paint thread. Notifies the CompositorBridge
   // that the paint thread has finished an asynchronous paint request.
-  template<typename CapturedState>
-  bool NotifyFinishedAsyncWorkerPaint(CapturedState& aState)
-  {
-    MOZ_ASSERT(PaintThread::IsOnPaintThread());
-
-    MonitorAutoLock lock(mPaintLock);
-    mOutstandingAsyncPaints--;
-
-    aState->ForEachTextureClient([] (auto aClient) {
-      aClient->DropPaintThreadRef();
-    });
-    aState->DropTextureClients();
-
-    // If the main thread has completed queuing work and this was the
-    // last paint, then it is time to end the layer transaction and sync
-    return mOutstandingAsyncEndTransaction && mOutstandingAsyncPaints == 0;
-  }
+  bool NotifyFinishedAsyncWorkerPaint(PaintTask* aTask);
 
   // Must only be called from the main thread. Notifies the CompositorBridge
   // that all work has been submitted to the paint thread or paint worker
@@ -339,7 +301,7 @@ private:
     ~SharedFrameMetricsData();
 
     void CopyFrameMetrics(FrameMetrics* aFrame);
-    FrameMetrics::ViewID GetViewID();
+    ScrollableLayerGuid::ViewID GetViewID();
     LayersId GetLayersId() const;
     uint32_t GetAPZCId();
 
@@ -407,6 +369,12 @@ private:
   // Off-Main-Thread Painting state. This covers access to the OMTP-related
   // state below.
   Monitor mPaintLock;
+
+  // Contains the number of asynchronous paints that were queued since the
+  // beginning of the last async transaction, and the time stamp of when
+  // that was
+  size_t mTotalAsyncPaints;
+  TimeStamp mAsyncTransactionBegin;
 
   // Contains the number of outstanding asynchronous paints tied to a
   // PLayerTransaction on this bridge. This is R/W on both the main and paint

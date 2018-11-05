@@ -291,18 +291,68 @@ NrIceCtx::NrIceCtx(const std::string& name, Policy policy)
     nat_ (nullptr) {
 }
 
+/* static */
+RefPtr<NrIceCtx>
+NrIceCtx::Create(const std::string& name,
+                 bool allow_loopback,
+                 bool tcp_enabled,
+                 bool allow_link_local,
+                 Policy policy)
+{
+  // InitializeGlobals only executes once
+  NrIceCtx::InitializeGlobals(allow_loopback, tcp_enabled, allow_link_local);
+
+  RefPtr<NrIceCtx> ctx = new NrIceCtx(name, policy);
+
+  if (!ctx->Initialize()) {
+    return nullptr;
+  }
+
+  return ctx;
+}
+
+RefPtr<NrIceMediaStream>
+NrIceCtx::CreateStream(const std::string& id,
+                       const std::string& name,
+                       int components)
+{
+  if (streams_.count(id)) {
+    MOZ_ASSERT(false);
+    return nullptr;
+  }
+
+  RefPtr<NrIceMediaStream> stream =
+    new NrIceMediaStream(this, id, name, components);
+  streams_[id] = stream;
+  return stream;
+}
+
+void
+NrIceCtx::DestroyStream(const std::string& id) {
+  auto it = streams_.find(id);
+  if (it != streams_.end()) {
+    auto preexisting_stream = it->second;
+    streams_.erase(it);
+    preexisting_stream->Close();
+  }
+}
+
 // Handler callbacks
 int NrIceCtx::select_pair(void *obj,nr_ice_media_stream *stream,
                    int component_id, nr_ice_cand_pair **potentials,
                    int potential_ct) {
   MOZ_MTLOG(ML_DEBUG, "select pair called: potential_ct = "
             << potential_ct);
+  MOZ_ASSERT(stream->local_stream);
+  MOZ_ASSERT(!stream->local_stream->obsolete);
 
   return 0;
 }
 
 int NrIceCtx::stream_ready(void *obj, nr_ice_media_stream *stream) {
   MOZ_MTLOG(ML_DEBUG, "stream_ready called");
+  MOZ_ASSERT(!stream->local_stream);
+  MOZ_ASSERT(!stream->obsolete);
 
   // Get the ICE ctx.
   NrIceCtx *ctx = static_cast<NrIceCtx *>(obj);
@@ -319,6 +369,8 @@ int NrIceCtx::stream_ready(void *obj, nr_ice_media_stream *stream) {
 
 int NrIceCtx::stream_failed(void *obj, nr_ice_media_stream *stream) {
   MOZ_MTLOG(ML_DEBUG, "stream_failed called");
+  MOZ_ASSERT(!stream->local_stream);
+  MOZ_ASSERT(!stream->obsolete);
 
   // Get the ICE ctx
   NrIceCtx *ctx = static_cast<NrIceCtx *>(obj);
@@ -328,7 +380,7 @@ int NrIceCtx::stream_failed(void *obj, nr_ice_media_stream *stream) {
   MOZ_ASSERT(s);
 
   ctx->SetConnectionState(ICE_CTX_FAILED);
-  s -> SignalFailed(s);
+  s -> Failed();
   return 0;
 }
 
@@ -387,6 +439,7 @@ void NrIceCtx::trickle_cb(void *arg, nr_ice_ctx *ice_ctx,
                           nr_ice_media_stream *stream,
                           int component_id,
                           nr_ice_candidate *candidate) {
+  MOZ_ASSERT(!stream->obsolete);
   // Get the ICE ctx
   NrIceCtx *ctx = static_cast<NrIceCtx *>(arg);
   RefPtr<NrIceMediaStream> s = ctx->FindStream(stream);
@@ -488,40 +541,6 @@ NrIceCtx::InitializeGlobals(bool allow_loopback,
   }
 }
 
-std::string
-NrIceCtx::GetNewUfrag()
-{
-  char* ufrag;
-  int r;
-
-  if ((r=nr_ice_get_new_ice_ufrag(&ufrag))) {
-    MOZ_CRASH("Unable to get new ice ufrag");
-    return "";
-  }
-
-  std::string ufragStr = ufrag;
-  RFREE(ufrag);
-
-  return ufragStr;
-}
-
-std::string
-NrIceCtx::GetNewPwd()
-{
-  char* pwd;
-  int r;
-
-  if ((r=nr_ice_get_new_ice_pwd(&pwd))) {
-    MOZ_CRASH("Unable to get new ice pwd");
-    return "";
-  }
-
-  std::string pwdStr = pwd;
-  RFREE(pwd);
-
-  return pwdStr;
-}
-
 #define MAXADDRS 100 // mirrors setting in ice_ctx.c
 
 /* static */
@@ -570,22 +589,6 @@ NrIceCtx::SetStunAddrs(const nsTArray<NrIceStunAddr>& addrs)
 bool
 NrIceCtx::Initialize()
 {
-  std::string ufrag = GetNewUfrag();
-  std::string pwd = GetNewPwd();
-
-  return Initialize(ufrag, pwd);
-}
-
-bool
-NrIceCtx::Initialize(const std::string& ufrag,
-                     const std::string& pwd)
-{
-  MOZ_ASSERT(!ufrag.empty());
-  MOZ_ASSERT(!pwd.empty());
-  if (ufrag.empty() || pwd.empty()) {
-    return false;
-  }
-
   // Create the ICE context
   int r;
 
@@ -601,13 +604,7 @@ NrIceCtx::Initialize(const std::string& ufrag,
       break;
   }
 
-  r = nr_ice_ctx_create_with_credentials(const_cast<char *>(name_.c_str()),
-                                         flags,
-                                         const_cast<char *>(ufrag.c_str()),
-                                         const_cast<char *>(pwd.c_str()),
-                                         &ctx_);
-  MOZ_ASSERT(ufrag == ctx_->ufrag);
-  MOZ_ASSERT(pwd == ctx_->pwd);
+  r = nr_ice_ctx_create(const_cast<char *>(name_.c_str()), flags, &ctx_);
 
   if (r) {
     MOZ_MTLOG(ML_ERROR, "Couldn't create ICE ctx for '" << name_ << "'");
@@ -744,10 +741,8 @@ NrIceStats NrIceCtx::Destroy() {
   // designed to be called more than once so if stats are desired, this can be
   // called just prior to the destructor
   MOZ_MTLOG(ML_DEBUG, "Destroying ICE ctx '" << name_ <<"'");
-  for (auto& stream : streams_) {
-    if (stream) {
-      stream->Close();
-    }
+  for (auto& idAndStream : streams_) {
+    idAndStream.second->Close();
   }
 
   NrIceStats stats;
@@ -791,29 +786,6 @@ NrIceStats NrIceCtx::Destroy() {
 }
 
 NrIceCtx::~NrIceCtx() {
-  Destroy();
-}
-
-void
-NrIceCtx::SetStream(size_t index, NrIceMediaStream* stream) {
-  if (index >= streams_.size()) {
-    streams_.resize(index + 1);
-  }
-
-  RefPtr<NrIceMediaStream> oldStream(streams_[index]);
-  streams_[index] = stream;
-
-  if (oldStream) {
-    oldStream->Close();
-  }
-}
-
-std::string NrIceCtx::ufrag() const {
-  return ctx_->ufrag;
-}
-
-std::string NrIceCtx::pwd() const {
-  return ctx_->pwd;
 }
 
 void NrIceCtx::destroy_peer_ctx() {
@@ -977,7 +949,7 @@ nsresult NrIceCtx::StartGathering(bool default_route_only, bool proxy_only) {
     Telemetry::AccumulateTimeDelta(
         Telemetry::WEBRTC_ICE_NR_ICE_GATHER_TIME_IMMEDIATE_SUCCESS, start);
   } else if (r != R_WOULDBLOCK) {
-    MOZ_MTLOG(ML_ERROR, "Couldn't gather ICE candidates for '"
+    MOZ_MTLOG(ML_ERROR, "ICE FAILED: Couldn't gather ICE candidates for '"
                         << name_ << "', error=" << r);
     SetConnectionState(ICE_CTX_FAILED);
     Telemetry::AccumulateTimeDelta(
@@ -991,11 +963,10 @@ nsresult NrIceCtx::StartGathering(bool default_route_only, bool proxy_only) {
   return NS_OK;
 }
 
-RefPtr<NrIceMediaStream> NrIceCtx::FindStream(
-    nr_ice_media_stream *stream) {
-  for (auto& stream_ : streams_) {
-    if (stream_ && (stream_->stream() == stream)) {
-      return stream_;
+RefPtr<NrIceMediaStream> NrIceCtx::FindStream(nr_ice_media_stream *stream) {
+  for (auto& idAndStream : streams_) {
+    if (idAndStream.second->HasStream(stream)) {
+      return idAndStream.second;
     }
   }
 
@@ -1045,8 +1016,8 @@ nsresult NrIceCtx::ParseGlobalAttributes(std::vector<std::string> attrs) {
 }
 
 bool NrIceCtx::HasStreamsToConnect() const {
-  for (auto& stream : streams_) {
-    if (stream && stream->state() != NrIceMediaStream::ICE_CLOSED) {
+  for (auto& idAndStream : streams_) {
+    if (idAndStream.second->state() != NrIceMediaStream::ICE_CLOSED) {
       return true;
     }
   }
@@ -1065,8 +1036,7 @@ nsresult NrIceCtx::StartChecks(bool offerer) {
 
   r=nr_ice_peer_ctx_pair_candidates(peer_);
   if (r) {
-    MOZ_MTLOG(ML_ERROR, "Couldn't pair candidates on "
-              << name_ << "'");
+    MOZ_MTLOG(ML_ERROR, "ICE FAILED: Couldn't pair candidates on " << name_);
     SetConnectionState(ICE_CTX_FAILED);
     return NS_ERROR_FAILURE;
   }
@@ -1074,11 +1044,11 @@ nsresult NrIceCtx::StartChecks(bool offerer) {
   r = nr_ice_peer_ctx_start_checks2(peer_,1);
   if (r) {
     if (r == R_NOT_FOUND) {
-      MOZ_MTLOG(ML_ERROR, "Couldn't start peer checks on "
-                << name_ << "' assuming trickle ICE");
+      MOZ_MTLOG(ML_INFO, "Couldn't start peer checks on "
+                << name_ << ", assuming trickle ICE");
     } else {
-      MOZ_MTLOG(ML_ERROR, "Couldn't start peer checks on "
-                << name_ << "'");
+      MOZ_MTLOG(ML_ERROR, "ICE FAILED: Couldn't start peer checks on "
+                << name_);
       SetConnectionState(ICE_CTX_FAILED);
       return NS_ERROR_FAILURE;
     }

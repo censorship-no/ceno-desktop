@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Αποτυχία φόρτωσης εικόνας. Δοκιμάστε ένα διαφορετικό URL.",
   "pocket_read_more": "Δημοφιλή θέματα:",
   "pocket_read_even_more": "Προβολή περισσότερων ιστοριών",
+  "pocket_more_reccommendations": "Περισσότερες προτάσεις",
+  "pocket_how_it_works": "Πώς λειτουργεί",
+  "pocket_cta_button": "Αποκτήστε το Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "Ξεκινήστε την περιήγηση και θα σάς δείξουμε μερικά υπέροχα άρθρα, βίντεο και άλλες σελίδες που έχετε επισκεφθεί πρόσφατα ή έχετε προσθέσει στους σελιδοδείκτες σας.",
   "topstories_empty_state": "Δεν υπάρχει κάτι νεότερο. Ελέγξτε αργότερα για περισσότερες ιστορίες από τον πάροχο {provider}. Δεν μπορείτε να περιμένετε; Διαλέξτε κάποιο από τα δημοφιλή θέματα και ανακαλύψτε ενδιαφέρουσες ιστορίες από όλο τον Ιστό.",
   "manual_migration_explanation2": "Δοκιμάστε το Firefox με τους σελιδοδείκτες, το ιστορικό και τους κωδικούς πρόσβασης από ένα άλλο πρόγραμμα περιήγησης.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Διαχείριση ενότητας",
   "section_menu_action_manage_webext": "Διαχείριση επέκτασης",
   "section_menu_action_add_topsite": "Προσθήκη κορυφαίας ιστοσελίδας",
+  "section_menu_action_add_search_engine": "Προσθήκη μηχανής αναζήτησης",
   "section_menu_action_move_up": "Μετακίνηση επάνω",
   "section_menu_action_move_down": "Μετακίνηση κάτω",
   "section_menu_action_privacy_notice": "Σημείωση απορρήτου",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Όρους Υπηρεσίας",
   "firstrun_privacy_notice": "Σημείωση Απορρήτου",
   "firstrun_continue_to_login": "Συνέχεια",
-  "firstrun_skip_login": "Παράλειψη βήματος"
+  "firstrun_skip_login": "Παράλειψη βήματος",
+  "context_menu_title": "Open menu",
+  "pocket_learn_more": "Μάθετε περισσότερα"
 };

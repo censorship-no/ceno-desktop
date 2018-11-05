@@ -12,12 +12,13 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
 
 const Button = createFactory(require("./Button"));
+const LearnMoreLink = createFactory(require("./LearnMoreLink"));
 const { enable, updateCanBeEnabled } = require("../actions/ui");
 
 // Localization
 const { L10N } = require("../utils/l10n");
 
-const { A11Y_SERVICE_ENABLED_COUNT } = require("../constants");
+const { A11Y_LEARN_MORE_LINK, A11Y_SERVICE_ENABLED_COUNT } = require("../constants");
 
 class OldVersionDescription extends Component {
   render() {
@@ -26,7 +27,7 @@ class OldVersionDescription extends Component {
         p({ className: "general" },
           img({
             src: "chrome://devtools/skin/images/accessibility.svg",
-            alt: L10N.getStr("accessibility.logo")
+            alt: L10N.getStr("accessibility.logo"),
           }), L10N.getStr("accessibility.description.oldVersion")))
     );
   }
@@ -41,7 +42,7 @@ class Description extends Component {
     return {
       accessibility: PropTypes.object.isRequired,
       canBeEnabled: PropTypes.bool,
-      dispatch: PropTypes.func.isRequired
+      dispatch: PropTypes.func.isRequired,
     };
   }
 
@@ -49,7 +50,7 @@ class Description extends Component {
     super(props);
 
     this.state = {
-      enabling: false
+      enabling: false,
     };
 
     this.onEnable = this.onEnable.bind(this);
@@ -99,20 +100,30 @@ class Description extends Component {
     }
 
     return (
-      div({ className: "description" },
-        p({ className: "general" },
+      div({ className: "description", role: "presentation" },
+        div({ className: "general", role: "presentation" },
           img({
             src: "chrome://devtools/skin/images/accessibility.svg",
-            alt: L10N.getStr("accessibility.logo")
+            alt: L10N.getStr("accessibility.logo"),
           }),
-          L10N.getStr("accessibility.description.general")),
+          div({ role: "presentation" },
+            LearnMoreLink({
+              href: A11Y_LEARN_MORE_LINK +
+                    "?utm_source=devtools&utm_medium=a11y-panel-description",
+              learnMoreStringKey: "accessibility.learnMore",
+              l10n: L10N,
+              messageStringKey: "accessibility.description.general.p1",
+            }),
+            p({}, L10N.getStr("accessibility.description.general.p2"))
+          )
+        ),
         Button({
           id: "accessibility-enable-button",
           onClick: this.onEnable,
           disabled: enabling || disableButton,
           busy: enabling,
           "data-standalone": true,
-          title
+          title,
         }, L10N.getStr(enableButtonStr))
       )
     );
@@ -120,7 +131,7 @@ class Description extends Component {
 }
 
 const mapStateToProps = ({ ui }) => ({
-  canBeEnabled: ui.canBeEnabled
+  canBeEnabled: ui.canBeEnabled,
 });
 
 // Exports from this module

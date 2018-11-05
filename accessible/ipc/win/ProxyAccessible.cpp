@@ -244,7 +244,7 @@ ProxyAccessible::BoundsInCSSPixels()
   }
 
   nsIntRect rect;
-  HRESULT hr = custom->get_boundsInCSSPixels(&rect.x, &rect.y, &rect.width, &rect.height);
+  Unused << custom->get_boundsInCSSPixels(&rect.x, &rect.y, &rect.width, &rect.height);
   return rect;
 }
 
@@ -416,7 +416,7 @@ ProxyAccessible::RelationByType(RelationType aType) const
   }
   CoTaskMemFree(targets);
 
-  return std::move(proxies);
+  return proxies;
 }
 
 double
@@ -497,7 +497,7 @@ GetIA2TextBoundary(AccessibleTextBoundary aGeckoBoundaryType)
     case nsIAccessibleText::BOUNDARY_LINE_START:
       return IA2_TEXT_BOUNDARY_LINE;
     default:
-      MOZ_RELEASE_ASSERT(false);
+      MOZ_CRASH();
   }
 }
 
@@ -687,7 +687,7 @@ ProxyAccessible::ScrollSubstringToPoint(int32_t aStartOffset, int32_t aEndOffset
   } else if (aCoordinateType == nsIAccessibleCoordinateType::COORDTYPE_PARENT_RELATIVE) {
     coordType = IA2_COORDTYPE_PARENT_RELATIVE;
   } else {
-    MOZ_RELEASE_ASSERT(false, "unsupported coord type");
+    MOZ_CRASH("unsupported coord type");
   }
 
   acc->scrollSubstringToPoint(static_cast<long>(aStartOffset),

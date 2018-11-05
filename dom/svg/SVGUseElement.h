@@ -39,7 +39,7 @@ class SVGUseElement final : public SVGUseElementBase,
 protected:
   friend nsresult (::NS_NewSVGUseElement(nsIContent **aResult,
                                          already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGUseElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGUseElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual ~SVGUseElement();
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
@@ -70,8 +70,7 @@ public:
   virtual bool HasValidDimensions() const override;
 
   // nsIContent interface
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   // WebIDL
@@ -87,6 +86,18 @@ public:
   // Updates the internal shadow tree to be an up-to-date clone of the
   // referenced element.
   void UpdateShadowTree();
+
+  // Shared code between AfterSetAttr and nsSVGUseFrame::AttributeChanged.
+  //
+  // This is needed because SMIL doesn't go through AfterSetAttr unfortunately.
+  void ProcessAttributeChange(int32_t aNamespaceID, nsAtom* aAttribute);
+
+  nsresult AfterSetAttr(int32_t aNamespaceID,
+                        nsAtom* aAttribute,
+                        const nsAttrValue* aValue,
+                        const nsAttrValue* aOldValue,
+                        nsIPrincipal* aSubjectPrincipal,
+                        bool aNotify) final;
 
 protected:
   /**

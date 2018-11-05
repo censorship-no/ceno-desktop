@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
     description=('Take the label of the current task, '
                  'and trigger the task with that label '
                  'on previous pushes in the same project.'),
-    order=0,
+    order=200,
     context=[{}],  # This will be available for all tasks
     schema={
         'type': 'object',
@@ -118,17 +118,14 @@ def backfill_action(parameters, graph_config, input, task_group_id, task_id, tas
                     task.task['extra']['treeherder']['symbol'] += '-p'
 
                 if input.get('testPath', ''):
-                    tp = input.get('testPath', '')
                     is_wpttest = 'web-platform' in task.task['metadata']['name']
                     is_android = 'android' in task.task['metadata']['name']
                     gpu_required = False
-                    # TODO: this has a high chance of getting out of date
                     if (not is_wpttest) and \
                        ('gpu' in task.task['metadata']['name'] or
                         'webgl' in task.task['metadata']['name'] or
-                        'canvas' in tp or
-                        'gfx/tests' in tp or
-                        ('reftest' in tp and 'jsreftest' not in tp)):
+                        ('reftest' in task.task['metadata']['name'] and
+                         'jsreftest' not in task.task['metadata']['name'])):
                         gpu_required = True
 
                     # Create new cmd that runs a test-verify type job

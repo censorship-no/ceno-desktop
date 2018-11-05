@@ -24,19 +24,19 @@ class SVGFESpotLightElement : public SVGFESpotLightElementBase
                                                  already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
   friend class ::nsSVGFELightingElement;
 protected:
-  explicit SVGFESpotLightElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGFESpotLightElementBase(aNodeInfo)
+  explicit SVGFESpotLightElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGFESpotLightElementBase(std::move(aNodeInfo))
   {
   }
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 public:
-  virtual AttributeMap ComputeLightAttributes(nsSVGFilterInstance* aInstance) override;
+  virtual mozilla::gfx::LightType ComputeLightAttributes(nsSVGFilterInstance* aInstance,
+                                                         nsTArray<float>& aFloatAttributes) override;
   virtual bool AttributeAffectsRendering(
           int32_t aNameSpaceID, nsAtom* aAttribute) const override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedNumber> X();

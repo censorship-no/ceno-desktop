@@ -24,7 +24,7 @@ class SVGTitleElement final : public SVGTitleElementBase,
 protected:
   friend nsresult (::NS_NewSVGTitleElement(nsIContent **aResult,
                                            already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGTitleElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGTitleElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   ~SVGTitleElement();
 
   virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
@@ -40,8 +40,7 @@ public:
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual nsresult BindToTree(nsIDocument *aDocument, nsIContent *aParent,
                               nsIContent *aBindingParent) override;

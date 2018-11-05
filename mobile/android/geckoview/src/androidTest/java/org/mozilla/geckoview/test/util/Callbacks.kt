@@ -5,9 +5,12 @@
 
 package org.mozilla.geckoview.test.util
 
+import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResponse
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoSession.NavigationDelegate.LoadRequest
+import org.mozilla.geckoview.WebRequestError
 
 import android.view.inputmethod.CursorAnchorInfo
 import android.view.inputmethod.ExtractedText
@@ -53,8 +56,8 @@ class Callbacks private constructor() {
         override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
         }
 
-        override fun onLoadRequest(session: GeckoSession, uri: String, where: Int,
-                                   flags: Int): GeckoResult<Boolean>? {
+        override fun onLoadRequest(session: GeckoSession,
+                                   request: LoadRequest): GeckoResult<AllowOrDeny>? {
             return null
         }
 
@@ -62,8 +65,9 @@ class Callbacks private constructor() {
             return null
         }
 
-        override fun onLoadError(session: GeckoSession, uri: String,
-                                 category: Int, error: Int) {
+        override fun onLoadError(session: GeckoSession, uri: String?,
+                                 error: WebRequestError): GeckoResult<String>? {
+            return null
         }
     }
 
@@ -72,7 +76,7 @@ class Callbacks private constructor() {
             callback.reject()
         }
 
-        override fun onContentPermissionRequest(session: GeckoSession, uri: String, type: Int, access: String?, callback: GeckoSession.PermissionDelegate.Callback) {
+        override fun onContentPermissionRequest(session: GeckoSession, uri: String, type: Int, callback: GeckoSession.PermissionDelegate.Callback) {
             callback.reject()
         }
 
@@ -127,6 +131,10 @@ class Callbacks private constructor() {
         override fun onFilePrompt(session: GeckoSession, title: String, type: Int, mimeTypes: Array<out String>, callback: GeckoSession.PromptDelegate.FileCallback) {
             callback.dismiss()
         }
+
+        override fun onPopupRequest(session: GeckoSession, targetUri: String): GeckoResult<AllowOrDeny>? {
+            return null
+        }
     }
 
     interface ScrollDelegate : GeckoSession.ScrollDelegate {
@@ -164,6 +172,9 @@ class Callbacks private constructor() {
         }
 
         override fun updateCursorAnchorInfo(session: GeckoSession, info: CursorAnchorInfo) {
+        }
+
+        override fun notifyAutoFill(session: GeckoSession, notification: Int, virtualId: Int) {
         }
     }
 }

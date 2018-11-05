@@ -16,7 +16,7 @@
 #include "prenv.h"
 
 #include "nsIAppShell.h"
-#include "nsIAppStartupNotifier.h"
+#include "nsAppStartupNotifier.h"
 #include "nsIDirectoryService.h"
 #include "nsIFile.h"
 #include "nsIToolkitChromeRegistry.h"
@@ -122,6 +122,8 @@ using mozilla::_ipdltest::IPDLUnitTestProcessChild;
 #include "mozilla/widget/PDFiumProcessChild.h"
 #endif
 
+#include "VRProcessChild.h"
+
 using namespace mozilla;
 
 using mozilla::ipc::BrowserProcessSubThread;
@@ -200,12 +202,7 @@ XRE_InitEmbedding2(nsIFile *aLibXULDirectory,
   // If the app wants to autoregister every time (for instance, if it's debug),
   // it can do so after we return from this function.
 
-  nsCOMPtr<nsIObserver> startupNotifier
-    (do_CreateInstance(NS_APPSTARTUPNOTIFIER_CONTRACTID));
-  if (!startupNotifier)
-    return NS_ERROR_FAILURE;
-
-  startupNotifier->Observe(nullptr, APPSTARTUP_TOPIC, nullptr);
+  nsAppStartupNotifier::NotifyObservers(APPSTARTUP_TOPIC);
 
   return NS_OK;
 }
@@ -295,10 +292,7 @@ XRE_SetRemoteExceptionHandler(const char* aPipe /*= 0*/,
 XRE_SetRemoteExceptionHandler(const char* aPipe /*= 0*/)
 #endif
 {
-  // Crash reporting is disabled for now when recording or replaying executions.
-  if (recordreplay::IsRecordingOrReplaying() || recordreplay::IsMiddleman()) {
-    return true;
-  }
+  recordreplay::AutoPassThroughThreadEvents pt;
 #if defined(XP_WIN)
   return CrashReporter::SetRemoteExceptionHandler(nsDependentCString(aPipe),
                                                   aCrashTimeAnnotationFile);
@@ -325,10 +319,8 @@ AddContentSandboxLevelAnnotation()
 {
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
     int level = GetEffectiveContentSandboxLevel();
-    nsAutoCString levelString;
-    levelString.AppendInt(level);
     CrashReporter::AnnotateCrashReport(
-      NS_LITERAL_CSTRING("ContentSandboxLevel"), levelString);
+      CrashReporter::Annotation::ContentSandboxLevel, level);
   }
 }
 #endif /* MOZ_CONTENT_SANDBOX */
@@ -673,6 +665,7 @@ XRE_InitChildProcess(int aArgc,
       break;
   case GeckoProcessType_GMPlugin:
   case GeckoProcessType_PDFium:
+  case GeckoProcessType_VR:
       uiLoopType = MessageLoop::TYPE_DEFAULT;
       break;
   default:
@@ -733,6 +726,10 @@ XRE_InitChildProcess(int aArgc,
 #endif
       case GeckoProcessType_GPU:
         process = new gfx::GPUProcessImpl(parentPID);
+        break;
+
+      case GeckoProcessType_VR:
+        process = new gfx::VRProcessChild(parentPID);
         break;
 
       default:

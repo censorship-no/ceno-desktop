@@ -55,19 +55,19 @@ var tests = [
     loadTabInWindow(window, function(tab) {
       // Load a new URL and then immediately stop it, to simulate a page load
       // error.
-      tab.linkedBrowser.loadURI("http://test1.example.com");
+      BrowserTestUtils.loadURI(tab.linkedBrowser, "http://test1.example.com");
       tab.linkedBrowser.stop();
       is(gURLBar.textValue, "example.com", "URL bar had user/pass stripped after load error");
       gBrowser.removeTab(tab);
       next();
     });
-  }
+  },
 ];
 
 function loadTabInWindow(win, callback) {
   info("Loading tab");
   let url = "http://user:pass@example.com/";
-  let tab = win.gBrowser.selectedTab = win.gBrowser.addTab(url);
+  let tab = win.gBrowser.selectedTab = BrowserTestUtils.addTab(win.gBrowser, url);
   BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, url).then(() => {
     info("Tab loaded");
     is(win.gURLBar.textValue, "example.com", "URL bar had user/pass stripped initially");

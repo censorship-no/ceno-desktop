@@ -47,51 +47,115 @@ var gMenuBuilder = {
   // to be displayed. We always clear all the items again when
   // popuphidden fires.
   build(contextData) {
+    contextData = this.maybeOverrideContextData(contextData);
     let xulMenu = contextData.menu;
     xulMenu.addEventListener("popuphidden", this);
     this.xulMenu = xulMenu;
     for (let [, root] of gRootItems) {
-      let rootElement = this.createTopLevelElement(root, contextData);
-      if (rootElement) {
-        this.appendTopLevelElement(rootElement);
-      }
+      this.createAndInsertTopLevelElements(root, contextData, null);
     }
     this.afterBuildingMenu(contextData);
+
+    if (contextData.webExtContextData && !contextData.webExtContextData.showDefaults) {
+      // Wait until nsContextMenu.js has toggled the visibility of the default
+      // menu items before hiding the default items.
+      Promise.resolve().then(() => this.hideDefaultMenuItems());
+    }
   },
 
-  // Builds a context menu for browserAction and pageAction buttons.
-  buildActionContextMenu(contextData) {
-    const {menu} = contextData;
+  maybeOverrideContextData(contextData) {
+    let {webExtContextData} = contextData;
+    if (!webExtContextData || !webExtContextData.overrideContext) {
+      return contextData;
+    }
+    let contextDataBase = {
+      menu: contextData.menu,
+      // eslint-disable-next-line no-use-before-define
+      originalViewType: getContextViewType(contextData),
+      originalViewUrl: contextData.inFrame ? contextData.frameUrl : contextData.pageUrl,
+      webExtContextData,
+    };
+    if (webExtContextData.overrideContext === "bookmark") {
+      return {
+        ...contextDataBase,
+        bookmarkId: webExtContextData.bookmarkId,
+        onBookmark: true,
+      };
+    }
+    if (webExtContextData.overrideContext === "tab") {
+      // TODO: Handle invalid tabs more gracefully (instead of throwing).
+      let tab = tabTracker.getTab(webExtContextData.tabId);
+      return {
+        ...contextDataBase,
+        tab,
+        pageUrl: tab.linkedBrowser.currentURI.spec,
+        onTab: true,
+      };
+    }
+    throw new Error(`Unexpected overrideContext: ${webExtContextData.overrideContext}`);
+  },
 
-    const root = gRootItems.get(contextData.extension);
-    if (!root) {
+  createAndInsertTopLevelElements(root, contextData, nextSibling) {
+    let rootElements;
+    if (contextData.onBrowserAction || contextData.onPageAction) {
+      if (contextData.extension.id !== root.extension.id) {
+        return;
+      }
+      rootElements = this.buildTopLevelElements(root, contextData, ACTION_MENU_TOP_LEVEL_LIMIT, false);
+
+      // Action menu items are prepended to the menu, followed by a separator.
+      nextSibling = nextSibling || this.xulMenu.firstElementChild;
+      if (rootElements.length && !this.itemsToCleanUp.has(nextSibling)) {
+        rootElements.push(this.xulMenu.ownerDocument.createXULElement("menuseparator"));
+      }
+    } else if (contextData.webExtContextData) {
+      let {
+        extensionId,
+        showDefaults,
+        overrideContext,
+      } = contextData.webExtContextData;
+      if (extensionId === root.extension.id) {
+        rootElements = this.buildTopLevelElements(root, contextData, Infinity, false);
+        // The extension menu should be rendered at the top, but after the navigation buttons.
+        nextSibling = nextSibling || this.xulMenu.querySelector(":scope > #context-sep-navigation + *");
+        if (rootElements.length && showDefaults && !this.itemsToCleanUp.has(nextSibling)) {
+          rootElements.push(this.xulMenu.ownerDocument.createXULElement("menuseparator"));
+        }
+      } else if (!showDefaults && !overrideContext) {
+        // When the default menu items should be hidden, menu items from other
+        // extensions should be hidden too.
+        return;
+      }
+      // Fall through to show default extension menu items.
+    }
+    if (!rootElements) {
+      rootElements = this.buildTopLevelElements(root, contextData, 1, true);
+      if (rootElements.length && !this.itemsToCleanUp.has(this.xulMenu.lastElementChild)) {
+        // All extension menu items are appended at the end.
+        // Prepend separator if this is the first extension menu item.
+        rootElements.unshift(this.xulMenu.ownerDocument.createXULElement("menuseparator"));
+      }
+    }
+
+    if (!rootElements.length) {
       return;
     }
 
-    const children = this.buildChildren(root, contextData);
-    const visible = children.slice(0, ACTION_MENU_TOP_LEVEL_LIMIT);
-
-    this.xulMenu = menu;
-    menu.addEventListener("popuphidden", this);
-
-    if (visible.length) {
-      const separator = menu.ownerDocument.createElement("menuseparator");
-      menu.insertBefore(separator, menu.firstChild);
-      this.itemsToCleanUp.add(separator);
-
-      for (const child of visible) {
-        this.itemsToCleanUp.add(child);
-        menu.insertBefore(child, separator);
-      }
+    if (nextSibling) {
+      nextSibling.before(...rootElements);
+    } else {
+      this.xulMenu.append(...rootElements);
     }
-    this.afterBuildingMenu(contextData);
+    for (let item of rootElements) {
+      this.itemsToCleanUp.add(item);
+    }
   },
 
   buildElementWithChildren(item, contextData) {
     const element = this.buildSingleElement(item, contextData);
     const children = this.buildChildren(item, contextData);
     if (children.length) {
-      element.firstChild.append(...children);
+      element.firstElementChild.append(...children);
     }
     return element;
   },
@@ -116,61 +180,58 @@ var gMenuBuilder = {
     return children;
   },
 
-  createTopLevelElement(root, contextData) {
-    let rootElement = this.buildElementWithChildren(root, contextData);
-    if (!rootElement.firstChild || !rootElement.firstChild.childNodes.length) {
-      // If the root has no visible children, there is no reason to show
-      // the root menu item itself either.
-      return null;
-    }
-    rootElement.setAttribute("ext-type", "top-level-menu");
-    rootElement = this.removeTopLevelMenuIfNeeded(rootElement);
+  buildTopLevelElements(root, contextData, maxCount, forceManifestIcons) {
+    let children = this.buildChildren(root, contextData);
 
-    // Display the extension icon on the root element.
-    if (root.extension.manifest.icons) {
-      this.setMenuItemIcon(rootElement, root.extension, contextData, root.extension.manifest.icons);
-    }
-    return rootElement;
-  },
-
-  appendTopLevelElement(rootElement) {
-    if (this.itemsToCleanUp.size === 0) {
-      const separator = this.xulMenu.ownerDocument.createElement("menuseparator");
-      this.itemsToCleanUp.add(separator);
-      this.xulMenu.append(separator);
+    // TODO: Fix bug 1492969 and remove this whole if block.
+    if (children.length === 1 && maxCount === 1 && forceManifestIcons &&
+        AppConstants.platform === "linux" &&
+        children[0].getAttribute("type") === "checkbox") {
+      // Keep single checkbox items in the submenu on Linux since
+      // the extension icon overlaps the checkbox otherwise.
+      maxCount = 0;
     }
 
-    this.xulMenu.appendChild(rootElement);
-    this.itemsToCleanUp.add(rootElement);
+    if (children.length > maxCount) {
+      // Move excess items into submenu.
+      let rootElement = this.buildSingleElement(root, contextData);
+      rootElement.setAttribute("ext-type", "top-level-menu");
+      rootElement.firstElementChild.append(...children.splice(maxCount - 1));
+      children.push(rootElement);
+    }
+
+    if (forceManifestIcons) {
+      for (let rootElement of children) {
+        // Display the extension icon on the root element.
+        if (root.extension.manifest.icons) {
+          this.setMenuItemIcon(rootElement, root.extension, contextData, root.extension.manifest.icons);
+        } else {
+          this.removeMenuItemIcon(rootElement);
+        }
+      }
+    }
+    return children;
   },
 
   removeSeparatorIfNoTopLevelItems() {
-    if (this.itemsToCleanUp.size === 1) {
-      // Remove the separator if all extension menu items have disappeared.
-      const separator = this.itemsToCleanUp.values().next().value;
-      separator.remove();
-      this.itemsToCleanUp.clear();
-    }
-  },
+    // Extension menu items always have have a non-empty ID.
+    let isNonExtensionSeparator =
+      item => item.nodeName === "menuseparator" && !item.id;
 
-  removeTopLevelMenuIfNeeded(element) {
-    // If there is only one visible top level element we don't need the
-    // root menu element for the extension.
-    let menuPopup = element.firstChild;
-    if (menuPopup && menuPopup.childNodes.length == 1) {
-      let onlyChild = menuPopup.firstChild;
+    // itemsToCleanUp contains all top-level menu items. A separator should
+    // only be kept if it is next to an extension menu item.
+    let isExtensionMenuItemSibling =
+      item => item && this.itemsToCleanUp.has(item) && !isNonExtensionSeparator(item);
 
-      // Keep single checkbox items in the submenu on Linux since
-      // the extension icon overlaps the checkbox otherwise.
-      if (AppConstants.platform === "linux" && onlyChild.getAttribute("type") === "checkbox") {
-        return element;
+    for (let item of this.itemsToCleanUp) {
+      if (isNonExtensionSeparator(item)) {
+        if (!isExtensionMenuItemSibling(item.previousElementSibling) &&
+            !isExtensionMenuItemSibling(item.nextElementSibling)) {
+          item.remove();
+          this.itemsToCleanUp.delete(item);
+        }
       }
-
-      onlyChild.remove();
-      return onlyChild;
     }
-
-    return element;
   },
 
   buildSingleElement(item, contextData) {
@@ -179,18 +240,18 @@ var gMenuBuilder = {
     if (item.children.length > 0) {
       element = this.createMenuElement(doc, item);
     } else if (item.type == "separator") {
-      element = doc.createElement("menuseparator");
+      element = doc.createXULElement("menuseparator");
     } else {
-      element = doc.createElement("menuitem");
+      element = doc.createXULElement("menuitem");
     }
 
     return this.customizeElement(element, item, contextData);
   },
 
   createMenuElement(doc, item) {
-    let element = doc.createElement("menu");
+    let element = doc.createXULElement("menu");
     // Menu elements need to have a menupopup child for its menu items.
-    let menupopup = doc.createElement("menupopup");
+    let menupopup = doc.createXULElement("menupopup");
     element.appendChild(menupopup);
     return element;
   },
@@ -247,8 +308,12 @@ var gMenuBuilder = {
 
     element.setAttribute("id", item.elementId);
 
-    if (item.icons) {
-      this.setMenuItemIcon(element, item.extension, contextData, item.icons);
+    if ("icons" in item) {
+      if (item.icons) {
+        this.setMenuItemIcon(element, item.extension, contextData, item.icons);
+      } else {
+        this.removeMenuItemIcon(element);
+      }
     }
 
     if (item.type == "checkbox") {
@@ -268,7 +333,9 @@ var gMenuBuilder = {
       element.setAttribute("disabled", "true");
     }
 
-    element.addEventListener("command", event => { // eslint-disable-line mozilla/balanced-listeners
+    let button;
+
+    element.addEventListener("command", event => {
       if (event.target !== event.currentTarget) {
         return;
       }
@@ -286,7 +353,11 @@ var gMenuBuilder = {
         item.checked = true;
       }
 
-      if (contextData.tab) {
+      let {webExtContextData} = contextData;
+      if (contextData.tab &&
+          // If the menu context was overridden by the extension, do not grant
+          // activeTab since the extension also controls the tabId.
+          (!webExtContextData || webExtContextData.extensionId !== item.extension.id)) {
         item.tabManager.addActiveTabPermission(contextData.tab);
       }
 
@@ -297,6 +368,8 @@ var gMenuBuilder = {
       if (event.ctrlKey && AppConstants.platform === "macosx") {
         info.modifiers.push("MacCtrl");
       }
+
+      info.button = button;
 
       // Allow menus to open various actions supported in webext prior
       // to notifying onclicked.
@@ -311,6 +384,18 @@ var gMenuBuilder = {
       }
 
       item.extension.emit("webext-menu-menuitem-click", info, contextData.tab);
+    }, {once: true});
+
+    element.addEventListener("click", event => { // eslint-disable-line mozilla/balanced-listeners
+      if (event.target !== event.currentTarget) {
+        return;
+      }
+
+      button = event.button;
+      if (event.button) {
+        element.doCommand();
+        contextData.menu.hidePopup();
+      }
     });
 
     // Don't publish the ID of the root because the root element is
@@ -342,6 +427,12 @@ var gMenuBuilder = {
     element.setAttribute("image", resolvedURL);
   },
 
+  // Undo changes from setMenuItemIcon.
+  removeMenuItemIcon(element) {
+    element.removeAttribute("class");
+    element.removeAttribute("image");
+  },
+
   rebuildMenu(extension) {
     let {contextData} = this;
     if (!contextData) {
@@ -349,57 +440,27 @@ var gMenuBuilder = {
       return;
     }
 
-    if (!gShownMenuItems.has(extension)) {
-      // The onShown event was not fired for the extension, so the extension
-      // does not know that a menu is being shown, and therefore they should
-      // not care whether the extension menu is updated.
-      return;
-    }
-
-    if (contextData.onBrowserAction || contextData.onPageAction) {
-      // The action menu can only have items from one extension, so remove all
-      // items (including the separator) and rebuild the action menu (if any).
-      for (let item of this.itemsToCleanUp) {
-        item.remove();
-      }
-      this.itemsToCleanUp.clear();
-      this.buildActionContextMenu(contextData);
-      return;
-    }
-
-    // First find the one and only top-level menu item for the extension.
+    // Find the group of existing top-level items (usually 0 or 1 items)
+    // and remember its position for when the new items are inserted.
     let elementIdPrefix = `${makeWidgetId(extension.id)}-menuitem-`;
-    let oldRoot = null;
-    for (let item = this.xulMenu.lastElementChild; item !== null; item = item.previousElementSibling) {
+    let nextSibling = null;
+    for (let item of this.itemsToCleanUp) {
       if (item.id && item.id.startsWith(elementIdPrefix)) {
-        oldRoot = item;
-        this.itemsToCleanUp.delete(oldRoot);
-        break;
+        nextSibling = item.nextSibling;
+        item.remove();
+        this.itemsToCleanUp.delete(item);
       }
     }
 
     let root = gRootItems.get(extension);
-    let newRoot = root && this.createTopLevelElement(root, contextData);
-    if (newRoot) {
-      this.itemsToCleanUp.add(newRoot);
-      if (oldRoot) {
-        oldRoot.replaceWith(newRoot);
-      } else {
-        this.appendTopLevelElement(newRoot);
-      }
-    } else if (oldRoot) {
-      oldRoot.remove();
-      this.removeSeparatorIfNoTopLevelItems();
+    if (root) {
+      this.createAndInsertTopLevelElements(root, contextData, nextSibling);
     }
+    this.removeSeparatorIfNoTopLevelItems();
   },
 
+  // This should be called once, after constructing the top-level menus, if any.
   afterBuildingMenu(contextData) {
-    if (this.contextData) {
-      // rebuildMenu can trigger us again, but the logic below should run only
-      // once per open menu.
-      return;
-    }
-
     function dispatchOnShownEvent(extension) {
       // Note: gShownMenuItems is a DefaultMap, so .get(extension) causes the
       // extension to be stored in the map even if there are currently no
@@ -416,6 +477,14 @@ var gMenuBuilder = {
     }
 
     this.contextData = contextData;
+  },
+
+  hideDefaultMenuItems() {
+    for (let item of this.xulMenu.children) {
+      if (!this.itemsToCleanUp.has(item)) {
+        item.hidden = true;
+      }
+    }
   },
 
   handleEvent(event) {
@@ -445,7 +514,7 @@ var gMenuBuilder = {
 global.actionContextMenu = function(contextData) {
   contextData.tab = tabTracker.activeTab;
   contextData.pageUrl = contextData.tab.linkedBrowser.currentURI.spec;
-  gMenuBuilder.buildActionContextMenu(contextData);
+  gMenuBuilder.build(contextData);
 };
 
 const contextsMap = {
@@ -486,7 +555,22 @@ const getMenuContexts = contextData => {
   return contexts;
 };
 
-function addMenuEventInfo(info, contextData, includeSensitiveData) {
+function getContextViewType(contextData) {
+  if ("originalViewType" in contextData) {
+    return contextData.originalViewType;
+  }
+  if (contextData.webExtBrowserType === "popup" ||
+      contextData.webExtBrowserType === "sidebar") {
+    return contextData.webExtBrowserType;
+  }
+  if (contextData.tab && contextData.menu.id === "contentAreaContextMenu") {
+    return "tab";
+  }
+  return undefined;
+}
+
+function addMenuEventInfo(info, contextData, extension, includeSensitiveData) {
+  info.viewType = getContextViewType(contextData);
   if (contextData.onVideo) {
     info.mediaType = "video";
   } else if (contextData.onAudio) {
@@ -502,6 +586,12 @@ function addMenuEventInfo(info, contextData, includeSensitiveData) {
   }
   info.editable = contextData.onEditable || false;
   if (includeSensitiveData) {
+    // menus.getTargetElement requires the "menus" permission, so do not set
+    // targetElementId for extensions with only the "contextMenus" permission.
+    if (contextData.timeStamp && extension.hasPermission("menus")) {
+      // Convert to integer, in case the DOMHighResTimeStamp has a fractional part.
+      info.targetElementId = Math.floor(contextData.timeStamp);
+    }
     if (contextData.onLink) {
       info.linkText = contextData.linkText;
       info.linkUrl = contextData.linkUrl;
@@ -518,6 +608,12 @@ function addMenuEventInfo(info, contextData, includeSensitiveData) {
     if (contextData.isTextSelected) {
       info.selectionText = contextData.selectionText;
     }
+  }
+  // If the context was overridden, then frameUrl should be the URL of the
+  // document in which the menu was opened (instead of undefined, even if that
+  // document is not in a frame).
+  if (contextData.originalViewUrl) {
+    info.frameUrl = contextData.originalViewUrl;
   }
 }
 
@@ -550,12 +646,16 @@ MenuItem.prototype = {
       this[propName] = createProperties[propName];
     }
 
+    if ("icons" in createProperties && createProperties.icons === null) {
+      this.icons = null;
+    }
+
     if (createProperties.documentUrlPatterns != null) {
       this.documentUrlMatchPattern = new MatchPatternSet(this.documentUrlPatterns);
     }
 
     if (createProperties.targetUrlPatterns != null) {
-      this.targetUrlMatchPattern = new MatchPatternSet(this.targetUrlPatterns);
+      this.targetUrlMatchPattern = new MatchPatternSet(this.targetUrlPatterns, {restrictSchemes: false});
     }
 
     // If a child MenuItem does not specify any contexts, then it should
@@ -571,6 +671,7 @@ MenuItem.prototype = {
       checked: false,
       contexts: ["all"],
       enabled: true,
+      visible: true,
     });
   },
 
@@ -688,7 +789,7 @@ MenuItem.prototype = {
       info.parentMenuItemId = this.parentId;
     }
 
-    addMenuEventInfo(info, contextData, true);
+    addMenuEventInfo(info, contextData, this.extension, true);
 
     if ((this.type === "checkbox") || (this.type === "radio")) {
       info.checked = this.checked;
@@ -699,16 +800,35 @@ MenuItem.prototype = {
   },
 
   enabledForContext(contextData) {
+    if (!this.visible) {
+      return false;
+    }
     let contexts = getMenuContexts(contextData);
     if (!this.contexts.some(n => contexts.has(n))) {
       return false;
+    }
+
+    if (this.viewTypes && !this.viewTypes.includes(getContextViewType(contextData))) {
+      return false;
+    }
+
+    let docPattern = this.documentUrlMatchPattern;
+    // When viewTypes is specified, the menu item is expected to be restricted
+    // to documents. So let documentUrlPatterns always apply to the URL of the
+    // document in which the menu was opened. When maybeOverrideContextData
+    // changes the context, contextData.pageUrl does not reflect that URL any
+    // more, so use contextData.originalViewUrl instead.
+    if (docPattern && this.viewTypes && contextData.originalViewUrl) {
+      if (!docPattern.matches(Services.io.newURI(contextData.originalViewUrl))) {
+        return false;
+      }
+      docPattern = null; // Null it so that it won't be used with pageURI below.
     }
 
     if (contextData.onBookmark) {
       return this.extension.hasPermission("bookmarks");
     }
 
-    let docPattern = this.documentUrlMatchPattern;
     let pageURI = Services.io.newURI(contextData[contextData.inFrame ? "frameUrl" : "pageUrl"]);
     if (docPattern && !docPattern.matches(pageURI)) {
       return false;
@@ -849,7 +969,7 @@ this.menusInternal = class extends ExtensionAPI {
               (nativeTab && extension.tabManager.hasActiveTabPermission(nativeTab)) ||
               (contextUrl && extension.whiteListedHosts.matches(contextUrl));
 
-            addMenuEventInfo(info, contextData, includeSensitiveData);
+            addMenuEventInfo(info, contextData, extension, includeSensitiveData);
 
             let tab = nativeTab && extension.tabManager.convert(nativeTab);
             fire.sync(info, tab);

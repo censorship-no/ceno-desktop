@@ -260,16 +260,15 @@ var ViewSourceContent = {
     let shEntrySource = pageDescriptor.QueryInterface(Ci.nsISHEntry);
     let shEntry = Cc["@mozilla.org/browser/session-history-entry;1"]
                     .createInstance(Ci.nsISHEntry);
-    shEntry.setURI(Services.io.newURI(viewSrcURL));
-    shEntry.setTitle(viewSrcURL);
+    shEntry.URI = Services.io.newURI(viewSrcURL);
+    shEntry.title = viewSrcURL;
     let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
     shEntry.triggeringPrincipal = systemPrincipal;
-    shEntry.setAsHistoryLoad();
+    shEntry.setLoadTypeAsHistory();
     shEntry.cacheKey = shEntrySource.cacheKey;
     docShell.QueryInterface(Ci.nsIWebNavigation)
             .sessionHistory
             .legacySHistory
-            .QueryInterface(Ci.nsISHistoryInternal)
             .addEntry(shEntry, true);
   },
 
@@ -282,7 +281,7 @@ var ViewSourceContent = {
   loadSourceFromURL(URL) {
     let loadFlags = Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
     let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
-    webNav.loadURI(URL, loadFlags, null, null, null);
+    webNav.loadURI(URL, loadFlags, null, null, null, Services.scriptSecurityManager.getSystemPrincipal());
   },
 
   /**
@@ -605,7 +604,8 @@ var ViewSourceContent = {
     webNav.loadURIWithOptions(uri, loadFlags,
                               null, referrerPolicy, // referrer
                               null, null, // postData, headers
-                              Services.io.newURI(baseURI));
+                              Services.io.newURI(baseURI),
+                              Services.scriptSecurityManager.getSystemPrincipal());
   },
 
   /**
@@ -711,7 +711,7 @@ var ViewSourceContent = {
       accesskey: true,
       handler() {
         sendAsyncMessage("ViewSource:PromptAndGoToLine");
-      }
+      },
     },
     {
       id: "wrapLongLines",
@@ -720,7 +720,7 @@ var ViewSourceContent = {
       },
       handler() {
         this.toggleWrapping();
-      }
+      },
     },
     {
       id: "highlightSyntax",
@@ -729,7 +729,7 @@ var ViewSourceContent = {
       },
       handler() {
         this.toggleSyntaxHighlighting();
-      }
+      },
     },
   ],
 

@@ -9,7 +9,9 @@
 #endif
 #endif
 
-  <stringbundleset id="stringbundleset">
+  <stringbundleset id="stringbundleset"
+                   string-bookmarkthispage="&bookmarkThisPageCmd.label;"
+                   string-editthisbookmark="&editThisBookmarkCmd.label;">
     <stringbundle id="bundle_brand" src="chrome://branding/locale/brand.properties"/>
     <stringbundle id="bundle_shell" src="chrome://browser/locale/shellservice.properties"/>
     <stringbundle id="bundle_preferences" src="chrome://browser/locale/preferences/preferences.properties"/>
@@ -33,36 +35,28 @@
     <command id="cmd_printPreview" oncommand="PrintUtils.printPreview(PrintPreviewListener);"/>
     <command id="cmd_close" oncommand="BrowserCloseTabOrWindow(event);"/>
     <command id="cmd_closeWindow" oncommand="BrowserTryToCloseWindow()"/>
-    <command id="cmd_toggleMute" oncommand="gBrowser.selectedTab.toggleMuteAudio()"/>
+    <command id="cmd_toggleMute" oncommand="gBrowser.toggleMuteAudioOnMultiSelectedTabs(gBrowser.selectedTab)"/>
     <command id="cmd_CustomizeToolbars" oncommand="gCustomizeMode.enter()"/>
+    <command id="cmd_toggleOfflineStatus" oncommand="BrowserOffline.toggleOfflineStatus();"/>
     <command id="cmd_quitApplication" oncommand="goQuitApplication()"/>
 
 #include ../../../toolkit/content/editMenuCommands.inc.xul
 
-    <command id="View:PageSource" oncommand="BrowserViewSource(window.gBrowser.selectedBrowser);" observes="canViewSource"/>
+    <command id="View:PageSource" oncommand="BrowserViewSource(window.gBrowser.selectedBrowser);"/>
     <command id="View:PageInfo" oncommand="BrowserPageInfo();"/>
     <command id="View:FullScreen" oncommand="BrowserFullScreen();"/>
     <command id="View:ReaderView" oncommand="ReaderParent.toggleReaderMode(event);"/>
-    <command id="cmd_find"
-             oncommand="gLazyFindCommand('onFindCommand')"
-             observes="isImage"/>
-    <command id="cmd_findAgain"
-             oncommand="gLazyFindCommand('onFindAgainCommand', false)"
-             observes="isImage"/>
-    <command id="cmd_findPrevious"
-             oncommand="gLazyFindCommand('onFindAgainCommand', true)"
-             observes="isImage"/>
+    <command id="cmd_find" oncommand="gLazyFindCommand('onFindCommand')"/>
+    <command id="cmd_findAgain" oncommand="gLazyFindCommand('onFindAgainCommand', false)"/>
+    <command id="cmd_findPrevious" oncommand="gLazyFindCommand('onFindAgainCommand', true)"/>
 #ifdef XP_MACOSX
     <command id="cmd_findSelection" oncommand="gLazyFindCommand('onFindSelectionCommand')"/>
 #endif
     <!-- work-around bug 392512 -->
     <command id="Browser:AddBookmarkAs"
              oncommand="PlacesCommandHook.bookmarkPage();"/>
-    <!-- The command disabled state must be manually updated through
-         PlacesCommandHook.updateBookmarkAllTabsCommand() -->
     <command id="Browser:BookmarkAllTabs"
              oncommand="PlacesCommandHook.bookmarkPages(PlacesCommandHook.uniqueCurrentPages);"/>
-    <command id="Browser:Home"    oncommand="BrowserHome();"/>
     <command id="Browser:Back"    oncommand="BrowserBack();" disabled="true"/>
     <command id="Browser:BackOrBackDuplicate" oncommand="BrowserBack(event);" disabled="true">
       <observes element="Browser:Back" attribute="disabled"/>
@@ -79,6 +73,8 @@
     <command id="Browser:ReloadSkipCache" oncommand="BrowserReloadSkipCache()" disabled="true">
       <observes element="Browser:Reload" attribute="disabled"/>
     </command>
+    <command id="Browser:NextTab" oncommand="gBrowser.tabContainer.advanceSelectedTab(1, true);"/>
+    <command id="Browser:PrevTab" oncommand="gBrowser.tabContainer.advanceSelectedTab(-1, true);"/>
     <command id="Browser:ShowAllTabs" oncommand="gTabsPanel.showAllTabsPanel();"/>
     <command id="cmd_fullZoomReduce"  oncommand="FullZoom.reduce()"/>
     <command id="cmd_fullZoomEnlarge" oncommand="FullZoom.enlarge()"/>
@@ -96,9 +92,6 @@
     <command id="Tools:Downloads" oncommand="BrowserDownloadsUI();"/>
     <command id="Tools:Addons" oncommand="BrowserOpenAddonsMgr();"/>
     <command id="Tools:Sanitize" oncommand="Sanitizer.showUI(window);"/>
-    <command id="Tools:RecordExecution" oncommand="BeginRecordExecution()"/>
-    <command id="Tools:SaveRecording" oncommand="SaveRecordedExecution()"/>
-    <command id="Tools:ReplayExecution" oncommand="BeginReplayExecution()"/>
     <command id="Tools:PrivateBrowsing"
       oncommand="OpenBrowserWindow({private: true});"/>
     <command id="History:UndoCloseTab" oncommand="undoCloseTab();"/>
@@ -118,52 +111,6 @@
   </commandset>
 
 #include ../../components/places/content/placesCommands.inc.xul
-
-  <broadcasterset id="mainBroadcasterSet">
-    <broadcaster id="viewBookmarksSidebar" autoCheck="false" label="&bookmarksButton.label;"
-                 type="checkbox" group="sidebar"
-                 sidebarurl="chrome://browser/content/places/bookmarksSidebar.xul"
-                 oncommand="SidebarUI.toggle('viewBookmarksSidebar');"/>
-
-    <broadcaster id="viewHistorySidebar" autoCheck="false" sidebartitle="&historyButton.label;"
-                 type="checkbox" group="sidebar"
-                 sidebarurl="chrome://browser/content/places/historySidebar.xul"
-                 oncommand="SidebarUI.toggle('viewHistorySidebar');"/>
-
-    <broadcaster id="bookmarkThisPageBroadcaster"
-                 label="&bookmarkThisPageCmd.label;"
-                 bookmarklabel="&bookmarkThisPageCmd.label;"
-                 editlabel="&editThisBookmarkCmd.label;"/>
-    <broadcaster id="isImage"/>
-    <broadcaster id="canViewSource"/>
-    <broadcaster id="isFrameImage"/>
-
-    <!-- Sync broadcasters -->
-    <!-- A broadcaster of a number of attributes suitable for "sync now" UI -
-        A 'syncstatus' attribute is set while actively syncing, and the label
-        attribute which changes from "sync now" to "syncing" etc. -->
-    <broadcaster id="sync-status" onmouseover="gSync.refreshSyncButtonsTooltip();"/>
-    <!-- broadcasters of the "hidden" attribute to reflect setup state for
-         menus -->
-    <broadcaster id="sync-setup-state" hidden="true"/>
-    <broadcaster id="sync-unverified-state" hidden="true"/>
-    <broadcaster id="sync-syncnow-state" hidden="true"/>
-    <broadcaster id="sync-reauth-state" hidden="true"/>
-    <broadcaster id="viewTabsSidebar" autoCheck="false" sidebartitle="&syncedTabs.sidebar.label;"
-                 type="checkbox" group="sidebar"
-                 sidebarurl="chrome://browser/content/syncedtabs/sidebar.xhtml"
-                 oncommand="SidebarUI.toggle('viewTabsSidebar');"/>
-    <broadcaster id="workOfflineMenuitemState"/>
-    <broadcaster id="devtoolsMenuBroadcaster_RecordExecution"
-                 label="&devtoolsRecordExecution.label;"
-                 command="Tools:RecordExecution"/>
-    <broadcaster id="devtoolsMenuBroadcaster_SaveRecording"
-                 label="&devtoolsSaveRecording.label;"
-                 command="Tools:SaveRecording"/>
-    <broadcaster id="devtoolsMenuBroadcaster_ReplayExecution"
-                 label="&devtoolsReplayExecution.label;"
-                 command="Tools:ReplayExecution"/>
-  </broadcasterset>
 
   <keyset id="mainKeyset">
     <key id="key_newNavigator"
@@ -249,7 +196,7 @@
     <key id="goBackKb2" key="&goBackCmd.commandKey;" command="Browser:Back" modifiers="accel"/>
     <key id="goForwardKb2" key="&goForwardCmd.commandKey;" command="Browser:Forward" modifiers="accel"/>
 #endif
-    <key id="goHome" keycode="VK_HOME" command="Browser:Home" modifiers="alt"/>
+    <key id="goHome" keycode="VK_HOME" oncommand="BrowserHome();" modifiers="alt"/>
     <key keycode="VK_F5" command="Browser:Reload"/>
 #ifndef XP_MACOSX
     <key id="showAllHistoryKb" key="&showAllHistoryCmd.commandkey;" command="Browser:ShowAllHistory" modifiers="accel,shift"/>
@@ -291,11 +238,11 @@
 #else
     <key id="manBookmarkKb" key="&bookmarksGtkCmd.commandkey;" command="Browser:ShowAllBookmarks" modifiers="accel,shift"/>
 #endif
-    <key id="viewBookmarksSidebarKb" key="&bookmarksCmd.commandkey;" command="viewBookmarksSidebar" modifiers="accel"/>
+    <key id="viewBookmarksSidebarKb" key="&bookmarksCmd.commandkey;" oncommand="SidebarUI.toggle('viewBookmarksSidebar');" modifiers="accel"/>
 #ifdef XP_WIN
 # Cmd+I is conventially mapped to Info on MacOS X, thus it should not be
 # overridden for other purposes there.
-    <key id="viewBookmarksSidebarWinKb" key="&bookmarksWinCmd.commandkey;" command="viewBookmarksSidebar" modifiers="accel"/>
+    <key id="viewBookmarksSidebarWinKb" key="&bookmarksWinCmd.commandkey;" oncommand="SidebarUI.toggle('viewBookmarksSidebar');" modifiers="accel"/>
 #endif
 
     <key id="key_stop" keycode="VK_ESCAPE" command="Browser:Stop"/>
@@ -311,7 +258,7 @@
 #else
          modifiers="accel"
 #endif
-         command="viewHistorySidebar"/>
+         oncommand="SidebarUI.toggle('viewHistorySidebar');"/>
 
     <key id="key_fullZoomReduce"  key="&fullZoomReduceCmd.commandkey;"   command="cmd_fullZoomReduce"  modifiers="accel"/>
     <key                          key="&fullZoomReduceCmd.commandkey2;"  command="cmd_fullZoomReduce"  modifiers="accel"/>

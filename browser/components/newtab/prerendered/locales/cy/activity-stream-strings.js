@@ -40,7 +40,7 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Iawn, deall",
   "prefs_home_header": "Cynnwys Cartref Firefox",
   "prefs_home_description": "Dewis pa gynnwys rydych eisiau ar eich sgrin Firefox Cartref.",
-  "prefs_section_rows_option": "{num} rhes;{num} rhes",
+  "prefs_section_rows_option": "{num} rhes;{num} rhes;{num} rhes;{num} rhes;{num} rhes;{num} rhes",
   "prefs_search_header": "Chwilio'r We",
   "prefs_topsites_description": "Y gwefannau rydych yn ymweld â nhw amlaf",
   "prefs_topstories_description2": "Cynnwys gwych o ar draws y we, wedi ei ddewis yn arbennig i chi",
@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Methodd y ddelwedd â llwytho. Defnyddiwch URL gwahanol.",
   "pocket_read_more": "Pynciau Poblogaidd:",
   "pocket_read_even_more": "Gweld Rhagor o Straeon",
+  "pocket_more_reccommendations": "Rhagor o Argymhellion",
+  "pocket_how_it_works": "Sut mae'n gweithio",
+  "pocket_cta_button": "Defnyddio Pocket",
+  "pocket_cta_text": "Cadw'r straeon rydych yn eu hoffi i Pocket a bwydo'ch meddwl á deunydd diddorol.",
   "highlights_empty_state": "Cychwynnwch bori ac fe ddangoswn rhai erthyglau, fideos a thudalennau eraill difyr rydych wedi ymweld â nhw'n ddiweddar neu wedi gosod nod tudalen arnyn nhw yma.",
   "topstories_empty_state": "Rydych wedi dal i fynDewch nôl rhywbryd eto am fwy o'r straeon pwysicaf gan {provider}. Methu aros? Dewiswch bwnc poblogaidd i ganfod straeon da o ar draws y we. ",
   "manual_migration_explanation2": "Profwch Firefox gyda nodau tudalen, hanes a chyfrineiriau o borwr arall.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Rheoli'r Adran",
   "section_menu_action_manage_webext": "Rheoli Estyniad",
   "section_menu_action_add_topsite": "Ychwanegu Hoff Wefan",
+  "section_menu_action_add_search_engine": "Ychwanegu Peiriant Chwilio",
   "section_menu_action_move_up": "Symud i Fyny",
   "section_menu_action_move_down": "Symud i Lawr",
   "section_menu_action_privacy_notice": "Hysbysiad Preifatrwydd",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Amodau Gwasanaeth",
   "firstrun_privacy_notice": "Hysbysiad Preifatrwydd",
   "firstrun_continue_to_login": "Parhau",
-  "firstrun_skip_login": "Hepgor y cam hwn"
+  "firstrun_skip_login": "Hepgor y cam hwn",
+  "context_menu_title": "Agor y ddewislen",
+  "pocket_learn_more": "Dysgu Rhagor"
 };

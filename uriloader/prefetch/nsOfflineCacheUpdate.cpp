@@ -38,6 +38,7 @@
 #include "mozilla/Attributes.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
+#include "nsDiskCacheDeviceSQL.h"
 
 #include "nsXULAppAPI.h"
 
@@ -791,8 +792,7 @@ nsOfflineManifestItem::AddNamespace(uint32_t namespaceType,
     }
 
     nsCOMPtr<nsIApplicationCacheNamespace> ns =
-        do_CreateInstance(NS_APPLICATIONCACHENAMESPACE_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
+        new nsApplicationCacheNamespace();
 
     rv = ns->Init(namespaceType, namespaceSpec, data);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -2434,7 +2434,7 @@ nsOfflineCacheUpdate::AddObserver(nsIOfflineCacheUpdateObserver *aObserver,
     NS_ENSURE_TRUE(mState >= STATE_INITIALIZED, NS_ERROR_NOT_INITIALIZED);
 
     if (aHoldWeak) {
-        nsCOMPtr<nsIWeakReference> weakRef = do_GetWeakReference(aObserver);
+        nsWeakPtr weakRef = do_GetWeakReference(aObserver);
         mWeakObservers.AppendObject(weakRef);
     } else {
         mObservers.AppendObject(aObserver);

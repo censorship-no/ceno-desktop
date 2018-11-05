@@ -161,7 +161,7 @@ LoginManagerPromptFactory.prototype = {
           } catch (e) { /* Throw away exceptions caused by callback */ }
         }
         self._doAsyncPrompt();
-      }
+      },
     };
 
     var cancelDialogLimit = Services.prefs.getIntPref("prompts.authentication_dialog_abuse_limit");
@@ -247,7 +247,7 @@ LoginManagerPrompter.prototype = {
   _factory: null,
   _chromeWindow: null,
   _browser: null,
-  _opener: null,
+  _openerBrowser: null,
 
   __strBundle: null, // String bundle for L10N
   get _strBundle() {
@@ -687,7 +687,7 @@ LoginManagerPrompter.prototype = {
         authInfo: aAuthInfo,
         level: aLevel,
         inProgress: false,
-        prompter: this
+        prompter: this,
       };
 
       this._factory._asyncPrompts[hashKey] = asyncPrompt;
@@ -723,7 +723,7 @@ LoginManagerPrompter.prototype = {
       this._chromeWindow = win;
       this._browser = browser;
     }
-    this._opener = null;
+    this._openerBrowser = null;
     this._factory = aFactory || null;
 
     this.log("===== initialized =====");
@@ -733,17 +733,18 @@ LoginManagerPrompter.prototype = {
     this._browser = aBrowser;
   },
 
-  set opener(aOpener) {
-    this._opener = aOpener;
+  set openerBrowser(aOpenerBrowser) {
+    this._openerBrowser = aOpenerBrowser;
   },
 
   promptToSavePassword(aLogin) {
     this.log("promptToSavePassword");
     var notifyObj = this._getPopupNote() || this._getNotifyBox();
-    if (notifyObj)
+    if (notifyObj) {
       this._showSaveLoginNotification(notifyObj, aLogin);
-    else
+    } else {
       this._showSaveLoginDialog(aLogin);
+    }
   },
 
   /**
@@ -821,14 +822,7 @@ LoginManagerPrompter.prototype = {
                                                 : "PWMGR_PROMPT_UPDATE_ACTION";
     let histogram = Services.telemetry.getHistogramById(histogramName);
     histogram.add(PROMPT_DISPLAYED);
-
-    const promptType = type == "password-save" ? "save" : "update";
-    const flow_id = browser.ownerGlobal.gBrowser.getTabForBrowser(browser).linkedPanel;
-    Services.telemetry.recordEvent("savant", "pwmgr", "ask", promptType,
-                                  {
-                                    subcategory: "prompt",
-                                    flow_id,
-                                  });
+    Services.obs.notifyObservers(null, "weave:telemetry:histogram", histogramName);
 
     let chromeDoc = browser.ownerDocument;
 
@@ -957,25 +951,14 @@ LoginManagerPrompter.prototype = {
       accessKey: this._getLocalizedString(initialMsgNames.buttonAccessKey),
       callback: () => {
         histogram.add(PROMPT_ADD_OR_UPDATE);
-        const flow_id = browser.ownerGlobal.gBrowser.getTabForBrowser(browser).linkedPanel;
         if (histogramName == "PWMGR_PROMPT_REMEMBER_ACTION") {
           Services.obs.notifyObservers(null, "LoginStats:NewSavedPassword");
-          Services.telemetry.recordEvent("savant", "pwmgr", "save", null,
-                                        {
-                                          subcategory: "prompt",
-                                          flow_id,
-                                        });
-        } else if (histogramName == "PWMGR_PROMPT_UPDATE_ACTION") {
-          Services.telemetry.recordEvent("savant", "pwmgr", "update", null,
-                                        {
-                                          subcategory: "prompt",
-                                          flow_id,
-                                        });
         }
         readDataFromUI();
         persistData();
+        Services.obs.notifyObservers(null, "weave:telemetry:histogram", histogramName);
         browser.focus();
-      }
+      },
     };
 
     let secondaryActions = [{
@@ -983,8 +966,9 @@ LoginManagerPrompter.prototype = {
       accessKey: this._getLocalizedString(initialMsgNames.secondaryButtonAccessKey),
       callback: () => {
         histogram.add(PROMPT_NOTNOW);
+        Services.obs.notifyObservers(null, "weave:telemetry:histogram", histogramName);
         browser.focus();
-      }
+      },
     }];
     // Include a "Never for this site" button when saving a new password.
     if (type == "password-save") {
@@ -993,9 +977,10 @@ LoginManagerPrompter.prototype = {
         accessKey: this._getLocalizedString("notifyBarNeverRememberButtonAccessKey2"),
         callback: () => {
           histogram.add(PROMPT_NEVER);
+          Services.obs.notifyObservers(null, "weave:telemetry:histogram", histogramName);
           Services.logins.setLoginSavingEnabled(login.hostname, false);
           browser.focus();
-        }
+        },
       });
     }
 
@@ -1077,7 +1062,7 @@ LoginManagerPrompter.prototype = {
     // Ugh. We can't use the strings from the popup window, because they
     // have the access key marked in the string (eg "Mo&zilla"), along
     // with some weird rules for handling access keys that do not occur
-    // in the string, for L10N. See commonDialog.js's setLabelForNode().
+    // in the string, for L10N. See CommonDialog.jsm's setLabelForNode().
     var neverButtonText =
           this._getLocalizedString("notifyBarNeverRememberButtonText2");
     var neverButtonAccessKey =
@@ -1108,7 +1093,7 @@ LoginManagerPrompter.prototype = {
           popup:     null,
           callback(aNotifyObj, aButton) {
             Services.logins.addLogin(aLogin);
-          }
+          },
         },
 
         // "Never for this site" button
@@ -1118,7 +1103,7 @@ LoginManagerPrompter.prototype = {
           popup:     null,
           callback(aNotifyObj, aButton) {
             Services.logins.setLoginSavingEnabled(aLogin.hostname, false);
-          }
+          },
         },
 
         // "Not now" button
@@ -1126,8 +1111,8 @@ LoginManagerPrompter.prototype = {
           label:     notNowButtonText,
           accessKey: notNowButtonAccessKey,
           popup:     null,
-          callback() { /* NOP */ }
-        }
+          callback() { /* NOP */ },
+        },
       ];
 
       this._showLoginNotification(aNotifyObj, "password-save",
@@ -1285,7 +1270,7 @@ LoginManagerPrompter.prototype = {
           popup:     null,
           callback(aNotifyObj, aButton) {
             Services.logins._updateLogin(aOldLogin, aNewLogin);
-          }
+          },
         },
 
         // "No" button
@@ -1295,8 +1280,8 @@ LoginManagerPrompter.prototype = {
           popup:     null,
           callback(aNotifyObj, aButton) {
             // do nothing
-          }
-        }
+          },
+        },
       ];
 
       this._showLoginNotification(aNotifyObj, "password-change",
@@ -1413,33 +1398,19 @@ LoginManagerPrompter.prototype = {
   _getChromeWindow(aWindow) {
     // Handle non-e10s toolkit consumers.
     if (!Cu.isCrossProcessWrapper(aWindow)) {
-      let chromeWin = aWindow.docShell.chromeEventHandler.ownerGlobal;
+      let browser = aWindow.docShell.chromeEventHandler;
+      if (!browser) {
+        return null;
+      }
+
+      let chromeWin = browser.ownerGlobal;
       if (!chromeWin) {
         return null;
       }
 
-      // gBrowser only exists on some apps, like Firefox.
-      let tabbrowser = chromeWin.gBrowser ||
-        (typeof chromeWin.getBrowser == "function" ? chromeWin.getBrowser() : null);
-      // At least serve the chrome window if getBrowser()
-      // or getBrowserForContentWindow() are not supported.
-      if (!tabbrowser || typeof tabbrowser.getBrowserForContentWindow != "function") {
-        return { win: chromeWin };
-      }
-
-      let browser = tabbrowser.getBrowserForContentWindow(aWindow);
       return { win: chromeWin, browser };
     }
 
-    let windows = Services.wm.getEnumerator(null);
-    while (windows.hasMoreElements()) {
-      let win = windows.getNext();
-      let tabbrowser = win.gBrowser || win.getBrowser();
-      let browser = tabbrowser.getBrowserForContentWindow(aWindow);
-      if (browser) {
-        return { win, browser };
-      }
-    }
     return null;
   },
 
@@ -1447,7 +1418,7 @@ LoginManagerPrompter.prototype = {
     // Some sites pop up a temporary login window, which disappears
     // upon submission of credentials. We want to put the notification
     // bar in the opener window if this seems to be happening.
-    if (this._opener) {
+    if (this._openerBrowser) {
       let chromeDoc = this._chromeWindow.document.documentElement;
 
       // Check to see if the current window was opened with chrome
@@ -1456,11 +1427,14 @@ LoginManagerPrompter.prototype = {
       // assume it'll stick around and *don't* use the opener.
       if (chromeDoc.getAttribute("chromehidden") && !this._browser.canGoBack) {
         this.log("Using opener window for notification bar.");
-        return this._getChromeWindow(this._opener);
+        return { win: this._openerBrowser.ownerGlobal, browser: this._openerBrowser };
       }
     }
 
-    return { win: this._chromeWindow, browser: this._browser };
+    return {
+      win: this._chromeWindow,
+      browser: this._browser,
+    };
   },
 
   /**
@@ -1690,7 +1664,7 @@ LoginManagerPrompter.prototype = {
         this.callback.onAuthCancelled(this.context, false);
         this.callback = null;
         this.context = null;
-      }
+      },
     };
   },
 

@@ -5,9 +5,9 @@
 
 import json
 import os
+import posixpath
 import shutil
 import sys
-import tarfile
 import tempfile
 import zipfile
 import uuid
@@ -39,12 +39,6 @@ code_coverage_config_options = [
       "default": False,
       "help": "Whether test run should package and upload code coverage data."
       }],
-    [["--jsd-code-coverage"],
-     {"action": "store_true",
-      "dest": "jsd_code_coverage",
-      "default": False,
-      "help": "Whether JSDebugger code coverage should be run."
-      }],
     [["--java-code-coverage"],
      {"action": "store_true",
       "dest": "java_code_coverage",
@@ -60,12 +54,21 @@ class CodeCoverageMixin(SingleTestMixin):
     the resulting .gcda files and uploading them to blobber.
     """
     gcov_dir = None
+    grcov_dir = None
+    grcov_bin = None
     jsvm_dir = None
     prefix = None
     per_test_reports = {}
 
-    def __init__(self):
-        super(CodeCoverageMixin, self).__init__()
+    def __init__(self, **kwargs):
+        if mozinfo.os == 'linux' or mozinfo.os == 'mac':
+            self.grcov_bin = 'grcov'
+        elif mozinfo.os == 'win':
+            self.grcov_bin = 'grcov.exe'
+        else:
+            raise Exception('Unexpected OS: {}'.format(mozinfo.os))
+
+        super(CodeCoverageMixin, self).__init__(**kwargs)
 
     @property
     def code_coverage_enabled(self):
@@ -132,42 +135,25 @@ class CodeCoverageMixin(SingleTestMixin):
 
         # Download and extract class files from the build task.
         self.classfiles_dir = tempfile.mkdtemp()
-        url_to_classfiles = self.query_build_dir_url('target.geckoview_classfiles.zip')
-        classfiles_zip_path = os.path.join(self.classfiles_dir, 'target.geckoview_classfiles.zip')
-        self.download_file(url_to_classfiles, classfiles_zip_path)
-        with zipfile.ZipFile(classfiles_zip_path, 'r') as z:
-            z.extractall(self.classfiles_dir)
-        os.remove(classfiles_zip_path)
+        for archive in ['target.geckoview_classfiles.zip', 'target.app_classfiles.zip']:
+            url_to_classfiles = self.query_build_dir_url(archive)
+            classfiles_zip_path = os.path.join(self.classfiles_dir, archive)
+            self.download_file(url_to_classfiles, classfiles_zip_path)
+            with zipfile.ZipFile(classfiles_zip_path, 'r') as z:
+                z.extractall(self.classfiles_dir)
+            os.remove(classfiles_zip_path)
 
         # Create the directory where the emulator coverage file will be placed.
-        self.java_coverage_output_path = os.path.join(tempfile.mkdtemp(),
-                                                      'junit-coverage.ec')
-
-    def _download_grcov(self):
-        fetches_dir = os.environ.get('MOZ_FETCHES_DIR')
-        if fetches_dir and os.path.isfile(os.path.join(fetches_dir, 'grcov')):
-            self.grcov_dir = fetches_dir
-        else:
-            # Create the grcov directory, then download it.
-            # TODO: use the fetch-content script to download artifacts.
-            self.grcov_dir = tempfile.mkdtemp()
-            ARTIFACT_URL = 'https://queue.taskcluster.net/v1/task/{task}/artifacts/{artifact}'
-            for word in os.getenv('MOZ_FETCHES').split():
-                artifact, task = word.split('@', 1)
-                filename = os.path.basename(artifact)
-                url = ARTIFACT_URL.format(artifact=artifact, task=task)
-                self.download_file(url, parent_dir=self.grcov_dir)
-
-                with tarfile.open(os.path.join(self.grcov_dir, filename), 'r') as tar:
-                    tar.extractall(self.grcov_dir)
-                os.remove(os.path.join(self.grcov_dir, filename))
+        self.java_coverage_output_dir = tempfile.mkdtemp()
 
     @PostScriptAction('download-and-extract')
     def setup_coverage_tools(self, action, success=None):
         if not self.code_coverage_enabled and not self.java_code_coverage_enabled:
             return
 
-        self._download_grcov()
+        self.grcov_dir = os.environ['MOZ_FETCHES_DIR']
+        if not os.path.isfile(os.path.join(self.grcov_dir, self.grcov_bin)):
+            self.fetch_content()
 
         if self.code_coverage_enabled:
             self._setup_cpp_js_coverage_tools()
@@ -266,11 +252,12 @@ class CodeCoverageMixin(SingleTestMixin):
         self.gcov_dir = tempfile.mkdtemp()
         env['GCOV_PREFIX'] = self.gcov_dir
 
-        # Set the GCOV directory where counters will be dumped in per-test mode.
+        # Set the GCOV/JSVM directories where counters will be dumped in per-test mode.
         # Resetting/dumping is only available on Linux for the time being
         # (https://bugzilla.mozilla.org/show_bug.cgi?id=1471576).
         if self.per_test_coverage and not is_baseline_test and self._is_linux():
             env['GCOV_RESULTS_DIR'] = tempfile.mkdtemp()
+            env['JSVM_RESULTS_DIR'] = tempfile.mkdtemp()
 
         # Set JSVM directory.
         self.jsvm_dir = tempfile.mkdtemp()
@@ -307,7 +294,7 @@ class CodeCoverageMixin(SingleTestMixin):
 
         # Run grcov on the zipped .gcno and .gcda files.
         grcov_command = [
-            os.path.join(self.grcov_dir, 'grcov'),
+            os.path.join(self.grcov_dir, self.grcov_bin),
             '-t', output_format,
             '-p', self.prefix,
             '--ignore-dir', 'gcc*',
@@ -349,14 +336,23 @@ class CodeCoverageMixin(SingleTestMixin):
 
     def add_per_test_coverage_report(self, env, suite, test):
         gcov_dir = env['GCOV_RESULTS_DIR'] if 'GCOV_RESULTS_DIR' in env else self.gcov_dir
+        jsvm_dir = env['JSVM_RESULTS_DIR'] if 'JSVM_RESULTS_DIR' in env else self.jsvm_dir
 
         grcov_file = self.parse_coverage_artifacts(
-            gcov_dir, self.jsvm_dir, merge=True, output_format='coveralls',
+            gcov_dir, jsvm_dir, merge=True, output_format='coveralls',
             filter_covered=True,
         )
 
         report_file = str(uuid.uuid4()) + '.json'
         shutil.move(grcov_file, report_file)
+
+        # Get the test path relative to topsrcdir.
+        # This mapping is constructed by self.find_modified_tests().
+        test = self.test_src_path.get(test.replace(os.sep, posixpath.sep), test)
+
+        # Log a warning if the test path is still an absolute path.
+        if os.path.isabs(test):
+            self.warn("Found absolute path for test: {}".format(test))
 
         if suite not in self.per_test_reports:
             self.per_test_reports[suite] = {}
@@ -364,9 +360,11 @@ class CodeCoverageMixin(SingleTestMixin):
         self.per_test_reports[suite][test] = report_file
 
         if 'GCOV_RESULTS_DIR' in env:
-            # In this case, parse_coverage_artifacts has removed GCOV_RESULTS_DIR
-            # so we need to remove GCOV_PREFIX.
+            assert 'JSVM_RESULTS_DIR' in env
+            # In this case, parse_coverage_artifacts has removed GCOV_RESULTS_DIR and
+            # JSVM_RESULTS_DIR so we need to remove GCOV_PREFIX and JS_CODE_COVERAGE_OUTPUT_DIR.
             shutil.rmtree(self.gcov_dir)
+            shutil.rmtree(self.jsvm_dir)
 
     def is_covered(self, sf):
         # For C/C++ source files, we can consider a file as being uncovered
@@ -388,23 +386,6 @@ class CodeCoverageMixin(SingleTestMixin):
     @PostScriptAction('run-tests')
     def _package_coverage_data(self, action, success=None):
         dirs = self.query_abs_dirs()
-
-        if self.jsd_code_coverage_enabled:
-            # Setup the command for compression
-            jsdcov_dir = dirs['abs_blob_upload_dir']
-            zipFile = os.path.join(jsdcov_dir, "jsdcov_artifacts.zip")
-
-            self.info("Beginning compression of JSDCov artifacts...")
-            with zipfile.ZipFile(zipFile, 'w', zipfile.ZIP_DEFLATED) as z:
-                for filename in os.listdir(jsdcov_dir):
-                    if filename.startswith("jscov") and filename.endswith(".json"):
-                        path = os.path.join(jsdcov_dir, filename)
-                        z.write(path, filename)
-                        # Delete already compressed JSCov artifacts.
-                        os.remove(path)
-
-            self.info("Completed compression of JSDCov artifacts!")
-            self.info("Path to JSDCov compressed artifacts: " + zipFile)
 
         if not self.code_coverage_enabled:
             return
@@ -428,7 +409,7 @@ class CodeCoverageMixin(SingleTestMixin):
                     with open(grcov_file, 'r') as f:
                         data = json.load(f)
 
-                    if suite in test:
+                    if suite in os.path.split(test)[-1]:
                         baseline_tests_suite_cov[suite] = data
                     else:
                         _, baseline_filetype = os.path.splitext(test)
@@ -512,22 +493,26 @@ class CodeCoverageMixin(SingleTestMixin):
             return
 
         # If the emulator became unresponsive, the task has failed and we don't
-        # have the coverage report file, so stop running this function and
+        # have any coverage report file, so stop running this function and
         # allow the task to be retried automatically.
-        if not success and not os.path.exists(self.java_coverage_output_path):
+        if not success and not os.listdir(self.java_coverage_output_dir):
             return
+
+        report_files = [os.path.join(self.java_coverage_output_dir, f)
+                        for f in os.listdir(self.java_coverage_output_dir)]
+        assert len(report_files) > 0, "JaCoCo coverage data files were not found."
 
         dirs = self.query_abs_dirs()
         xml_path = tempfile.mkdtemp()
-        jacoco_command = ['java', '-jar', self.jacoco_jar, 'report',
-                          self.java_coverage_output_path,
-                          '--classfiles', self.classfiles_dir,
-                          '--name', 'geckoview-junit',
-                          '--xml', os.path.join(xml_path, 'geckoview-junit.xml')]
+        jacoco_command = ['java', '-jar', self.jacoco_jar, 'report'] + \
+            report_files + \
+            ['--classfiles', self.classfiles_dir,
+             '--name', 'geckoview-junit',
+             '--xml', os.path.join(xml_path, 'geckoview-junit.xml')]
         self.run_command(jacoco_command, halt_on_failure=True)
 
         grcov_command = [
-            os.path.join(self.grcov_dir, 'grcov'),
+            os.path.join(self.grcov_dir, self.grcov_bin),
             '-t', 'lcov',
             xml_path,
         ]

@@ -55,11 +55,11 @@
 
 #include "nsIAppShellService.h"
 #include "nsIAppStartup.h"
-#include "nsIAppStartupNotifier.h"
+#include "nsAppStartupNotifier.h"
 #include "nsIMutableArray.h"
 #include "nsICategoryManager.h"
 #include "nsIChromeRegistry.h"
-#include "nsICommandLineRunner.h"
+#include "nsCommandLine.h"
 #include "nsIComponentManager.h"
 #include "nsIComponentRegistrar.h"
 #include "nsIConsoleService.h"
@@ -180,7 +180,7 @@
 #endif
 
 // for X remote support
-#ifdef MOZ_ENABLE_XREMOTE
+#if defined(MOZ_WIDGET_GTK)
 #include "XRemoteClient.h"
 #include "nsIRemoteService.h"
 #include "nsProfileLock.h"
@@ -560,17 +560,6 @@ ProcessDDE(nsINativeAppSupport* aNative, bool aWait)
 }
 #endif
 
-/**
- * Determines if there is support for showing the profile manager
- *
- * @return true in all environments
-*/
-static bool
-CanShowProfileManager()
-{
-  return true;
-}
-
 bool gSafeMode = false;
 
 /**
@@ -795,9 +784,10 @@ SYNC_ENUMS(IPDLUNITTEST, IPDLUnitTest)
 SYNC_ENUMS(GMPLUGIN, GMPlugin)
 SYNC_ENUMS(GPU, GPU)
 SYNC_ENUMS(PDFIUM, PDFium)
+SYNC_ENUMS(VR, VR)
 
 // .. and ensure that that is all of them:
-static_assert(GeckoProcessType_PDFium + 1 == GeckoProcessType_End,
+static_assert(GeckoProcessType_VR + 1 == GeckoProcessType_End,
               "Did not find the final GeckoProcessType");
 
 NS_IMETHODIMP
@@ -1127,7 +1117,7 @@ nsXULAppInfo::SetEnabled(bool aEnabled)
       return NS_ERROR_FAILURE;
     }
 
-    nsCOMPtr<nsIFile> xreBinDirectory = do_QueryInterface(greBinDir);
+    nsCOMPtr<nsIFile> xreBinDirectory = greBinDir;
     if (!xreBinDirectory) {
       return NS_ERROR_FAILURE;
     }
@@ -1235,7 +1225,40 @@ NS_IMETHODIMP
 nsXULAppInfo::AnnotateCrashReport(const nsACString& key,
                                   const nsACString& data)
 {
-  return CrashReporter::AnnotateCrashReport(key, data);
+  CrashReporter::Annotation annotation;
+
+  if (!AnnotationFromString(annotation, PromiseFlatCString(key).get())) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  return CrashReporter::AnnotateCrashReport(annotation, data);
+}
+
+NS_IMETHODIMP
+nsXULAppInfo::RemoveCrashReportAnnotation(const nsACString& key)
+{
+  CrashReporter::Annotation annotation;
+
+  if (!AnnotationFromString(annotation, PromiseFlatCString(key).get())) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  return CrashReporter::RemoveCrashReportAnnotation(annotation);
+}
+
+NS_IMETHODIMP
+nsXULAppInfo::IsAnnotationWhitelistedForPing(const nsACString& aValue,
+                                             bool* aIsWhitelisted)
+{
+  CrashReporter::Annotation annotation;
+
+  if (!AnnotationFromString(annotation, PromiseFlatCString(aValue).get())) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  *aIsWhitelisted = CrashReporter::IsAnnotationWhitelistedForPing(annotation);
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1376,11 +1399,11 @@ public:
   nsresult Initialize();
   nsresult SetWindowCreator(nsINativeAppSupport* native);
 
-  static nsresult CreateAppSupport(nsISupports* aOuter, REFNSIID aIID, void** aResult);
-
 private:
   nsIServiceManager* mServiceManager;
   static nsINativeAppSupport* gNativeAppSupport;
+
+  friend already_AddRefed<nsINativeAppSupport> NS_GetNativeAppSupport();
 };
 
 ScopedXPCOMStartup::~ScopedXPCOMStartup()
@@ -1412,10 +1435,6 @@ ScopedXPCOMStartup::~ScopedXPCOMStartup()
 #define APPINFO_CID \
   { 0x95d89e3e, 0xa169, 0x41a3, { 0x8e, 0x56, 0x71, 0x99, 0x78, 0xe1, 0x5b, 0x12 } }
 
-// {0C4A446C-EE82-41f2-8D04-D366D2C7A7D4}
-static const nsCID kNativeAppSupportCID =
-  { 0xc4a446c, 0xee82, 0x41f2, { 0x8d, 0x4, 0xd3, 0x66, 0xd2, 0xc7, 0xa7, 0xd4 } };
-
 // {5F5E59CE-27BC-47eb-9D1F-B09CA9049836}
 static const nsCID kProfileServiceCID =
   { 0x5f5e59ce, 0x27bc, 0x47eb, { 0x9d, 0x1f, 0xb0, 0x9c, 0xa9, 0x4, 0x98, 0x36 } };
@@ -1433,7 +1452,6 @@ NS_DEFINE_NAMED_CID(APPINFO_CID);
 static const mozilla::Module::CIDEntry kXRECIDs[] = {
   { &kAPPINFO_CID, false, nullptr, AppInfoConstructor },
   { &kProfileServiceCID, false, ProfileServiceFactoryConstructor, nullptr },
-  { &kNativeAppSupportCID, false, nullptr, ScopedXPCOMStartup::CreateAppSupport },
   { nullptr }
 };
 
@@ -1444,7 +1462,6 @@ static const mozilla::Module::ContractIDEntry kXREContracts[] = {
   { NS_CRASHREPORTER_CONTRACTID, &kAPPINFO_CID },
 #endif // MOZ_CRASHREPORTER
   { NS_PROFILESERVICE_CONTRACTID, &kProfileServiceCID },
-  { NS_NATIVEAPPSUPPORT_CONTRACTID, &kNativeAppSupportCID },
   { nullptr }
 };
 
@@ -1548,16 +1565,14 @@ ScopedXPCOMStartup::SetWindowCreator(nsINativeAppSupport* native)
   return wwatch->SetWindowCreator(creator);
 }
 
-/* static */ nsresult
-ScopedXPCOMStartup::CreateAppSupport(nsISupports* aOuter, REFNSIID aIID, void** aResult)
+/* static */ already_AddRefed<nsINativeAppSupport>
+NS_GetNativeAppSupport()
 {
-  if (aOuter)
-    return NS_ERROR_NO_AGGREGATION;
+  if (!ScopedXPCOMStartup::gNativeAppSupport) {
+    return nullptr;
+  }
 
-  if (!gNativeAppSupport)
-    return NS_ERROR_NOT_INITIALIZED;
-
-  return gNativeAppSupport->QueryInterface(aIID, aResult);
+  return do_AddRef(ScopedXPCOMStartup::gNativeAppSupport);
 }
 
 nsINativeAppSupport* ScopedXPCOMStartup::gNativeAppSupport;
@@ -1572,10 +1587,7 @@ static void DumpArbitraryHelp()
     ScopedXPCOMStartup xpcom;
     xpcom.Initialize();
 
-    nsCOMPtr<nsICommandLineRunner> cmdline
-      (do_CreateInstance("@mozilla.org/toolkit/command-line;1"));
-    if (!cmdline)
-      return;
+    nsCOMPtr<nsICommandLineRunner> cmdline(new nsCommandLine());
 
     nsCString text;
     rv = cmdline->GetHelpText(text);
@@ -1636,48 +1648,6 @@ DumpHelp()
   DumpArbitraryHelp();
 }
 
-#if defined(DEBUG) && defined(XP_WIN)
-#ifdef DEBUG_warren
-#define _CRTDBG_MAP_ALLOC
-#endif
-// Set a CRT ReportHook function to capture and format MSCRT
-// warnings, errors and assertions.
-// See http://msdn.microsoft.com/en-US/library/74kabxyx(v=VS.80).aspx
-#include <stdio.h>
-#include <crtdbg.h>
-#include "mozilla/mozalloc_abort.h"
-static int MSCRTReportHook( int aReportType, char *aMessage, int *oReturnValue)
-{
-  *oReturnValue = 0; // continue execution
-
-  // Do not use fprintf or other functions which may allocate
-  // memory from the heap which may be corrupted. Instead,
-  // use fputs to output the leading portion of the message
-  // and use mozalloc_abort to emit the remainder of the
-  // message.
-
-  switch(aReportType) {
-  case 0:
-    fputs("\nWARNING: CRT WARNING", stderr);
-    fputs(aMessage, stderr);
-    fputs("\n", stderr);
-    break;
-  case 1:
-    fputs("\n###!!! ABORT: CRT ERROR ", stderr);
-    mozalloc_abort(aMessage);
-    break;
-  case 2:
-    fputs("\n###!!! ABORT: CRT ASSERT ", stderr);
-    mozalloc_abort(aMessage);
-    break;
-  }
-
-  // do not invoke the debugger
-  return 1;
-}
-
-#endif
-
 static inline void
 DumpVersion()
 {
@@ -1689,7 +1659,7 @@ DumpVersion()
   printf("\n");
 }
 
-#ifdef MOZ_ENABLE_XREMOTE
+#if defined(MOZ_WIDGET_GTK)
 static RemoteResult
 ParseRemoteCommandLine(nsCString& program,
                        const char** profile,
@@ -1759,7 +1729,7 @@ StartRemoteClient(const char* aDesktopStartupID,
 
   return REMOTE_FOUND;
 }
-#endif // MOZ_ENABLE_XREMOTE
+#endif // MOZ_WIDGET_GTK
 
 void
 XRE_InitOmnijar(nsIFile* greOmni, nsIFile* appOmni)
@@ -1794,7 +1764,7 @@ RegisterApplicationRestartChanged(const char* aPref, void* aData) {
     // Excludes argv[0] because RegisterApplicationRestart adds the
     // executable name, replace that temporarily with -os-restarted
     char* exeName = gRestartArgv[0];
-    gRestartArgv[0] = "-os-restarted";
+    gRestartArgv[0] = const_cast<char*>("-os-restarted");
     wchar_t** restartArgvConverted =
       AllocConvertUTF8toUTF16Strings(gRestartArgc, gRestartArgv);
     gRestartArgv[0] = exeName;
@@ -1839,6 +1809,9 @@ static nsresult LaunchChild(nsINativeAppSupport* aNative,
   }
 
   SaveToEnv("MOZ_LAUNCHED_CHILD=1");
+#if defined(MOZ_LAUNCHER_PROCESS)
+  SaveToEnv("MOZ_LAUNCHER_PROCESS=1");
+#endif // defined(MOZ_LAUNCHER_PROCESS)
 
 #if !defined(MOZ_WIDGET_ANDROID) // Android has separate restart code.
 #if defined(XP_MACOSX)
@@ -2099,15 +2072,12 @@ static ReturnAbortOnError
 ShowProfileManager(nsIToolkitProfileService* aProfileSvc,
                    nsINativeAppSupport* aNative)
 {
-  if (!CanShowProfileManager()) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
   nsresult rv;
 
   nsCOMPtr<nsIFile> profD, profLD;
   char16_t* profileNamePtr;
   nsAutoCString profileName;
+  bool offline = false;
 
   {
     ScopedXPCOMStartup xpcom;
@@ -2161,6 +2131,10 @@ ShowProfileManager(nsIToolkitProfileService* aProfileSvc,
       rv = ioParamBlock->GetInt(0, &dialogConfirmed);
       if (NS_FAILED(rv) || dialogConfirmed == 0) return NS_ERROR_ABORT;
 
+      int32_t startOffline;
+      rv = ioParamBlock->GetInt(1, &startOffline);
+      offline = NS_SUCCEEDED(rv) && startOffline == 1;
+
       nsCOMPtr<nsIProfileLock> lock;
       rv = dlgArray->QueryElementAt(0, NS_GET_IID(nsIProfileLock),
                                     getter_AddRefs(lock));
@@ -2175,7 +2149,7 @@ ShowProfileManager(nsIToolkitProfileService* aProfileSvc,
       rv = ioParamBlock->GetString(0, &profileNamePtr);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      CopyUTF16toUTF8(profileNamePtr, profileName);
+      CopyUTF16toUTF8(MakeStringSpan(profileNamePtr), profileName);
       free(profileNamePtr);
 
       lock->Unlock();
@@ -2186,8 +2160,6 @@ ShowProfileManager(nsIToolkitProfileService* aProfileSvc,
   SaveFileToEnv("XRE_PROFILE_LOCAL_PATH", profLD);
   SaveWordToEnv("XRE_PROFILE_NAME", profileName);
 
-  bool offline = false;
-  aProfileSvc->GetStartOffline(&offline);
   if (offline) {
     SaveToEnv("XRE_START_OFFLINE=1");
   }
@@ -2451,9 +2423,7 @@ SelectProfile(nsIProfileLock* *aResult, nsIToolkitProfileService* aProfileSvc, n
       return NS_ERROR_FAILURE;
     }
 
-    if (CanShowProfileManager()) {
-      return ShowProfileManager(aProfileSvc, aNative);
-    }
+    return ShowProfileManager(aProfileSvc, aNative);
   }
   if (ar) {
     ar = CheckArg("osint");
@@ -2503,9 +2473,7 @@ SelectProfile(nsIProfileLock* *aResult, nsIToolkitProfileService* aProfileSvc, n
       return ProfileLockedDialog(profile, unlocker, aNative, aResult);
     }
 
-    if (CanShowProfileManager()) {
-      return ShowProfileManager(aProfileSvc, aNative);
-    }
+    return ShowProfileManager(aProfileSvc, aNative);
   }
 
   ar = CheckArg("profilemanager", nullptr, CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
@@ -2513,7 +2481,7 @@ SelectProfile(nsIProfileLock* *aResult, nsIToolkitProfileService* aProfileSvc, n
     PR_fprintf(PR_STDERR, "Error: argument --profilemanager is invalid when argument --osint is specified\n");
     return NS_ERROR_FAILURE;
   }
-  if (ar == ARG_FOUND && CanShowProfileManager()) {
+  if (ar == ARG_FOUND) {
     return ShowProfileManager(aProfileSvc, aNative);
   }
 
@@ -2566,7 +2534,7 @@ SelectProfile(nsIProfileLock* *aResult, nsIToolkitProfileService* aProfileSvc, n
   }
 
   bool useDefault = true;
-  if (count > 1 && CanShowProfileManager()) {
+  if (count > 1) {
     aProfileSvc->GetStartWithLastProfile(&useDefault);
   }
 
@@ -2632,10 +2600,6 @@ SelectProfile(nsIProfileLock* *aResult, nsIToolkitProfileService* aProfileSvc, n
 
       return ProfileLockedDialog(profile, unlocker, aNative, aResult);
     }
-  }
-
-  if (!CanShowProfileManager()) {
-    return NS_ERROR_FAILURE;
   }
 
   return ShowProfileManager(aProfileSvc, aNative);
@@ -3055,10 +3019,8 @@ public:
   XREMain() :
     mStartOffline(false)
     , mShuttingDown(false)
-#ifdef MOZ_ENABLE_XREMOTE
-    , mDisableRemote(false)
-#endif
 #if defined(MOZ_WIDGET_GTK)
+    , mDisableRemote(false)
     , mGdkDisplay(nullptr)
 #endif
   {};
@@ -3080,7 +3042,7 @@ public:
   nsCOMPtr<nsIFile> mProfD;
   nsCOMPtr<nsIFile> mProfLD;
   nsCOMPtr<nsIProfileLock> mProfileLock;
-#ifdef MOZ_ENABLE_XREMOTE
+#if defined(MOZ_WIDGET_GTK)
   nsCOMPtr<nsIRemoteService> mRemoteService;
   nsProfileLock mRemoteLock;
   nsCOMPtr<nsIFile> mRemoteLockDir;
@@ -3095,7 +3057,7 @@ public:
 
   bool mStartOffline;
   bool mShuttingDown;
-#ifdef MOZ_ENABLE_XREMOTE
+#if defined(MOZ_WIDGET_GTK)
   bool mDisableRemote;
 #endif
 
@@ -3224,6 +3186,17 @@ XREMain::XRE_mainInit(bool* aExitFlag)
     }
     ChaosMode::SetChaosFeature(feature);
   }
+
+#ifdef MOZ_ASAN_REPORTER
+  // In ASan Reporter builds, we enable certain chaos features by default unless
+  // the user explicitly requests a particular set of features.
+  if (!PR_GetEnv("MOZ_CHAOSMODE")) {
+    ChaosMode::SetChaosFeature(static_cast<ChaosFeature>(
+                               ChaosFeature::ThreadScheduling
+                               | ChaosFeature::NetworkScheduling
+                               | ChaosFeature::TimerScheduling));
+  }
+#endif
 
   if (ChaosMode::isActive(ChaosFeature::Any)) {
     printf_stderr("*** You are running in chaos test mode. See ChaosMode.h. ***\n");
@@ -3390,39 +3363,39 @@ XREMain::XRE_mainInit(bool* aExitFlag)
       CrashReporter::SetServerURL(nsDependentCString(mAppData->crashReporterURL));
 
     // We overwrite this once we finish starting up.
-    CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("StartupCrash"),
-                                       NS_LITERAL_CSTRING("1"));
+    CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::StartupCrash,
+                                       true);
 
     // pass some basic info from the app data
     if (mAppData->vendor)
-      CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("Vendor"),
+      CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::Vendor,
                                          nsDependentCString(mAppData->vendor));
     if (mAppData->name)
-      CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("ProductName"),
+      CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::ProductName,
                                          nsDependentCString(mAppData->name));
     if (mAppData->ID)
-      CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("ProductID"),
+      CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::ProductID,
                                          nsDependentCString(mAppData->ID));
     if (mAppData->version)
-      CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("Version"),
+      CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::Version,
                                          nsDependentCString(mAppData->version));
     if (mAppData->buildID)
-      CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("BuildID"),
+      CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::BuildID,
                                          nsDependentCString(mAppData->buildID));
 
     nsDependentCString releaseChannel(NS_STRINGIFY(MOZ_UPDATE_CHANNEL));
-    CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("ReleaseChannel"),
-                                       releaseChannel);
+    CrashReporter::AnnotateCrashReport(
+      CrashReporter::Annotation::ReleaseChannel, releaseChannel);
 #ifdef MOZ_LINKER
-    CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("CrashAddressLikelyWrong"),
-                                       IsSignalHandlingBroken() ? NS_LITERAL_CSTRING("1")
-                                                                : NS_LITERAL_CSTRING("0"));
+    CrashReporter::AnnotateCrashReport(
+      CrashReporter::Annotation::CrashAddressLikelyWrong,
+      IsSignalHandlingBroken());
 #endif
 
 #ifdef XP_WIN
     nsAutoString appInitDLLs;
     if (widget::WinUtils::GetAppInitDLLs(appInitDLLs)) {
-      CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AppInitDLLs"),
+      CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::AppInitDLLs,
                                          NS_ConvertUTF16toUTF8(appInitDLLs));
     }
 #endif
@@ -3583,16 +3556,15 @@ XREMain::XRE_mainInit(bool* aExitFlag)
     }
 
     if (cpuUpdateRevision > 0) {
-      CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("CPUMicrocodeVersion"),
-                                         nsPrintfCString("0x%x",
-                                                         cpuUpdateRevision));
+      CrashReporter::AnnotateCrashReport(
+        CrashReporter::Annotation::CPUMicrocodeVersion,
+        nsPrintfCString("0x%x", cpuUpdateRevision));
     }
   }
 #endif
 
-    CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("SafeMode"),
-                                       gSafeMode ? NS_LITERAL_CSTRING("1") :
-                                                   NS_LITERAL_CSTRING("0"));
+    CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::SafeMode,
+                                       gSafeMode);
 
   // Handle --no-remote and --new-instance command line arguments. Setup
   // the environment to better accommodate other components and various
@@ -3657,12 +3629,57 @@ XREMain::XRE_mainInit(bool* aExitFlag)
 }
 
 #ifdef XP_WIN
+static bool QueryOneWMIProperty(IWbemServices* aServices,
+                                const wchar_t* aWMIClass,
+                                const wchar_t* aProperty,
+                                VARIANT* aResult)
+{
+  RefPtr<IEnumWbemClassObject> enumerator;
+
+  _bstr_t query(L"SELECT * FROM ");
+  query += _bstr_t(aWMIClass);
+
+  HRESULT hr = aServices->ExecQuery(_bstr_t(L"WQL"), query,
+                                    WBEM_FLAG_FORWARD_ONLY |
+                                      WBEM_FLAG_RETURN_IMMEDIATELY,
+                                    nullptr, getter_AddRefs(enumerator));
+
+  if (FAILED(hr) || !enumerator) {
+    return false;
+  }
+
+  RefPtr<IWbemClassObject> classObject;
+  ULONG results;
+
+  hr = enumerator->Next(WBEM_INFINITE, 1, getter_AddRefs(classObject), &results);
+
+  if (FAILED(hr) || results == 0) {
+    return false;
+  }
+
+  hr = classObject->Get(aProperty, 0, aResult, 0, 0);
+
+  return SUCCEEDED(hr);
+}
+
 /**
- * Uses WMI to read some manufacturer information that may be useful for
- * diagnosing hardware-specific crashes. This function is best-effort; failures
- * shouldn't burden the caller. COM must be initialized before calling.
+ * Uses WMI to read some information that may be useful for diagnosing
+ * crashes. This function is best-effort; failures shouldn't burden the
+ * caller. COM must be initialized before calling.
  */
-static void AnnotateSystemManufacturer()
+
+static const char kMemoryErrorCorrectionValues[][15] = {
+  "Reserved", // 0
+  "Other", // 1
+  "Unknown", // 2
+  "None", // 3
+  "Parity", // 4
+  "Single-bit ECC", // 5
+  "Multi-bit ECC", // 6
+  "CRC" // 7
+};
+
+static void AnnotateWMIData()
 {
   RefPtr<IWbemLocator> locator;
 
@@ -3690,39 +3707,39 @@ static void AnnotateSystemManufacturer()
     return;
   }
 
-  RefPtr<IEnumWbemClassObject> enumerator;
-
-  hr = services->ExecQuery(_bstr_t(L"WQL"), _bstr_t(L"SELECT * FROM Win32_BIOS"),
-                           WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
-                           nullptr, getter_AddRefs(enumerator));
-
-  if (FAILED(hr) || !enumerator) {
-    return;
-  }
-
-  RefPtr<IWbemClassObject> classObject;
-  ULONG results;
-
-  hr = enumerator->Next(WBEM_INFINITE, 1, getter_AddRefs(classObject), &results);
-
-  if (FAILED(hr) || results == 0) {
-    return;
-  }
 
   VARIANT value;
   VariantInit(&value);
 
-  hr = classObject->Get(L"Manufacturer", 0, &value, 0, 0);
+  // Annotate information about the system manufacturer.
+  if (QueryOneWMIProperty(services, L"Win32_BIOS", L"Manufacturer", &value) &&
+      V_VT(&value) == VT_BSTR) {
+    CrashReporter::AnnotateCrashReport(
+      CrashReporter::Annotation::BIOS_Manufacturer,
+      NS_ConvertUTF16toUTF8(V_BSTR(&value)));
+  }
 
-  if (SUCCEEDED(hr) && V_VT(&value) == VT_BSTR) {
-    CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("BIOS_Manufacturer"),
-                                       NS_ConvertUTF16toUTF8(V_BSTR(&value)));
+  VariantClear(&value);
+
+  // Annotate information about type of memory error correction.
+  if (QueryOneWMIProperty(services, L"Win32_PhysicalMemoryArray",
+                          L"MemoryErrorCorrection", &value) &&
+      V_VT(&value) == VT_I4) {
+    long valueInt = V_I4(&value);
+    nsCString valueString;
+    if (valueInt < 0 || valueInt >= long(ArrayLength(kMemoryErrorCorrectionValues))) {
+      valueString.AssignLiteral("Unexpected value");
+    } else {
+      valueString.AssignASCII(kMemoryErrorCorrectionValues[valueInt]);
+    }
+    CrashReporter::AnnotateCrashReport(
+      CrashReporter::Annotation::MemoryErrorCorrection, valueString);
   }
 
   VariantClear(&value);
 }
 
-static void PR_CALLBACK AnnotateSystemManufacturer_ThreadStart(void*)
+static void PR_CALLBACK AnnotateWMIData_ThreadStart(void*)
 {
   HRESULT hr = CoInitialize(nullptr);
 
@@ -3730,7 +3747,7 @@ static void PR_CALLBACK AnnotateSystemManufacturer_ThreadStart(void*)
     return;
   }
 
-  AnnotateSystemManufacturer();
+  AnnotateWMIData();
 
   CoUninitialize();
 }
@@ -3892,7 +3909,7 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
   HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
 #endif /* XP_WIN */
 
-#if defined(MOZ_WIDGET_GTK) || defined(MOZ_ENABLE_XREMOTE)
+#if defined(MOZ_WIDGET_GTK)
   // Stash DESKTOP_STARTUP_ID in malloc'ed memory because gtk_init will clear it.
 #define HAVE_DESKTOP_STARTUP_ID
   const char* desktopStartupIDEnv = PR_GetEnv("DESKTOP_STARTUP_ID");
@@ -3979,10 +3996,18 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
       saveDisplayArg = true;
     }
 
+    bool disableWayland = true;
+#if defined(MOZ_WAYLAND)
+    // Make X11 backend the default one.
+    // Enable Wayland backend only when GDK_BACKEND is set and
+    // Gtk+ >= 3.22 where we can expect recent enough
+    // compositor & libwayland interface.
+    disableWayland = (PR_GetEnv("GDK_BACKEND") == nullptr) ||
+                     (gtk_check_version(3, 22, 0) != nullptr);
+#endif
     // On Wayland disabled builds read X11 DISPLAY env exclusively
     // and don't care about different displays.
-#if !defined(MOZ_WAYLAND)
-    if (!display_name) {
+    if (disableWayland && !display_name) {
       display_name = PR_GetEnv("DISPLAY");
       if (!display_name) {
         PR_fprintf(PR_STDERR,
@@ -3990,7 +4015,6 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
         return 1;
       }
     }
-#endif
 
     if (display_name) {
       mGdkDisplay = gdk_display_open(display_name);
@@ -4022,7 +4046,7 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
     mDisableRemote = true;
   }
 #endif
-#ifdef MOZ_ENABLE_XREMOTE
+#if defined(MOZ_WIDGET_GTK)
   // handle --remote now that xpcom is fired up
   bool newInstance;
   {
@@ -4360,7 +4384,7 @@ void AddSandboxAnnotations()
   levelString.AppendInt(level);
 
   CrashReporter::AnnotateCrashReport(
-    NS_LITERAL_CSTRING("ContentSandboxLevel"), levelString);
+    CrashReporter::Annotation::ContentSandboxLevel, levelString);
 
   // Include whether or not this instance is capable of content sandboxing
   bool sandboxCapable = false;
@@ -4373,11 +4397,13 @@ void AddSandboxAnnotations()
   sandboxCapable = true;
 #elif defined(XP_LINUX)
   sandboxCapable = SandboxInfo::Get().CanSandboxContent();
+#elif defined(__OpenBSD__)
+  sandboxCapable = true;
+  StartOpenBSDSandbox(GeckoProcessType_Default);
 #endif
 
   CrashReporter::AnnotateCrashReport(
-    NS_LITERAL_CSTRING("ContentSandboxCapable"),
-    sandboxCapable ? NS_LITERAL_CSTRING("1") : NS_LITERAL_CSTRING("0"));
+    CrashReporter::Annotation::ContentSandboxCapable, sandboxCapable);
 }
 #endif /* MOZ_CONTENT_SANDBOX */
 
@@ -4431,23 +4457,25 @@ XREMain::XRE_mainRun()
       nsAutoCString sval;
       rv = defaultPrefBranch->GetCharPref("app.update.channel", sval);
       if (NS_SUCCEEDED(rv)) {
-        CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("ReleaseChannel"),
-                                            sval);
+        CrashReporter::AnnotateCrashReport(
+          CrashReporter::Annotation::ReleaseChannel, sval);
       }
     }
   }
   // Needs to be set after xpcom initialization.
-  CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("FramePoisonBase"),
-                                     nsPrintfCString("%.16" PRIu64, uint64_t(gMozillaPoisonBase)));
-  CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("FramePoisonSize"),
-                                     nsPrintfCString("%" PRIu32, uint32_t(gMozillaPoisonSize)));
+  CrashReporter::AnnotateCrashReport(
+    CrashReporter::Annotation::FramePoisonBase,
+    nsPrintfCString("%.16" PRIu64, uint64_t(gMozillaPoisonBase)));
+  CrashReporter::AnnotateCrashReport(
+    CrashReporter::Annotation::FramePoisonSize,
+    uint32_t(gMozillaPoisonSize));
 
   bool includeContextHeap =
     Preferences::GetBool("toolkit.crashreporter.include_context_heap", false);
   CrashReporter::SetIncludeContextHeap(includeContextHeap);
 
 #ifdef XP_WIN
-  PR_CreateThread(PR_USER_THREAD, AnnotateSystemManufacturer_ThreadStart, 0,
+  PR_CreateThread(PR_USER_THREAD, AnnotateWMIData_ThreadStart, 0,
                   PR_PRIORITY_LOW, PR_GLOBAL_THREAD, PR_UNJOINABLE_THREAD, 0);
 #endif
 
@@ -4577,13 +4605,7 @@ XREMain::XRE_mainRun()
   // ready in time for early consumers, such as the component loader.
   mDirProvider.InitializeUserPrefs();
 
-  {
-    nsCOMPtr<nsIObserver> startupNotifier
-      (do_CreateInstance(NS_APPSTARTUPNOTIFIER_CONTRACTID, &rv));
-    NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
-
-    startupNotifier->Observe(nullptr, APPSTARTUP_TOPIC, nullptr);
-  }
+  nsAppStartupNotifier::NotifyObservers(APPSTARTUP_TOPIC);
 
   nsCOMPtr<nsIAppStartup> appStartup
     (do_GetService(NS_APPSTARTUP_CONTRACTID));
@@ -4599,7 +4621,8 @@ XREMain::XRE_mainRun()
 
   nsCString userAgentLocale;
   LocaleService::GetInstance()->GetAppLocaleAsLangTag(userAgentLocale);
-  CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("useragent_locale"), userAgentLocale);
+  CrashReporter::AnnotateCrashReport(
+    CrashReporter::Annotation::useragent_locale, userAgentLocale);
 
   appStartup->GetShuttingDown(&mShuttingDown);
 
@@ -4610,8 +4633,7 @@ XREMain::XRE_mainRun()
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
   if (!mShuttingDown) {
-    cmdLine = do_CreateInstance("@mozilla.org/toolkit/command-line;1");
-    NS_ENSURE_TRUE(cmdLine, NS_ERROR_FAILURE);
+    cmdLine = new nsCommandLine();
 
     rv = cmdLine->Init(gArgc, gArgv, workingDir,
                        nsICommandLine::STATE_INITIAL_LAUNCH);
@@ -4652,7 +4674,6 @@ XREMain::XRE_mainRun()
   SaveToEnv("XRE_PROFILE_LOCAL_PATH=");
   SaveToEnv("XRE_PROFILE_NAME=");
   SaveToEnv("XRE_START_OFFLINE=");
-  SaveToEnv("NO_EM_RESTART=");
   SaveToEnv("XUL_APP_FILE=");
   SaveToEnv("XRE_BINARY_PATH=");
 
@@ -4678,8 +4699,7 @@ XREMain::XRE_mainRun()
 #ifdef XP_MACOSX
     // we re-initialize the command-line service and do appleevents munging
     // after we are sure that we're not restarting
-    cmdLine = do_CreateInstance("@mozilla.org/toolkit/command-line;1");
-    NS_ENSURE_TRUE(cmdLine, NS_ERROR_FAILURE);
+    cmdLine = new nsCommandLine();
 
     CommandLineServiceMac::SetupMacCommandLine(gArgc, gArgv, false);
 
@@ -4695,8 +4715,8 @@ XREMain::XRE_mainRun()
 
     (void)appStartup->DoneStartingUp();
 
-    CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("StartupCrash"),
-                                       NS_LITERAL_CSTRING("0"));
+    CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::StartupCrash,
+                                       false);
 
     appStartup->GetShuttingDown(&mShuttingDown);
   }
@@ -4709,7 +4729,7 @@ XREMain::XRE_mainRun()
   }
 
   if (!mShuttingDown) {
-#ifdef MOZ_ENABLE_XREMOTE
+#if defined(MOZ_WIDGET_GTK)
     // if we have X remote support, start listening for requests on the
     // proxy window.
     if (!mDisableRemote)
@@ -4721,7 +4741,7 @@ XREMain::XRE_mainRun()
       mRemoteLock.Cleanup();
       mRemoteLockDir->Remove(false);
     }
-#endif /* MOZ_ENABLE_XREMOTE */
+#endif /* MOZ_WIDGET_GTK */
 
     mNativeApp->Enable();
   }
@@ -4753,7 +4773,7 @@ XREMain::XRE_mainRun()
   flagsString.AppendInt(sandboxInfo.AsInteger());
 
   CrashReporter::AnnotateCrashReport(
-    NS_LITERAL_CSTRING("ContentSandboxCapabilities"), flagsString);
+    CrashReporter::Annotation::ContentSandboxCapabilities, flagsString);
 #endif /* MOZ_SANDBOX && XP_LINUX */
 
 #if defined(MOZ_CONTENT_SANDBOX)
@@ -4926,12 +4946,12 @@ XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig)
   }
 
   if (!mShuttingDown) {
-#ifdef MOZ_ENABLE_XREMOTE
+#if defined(MOZ_WIDGET_GTK)
     // shut down the x remote proxy window
     if (mRemoteService) {
       mRemoteService->Shutdown();
     }
-#endif /* MOZ_ENABLE_XREMOTE */
+#endif /* MOZ_WIDGET_GTK */
   }
 
   mScopedXPCOM = nullptr;
@@ -5102,6 +5122,12 @@ XRE_IsGPUProcess()
   return XRE_GetProcessType() == GeckoProcessType_GPU;
 }
 
+bool
+XRE_IsVRProcess()
+{
+  return XRE_GetProcessType() == GeckoProcessType_VR;
+}
+
 /**
  * Returns true in the e10s parent process and in the main process when e10s
  * is disabled.
@@ -5265,21 +5291,6 @@ SetupErrorHandling(const char* progname)
 
   SetErrorMode(realMode);
 
-#endif
-
-#if defined (DEBUG) && defined(XP_WIN)
-  // Send MSCRT Warnings, Errors and Assertions to stderr.
-  // See http://msdn.microsoft.com/en-us/library/1y71x448(v=VS.80).aspx
-  // and http://msdn.microsoft.com/en-us/library/a68f826y(v=VS.80).aspx.
-
-  _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
-  _CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
-  _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
-  _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
-  _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
-  _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
-
-  _CrtSetReportHook(MSCRTReportHook);
 #endif
 
   InstallSignalHandlers(progname);

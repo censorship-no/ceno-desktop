@@ -35,6 +35,7 @@
 
 #define PREF_VOLUME_SCALE "media.volume_scale"
 #define PREF_CUBEB_BACKEND "media.cubeb.backend"
+#define PREF_CUBEB_OUTPUT_DEVICE "media.cubeb.output_device"
 #define PREF_CUBEB_LATENCY_PLAYBACK "media.cubeb_latency_playback_ms"
 #define PREF_CUBEB_LATENCY_MSG "media.cubeb_latency_msg_frames"
 // Allows to get something non-default for the preferred sample-rate, to allow
@@ -55,8 +56,10 @@
 
 extern "C" {
 
+// This must match AudioIpcInitParams in media/audioipc/client/src/lib.rs.
+// TODO: Generate this from the Rust definition rather than duplicating it.
 struct AudioIpcInitParams {
-  int mServerConnection;
+  mozilla::ipc::FileDescriptor::PlatformHandleType mServerConnection;
   size_t mPoolSize;
   size_t mStackSize;
   void (*mThreadCreateCallback)(const char*);
@@ -142,6 +145,7 @@ size_t sAudioIPCStackSize;
 #endif
 StaticAutoPtr<char> sBrandName;
 StaticAutoPtr<char> sCubebBackendName;
+StaticAutoPtr<char> sCubebOutputDeviceName;
 
 const char kBrandBundleURL[]      = "chrome://branding/locale/brand.properties";
 
@@ -187,6 +191,19 @@ static const uint32_t CUBEB_NORMAL_LATENCY_FRAMES = 1024;
 
 namespace CubebUtils {
 cubeb* GetCubebContextUnlocked();
+
+void GetPrefAndSetString(const char* aPref, StaticAutoPtr<char>& aStorage)
+{
+  nsAutoCString value;
+  Preferences::GetCString(aPref, value);
+  if (value.IsEmpty()) {
+    aStorage = nullptr;
+  } else {
+    aStorage = new char[value.Length() + 1];
+    PodCopy(aStorage.get(), value.get(), value.Length());
+    aStorage[value.Length()] = 0;
+  }
+}
 
 void PrefChanged(const char* aPref, void* aClosure)
 {
@@ -235,15 +252,10 @@ void PrefChanged(const char* aPref, void* aClosure)
     }
   } else if (strcmp(aPref, PREF_CUBEB_BACKEND) == 0) {
     StaticMutexAutoLock lock(sMutex);
-    nsAutoCString value;
-    Preferences::GetCString(aPref, value);
-    if (value.IsEmpty()) {
-      sCubebBackendName = nullptr;
-    } else {
-      sCubebBackendName = new char[value.Length() + 1];
-      PodCopy(sCubebBackendName.get(), value.get(), value.Length());
-      sCubebBackendName[value.Length()] = 0;
-    }
+    GetPrefAndSetString(aPref, sCubebBackendName);
+  } else if (strcmp(aPref, PREF_CUBEB_OUTPUT_DEVICE) == 0) {
+    StaticMutexAutoLock lock(sMutex);
+    GetPrefAndSetString(aPref, sCubebOutputDeviceName);
   } else if (strcmp(aPref, PREF_CUBEB_FORCE_NULL_CONTEXT) == 0) {
     StaticMutexAutoLock lock(sMutex);
     sCubebForceNullContext = Preferences::GetBool(aPref, false);
@@ -393,9 +405,19 @@ ipc::FileDescriptor CreateAudioIPCConnection()
 {
 #ifdef MOZ_CUBEB_REMOTING
   MOZ_ASSERT(sServerHandle);
-  int rawFD = audioipc_server_new_client(sServerHandle);
+  ipc::FileDescriptor::PlatformHandleType rawFD = audioipc_server_new_client(sServerHandle);
   ipc::FileDescriptor fd(rawFD);
+  if (!fd.IsValid()) {
+    MOZ_LOG(gCubebLog, LogLevel::Error, ("audioipc_server_new_client failed"));
+    return ipc::FileDescriptor();
+  }
+  // Close rawFD since FileDescriptor's ctor cloned it.
+  // TODO: Find cleaner cross-platform way to close rawFD.
+#ifdef XP_WIN
+  CloseHandle(rawFD);
+#else
   close(rawFD);
+#endif
   return fd;
 #else
   return ipc::FileDescriptor();
@@ -409,6 +431,10 @@ cubeb* GetCubebContextUnlocked()
     // Pref set such that we should return a null context
     MOZ_LOG(gCubebLog, LogLevel::Debug,
             ("%s: returning null context due to %s!", __func__, PREF_CUBEB_FORCE_NULL_CONTEXT));
+    return nullptr;
+  }
+  if (recordreplay::IsRecordingOrReplaying()) {
+    // Media is not supported when recording or replaying. See bug 1304146.
     return nullptr;
   }
   if (sCubebState != CubebState::Uninitialized) {
@@ -538,15 +564,11 @@ uint32_t GetCubebMSGLatencyInFrames(cubeb_stream_params * params)
 }
 
 static const char* gInitCallbackPrefs[] = {
-  PREF_VOLUME_SCALE,
-  PREF_CUBEB_LATENCY_PLAYBACK,
-  PREF_CUBEB_LATENCY_MSG,
-  PREF_CUBEB_BACKEND,
-  PREF_CUBEB_FORCE_NULL_CONTEXT,
-  PREF_CUBEB_SANDBOX,
-  PREF_AUDIOIPC_POOL_SIZE,
-  PREF_AUDIOIPC_STACK_SIZE,
-  nullptr,
+  PREF_VOLUME_SCALE,           PREF_CUBEB_OUTPUT_DEVICE,
+  PREF_CUBEB_LATENCY_PLAYBACK, PREF_CUBEB_LATENCY_MSG,
+  PREF_CUBEB_BACKEND,          PREF_CUBEB_FORCE_NULL_CONTEXT,
+  PREF_CUBEB_SANDBOX,          PREF_AUDIOIPC_POOL_SIZE,
+  PREF_AUDIOIPC_STACK_SIZE,    nullptr,
 };
 static const char* gCallbackPrefs[] = {
   PREF_CUBEB_FORCE_SAMPLE_RATE,
@@ -625,6 +647,12 @@ void GetCurrentBackend(nsAString& aBackend)
     }
   }
   aBackend.AssignLiteral("unknown");
+}
+
+char* GetForcedOutputDevice()
+{
+  StaticMutexAutoLock lock(sMutex);
+  return sCubebOutputDeviceName;
 }
 
 uint16_t ConvertCubebType(cubeb_device_type aType)

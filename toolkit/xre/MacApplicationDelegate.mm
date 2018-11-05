@@ -26,12 +26,13 @@
 #include "nsObjCExceptions.h"
 #include "nsIFile.h"
 #include "nsDirectoryServiceDefs.h"
-#include "nsICommandLineRunner.h"
+#include "nsCommandLine.h"
 #include "nsIMacDockSupport.h"
 #include "nsIStandaloneNativeMenu.h"
 #include "nsILocalFileMac.h"
 #include "nsString.h"
 #include "nsCommandLineServiceMac.h"
+#include "nsCommandLine.h"
 
 class AutoAutoreleasePool {
 public:
@@ -173,7 +174,7 @@ ProcessPendingGetURLAppleEvents()
 // miniaturized, so we can't skip nsCocoaNativeReOpen() if 'flag' is 'true'.
 - (BOOL)applicationShouldHandleReopen:(NSApplication*)theApp hasVisibleWindows:(BOOL)flag
 {
-  nsCOMPtr<nsINativeAppSupport> nas = do_CreateInstance(NS_NATIVEAPPSUPPORT_CONTRACTID);
+  nsCOMPtr<nsINativeAppSupport> nas = NS_GetNativeAppSupport();
   NS_ENSURE_TRUE(nas, NO);
 
   // Go to the common Carbon/Cocoa reopen method.
@@ -207,11 +208,7 @@ ProcessPendingGetURLAppleEvents()
   if (NS_FAILED(rv))
     return NO;
 
-  nsCOMPtr<nsICommandLineRunner> cmdLine(do_CreateInstance("@mozilla.org/toolkit/command-line;1"));
-  if (!cmdLine) {
-    NS_ERROR("Couldn't create command line!");
-    return NO;
-  }
+  nsCOMPtr<nsICommandLineRunner> cmdLine(new nsCommandLine());
 
   nsCString filePath;
   rv = inFile->GetNativePath(filePath);
@@ -348,34 +345,9 @@ ProcessPendingGetURLAppleEvents()
   if (isGetURLEvent ||
       ([event eventClass] == 'WWW!' && [event eventID] == 'OURL')) {
     NSString* urlString = [[event paramDescriptorForKeyword:keyDirectObject] stringValue];
+    NSURL* url = [NSURL URLWithString:urlString];
 
-    // don't open chrome URLs
-    NSString* schemeString = [[NSURL URLWithString:urlString] scheme];
-    if (!schemeString ||
-        [schemeString compare:@"chrome"
-                      options:NSCaseInsensitiveSearch
-                        range:NSMakeRange(0, [schemeString length])] == NSOrderedSame) {
-      return;
-    }
-
-    // Add the URL to any command line we're currently setting up.
-    if (CommandLineServiceMac::AddURLToCurrentCommandLine([urlString UTF8String]))
-      return;
-
-    nsCOMPtr<nsICommandLineRunner> cmdLine(do_CreateInstance("@mozilla.org/toolkit/command-line;1"));
-    if (!cmdLine) {
-      NS_ERROR("Couldn't create command line!");
-      return;
-    }
-    nsCOMPtr<nsIFile> workingDir;
-    nsresult rv = NS_GetSpecialDirectory(NS_OS_CURRENT_WORKING_DIR, getter_AddRefs(workingDir));
-    if (NS_FAILED(rv))
-      return;
-    const char *argv[3] = {nullptr, "-url", [urlString UTF8String]};
-    rv = cmdLine->Init(3, argv, workingDir, nsICommandLine::STATE_REMOTE_EXPLICIT);
-    if (NS_FAILED(rv))
-      return;
-    rv = cmdLine->Run();
+    [self openURL:url];
   }
   else if ([event eventClass] == kCoreEventClass && [event eventID] == kAEOpenDocuments) {
     NSAppleEventDescriptor* fileListDescriptor = [event paramDescriptorForKeyword:keyDirectObject];
@@ -397,6 +369,62 @@ ProcessPendingGetURLAppleEvents()
       [self application:NSApp openFile:[url path]];
     }
   }
+}
+
+- (BOOL)application:(NSApplication*)application
+    willContinueUserActivityWithType:(NSString*)userActivityType
+{
+  return [userActivityType isEqualToString:NSUserActivityTypeBrowsingWeb];
+}
+
+- (BOOL)application:(NSApplication*)application
+   continueUserActivity:(NSUserActivity*)userActivity
+     restorationHandler:(void (^)(NSArray*))restorationHandler
+{
+  if (![userActivity.activityType isEqualToString:NSUserActivityTypeBrowsingWeb]) {
+    return NO;
+  }
+
+  return [self openURL:userActivity.webpageURL];
+}
+
+- (void)application:(NSApplication*)application
+    didFailToContinueUserActivityWithType:(NSString*)userActivityType
+                                    error:(NSError*)error
+{
+  NSLog(@"Failed to continue user activity %@: %@", userActivityType, error);
+}
+
+- (BOOL)openURL:(NSURL*)url
+{
+  if (!url || !url.scheme || [url.scheme caseInsensitiveCompare:@"chrome"] == NSOrderedSame) {
+    return NO;
+  }
+
+  const char* const urlString = [[url absoluteString] UTF8String];
+  // Add the URL to any command line we're currently setting up.
+  if (CommandLineServiceMac::AddURLToCurrentCommandLine(urlString)) {
+    return NO;
+  }
+
+  nsCOMPtr<nsICommandLineRunner> cmdLine(new nsCommandLine());
+  nsCOMPtr<nsIFile> workingDir;
+  nsresult rv = NS_GetSpecialDirectory(NS_OS_CURRENT_WORKING_DIR,
+                                       getter_AddRefs(workingDir));
+  if (NS_FAILED(rv)) {
+    return NO;
+  }
+  const char* argv[3] = {nullptr, "-url", urlString};
+  rv = cmdLine->Init(3, argv, workingDir, nsICommandLine::STATE_REMOTE_EXPLICIT);
+  if (NS_FAILED(rv)) {
+    return NO;
+  }
+  rv = cmdLine->Run();
+  if (NS_FAILED(rv)) {
+    return NO;
+  }
+
+  return YES;
 }
 
 @end

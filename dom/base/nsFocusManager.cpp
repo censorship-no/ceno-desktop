@@ -8,7 +8,6 @@
 
 #include "nsFocusManager.h"
 
-#include "AccessibleCaretEventHub.h"
 #include "ChildIterator.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsGkAtoms.h"
@@ -46,6 +45,7 @@
 #include "nsNetUtil.h"
 #include "nsRange.h"
 
+#include "mozilla/AccessibleCaretEventHub.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLImageElement.h"
@@ -296,6 +296,12 @@ nsFocusManager::IsFocused(nsIContent* aContent)
     return false;
   }
   return aContent == mFocusedElement;
+}
+
+bool
+nsFocusManager::IsTestMode()
+{
+  return sTestMode;
 }
 
 // get the current window for the given content node
@@ -1630,7 +1636,7 @@ nsFocusManager::CheckIfFocusable(Element* aElement, uint32_t aFlags)
   // offscreen browsers can still be focused.
   nsIDocument* subdoc = doc->GetSubDocumentFor(aElement);
   if (subdoc && IsWindowVisible(subdoc->GetWindow())) {
-    const nsStyleUserInterface* ui = frame->StyleUserInterface();
+    const nsStyleUI* ui = frame->StyleUI();
     int32_t tabIndex = (ui->mUserFocus == StyleUserFocus::Ignore ||
                         ui->mUserFocus == StyleUserFocus::None) ? -1 : 0;
     return aElement->IsFocusable(&tabIndex, aFlags & FLAG_BYMOUSE) ? aElement : nullptr;
@@ -2361,11 +2367,11 @@ nsFocusManager::UpdateCaret(bool aMoveCaretToFocus,
   // this is called when a document is focused or when the caretbrowsing
   // preference is changed
   nsCOMPtr<nsIDocShell> focusedDocShell = mFocusedWindow->GetDocShell();
-  nsCOMPtr<nsIDocShellTreeItem> dsti = do_QueryInterface(focusedDocShell);
-  if (!dsti)
+  if (!focusedDocShell) {
     return;
+  }
 
-  if (dsti->ItemType() == nsIDocShellTreeItem::typeChrome) {
+  if (focusedDocShell->ItemType() == nsIDocShellTreeItem::typeChrome) {
     return;  // Never browse with caret in chrome
   }
 
@@ -2860,7 +2866,7 @@ nsFocusManager::DetermineElementToMoveFocus(nsPIDOMWindowOuter* aWindow,
   // from there but instead from the beginning of the document. Otherwise, the
   // content that appears before the retargetdocumentfocus element will never
   // get checked as it will be skipped when the focus is retargetted to it.
-  if (forDocumentNavigation && doc->IsXULDocument()) {
+  if (forDocumentNavigation && nsContentUtils::IsChromeDoc(doc)) {
     nsAutoString retarget;
 
     if (rootContent->GetAttr(kNameSpaceID_None,
@@ -3207,9 +3213,20 @@ nsFocusManager::IsHostOrSlot(nsIContent* aContent)
 }
 
 int32_t
-nsFocusManager::HostOrSlotTabIndexValue(nsIContent* aContent)
+nsFocusManager::HostOrSlotTabIndexValue(nsIContent* aContent,
+                                        bool* aIsFocusable)
 {
   MOZ_ASSERT(IsHostOrSlot(aContent));
+
+  if (aIsFocusable) {
+    *aIsFocusable = false;
+    nsIFrame* frame = aContent->GetPrimaryFrame();
+    if (frame) {
+      int32_t tabIndex;
+      frame->IsFocusable(&tabIndex, 0);
+      *aIsFocusable = tabIndex >= 0;
+    }
+  }
 
   const nsAttrValue* attrVal =
     aContent->AsElement()->GetParsedAttr(nsGkAtoms::tabindex);
@@ -3277,9 +3294,6 @@ nsFocusManager::GetNextTabbableContentInScope(nsIContent* aOwner,
         break;
       }
 
-      // Get the tab index of the next element. For NAC we rely on frames.
-      //XXXsmaug we should probably use frames also for Shadow DOM and special
-      //         case only display:contents elements.
       int32_t tabIndex = 0;
       if (iterContent->IsInNativeAnonymousSubtree() &&
           iterContent->GetPrimaryFrame()) {
@@ -3287,7 +3301,11 @@ nsFocusManager::GetNextTabbableContentInScope(nsIContent* aOwner,
       } else if (IsHostOrSlot(iterContent)) {
         tabIndex = HostOrSlotTabIndexValue(iterContent);
       } else {
-        iterContent->IsFocusable(&tabIndex);
+        nsIFrame* frame = iterContent->GetPrimaryFrame();
+        if (!frame) {
+          continue;
+        }
+        frame->IsFocusable(&tabIndex, 0);
       }
       if (tabIndex < 0 || !(aIgnoreTabIndex || tabIndex == aCurrentTabIndex)) {
         // If the element has native anonymous content, we may need to
@@ -3295,10 +3313,18 @@ nsFocusManager::GetNextTabbableContentInScope(nsIContent* aOwner,
         // This happens for example with <input type="date">.
         // So, try to find NAC and then traverse the frame tree to find elements
         // to focus.
+        // Yet, even if the frame is a nsIAnonymousContentCreator, don't
+        // traverse into the element again when the element is in a UA Widget,
+        // because there isn't any NAC to focus.
         nsIFrame* possibleAnonOwnerFrame = iterContent->GetPrimaryFrame();
         nsIAnonymousContentCreator* anonCreator =
           do_QueryFrame(possibleAnonOwnerFrame);
-        if (anonCreator && !iterContent->IsInNativeAnonymousSubtree()) {
+        bool isIterContentInUAWidgetShadow =
+          iterContent->GetContainingShadow() &&
+          iterContent->GetContainingShadow()->IsUAWidget();
+        if (anonCreator &&
+            !isIterContentInUAWidgetShadow &&
+            !iterContent->IsInNativeAnonymousSubtree()) {
           nsIFrame* frame = nullptr;
           // Find the first or last frame in tree order so that
           // we can scope frame traversing to NAC.
@@ -3598,10 +3624,13 @@ nsFocusManager::GetNextTabbableContent(nsIPresShell* aPresShell,
       // skip Shadow DOM in frame traversal.
       nsIContent* currentContent = frame->GetContent();
       nsIContent* oldTopLevelHost = currentTopLevelHost;
-      nsIContent* topLevel = GetTopLevelHost(currentContent);
-      currentTopLevelHost = topLevel;
-      if (topLevel) {
-        if (topLevel == oldTopLevelHost) {
+      if (oldTopLevelHost != currentContent) {
+        currentTopLevelHost = GetTopLevelHost(currentContent);
+      } else {
+        currentTopLevelHost = currentContent;
+      }
+      if (currentTopLevelHost) {
+        if (currentTopLevelHost == oldTopLevelHost) {
           // We're within Shadow DOM, continue.
           do {
             if (aForward) {
@@ -3615,7 +3644,7 @@ nsFocusManager::GetNextTabbableContent(nsIPresShell* aPresShell,
           } while (frame && frame->GetPrevContinuation());
           continue;
         }
-        currentContent = topLevel;
+        currentContent = currentTopLevelHost;
       }
 
       // For document navigation, check if this element is an open panel. Since
@@ -3670,8 +3699,12 @@ nsFocusManager::GetNextTabbableContent(nsIPresShell* aPresShell,
       // hosts and slots are handled before other elements.
       if (currentContent && nsDocument::IsShadowDOMEnabled(currentContent) &&
           IsHostOrSlot(currentContent)) {
-        int32_t tabIndex = HostOrSlotTabIndexValue(currentContent);
-        if (tabIndex >= 0 &&
+        bool focusableHostSlot;
+        int32_t tabIndex = HostOrSlotTabIndexValue(currentContent,
+                                                   &focusableHostSlot);
+        // Host or slot itself isn't focusable, enter its scope.
+        if (!focusableHostSlot &&
+            tabIndex >= 0 &&
             (aIgnoreTabIndex || aCurrentTabIndex == tabIndex)) {
           nsIContent* contentToFocus =
             GetNextTabbableContentInScope(currentContent, currentContent,
@@ -3878,7 +3911,7 @@ nsFocusManager::TryToMoveFocusToSubDocument(nsIContent* aCurrentContent,
   nsIDocument* subdoc = doc->GetSubDocumentFor(aCurrentContent);
   if (subdoc && !subdoc->EventHandlingSuppressed()) {
     if (aForward) {
-      // when tabbing forward into a frame, return the root
+      // When tabbing forward into a frame, return the root
       // frame so that the canvas becomes focused.
       nsCOMPtr<nsPIDOMWindowOuter> subframe = subdoc->GetWindow();
       if (subframe) {
@@ -4022,7 +4055,7 @@ nsFocusManager::FocusFirst(Element* aRootElement, nsIContent** aNextContent)
 
   nsIDocument* doc = aRootElement->GetComposedDoc();
   if (doc) {
-    if (doc->IsXULDocument()) {
+    if (nsContentUtils::IsChromeDoc(doc)) {
       // If the redirectdocumentfocus attribute is set, redirect the focus to a
       // specific element. This is primarily used to retarget the focus to the
       // urlbar during document navigation.

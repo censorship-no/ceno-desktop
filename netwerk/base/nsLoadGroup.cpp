@@ -21,6 +21,7 @@
 #include "nsIRequestContext.h"
 #include "CacheObserver.h"
 #include "MainThreadUtils.h"
+#include "RequestContextService.h"
 #include "mozilla/Unused.h"
 
 namespace mozilla {
@@ -654,7 +655,7 @@ nsLoadGroup::GetRequests(nsISimpleEnumerator * *aRequests)
       requests.AppendObject(e->mKey);
     }
 
-    return NS_NewArrayEnumerator(aRequests, requests);
+    return NS_NewArrayEnumerator(aRequests, requests, NS_GET_IID(nsIRequest));
 }
 
 NS_IMETHODIMP
@@ -1056,7 +1057,7 @@ nsresult nsLoadGroup::MergeDefaultLoadFlags(nsIRequest *aRequest,
 
 nsresult nsLoadGroup::Init()
 {
-    mRequestContextService = do_GetService("@mozilla.org/network/request-context-service;1");
+    mRequestContextService = RequestContextService::GetOrCreate();
     if (mRequestContextService) {
         Unused << mRequestContextService->NewRequestContext(getter_AddRefs(mRequestContext));
     }

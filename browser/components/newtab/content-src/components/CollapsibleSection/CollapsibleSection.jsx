@@ -12,40 +12,6 @@ function getFormattedMessage(message) {
   return typeof message === "string" ? <span>{message}</span> : <FormattedMessage {...message} />;
 }
 
-export class Disclaimer extends React.PureComponent {
-  constructor(props) {
-    super(props);
-    this.onAcknowledge = this.onAcknowledge.bind(this);
-  }
-
-  onAcknowledge() {
-    this.props.dispatch(ac.SetPref(this.props.disclaimerPref, false));
-    this.props.dispatch(ac.UserEvent({event: "DISCLAIMER_ACKED", source: this.props.eventSource}));
-  }
-
-  render() {
-    const {disclaimer} = this.props;
-    return (
-      <div className="section-disclaimer">
-          <div className="section-disclaimer-text">
-            {getFormattedMessage(disclaimer.text)}
-            {disclaimer.link &&
-              <a href={disclaimer.link.href} target="_blank" rel="noopener noreferrer">
-                {getFormattedMessage(disclaimer.link.title || disclaimer.link)}
-              </a>
-            }
-          </div>
-
-          <button onClick={this.onAcknowledge}>
-            {getFormattedMessage(disclaimer.button)}
-          </button>
-      </div>
-    );
-  }
-}
-
-export const DisclaimerIntl = injectIntl(Disclaimer);
-
 export class _CollapsibleSection extends React.PureComponent {
   constructor(props) {
     super(props);
@@ -103,14 +69,25 @@ export class _CollapsibleSection extends React.PureComponent {
     // Get the current height of the body so max-height transitions can work
     this.setState({
       isAnimating: true,
-      maxHeight: `${this.sectionBody.scrollHeight}px`
+      maxHeight: `${this._getSectionBodyHeight()}px`,
     });
     const {action, userEvent} = SectionMenuOptions.CheckCollapsed(this.props);
     this.props.dispatch(action);
     this.props.dispatch(ac.UserEvent({
       event: userEvent,
-      source: this.props.source
+      source: this.props.source,
     }));
+  }
+
+  _getSectionBodyHeight() {
+    const div = this.sectionBody;
+    if (div.style.display === "none") {
+      // If the div isn't displayed, we can't get it's height. So we display it
+      // to get the height (it doesn't show up because max-height is set to 0px
+      // in CSS). We don't undo this because we are about to expand the section.
+      div.style.display = "block";
+    }
+    return div.scrollHeight;
   }
 
   onTransitionEnd(event) {
@@ -148,10 +125,14 @@ export class _CollapsibleSection extends React.PureComponent {
   render() {
     const isCollapsible = this.props.collapsed !== undefined;
     const {enableAnimation, isAnimating, maxHeight, menuButtonHover, showContextMenu} = this.state;
-    const {id, eventSource, collapsed, disclaimer, title, extraMenuOptions, showPrefName, privacyNoticeURL, dispatch, isFirst, isLast, isWebExtension} = this.props;
-    const disclaimerPref = `section.${id}.showDisclaimer`;
-    const needsDisclaimer = disclaimer && this.props.Prefs.values[disclaimerPref];
+    const {id, eventSource, collapsed, learnMore, title, extraMenuOptions, showPrefName, privacyNoticeURL, dispatch, isFirst, isLast, isWebExtension} = this.props;
     const active = menuButtonHover || showContextMenu;
+    let bodyStyle;
+    if (isAnimating && !collapsed) {
+      bodyStyle = {maxHeight};
+    } else if (!isAnimating && collapsed) {
+      bodyStyle = {display: "none"};
+    }
     return (
       <section
         className={`collapsible-section ${this.props.className}${enableAnimation ? " animation-enabled" : ""}${collapsed ? " collapsed" : ""}${active ? " active" : ""}`}
@@ -159,15 +140,29 @@ export class _CollapsibleSection extends React.PureComponent {
         data-section-id={id}>
         <div className="section-top-bar">
           <h3 className="section-title">
-            <span className="click-target" onClick={this.onHeaderClick}>
-              {this.renderIcon()}
-              {getFormattedMessage(title)}
-              {isCollapsible && <span className={`collapsible-arrow icon ${collapsed ? "icon-arrowhead-forward-small" : "icon-arrowhead-down-small"}`} />}
+            <span className="click-target-container">
+              <span className="click-target" onClick={this.onHeaderClick}>
+                {this.renderIcon()}
+                {getFormattedMessage(title)}
+              </span>
+              <span className="click-target" onClick={this.onHeaderClick}>
+                {isCollapsible && <span className={`collapsible-arrow icon ${collapsed ? "icon-arrowhead-forward-small" : "icon-arrowhead-down-small"}`} />}
+              </span>
+              <span>
+                {learnMore &&
+                  <span className="learn-more-link">
+                    <a href={learnMore.link.href}>
+                      <FormattedMessage id={learnMore.link.id} />
+                    </a>
+                  </span>
+                }
+              </span>
             </span>
           </h3>
           <div>
             <button
               className="context-menu-button icon"
+              title={this.props.intl.formatMessage({id: "context_menu_title"})}
               onClick={this.onMenuButtonClick}
               onMouseEnter={this.onMenuButtonMouseEnter}
               onMouseLeave={this.onMenuButtonMouseLeave}>
@@ -196,8 +191,7 @@ export class _CollapsibleSection extends React.PureComponent {
             className={`section-body${isAnimating ? " animating" : ""}`}
             onTransitionEnd={this.onTransitionEnd}
             ref={this.onBodyMount}
-            style={isAnimating && !collapsed ? {maxHeight} : null}>
-            {needsDisclaimer && <DisclaimerIntl disclaimerPref={disclaimerPref} disclaimer={disclaimer} eventSource={eventSource} dispatch={this.props.dispatch} />}
+            style={bodyStyle}>
             {this.props.children}
           </div>
         </ErrorBoundary>
@@ -210,9 +204,9 @@ _CollapsibleSection.defaultProps = {
   document: global.document || {
     addEventListener: () => {},
     removeEventListener: () => {},
-    visibilityState: "hidden"
+    visibilityState: "hidden",
   },
-  Prefs: {values: {}}
+  Prefs: {values: {}},
 };
 
 export const CollapsibleSection = injectIntl(_CollapsibleSection);

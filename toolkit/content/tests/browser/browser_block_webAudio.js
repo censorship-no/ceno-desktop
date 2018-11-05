@@ -10,14 +10,14 @@ if (!gMultiProcessBrowser) {
 add_task(async function setup_test_preference() {
   await SpecialPowers.pushPrefEnv({"set": [
     ["media.useAudioChannelService.testing", true],
-    ["media.block-autoplay-until-in-foreground", true]
+    ["media.block-autoplay-until-in-foreground", true],
   ]});
 });
 
 add_task(async function block_web_audio() {
   info("- open new background tab -");
-  let tab = window.gBrowser.addTab("about:blank");
-  tab.linkedBrowser.loadURI(PAGE);
+  let tab = BrowserTestUtils.addTab(window.gBrowser, "about:blank");
+  BrowserTestUtils.loadURI(tab.linkedBrowser, PAGE);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   info("- tab should be blocked -");

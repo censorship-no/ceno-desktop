@@ -3,7 +3,10 @@
 
 "use strict";
 
-const PREF = "privacy.trackingprotection.enabled";
+const TP_PREF = "privacy.trackingprotection.enabled";
+const TPC_PREF = "network.cookie.cookieBehavior";
+const TP_UI_PREF = "browser.contentblocking.trackingprotection.control-center.ui.enabled";
+const RT_UI_PREF = "browser.contentblocking.rejecttrackers.control-center.ui.enabled";
 const TRACKING_PAGE = "http://tracking.example.org/browser/browser/base/content/test/trackingUI/trackingPage.html";
 
 async function waitAndAssertPreferencesShown() {
@@ -24,6 +27,14 @@ async function waitAndAssertPreferencesShown() {
 
 add_task(async function setup() {
   await UrlClassifierTestUtils.addTestTrackers();
+  let oldCanRecord = Services.telemetry.canRecordExtended;
+  Services.telemetry.canRecordExtended = true;
+
+  registerCleanupFunction(() => {
+    Services.telemetry.canRecordExtended = oldCanRecord;
+  });
+
+  Services.telemetry.clearEvents();
 });
 
 // Tests that pressing the preferences icon in the identity popup
@@ -41,8 +52,44 @@ add_task(async function testOpenPreferencesFromPrefsButton() {
     let shown = waitAndAssertPreferencesShown();
     preferencesButton.click();
     await shown;
+
+    let events = Services.telemetry.snapshotEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true).parent;
+    let clickEvents = events.filter(
+      e => e[1] == "security.ui.identitypopup" && e[2] == "click" && e[3] == "cb_prefs_button");
+    is(clickEvents.length, 1, "recorded telemetry for the click");
   });
 });
+
+// Tests that clicking the contentblocking category items "add blocking" labels
+// links to about:preferences
+add_task(async function testOpenPreferencesFromAddBlockingButtons() {
+  SpecialPowers.pushPrefEnv({set: [
+    [TP_PREF, false],
+    [TPC_PREF, Ci.nsICookieService.BEHAVIOR_ACCEPT],
+    [TP_UI_PREF, true],
+    [RT_UI_PREF, true],
+  ]});
+
+  await BrowserTestUtils.withNewTab(TRACKING_PAGE, async function() {
+    let addBlockingButtons = document.querySelectorAll(".identity-popup-content-blocking-category-add-blocking");
+    for (let button of addBlockingButtons) {
+      let promisePanelOpen = BrowserTestUtils.waitForEvent(gIdentityHandler._identityPopup, "popupshown");
+      gIdentityHandler._identityBox.click();
+      await promisePanelOpen;
+
+      ok(BrowserTestUtils.is_visible(button), "Button is shown.");
+      let shown = waitAndAssertPreferencesShown();
+      button.click();
+      await shown;
+
+      let events = Services.telemetry.snapshotEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true).parent;
+      let clickEvents = events.filter(
+        e => e[1] == "security.ui.identitypopup" && e[2] == "click" && e[3].endsWith("_add_blocking"));
+      is(clickEvents.length, 1, "recorded telemetry for the click");
+    }
+  });
+});
+
 
 add_task(async function cleanup() {
   UrlClassifierTestUtils.cleanupTestTrackers();

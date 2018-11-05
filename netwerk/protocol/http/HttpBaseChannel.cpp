@@ -171,7 +171,8 @@ HttpBaseChannel::HttpBaseChannel()
   , mReqContentLength(0U)
   , mStatus(NS_OK)
   , mCanceled(false)
-  , mIsTrackingResource(false)
+  , mIsFirstPartyTrackingResource(false)
+  , mIsThirdPartyTrackingResource(false)
   , mLoadFlags(LOAD_NORMAL)
   , mCaps(0)
   , mClassOfService(0)
@@ -318,10 +319,22 @@ HttpBaseChannel::ReleaseMainThreadOnlyReferences()
 }
 
 void
-HttpBaseChannel::SetIsTrackingResource()
+HttpBaseChannel::SetIsTrackingResource(bool aIsThirdParty)
 {
-  LOG(("HttpBaseChannel::SetIsTrackingResource %p", this));
-  mIsTrackingResource = true;
+  LOG(("HttpBaseChannel::SetIsTrackingResource thirdparty=%d %p",
+       static_cast<int>(aIsThirdParty), this));
+
+  if (aIsThirdParty) {
+    MOZ_ASSERT(!mIsFirstPartyTrackingResource);
+    mIsThirdPartyTrackingResource = true;
+  } else {
+    MOZ_ASSERT(!mIsThirdPartyTrackingResource);
+    mIsFirstPartyTrackingResource = true;
+  }
+
+  if (mLoadInfo) {
+    MOZ_ALWAYS_SUCCEEDS(mLoadInfo->SetIsTracker(true));
+  }
 }
 
 nsresult
@@ -901,9 +914,16 @@ HttpBaseChannel::EnsureUploadStreamIsCloneable(nsIRunnable* aCallback)
   // this is called more than once simultaneously.
   NS_ENSURE_FALSE(mUploadCloneableCallback, NS_ERROR_UNEXPECTED);
 
-  // If the CloneUploadStream() will succeed, then synchronously invoke
-  // the callback to indicate we're already cloneable.
-  if (!mUploadStream || NS_InputStreamIsCloneable(mUploadStream)) {
+  // We can immediately exec the callback if we don't have an upload stream.
+  if (!mUploadStream) {
+    aCallback->Run();
+    return NS_OK;
+  }
+
+  // Upload nsIInputStream must be cloneable and seekable in order to be
+  // processed by devtools network inspector.
+  nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(mUploadStream);
+  if (seekable && NS_InputStreamIsCloneable(mUploadStream)) {
     aCallback->Run();
     return NS_OK;
   }
@@ -1444,7 +1464,8 @@ HttpBaseChannel::nsContentEncodings::GetNext(nsACString& aNextEncoding)
 // HttpBaseChannel::nsContentEncodings::nsISupports
 //-----------------------------------------------------------------------------
 
-NS_IMPL_ISUPPORTS(HttpBaseChannel::nsContentEncodings, nsIUTF8StringEnumerator)
+NS_IMPL_ISUPPORTS(HttpBaseChannel::nsContentEncodings, nsIUTF8StringEnumerator,
+                  nsIStringEnumerator)
 
 //-----------------------------------------------------------------------------
 // HttpBaseChannel::nsContentEncodings <private>
@@ -1552,18 +1573,39 @@ NS_IMETHODIMP HttpBaseChannel::SetTopLevelContentWindowId(uint64_t aWindowId)
 NS_IMETHODIMP
 HttpBaseChannel::GetIsTrackingResource(bool* aIsTrackingResource)
 {
-  *aIsTrackingResource = mIsTrackingResource;
+  MOZ_ASSERT(!(mIsFirstPartyTrackingResource && mIsThirdPartyTrackingResource));
+  *aIsTrackingResource =
+    mIsThirdPartyTrackingResource || mIsFirstPartyTrackingResource;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-HttpBaseChannel::OverrideTrackingResource(bool aIsTracking)
+HttpBaseChannel::GetIsThirdPartyTrackingResource(bool* aIsTrackingResource)
 {
-  LOG(("HttpBaseChannel::OverrideTrackingResource(%d) %p "
-       "mIsTrackingResource=%d",
-      (int) aIsTracking, this, (int) mIsTrackingResource));
+  MOZ_ASSERT(!(mIsFirstPartyTrackingResource && mIsThirdPartyTrackingResource));
+  *aIsTrackingResource = mIsThirdPartyTrackingResource;
+  return NS_OK;
+}
 
-  mIsTrackingResource = aIsTracking;
+NS_IMETHODIMP
+HttpBaseChannel::OverrideTrackingFlagsForDocumentCookieAccessor(nsIHttpChannel* aDocumentChannel)
+{
+  LOG(("HttpBaseChannel::OverrideTrackingFlagsForDocumentCookieAccessor() %p "
+       "mIsFirstPartyTrackingResource=%d  mIsThirdPartyTrackingResource=%d",
+       this, static_cast<int>(mIsFirstPartyTrackingResource),
+       static_cast<int>(mIsThirdPartyTrackingResource)));
+
+  // The semantics we'd like to achieve here are that document.cookie
+  // should follow the same rules that the document is subject to with
+  // regards to content blocking. Therefore we need to propagate the
+  // same flags from the document channel to the fake channel here.
+  if (aDocumentChannel->GetIsThirdPartyTrackingResource()) {
+    mIsThirdPartyTrackingResource = true;
+  } else {
+    mIsFirstPartyTrackingResource = true;
+  }
+
+  MOZ_ASSERT(!(mIsFirstPartyTrackingResource && mIsThirdPartyTrackingResource));
   return NS_OK;
 }
 
@@ -1656,7 +1698,8 @@ HttpBaseChannel::IsCrossOriginWithReferrer()
       LOG(("triggeringURI=%s\n", triggeringURISpec.get()));
     }
     nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-    rv = ssm->CheckSameOriginURI(triggeringURI, mURI, false);
+    bool isPrivateWin = mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
+    rv = ssm->CheckSameOriginURI(triggeringURI, mURI, false, isPrivateWin);
     return (NS_FAILED(rv));
   }
 
@@ -2460,7 +2503,7 @@ HttpBaseChannel::NotifySetCookie(char const *aCookie)
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
   if (obs) {
     nsAutoString cookie;
-    CopyASCIItoUTF16(aCookie, cookie);
+    CopyASCIItoUTF16(mozilla::MakeStringSpan(aCookie), cookie);
     obs->NotifyObservers(static_cast<nsIChannel*>(this),
                          "http-on-response-set-cookie",
                          cookie.get());
@@ -2561,7 +2604,7 @@ HttpBaseChannel::GetLocalAddress(nsACString& addr)
   if (mSelfAddr.raw.family == PR_AF_UNSPEC)
     return NS_ERROR_NOT_AVAILABLE;
 
-  addr.SetCapacity(kIPv6CStrBufSize);
+  addr.SetLength(kIPv6CStrBufSize);
   NetAddrToString(&mSelfAddr, addr.BeginWriting(), kIPv6CStrBufSize);
   addr.SetLength(strlen(addr.BeginReading()));
 
@@ -2670,7 +2713,7 @@ HttpBaseChannel::GetRemoteAddress(nsACString& addr)
   if (mPeerAddr.raw.family == PR_AF_UNSPEC)
     return NS_ERROR_NOT_AVAILABLE;
 
-  addr.SetCapacity(kIPv6CStrBufSize);
+  addr.SetLength(kIPv6CStrBufSize);
   NetAddrToString(&mPeerAddr, addr.BeginWriting(), kIPv6CStrBufSize);
   addr.SetLength(strlen(addr.BeginReading()));
 
@@ -3862,7 +3905,9 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
   // Pass the preferred alt-data type on to the new channel.
   nsCOMPtr<nsICacheInfoChannel> cacheInfoChan(do_QueryInterface(newChannel));
   if (cacheInfoChan) {
-    cacheInfoChan->PreferAlternativeDataType(mPreferredCachedAltDataType);
+    for (auto& pair : mPreferredCachedAltDataTypes) {
+      cacheInfoChan->PreferAlternativeDataType(mozilla::Get<0>(pair), mozilla::Get<1>(pair));
+    }
   }
 
   if (redirectFlags & (nsIChannelEventSink::REDIRECT_INTERNAL |
@@ -3884,7 +3929,8 @@ bool
 HttpBaseChannel::SameOriginWithOriginalUri(nsIURI *aURI)
 {
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-  nsresult rv = ssm->CheckSameOriginURI(aURI, mOriginalURI, false);
+  bool isPrivateWin = mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
+  nsresult rv = ssm->CheckSameOriginURI(aURI, mOriginalURI, false, isPrivateWin);
   return (NS_SUCCEEDED(rv));
 }
 
@@ -4692,6 +4738,12 @@ HttpBaseChannel::GetNativeServerTiming(nsTArray<nsCOMPtr<nsIServerTiming>>& aSer
   }
 
   return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::CancelForTrackingProtection()
+{
+  return Cancel(NS_ERROR_TRACKING_URI);
 }
 
 } // namespace net

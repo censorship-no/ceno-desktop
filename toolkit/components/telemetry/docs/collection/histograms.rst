@@ -168,9 +168,17 @@ Required for linear and exponential histograms. The maximum value to be stored i
 -------------
 Required for linear and exponential histograms. The number of buckets in a linear or exponential histogram.
 
+.. note::
+
+    The maximum value for ``n_buckets`` is 100. The more buckets, the larger the storage and transfer costs borne by our users and our pipeline.
+
 ``n_values``
 ------------
 Required for enumerated histograms. Similar to n_buckets, it represent the number of elements in the enum.
+
+.. note::
+
+    The maximum value for ``n_values`` is 100. The more values, the larger the storage and transfer costs borne by our users and our pipeline.
 
 ``labels``
 ----------
@@ -184,9 +192,23 @@ Required for all new histograms. This is an array of integers and should at leas
 ---------------
 Required. A description of the data tracked by the histogram, e.g. _"Resident memory size"_
 
-``cpp_guard``
--------------
+``cpp_guard`` (obsolete, use ``operating_systems``)
+---------------------------------------------------
 Optional. This field inserts an #ifdef directive around the histogram's C++ declaration. This is typically used for platform-specific histograms, e.g. ``"cpp_guard": "ANDROID"``
+
+``operating_systems``
+---------------------
+Optional. This field restricts recording to certain operating systems only. Use that in-place of previous ``cpp_guards`` to avoid inclusion on not-specified operating systems.
+Currently supported values are:
+
+- ``mac``
+- ``linux``
+- ``windows``
+- ``android``
+- ``unix``
+- ``all`` (record on all operating systems)
+
+If this field is left out it defaults to ``all``.
 
 ``releaseChannelCollection``
 ----------------------------
@@ -250,7 +272,7 @@ Note that ``nsITelemetry.getHistogramById()`` will throw an ``NS_ERROR_FAILURE``
 
   Adding a new Telemetry probe is not possible with Artifact builds. A full build is needed.
 
-For histograms measuring time, `TelemetryStopwatch <https://dxr.mozilla.org/mozilla-central/source/toolkit/components/telemetry/TelemetryStopwatch.jsm>`_ can be used to avoid working with Dates manually:
+For histograms measuring time, TelemetryStopwatch can be used to avoid working with Dates manually:
 
 .. code-block:: js
 

@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import AddressForm from "./address-form.js";
 import AddressOption from "../components/address-option.js";
 import RichPicker from "./rich-picker.js";
 import paymentRequest from "../paymentRequest.js";
@@ -13,8 +14,16 @@ import paymentRequest from "../paymentRequest.js";
  */
 
 export default class AddressPicker extends RichPicker {
+  static get pickerAttributes() {
+    return [
+      "address-fields",
+      "break-after-nth-field",
+      "data-field-separator",
+    ];
+  }
+
   static get observedAttributes() {
-    return RichPicker.observedAttributes.concat(["address-fields"]);
+    return RichPicker.observedAttributes.concat(AddressPicker.pickerAttributes);
   }
 
   constructor() {
@@ -24,21 +33,21 @@ export default class AddressPicker extends RichPicker {
 
   attributeChangedCallback(name, oldValue, newValue) {
     super.attributeChangedCallback(name, oldValue, newValue);
-    if (name == "address-fields" && oldValue !== newValue) {
+    if (AddressPicker.pickerAttributes.includes(name) && oldValue !== newValue) {
       this.render(this.requestStore.getState());
     }
   }
 
   get fieldNames() {
     if (this.hasAttribute("address-fields")) {
-      let names = this.getAttribute("address-fields").split(/\s+/);
+      let names = this.getAttribute("address-fields").trim().split(/\s+/);
       if (names.length) {
         return names;
       }
     }
 
     return [
-      "address-level1",
+      // "address-level1", // TODO: bug 1481481 - not required for some countries e.g. DE
       "address-level2",
       "country",
       "name",
@@ -100,7 +109,24 @@ export default class AddressPicker extends RichPicker {
         }
       }
 
-      optionEl.textContent = AddressOption.formatSingleLineLabel(address);
+      optionEl.dataset.fieldSeparator = this.dataset.fieldSeparator;
+
+      if (this.hasAttribute("address-fields")) {
+        optionEl.setAttribute("address-fields", this.getAttribute("address-fields"));
+      } else {
+        optionEl.removeAttribute("address-fields");
+      }
+
+      if (this.hasAttribute("break-after-nth-field")) {
+        optionEl.setAttribute("break-after-nth-field", this.getAttribute("break-after-nth-field"));
+      } else {
+        optionEl.removeAttribute("break-after-nth-field");
+      }
+
+      // fieldNames getter is not used here because it returns a default array with
+      // attributes even when "address-fields" observed attribute is null.
+      let addressFields = this.getAttribute("address-fields");
+      optionEl.textContent = AddressOption.formatSingleLineLabel(address, addressFields);
       desiredOptions.push(optionEl);
     }
 
@@ -123,6 +149,24 @@ export default class AddressPicker extends RichPicker {
 
   get selectedStateKey() {
     return this.getAttribute("selected-state-key");
+  }
+
+  errorForSelectedOption(state) {
+    let superError = super.errorForSelectedOption(state);
+    if (superError) {
+      return superError;
+    }
+
+    if (!this.selectedOption) {
+      return "";
+    }
+
+    let merchantFieldErrors = AddressForm.merchantFieldErrorsForForm(state,
+                                                                     [this.selectedStateKey]);
+    // TODO: errors in priority order.
+    return Object.values(merchantFieldErrors).find(msg => {
+      return typeof(msg) == "string" && msg.length;
+    }) || "";
   }
 
   handleEvent(event) {

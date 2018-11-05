@@ -31,6 +31,8 @@ add_task(async function test_dropdown() {
       await PTU.DialogContentUtils.waitForState(content, (state) => {
         return state.page.id == "address-page" && !state.page.guid;
       }, "Check add page state");
+
+      content.document.querySelector("#country").scrollIntoView();
     });
 
     info("going to open the country <select>");
@@ -42,6 +44,8 @@ add_task(async function test_dropdown() {
       expectedPopupID = "ContentSelectDropdown-windows";
     }
     is(event.target.parentElement.id, expectedPopupID, "Checked menulist of opened popup");
+
+    event.target.hidePopup(true);
 
     info("clicking cancel");
     spawnPaymentDialogTask(frame, PTU.DialogContentTasks.manuallyClickCancel);

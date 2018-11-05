@@ -4,7 +4,10 @@
 
 "use strict";
 
-const {FormAutofillStorage} = ChromeUtils.import("resource://formautofill/FormAutofillStorage.jsm", {});
+let FormAutofillStorage;
+add_task(async function setup() {
+  ({FormAutofillStorage} = ChromeUtils.import("resource://formautofill/FormAutofillStorage.jsm", {}));
+});
 
 const TEST_STORE_FILE_NAME = "test-profile.json";
 
@@ -411,7 +414,7 @@ const ADDRESS_NORMALIZE_TESTCASES = [
     description: "Has unsupported \"country\"",
     address: {
       "given-name": "John", // Make sure it won't be an empty record.
-      "country": "TV",
+      "country": "XX",
     },
     expectedResult: {
       "country": undefined,
@@ -892,15 +895,17 @@ add_task(async function test_computeAddressFields() {
   let profileStorage = new FormAutofillStorage(path);
   await profileStorage.initialize();
 
-  ADDRESS_COMPUTE_TESTCASES.forEach(testcase => {
+  for (let testcase of ADDRESS_COMPUTE_TESTCASES) {
     info("Verify testcase: " + testcase.description);
 
-    let guid = profileStorage.addresses.add(testcase.address);
-    let address = profileStorage.addresses.get(guid);
+    let guid = await profileStorage.addresses.add(testcase.address);
+    let address = await profileStorage.addresses.get(guid);
     do_check_record_matches(testcase.expectedResult, address);
 
     profileStorage.addresses.remove(guid);
-  });
+  }
+
+  await profileStorage._finalize();
 });
 
 add_task(async function test_normalizeAddressFields() {
@@ -909,15 +914,17 @@ add_task(async function test_normalizeAddressFields() {
   let profileStorage = new FormAutofillStorage(path);
   await profileStorage.initialize();
 
-  ADDRESS_NORMALIZE_TESTCASES.forEach(testcase => {
+  for (let testcase of ADDRESS_NORMALIZE_TESTCASES) {
     info("Verify testcase: " + testcase.description);
 
-    let guid = profileStorage.addresses.add(testcase.address);
-    let address = profileStorage.addresses.get(guid);
+    let guid = await profileStorage.addresses.add(testcase.address);
+    let address = await profileStorage.addresses.get(guid);
     do_check_record_matches(testcase.expectedResult, address);
 
     profileStorage.addresses.remove(guid);
-  });
+  }
+
+  await profileStorage._finalize();
 });
 
 add_task(async function test_computeCreditCardFields() {
@@ -926,15 +933,17 @@ add_task(async function test_computeCreditCardFields() {
   let profileStorage = new FormAutofillStorage(path);
   await profileStorage.initialize();
 
-  CREDIT_CARD_COMPUTE_TESTCASES.forEach(testcase => {
+  for (let testcase of CREDIT_CARD_COMPUTE_TESTCASES) {
     info("Verify testcase: " + testcase.description);
 
-    let guid = profileStorage.creditCards.add(testcase.creditCard);
-    let creditCard = profileStorage.creditCards.get(guid);
+    let guid = await profileStorage.creditCards.add(testcase.creditCard);
+    let creditCard = await profileStorage.creditCards.get(guid);
     do_check_record_matches(testcase.expectedResult, creditCard);
 
     profileStorage.creditCards.remove(guid);
-  });
+  }
+
+  await profileStorage._finalize();
 });
 
 add_task(async function test_normalizeCreditCardFields() {
@@ -943,13 +952,15 @@ add_task(async function test_normalizeCreditCardFields() {
   let profileStorage = new FormAutofillStorage(path);
   await profileStorage.initialize();
 
-  CREDIT_CARD_NORMALIZE_TESTCASES.forEach(testcase => {
+  for (let testcase of CREDIT_CARD_NORMALIZE_TESTCASES) {
     info("Verify testcase: " + testcase.description);
 
-    let guid = profileStorage.creditCards.add(testcase.creditCard);
-    let creditCard = profileStorage.creditCards.get(guid, {rawData: true});
+    let guid = await profileStorage.creditCards.add(testcase.creditCard);
+    let creditCard = await profileStorage.creditCards.get(guid, {rawData: true});
     do_check_record_matches(testcase.expectedResult, creditCard);
 
     profileStorage.creditCards.remove(guid);
-  });
+  }
+
+  await profileStorage._finalize();
 });

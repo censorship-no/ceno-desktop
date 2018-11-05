@@ -15,7 +15,7 @@ import mozcrash
 import mozinfo
 import mozlog
 import moznetwork
-from mozdevice import ADBAndroid
+from mozdevice import ADBAndroid, ADBError
 from mozprofile import Profile, DEFAULT_PORTS
 from mozprofile.permissions import ServerLocations
 from runtests import MochitestDesktop, update_mozinfo
@@ -52,10 +52,14 @@ class JUnitTestRunner(MochitestDesktop):
         update_mozinfo()
         self.remote_profile = posixpath.join(self.device.test_root, 'junit-profile')
 
-        if self.options.coverage and not self.options.coverage_output_path:
-            raise Exception("--coverage-output-path is required when using --enable-coverage")
-        self.remote_coverage_output_path = posixpath.join(self.device.test_root,
-                                                          'junit-coverage.ec')
+        if self.options.coverage and not self.options.coverage_output_dir:
+            raise Exception("--coverage-output-dir is required when using --enable-coverage")
+        if self.options.coverage:
+            self.remote_coverage_output_file = posixpath.join(self.device.test_root,
+                                                              'junit-coverage.ec')
+            self.coverage_output_file = os.path.join(self.options.coverage_output_dir,
+                                                     'junit-coverage.ec')
+
         self.server_init()
 
         self.cleanup()
@@ -153,7 +157,7 @@ class JUnitTestRunner(MochitestDesktop):
         # enable code coverage reports
         if self.options.coverage:
             cmd = cmd + " -e coverage true"
-            cmd = cmd + " -e coverageFile %s" % self.remote_coverage_output_path
+            cmd = cmd + " -e coverageFile %s" % self.remote_coverage_output_file
         # environment
         env = {}
         env["MOZ_CRASHREPORTER"] = "1"
@@ -256,6 +260,7 @@ class JUnitTestRunner(MochitestDesktop):
         # names are not known in advance.
         self.log.suite_start(["geckoview-junit"])
         try:
+            self.device.grant_runtime_permissions(self.options.app)
             cmd = self.build_command_line(test_filters)
             self.log.info("launching %s" % cmd)
             p = self.device.shell(cmd, timeout=self.options.max_time, stdout_callback=callback)
@@ -272,7 +277,14 @@ class JUnitTestRunner(MochitestDesktop):
             self.fail_count = 1
 
         if self.options.coverage:
-            self.device.pull(self.remote_coverage_output_path, self.options.coverage_output_path)
+            try:
+                self.device.pull(self.remote_coverage_output_file,
+                                 self.coverage_output_file)
+            except ADBError:
+                # Avoid a task retry in case the code coverage file is not found.
+                self.log.error("No code coverage file (%s) found on remote device" %
+                               self.remote_coverage_output_file)
+                return -1
 
         return 1 if self.fail_count else 0
 
@@ -381,12 +393,12 @@ class JunitArgumentParser(argparse.ArgumentParser):
                           dest="coverage",
                           default=False,
                           help="Enable code coverage collection.")
-        self.add_argument("--coverage-output-path",
+        self.add_argument("--coverage-output-dir",
                           action="store",
                           type=str,
-                          dest="coverage_output_path",
+                          dest="coverage_output_dir",
                           default=None,
-                          help="If collecting code coverage, save the report file to this path.")
+                          help="If collecting code coverage, save the report file in this dir.")
         # Additional options for server.
         self.add_argument("--certificate-path",
                           action="store",

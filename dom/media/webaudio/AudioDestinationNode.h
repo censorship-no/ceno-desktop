@@ -10,6 +10,7 @@
 #include "AudioChannelService.h"
 #include "AudioNode.h"
 #include "nsIAudioChannelAgent.h"
+#include "mozilla/TimeStamp.h"
 
 namespace mozilla {
 namespace dom {
@@ -26,9 +27,8 @@ public:
   AudioDestinationNode(AudioContext* aContext,
                        bool aIsOffline,
                        bool aAllowedToStart,
-                       uint32_t aNumberOfChannels = 0,
-                       uint32_t aLength = 0,
-                       float aSampleRate = 0.0f);
+                       uint32_t aNumberOfChannels,
+                       uint32_t aLength);
 
   void DestroyMediaStream() override;
 
@@ -48,7 +48,7 @@ public:
                        ErrorResult& aRv) override;
 
   // Returns the stream or null after unlink.
-  AudioNodeStream* Stream() { return mStream; }
+  AudioNodeStream* Stream();
 
   void Mute();
   void Unmute();
@@ -74,7 +74,7 @@ public:
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
-  void InputMuted(bool aInputMuted);
+  void NotifyAudibleStateChanged(bool aAudible);
   void ResolvePromise(AudioBuffer* aRenderedBuffer);
 
   unsigned long Length()
@@ -100,6 +100,11 @@ private:
 
   bool mCaptured;
   AudioChannelService::AudibleState mAudible;
+
+  // These varaibles are used to know how long AudioContext would become audible
+  // since it was created.
+  TimeStamp mCreatedTime;
+  TimeDuration mDurationBeforeFirstTimeAudible;
 };
 
 } // namespace dom

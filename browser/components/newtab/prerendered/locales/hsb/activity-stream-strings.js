@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Wobraz njeda so začitać. Spytajće druhi URL.",
   "pocket_read_more": "Woblubowane temy:",
   "pocket_read_even_more": "Dalše zdźělenki sej wobhladać",
+  "pocket_more_reccommendations": "Dalše doporučenja",
+  "pocket_how_it_works": "Kak funguje",
+  "pocket_cta_button": "Pocket wobstarać",
+  "pocket_cta_text": "Składujće stawizny, kotrež so wam spodobuja, w Pocket a žiwće swój duch z fascinowacymi čitančkami.",
   "highlights_empty_state": "Započńće přehladować, a pokazamy někotre wulkotne nastawki, wideja a druhe strony, kotrež sće njedawno wopytał abo tu jako zapołožki składował.",
   "topstories_empty_state": "To je nachwilu wšitko. Wróćće so pozdźišo dalšich wulkotnych stawiznow dla wot {provider}. Njemóžeće čakać? Wubjerće woblubowanu temu, zo byšće dalše wulkotne stawizny z weba namakał.",
   "manual_migration_explanation2": "Wupruwujće Firefox ze zapołožkami, historiju a hesłami z druheho wobhladowaka.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Wotrězk rjadować",
   "section_menu_action_manage_webext": "Rozšěrjenje rjadować",
   "section_menu_action_add_topsite": "Woblubowane sydło přidać",
+  "section_menu_action_add_search_engine": "Pytawu přidać",
   "section_menu_action_move_up": "Horje",
   "section_menu_action_move_down": "Dele",
   "section_menu_action_privacy_notice": "Zdźělenka priwatnosće",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Wužiwanske wuměnjenja",
   "firstrun_privacy_notice": "Zdźělenka priwatnosće",
   "firstrun_continue_to_login": "Pokročować",
-  "firstrun_skip_login": "Tutón krok přeskočić"
+  "firstrun_skip_login": "Tutón krok přeskočić",
+  "context_menu_title": "Meni wočinić",
+  "pocket_learn_more": "Dalše informacije"
 };

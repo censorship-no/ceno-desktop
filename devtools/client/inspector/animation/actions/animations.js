@@ -9,8 +9,9 @@ const {
   UPDATE_DETAIL_VISIBILITY,
   UPDATE_ELEMENT_PICKER_ENABLED,
   UPDATE_HIGHLIGHTED_NODE,
+  UPDATE_PLAYBACK_RATES,
   UPDATE_SELECTED_ANIMATION,
-  UPDATE_SIDEBAR_SIZE
+  UPDATE_SIDEBAR_SIZE,
 } = require("./index");
 
 module.exports = {
@@ -55,6 +56,15 @@ module.exports = {
   },
 
   /**
+   * Update the playback rates.
+   */
+  updatePlaybackRates() {
+    return {
+      type: UPDATE_PLAYBACK_RATES,
+    };
+  },
+
+  /**
    * Update selected animation.
    */
   updateSelectedAnimation(selectedAnimation) {
@@ -72,5 +82,5 @@ module.exports = {
       type: UPDATE_SIDEBAR_SIZE,
       sidebarSize,
     };
-  }
+  },
 };

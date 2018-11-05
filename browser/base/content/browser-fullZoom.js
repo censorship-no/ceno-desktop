@@ -168,7 +168,7 @@ var FullZoom = {
       handleCompletion: () => {
         if (!hasPref && token.isCurrent)
           this._applyPrefToZoom(undefined, browser);
-      }
+      },
     });
   },
 
@@ -252,7 +252,7 @@ var FullZoom = {
         }
         this._applyPrefToZoom(value, browser,
                               this._notifyOnLocationChange.bind(this, browser));
-      }
+      },
     });
   },
 
@@ -457,8 +457,9 @@ var FullZoom = {
 
     // With in-process content browsers, the event's target is the content
     // document.
-    if (target.nodeType == Node.DOCUMENT_NODE)
-      return gBrowser.getBrowserForDocument(target);
+    if (target.nodeType == Node.DOCUMENT_NODE) {
+      return target.ownerGlobal.docShell.chromeEventHandler;
+    }
 
     throw new Error("Unexpected ZoomChangeUsingMouseWheel event source");
   },
@@ -512,7 +513,7 @@ var FullZoom = {
         handleCompletion: (reason) => {
           this._globalValue = this._ensureValid(value);
           resolve(this._globalValue);
-        }
+        },
       });
     });
   },

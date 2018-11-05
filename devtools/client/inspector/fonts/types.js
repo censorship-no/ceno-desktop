@@ -74,20 +74,12 @@ const font = exports.font = {
   variationAxes: PropTypes.arrayOf(PropTypes.shape(fontVariationAxis)),
 
   // The variation instances of the font
-  variationInstances: PropTypes.arrayOf(PropTypes.shape(fontVariationInstance))
+  variationInstances: PropTypes.arrayOf(PropTypes.shape(fontVariationInstance)),
 };
 
 exports.fontOptions = {
   // The current preview text
   previewText: PropTypes.string,
-};
-
-const fontFamilies = {
-  // Font family names used on the selected element
-  used: PropTypes.arrayOf(PropTypes.string),
-
-  // Font family names declared but not used on the selected element
-  notUsed: PropTypes.arrayOf(PropTypes.string),
 };
 
 exports.fontEditor = {
@@ -98,10 +90,7 @@ exports.fontEditor = {
   // of a fontVariationInstance
   customInstanceValues: PropTypes.array,
 
-  // Font families declared on this element
-  families: PropTypes.shape(fontFamilies),
-
-  // Fonts used on the selected element whose family names are declared in CSS font-family
+  // Fonts used on the selected element
   fonts: PropTypes.arrayOf(PropTypes.shape(font)),
 
   // Font variation instance currently selected
@@ -115,6 +104,9 @@ exports.fontEditor = {
  * Font data.
  */
 exports.fontData = {
+  // All fonts on the current page.
+  allFonts: PropTypes.arrayOf(PropTypes.shape(font)),
+
   // The fonts used in the current element.
   fonts: PropTypes.arrayOf(PropTypes.shape(font)),
 

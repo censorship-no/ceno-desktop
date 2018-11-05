@@ -18,7 +18,7 @@ namespace dom {
 class HTMLHRElement final : public nsGenericHTMLElement
 {
 public:
-  explicit HTMLHRElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLHRElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   // nsISupports
   NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLHRElement, nsGenericHTMLElement)
@@ -30,8 +30,7 @@ public:
                               nsAttrValue& aResult) override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL API
   void GetAlign(nsAString& aValue) const

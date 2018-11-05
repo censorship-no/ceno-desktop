@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Kunne ikke lese inn bildet. Prøv en annen URL.",
   "pocket_read_more": "Populære emner:",
   "pocket_read_even_more": "Vis flere saker",
+  "pocket_more_reccommendations": "Flere anbefalinger",
+  "pocket_how_it_works": "Hvordan det virker",
+  "pocket_cta_button": "Hent Pocket",
+  "pocket_cta_text": "Lagre artiklene du synes er interessante i Pocket, og stimuler dine tanker med fasinerende lesermateriell.",
   "highlights_empty_state": "Begynn å surfe, og vi viser noen av de beste artiklene, videoer og andre sider du nylig har besøkt eller bokmerket her.",
   "topstories_empty_state": "Du har tatt igjen. Kom tilbake senere for flere topphistorier fra {provider}. Kan du ikke vente? Velg et populært emne for å finne flere gode artikler fra hele Internett.",
   "manual_migration_explanation2": "Prøv Firefox med bokmerkene, historikk og passord fra en annen nettleser.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Håndter seksjon",
   "section_menu_action_manage_webext": "Behandle utvidelse",
   "section_menu_action_add_topsite": "Legg til toppsted",
+  "section_menu_action_add_search_engine": "Legg til søkemotor",
   "section_menu_action_move_up": "Flytt opp",
   "section_menu_action_move_down": "Flytt ned",
   "section_menu_action_privacy_notice": "Personvernbestemmelser",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Tjenestevilkår",
   "firstrun_privacy_notice": "Personvernbestemmelser",
   "firstrun_continue_to_login": "Fortsett",
-  "firstrun_skip_login": "Hopp over dette trinnet"
+  "firstrun_skip_login": "Hopp over dette trinnet",
+  "context_menu_title": "Open menu",
+  "pocket_learn_more": "Les mer"
 };

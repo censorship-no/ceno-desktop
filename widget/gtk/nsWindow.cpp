@@ -57,6 +57,7 @@
 
 #if defined(MOZ_WAYLAND)
 #include <gdk/gdkwayland.h>
+#include "nsView.h"
 #endif
 
 #include "nsGkAtoms.h"
@@ -841,6 +842,37 @@ nsWindow::GetDesktopToDeviceScale()
     return DesktopToLayoutDeviceScale(1.0);
 }
 
+DesktopToLayoutDeviceScale
+nsWindow::GetDesktopToDeviceScaleByScreen()
+{
+#ifdef MOZ_WAYLAND
+    GdkDisplay* gdkDisplay = gdk_display_get_default();
+    // In Wayland there's no way to get absolute position of the window and use it to
+    // determine the screen factor of the monitor on which the window is placed.
+    // The window is notified of the current scale factor but not at this point,
+    // so the GdkScaleFactor can return wrong value which can lead to wrong popup
+    // placement.
+    // We need to use parent's window scale factor for the new one.
+    if (GDK_IS_WAYLAND_DISPLAY(gdkDisplay)) {
+        nsView* view = nsView::GetViewFor(this);
+        if (view) {
+            nsView* parentView = view->GetParent();
+            if (parentView) {
+                nsIWidget* parentWidget = parentView->GetNearestWidget(nullptr);
+                if (parentWidget) {
+                    return DesktopToLayoutDeviceScale(parentWidget->RoundsWidgetCoordinatesTo());
+                } else {
+                    NS_WARNING("Widget has no parent");
+                }
+            }
+        } else {
+            NS_WARNING("Cannot find widget view");
+        }
+    }
+#endif
+    return nsBaseWidget::GetDesktopToDeviceScale();
+}
+
 void
 nsWindow::SetParent(nsIWidget *aNewParent)
 {
@@ -1573,7 +1605,6 @@ nsWindow::GetClientOffset()
 
 gboolean
 nsWindow::OnPropertyNotifyEvent(GtkWidget* aWidget, GdkEventProperty* aEvent)
-
 {
   if (aEvent->atom == gdk_atom_intern("_NET_FRAME_EXTENTS", FALSE)) {
     UpdateClientOffset();
@@ -3668,6 +3699,14 @@ nsWindow::Create(nsIWidget* aParent,
     bool            needsAlphaVisual = (mWindowType == eWindowType_popup &&
                                        aInitData->mSupportTranslucency);
 
+    // Some Gtk+ themes use non-rectangular toplevel windows. To fully support
+    // such themes we need to make toplevel window transparent with ARGB visual.
+    // It may cause performanance issue so make it configurable
+    // and enable it by default for selected window managers.
+    if (mWindowType == eWindowType_toplevel) {
+        needsAlphaVisual = TopLevelWindowUseARGBVisual();
+    }
+
     if (aParent) {
         parentnsWindow = static_cast<nsWindow*>(aParent);
         parentGdkWindow = parentnsWindow->mGdkWindow;
@@ -3717,18 +3756,25 @@ nsWindow::Create(nsIWidget* aParent,
         }
         mShell = gtk_window_new(type);
 
+        bool isSetVisual = false;
 #ifdef MOZ_X11
         // Ensure gfxPlatform is initialized, since that is what initializes
         // gfxVars, used below.
         Unused << gfxPlatform::GetPlatform();
 
         bool useWebRender = gfx::gfxVars::UseWebRender() &&
-            AllowWebRenderForThisWindow();
+             AllowWebRenderForThisWindow();
+
+        bool shouldAccelerate = ComputeShouldAccelerate();
+        MOZ_ASSERT(shouldAccelerate | !useWebRender);
 
         // If using WebRender on X11, we need to select a visual with a depth buffer,
         // as well as an alpha channel if transparency is requested. This must be done
         // before the widget is realized.
-        if (mIsX11Display && useWebRender) {
+
+        // Use GL/WebRender compatible visual only when it is necessary, since
+        // the visual consumes more memory.
+        if (mIsX11Display && shouldAccelerate) {
             auto display =
                 GDK_DISPLAY_XDISPLAY(gtk_widget_get_display(mShell));
             auto screen = gtk_widget_get_screen(mShell);
@@ -3743,22 +3789,29 @@ nsWindow::Create(nsIWidget* aParent,
                                       gdk_x11_screen_lookup_visual(screen,
                                                                    visualId));
                 mHasAlphaVisual = needsAlphaVisual;
+                isSetVisual = true;
             } else {
-                NS_WARNING("We're missing X11 Visual for WebRender!");
+                NS_WARNING("We're missing X11 Visual!");
             }
-        } else
+        }
 #endif // MOZ_X11
-        {
-            if (needsAlphaVisual) {
-                GdkScreen *screen = gtk_widget_get_screen(mShell);
-                if (gdk_screen_is_composited(screen)) {
-                    GdkVisual *visual = gdk_screen_get_rgba_visual(screen);
-                    if (visual) {
-                        gtk_widget_set_visual(mShell, visual);
-                        mHasAlphaVisual = true;
-                    }
+
+        if (!isSetVisual && needsAlphaVisual) {
+            GdkScreen *screen = gtk_widget_get_screen(mShell);
+            if (gdk_screen_is_composited(screen)) {
+                GdkVisual *visual = gdk_screen_get_rgba_visual(screen);
+                if (visual) {
+                    gtk_widget_set_visual(mShell, visual);
+                    mHasAlphaVisual = true;
                 }
             }
+        }
+
+        // We have a toplevel window with transparency. Mark it as transparent
+        // now as nsWindow::SetTransparencyMode() can't be called after
+        // nsWindow is created (Bug 1344839).
+        if (mWindowType == eWindowType_toplevel && mHasAlphaVisual) {
+            mIsTransparent = true;
         }
 
         // We only move a general managed toplevel window if someone has
@@ -6726,6 +6779,13 @@ nsWindow::ClearCachedResources()
 void
 nsWindow::UpdateClientOffsetForCSDWindow()
 {
+    // We update window offset on X11 as the window position is calculated
+    // relatively to mShell. We don't do that on Wayland as our wl_subsurface
+    // is attached to mContainer and mShell is ignored.
+    if (!mIsX11Display) {
+        return;
+    }
+
     // _NET_FRAME_EXTENTS is not set on client decorated windows,
     // so we need to read offset between mContainer and toplevel mShell
     // window.
@@ -7132,6 +7192,8 @@ nsWindow::GetSystemCSDSupportLevel() {
         // KDE Plasma
         } else if (strstr(currentDesktop, "KDE") != nullptr) {
             sCSDSupportLevel = CSD_SUPPORT_CLIENT;
+        } else if (strstr(currentDesktop, "Enlightenment") != nullptr) {
+            sCSDSupportLevel = CSD_SUPPORT_CLIENT;
         } else if (strstr(currentDesktop, "LXDE") != nullptr) {
             sCSDSupportLevel = CSD_SUPPORT_CLIENT;
         } else if (strstr(currentDesktop, "openbox") != nullptr) {
@@ -7142,11 +7204,13 @@ nsWindow::GetSystemCSDSupportLevel() {
             sCSDSupportLevel = CSD_SUPPORT_CLIENT;
         // Ubuntu Unity
         } else if (strstr(currentDesktop, "Unity") != nullptr) {
-            sCSDSupportLevel = CSD_SUPPORT_CLIENT;
+            sCSDSupportLevel = CSD_SUPPORT_SYSTEM;
         // Elementary OS
         } else if (strstr(currentDesktop, "Pantheon") != nullptr) {
             sCSDSupportLevel = CSD_SUPPORT_SYSTEM;
         } else if (strstr(currentDesktop, "LXQt") != nullptr) {
+            sCSDSupportLevel = CSD_SUPPORT_SYSTEM;
+        } else if (strstr(currentDesktop, "Deepin") != nullptr) {
             sCSDSupportLevel = CSD_SUPPORT_SYSTEM;
         } else {
 // Release or beta builds are not supposed to be broken
@@ -7190,6 +7254,33 @@ nsWindow::GetSystemCSDSupportLevel() {
     }
 
     return sCSDSupportLevel;
+}
+
+bool
+nsWindow::TopLevelWindowUseARGBVisual()
+{
+    static int useARGBVisual = -1;
+    if (useARGBVisual != -1) {
+        return useARGBVisual;
+    }
+
+    if (Preferences::HasUserValue("mozilla.widget.use-argb-visuals")) {
+        useARGBVisual =
+            Preferences::GetBool("mozilla.widget.use-argb-visuals", false);
+    } else {
+        const char* currentDesktop = getenv("XDG_CURRENT_DESKTOP");
+        useARGBVisual =
+            (currentDesktop &&
+             GetSystemCSDSupportLevel() != CSD_SUPPORT_NONE);
+
+        if (useARGBVisual) {
+            useARGBVisual =
+                (strstr(currentDesktop, "GNOME-Flashback:GNOME") != nullptr ||
+                 strstr(currentDesktop, "GNOME") != nullptr);
+        }
+    }
+
+    return useARGBVisual;
 }
 
 int32_t
@@ -7317,3 +7408,82 @@ nsWindow::SetCompositorHint(WindowComposeRequest aState)
     }
 }
 #endif
+
+nsresult
+nsWindow::SetSystemFont(const nsCString& aFontName)
+{
+    GtkSettings* settings = gtk_settings_get_default();
+    g_object_set(settings, "gtk-font-name", aFontName.get(), nullptr);
+    return NS_OK;
+}
+
+nsresult
+nsWindow::GetSystemFont(nsCString& aFontName)
+{
+    GtkSettings* settings = gtk_settings_get_default();
+    gchar* fontName = nullptr;
+    g_object_get(settings,
+                 "gtk-font-name", &fontName,
+                 nullptr);
+    if (fontName) {
+        aFontName.Assign(fontName);
+        g_free(fontName);
+    }
+    return NS_OK;
+}
+
+already_AddRefed<nsIWidget>
+nsIWidget::CreateTopLevelWindow()
+{
+  nsCOMPtr<nsIWidget> window = new nsWindow();
+  return window.forget();
+}
+
+already_AddRefed<nsIWidget>
+nsIWidget::CreateChildWindow()
+{
+  nsCOMPtr<nsIWidget> window = new nsWindow();
+  return window.forget();
+}
+
+bool
+nsWindow::GetTopLevelWindowActiveState(nsIFrame *aFrame)
+{
+  // Used by window frame and button box rendering. We can end up in here in
+  // the content process when rendering one of these moz styles freely in a
+  // page. Fail in this case, there is no applicable window focus state.
+  if (!XRE_IsParentProcess()) {
+    return false;
+  }
+  // All headless windows are considered active so they are painted.
+  if (gfxPlatform::IsHeadless()) {
+    return true;
+  }
+  // Get the widget. nsIFrame's GetNearestWidget walks up the view chain
+  // until it finds a real window.
+  nsWindow* window = static_cast<nsWindow*>(aFrame->GetNearestWidget());
+  if (!window) {
+    return false;
+  }
+
+  // Get our toplevel nsWindow.
+  if (!window->mIsTopLevel) {
+      GtkWidget *widget = window->GetMozContainerWidget();
+      if (!widget) {
+        return false;
+      }
+
+      GtkWidget *toplevelWidget = gtk_widget_get_toplevel(widget);
+      window = get_window_for_gtk_widget(toplevelWidget);
+      if (!window) {
+        return false;
+      }
+  }
+
+  GtkWidget* widget = window->GetGtkWidget();
+  if (widget) {
+      return !(gtk_widget_get_state_flags(widget) & GTK_STATE_FLAG_BACKDROP);
+  }
+
+  return false;
+}

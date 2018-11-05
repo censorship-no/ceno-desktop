@@ -30,7 +30,7 @@ class SVGAElement final : public SVGAElementBase,
 protected:
   using Element::GetText;
 
-  explicit SVGAElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGAElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   friend nsresult (::NS_NewSVGAElement(nsIContent **aResult,
                                        already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
@@ -44,8 +44,7 @@ public:
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
   virtual nsresult PostHandleEvent(
                      EventChainPostVisitor& aVisitor) override;
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // nsIContent
   virtual nsresult BindToTree(nsIDocument *aDocument, nsIContent *aParent,

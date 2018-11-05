@@ -11,7 +11,6 @@
 
 #include "DateTimeFormat.h"
 #include "nsAttrValue.h"
-#include "nsAutoCopyListener.h"
 #include "nsColorNames.h"
 #include "nsComputedDOMStyle.h"
 #include "nsContentDLF.h"
@@ -80,7 +79,6 @@
 #endif
 
 #include "CubebUtils.h"
-#include "Latency.h"
 #include "WebAudioUtils.h"
 
 #include "nsError.h"
@@ -104,6 +102,7 @@
 #include "DecoderDoctorLogger.h"
 #include "MediaDecoder.h"
 #include "mozilla/ClearSiteData.h"
+#include "mozilla/Fuzzyfox.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StaticPresData.h"
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
@@ -112,6 +111,7 @@
 #include "mozilla/dom/PointerEventHandler.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "nsThreadManager.h"
+#include "mozilla/css/ImageLoader.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -134,15 +134,14 @@ nsLayoutStatics::Initialize()
 
   ContentParent::StartUp();
 
-  // Register static atoms. Note that nsGkAtoms must be initialized earlier
-  // than here, so it's done in NS_InitAtomTable() instead.
-  nsCSSAnonBoxes::RegisterStaticAtoms();
-  nsCSSPseudoElements::RegisterStaticAtoms();
   nsCSSKeywords::AddRefTable();
   nsCSSProps::AddRefTable();
   nsColorNames::AddRefTable();
 
-  NS_SetStaticAtomsDone();
+#ifdef DEBUG
+  nsCSSPseudoElements::AssertAtoms();
+  nsCSSAnonBoxes::AssertAtoms();
+#endif
 
   StartupJSEnvironment();
   nsJSContext::EnsureStatics();
@@ -175,6 +174,7 @@ nsLayoutStatics::Initialize()
   mozilla::SharedFontList::Initialize();
   StaticPresData::Init();
   nsCSSRendering::Init();
+  css::ImageLoader::Init();
 
   rv = nsHTMLDNSPrefetch::Initialize();
   if (NS_FAILED(rv)) {
@@ -221,7 +221,6 @@ nsLayoutStatics::Initialize()
     return rv;
   }
 
-  AsyncLatencyLogger::InitializeStatics();
   DecoderDoctorLogger::Init();
   MediaManager::StartupInit();
   CubebUtils::InitLibrary();
@@ -285,6 +284,8 @@ nsLayoutStatics::Initialize()
   }
 
   nsThreadManager::InitializeShutdownObserver();
+
+  mozilla::Fuzzyfox::Start();
 
   ClearSiteData::Initialize();
 
@@ -353,14 +354,11 @@ nsLayoutStatics::Shutdown()
   ShutdownJSEnvironment();
   nsGlobalWindowInner::ShutDown();
   nsGlobalWindowOuter::ShutDown();
-  WebIDLGlobalNameHash::Shutdown();
   nsListControlFrame::Shutdown();
   nsXBLService::Shutdown();
-  nsAutoCopyListener::Shutdown();
   FrameLayerBuilder::Shutdown();
 
   CubebUtils::ShutdownLibrary();
-  AsyncLatencyLogger::ShutdownLogger();
   WebAudioUtils::Shutdown();
 
   nsCORSListenerProxy::Shutdown();
@@ -396,4 +394,6 @@ nsLayoutStatics::Shutdown()
   PromiseDebugging::Shutdown();
 
   BlobURLProtocolHandler::RemoveDataEntries();
+
+  css::ImageLoader::Shutdown();
 }

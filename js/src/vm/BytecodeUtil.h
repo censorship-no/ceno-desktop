@@ -39,53 +39,41 @@ FOR_EACH_OPCODE(ENUMERATE_OPCODE)
  */
 enum {
     JOF_BYTE            = 0,        /* single bytecode, no immediates */
-    JOF_JUMP            = 1,        /* signed 16-bit jump offset immediate */
-    JOF_ATOM            = 2,        /* unsigned 16-bit constant index */
-    JOF_UINT16          = 3,        /* unsigned 16-bit immediate operand */
-    JOF_TABLESWITCH     = 4,        /* table switch */
-    /* 5 is unused */
-    JOF_QARG            = 6,        /* quickened get/set function argument ops */
-    JOF_LOCAL           = 7,        /* var or block-local variable */
-    JOF_DOUBLE          = 8,        /* uint32_t index for double value */
-    JOF_UINT24          = 12,       /* extended unsigned 24-bit literal (index) */
-    JOF_UINT8           = 13,       /* uint8_t immediate, e.g. top 8 bits of 24-bit
-                                       atom index */
-    JOF_INT32           = 14,       /* int32_t immediate operand */
-    JOF_UINT32          = 15,       /* uint32_t immediate operand */
-    JOF_OBJECT          = 16,       /* unsigned 32-bit object index */
-    JOF_REGEXP          = 17,       /* unsigned 32-bit regexp index */
-    JOF_INT8            = 18,       /* int8_t immediate operand */
-    JOF_ATOMOBJECT      = 19,       /* uint16_t constant index + object index */
-    JOF_SCOPE           = 20,       /* unsigned 32-bit scope index */
-    JOF_ENVCOORD        = 21,       /* embedded ScopeCoordinate immediate */
+    JOF_UINT8           = 1,        /* unspecified uint8_t argument */
+    JOF_UINT16          = 2,        /* unspecified uint16_t argument */
+    JOF_UINT24          = 3,        /* unspecified uint24_t argument */
+    JOF_UINT32          = 4,        /* unspecified uint32_t argument */
+    JOF_INT8            = 5,        /* int8_t literal */
+    JOF_INT32           = 6,        /* int32_t literal */
+    JOF_JUMP            = 7,        /* int32_t jump offset */
+    JOF_TABLESWITCH     = 8,        /* table switch */
+    JOF_ENVCOORD        = 9,        /* embedded ScopeCoordinate immediate */
+    JOF_ARGC            = 10,       /* uint16_t argument count */
+    JOF_QARG            = 11,       /* function argument index */
+    JOF_LOCAL           = 12,       /* var or block-local variable */
+    JOF_RESUMEINDEX     = 13,       /* yield, await, or gosub resume index */
+    JOF_ATOM            = 14,       /* uint32_t constant index */
+    JOF_OBJECT          = 15,       /* uint32_t object index */
+    JOF_REGEXP          = 16,       /* uint32_t regexp index */
+    JOF_DOUBLE          = 17,       /* uint32_t index for double value */
+    JOF_SCOPE           = 18,       /* uint32_t scope index */
     JOF_TYPEMASK        = 0x001f,   /* mask for above immediate types */
 
     JOF_NAME            = 1 << 5,   /* name operation */
     JOF_PROP            = 2 << 5,   /* obj.prop operation */
     JOF_ELEM            = 3 << 5,   /* obj[index] operation */
     JOF_MODEMASK        = 3 << 5,   /* mask for above addressing modes */
+
     JOF_PROPSET         = 1 << 7,   /* property/element/name set operation */
     JOF_PROPINIT        = 1 << 8,   /* property/element/name init operation */
-    /* 1 << 9 is unused */
-    /* 1 << 10 is unused */
-    /* 1 << 11 is unused */
-    /* 1 << 12 is unused */
-    /* 1 << 13 is unused */
-    JOF_DETECTING       = 1 << 14,  /* object detection for warning-quelling */
-    /* 1 << 15 is unused */
-    JOF_LEFTASSOC       = 1 << 16,  /* left-associative operator */
-    /* 1 << 17 is unused */
-    /* 1 << 18 is unused */
-    JOF_CHECKSLOPPY     = 1 << 19,  /* Op can only be generated in sloppy mode */
-    JOF_CHECKSTRICT     = 1 << 20,  /* Op can only be generated in strict mode */
-    JOF_INVOKE          = 1 << 21,  /* JSOP_CALL, JSOP_FUNCALL, JSOP_FUNAPPLY,
+    JOF_DETECTING       = 1 << 9,   /* object detection for warning-quelling */
+    JOF_CHECKSLOPPY     = 1 << 10,  /* Op can only be generated in sloppy mode */
+    JOF_CHECKSTRICT     = 1 << 11,  /* Op can only be generated in strict mode */
+    JOF_INVOKE          = 1 << 12,  /* JSOP_CALL, JSOP_FUNCALL, JSOP_FUNAPPLY,
                                        JSOP_NEW, JSOP_EVAL, JSOP_CALLITER */
-    /* 1 << 22 is unused */
-    /* 1 << 23 is unused */
-    /* 1 << 24 is unused */
-    JOF_GNAME           = 1 << 25,  /* predicted global name */
-    JOF_TYPESET         = 1 << 26,  /* has an entry in a script's type sets */
-    JOF_ARITH           = 1 << 27   /* unary or binary arithmetic opcode */
+    JOF_GNAME           = 1 << 13,  /* predicted global name */
+    JOF_TYPESET         = 1 << 14,  /* has an entry in a script's type sets */
+    JOF_IC              = 1 << 15,  /* Baseline may use an IC for this op */
 };
 
 /* Shorthand for type from format. */
@@ -319,6 +307,19 @@ static const unsigned LOCALNO_LEN       = 3;
 static const unsigned LOCALNO_BITS      = 24;
 static const uint32_t LOCALNO_LIMIT     = 1 << LOCALNO_BITS;
 
+static inline uint32_t
+GET_RESUMEINDEX(const jsbytecode* pc)
+{
+    return GET_UINT24(pc);
+}
+
+static inline void
+SET_RESUMEINDEX(jsbytecode* pc, uint32_t resumeIndex)
+{
+    SET_UINT24(pc, resumeIndex);
+}
+
+
 static inline unsigned
 LoopEntryDepthHint(jsbytecode* pc)
 {
@@ -394,8 +395,7 @@ struct JSCodeSpec {
 namespace js {
 
 extern const JSCodeSpec CodeSpec[];
-extern const unsigned   NumCodeSpecs;
-extern const char       * const CodeName[];
+extern const char* const CodeName[];
 
 /* Shorthand for type from opcode. */
 
@@ -458,8 +458,9 @@ StackUses(jsbytecode* pc)
 {
     JSOp op = JSOp(*pc);
     int nuses = CodeSpec[op].nuses;
-    if (nuses >= 0)
+    if (nuses >= 0) {
         return nuses;
+    }
 
     MOZ_ASSERT(nuses == -1);
     switch (op) {
@@ -533,22 +534,8 @@ DecompileValueGenerator(JSContext* cx, int spindex, HandleValue v,
  * Decompile the formal argument at formalIndex in the nearest non-builtin
  * stack frame, falling back with converting v to source.
  */
-UniqueChars
+JSString*
 DecompileArgument(JSContext* cx, int formalIndex, HandleValue v);
-
-extern bool
-CallResultEscapes(jsbytecode* pc);
-
-static inline unsigned
-GetDecomposeLength(jsbytecode* pc, size_t len)
-{
-    /*
-     * The last byte of a DECOMPOSE op stores the decomposed length.  This is a
-     * constant: perhaps we should just hardcode values instead?
-     */
-    MOZ_ASSERT(size_t(CodeSpec[*pc].length) == len);
-    return (unsigned) pc[len - 1];
-}
 
 static inline unsigned
 GetBytecodeLength(jsbytecode* pc)
@@ -556,8 +543,9 @@ GetBytecodeLength(jsbytecode* pc)
     JSOp op = (JSOp)*pc;
     MOZ_ASSERT(op < JSOP_LIMIT);
 
-    if (CodeSpec[op].length != -1)
+    if (CodeSpec[op].length != -1) {
         return CodeSpec[op].length;
+    }
     return GetVariableBytecodeLength(pc);
 }
 
@@ -573,27 +561,31 @@ BytecodeFlowsToBitop(jsbytecode* pc)
 {
     // Look for simple bytecode for integer conversions like (x | 0) or (x & -1).
     jsbytecode* next = pc + GetBytecodeLength(pc);
-    if (*next == JSOP_BITOR || *next == JSOP_BITAND)
+    if (*next == JSOP_BITOR || *next == JSOP_BITAND) {
         return true;
+    }
     if (*next == JSOP_INT8 && GET_INT8(next) == -1) {
         next += GetBytecodeLength(next);
-        if (*next == JSOP_BITAND)
+        if (*next == JSOP_BITAND) {
             return true;
+        }
         return false;
     }
     if (*next == JSOP_ONE) {
         next += GetBytecodeLength(next);
         if (*next == JSOP_NEG) {
             next += GetBytecodeLength(next);
-            if (*next == JSOP_BITAND)
+            if (*next == JSOP_BITAND) {
                 return true;
+            }
         }
         return false;
     }
     if (*next == JSOP_ZERO) {
         next += GetBytecodeLength(next);
-        if (*next == JSOP_BITOR)
+        if (*next == JSOP_BITOR) {
             return true;
+        }
         return false;
     }
     return false;
@@ -786,6 +778,12 @@ GetBytecodeInteger(jsbytecode* pc)
     }
 }
 
+inline bool
+BytecodeOpHasIC(JSOp op)
+{
+    return CodeSpec[op].format & JOF_IC;
+}
+
 /*
  * Counts accumulated for a single opcode in a script. The counts tracked vary
  * between opcodes, and this structure ensures that counts are accessed in a
@@ -827,7 +825,7 @@ class PCCounts
         return numExec_;
     }
 
-    static const char* numExecName;
+    static const char numExecName[];
 };
 
 static inline jsbytecode*

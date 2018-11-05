@@ -17,8 +17,8 @@ const EDIT_ADDRESS_KEYWORDS = [
   "givenName", "additionalName", "familyName", "organization2", "streetAddress",
   "state", "province", "city", "country", "zip", "postalCode", "email", "tel",
 ];
-const MANAGE_CREDITCARDS_KEYWORDS = ["manageCreditCardsTitle", "addNewCreditCardTitle", "showCreditCardsBtnLabel"];
-const EDIT_CREDITCARD_KEYWORDS = ["cardNumber", "nameOnCard", "cardExpires"];
+const MANAGE_CREDITCARDS_KEYWORDS = ["manageCreditCardsTitle", "addNewCreditCardTitle"];
+const EDIT_CREDITCARD_KEYWORDS = ["cardNumber", "nameOnCard", "cardExpiresMonth", "cardExpiresYear", "cardNetwork"];
 const FIELD_STATES = {
   NORMAL: "NORMAL",
   AUTO_FILLED: "AUTO_FILLED",
@@ -72,7 +72,12 @@ let AddressDataLoader = {
 
     if (extSandbox.addressDataExt) {
       for (let key in extSandbox.addressDataExt) {
-        Object.assign(sandbox.addressData[key], extSandbox.addressDataExt[key]);
+        let addressDataForKey = sandbox.addressData[key];
+        if (!addressDataForKey) {
+          addressDataForKey = sandbox.addressData[key] = {};
+        }
+
+        Object.assign(addressDataForKey, extSandbox.addressDataExt[key]);
       }
     }
     return sandbox;
@@ -206,6 +211,7 @@ this.FormAutofillUtils = {
     "cc-exp-month": "creditCard",
     "cc-exp-year": "creditCard",
     "cc-exp": "creditCard",
+    "cc-type": "creditCard",
   },
 
   _collators: {},
@@ -222,6 +228,15 @@ this.FormAutofillUtils = {
   isCCNumber(ccNumber) {
     let card = new CreditCard({number: ccNumber});
     return card.isValidNumber();
+  },
+
+  /**
+   * Get the array of credit card network ids ("types") we expect and offer as valid choices
+   *
+   * @returns {Array}
+   */
+  getCreditCardNetworks() {
+    return CreditCard.SUPPORTED_NETWORKS;
   },
 
   getCategoryFromFieldName(fieldName) {
@@ -246,19 +261,21 @@ this.FormAutofillUtils = {
   },
 
   /**
-   * Get address display label. It should display up to two pieces of
-   * information, separated by a comma.
+   * Get address display label. It should display information separated
+   * by a comma.
    *
    * @param  {object} address
+   * @param  {string?} addressFields Override the fields which can be displayed, but not the order.
    * @returns {string}
    */
-  getAddressLabel(address) {
+  getAddressLabel(address, addressFields = null) {
     // TODO: Implement a smarter way for deciding what to display
     //       as option text. Possibly improve the algorithm in
     //       ProfileAutoCompleteResult.jsm and reuse it here.
-    const fieldOrder = [
+    let fieldOrder = [
       "name",
       "-moz-street-address-one-line",  // Street address
+      "address-level3",  // Townland / Neighborhood / Village
       "address-level2",  // City/Town
       "organization",    // Company or organization name
       "address-level1",  // Province/State (Standardized code if possible)
@@ -270,6 +287,10 @@ this.FormAutofillUtils = {
 
     address = {...address};
     let parts = [];
+    if (addressFields) {
+      let requiredFields = addressFields.trim().split(/\s+/);
+      fieldOrder = fieldOrder.filter(name => requiredFields.includes(name));
+    }
     if (address["street-address"]) {
       address["-moz-street-address-one-line"] = this.toOneLineAddress(
         address["street-address"]
@@ -280,7 +301,7 @@ this.FormAutofillUtils = {
       if (string) {
         parts.push(string);
       }
-      if (parts.length == 2) {
+      if (parts.length == 2 && !addressFields) {
         break;
       }
     }
@@ -356,10 +377,10 @@ this.FormAutofillUtils = {
    *        The country code for requesting specific country's metadata. It'll be
    *        default region if parameter is not set.
    * @param {string} [level1=null]
-   *        Retrun address level 1/level 2 metadata if parameter is set.
+   *        Return address level 1/level 2 metadata if parameter is set.
    * @returns {object|null}
    *          Return metadata of specific region with default locale and other supported
-   *          locales. We need to return a deafult country metadata for layout format
+   *          locales. We need to return a default country metadata for layout format
    *          and collator, but for sub-region metadata we'll just return null if not found.
    */
   getCountryAddressRawData(country = FormAutofill.DEFAULT_REGION, level1 = null) {
@@ -387,6 +408,9 @@ this.FormAutofillUtils = {
    * @param {string} country
    * @param {string} level1
    * @returns {object|null} Return metadata of specific region with default locale.
+   *          NOTE: The returned data may be for a default region if the
+   *          specified one cannot be found. Callers who only want the specific
+   *          region should check the returned country code.
    */
   getCountryAddressData(country, level1) {
     let metadata = this.getCountryAddressRawData(country, level1);
@@ -399,6 +423,9 @@ this.FormAutofillUtils = {
    * @param {string} level1
    * @returns {array<object>|null}
    *          Return metadata of specific region with all the locales.
+   *          NOTE: The returned data may be for a default region if the
+   *          specified one cannot be found. Callers who only want the specific
+   *          region should check the returned country code.
    */
   getCountryAddressDataWithLocales(country, level1) {
     let metadata = this.getCountryAddressRawData(country, level1);
@@ -424,6 +451,19 @@ this.FormAutofillUtils = {
     return this._collators[country];
   },
 
+  // Based on the list of fields abbreviations in
+  // https://github.com/googlei18n/libaddressinput/wiki/AddressValidationMetadata
+  FIELDS_LOOKUP: {
+    N: "name",
+    O: "organization",
+    A: "street-address",
+    S: "address-level1",
+    C: "address-level2",
+    D: "address-level3",
+    Z: "postal-code",
+    n: "newLine",
+  },
+
   /**
    * Parse a country address format string and outputs an array of fields.
    * Spaces, commas, and other literals are ignored in this implementation.
@@ -441,21 +481,10 @@ this.FormAutofillUtils = {
     if (!fmt) {
       throw new Error("fmt string is missing.");
     }
-    // Based on the list of fields abbreviations in
-    // https://github.com/googlei18n/libaddressinput/wiki/AddressValidationMetadata
-    const fieldsLookup = {
-      N: "name",
-      O: "organization",
-      A: "street-address",
-      S: "address-level1",
-      C: "address-level2",
-      Z: "postal-code",
-      n: "newLine",
-    };
 
     return fmt.match(/%[^%]/g).reduce((parsed, part) => {
       // Take the first letter of each segment and try to identify it
-      let fieldId = fieldsLookup[part[1]];
+      let fieldId = this.FIELDS_LOOKUP[part[1]];
       // Early return if cannot identify part.
       if (!fieldId) {
         return parsed;
@@ -473,6 +502,23 @@ this.FormAutofillUtils = {
   },
 
   /**
+   * Parse a require string and outputs an array of fields.
+   * Spaces, commas, and other literals are ignored in this implementation.
+   * For example, a require string "ACS" should return:
+   * ["street-address", "address-level2", "address-level1"]
+   *
+   * @param   {string} requireString Country address require string
+   * @returns {array<string>} List of fields
+   */
+  parseRequireString(requireString) {
+    if (!requireString) {
+      throw new Error("requireString string is missing.");
+    }
+
+    return requireString.split("").map(fieldId => this.FIELDS_LOOKUP[fieldId]);
+  },
+
+  /**
    * Use alternative country name list to identify a country code from a
    * specified country name.
    * @param   {string} countryName A country name to be identified
@@ -481,12 +527,20 @@ this.FormAutofillUtils = {
    * @returns {string} The matching country code.
    */
   identifyCountryCode(countryName, countrySpecified) {
-    let countries = countrySpecified ? [countrySpecified] : FormAutofill.supportedCountries;
+    let countries = countrySpecified ? [countrySpecified] : [...FormAutofill.countries.keys()];
 
     for (let country of countries) {
       let collators = this.getCollators(country);
-
       let metadata = this.getCountryAddressData(country);
+      if (country != metadata.key) {
+        // We hit the fallback logic in getCountryAddressRawData so ignore it as
+        // it's not related to `country` and use the name from l10n instead.
+        metadata = {
+          id: `data/${country}`,
+          key: country,
+          name: FormAutofill.countries.get(country),
+        };
+      }
       let alternativeCountryNames = metadata.alternative_names || [metadata.name];
       let reAlternativeCountryNames = this._reAlternativeCountryNames[country];
       if (!reAlternativeCountryNames) {
@@ -697,6 +751,17 @@ this.FormAutofillUtils = {
         }
         break;
       }
+      case "cc-type": {
+        let network = creditCard["cc-type"] || "";
+        for (let option of options) {
+          if ([option.text, option.label, option.value].some(
+            s => s.trim().toLowerCase() == network
+          )) {
+            return option;
+          }
+        }
+        break;
+      }
     }
 
     return null;
@@ -750,18 +815,26 @@ this.FormAutofillUtils = {
    * @param   {string} country
    * @returns {object}
    *         {
+   *           {string} addressLevel3Label
+   *           {string} addressLevel2Label
    *           {string} addressLevel1Label
    *           {string} postalCodeLabel
    *           {object} fieldsOrder
+   *           {string} postalCodePattern
    *         }
    */
   getFormFormat(country) {
     const dataset = this.getCountryAddressData(country);
     return {
-      "addressLevel1Label": dataset.state_name_type || "province",
-      "postalCodeLabel": dataset.zip_name_type || "postalCode",
-      "fieldsOrder": this.parseAddressFormat(dataset.fmt || "%N%n%O%n%A%n%C, %S %Z"),
-      "postalCodePattern": dataset.zip,
+      // When particular values are missing for a country, the
+      // data/ZZ value should be used instead.
+      addressLevel3Label: dataset.sublocality_name_type || "suburb",
+      addressLevel2Label: dataset.locality_name_type || "city",
+      addressLevel1Label: dataset.state_name_type || "province",
+      postalCodeLabel: dataset.zip_name_type || "postalCode",
+      fieldsOrder: this.parseAddressFormat(dataset.fmt || "%N%n%O%n%A%n%C"),
+      postalCodePattern: dataset.zip,
+      countryRequiredFields: this.parseRequireString(dataset.require || "AC"),
     };
   },
 

@@ -36,8 +36,8 @@ if (typeof Mozilla == "undefined") {
       bubbles: true,
       detail: {
         name: name,
-        data: data || {}
-      }
+        data: data || {},
+      },
     });
 
     document.dispatchEvent(event);
@@ -50,7 +50,7 @@ if (typeof Mozilla == "undefined") {
    */
   function _registerInternalPolicyHandler() {
     // Create a promise to wait on for HCT to be completely initialized.
-    _initPromise = new Promise(function(resolveInit) {
+    var setupPromise = new Promise(function(resolveInit, rejectInit) {
       // Register the handler that will update the policy boolean.
       function policyChangeHandler(updatedPref) {
         if (!("detail" in updatedPref) ||
@@ -64,7 +64,23 @@ if (typeof Mozilla == "undefined") {
         resolveInit();
       }
       document.addEventListener("mozTelemetryPolicyChange", policyChangeHandler);
+      document.addEventListener("mozTelemetryUntrustedOrigin",
+                                () => rejectInit(new Error("Origin not trusted or HCT disabled.")),
+                                {once: true});
     });
+
+    // In bug 1490284 we introduced a mechanism for which the HCT library rejects if the
+    // requesting website has not enough privileges or telemetry is disabled. Unfortunately,
+    // this required a change in chrome JSMs and is not available to Firefox versions
+    // before 63. To reject on these versions as well, a fallback timeout is provided that
+    // automatically rejects the init promise after 3 seconds.
+    var timeoutPromise = new Promise((resolve, reject) => {
+      setTimeout(reject, 3000);
+    });
+
+    // Resolves or rejects as soon as one of the promises resolves or rejects: the
+    // rejection timeout has no effect if |setupPromise| resolves before it.
+    _initPromise = Promise.race([setupPromise, timeoutPromise]);
 
     // Make sure the chrome is initialized.
     _sendMessageToChrome("init");
@@ -81,7 +97,7 @@ if (typeof Mozilla == "undefined") {
   Mozilla.ContentTelemetry.registerEvents = function(category, eventData) {
     _sendMessageToChrome("registerEvents", {
       category: category,
-      eventData: eventData
+      eventData: eventData,
     });
   };
 
@@ -91,7 +107,7 @@ if (typeof Mozilla == "undefined") {
       method: method,
       object: object,
       value: value,
-      extra: extra
+      extra: extra,
     });
   };
 

@@ -20,7 +20,7 @@ class HTMLEmbedElement final : public nsGenericHTMLElement
                              , public nsObjectLoadingContent
 {
 public:
-  explicit HTMLEmbedElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+  explicit HTMLEmbedElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                             mozilla::dom::FromParser aFromParser = mozilla::dom::NOT_FROM_PARSER);
 
   // nsISupports
@@ -57,10 +57,9 @@ public:
   // nsObjectLoadingContent
   virtual uint32_t GetCapabilities() const override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  nsresult CopyInnerTo(Element* aDest, bool aPreallocateChildren);
+  nsresult CopyInnerTo(HTMLEmbedElement* aDest);
 
   void StartObjectLoad() { StartObjectLoad(true, false); }
 
@@ -127,6 +126,8 @@ public:
    * Calls LoadObject with the correct arguments to start the plugin load.
    */
   void StartObjectLoad(bool aNotify, bool aForceLoad);
+
+  NS_FORWARD_NSIFRAMELOADEROWNER(nsObjectLoadingContent::)
 
 protected:
   // Override for nsImageLoadingContent.

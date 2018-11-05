@@ -24,7 +24,7 @@ class HTMLOutputElement final : public nsGenericHTMLFormElement,
 public:
   using nsIConstraintValidation::GetValidationMessage;
 
-  explicit HTMLOutputElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+  explicit HTMLOutputElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                              FromParser aFromParser = NOT_FROM_PARSER);
 
   // nsISupports
@@ -34,8 +34,7 @@ public:
   NS_IMETHOD Reset() override;
   NS_IMETHOD SubmitNamesValues(HTMLFormSubmission* aFormSubmission) override;
 
-  nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult,
-                 bool aPreallocateChildren) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                               const nsAString& aValue,

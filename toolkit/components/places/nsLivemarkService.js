@@ -111,7 +111,7 @@ LivemarkService.prototype = {
             dateAdded: row.getResultByName("dateAdded"),
             lastModified: row.getResultByName("lastModified"),
             feedURI: NetUtil.newURI(row.getResultByName("feedURI")),
-            siteURI: siteURI ? NetUtil.newURI(siteURI) : null
+            siteURI: siteURI ? NetUtil.newURI(siteURI) : null,
           });
           this._livemarksMap.set(livemark.guid, livemark);
         }
@@ -160,78 +160,6 @@ LivemarkService.prototype = {
   },
 
   // mozIAsyncLivemarks
-
-  addLivemark(aLivemarkInfo) {
-    if (!aLivemarkInfo) {
-      throw new Components.Exception("Invalid arguments", Cr.NS_ERROR_INVALID_ARG);
-    }
-    let hasParentId = "parentId" in aLivemarkInfo;
-    let hasParentGuid = "parentGuid" in aLivemarkInfo;
-    let hasIndex = "index" in aLivemarkInfo;
-    // Must provide at least non-null parent guid/id, index and feedURI.
-    if ((!hasParentId && !hasParentGuid) ||
-        (hasParentId && aLivemarkInfo.parentId < 1) ||
-        (hasParentGuid && !/^[a-zA-Z0-9\-_]{12}$/.test(aLivemarkInfo.parentGuid)) ||
-        (hasIndex && aLivemarkInfo.index < Ci.nsINavBookmarksService.DEFAULT_INDEX) ||
-        !(aLivemarkInfo.feedURI instanceof Ci.nsIURI) ||
-        (aLivemarkInfo.siteURI && !(aLivemarkInfo.siteURI instanceof Ci.nsIURI)) ||
-        (aLivemarkInfo.guid && !/^[a-zA-Z0-9\-_]{12}$/.test(aLivemarkInfo.guid))) {
-      throw new Components.Exception("Invalid arguments", Cr.NS_ERROR_INVALID_ARG);
-    }
-
-    return this._withLivemarksMap(async livemarksMap => {
-      if (!aLivemarkInfo.parentGuid)
-        aLivemarkInfo.parentGuid = await PlacesUtils.promiseItemGuid(aLivemarkInfo.parentId);
-
-      // Disallow adding a livemark inside another livemark.
-      if (livemarksMap.has(aLivemarkInfo.parentGuid)) {
-        throw new Components.Exception("Cannot create a livemark inside a livemark", Cr.NS_ERROR_INVALID_ARG);
-      }
-
-      // Create a new livemark.
-      let folder = await PlacesUtils.bookmarks.insert({
-        type: PlacesUtils.bookmarks.TYPE_FOLDER,
-        parentGuid: aLivemarkInfo.parentGuid,
-        title: aLivemarkInfo.title,
-        index: aLivemarkInfo.index,
-        guid: aLivemarkInfo.guid,
-        dateAdded: toDate(aLivemarkInfo.dateAdded) || toDate(aLivemarkInfo.lastModified),
-        source: aLivemarkInfo.source,
-      });
-
-      // Set feed and site URI annotations.
-      let id = await PlacesUtils.promiseItemId(folder.guid);
-
-      // Create the internal Livemark object.
-      let livemark = new Livemark({ id,
-                                    title:        folder.title,
-                                    parentGuid:   folder.parentGuid,
-                                    parentId:     await PlacesUtils.promiseItemId(folder.parentGuid),
-                                    index:        folder.index,
-                                    feedURI:      aLivemarkInfo.feedURI,
-                                    siteURI:      aLivemarkInfo.siteURI,
-                                    guid:         folder.guid,
-                                    dateAdded:    toPRTime(folder.dateAdded),
-                                    lastModified: toPRTime(folder.lastModified)
-                                  });
-
-      livemark.writeFeedURI(aLivemarkInfo.feedURI, aLivemarkInfo.source);
-      if (aLivemarkInfo.siteURI) {
-        livemark.writeSiteURI(aLivemarkInfo.siteURI, aLivemarkInfo.source);
-      }
-
-      if (aLivemarkInfo.lastModified) {
-        await PlacesUtils.bookmarks.update({ guid: folder.guid,
-                                             lastModified: toDate(aLivemarkInfo.lastModified),
-                                             source: aLivemarkInfo.source });
-        livemark.lastModified = aLivemarkInfo.lastModified;
-      }
-
-      livemarksMap.set(folder.guid, livemark);
-
-      return livemark;
-    });
-  },
 
   removeLivemark(aLivemarkInfo) {
     if (!aLivemarkInfo) {
@@ -361,7 +289,6 @@ LivemarkService.prototype = {
   onBeginUpdateBatch() {},
   onEndUpdateBatch() {},
   onItemVisited() {},
-  onItemAdded() {},
 
   onItemChanged(id, property, isAnno, value, lastModified, itemType, parentId,
                 guid, parentGuid) {
@@ -443,8 +370,8 @@ LivemarkService.prototype = {
     Ci.nsINavBookmarkObserver,
     Ci.nsINavHistoryObserver,
     Ci.nsIObserver,
-    Ci.nsISupportsWeakReference
-  ])
+    Ci.nsISupportsWeakReference,
+  ]),
 };
 
 // Livemark
@@ -497,15 +424,6 @@ Livemark.prototype = {
       this._invalidateRegisteredContainers();
     }
     return this._status;
-  },
-
-  writeFeedURI(aFeedURI, aSource) {
-    PlacesUtils.annotations
-               .setItemAnnotation(this.id, PlacesUtils.LMANNO_FEEDURI,
-                                  aFeedURI.spec,
-                                  0, PlacesUtils.annotations.EXPIRE_NEVER,
-                                  aSource, true);
-    this.feedURI = aFeedURI;
   },
 
   writeSiteURI(aSiteURI, aSource) {
@@ -573,7 +491,7 @@ Livemark.prototype = {
         uri: this.feedURI,
         loadingPrincipal: Services.scriptSecurityManager.createCodebasePrincipal(this.feedURI, {}),
         securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-        contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_XMLHTTPREQUEST
+        contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_XMLHTTPREQUEST,
       }).QueryInterface(Ci.nsIHttpChannel);
       channel.loadGroup = loadgroup;
       channel.loadFlags |= Ci.nsIRequest.LOAD_BACKGROUND |
@@ -676,7 +594,7 @@ Livemark.prototype = {
         get tags() {
           return PlacesUtils.tagging.getTagsForURI(NetUtil.newURI(this.uri)).join(", ");
         },
-        QueryInterface: ChromeUtils.generateQI([Ci.nsINavHistoryResultNode])
+        QueryInterface: ChromeUtils.generateQI([Ci.nsINavHistoryResultNode]),
       };
       nodes.push(node);
     }
@@ -753,8 +671,8 @@ Livemark.prototype = {
   },
 
   QueryInterface: ChromeUtils.generateQI([
-    Ci.mozILivemark
-  ])
+    Ci.mozILivemark,
+  ]),
 };
 
 // LivemarkLoadListener
@@ -916,8 +834,8 @@ LivemarkLoadListener.prototype = {
     Ci.nsIFeedResultListener,
     Ci.nsIStreamListener,
     Ci.nsIRequestObserver,
-    Ci.nsIInterfaceRequestor
-  ])
+    Ci.nsIInterfaceRequestor,
+  ]),
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([LivemarkService]);

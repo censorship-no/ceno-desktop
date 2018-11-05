@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Slike ni bilo mogoče naložiti. Poskusite drug spletni naslov.",
   "pocket_read_more": "Priljubljene teme:",
   "pocket_read_even_more": "Prikaži več vesti",
+  "pocket_more_reccommendations": "Več priporočil",
+  "pocket_how_it_works": "Kako deluje",
+  "pocket_cta_button": "Prenesi Pocket",
+  "pocket_cta_text": "Shranite zgodbe, ki jih imate radi, v Pocket, in napolnite svoje misli z navdušujočim branjem.",
   "highlights_empty_state": "Začnite z brskanjem, mi pa vam bomo tu prikazovali odlične članke, videoposnetke ter druge strani, ki ste jih nedavno obiskali ali shranili med zaznamke.",
   "topstories_empty_state": "Zdaj ste seznanjeni z novicami. Vrnite se pozneje in si oglejte nove prispevke iz {provider}. Komaj čakate? Izberite priljubljeno temo in odkrijte več velikih zgodb na spletu.",
   "manual_migration_explanation2": "Preskusite Firefox z zaznamki, zgodovino in gesli iz drugega brskalnika.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Upravljanje odseka",
   "section_menu_action_manage_webext": "Upravljaj razširitev",
   "section_menu_action_add_topsite": "Dodaj glavno stran",
+  "section_menu_action_add_search_engine": "Dodaj iskalnik",
   "section_menu_action_move_up": "Premakni gor",
   "section_menu_action_move_down": "Premakni dol",
   "section_menu_action_privacy_notice": "Obvestilo o zasebnosti",
@@ -96,10 +101,12 @@ window.gActivityStreamStrings = {
   "firstrun_form_header": "Vnesite e-poštni naslov",
   "firstrun_form_sub_header": "za nadaljevanje v Firefox Sync.",
   "firstrun_email_input_placeholder": "E-pošta",
-  "firstrun_invalid_input": "Valid email required",
+  "firstrun_invalid_input": "Zahtevan je veljaven e-poštni naslov",
   "firstrun_extra_legal_links": "Z nadaljevanjem se strinjate s {terms} in {privacy}.",
   "firstrun_terms_of_service": "Pogoji uporabe",
   "firstrun_privacy_notice": "Obvestilom o zasebnosti",
   "firstrun_continue_to_login": "Nadaljuj",
-  "firstrun_skip_login": "Preskoči ta korak"
+  "firstrun_skip_login": "Preskoči ta korak",
+  "context_menu_title": "Odpri meni",
+  "pocket_learn_more": "Več o tem"
 };

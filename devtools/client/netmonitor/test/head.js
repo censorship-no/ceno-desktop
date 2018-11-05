@@ -21,7 +21,7 @@ const {
 
 const {
   getSortedRequests,
-  getRequestById
+  getRequestById,
 } = require("devtools/client/netmonitor/src/selectors/index");
 
 const {
@@ -61,6 +61,7 @@ const JSON_CUSTOM_MIME_URL = EXAMPLE_URL + "html_json-custom-mime-test-page.html
 const JSON_TEXT_MIME_URL = EXAMPLE_URL + "html_json-text-mime-test-page.html";
 const JSON_B64_URL = EXAMPLE_URL + "html_json-b64.html";
 const JSON_BASIC_URL = EXAMPLE_URL + "html_json-basic.html";
+const JSON_EMPTY_URL = EXAMPLE_URL + "html_json-empty.html";
 const SORTING_URL = EXAMPLE_URL + "html_sorting-test-page.html";
 const FILTERING_URL = EXAMPLE_URL + "html_filter-test-page.html";
 const INFINITE_GET_URL = EXAMPLE_URL + "html_infinite-get-page.html";
@@ -136,12 +137,6 @@ function waitForNavigation(target) {
   });
 }
 
-function reconfigureTab(target, options) {
-  return new Promise((resolve) => {
-    target.activeTab.reconfigure(options, resolve);
-  });
-}
-
 function toggleCache(target, disabled) {
   const options = { cacheDisabled: disabled, performReload: true };
   const navigationFinished = waitForNavigation(target);
@@ -149,7 +144,7 @@ function toggleCache(target, disabled) {
   // Disable the cache for any toolbox that it is opened from this point on.
   Services.prefs.setBoolPref("devtools.cache.disabled", disabled);
 
-  return reconfigureTab(target, options).then(() => navigationFinished);
+  return target.activeTab.reconfigure({ options }).then(() => navigationFinished);
 }
 
 /**
@@ -289,10 +284,7 @@ function initNetMonitor(url, enableCache) {
     const tab = await addTab(url);
     info("Net tab added successfully: " + url);
 
-    const target = TargetFactory.forTab(tab);
-
-    await target.makeRemote();
-    info("Target remoted.");
+    const target = await TargetFactory.forTab(tab);
 
     const toolbox = await gDevTools.showToolbox(target, "netmonitor");
     info("Network monitor pane shown successfully.");
@@ -354,9 +346,8 @@ function teardown(monitor) {
     await waitForAllNetworkUpdateEvents();
     info("All pending requests finished.");
 
-    const onDestroyed = monitor.once("destroyed");
+    await monitor.toolbox.destroy();
     await removeTab(tab);
-    await onDestroyed;
   })();
 }
 
@@ -798,4 +789,43 @@ function waitForRequestData(store, fields, id) {
     }
     return true;
   });
+}
+
+// Telemetry
+
+/**
+ * Helper for verifying telemetry event.
+ *
+ * @param Object expectedEvent object representing expected event data.
+ * @param Object query fields specifying category, method and object
+ *                     of the target telemetry event.
+ */
+function checkTelemetryEvent(expectedEvent, query) {
+  const events = queryTelemetryEvents(query);
+  is(events.length, 1, "There was only 1 event logged");
+
+  const [event] = events;
+  ok(event.session_id > 0, "There is a valid session_id in the logged event");
+
+  const f = e => JSON.stringify(e, null, 2);
+  is(f(event), f({
+    ...expectedEvent,
+    "session_id": event.session_id,
+  }), "The event has the expected data");
+}
+
+function queryTelemetryEvents(query) {
+  const OPTOUT = Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTOUT;
+  const snapshot = Services.telemetry.snapshotEvents(OPTOUT, true);
+  const category = query.category || "devtools.main";
+  const object = query.object || "netmonitor";
+
+  const filtersChangedEvents = snapshot.parent.filter(event =>
+    event[1] === category &&
+    event[2] === query.method &&
+    event[3] === object
+  );
+
+  // Return the `extra` field (which is event[5]e).
+  return filtersChangedEvents.map(event => event[5]);
 }

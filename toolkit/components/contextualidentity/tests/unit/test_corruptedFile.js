@@ -30,14 +30,13 @@ function createCookie(userContextId) {
                        COOKIE.isHttpOnly,
                        COOKIE.isSession,
                        COOKIE.expiry,
-                       {userContextId});
+                       {userContextId},
+                       Ci.nsICookie2.SAMESITE_UNSET);
 }
 
 function hasCookie(userContextId) {
   let found = false;
-  let enumerator = Services.cookies.getCookiesFromHost(BASE_URL, {userContextId});
-  while (enumerator.hasMoreElements()) {
-    let cookie = enumerator.getNext().QueryInterface(Ci.nsICookie);
+  for (let cookie of Services.cookies.getCookiesFromHost(BASE_URL, {userContextId})) {
     if (cookie.originAttributes.userContextId == userContextId) {
       found = true;
       break;

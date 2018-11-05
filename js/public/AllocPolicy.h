@@ -79,8 +79,9 @@ class TempAllocPolicy : public AllocPolicyBase
     template <typename T>
     T* onOutOfMemoryTyped(AllocFunction allocFunc, size_t numElems, void* reallocPtr = nullptr) {
         size_t bytes;
-        if (MOZ_UNLIKELY(!CalculateAllocSize<T>(numElems, &bytes)))
+        if (MOZ_UNLIKELY(!CalculateAllocSize<T>(numElems, &bytes))) {
             return nullptr;
+        }
         return static_cast<T*>(onOutOfMemory(allocFunc, bytes, reallocPtr));
     }
 
@@ -90,24 +91,27 @@ class TempAllocPolicy : public AllocPolicyBase
     template <typename T>
     T* pod_malloc(size_t numElems) {
         T* p = this->maybe_pod_malloc<T>(numElems);
-        if (MOZ_UNLIKELY(!p))
+        if (MOZ_UNLIKELY(!p)) {
             p = onOutOfMemoryTyped<T>(AllocFunction::Malloc, numElems);
+        }
         return p;
     }
 
     template <typename T>
     T* pod_calloc(size_t numElems) {
         T* p = this->maybe_pod_calloc<T>(numElems);
-        if (MOZ_UNLIKELY(!p))
+        if (MOZ_UNLIKELY(!p)) {
             p = onOutOfMemoryTyped<T>(AllocFunction::Calloc, numElems);
+        }
         return p;
     }
 
     template <typename T>
     T* pod_realloc(T* prior, size_t oldSize, size_t newSize) {
         T* p2 = this->maybe_pod_realloc<T>(prior, oldSize, newSize);
-        if (MOZ_UNLIKELY(!p2))
+        if (MOZ_UNLIKELY(!p2)) {
             p2 = onOutOfMemoryTyped<T>(AllocFunction::Realloc, newSize, prior);
+        }
         return p2;
     }
 
@@ -125,40 +129,6 @@ class TempAllocPolicy : public AllocPolicyBase
         }
 
         return true;
-    }
-};
-
-/*
- * Allocation policy that uses Zone::pod_malloc and friends, so that memory
- * pressure is accounted for on the zone. This is suitable for memory associated
- * with GC things allocated in the zone.
- *
- * Since it doesn't hold a JSContext (those may not live long enough), it can't
- * report out-of-memory conditions itself; the caller must check for OOM and
- * take the appropriate action.
- *
- * FIXME bug 647103 - replace these *AllocPolicy names.
- */
-class ZoneAllocPolicy
-{
-    JS::Zone* const zone;
-
-  public:
-    MOZ_IMPLICIT ZoneAllocPolicy(JS::Zone* z) : zone(z) {}
-
-    // These methods are defined in gc/Zone.h.
-    template <typename T> inline T* maybe_pod_malloc(size_t numElems);
-    template <typename T> inline T* maybe_pod_calloc(size_t numElems);
-    template <typename T> inline T* maybe_pod_realloc(T* p, size_t oldSize, size_t newSize);
-    template <typename T> inline T* pod_malloc(size_t numElems);
-    template <typename T> inline T* pod_calloc(size_t numElems);
-    template <typename T> inline T* pod_realloc(T* p, size_t oldSize, size_t newSize);
-
-    template <typename T> void free_(T* p, size_t numElems = 0) { js_free(p); }
-    void reportAllocOverflow() const {}
-
-    MOZ_MUST_USE bool checkSimulatedOOM() const {
-        return !js::oom::ShouldFailWithOOM();
     }
 };
 

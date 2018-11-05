@@ -6,6 +6,8 @@
 
 #include "ChromeUtils.h"
 
+#include "js/CharacterEncoding.h"
+#include "js/SavedFrameAPI.h"
 #include "jsfriendapi.h"
 #include "WrapperFactory.h"
 
@@ -15,6 +17,7 @@
 #include "mozilla/PerformanceMetricsCollector.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/IdleDeadline.h"
 #include "mozilla/dom/UnionTypes.h"
@@ -464,11 +467,11 @@ namespace module_getter {
 
     JS::Rooted<JSString*> moduleURI(
       aCx, js::GetFunctionNativeReserved(callee, SLOT_URI).toString());
-    JSAutoByteString bytes;
-    if (!bytes.encodeUtf8(aCx, moduleURI)) {
+    JS::UniqueChars bytes = JS_EncodeStringToUTF8(aCx, moduleURI);
+    if (!bytes) {
       return false;
     }
-    nsDependentCString uri(bytes.ptr());
+    nsDependentCString uri(bytes.get());
 
     RefPtr<mozJSComponentLoader> moduleloader = mozJSComponentLoader::Get();
     MOZ_ASSERT(moduleloader);
@@ -777,6 +780,13 @@ ChromeUtils::RequestIOActivity(GlobalObject& aGlobal, ErrorResult& aRv)
   MOZ_ASSERT(domPromise);
   mozilla::net::IOActivityMonitor::RequestActivities(domPromise);
   return domPromise.forget();
+}
+
+/* static */ void
+ChromeUtils::GetRootBrowsingContexts(GlobalObject& aGlobal,
+                                     nsTArray<RefPtr<BrowsingContext>>& aBrowsingContexts)
+{
+  BrowsingContext::GetRootBrowsingContexts(aBrowsingContexts);
 }
 
 } // namespace dom

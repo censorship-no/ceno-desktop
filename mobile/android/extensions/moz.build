@@ -7,8 +7,6 @@
 with Files('**'):
     BUG_COMPONENT = ('Firefox for Android', 'General')
 
-# Only include the following system add-ons if building Nightly
-if CONFIG['NIGHTLY_BUILD']:
-    DIRS += [
-        'gws-and-facebook-chrome-spoof',
-    ]
+DIRS += [
+    'webcompat',
+]

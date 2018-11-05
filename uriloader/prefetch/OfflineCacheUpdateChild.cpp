@@ -31,6 +31,7 @@
 #include "nsProxyRelease.h"
 #include "mozilla/Logging.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsApplicationCache.h"
 
 using namespace mozilla::ipc;
 using namespace mozilla::net;
@@ -326,7 +327,7 @@ OfflineCacheUpdateChild::AddObserver(nsIOfflineCacheUpdateObserver *aObserver,
     NS_ENSURE_TRUE(mState >= STATE_INITIALIZED, NS_ERROR_NOT_INITIALIZED);
 
     if (aHoldWeak) {
-        nsCOMPtr<nsIWeakReference> weakRef = do_GetWeakReference(aObserver);
+        nsWeakPtr weakRef = do_GetWeakReference(aObserver);
         mWeakObservers.AppendObject(weakRef);
     } else {
         mObservers.AppendObject(aObserver);
@@ -440,12 +441,7 @@ OfflineCacheUpdateChild::RecvAssociateDocuments(const nsCString &cacheGroupId,
 {
     LOG(("OfflineCacheUpdateChild::RecvAssociateDocuments [%p, cache=%s]", this, cacheClientId.get()));
 
-    nsresult rv;
-
-    nsCOMPtr<nsIApplicationCache> cache =
-        do_CreateInstance(NS_APPLICATIONCACHE_CONTRACTID, &rv);
-    if (NS_FAILED(rv))
-      return IPC_OK();
+    nsCOMPtr<nsIApplicationCache> cache = new nsApplicationCache();
 
     cache->InitAsHandle(cacheGroupId, cacheClientId);
 

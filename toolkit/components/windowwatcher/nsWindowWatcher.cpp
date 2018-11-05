@@ -22,7 +22,7 @@
 #include "nsIBaseWindow.h"
 #include "nsIBrowserDOMWindow.h"
 #include "nsIDocShell.h"
-#include "nsDocShellLoadInfo.h"
+#include "nsDocShellLoadState.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIDocumentLoader.h"
@@ -58,6 +58,7 @@
 #include "nsIPrefBranch.h"
 #include "nsIPrefService.h"
 #include "nsSandboxFlags.h"
+#include "nsSimpleEnumerator.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/Element.h"
@@ -146,7 +147,7 @@ nsWatcherWindowEntry::ReferenceSelf()
  ****************** nsWatcherWindowEnumerator *******************
  ****************************************************************/
 
-class nsWatcherWindowEnumerator : public nsISimpleEnumerator
+class nsWatcherWindowEnumerator : public nsSimpleEnumerator
 {
 
 public:
@@ -154,10 +155,8 @@ public:
   NS_IMETHOD HasMoreElements(bool* aResult) override;
   NS_IMETHOD GetNext(nsISupports** aResult) override;
 
-  NS_DECL_ISUPPORTS
-
 protected:
-  virtual ~nsWatcherWindowEnumerator();
+  ~nsWatcherWindowEnumerator() override;
 
 private:
   friend class nsWindowWatcher;
@@ -168,10 +167,6 @@ private:
   nsWindowWatcher* mWindowWatcher;
   nsWatcherWindowEntry* mCurrentPosition;
 };
-
-NS_IMPL_ADDREF(nsWatcherWindowEnumerator)
-NS_IMPL_RELEASE(nsWatcherWindowEnumerator)
-NS_IMPL_QUERY_INTERFACE(nsWatcherWindowEnumerator, nsISimpleEnumerator)
 
 nsWatcherWindowEnumerator::nsWatcherWindowEnumerator(nsWindowWatcher* aWatcher)
   : mWindowWatcher(aWatcher)
@@ -210,8 +205,9 @@ nsWatcherWindowEnumerator::GetNext(nsISupports** aResult)
   if (mCurrentPosition) {
     CallQueryInterface(mCurrentPosition->mWindow, aResult);
     mCurrentPosition = FindNext();
+    return NS_OK;
   }
-  return NS_OK;
+  return NS_ERROR_FAILURE;
 }
 
 nsWatcherWindowEntry*
@@ -329,7 +325,7 @@ nsWindowWatcher::OpenWindow(mozIDOMWindowProxy* aParent,
                             /* navigate = */ true, argv,
                             /* aIsPopupSpam = */ false,
                             /* aForceNoOpener = */ false,
-                            /* aLoadInfo = */ nullptr,
+                            /* aLoadState = */ nullptr,
                             aResult);
 }
 
@@ -395,7 +391,7 @@ nsWindowWatcher::OpenWindow2(mozIDOMWindowProxy* aParent,
                              nsISupports* aArguments,
                              bool aIsPopupSpam,
                              bool aForceNoOpener,
-                             nsDocShellLoadInfo* aLoadInfo,
+                             nsDocShellLoadState* aLoadState,
                              mozIDOMWindowProxy** aResult)
 {
   nsCOMPtr<nsIArray> argv = ConvertArgsToArray(aArguments);
@@ -416,7 +412,7 @@ nsWindowWatcher::OpenWindow2(mozIDOMWindowProxy* aParent,
   return OpenWindowInternal(aParent, aUrl, aName, aFeatures,
                             aCalledFromScript, dialog,
                             aNavigate, argv, aIsPopupSpam,
-                            aForceNoOpener, aLoadInfo, aResult);
+                            aForceNoOpener, aLoadState, aResult);
 }
 
 // This static function checks if the aDocShell uses an UserContextId equal to
@@ -641,7 +637,7 @@ nsWindowWatcher::OpenWindowInternal(mozIDOMWindowProxy* aParent,
                                     nsIArray* aArgv,
                                     bool aIsPopupSpam,
                                     bool aForceNoOpener,
-                                    nsDocShellLoadInfo* aLoadInfo,
+                                    nsDocShellLoadState* aLoadState,
                                     mozIDOMWindowProxy** aResult)
 {
   nsresult rv = NS_OK;
@@ -685,7 +681,7 @@ nsWindowWatcher::OpenWindowInternal(mozIDOMWindowProxy* aParent,
 
   bool nameSpecified = false;
   if (aName) {
-    CopyUTF8toUTF16(aName, name);
+    CopyUTF8toUTF16(MakeStringSpan(aName), name);
     nameSpecified = true;
   } else {
     name.SetIsVoid(true);
@@ -825,7 +821,7 @@ nsWindowWatcher::OpenWindowInternal(mozIDOMWindowProxy* aParent,
                                      sizeSpec.PositionSpecified(),
                                      sizeSpec.SizeSpecified(),
                                      uriToLoad, name, features, aForceNoOpener,
-                                     aLoadInfo, &windowIsNew,
+                                     aLoadState, &windowIsNew,
                                      getter_AddRefs(newWindow));
 
         if (NS_SUCCEEDED(rv)) {
@@ -1122,12 +1118,12 @@ nsWindowWatcher::OpenWindowInternal(mozIDOMWindowProxy* aParent,
     }
   }
 
-  RefPtr<nsDocShellLoadInfo> loadInfo = aLoadInfo;
-  if (uriToLoad && aNavigate && !loadInfo) {
-    loadInfo = new nsDocShellLoadInfo();
+  RefPtr<nsDocShellLoadState> loadState = aLoadState;
+  if (uriToLoad && aNavigate && !loadState) {
+    loadState = new nsDocShellLoadState();
 
     if (subjectPrincipal) {
-      loadInfo->SetTriggeringPrincipal(subjectPrincipal);
+      loadState->SetTriggeringPrincipal(subjectPrincipal);
     }
 
     /* use the URL from the *extant* document, if any. The usual accessor
@@ -1142,8 +1138,8 @@ nsWindowWatcher::OpenWindowInternal(mozIDOMWindowProxy* aParent,
     }
     if (doc) {
       // Set the referrer
-      loadInfo->SetReferrer(doc->GetDocumentURI());
-      loadInfo->SetReferrerPolicy(doc->GetReferrerPolicy());
+      loadState->SetReferrer(doc->GetDocumentURI());
+      loadState->SetReferrerPolicy(doc->GetReferrerPolicy());
     }
   }
 
@@ -1185,13 +1181,13 @@ nsWindowWatcher::OpenWindowInternal(mozIDOMWindowProxy* aParent,
   }
 
   if (uriToLoad && aNavigate) {
-    newDocShell->LoadURI(
-      uriToLoad,
-      loadInfo,
-      windowIsNew ?
+    loadState->SetURI(uriToLoad);
+    loadState->SetLoadFlags(windowIsNew ?
         static_cast<uint32_t>(nsIWebNavigation::LOAD_FLAGS_FIRST_LOAD) :
-        static_cast<uint32_t>(nsIWebNavigation::LOAD_FLAGS_NONE),
-      true);
+                            static_cast<uint32_t>(nsIWebNavigation::LOAD_FLAGS_NONE));
+    loadState->SetFirstParty(true);
+    // Should this pay attention to errors returned by LoadURI?
+    newDocShell->LoadURI(loadState);
   }
 
   // Copy the current session storage for the current domain. Don't perform the
@@ -1203,7 +1199,7 @@ nsWindowWatcher::OpenWindowInternal(mozIDOMWindowProxy* aParent,
       do_QueryInterface(newDocShell);
 
     if (parentStorageManager && newStorageManager) {
-      nsCOMPtr<nsIDOMStorage> storage;
+      RefPtr<Storage> storage;
       nsCOMPtr<nsPIDOMWindowInner> pInnerWin = parentWindow->GetCurrentInnerWindow();
       parentStorageManager->GetStorage(pInnerWin, subjectPrincipal,
                                        isPrivateBrowsingWindow,
@@ -1326,12 +1322,9 @@ nsWindowWatcher::GetWindowEnumerator(nsISimpleEnumerator** aResult)
   }
 
   MutexAutoLock lock(mListLock);
-  nsWatcherWindowEnumerator* enumerator = new nsWatcherWindowEnumerator(this);
-  if (enumerator) {
-    return CallQueryInterface(enumerator, aResult);
-  }
-
-  return NS_ERROR_OUT_OF_MEMORY;
+  RefPtr<nsWatcherWindowEnumerator> enumerator = new nsWatcherWindowEnumerator(this);
+  enumerator.forget(aResult);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -2098,7 +2091,8 @@ nsWindowWatcher::ReadyOpenedDocShellItem(nsIDocShellTreeItem* aOpenedItem,
         doc->SetIsInitialDocument(true);
       }
     }
-    rv = CallQueryInterface(piOpenedWindow, aOpenedWindow);
+    piOpenedWindow.forget(aOpenedWindow);
+    rv = NS_OK;
   }
   return rv;
 }
@@ -2461,10 +2455,8 @@ nsWindowWatcher::GetWindowTreeItem(mozIDOMWindowProxy* aWindow,
   *aResult = 0;
 
   if (aWindow) {
-    nsIDocShell* docshell = nsPIDOMWindowOuter::From(aWindow)->GetDocShell();
-    if (docshell) {
-      CallQueryInterface(docshell, aResult);
-    }
+    nsCOMPtr<nsIDocShell> docshell = nsPIDOMWindowOuter::From(aWindow)->GetDocShell();
+    docshell.forget(aResult);
   }
 }
 

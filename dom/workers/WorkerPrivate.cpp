@@ -6,7 +6,10 @@
 
 #include "WorkerPrivate.h"
 
+#include "js/CompilationAndEvaluation.h"
+#include "js/LocaleSensitive.h"
 #include "js/MemoryMetrics.h"
+#include "js/SourceBufferHolder.h"
 #include "MessageEventRunnable.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs.h"
@@ -930,13 +933,13 @@ PRThreadFromThread(nsIThread* aThread)
 
 // A runnable to cancel the worker from the parent thread when self.close() is
 // called. This runnable is executed on the parent process in order to cancel
-// the current runnable. It uses a normal WorkerRunnable in order to be sure
-// that all the pending WorkerRunnables are executed before this.
-class CancelingOnParentRunnable final : public WorkerRunnable
+// the current runnable. It uses a normal WorkerDebuggeeRunnable in order to be sure
+// that all the pending WorkerDebuggeeRunnables are executed before this.
+class CancelingOnParentRunnable final : public WorkerDebuggeeRunnable
 {
 public:
   explicit CancelingOnParentRunnable(WorkerPrivate* aWorkerPrivate)
-    : WorkerRunnable(aWorkerPrivate, ParentThreadUnchangedBusyCount)
+    : WorkerDebuggeeRunnable(aWorkerPrivate, ParentThreadUnchangedBusyCount)
   {}
 
   bool
@@ -1468,7 +1471,6 @@ WorkerPrivate::SetCSP(nsIContentSecurityPolicy* aCSP)
     return;
   }
   aCSP->EnsureEventTarget(mMainThreadEventTarget);
-  aCSP->SetEventListener(mCSPEventListener);
 
   mLoadInfo.mCSP = aCSP;
 }
@@ -1490,7 +1492,6 @@ WorkerPrivate::SetCSPFromHeaderValues(const nsACString& aCSPHeaderValue,
   }
 
   csp->EnsureEventTarget(mMainThreadEventTarget);
-  csp->SetEventListener(mCSPEventListener);
 
   // If there's a CSP header, apply it.
   if (!cspHeaderValue.IsEmpty()) {
@@ -1587,6 +1588,10 @@ WorkerPrivate::Dispatch(already_AddRefed<WorkerRunnable> aRunnable,
     if (aSyncLoopTarget) {
       rv = aSyncLoopTarget->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
     } else {
+      // WorkerDebuggeeRunnables don't need any special treatment here. True,
+      // they should not be delivered to a frozen worker. But frozen workers
+      // aren't drawing from the thread's main event queue anyway, only from
+      // mControlQueue.
       rv = mThread->DispatchAnyThread(WorkerThreadFriendKey(), runnable.forget());
     }
 
@@ -1760,12 +1765,6 @@ WorkerPrivate::Notify(WorkerStatus aStatus)
     return true;
   }
 
-  NS_ASSERTION(aStatus != Canceling || mQueuedRunnables.IsEmpty(),
-               "Shouldn't have anything queued!");
-
-  // Anything queued will be discarded.
-  mQueuedRunnables.Clear();
-
   // No Canceling timeout is needed.
   if (mCancelingTimer) {
     mCancelingTimer->Cancel();
@@ -1811,6 +1810,21 @@ WorkerPrivate::Freeze(nsPIDOMWindowInner* aWindow)
   }
 
   mParentFrozen = true;
+
+  // WorkerDebuggeeRunnables sent from a worker to content must not be delivered
+  // while the worker is frozen.
+  //
+  // Since a top-level worker and all its children share the same
+  // mMainThreadDebuggeeEventTarget, it's sufficient to do this only in the
+  // top-level worker.
+  if (aWindow) {
+    // This is called from WorkerPrivate construction, and We may not have
+    // allocated mMainThreadDebuggeeEventTarget yet.
+    if (mMainThreadDebuggeeEventTarget) {
+      // Pausing a ThrottledEventQueue is infallible.
+      MOZ_ALWAYS_SUCCEEDS(mMainThreadDebuggeeEventTarget->SetIsPaused(true));
+    }
+  }
 
   {
     MutexAutoLock lock(mMutex);
@@ -1869,6 +1883,21 @@ WorkerPrivate::Thaw(nsPIDOMWindowInner* aWindow)
 
   mParentFrozen = false;
 
+  // Delivery of WorkerDebuggeeRunnables to the window may resume.
+  //
+  // Since a top-level worker and all its children share the same
+  // mMainThreadDebuggeeEventTarget, it's sufficient to do this only in the
+  // top-level worker.
+  if (aWindow) {
+    // Since the worker is no longer frozen, only a paused parent window should
+    // require the queue to remain paused.
+    //
+    // This can only fail if the ThrottledEventQueue cannot dispatch its executor
+    // to the main thread, in which case the main thread was never going to draw
+    // runnables from it anyway, so the failure doesn't matter.
+    Unused << mMainThreadDebuggeeEventTarget->SetIsPaused(IsParentWindowPaused());
+  }
+
   {
     MutexAutoLock lock(mMutex);
 
@@ -1878,19 +1907,6 @@ WorkerPrivate::Thaw(nsPIDOMWindowInner* aWindow)
   }
 
   EnableDebugger();
-
-  // Execute queued runnables before waking up the worker, otherwise the worker
-  // could post new messages before we run those that have been queued.
-  if (!IsParentWindowPaused() && !mQueuedRunnables.IsEmpty()) {
-    MOZ_ASSERT(IsDedicatedWorker());
-
-    nsTArray<nsCOMPtr<nsIRunnable>> runnables;
-    mQueuedRunnables.SwapElements(runnables);
-
-    for (uint32_t index = 0; index < runnables.Length(); index++) {
-      runnables[index]->Run();
-    }
-  }
 
   RefPtr<ThawRunnable> runnable = new ThawRunnable(this);
   if (!runnable->Dispatch()) {
@@ -1906,6 +1922,13 @@ WorkerPrivate::ParentWindowPaused()
   AssertIsOnMainThread();
   MOZ_ASSERT_IF(IsDedicatedWorker(), mParentWindowPausedDepth == 0);
   mParentWindowPausedDepth += 1;
+
+  // This is called from WorkerPrivate construction, and we may not have
+  // allocated mMainThreadDebuggeeEventTarget yet.
+  if (mMainThreadDebuggeeEventTarget) {
+    // Pausing a ThrottledEventQueue is infallible.
+    MOZ_ALWAYS_SUCCEEDS(mMainThreadDebuggeeEventTarget->SetIsPaused(true));
+  }
 }
 
 void
@@ -1928,18 +1951,13 @@ WorkerPrivate::ParentWindowResumed()
     }
   }
 
-  // Execute queued runnables before waking up, otherwise the worker could post
-  // new messages before we run those that have been queued.
-  if (!IsFrozen() && !mQueuedRunnables.IsEmpty()) {
-    MOZ_ASSERT(IsDedicatedWorker());
-
-    nsTArray<nsCOMPtr<nsIRunnable>> runnables;
-    mQueuedRunnables.SwapElements(runnables);
-
-    for (uint32_t index = 0; index < runnables.Length(); index++) {
-      runnables[index]->Run();
-    }
-  }
+  // Since the window is no longer paused, the queue should only remain paused
+  // if the worker is frozen.
+  //
+  // This can only fail if the ThrottledEventQueue cannot dispatch its executor
+  // to the main thread, in which case the main thread was never going to draw
+  // runnables from it anyway, so the failure doesn't matter.
+  Unused << mMainThreadDebuggeeEventTarget->SetIsPaused(IsFrozen());
 }
 
 void
@@ -2604,7 +2622,6 @@ WorkerPrivate::WorkerPrivate(WorkerPrivate* aParent,
   , mDebugger(nullptr)
   , mJSContext(nullptr)
   , mPRThread(nullptr)
-  , mMainThreadEventTarget(GetMainThreadEventTarget())
   , mWorkerControlEventTarget(new WorkerEventTarget(this,
                                                     WorkerEventTarget::Behavior::ControlOnly))
   , mWorkerHybridEventTarget(new WorkerEventTarget(this,
@@ -2713,8 +2730,8 @@ WorkerPrivate::WorkerPrivate(WorkerPrivate* aParent,
   // that ThrottledEventQueue can only be created on the main thread at the
   // moment.
   if (aParent) {
-    mMainThreadThrottledEventQueue = aParent->mMainThreadThrottledEventQueue;
     mMainThreadEventTarget = aParent->mMainThreadEventTarget;
+    mMainThreadDebuggeeEventTarget = aParent->mMainThreadDebuggeeEventTarget;
     return;
   }
 
@@ -2727,16 +2744,11 @@ WorkerPrivate::WorkerPrivate(WorkerPrivate* aParent,
   }
 
   // Throttle events to the main thread using a ThrottledEventQueue specific to
-  // this worker thread.  This may return nullptr during shutdown.
-  mMainThreadThrottledEventQueue = ThrottledEventQueue::Create(target);
-
-  // If we were able to creat the throttled event queue, then use it for
-  // dispatching our main thread runnables.  Otherwise use our underlying
-  // base target.
-  if (mMainThreadThrottledEventQueue) {
-    mMainThreadEventTarget = mMainThreadThrottledEventQueue;
-  } else {
-    mMainThreadEventTarget = target.forget();
+  // this tree of worker threads.
+  mMainThreadEventTarget = ThrottledEventQueue::Create(target);
+  mMainThreadDebuggeeEventTarget = ThrottledEventQueue::Create(target);
+  if (IsParentWindowPaused() || IsFrozen()) {
+    MOZ_ALWAYS_SUCCEEDS(mMainThreadDebuggeeEventTarget->SetIsPaused(true));
   }
 }
 
@@ -3311,11 +3323,12 @@ WorkerPrivate::DoRunLoop(JSContext* aCx)
     }
 
     // If the worker thread is spamming the main thread faster than it can
-    // process the work, then pause the worker thread until the MT catches
-    // up.
-    if (mMainThreadThrottledEventQueue &&
-        mMainThreadThrottledEventQueue->Length() > 5000) {
-      mMainThreadThrottledEventQueue->AwaitIdle();
+    // process the work, then pause the worker thread until the main thread
+    // catches up.
+    size_t queuedEvents = mMainThreadEventTarget->Length() +
+                          mMainThreadDebuggeeEventTarget->Length();
+    if (queuedEvents > 5000) {
+      mMainThreadEventTarget->AwaitIdle();
     }
   }
 
@@ -3367,6 +3380,13 @@ WorkerPrivate::DispatchToMainThread(already_AddRefed<nsIRunnable> aRunnable,
                                     uint32_t aFlags)
 {
   return mMainThreadEventTarget->Dispatch(std::move(aRunnable), aFlags);
+}
+
+nsresult
+WorkerPrivate::DispatchDebuggeeToMainThread(already_AddRefed<WorkerDebuggeeRunnable> aRunnable,
+                                            uint32_t aFlags)
+{
+  return mMainThreadDebuggeeEventTarget->Dispatch(std::move(aRunnable), aFlags);
 }
 
 nsISerialEventTarget*
@@ -3442,12 +3462,20 @@ WorkerPrivate::EnsureClientSource()
 bool
 WorkerPrivate::EnsureCSPEventListener()
 {
-  mCSPEventListener = WorkerCSPEventListener::Create(this);
-  if (NS_WARN_IF(!mCSPEventListener)) {
-    return false;
+  if (!mCSPEventListener) {
+    mCSPEventListener = WorkerCSPEventListener::Create(this);
+    if (NS_WARN_IF(!mCSPEventListener)) {
+      return false;
+    }
   }
-
   return true;
+}
+
+nsICSPEventListener*
+WorkerPrivate::CSPEventListener() const
+{
+  MOZ_ASSERT(mCSPEventListener);
+  return mCSPEventListener;
 }
 
 void
@@ -3803,6 +3831,8 @@ WorkerPrivate::WaitForWorkerEvents()
 
   AssertIsOnWorkerThread();
   mMutex.AssertCurrentThreadOwns();
+
+  AUTO_PROFILER_THREAD_SLEEP;
 
   // Wait for a worker event.
   mCondVar.Wait();
@@ -5003,7 +5033,8 @@ WorkerPrivate::StartCancelingTimer()
     }
   }
 
-  uint32_t cancelingTimeoutMillis = DOMPrefs::WorkerCancelingTimeoutMillis();
+  uint32_t cancelingTimeoutMillis =
+    StaticPrefs::dom_worker_canceling_timeoutMilliseconds();
 
   RefPtr<CancelingTimerCallback> callback = new CancelingTimerCallback(this);
   nsresult rv = mCancelingTimer->InitWithCallback(callback,
@@ -5346,22 +5377,13 @@ WorkerPrivate::CreateDebuggerGlobalScope(JSContext* aCx)
 bool
 WorkerPrivate::IsOnWorkerThread() const
 {
-  // This is much more complicated than it needs to be but we can't use mThread
-  // because it must be protected by mMutex and sometimes this method is called
-  // when mMutex is already locked. This method should always work.
+  // We can't use mThread because it must be protected by mMutex and sometimes
+  // this method is called when mMutex is already locked. This method should
+  // always work.
   MOZ_ASSERT(mPRThread,
              "AssertIsOnWorkerThread() called before a thread was assigned!");
 
-  nsCOMPtr<nsIThread> thread;
-  nsresult rv =
-    nsThreadManager::get().GetThreadFromPRThread(mPRThread,
-                                                 getter_AddRefs(thread));
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
-  MOZ_ASSERT(thread);
-
-  bool current;
-  rv = thread->IsOnCurrentThread(&current);
-  return NS_SUCCEEDED(rv) && current;
+  return mPRThread == PR_GetCurrentThread();
 }
 
 #ifdef DEBUG

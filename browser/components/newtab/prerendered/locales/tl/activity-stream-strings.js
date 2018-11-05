@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Nabigo ang pag-load ng larawan. Subukan ang ibang URL.",
   "pocket_read_more": "Tanyag na mga paksa:",
   "pocket_read_even_more": "Tignan ang higit pang mga kuwento",
+  "pocket_more_reccommendations": "More Recommendations",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "Get Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "Magsimulang mag-browse, at ipapakita namin ang ilan sa mga magagandang artikulo, video, at iba pang mga pahina na kamakailan mong binisita o na-bookmark dito.",
   "topstories_empty_state": "Nakahabol ka na. Bumalik sa ibang pagkakataon para sa higit pang mga nangungunang kuwento mula sa {provider}. Hindi makapaghintay? Pumili ng isang tanyag na paksa upang makahanap ng higit pang mahusay na mga kuwento mula sa buong web.",
   "manual_migration_explanation2": "Subukan ang Firefox gamit ang mga bookmark, kasaysayan at mga password mula sa isa pang browser.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Pamahalaan ang Seksyon",
   "section_menu_action_manage_webext": "Manage Extension",
   "section_menu_action_add_topsite": "Magdagdag ng Nangungunang Site",
+  "section_menu_action_add_search_engine": "Add Search Engine",
   "section_menu_action_move_up": "Ilipat Up",
   "section_menu_action_move_down": "Ilipat sa Baba",
   "section_menu_action_privacy_notice": "Paunawa sa Privacy",
@@ -101,5 +106,6 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Terms of Service",
   "firstrun_privacy_notice": "Privacy Notice",
   "firstrun_continue_to_login": "Continue",
-  "firstrun_skip_login": "Skip this step"
+  "firstrun_skip_login": "Skip this step",
+  "context_menu_title": "Open menu"
 };

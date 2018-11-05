@@ -5,26 +5,24 @@
 
 package org.mozilla.gecko.mozglue;
 
+import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.annotation.JNITarget;
+import org.mozilla.gecko.annotation.RobocopTarget;
+import org.mozilla.geckoview.BuildConfig;
+
+import android.content.Context;
+import android.os.Build;
+import android.os.Environment;
+import android.util.Log;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.Collection;
 import java.util.Locale;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
-
-import android.content.Context;
-import android.content.Intent;
-import android.os.Build;
-import android.os.Bundle;
-import android.os.Environment;
-import java.util.ArrayList;
-import android.util.Log;
-
-import org.mozilla.gecko.GeckoThread;
-import org.mozilla.gecko.annotation.JNITarget;
-import org.mozilla.gecko.annotation.RobocopTarget;
-import org.mozilla.geckoview.BuildConfig;
 
 public final class GeckoLoader {
     private static final String LOGTAG = "GeckoLoader";
@@ -92,9 +90,35 @@ public final class GeckoLoader {
         return tmpDir;
     }
 
+    private static String escapeDoubleQuotes(final String str) {
+        return str.replaceAll("\"", "\\\"");
+    }
+
+    private static void setupInitialPrefs(final Map<String, Object> prefs) {
+        if (prefs != null) {
+            final StringBuilder prefsEnv = new StringBuilder("MOZ_DEFAULT_PREFS=");
+            for (final String key : prefs.keySet()) {
+                prefsEnv.append(String.format("pref(\"%s\",", escapeDoubleQuotes(key)));
+                final Object value = prefs.get(key);
+                if (value instanceof String) {
+                    prefsEnv.append(String.format("\"%s\"", escapeDoubleQuotes(value.toString())));
+                } else if (value instanceof Boolean) {
+                    prefsEnv.append((Boolean)value ? "true" : "false");
+                } else {
+                    prefsEnv.append(value.toString());
+                }
+
+                prefsEnv.append(");\n");
+            }
+
+            putenv(prefsEnv.toString());
+        }
+    }
+
     public synchronized static void setupGeckoEnvironment(final Context context,
                                                           final String profilePath,
-                                                          final Collection<String> env) {
+                                                          final Collection<String> env,
+                                                          final Map<String, Object> prefs) {
         for (final String e : env) {
             putenv(e);
         }
@@ -107,9 +131,6 @@ public final class GeckoLoader {
         }
 
         putenv("MOZ_ANDROID_PACKAGE_NAME=" + context.getPackageName());
-
-        final int crashReporterJobId = GeckoThread.getCrashReporterJobId();
-        putenv("MOZ_ANDROID_CRASH_REPORTER_JOB_ID=" + crashReporterJobId);
 
         setupDownloadEnvironment(context);
 
@@ -142,7 +163,15 @@ public final class GeckoLoader {
 
         putenv("LANG=" + Locale.getDefault().toString());
 
+        final Class<?> crashHandler = GeckoAppShell.getCrashHandlerService();
+        if (crashHandler != null) {
+            putenv("MOZ_ANDROID_CRASH_HANDLER=" +
+                    context.getPackageName() + "/" + crashHandler.getName());
+        }
+
         putenv("MOZ_ANDROID_DEVICE_SDK_VERSION=" + Build.VERSION.SDK_INT);
+
+        setupInitialPrefs(prefs);
 
         // env from extras could have reset out linker flags; set them again.
         loadLibsSetupLocked(context);

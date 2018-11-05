@@ -598,7 +598,10 @@ class Dumper:
                         # pass through all other lines unchanged
                         f.write(line)
                 f.close()
-                proc.wait()
+                retcode = proc.wait()
+                if retcode != 0:
+                    raise RuntimeError(
+                        "dump_syms failed with error code %d" % retcode)
                 # we output relative paths so callers can get a list of what
                 # was generated
                 print(rel_path)
@@ -762,9 +765,13 @@ class Dumper_Linux(Dumper):
         # We want to strip out the debug info, and add a
         # .gnu_debuglink section to the object, so the debugger can
         # actually load our debug info later.
+        # In some odd cases, the object might already have an irrelevant
+        # .gnu_debuglink section, and objcopy doesn't want to add one in
+        # such cases, so we make it remove it any existing one first.
         file_dbg = file + ".dbg"
         if subprocess.call([self.objcopy, '--only-keep-debug', file, file_dbg]) == 0 and \
-           subprocess.call([self.objcopy, '--add-gnu-debuglink=%s' % file_dbg, file]) == 0:
+           subprocess.call([self.objcopy, '--remove-section', '.gnu_debuglink',
+                            '--add-gnu-debuglink=%s' % file_dbg, file]) == 0:
             rel_path = os.path.join(debug_file,
                                     guid,
                                     debug_file + ".dbg")

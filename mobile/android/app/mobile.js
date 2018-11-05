@@ -216,6 +216,7 @@ pref("extensions.getAddons.search.browseURL", "https://addons.mozilla.org/%LOCAL
 pref("extensions.getAddons.browseAddons", "https://addons.mozilla.org/%LOCALE%/android/");
 pref("extensions.getAddons.get.url", "https://services.addons.mozilla.org/api/v3/addons/search/?guid=%IDS%&lang=%LOCALE%");
 pref("extensions.getAddons.compatOverides.url", "https://services.addons.mozilla.org/api/v3/addons/compat-override/?guid=%IDS%&lang=%LOCALE%");
+pref("extensions.getAddons.langpacks.url", "https://services.addons.mozilla.org/api/v3/addons/language-tools/?app=android&type=language&appversion=%VERSION%");
 
 /* preference for the locale picker */
 pref("extensions.getLocales.get.url", "");
@@ -230,6 +231,8 @@ pref("extensions.webextOptionalPermissionPrompts", true);
 // Add-on content security policies.
 pref("extensions.webextensions.base-content-security-policy", "script-src 'self' https://* moz-extension: blob: filesystem: 'unsafe-eval' 'unsafe-inline'; object-src 'self' https://* moz-extension: blob: filesystem:;");
 pref("extensions.webextensions.default-content-security-policy", "script-src 'self'; object-src 'self';");
+
+pref("extensions.webextensions.background-delayed-startup", true);
 
 pref("extensions.legacy.enabled", false);
 
@@ -541,6 +544,10 @@ pref("layers.low-precision-opacity", "1.0");
 // work harder keep scrolling smooth and memory low.
 pref("layers.max-active", 20);
 
+// On Fennec we need containerful scrolling to support zooming. Bug 1459312
+// tracks zooming with containerless scrolling.
+pref("layout.scroll.root-frame-containers", 1);
+
 pref("notification.feature.enabled", true);
 pref("dom.webnotifications.enabled", true);
 
@@ -833,7 +840,6 @@ pref("dom.vr.enabled", true);
 pref("browser.tabs.showAudioPlayingIcon", true);
 
 pref("dom.serviceWorkers.enabled", true);
-pref("dom.serviceWorkers.interception.enabled", true);
 
 // Allow service workers to open windows for a longer period after a notification
 // click on mobile.  This is to account for some devices being quite slow.
@@ -885,3 +891,8 @@ pref("media.navigator.permission.device", true);
 
 // Allow system add-on updates
 pref("extensions.systemAddon.update.url", "https://aus5.mozilla.org/update/3/SystemAddons/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
+
+// E10s stuff. We don't support 'file' or 'priveleged' process types.
+pref("browser.tabs.remote.separateFileUriProcess", false);
+pref("browser.tabs.remote.allowLinkedWebInFileUriProcess", true);
+pref("browser.tabs.remote.separatePrivilegedContentProcess", false);

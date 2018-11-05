@@ -30,7 +30,6 @@ class JsepTransceiver {
       mJsDirection(jsDirection),
       mSendTrack(type, sdp::kSend),
       mRecvTrack(type, sdp::kRecv),
-      mTransport(*(new JsepTransport)),
       mLevel(SIZE_MAX),
       mBundleLevel(SIZE_MAX),
       mAddTrackMagic(false),
@@ -45,7 +44,7 @@ class JsepTransceiver {
       mJsDirection(orig.mJsDirection),
       mSendTrack(orig.mSendTrack),
       mRecvTrack(orig.mRecvTrack),
-      mTransport(*(new JsepTransport(orig.mTransport))),
+      mTransport(orig.mTransport),
       mMid(orig.mMid),
       mLevel(orig.mLevel),
       mBundleLevel(orig.mBundleLevel),
@@ -60,7 +59,10 @@ class JsepTransceiver {
 
     void Rollback(JsepTransceiver& oldTransceiver)
     {
-      *mTransport = *oldTransceiver.mTransport;
+      MOZ_ASSERT(oldTransceiver.GetMediaType() == GetMediaType());
+      MOZ_ASSERT(!oldTransceiver.HasLevel() ||
+                 oldTransceiver.GetLevel() == GetLevel());
+      mTransport = oldTransceiver.mTransport;
       mLevel = oldTransceiver.mLevel;
       mBundleLevel = oldTransceiver.mBundleLevel;
       mRecvTrack = oldTransceiver.mRecvTrack;
@@ -110,8 +112,6 @@ class JsepTransceiver {
 
     void ClearLevel()
     {
-      MOZ_ASSERT(mStopped);
-      MOZ_ASSERT(!IsAssociated());
       mLevel = SIZE_MAX;
     }
 
@@ -129,6 +129,12 @@ class JsepTransceiver {
     bool IsStopped() const
     {
       return mStopped;
+    }
+
+    void RestartDatachannelTransceiver()
+    {
+      MOZ_RELEASE_ASSERT(GetMediaType() == SdpMediaSection::kApplication);
+      mStopped = false;
     }
 
     void SetRemoved()
@@ -204,7 +210,17 @@ class JsepTransceiver {
     // Convenience function
     SdpMediaSection::MediaType GetMediaType() const
     {
+      MOZ_ASSERT(mRecvTrack.GetMediaType() == mSendTrack.GetMediaType());
       return mRecvTrack.GetMediaType();
+    }
+
+    bool HasOwnTransport() const
+    {
+      if (mTransport.mComponents &&
+          (!HasBundleLevel() || (GetLevel() == BundleLevel()))) {
+        return true;
+      }
+      return false;
     }
 
     // This is the direction JS wants. It might not actually happen.
@@ -212,7 +228,7 @@ class JsepTransceiver {
 
     JsepTrack mSendTrack;
     JsepTrack mRecvTrack;
-    OwningNonNull<JsepTransport> mTransport;
+    JsepTransport mTransport;
 
   private:
     // Stuff that is not negotiated

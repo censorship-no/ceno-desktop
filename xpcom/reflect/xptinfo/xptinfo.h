@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include "nsID.h"
 #include "mozilla/Assertions.h"
+#include "jsapi.h"
 #include "js/Value.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -78,7 +79,6 @@ struct nsXPTInterfaceInfo
 
 
   // Interface flag getters
-  bool IsScriptable() const { return true; } // XXX remove (bug 1480245)
   bool IsFunction() const { return mFunction; }
   bool IsBuiltinClass() const { return mBuiltinClass; }
   bool IsMainProcessScriptableOnly() const { return mMainProcessScriptableOnly; }
@@ -100,29 +100,10 @@ struct nsXPTInterfaceInfo
   uint16_t MethodCount() const { return mNumMethods; }
   const nsXPTMethodInfo& Method(uint16_t aIndex) const;
 
-
-  ////////////////////////////////////////////////////////////
-  // nsIInterfaceInfo backwards compatibility (bug 1480245) //
-  ////////////////////////////////////////////////////////////
-
-  nsresult GetName(char** aName) const;
-  nsresult IsScriptable(bool* aRes) const;
-  nsresult IsBuiltinClass(bool* aRes) const;
-  nsresult GetParent(const nsXPTInterfaceInfo** aParent) const;
-  nsresult GetMethodCount(uint16_t* aMethodCount) const;
-  nsresult GetConstantCount(uint16_t* aConstantCount) const;
   nsresult GetMethodInfo(uint16_t aIndex, const nsXPTMethodInfo** aInfo) const;
   nsresult GetConstant(uint16_t aIndex,
                        JS::MutableHandleValue constant,
                        char** aName) const;
-  nsresult IsIID(const nsIID* aIID, bool* aIs) const;
-  nsresult GetNameShared(const char** aName) const;
-  nsresult GetIIDShared(const nsIID** aIID) const;
-  nsresult IsFunction(bool* aRetval) const;
-  nsresult HasAncestor(const nsIID* aIID, bool* aRetval) const;
-  nsresult IsMainProcessScriptableOnly(bool* aRetval) const;
-
-  bool EnsureResolved() const { return true; } // XXX: Remove (bug 1480245)
 
   ////////////////////////////////////////////////////////////////
   // Ensure these fields are in the same order as xptcodegen.py //
@@ -204,12 +185,11 @@ enum nsXPTTypeTag : uint8_t
   //  - Always passed indirectly,
   //  - Outparams must be initialized by caller,
   //  - Supported in xptcall due to indirection.
-  TD_DOMSTRING         = 24,
-  TD_UTF8STRING        = 25,
-  TD_CSTRING           = 26,
-  TD_ASTRING           = 27,
-  TD_JSVAL             = 28,
-  TD_ARRAY             = 29,
+  TD_UTF8STRING        = 24,
+  TD_CSTRING           = 25,
+  TD_ASTRING           = 26,
+  TD_JSVAL             = 27,
+  TD_ARRAY             = 28,
   _TD_LAST_COMPLEX     = TD_ARRAY
 };
 
@@ -359,7 +339,6 @@ public:
   TD_ALIAS_(T_WCHAR             , TD_WCHAR            );
   TD_ALIAS_(T_VOID              , TD_VOID             );
   TD_ALIAS_(T_IID               , TD_PNSIID           );
-  TD_ALIAS_(T_DOMSTRING         , TD_DOMSTRING        );
   TD_ALIAS_(T_CHAR_STR          , TD_PSTRING          );
   TD_ALIAS_(T_WCHAR_STR         , TD_PWSTRING         );
   TD_ALIAS_(T_INTERFACE         , TD_INTERFACE_TYPE   );
@@ -440,11 +419,13 @@ struct nsXPTMethodInfo
   bool IsSetter() const { return mSetter; }
   bool IsNotXPCOM() const { return mNotXPCOM; }
   bool IsHidden() const { return mHidden; }
+  bool IsSymbol() const { return mIsSymbol; }
   bool WantsOptArgc() const { return mOptArgc; }
   bool WantsContext() const { return mContext; }
   uint8_t ParamCount() const { return mNumParams; }
 
   const char* Name() const {
+    MOZ_ASSERT(!IsSymbol());
     return xpt::detail::GetString(mName);
   }
   const nsXPTParamInfo& Param(uint8_t aIndex) const {
@@ -478,6 +459,20 @@ struct nsXPTMethodInfo
   /////////////////////////////////////////////
 
   const char* GetName() const { return Name(); }
+
+  JS::SymbolCode GetSymbolCode() const
+  {
+    MOZ_ASSERT(IsSymbol());
+    return JS::SymbolCode(mName);
+  }
+
+  JS::Symbol* GetSymbol(JSContext* aCx) const
+  {
+    return JS::GetWellKnownSymbol(aCx, GetSymbolCode());
+  }
+
+  void GetSymbolDescription(JSContext* aCx, nsACString& aID) const;
+
   uint8_t GetParamCount() const { return ParamCount(); }
   const nsXPTParamInfo& GetParam(uint8_t aIndex) const {
     return Param(aIndex);
@@ -498,7 +493,7 @@ struct nsXPTMethodInfo
   uint8_t mOptArgc : 1;
   uint8_t mContext : 1;
   uint8_t mHasRetval : 1;
-  // uint8_t unused : 1;
+  uint8_t mIsSymbol : 1;
 };
 
 // The fields in nsXPTMethodInfo were carefully ordered to minimize size.
@@ -691,7 +686,6 @@ GetString(uint32_t aIndex)
   macro(TD_PROMISE,           mozilla::dom::Promise*)
 
 #define XPT_FOR_EACH_COMPLEX_TYPE(macro) \
-  macro(TD_DOMSTRING,  nsString) \
   macro(TD_UTF8STRING, nsCString) \
   macro(TD_CSTRING,    nsCString) \
   macro(TD_ASTRING,    nsString) \

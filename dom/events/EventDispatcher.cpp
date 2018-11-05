@@ -12,6 +12,7 @@
 #include "nsIContentInlines.h"
 #include "nsIDocument.h"
 #include "nsINode.h"
+#include "nsIScriptObjectPrincipal.h"
 #include "nsPIDOMWindow.h"
 #include "AnimationEvent.h"
 #include "BeforeUnloadEvent.h"
@@ -65,6 +66,10 @@
 using namespace mozilla::tasktracer;
 #endif
 
+#ifdef MOZ_GECKO_PROFILER
+#include "ProfilerMarkerPayload.h"
+#endif
+
 namespace mozilla {
 
 using namespace dom;
@@ -104,22 +109,23 @@ static bool IsEventTargetChrome(EventTarget* aEventTarget,
   }
 
   nsIDocument* doc = nullptr;
-  nsCOMPtr<nsINode> node = do_QueryInterface(aEventTarget);
-  if (node) {
+  if (nsCOMPtr<nsINode> node = do_QueryInterface(aEventTarget)) {
     doc = node->OwnerDoc();
-  } else {
-    nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(aEventTarget);
-    if (!window) {
-      return false;
-    }
+  } else if (nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(aEventTarget)) {
     doc = window->GetExtantDoc();
   }
 
   // nsContentUtils::IsChromeDoc is null-safe.
-  bool isChrome = nsContentUtils::IsChromeDoc(doc);
-  if (aDocument && doc) {
-    nsCOMPtr<nsIDocument> retVal = doc;
-    retVal.swap(*aDocument);
+  bool isChrome = false;
+  if (doc) {
+    isChrome = nsContentUtils::IsChromeDoc(doc);
+    if (aDocument) {
+      nsCOMPtr<nsIDocument> retVal = doc;
+      retVal.swap(*aDocument);
+    }
+  } else if (nsCOMPtr<nsIScriptObjectPrincipal> sop =
+              do_QueryInterface(aEventTarget->GetOwnerGlobal())) {
+    isChrome = nsContentUtils::IsSystemPrincipal(sop->GetPrincipal());
   }
   return isChrome;
 }
@@ -865,7 +871,7 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
     nsCOMPtr<nsIContent> content = do_QueryInterface(target);
     if (content && content->IsInNativeAnonymousSubtree()) {
       nsCOMPtr<EventTarget> newTarget =
-        do_QueryInterface(content->FindFirstNonChromeOnlyAccessContent());
+        content->FindFirstNonChromeOnlyAccessContent();
       NS_ENSURE_STATE(newTarget);
 
       aEvent->mOriginalTarget = target;
@@ -886,7 +892,7 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
 
       // Set the target to be the original dispatch target,
       aEvent->mTarget = target;
-      // but use chrome event handler or TabChildGlobal for event target chain.
+      // but use chrome event handler or TabChildMessageManager for event target chain.
       target = piTarget;
     } else if (NS_WARN_IF(!doc)) {
       return NS_ERROR_UNEXPECTED;
@@ -899,10 +905,10 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
       !nsContentUtils::IsSafeToRunScript()) {
     nsCOMPtr<nsINode> node = do_QueryInterface(target);
     if (!node) {
-      // If the target is not a node, just go ahead and assert that this is
-      // unsafe.  There really shouldn't be any other event targets in documents
-      // that are not being rendered or scripted.
-      NS_ERROR("This is unsafe! Fix the caller!");
+      // If the target is not a node, just go ahead and crash. There really
+      // shouldn't be any other event targets in documents that are not being
+      // rendered or scripted.
+      MOZ_CRASH("This is unsafe! Fix the caller!");
     } else {
       // If this is a node, it's possible that this is some sort of DOM tree
       // that is never accessed by script (for example an SVG image or XBL
@@ -918,7 +924,7 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
         if (nsContentUtils::IsChromeDoc(doc)) {
           NS_WARNING("Fix the caller!");
         } else {
-          NS_ERROR("This is unsafe! Fix the caller!");
+          MOZ_CRASH("This is unsafe! Fix the caller!");
         }
       }
     }
@@ -1014,7 +1020,7 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
   } else {
     // At least the original target can handle the event.
     // Setting the retarget to the |target| simplifies retargeting code.
-    nsCOMPtr<EventTarget> t = do_QueryInterface(aEvent->mTarget);
+    nsCOMPtr<EventTarget> t = aEvent->mTarget;
     targetEtci->SetNewTarget(t);
     // In order to not change the targetTouches array passed to TouchEvents
     // when dispatching events from JS, we need to store the initial Touch
@@ -1107,8 +1113,49 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
         EventChainPostVisitor postVisitor(preVisitor);
         MOZ_RELEASE_ASSERT(!aEvent->mPath);
         aEvent->mPath = &chain;
-        EventTargetChainItem::HandleEventTargetChain(chain, postVisitor,
-                                                     aCallback, cd);
+
+#ifdef MOZ_GECKO_PROFILER
+        if (profiler_is_active()) {
+          // Add a profiler label and a profiler marker for the actual
+          // dispatch of the event.
+          // This is a very hot code path, so we need to make sure not to
+          // do this extra work when we're not profiling.
+          if (!postVisitor.mDOMEvent) {
+            // This is tiny bit slow, but happens only once per event.
+            // Similar code also in EventListenerManager.
+            nsCOMPtr<EventTarget> et = aEvent->mOriginalTarget;
+            RefPtr<Event> event = EventDispatcher::CreateEvent(et, aPresContext,
+                                                               aEvent,
+                                                               EmptyString());
+            event.swap(postVisitor.mDOMEvent);
+          }
+          nsAutoString typeStr;
+          postVisitor.mDOMEvent->GetType(typeStr);
+          AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING(
+            "EventDispatcher::Dispatch", OTHER, typeStr);
+
+          profiler_add_marker(
+            "DOMEvent",
+            MakeUnique<DOMEventMarkerPayload>(typeStr,
+                                              aEvent->mTimeStamp,
+                                              "DOMEvent",
+                                              TRACING_INTERVAL_START));
+
+          EventTargetChainItem::HandleEventTargetChain(chain, postVisitor,
+                                                       aCallback, cd);
+
+          profiler_add_marker(
+            "DOMEvent",
+            MakeUnique<DOMEventMarkerPayload>(typeStr,
+                                              aEvent->mTimeStamp,
+                                              "DOMEvent",
+                                              TRACING_INTERVAL_END));
+        } else
+#endif
+        {
+          EventTargetChainItem::HandleEventTargetChain(chain, postVisitor,
+                                                       aCallback, cd);
+        }
         aEvent->mPath = nullptr;
 
         preVisitor.mEventStatus = postVisitor.mEventStatus;

@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Image failed to load. Try a different URL.",
   "pocket_read_more": "Popular Topics:",
   "pocket_read_even_more": "View More Stories",
+  "pocket_more_reccommendations": "More Recommendations",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "Get Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "Start browsing, and we’ll show some of the great articles, videos, and other pages you’ve recently visited or bookmarked here.",
   "topstories_empty_state": "You’ve caught up. Check back later for more top stories from {provider}. Can’t wait? Select a popular topic to find more great stories from around the web.",
   "manual_migration_explanation2": "Try Firefox with the bookmarks, history and passwords from another browser.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Manage Section",
   "section_menu_action_manage_webext": "Manage Extension",
   "section_menu_action_add_topsite": "Add Top Site",
+  "section_menu_action_add_search_engine": "Add Search Engine",
   "section_menu_action_move_up": "Move Up",
   "section_menu_action_move_down": "Move Down",
   "section_menu_action_privacy_notice": "Privacy Notice",
@@ -102,6 +107,7 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "Privacy Notice",
   "firstrun_continue_to_login": "Continue",
   "firstrun_skip_login": "Skip this step",
+  "context_menu_title": "Open menu",
   "prefs_restore_defaults_button": "Restore Defaults",
   "prefs_topstories_description": "High-quality content you might otherwise miss",
   "prefs_topstories_show_sponsored_label": "{provider} Sponsored Stories",
@@ -116,5 +122,6 @@ window.gActivityStreamStrings = {
   "settings_pane_snippets_body": "Read short and sweet updates from Mozilla about Firefox, internet culture, and the occasional random meme.",
   "settings_pane_done_button": "Done",
   "settings_pane_topstories_options_sponsored": "Show Sponsored Stories",
-  "pocket_description": "Discover high-quality content you might otherwise miss, with help from Pocket, now part of Mozilla."
+  "pocket_description": "Discover high-quality content you might otherwise miss, with help from Pocket, now part of Mozilla.",
+  "pocket_learn_more": "Learn More"
 };

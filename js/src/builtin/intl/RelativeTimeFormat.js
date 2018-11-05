@@ -174,8 +174,12 @@ function Intl_RelativeTimeFormat_format(value, unit) {
     let relativeTimeFormat = this;
 
     // Step 2.
-    if (!IsObject(relativeTimeFormat) || (relativeTimeFormat = GuardToRelativeTimeFormat(relativeTimeFormat)) === null)
-        ThrowTypeError(JSMSG_INTL_OBJECT_NOT_INITED, "RelativeTimeFormat", "format", "RelativeTimeFormat");
+    if (!IsObject(relativeTimeFormat) ||
+        (relativeTimeFormat = GuardToRelativeTimeFormat(relativeTimeFormat)) === null)
+    {
+        return callFunction(CallRelativeTimeFormatMethodIfWrapped, this, value, unit,
+                            "Intl_RelativeTimeFormat_format");
+    }
 
     // Ensure the RelativeTimeFormat internals are resolved.
     var internals = getRelativeTimeFormatInternals(relativeTimeFormat);
@@ -186,15 +190,29 @@ function Intl_RelativeTimeFormat_format(value, unit) {
     // Step 4.
     let u = ToString(unit);
 
+    // PartitionRelativeTimePattern, step 4.
+    if (!Number_isFinite(t)) {
+        ThrowRangeError(JSMSG_DATE_NOT_FINITE, "RelativeTimeFormat");
+    }
+
+    // PartitionRelativeTimePattern, step 5.
     switch (u) {
       case "second":
+      case "seconds":
       case "minute":
+      case "minutes":
       case "hour":
+      case "hours":
       case "day":
+      case "days":
       case "week":
+      case "weeks":
       case "month":
+      case "months":
       case "quarter":
+      case "quarters":
       case "year":
+      case "years":
         break;
       default:
         ThrowRangeError(JSMSG_INVALID_OPTION_VALUE, "unit", u);
@@ -205,7 +223,7 @@ function Intl_RelativeTimeFormat_format(value, unit) {
 }
 
 /**
- * Returns the resolved options for a PluralRules object.
+ * Returns the resolved options for a RelativeTimeFormat object.
  *
  * Spec: ECMAScript 402 API, RelativeTimeFormat, 1.4.4.
  */
@@ -213,8 +231,8 @@ function Intl_RelativeTimeFormat_resolvedOptions() {
     var relativeTimeFormat;
     // Check "this RelativeTimeFormat object" per introduction of section 1.4.
     if (!IsObject(this) || (relativeTimeFormat = GuardToRelativeTimeFormat(this)) === null) {
-        ThrowTypeError(JSMSG_INTL_OBJECT_NOT_INITED, "RelativeTimeFormat", "resolvedOptions",
-                       "RelativeTimeFormat");
+        return callFunction(CallRelativeTimeFormatMethodIfWrapped, this,
+                            "Intl_RelativeTimeFormat_resolvedOptions");
     }
 
     var internals = getRelativeTimeFormatInternals(relativeTimeFormat, "resolvedOptions");

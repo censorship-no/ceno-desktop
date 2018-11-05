@@ -85,7 +85,7 @@ function NetworkEventMessage({
         e.stopPropagation();
         e.preventDefault();
         serviceContainer.openLink(statusCodeDocURL, e);
-      }
+      },
     }, status);
     statusInfo = dom.span(
       {className: "status-info"},
@@ -106,7 +106,7 @@ function NetworkEventMessage({
   const xhr = isXHR
     ? dom.span({ className: "xhr" }, l10n.getStr("webConsoleXhrIndicator"))
     : null;
-  const requestUrl = dom.a({ className: "url", title: request.url, onClick: toggle },
+  const requestUrl = dom.span({ className: "url", title: request.url, onClick: toggle },
     request.url);
   const statusBody = statusInfo
     ? dom.a({ className: "status", onClick: toggle }, statusInfo)

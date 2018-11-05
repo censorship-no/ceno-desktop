@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaCapabilities.h"
+#include "AllocationPolicy.h"
 #include "Benchmark.h"
 #include "DecoderTraits.h"
 #include "Layers.h"
@@ -42,11 +43,11 @@ VideoConfigurationToStr(const VideoConfiguration* aConfig)
   }
   auto str = nsPrintfCString(
     "[contentType:%s width:%d height:%d bitrate:%" PRIu64 " framerate:%s]",
-    NS_ConvertUTF16toUTF8(aConfig->mContentType.Value()).get(),
-    aConfig->mWidth.Value(),
-    aConfig->mHeight.Value(),
-    aConfig->mBitrate.Value(),
-    NS_ConvertUTF16toUTF8(aConfig->mFramerate.Value()).get());
+    NS_ConvertUTF16toUTF8(aConfig->mContentType).get(),
+    aConfig->mWidth,
+    aConfig->mHeight,
+    aConfig->mBitrate,
+    NS_ConvertUTF16toUTF8(aConfig->mFramerate).get());
   return std::move(str);
 }
 
@@ -58,7 +59,7 @@ AudioConfigurationToStr(const AudioConfiguration* aConfig)
   }
   auto str = nsPrintfCString(
     "[contentType:%s channels:%s bitrate:%" PRIu64 " samplerate:%d]",
-    NS_ConvertUTF16toUTF8(aConfig->mContentType.Value()).get(),
+    NS_ConvertUTF16toUTF8(aConfig->mContentType).get(),
     aConfig->mChannels.WasPassed()
       ? NS_ConvertUTF16toUTF8(aConfig->mChannels.Value()).get()
       : "?",
@@ -85,16 +86,16 @@ MediaDecodingConfigurationToStr(const MediaDecodingConfiguration& aConfig)
 {
   nsCString str;
   str += NS_LITERAL_CSTRING("[");
-  if (aConfig.mVideo.IsAnyMemberPresent()) {
+  if (aConfig.mVideo.WasPassed()) {
     str +=
-      NS_LITERAL_CSTRING("video:") + VideoConfigurationToStr(&aConfig.mVideo);
-    if (aConfig.mAudio.IsAnyMemberPresent()) {
+      NS_LITERAL_CSTRING("video:") + VideoConfigurationToStr(&aConfig.mVideo.Value());
+    if (aConfig.mAudio.WasPassed()) {
       str += NS_LITERAL_CSTRING(" ");
     }
   }
-  if (aConfig.mAudio.IsAnyMemberPresent()) {
+  if (aConfig.mAudio.WasPassed()) {
     str +=
-      NS_LITERAL_CSTRING("audio:") + AudioConfigurationToStr(&aConfig.mAudio);
+      NS_LITERAL_CSTRING("audio:") + AudioConfigurationToStr(&aConfig.mAudio.Value());
   }
   str += NS_LITERAL_CSTRING("]");
   return str;
@@ -103,54 +104,6 @@ MediaDecodingConfigurationToStr(const MediaDecodingConfiguration& aConfig)
 MediaCapabilities::MediaCapabilities(nsIGlobalObject* aParent)
   : mParent(aParent)
 {
-}
-
-static void
-ThrowWithMemberName(ErrorResult& aRv,
-                    const char* aCategory,
-                    const char* aMember)
-{
-  auto str = nsPrintfCString("'%s' member of %s", aMember, aCategory);
-  aRv.ThrowTypeError<MSG_MISSING_REQUIRED_DICTIONARY_MEMBER>(
-    NS_ConvertUTF8toUTF16(str));
-}
-
-static void
-CheckVideoConfigurationSanity(const VideoConfiguration& aConfig,
-                              const char* aCategory,
-                              ErrorResult& aRv)
-{
-  if (!aConfig.mContentType.WasPassed()) {
-    ThrowWithMemberName(aRv, "contentType", aCategory);
-    return;
-  }
-  if (!aConfig.mWidth.WasPassed()) {
-    ThrowWithMemberName(aRv, "width", aCategory);
-    return;
-  }
-  if (!aConfig.mHeight.WasPassed()) {
-    ThrowWithMemberName(aRv, "height", aCategory);
-    return;
-  }
-  if (!aConfig.mBitrate.WasPassed()) {
-    ThrowWithMemberName(aRv, "bitrate", aCategory);
-    return;
-  }
-  if (!aConfig.mFramerate.WasPassed()) {
-    ThrowWithMemberName(aRv, "framerate", aCategory);
-    return;
-  }
-}
-
-static void
-CheckAudioConfigurationSanity(const AudioConfiguration& aConfig,
-                              const char* aCategory,
-                              ErrorResult& aRv)
-{
-  if (!aConfig.mContentType.WasPassed()) {
-    ThrowWithMemberName(aRv, "contentType", aCategory);
-    return;
-  }
 }
 
 already_AddRefed<Promise>
@@ -165,31 +118,11 @@ MediaCapabilities::DecodingInfo(
 
   // If configuration is not a valid MediaConfiguration, return a Promise
   // rejected with a TypeError.
-  if (!aConfiguration.IsAnyMemberPresent() ||
-      (!aConfiguration.mVideo.IsAnyMemberPresent() &&
-       !aConfiguration.mAudio.IsAnyMemberPresent())) {
+  if (!aConfiguration.mVideo.WasPassed() &&
+      !aConfiguration.mAudio.WasPassed()) {
     aRv.ThrowTypeError<MSG_MISSING_REQUIRED_DICTIONARY_MEMBER>(
       NS_LITERAL_STRING("'audio' or 'video'"));
     return nullptr;
-  }
-
-  // Here we will throw rather than rejecting a promise in order to simulate
-  // optional dictionaries with required members (see bug 1368949)
-  if (aConfiguration.mVideo.IsAnyMemberPresent()) {
-    // Check that all VideoConfiguration required members are present.
-    CheckVideoConfigurationSanity(
-      aConfiguration.mVideo, "MediaDecodingConfiguration", aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
-  }
-  if (aConfiguration.mAudio.IsAnyMemberPresent()) {
-    // Check that all AudioConfiguration required members are present.
-    CheckAudioConfigurationSanity(
-      aConfiguration.mAudio, "MediaDecodingConfiguration", aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
   }
 
   LOG("Processing %s", MediaDecodingConfigurationToStr(aConfiguration).get());
@@ -200,8 +133,8 @@ MediaCapabilities::DecodingInfo(
 
   // If configuration.video is present and is not a valid video configuration,
   // return a Promise rejected with a TypeError.
-  if (aConfiguration.mVideo.IsAnyMemberPresent()) {
-    videoContainer = CheckVideoConfiguration(aConfiguration.mVideo);
+  if (aConfiguration.mVideo.WasPassed()) {
+    videoContainer = CheckVideoConfiguration(aConfiguration.mVideo.Value());
     if (!videoContainer) {
       aRv.ThrowTypeError<MSG_INVALID_MEDIA_VIDEO_CONFIGURATION>();
       return nullptr;
@@ -210,11 +143,11 @@ MediaCapabilities::DecodingInfo(
     // We have a video configuration and it is valid. Check if it is supported.
     supported &=
       aConfiguration.mType == MediaDecodingType::File
-        ? CheckTypeForFile(aConfiguration.mVideo.mContentType.Value())
-        : CheckTypeForMediaSource(aConfiguration.mVideo.mContentType.Value());
+        ? CheckTypeForFile(aConfiguration.mVideo.Value().mContentType)
+        : CheckTypeForMediaSource(aConfiguration.mVideo.Value().mContentType);
   }
-  if (aConfiguration.mAudio.IsAnyMemberPresent()) {
-    audioContainer = CheckAudioConfiguration(aConfiguration.mAudio);
+  if (aConfiguration.mAudio.WasPassed()) {
+    audioContainer = CheckAudioConfiguration(aConfiguration.mAudio.Value());
     if (!audioContainer) {
       aRv.ThrowTypeError<MSG_INVALID_MEDIA_AUDIO_CONFIGURATION>();
       return nullptr;
@@ -222,8 +155,8 @@ MediaCapabilities::DecodingInfo(
     // We have an audio configuration and it is valid. Check if it is supported.
     supported &=
       aConfiguration.mType == MediaDecodingType::File
-        ? CheckTypeForFile(aConfiguration.mAudio.mContentType.Value())
-        : CheckTypeForMediaSource(aConfiguration.mAudio.mContentType.Value());
+        ? CheckTypeForFile(aConfiguration.mAudio.Value().mContentType)
+        : CheckTypeForMediaSource(aConfiguration.mAudio.Value().mContentType);
   }
 
   if (!supported) {
@@ -237,7 +170,7 @@ MediaCapabilities::DecodingInfo(
   }
 
   nsTArray<UniquePtr<TrackInfo>> tracks;
-  if (aConfiguration.mVideo.IsAnyMemberPresent()) {
+  if (aConfiguration.mVideo.WasPassed()) {
     MOZ_ASSERT(videoContainer.isSome(), "configuration is valid and supported");
     auto videoTracks = DecoderTraits::GetTracksInfo(*videoContainer);
     // If the MIME type does not imply a codec, the string MUST
@@ -252,7 +185,7 @@ MediaCapabilities::DecodingInfo(
                           "must contain a valid trackinfo");
     tracks.AppendElements(std::move(videoTracks));
   }
-  if (aConfiguration.mAudio.IsAnyMemberPresent()) {
+  if (aConfiguration.mAudio.WasPassed()) {
     MOZ_ASSERT(audioContainer.isSome(), "configuration is valid and supported");
     auto audioTracks = DecoderTraits::GetTracksInfo(*audioContainer);
     // If the MIME type does not imply a codec, the string MUST
@@ -328,68 +261,75 @@ MediaCapabilities::DecodingInfo(
                                     CreateDecoderParams::VideoFrameRate(
                                       frameRate),
                                     TrackInfo::kVideoTrack };
-
-        RefPtr<PDMFactory> pdm = new PDMFactory();
-        RefPtr<MediaDataDecoder> decoder = pdm->CreateDecoder(params);
-        if (!decoder) {
-          return CapabilitiesPromise::CreateAndReject(
-            MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR, "Can't create decoder"),
-            __func__);
-        }
-        // We now query the decoder to determine if it's power efficient.
-        return decoder->Init()->Then(
+        return AllocationWrapper::CreateDecoder(params)->Then(
           taskQueue,
           __func__,
-          [taskQueue, decoder, frameRate, config = std::move(config)](
-            const MediaDataDecoder::InitPromise::ResolveOrRejectValue&
-              aValue) mutable {
-            RefPtr<CapabilitiesPromise> p;
+          [taskQueue, frameRate, config = std::move(config)](
+            const AllocationWrapper::AllocateDecoderPromise::
+              ResolveOrRejectValue& aValue) mutable {
             if (aValue.IsReject()) {
-              p = CapabilitiesPromise::CreateAndReject(aValue.RejectValue(),
-                                                       __func__);
-            } else {
-              MOZ_ASSERT(config->IsVideo());
-              nsAutoCString reason;
-              bool powerEfficient = true;
-              bool smooth = true;
-              if (config->GetAsVideoInfo()->mImage.height > 480) {
-                // Assume that we can do stuff at 480p or less in a power
-                // efficient manner and smoothly. If greater than 480p we assume
-                // that if the video decoding is hardware accelerated it will be
-                // smooth and power efficient, otherwise we use the benchmark to
-                // estimate
-                powerEfficient = decoder->IsHardwareAccelerated(reason);
-                if (!powerEfficient && VPXDecoder::IsVP9(config->mMimeType)) {
-                  smooth = VP9Benchmark::IsVP9DecodeFast(true /* default */);
-                  uint32_t fps = VP9Benchmark::MediaBenchmarkVp9Fps();
-                  if (!smooth && fps > 0) {
-                    // The VP9 estimizer decode a 1280x720 video. Let's adjust
-                    // the result for the resolution and frame rate of what we
-                    // actually want. If the result is twice that we need we
-                    // assume it will be smooth.
-                    const auto& videoConfig = *config->GetAsVideoInfo();
-                    double needed =
-                      ((1280.0 * 720.0) /
-                       (videoConfig.mImage.width * videoConfig.mImage.height) *
-                       fps) /
-                      frameRate;
-                    smooth = needed > 2;
-                  }
-                }
-              }
-              p = CapabilitiesPromise::CreateAndResolve(
-                MediaCapabilitiesInfo(
-                  true /* supported */, smooth, powerEfficient),
-                __func__);
+              return CapabilitiesPromise::CreateAndReject(aValue.RejectValue(),
+                                                          __func__);
             }
-            MOZ_ASSERT(p.get(), "the promise has been created");
-            // Let's keep alive the decoder and the config object until the
-            // decoder has shutdown.
-            decoder->Shutdown()->Then(
+            RefPtr<MediaDataDecoder> decoder = aValue.ResolveValue();
+            // We now query the decoder to determine if it's power efficient.
+            RefPtr<CapabilitiesPromise> p = decoder->Init()->Then(
               taskQueue,
               __func__,
-              [taskQueue, decoder, config = std::move(config)](
-                const ShutdownPromise::ResolveOrRejectValue& aValue) {});
+              [taskQueue, decoder, frameRate, config = std::move(config)](
+                const MediaDataDecoder::InitPromise::ResolveOrRejectValue&
+                  aValue) mutable {
+                RefPtr<CapabilitiesPromise> p;
+                if (aValue.IsReject()) {
+                  p = CapabilitiesPromise::CreateAndReject(aValue.RejectValue(),
+                                                           __func__);
+                } else {
+                  MOZ_ASSERT(config->IsVideo());
+                  nsAutoCString reason;
+                  bool powerEfficient = true;
+                  bool smooth = true;
+                  if (config->GetAsVideoInfo()->mImage.height > 480) {
+                    // Assume that we can do stuff at 480p or less in a power
+                    // efficient manner and smoothly. If greater than 480p we
+                    // assume that if the video decoding is hardware accelerated
+                    // it will be smooth and power efficient, otherwise we use
+                    // the benchmark to estimate
+                    powerEfficient = decoder->IsHardwareAccelerated(reason);
+                    if (!powerEfficient &&
+                        VPXDecoder::IsVP9(config->mMimeType)) {
+                      smooth =
+                        VP9Benchmark::IsVP9DecodeFast(true /* default */);
+                      uint32_t fps = VP9Benchmark::MediaBenchmarkVp9Fps();
+                      if (!smooth && fps > 0) {
+                        // The VP9 estimizer decode a 1280x720 video. Let's
+                        // adjust the result for the resolution and frame rate
+                        // of what we actually want. If the result is twice that
+                        // we need we assume it will be smooth.
+                        const auto& videoConfig = *config->GetAsVideoInfo();
+                        double needed = ((1280.0 * 720.0) /
+                                         (videoConfig.mImage.width *
+                                          videoConfig.mImage.height) *
+                                         fps) /
+                                        frameRate;
+                        smooth = needed > 2;
+                      }
+                    }
+                  }
+                  p = CapabilitiesPromise::CreateAndResolve(
+                    MediaCapabilitiesInfo(
+                      true /* supported */, smooth, powerEfficient),
+                    __func__);
+                }
+                MOZ_ASSERT(p.get(), "the promise has been created");
+                // Let's keep alive the decoder and the config object until the
+                // decoder has shutdown.
+                decoder->Shutdown()->Then(
+                  taskQueue,
+                  __func__,
+                  [taskQueue, decoder, config = std::move(config)](
+                    const ShutdownPromise::ResolveOrRejectValue& aValue) {});
+                return p;
+              });
             return p;
           });
       }));
@@ -407,7 +347,7 @@ MediaCapabilities::DecodingInfo(
     WorkerPrivate* wp = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(wp, "Must be called from a worker thread");
     targetThread = wp->HybridEventTarget();
-    RefPtr<StrongWorkerRef> strongWorkerRef = StrongWorkerRef::Create(
+    workerRef = StrongWorkerRef::Create(
       wp, "MediaCapabilities", [holder, targetThread]() {
         MOZ_ASSERT(targetThread->IsOnCurrentThread());
         holder->DisconnectIfExists();
@@ -478,54 +418,34 @@ MediaCapabilities::EncodingInfo(
 
   // If configuration is not a valid MediaConfiguration, return a Promise
   // rejected with a TypeError.
-  if (!aConfiguration.IsAnyMemberPresent() ||
-      (!aConfiguration.mVideo.IsAnyMemberPresent() &&
-       !aConfiguration.mAudio.IsAnyMemberPresent())) {
+  if (!aConfiguration.mVideo.WasPassed() &&
+      !aConfiguration.mAudio.WasPassed()) {
     aRv.ThrowTypeError<MSG_MISSING_REQUIRED_DICTIONARY_MEMBER>(
       NS_LITERAL_STRING("'audio' or 'video'"));
     return nullptr;
-  }
-
-  // Here we will throw rather than rejecting a promise in order to simulate
-  // optional dictionaries with required members (see bug 1368949)
-  if (aConfiguration.mVideo.IsAnyMemberPresent()) {
-    // Check that all VideoConfiguration required members are present.
-    CheckVideoConfigurationSanity(
-      aConfiguration.mVideo, "MediaDecodingConfiguration", aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
-  }
-  if (aConfiguration.mAudio.IsAnyMemberPresent()) {
-    // Check that all AudioConfiguration required members are present.
-    CheckAudioConfigurationSanity(
-      aConfiguration.mAudio, "MediaDecodingConfiguration", aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
   }
 
   bool supported = true;
 
   // If configuration.video is present and is not a valid video configuration,
   // return a Promise rejected with a TypeError.
-  if (aConfiguration.mVideo.IsAnyMemberPresent()) {
-    if (!CheckVideoConfiguration(aConfiguration.mVideo)) {
+  if (aConfiguration.mVideo.WasPassed()) {
+    if (!CheckVideoConfiguration(aConfiguration.mVideo.Value())) {
       aRv.ThrowTypeError<MSG_INVALID_MEDIA_VIDEO_CONFIGURATION>();
       return nullptr;
     }
     // We have a video configuration and it is valid. Check if it is supported.
     supported &=
-      CheckTypeForEncoder(aConfiguration.mVideo.mContentType.Value());
+      CheckTypeForEncoder(aConfiguration.mVideo.Value().mContentType);
   }
-  if (aConfiguration.mAudio.IsAnyMemberPresent()) {
-    if (!CheckAudioConfiguration(aConfiguration.mAudio)) {
+  if (aConfiguration.mAudio.WasPassed()) {
+    if (!CheckAudioConfiguration(aConfiguration.mAudio.Value())) {
       aRv.ThrowTypeError<MSG_INVALID_MEDIA_AUDIO_CONFIGURATION>();
       return nullptr;
     }
     // We have an audio configuration and it is valid. Check if it is supported.
     supported &=
-      CheckTypeForEncoder(aConfiguration.mAudio.mContentType.Value());
+      CheckTypeForEncoder(aConfiguration.mAudio.Value().mContentType);
   }
 
   auto info = MakeUnique<MediaCapabilitiesInfo>(supported, supported, false);

@@ -307,7 +307,6 @@ public:
   virtual mozilla::ipc::IPCResult RecvOpenRecordReplayChannel(const uint32_t& channelId,
                                                               FileDescriptor* connection) override;
   virtual mozilla::ipc::IPCResult RecvCreateReplayingProcess(const uint32_t& aChannelId) override;
-  virtual mozilla::ipc::IPCResult RecvTerminateReplayingProcess(const uint32_t& aChannelId) override;
 
   virtual mozilla::ipc::IPCResult RecvCreateGMPService() override;
 
@@ -862,8 +861,6 @@ private:
   // Start the force-kill timer on shutdown.
   void StartForceKillTimer();
 
-  void OnGenerateMinidumpComplete(bool aDumpResult);
-
   // Ensure that the permissions for the giben Permission key are set in the
   // content process.
   //
@@ -1036,9 +1033,6 @@ private:
   virtual mozilla::ipc::IPCResult RecvBeep() override;
   virtual mozilla::ipc::IPCResult RecvPlayEventSound(const uint32_t& aEventId) override;
 
-  virtual mozilla::ipc::IPCResult RecvGetSystemColors(const uint32_t& colorsCount,
-                                                      InfallibleTArray<uint32_t>* colors) override;
-
   virtual mozilla::ipc::IPCResult RecvGetIconForExtension(const nsCString& aFileExt,
                                                           const uint32_t& aIconSize,
                                                           InfallibleTArray<uint8_t>* bits) override;
@@ -1155,8 +1149,6 @@ public:
 
   virtual mozilla::ipc::IPCResult RecvGraphicsError(const nsCString& aError) override;
 
-  virtual mozilla::ipc::IPCResult RecvRecordReplayFatalError(const nsCString& aError) override;
-
   virtual mozilla::ipc::IPCResult
   RecvBeginDriverCrashGuard(const uint32_t& aGuardType,
                             bool* aOutCrashed) override;
@@ -1224,8 +1216,6 @@ public:
   virtual mozilla::ipc::IPCResult RecvNotifyPushSubscriptionModifiedObservers(const nsCString& aScope,
                                                                               const IPC::Principal& aPrincipal) override;
 
-  virtual mozilla::ipc::IPCResult RecvNotifyLowMemory() override;
-
   virtual mozilla::ipc::IPCResult RecvGetFilesRequest(const nsID& aID,
                                                       const nsString& aDirectoryPath,
                                                       const bool& aRecursiveFlag) override;
@@ -1262,9 +1252,14 @@ public:
                                               const nsCString& aGrantedOrigin,
                                               FirstPartyStorageAccessGrantedForOriginResolver&& aResolver) override;
 
+  virtual mozilla::ipc::IPCResult
+  RecvStoreUserInteractionAsPermission(const Principal& aPrincipal) override;
+
   // Notify the ContentChild to enable the input event prioritization when
   // initializing.
   void MaybeEnableRemoteInputEventQueue();
+
+  void AppendSandboxParams(std::vector<std::string>& aArgs);
 
 public:
   void SendGetFilesResponseAndForget(const nsID& aID,
@@ -1284,6 +1279,8 @@ public:
   }
 
 private:
+  // Released in ActorDestroy; deliberately not exposed to the CC.
+  RefPtr<ContentParent> mSelfRef;
 
   // If you add strong pointers to cycle collected objects here, be sure to
   // release these objects in ShutDownProcess.  See the comment there for more
@@ -1391,6 +1388,13 @@ private:
 
   static uint64_t sNextTabParentId;
   static nsDataHashtable<nsUint64HashKey, TabParent*> sNextTabParents;
+
+#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
+  // When set to true, indicates that content processes should
+  // initialize their sandbox during startup instead of waiting
+  // for the SetProcessSandbox IPDL message.
+  static bool sEarlySandboxInit;
+#endif
 };
 
 } // namespace dom

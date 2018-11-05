@@ -20,7 +20,7 @@ namespace dom {
 class SVGAnimateTransformElement final : public SVGAnimationElement
 {
 protected:
-  explicit SVGAnimateTransformElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGAnimateTransformElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   nsSMILAnimationFunction mAnimationFunction;
   friend nsresult
@@ -31,8 +31,7 @@ protected:
 
 public:
   // nsINode specializations
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // Element specializations
   virtual bool ParseAttribute(int32_t aNamespaceID,

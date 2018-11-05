@@ -469,7 +469,7 @@ this.downloads = class extends ExtensionAPI {
             if (!filename) {
               let uri = Services.io.newURI(options.url);
               if (uri instanceof Ci.nsIURL) {
-                filename = DownloadPaths.sanitize(uri.fileName);
+                filename = DownloadPaths.sanitize(Services.textToSubURI.unEscapeURIForUI("UTF-8", uri.fileName));
               }
             }
 
@@ -511,7 +511,7 @@ this.downloads = class extends ExtensionAPI {
               }
             }
 
-            if (!saveAs) {
+            if (!saveAs || AppConstants.platform === "android") {
               return target;
             }
 

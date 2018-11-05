@@ -15,7 +15,7 @@ extern "C" {
 }
 
 #include "gtest_utils.h"
-#include "scoped_ptrs.h"
+#include "nss_scoped_ptrs.h"
 #include "tls_connect.h"
 #include "tls_filter.h"
 #include "tls_parser.h"
@@ -97,6 +97,76 @@ TEST_P(TlsConnectGeneric, ServerAuthRsaCARsaPssChain) {
   size_t chain_length;
   EXPECT_TRUE(client_->GetPeerChainLength(&chain_length));
   EXPECT_EQ(2UL, chain_length);
+}
+
+TEST_P(TlsConnectGeneric, ServerAuthRejected) {
+  EnsureTlsSetup();
+  client_->SetAuthCertificateCallback(
+      [](TlsAgent*, PRBool, PRBool) -> SECStatus { return SECFailure; });
+  ConnectExpectAlert(client_, kTlsAlertBadCertificate);
+  client_->CheckErrorCode(SSL_ERROR_BAD_CERTIFICATE);
+  server_->CheckErrorCode(SSL_ERROR_BAD_CERT_ALERT);
+  EXPECT_EQ(TlsAgent::STATE_ERROR, client_->state());
+}
+
+struct AuthCompleteArgs : public PollTarget {
+  AuthCompleteArgs(const std::shared_ptr<TlsAgent>& a, PRErrorCode c)
+      : agent(a), code(c) {}
+
+  std::shared_ptr<TlsAgent> agent;
+  PRErrorCode code;
+};
+
+static void CallAuthComplete(PollTarget* target, Event event) {
+  EXPECT_EQ(TIMER_EVENT, event);
+  auto args = reinterpret_cast<AuthCompleteArgs*>(target);
+  std::cerr << args->agent->role_str() << ": call SSL_AuthCertificateComplete "
+            << (args->code ? PR_ErrorToName(args->code) : "no error")
+            << std::endl;
+  EXPECT_EQ(SECSuccess,
+            SSL_AuthCertificateComplete(args->agent->ssl_fd(), args->code));
+  args->agent->Handshake();  // Make the TlsAgent aware of the error.
+  delete args;
+}
+
+// Install an AuthCertificateCallback that blocks when called.  Then
+// SSL_AuthCertificateComplete is called on a very short timer.  This allows any
+// processing that might follow the callback to complete.
+static void SetDeferredAuthCertificateCallback(std::shared_ptr<TlsAgent> agent,
+                                               PRErrorCode code) {
+  auto args = new AuthCompleteArgs(agent, code);
+  agent->SetAuthCertificateCallback(
+      [args](TlsAgent*, PRBool, PRBool) -> SECStatus {
+        // This can't be 0 or we race the message from the client to the server,
+        // and tests assume that we lose that race.
+        std::shared_ptr<Poller::Timer> timer_handle;
+        Poller::Instance()->SetTimer(1U, args, CallAuthComplete, &timer_handle);
+        return SECWouldBlock;
+      });
+}
+
+TEST_P(TlsConnectTls13, ServerAuthRejectAsync) {
+  SetDeferredAuthCertificateCallback(client_, SEC_ERROR_REVOKED_CERTIFICATE);
+  ConnectExpectAlert(client_, kTlsAlertCertificateRevoked);
+  // We only detect the error here when we attempt to handshake, so all the
+  // client learns is that the handshake has already failed.
+  client_->CheckErrorCode(SSL_ERROR_HANDSHAKE_FAILED);
+  server_->CheckErrorCode(SSL_ERROR_REVOKED_CERT_ALERT);
+}
+
+// In TLS 1.2 and earlier, this will result in the client sending its Finished
+// before learning that the server certificate is bad.  That means that the
+// server will believe that the handshake is complete.
+TEST_P(TlsConnectGenericPre13, ServerAuthRejectAsync) {
+  SetDeferredAuthCertificateCallback(client_, SEC_ERROR_EXPIRED_CERTIFICATE);
+  client_->ExpectSendAlert(kTlsAlertCertificateExpired);
+  server_->ExpectReceiveAlert(kTlsAlertCertificateExpired);
+  ConnectExpectFailOneSide(TlsAgent::CLIENT);
+  client_->CheckErrorCode(SSL_ERROR_HANDSHAKE_FAILED);
+
+  // The server might not receive the alert that the client sends, which would
+  // cause the test to fail when it cleans up.  Reset expectations.
+  server_->ExpectReceiveAlert(kTlsAlertCloseNotify, kTlsAlertWarning);
 }
 
 TEST_P(TlsConnectGeneric, ClientAuth) {
@@ -195,6 +265,81 @@ TEST_P(TlsConnectTls12, ClientAuthBigRsaCheckSigAlg) {
   CheckKeys();
   CheckSigScheme(capture_cert_verify, 0, server_, ssl_sig_rsa_pss_rsae_sha256,
                  2048);
+}
+
+// Replaces the signature scheme in a CertificateVerify message.
+class TlsReplaceSignatureSchemeFilter : public TlsHandshakeFilter {
+ public:
+  TlsReplaceSignatureSchemeFilter(const std::shared_ptr<TlsAgent>& a,
+                                  SSLSignatureScheme scheme)
+      : TlsHandshakeFilter(a, {kTlsHandshakeCertificateVerify}),
+        scheme_(scheme) {
+    EnableDecryption();
+  }
+
+ protected:
+  virtual PacketFilter::Action FilterHandshake(const HandshakeHeader& header,
+                                               const DataBuffer& input,
+                                               DataBuffer* output) {
+    *output = input;
+    output->Write(0, scheme_, 2);
+    return CHANGE;
+  }
+
+ private:
+  SSLSignatureScheme scheme_;
+};
+
+// Check if CertificateVerify signed with rsa_pss_rsae_* is properly
+// rejected when the certificate is RSA-PSS.
+//
+// This only works under TLS 1.2, because PSS doesn't work with TLS
+// 1.0 or TLS 1.1 and the TLS 1.3 1-RTT handshake is partially
+// successful at the client side.
+TEST_P(TlsConnectTls12, ClientAuthInconsistentRsaeSignatureScheme) {
+  static const SSLSignatureScheme kSignatureSchemePss[] = {
+      ssl_sig_rsa_pss_pss_sha256, ssl_sig_rsa_pss_rsae_sha256};
+
+  Reset(TlsAgent::kServerRsa, "rsa_pss");
+  client_->SetSignatureSchemes(kSignatureSchemePss,
+                               PR_ARRAY_SIZE(kSignatureSchemePss));
+  server_->SetSignatureSchemes(kSignatureSchemePss,
+                               PR_ARRAY_SIZE(kSignatureSchemePss));
+  client_->SetupClientAuth();
+  server_->RequestClientAuth(true);
+
+  EnsureTlsSetup();
+
+  MakeTlsFilter<TlsReplaceSignatureSchemeFilter>(client_,
+                                                 ssl_sig_rsa_pss_rsae_sha256);
+
+  ConnectExpectAlert(server_, kTlsAlertIllegalParameter);
+}
+
+// Check if CertificateVerify signed with rsa_pss_pss_* is properly
+// rejected when the certificate is RSA.
+//
+// This only works under TLS 1.2, because PSS doesn't work with TLS
+// 1.0 or TLS 1.1 and the TLS 1.3 1-RTT handshake is partially
+// successful at the client side.
+TEST_P(TlsConnectTls12, ClientAuthInconsistentPssSignatureScheme) {
+  static const SSLSignatureScheme kSignatureSchemePss[] = {
+      ssl_sig_rsa_pss_rsae_sha256, ssl_sig_rsa_pss_pss_sha256};
+
+  Reset(TlsAgent::kServerRsa, "rsa");
+  client_->SetSignatureSchemes(kSignatureSchemePss,
+                               PR_ARRAY_SIZE(kSignatureSchemePss));
+  server_->SetSignatureSchemes(kSignatureSchemePss,
+                               PR_ARRAY_SIZE(kSignatureSchemePss));
+  client_->SetupClientAuth();
+  server_->RequestClientAuth(true);
+
+  EnsureTlsSetup();
+
+  MakeTlsFilter<TlsReplaceSignatureSchemeFilter>(client_,
+                                                 ssl_sig_rsa_pss_pss_sha256);
+
+  ConnectExpectAlert(server_, kTlsAlertIllegalParameter);
 }
 
 class TlsZeroCertificateRequestSigAlgsFilter : public TlsHandshakeFilter {
@@ -410,29 +555,6 @@ TEST_P(TlsConnectTls12, SignatureAlgorithmDrop) {
   server_->CheckErrorCode(SSL_ERROR_BAD_HANDSHAKE_HASH_VALUE);
 }
 
-// Replaces the signature scheme in a TLS 1.3 CertificateVerify message.
-class TlsReplaceSignatureSchemeFilter : public TlsHandshakeFilter {
- public:
-  TlsReplaceSignatureSchemeFilter(const std::shared_ptr<TlsAgent>& a,
-                                  SSLSignatureScheme scheme)
-      : TlsHandshakeFilter(a, {kTlsHandshakeCertificateVerify}),
-        scheme_(scheme) {
-    EnableDecryption();
-  }
-
- protected:
-  virtual PacketFilter::Action FilterHandshake(const HandshakeHeader& header,
-                                               const DataBuffer& input,
-                                               DataBuffer* output) {
-    *output = input;
-    output->Write(0, scheme_, 2);
-    return CHANGE;
-  }
-
- private:
-  SSLSignatureScheme scheme_;
-};
-
 TEST_P(TlsConnectTls13, UnsupportedSignatureSchemeAlert) {
   EnsureTlsSetup();
   MakeTlsFilter<TlsReplaceSignatureSchemeFilter>(server_, ssl_sig_none);
@@ -596,25 +718,11 @@ TEST_F(TlsConnectDatagram13, AuthCompleteBeforeFinished) {
   Connect();
 }
 
-static void TriggerAuthComplete(PollTarget* target, Event event) {
-  std::cerr << "client: call SSL_AuthCertificateComplete" << std::endl;
-  EXPECT_EQ(TIMER_EVENT, event);
-  TlsAgent* client = static_cast<TlsAgent*>(target);
-  EXPECT_EQ(SECSuccess, SSL_AuthCertificateComplete(client->ssl_fd(), 0));
-}
-
 // This test uses a simple AuthCertificateCallback.  Due to the way that the
 // entire server flight is processed, the call to SSL_AuthCertificateComplete
 // will trigger after the Finished message is processed.
 TEST_F(TlsConnectDatagram13, AuthCompleteAfterFinished) {
-  client_->SetAuthCertificateCallback(
-      [this](TlsAgent*, PRBool, PRBool) -> SECStatus {
-        std::shared_ptr<Poller::Timer> timer_handle;
-        // This is really just to unroll the stack.
-        Poller::Instance()->SetTimer(1U, client_.get(), TriggerAuthComplete,
-                                     &timer_handle);
-        return SECWouldBlock;
-      });
+  SetDeferredAuthCertificateCallback(client_, 0);  // 0 = success.
   Connect();
 }
 

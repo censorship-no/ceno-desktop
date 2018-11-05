@@ -36,13 +36,12 @@ public:
         mIsOfferer(false),
         mWasOffererLastTime(false),
         mIceControlling(false),
-        mLocalIceIsRestarting(false),
         mRemoteIsIceLite(false),
-        mRemoteIceIsRestarting(false),
         mBundlePolicy(kBundleBalanced),
         mSessionId(0),
         mSessionVersion(0),
         mMidCounter(0),
+        mTransportIdCounter(0),
         mUuidGen(std::move(uuidgen)),
         mSdpHelper(&mLastError),
         mRunRustParser(false),
@@ -53,22 +52,12 @@ public:
   // Implement JsepSession methods.
   virtual nsresult Init() override;
 
-  virtual nsresult SetIceCredentials(const std::string& ufrag,
-                                     const std::string& pwd) override;
-  virtual const std::string& GetUfrag() const override { return mIceUfrag; }
-  virtual const std::string& GetPwd() const override { return mIcePwd; }
   nsresult SetBundlePolicy(JsepBundlePolicy policy) override;
 
   virtual bool
   RemoteIsIceLite() const override
   {
     return mRemoteIsIceLite;
-  }
-
-  virtual bool
-  RemoteIceIsRestarting() const override
-  {
-    return mRemoteIceIsRestarting;
   }
 
   virtual std::vector<std::string>
@@ -124,10 +113,12 @@ public:
 
   virtual nsresult AddRemoteIceCandidate(const std::string& candidate,
                                          const std::string& mid,
-                                         uint16_t level) override;
+                                         uint16_t level,
+                                         std::string* transportId) override;
 
   virtual nsresult AddLocalIceCandidate(const std::string& candidate,
-                                        uint16_t level,
+                                        const std::string& transportId,
+                                        uint16_t* level,
                                         std::string* mid,
                                         bool* skipped) override;
 
@@ -136,9 +127,10 @@ public:
       uint16_t defaultCandidatePort,
       const std::string& defaultRtcpCandidateAddr,
       uint16_t defaultRtcpCandidatePort,
-      uint16_t level) override;
+      const std::string& transportId) override;
 
-  virtual nsresult EndOfLocalCandidates(uint16_t level) override;
+  virtual nsresult EndOfLocalCandidates(
+      const std::string& transportId) override;
 
   virtual nsresult Close() override;
 
@@ -154,6 +146,12 @@ public:
   IsOfferer() const override
   {
     return mIsOfferer;
+  }
+
+  virtual bool
+  IsIceRestarting() const override
+  {
+    return !mOldIceUfrag.empty();
   }
 
   virtual const std::vector<RefPtr<JsepTransceiver>>&
@@ -202,8 +200,10 @@ private:
   nsresult UpdateTransceiversFromRemoteDescription(const Sdp& remote);
   bool WasMsectionDisabledLastNegotiation(size_t level) const;
   JsepTransceiver* GetTransceiverForLevel(size_t level);
+  JsepTransceiver* GetTransceiverForMid(const std::string& mid);
   JsepTransceiver* GetTransceiverForLocal(size_t level);
   JsepTransceiver* GetTransceiverForRemote(const SdpMediaSection& msection);
+  JsepTransceiver* GetTransceiverWithTransport(const std::string& transportId);
   // The w3c and IETF specs have a lot of "magical" behavior that happens when
   // addTrack is used. This was a deliberate design choice. Sadface.
   JsepTransceiver* FindUnassociatedTransceiver(
@@ -239,14 +239,13 @@ private:
                                       SdpSetupAttribute::Role* rolep);
   nsresult MakeNegotiatedTransceiver(const SdpMediaSection& remote,
                                      const SdpMediaSection& local,
-                                     bool usingBundle,
-                                     size_t transportLevel,
                                      JsepTransceiver* transceiverOut);
-  void InitTransport(const SdpMediaSection& msection, JsepTransport* transport);
+  void EnsureHasOwnTransport(const SdpMediaSection& msection,
+                             JsepTransceiver* transceiver);
 
   nsresult FinalizeTransport(const SdpAttributeList& remote,
                              const SdpAttributeList& answer,
-                             const RefPtr<JsepTransport>& transport);
+                             JsepTransport* transport);
 
   nsresult GetNegotiatedBundledMids(SdpHelper::BundledMids* bundledMids);
 
@@ -257,6 +256,7 @@ private:
   mozilla::Sdp* GetParsedRemoteDescription(JsepDescriptionPendingOrCurrent type)
                                            const;
   const Sdp* GetAnswer() const;
+  void SetIceRestarting(bool restarting);
 
   // !!!NOT INDEXED BY LEVEL!!! These are in the order they were created in. The
   // level mapping is done with JsepTransceiver::mLevel.
@@ -269,9 +269,9 @@ private:
   bool mIceControlling;
   std::string mIceUfrag;
   std::string mIcePwd;
-  bool mLocalIceIsRestarting;
+  std::string mOldIceUfrag;
+  std::string mOldIcePwd;
   bool mRemoteIsIceLite;
-  bool mRemoteIceIsRestarting;
   std::vector<std::string> mIceOptions;
   JsepBundlePolicy mBundlePolicy;
   std::vector<JsepDtlsFingerprint> mDtlsFingerprints;
@@ -279,6 +279,7 @@ private:
   uint64_t mSessionVersion;
   size_t mMidCounter;
   std::set<std::string> mUsedMids;
+  size_t mTransportIdCounter;
   std::vector<JsepExtmapMediaType> mRtpExtensions;
   UniquePtr<JsepUuidGenerator> mUuidGen;
   std::string mDefaultRemoteStreamId;

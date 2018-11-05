@@ -40,9 +40,9 @@ add_test(function test_Timeouts_toJSON() {
 
 add_test(function test_Timeouts_fromJSON() {
   let json = {
-    implicit: 10,
-    pageLoad: 20,
-    script: 30,
+    implicit: 0,
+    pageLoad: 2.0,
+    script: Number.MAX_SAFE_INTEGER,
   };
   let ts = Timeouts.fromJSON(json);
   equal(ts.implicit, json.implicit);
@@ -55,7 +55,6 @@ add_test(function test_Timeouts_fromJSON() {
 add_test(function test_Timeouts_fromJSON_unrecognised_field() {
   let json = {
     sessionId: "foobar",
-    script: 42,
   };
   try {
     Timeouts.fromJSON(json);
@@ -67,23 +66,17 @@ add_test(function test_Timeouts_fromJSON_unrecognised_field() {
   run_next_test();
 });
 
-add_test(function test_Timeouts_fromJSON_invalid_type() {
-  try {
-    Timeouts.fromJSON({script: "foobar"});
-  } catch (e) {
-    equal(e.name, InvalidArgumentError.name);
-    equal(e.message, "Expected [object String] \"script\" to be a positive integer, got [object String] \"foobar\"");
+add_test(function test_Timeouts_fromJSON_invalid_types() {
+  for (let value of [null, [], {}, false, "10", 2.5]) {
+    Assert.throws(() => Timeouts.fromJSON({"script": value}), /InvalidArgumentError/);
   }
 
   run_next_test();
 });
 
 add_test(function test_Timeouts_fromJSON_bounds() {
-  try {
-    Timeouts.fromJSON({script: -42});
-  } catch (e) {
-    equal(e.name, InvalidArgumentError.name);
-    equal(e.message, "Expected [object String] \"script\" to be a positive integer, got [object Number] -42");
+  for (let value of [-1, Number.MAX_SAFE_INTEGER + 1]) {
+    Assert.throws(() => Timeouts.fromJSON({"script": value}), /InvalidArgumentError/);
   }
 
   run_next_test();
@@ -389,6 +382,7 @@ add_test(function test_Capabilities_ctor() {
   ok(caps.get("timeouts") instanceof Timeouts);
   ok(caps.get("proxy") instanceof Proxy);
   equal(caps.get("setWindowRect"), false); // xpcshell does not populate appinfo
+  equal(caps.get("strictFileInteractability"), false);
 
   ok(caps.has("rotatable"));
 
@@ -420,6 +414,7 @@ add_test(function test_Capabilities_toJSON() {
   deepEqual(caps.get("timeouts").toJSON(), json.timeouts);
   equal(undefined, json.proxy);
   equal(caps.get("setWindowRect"), json.setWindowRect);
+  equal(caps.get("strictFileInteractability"), json.strictFileInteractability);
 
   equal(caps.get("rotatable"), json.rotatable);
 
@@ -471,6 +466,11 @@ add_test(function test_Capabilities_fromJSON() {
   caps = fromJSON({setWindowRect: false});
   equal(false, caps.get("setWindowRect"));
   Assert.throws(() => fromJSON({setWindowRect: true}), InvalidArgumentError);
+
+  caps = fromJSON({strictFileInteractability: false});
+  equal(false, caps.get("strictFileInteractability"));
+  caps = fromJSON({strictFileInteractability: true});
+  equal(true, caps.get("strictFileInteractability"));
 
   caps = fromJSON({"moz:accessibilityChecks": true});
   equal(true, caps.get("moz:accessibilityChecks"));

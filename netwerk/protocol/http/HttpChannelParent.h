@@ -23,7 +23,6 @@
 #include "nsIDeprecationWarner.h"
 
 class nsICacheEntry;
-class nsIAssociatedContentSecurity;
 
 #define HTTP_CHANNEL_PARENT_IID \
   { 0x982b2372, 0x7aa5, 0x4e8a, \
@@ -123,6 +122,8 @@ public:
 
   base::ProcessId OtherPid() const override;
 
+  void SetCrossProcessRedirect() { mDoingCrossProcessRedirect = true; }
+
 protected:
   // used to connect redirected-to channel in parent with just created
   // ChildChannel.  Used during redirects.
@@ -172,7 +173,7 @@ protected:
               const uint64_t&            aChannelId,
               const nsString&            aIntegrityMetadata,
               const uint64_t&            aContentWindowId,
-              const nsCString&           aPreferredAlternativeType,
+              const ArrayOfStringPairs&  aPreferredAlternativeTypes,
               const uint64_t&            aTopLevelOuterContentWindowId,
               const TimeStamp&           aLaunchServiceWorkerStart,
               const TimeStamp&           aLaunchServiceWorkerEnd,
@@ -198,8 +199,6 @@ protected:
                                                       const OptionalURIParams& apiRedirectUri,
                                                       const OptionalCorsPreflightArgs& aCorsPreflightArgs,
                                                       const bool& aChooseAppcache) override;
-  virtual mozilla::ipc::IPCResult RecvUpdateAssociatedContentSecurity(const int32_t& broken,
-                                                   const int32_t& no) override;
   virtual mozilla::ipc::IPCResult RecvDocumentChannelCleanup(const bool& clearCacheEntry) override;
   virtual mozilla::ipc::IPCResult RecvMarkOfflineCacheEntryAsForeign() override;
   virtual mozilla::ipc::IPCResult RecvDivertOnDataAvailable(const nsCString& data,
@@ -207,8 +206,11 @@ protected:
                                          const uint32_t& count) override;
   virtual mozilla::ipc::IPCResult RecvDivertOnStopRequest(const nsresult& statusCode) override;
   virtual mozilla::ipc::IPCResult RecvDivertComplete() override;
+  virtual mozilla::ipc::IPCResult RecvCrossProcessRedirectDone(const nsresult& aResult) override;
   virtual mozilla::ipc::IPCResult RecvRemoveCorsPreflightCacheEntry(const URIParams& uri,
                                                                     const mozilla::ipc::PrincipalInfo& requestingPrincipal) override;
+  virtual mozilla::ipc::IPCResult RecvBytesRead(const int32_t& aCount) override;
+  virtual mozilla::ipc::IPCResult RecvOpenOriginalCacheInputStream() override;
   virtual void ActorDestroy(ActorDestroyReason why) override;
 
   // Supporting function for ADivertableParentChannel.
@@ -262,6 +264,12 @@ private:
   // DocumentChannelCleanup.
   void CleanupBackgroundChannel();
 
+  // Check if the channel needs to enable the flow control on the IPC channel.
+  // That is, we may suspend the channel if the ODA-s to child process are not
+  // consumed quickly enough. Otherwise, memory explosion could happen.
+  bool NeedFlowControl();
+  int32_t mSendWindowSize;
+
   friend class HttpBackgroundChannelParent;
   friend class DivertDataAvailableEvent;
   friend class DivertStopRequestEvent;
@@ -269,7 +277,6 @@ private:
 
   RefPtr<HttpBaseChannel>       mChannel;
   nsCOMPtr<nsICacheEntry>       mCacheEntry;
-  nsCOMPtr<nsIAssociatedContentSecurity>  mAssociatedContentSecurity;
 
   nsCOMPtr<nsIChannel> mRedirectChannel;
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;
@@ -292,6 +299,9 @@ private:
 
   dom::TabId mNestedFrameId;
 
+  // To calculate the delay caused by the e10s back-pressure suspension
+  TimeStamp mResumedTimestamp;
+
   Atomic<bool> mIPCClosed; // PHttpChannel actor has been Closed()
 
   // Corresponding redirect channel registrar Id. 0 means redirection is not started.
@@ -309,6 +319,7 @@ private:
 
   uint8_t mSentRedirect1BeginFailed    : 1;
   uint8_t mReceivedRedirect2Verify     : 1;
+  uint8_t mHasSuspendedByBackPressure  : 1;
 
   // Indicates that diversion has been requested, but we could not start it
   // yet because the channel is still being opened with a synthesized response.
@@ -327,6 +338,12 @@ private:
   uint8_t mSuspendAfterSynthesizeResponse : 1;
   // Set if this channel will synthesize its response.
   uint8_t mWillSynthesizeResponse         : 1;
+
+  // Set if we get the result of and cache |mNeedFlowControl|
+  uint8_t mCacheNeedFlowControlInitialized : 1;
+  uint8_t mNeedFlowControl : 1;
+  uint8_t mSuspendedForFlowControl : 1;
+  uint8_t mDoingCrossProcessRedirect : 1;
 
   // Number of events to wait before actually invoking AsyncOpen on the main
   // channel. For each asynchronous step required before InvokeAsyncOpen, should

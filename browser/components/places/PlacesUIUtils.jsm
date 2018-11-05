@@ -163,9 +163,9 @@ let InternalFaviconLoader = {
     });
   },
 
-  loadFavicon(browser, principal, uri, expiration, iconURI) {
+  loadFavicon(browser, principal, pageURI, uri, expiration, iconURI) {
     this.ensureInitialized();
-    let win = browser.ownerGlobal;
+    let {ownerGlobal: win, innerWindowID} = browser;
     if (!gFaviconLoadDataMap.has(win)) {
       gFaviconLoadDataMap.set(win, []);
       let unloadHandler = event => {
@@ -179,8 +179,6 @@ let InternalFaviconLoader = {
       win.addEventListener("unload", unloadHandler, true);
     }
 
-    let {innerWindowID, currentURI} = browser;
-
     // First we do the actual setAndFetch call:
     let loadType = PrivateBrowsingUtils.isWindowPrivate(win)
       ? PlacesUtils.favicons.FAVICON_LOAD_PRIVATE
@@ -193,8 +191,8 @@ let InternalFaviconLoader = {
                                                          expiration, principal);
     }
 
-    let request = PlacesUtils.favicons.setAndFetchFaviconForPage(currentURI, uri, false,
-                                                                 loadType, callback, principal);
+    let request = PlacesUtils.favicons.setAndFetchFaviconForPage(
+      pageURI, uri, false, loadType, callback, principal);
 
     // Now register the result so we can cancel it if/when necessary.
     if (!request) {
@@ -313,15 +311,16 @@ var PlacesUIUtils = {
    * set and fetch a favicon. Can only be used from the parent process.
    * @param browser    {Browser}   The XUL browser element for which we're fetching a favicon.
    * @param principal  {Principal} The loading principal to use for the fetch.
+   * @pram pageURI     {URI}       The page URI associated to this favicon load.
    * @param uri        {URI}       The URI to fetch.
    * @param expiration {Number}    An optional expiration time.
    * @param iconURI    {URI}       An optional data: URI holding the icon's data.
    */
-  loadFavicon(browser, principal, uri, expiration = 0, iconURI = null) {
+  loadFavicon(browser, principal, pageURI, uri, expiration = 0, iconURI = null) {
     if (gInContentProcess) {
       throw new Error("Can't track loads from within the child process!");
     }
-    InternalFaviconLoader.loadFavicon(browser, principal, uri, expiration, iconURI);
+    InternalFaviconLoader.loadFavicon(browser, principal, pageURI, uri, expiration, iconURI);
   },
 
   /**
@@ -481,7 +480,7 @@ var PlacesUIUtils = {
 
     await PlacesUtils.history.update({
       url,
-      annotations: new Map([[PlacesUtils.CHARSET_ANNO, charset]])
+      annotations: new Map([[PlacesUtils.CHARSET_ANNO, charset]]),
     });
   },
 
@@ -519,11 +518,9 @@ var PlacesUIUtils = {
    *
    * @param aNode
    *        a node, except the root node of a query.
-   * @param aView
-   *        The view originating the request.
    * @return true if the aNode represents a removable entry, false otherwise.
    */
-  canUserRemove(aNode, aView) {
+  canUserRemove(aNode) {
     let parentNode = aNode.parent;
     if (!parentNode) {
       // canUserRemove doesn't accept root nodes.
@@ -545,21 +542,13 @@ var PlacesUIUtils = {
       }
     }
 
-    // If it's not a bookmark, we can remove it unless it's a child of a
-    // livemark.
-    if (aNode.itemId == -1) {
-      // Rather than executing a db query, checking the existence of the feedURI
-      // annotation, detect livemark children by the fact that they are the only
-      // direct non-bookmark children of bookmark folders.
-      return !PlacesUtils.nodeIsFolder(parentNode);
+    // If it's not a bookmark, or it's child of a query, we can remove it.
+    if (aNode.itemId == -1 || PlacesUtils.nodeIsQuery(parentNode)) {
+      return true;
     }
 
-    // Generally it's always possible to remove children of a query.
-    if (PlacesUtils.nodeIsQuery(parentNode))
-      return true;
-
     // Otherwise it has to be a child of an editable folder.
-    return !this.isFolderReadOnly(parentNode, aView);
+    return !this.isFolderReadOnly(parentNode);
   },
 
   /**
@@ -577,25 +566,15 @@ var PlacesUIUtils = {
    *
    * @param placesNode
    *        any folder result node.
-   * @param view
-   *        The view originating the request.
    * @throws if placesNode is not a folder result node or views is invalid.
-   * @note livemark "folders" are considered read-only (but see bug 1072833).
    * @return true if placesNode is a read-only folder, false otherwise.
    */
-  isFolderReadOnly(placesNode, view) {
+  isFolderReadOnly(placesNode) {
     if (typeof placesNode != "object" || !PlacesUtils.nodeIsFolder(placesNode)) {
       throw new Error("invalid value for placesNode");
     }
-    if (!view || typeof view != "object") {
-      throw new Error("invalid value for aView");
-    }
-    let itemId = PlacesUtils.getConcreteItemId(placesNode);
-    if (itemId == PlacesUtils.placesRootId ||
-        view.controller.hasCachedLivemarkInfo(placesNode))
-      return true;
 
-    return false;
+    return PlacesUtils.getConcreteItemId(placesNode) == PlacesUtils.placesRootId;
   },
 
   /** aItemsToOpen needs to be an array of objects of the form:
@@ -647,25 +626,6 @@ var PlacesUIUtils = {
     });
   },
 
-  openLiveMarkNodesInTabs:
-  function PUIU_openLiveMarkNodesInTabs(aNode, aEvent, aView) {
-    let window = aView.ownerWindow;
-
-    PlacesUtils.livemarks.getLivemark({id: aNode.itemId})
-      .then(aLivemark => {
-        let urlsToOpen = [];
-
-        let nodes = aLivemark.getNodesForContainer(aNode);
-        for (let node of nodes) {
-          urlsToOpen.push({uri: node.uri, isBookmark: false});
-        }
-
-        if (OpenInTabsUtils.confirmOpenInTabs(urlsToOpen.length, window)) {
-          this._openTabset(urlsToOpen, aEvent, window);
-        }
-      }, Cu.reportError);
-  },
-
   openContainerNodeInTabs:
   function PUIU_openContainerInTabs(aNode, aEvent, aView) {
     let window = aView.ownerWindow;
@@ -709,16 +669,12 @@ var PlacesUIUtils = {
       if (where == "current" && !aNode.uri.startsWith("javascript:")) {
         where = "tab";
       }
-      if (where == "tab" && browserWindow.isTabEmpty(browserWindow.gBrowser.selectedTab)) {
+      if (where == "tab" && browserWindow.gBrowser.selectedTab.isEmpty) {
         where = "current";
       }
     }
 
     this._openNodeIn(aNode, where, window);
-    let view = this.getViewForNode(aEvent.target);
-    if (view && view.controller.hasCachedLivemarkInfo(aNode.parent)) {
-      Services.telemetry.scalarAdd("browser.feeds.livebookmark_item_opened", 1);
-    }
   },
 
   /**
@@ -742,9 +698,11 @@ var PlacesUIUtils = {
           this.markPageAsTyped(aNode.uri);
       }
 
+      const isJavaScriptURL = aNode.uri.startsWith("javascript:");
       aWindow.openTrustedLinkIn(aNode.uri, aWhere, {
-        allowPopups: aNode.uri.startsWith("javascript:"),
+        allowPopups: isJavaScriptURL,
         inBackground: this.loadBookmarksInBackground,
+        allowInheritPrincipal: isJavaScriptURL && aWhere == "current",
         private: aPrivate,
       });
     }
@@ -842,7 +800,7 @@ var PlacesUIUtils = {
     let parent = {
       itemId: await PlacesUtils.promiseItemId(aFetchInfo.parentGuid),
       bookmarkGuid: aFetchInfo.parentGuid,
-      type: Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER
+      type: Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER,
     };
 
     return Object.freeze({
@@ -870,7 +828,7 @@ var PlacesUIUtils = {
 
       get parent() {
         return parent;
-      }
+      },
     });
   },
 

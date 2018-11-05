@@ -11,6 +11,7 @@
 #include "mozilla/dom/WorkerPrivate.h"
 
 #include "jsapi.h"
+#include "js/StableStringChars.h"
 #include "xpcpublic.h"
 #include "nsIGlobalObject.h"
 #include "nsIDocShell.h"
@@ -321,11 +322,6 @@ AutoJSAPI::~AutoJSAPI()
     JS::SetWarningReporter(cx(), mOldWarningReporter.value());
   }
 
-  // Leave the request before popping.
-  if (mIsMainThread) {
-    mAutoRequest.reset();
-  }
-
   ScriptSettingsStack::Pop(this);
 }
 
@@ -348,12 +344,6 @@ AutoJSAPI::InitInternal(nsIGlobalObject* aGlobalObject, JSObject* aGlobal,
   mCx = aCx;
   mIsMainThread = aIsMainThread;
   mGlobalObject = aGlobalObject;
-  if (aIsMainThread) {
-    // We _could_ just unconditionally emplace mAutoRequest here.  It's just not
-    // needed on worker threads, and we're hoping to kill it on the main thread
-    // too.
-    mAutoRequest.emplace(mCx);
-  }
   if (aGlobal) {
     JS::ExposeObjectToActiveJS(aGlobal);
   }
@@ -661,8 +651,11 @@ AutoEntryScript::AutoEntryScript(nsIGlobalObject* aGlobalObject,
 {
   MOZ_ASSERT(aGlobalObject);
 
-  if (aIsMainThread && gRunToCompletionListeners > 0) {
-    mDocShellEntryMonitor.emplace(cx(), aReason);
+  if (aIsMainThread) {
+    if (gRunToCompletionListeners > 0) {
+      mDocShellEntryMonitor.emplace(cx(), aReason);
+    }
+    mScriptActivity.emplace(true);
   }
 }
 
@@ -671,7 +664,8 @@ AutoEntryScript::AutoEntryScript(JSObject* aObject,
                                  bool aIsMainThread)
   : AutoEntryScript(xpc::NativeGlobal(aObject), aReason, aIsMainThread)
 {
-  MOZ_ASSERT(!js::IsCrossCompartmentWrapper(aObject));
+  // xpc::NativeGlobal uses JS::GetNonCCWObjectGlobal, which asserts that
+  // aObject is not a CCW.
 }
 
 AutoEntryScript::~AutoEntryScript()
@@ -709,7 +703,7 @@ AutoEntryScript::DocshellEntryMonitor::Entry(JSContext* aCx, JSFunction* aFuncti
   nsString filename;
   uint32_t lineNumber = 0;
 
-  js::AutoStableStringChars functionName(aCx);
+  JS::AutoStableStringChars functionName(aCx);
   if (rootedFunction) {
     JS::Rooted<JSString*> displayId(aCx, JS_GetFunctionDisplayId(rootedFunction));
     if (displayId) {
@@ -813,11 +807,12 @@ AutoSafeJSContext::AutoSafeJSContext(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM_IN_IMP
 }
 
 AutoSlowOperation::AutoSlowOperation(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM_IN_IMPL)
-  : AutoJSAPI()
+  : mIsMainThread(NS_IsMainThread())
 {
   MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-
-  Init();
+  if (mIsMainThread) {
+    mScriptActivity.emplace(true);
+  }
 }
 
 void
@@ -826,8 +821,10 @@ AutoSlowOperation::CheckForInterrupt()
   // For now we support only main thread!
   if (mIsMainThread) {
     // JS_CheckForInterrupt expects us to be in a realm.
-    JSAutoRealm ar(cx(), xpc::UnprivilegedJunkScope());
-    JS_CheckForInterrupt(cx());
+    AutoJSAPI jsapi;
+    if (jsapi.Init(xpc::UnprivilegedJunkScope())) {
+      JS_CheckForInterrupt(jsapi.cx());
+    }
   }
 }
 

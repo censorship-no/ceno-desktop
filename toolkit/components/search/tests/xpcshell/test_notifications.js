@@ -22,7 +22,7 @@ var expectedLog = [
   "engine-default",
   "engine-current",
   "engine-loaded",
-  "engine-removed"
+  "engine-removed",
 ];
 
 function search_observer(subject, topic, data) {
@@ -66,5 +66,5 @@ function run_test() {
 
   Services.obs.addObserver(search_observer, "browser-search-engine-modified");
 
-  Services.search.addEngine(gDataUrl + "engine.xml", null, null, false);
+  Services.search.addEngine(gDataUrl + "engine.xml", null, false);
 }

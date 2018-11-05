@@ -32,20 +32,20 @@ include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
 
 using class IPC::Principal from "mozilla/dom/PermissionMessageUtils.h";
+using moveonly mozilla::gfx::PaintFragment from "mozilla/gfx/CrossProcessPaint.h";
 using mozilla::gfx::Matrix from "mozilla/gfx/Matrix.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
 using mozilla::LayoutDevicePoint from "Units.h";
 using mozilla::ScreenIntPoint from "Units.h";
 using ScreenIntSize from "Units.h";
-using struct mozilla::layers::FrameMetrics from "FrameMetrics.h";
-using struct mozilla::layers::ScrollableLayerGuid from "FrameMetrics.h";
-using struct mozilla::layers::ZoomConstraints from "FrameMetrics.h";
+using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
+using struct mozilla::layers::ZoomConstraints from "mozilla/layers/ZoomConstraints.h";
 using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
-using mozilla::layers::MaybeZoomConstraints from "FrameMetrics.h";
+using mozilla::layers::MaybeZoomConstraints from "mozilla/layers/ZoomConstraints.h";
 using mozilla::layers::GeckoContentController::TapType from "mozilla/layers/GeckoContentController.h";
-using FrameMetrics::ViewID from "FrameMetrics.h";
+using ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
 using struct mozilla::void_t from "ipc/IPCMessageUtils.h";
 using mozilla::WindowsHandle from "ipc/IPCMessageUtils.h";
 using nscolor from "nsColor.h";
@@ -576,6 +576,12 @@ parent:
      */
     async ShowCanvasPermissionPrompt(nsCString aFirstPartyURI);
 
+    sync SetSystemFont(nsCString aFontName);
+    sync GetSystemFont() returns (nsCString retval);
+
+    sync SetPrefersReducedMotionOverrideForTest(bool aValue);
+    sync ResetPrefersReducedMotionOverrideForTest();
+
 child:
     /**
      * Notify the remote browser that it has been Show()n on this
@@ -760,6 +766,9 @@ child:
      */
     async RenderLayers(bool aEnabled, bool aForceRepaint, LayersObserverEpoch aEpoch);
 
+    async RequestRootPaint(IntRect aRect, float aScale, nscolor aBackgroundColor) returns (PaintFragment retval);
+    async RequestSubPaint(float aScale, nscolor aBackgroundColor) returns (PaintFragment retval);
+child:
     /**
      * Notify the child that it shouldn't paint the offscreen displayport.
      * This is useful to speed up interactive operations over async
@@ -864,6 +873,11 @@ child:
     async SetWindowName(nsString aName);
 
     /**
+     * Tell the TabChild to allow scripts in the docshell to close the window.
+     */
+    async AllowScriptsToClose();
+
+    /**
      * Tell the TabChild what OriginAttributes it should inherit from. This must
      * be called before the first non-blank document is loaded in the TabChild.
      */
@@ -874,6 +888,11 @@ child:
      * process, so it can be used by PuppetWidget.
      */
     async SetWidgetNativeData(WindowsHandle aHandle);
+
+    /**
+     * Requests the content blocking log, which is sent back in response.
+     */
+    async GetContentBlockingLog() returns(nsString log, bool success);
 
 /*
  * FIXME: write protocol!

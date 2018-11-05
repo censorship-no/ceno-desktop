@@ -33,6 +33,7 @@
 #include "mozilla/dom/Timeout.h"
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/TimeoutManager.h"
+#include "mozilla/dom/VisualViewport.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #if defined(MOZ_WIDGET_ANDROID)
 #include "mozilla/dom/WindowOrientationObserver.h"
@@ -68,7 +69,7 @@
 
 // Helper Classes
 #include "nsJSUtils.h"
-#include "jsapi.h"              // for JSAutoRequest
+#include "jsapi.h"
 #include "js/Wrapper.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsReadableUtils.h"
@@ -100,6 +101,8 @@
 #include "PostMessageEvent.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/TabGroup.h"
+#include "mozilla/StaticPrefs.h"
+#include "PaintWorkletImpl.h"
 
 // Interfaces Needed
 #include "nsIFrame.h"
@@ -534,7 +537,7 @@ NS_INTERFACE_MAP_END
 NS_IMETHODIMP
 IdleRequestExecutor::GetName(nsACString& aName)
 {
-    aName.AssignASCII("IdleRequestExecutor");
+    aName.AssignLiteral("IdleRequestExecutor");
     return NS_OK;
 }
 
@@ -1063,6 +1066,12 @@ nsGlobalWindowInner::~nsGlobalWindowInner()
     sInnerWindowsById->Remove(mWindowID);
   }
 
+  // If AutoplayPermissionManager is going to be destroyed before getting the
+  // request's result, we would treat it as user deny.
+  if (mAutoplayPermissionManager) {
+    mAutoplayPermissionManager->DenyPlayRequestIfExists();
+  }
+
   nsContentUtils::InnerOrOuterWindowDestroyed();
 
 #ifdef DEBUG
@@ -1141,7 +1150,7 @@ nsGlobalWindowInner::CleanupCachedXBLHandlers()
 }
 
 void
-nsGlobalWindowInner::FreeInnerObjects()
+nsGlobalWindowInner::FreeInnerObjects(bool aForDocumentOpen)
 {
   if (IsDying()) {
     return;
@@ -1199,8 +1208,10 @@ nsGlobalWindowInner::FreeInnerObjects()
     mDocumentURI = mDoc->GetDocumentURI();
     mDocBaseURI = mDoc->GetDocBaseURI();
 
-    while (mDoc->EventHandlingSuppressed()) {
-      mDoc->UnsuppressEventHandlingAndFireEvents(false);
+    if (!aForDocumentOpen) {
+      while (mDoc->EventHandlingSuppressed()) {
+        mDoc->UnsuppressEventHandlingAndFireEvents(false);
+      }
     }
 
     if (mObservingDidRefresh) {
@@ -2217,6 +2228,15 @@ nsPIDOMWindowInner::Navigator()
   return mNavigator;
 }
 
+VisualViewport* nsGlobalWindowInner::VisualViewport()
+{
+  if (!mVisualViewport) {
+    mVisualViewport = new mozilla::dom::VisualViewport(this);
+  }
+
+  return mVisualViewport;
+}
+
 nsScreen*
 nsGlobalWindowInner::GetScreen(ErrorResult& aError)
 {
@@ -3075,7 +3095,8 @@ nsGlobalWindowInner::GetOwnPropertyNames(JSContext* aCx, JS::AutoIdVector& aName
 nsGlobalWindowInner::IsPrivilegedChromeWindow(JSContext* aCx, JSObject* aObj)
 {
   // For now, have to deal with XPConnect objects here.
-  return xpc::WindowOrNull(aObj)->IsChromeWindow() &&
+  nsGlobalWindowInner* win = xpc::WindowOrNull(aObj);
+  return win && win->IsChromeWindow() &&
          nsContentUtils::ObjectPrincipal(aObj) == nsContentUtils::GetSystemPrincipal();
 }
 
@@ -3207,52 +3228,17 @@ void
 nsGlobalWindowInner::SetOpener(JSContext* aCx, JS::Handle<JS::Value> aOpener,
                                ErrorResult& aError)
 {
-  // Check if we were called from a privileged chrome script.  If not, and if
-  // aOpener is not null, just define aOpener on our inner window's JS object,
-  // wrapped into the current compartment so that for Xrays we define on the
-  // Xray expando object, but don't set it on the outer window, so that it'll
-  // get reset on navigation.  This is just like replaceable properties, but
-  // we're not quite readonly.
-  if (!aOpener.isNull() && !nsContentUtils::IsCallerChrome()) {
-    RedefineProperty(aCx, "opener", aOpener, aError);
+  if (aOpener.isNull()) {
+    SetOpenerWindow(nullptr, false);
     return;
   }
 
-  if (!aOpener.isObjectOrNull()) {
-    // Chrome code trying to set some random value as opener
-    aError.Throw(NS_ERROR_INVALID_ARG);
-    return;
-  }
-
-  nsPIDOMWindowInner* win = nullptr;
-  if (aOpener.isObject()) {
-    JSObject* unwrapped = js::CheckedUnwrap(&aOpener.toObject(),
-                                            /* stopAtWindowProxy = */ false);
-    if (!unwrapped) {
-      aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
-      return;
-    }
-
-    auto* globalWindow = xpc::WindowOrNull(unwrapped);
-    if (!globalWindow) {
-      // Wasn't a window
-      aError.Throw(NS_ERROR_INVALID_ARG);
-      return;
-    }
-
-    win = globalWindow;
-  }
-
-  nsPIDOMWindowOuter* outer = nullptr;
-  if (win) {
-    if (!win->IsCurrentInnerWindow()) {
-      aError.Throw(NS_ERROR_FAILURE);
-      return;
-    }
-    outer = win->GetOuterWindow();
-  }
-
-  SetOpenerWindow(outer, false);
+  // If something other than null is passed, just define aOpener on our inner
+  // window's JS object, wrapped into the current compartment so that for Xrays
+  // we define on the Xray expando object, but don't set it on the outer window,
+  // so that it'll get reset on navigation.  This is just like replaceable
+  // properties, but we're not quite readonly.
+  RedefineProperty(aCx, "opener", aOpener, aError);
 }
 
 void
@@ -3662,15 +3648,15 @@ nsGlobalWindowInner::GetNearestWidget() const
 }
 
 void
-nsGlobalWindowInner::SetFullScreen(bool aFullScreen, mozilla::ErrorResult& aError)
+nsGlobalWindowInner::SetFullScreen(bool aFullscreen, mozilla::ErrorResult& aError)
 {
-  FORWARD_TO_OUTER_OR_THROW(SetFullScreenOuter, (aFullScreen, aError), aError, /* void */);
+  FORWARD_TO_OUTER_OR_THROW(SetFullscreenOuter, (aFullscreen, aError), aError, /* void */);
 }
 
 bool
 nsGlobalWindowInner::GetFullScreen(ErrorResult& aError)
 {
-  FORWARD_TO_OUTER_OR_THROW(GetFullScreenOuter, (), aError, false);
+  FORWARD_TO_OUTER_OR_THROW(GetFullscreenOuter, (), aError, false);
 }
 
 bool
@@ -3956,13 +3942,13 @@ nsGlobalWindowInner::ScrollBy(double aXScrollDif, double aYScrollDif)
   nsIScrollableFrame *sf = GetScrollFrame();
 
   if (sf) {
-    // Convert -Inf, Inf, and NaN to 0; otherwise, convert by C-style cast.
-    auto scrollDif = CSSIntPoint::Truncate(mozilla::ToZeroIfNonfinite(aXScrollDif),
-                                           mozilla::ToZeroIfNonfinite(aYScrollDif));
     // It seems like it would make more sense for ScrollBy to use
     // SMOOTH mode, but tests seem to depend on the synchronous behaviour.
     // Perhaps Web content does too.
-    ScrollTo(sf->GetScrollPositionCSSPixels() + scrollDif, ScrollOptions());
+    ScrollToOptions options;
+    options.mLeft.Construct(aXScrollDif);
+    options.mTop.Construct(aYScrollDif);
+    ScrollBy(options);
   }
 }
 
@@ -3973,15 +3959,25 @@ nsGlobalWindowInner::ScrollBy(const ScrollToOptions& aOptions)
   nsIScrollableFrame *sf = GetScrollFrame();
 
   if (sf) {
-    CSSIntPoint scrollPos = sf->GetScrollPositionCSSPixels();
+    CSSIntPoint scrollDelta;
     if (aOptions.mLeft.WasPassed()) {
-      scrollPos.x += mozilla::ToZeroIfNonfinite(aOptions.mLeft.Value());
+      scrollDelta.x = mozilla::ToZeroIfNonfinite(aOptions.mLeft.Value());
     }
     if (aOptions.mTop.WasPassed()) {
-      scrollPos.y += mozilla::ToZeroIfNonfinite(aOptions.mTop.Value());
+      scrollDelta.y = mozilla::ToZeroIfNonfinite(aOptions.mTop.Value());
     }
 
-    ScrollTo(scrollPos, aOptions);
+    nsIScrollableFrame::ScrollMode scrollMode = nsIScrollableFrame::INSTANT;
+    if (aOptions.mBehavior == ScrollBehavior::Smooth) {
+      scrollMode = nsIScrollableFrame::SMOOTH_MSD;
+    } else if (aOptions.mBehavior == ScrollBehavior::Auto) {
+      ScrollStyles styles = sf->GetScrollStyles();
+      if (styles.mScrollBehavior == NS_STYLE_SCROLL_BEHAVIOR_SMOOTH) {
+        scrollMode = nsIScrollableFrame::SMOOTH_MSD;
+      }
+    }
+
+    sf->ScrollByCSSPixels(scrollDelta, scrollMode, nsGkAtoms::relative);
   }
 }
 
@@ -4125,6 +4121,25 @@ nsGlobalWindowInner::PostMessageMoz(JSContext* aCx, JS::Handle<JS::Value> aMessa
   }
 
   PostMessageMoz(aCx, aMessage, aTargetOrigin, transferArray,
+                 aSubjectPrincipal, aRv);
+}
+
+void
+nsGlobalWindowInner::PostMessageMoz(JSContext* aCx, JS::Handle<JS::Value> aMessage,
+                                    const WindowPostMessageOptions& aOptions,
+                                    nsIPrincipal& aSubjectPrincipal,
+                                    ErrorResult& aRv)
+{
+  JS::Rooted<JS::Value> transferArray(aCx, JS::UndefinedValue());
+
+  aRv = nsContentUtils::CreateJSValueFromSequenceOfObject(aCx,
+                                                          aOptions.mTransfer,
+                                                          &transferArray);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
+  }
+
+  PostMessageMoz(aCx, aMessage, aOptions.mTargetOrigin, transferArray,
                  aSubjectPrincipal, aRv);
 }
 
@@ -4450,6 +4465,23 @@ nsGlobalWindowInner::ResetVRTelemetry(bool aUpdate)
   }
 }
 
+void
+nsGlobalWindowInner::StartVRActivity()
+{
+  if (mVREventObserver) {
+    mVREventObserver->StartActivity();
+  }
+}
+
+void
+nsGlobalWindowInner::StopVRActivity()
+{
+  if (mVREventObserver) {
+    mVREventObserver->StopActivity();
+  }
+}
+
+#ifndef XP_WIN // This guard should match the guard at the callsite.
 static bool ShouldShowFocusRingIfFocusedByMouse(nsIContent* aNode)
 {
   if (!aNode) {
@@ -4458,6 +4490,7 @@ static bool ShouldShowFocusRingIfFocusedByMouse(nsIContent* aNode)
   return !nsContentUtils::ContentIsLink(aNode) &&
     !aNode->IsAnyOfHTMLElements(nsGkAtoms::video, nsGkAtoms::audio);
 }
+#endif
 
 void
 nsGlobalWindowInner::SetFocusedElement(Element* aElement,
@@ -4818,7 +4851,7 @@ nsGlobalWindowInner::GetSessionStorage(ErrorResult& aError)
       return nullptr;
     }
 
-    nsCOMPtr<nsIDOMStorage> storage;
+    RefPtr<Storage> storage;
     aError = storageManager->CreateStorage(this, principal, documentURI,
                                            IsPrivateBrowsing(),
                                            getter_AddRefs(storage));
@@ -4826,7 +4859,7 @@ nsGlobalWindowInner::GetSessionStorage(ErrorResult& aError)
       return nullptr;
     }
 
-    mSessionStorage = static_cast<Storage*>(storage.get());
+    mSessionStorage = storage;
     MOZ_ASSERT(mSessionStorage);
 
     MOZ_LOG(gDOMLeakPRLogInner, LogLevel::Debug,
@@ -4879,7 +4912,7 @@ nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError)
       }
     }
 
-    nsCOMPtr<nsIDOMStorage> storage;
+    RefPtr<Storage> storage;
     aError = storageManager->CreateStorage(this, principal, documentURI,
                                            IsPrivateBrowsing(),
                                            getter_AddRefs(storage));
@@ -4887,7 +4920,7 @@ nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError)
       return nullptr;
     }
 
-    mLocalStorage = static_cast<Storage*>(storage.get());
+    mLocalStorage = storage;
     MOZ_ASSERT(mLocalStorage);
   }
 
@@ -5707,7 +5740,7 @@ nsGlobalWindowInner::ObserveStorageNotification(StorageEvent* aEvent,
   eventType.AssignLiteral("storage");
 
   if (!NS_strcmp(aStorageType, u"sessionStorage")) {
-    nsCOMPtr<nsIDOMStorage> changingStorage = aEvent->GetStorageArea();
+    RefPtr<Storage> changingStorage = aEvent->GetStorageArea();
     MOZ_ASSERT(changingStorage);
 
     bool check = false;
@@ -6256,8 +6289,46 @@ nsGlobalWindowInner::GetParentInternal()
 }
 
 nsIPrincipal*
+nsGlobalWindowInner::GetTopLevelPrincipal()
+{
+  nsPIDOMWindowOuter* outerWindow = GetOuterWindowInternal();
+  if (!outerWindow) {
+    return nullptr;
+  }
+
+  nsPIDOMWindowOuter* topLevelOuterWindow = GetTopInternal();
+  if (!topLevelOuterWindow) {
+    return nullptr;
+  }
+
+  if (topLevelOuterWindow == outerWindow) {
+    return nullptr;
+  }
+
+  nsPIDOMWindowInner* topLevelInnerWindow =
+    topLevelOuterWindow->GetCurrentInnerWindow();
+  if (NS_WARN_IF(!topLevelInnerWindow)) {
+    return nullptr;
+  }
+
+  nsIPrincipal* topLevelPrincipal =
+    nsGlobalWindowInner::Cast(topLevelInnerWindow)->GetPrincipal();
+  if (NS_WARN_IF(!topLevelPrincipal)) {
+    return nullptr;
+  }
+
+  return topLevelPrincipal;
+}
+
+nsIPrincipal*
 nsGlobalWindowInner::GetTopLevelStorageAreaPrincipal()
 {
+  if (mDoc && ((mDoc->GetSandboxFlags() & SANDBOXED_STORAGE_ACCESS) != 0 ||
+               nsContentUtils::IsInPrivateBrowsing(mDoc))) {
+    // Storage access is disabled
+    return nullptr;
+  }
+
   nsPIDOMWindowOuter* outerWindow = GetParentInternal();
   if (!outerWindow) {
     // No outer window available!
@@ -6859,6 +6930,15 @@ nsGlobalWindowInner::NotifyActiveVRDisplaysChanged()
 {
   if (mNavigator) {
     mNavigator->NotifyActiveVRDisplaysChanged();
+  }
+}
+
+void
+nsGlobalWindowInner::NotifyPresentationGenerationChanged(uint32_t aDisplayID) {
+  for (const auto& display : mVRDisplays) {
+    if (display->DisplayId() == aDisplayID) {
+      display->OnPresentationGenerationChanged();
+    }
   }
 }
 
@@ -7488,6 +7568,10 @@ nsGlobalWindowInner::GetSidebar(OwningExternalOrWindowProxy& aResult,
 void
 nsGlobalWindowInner::ClearDocumentDependentSlots(JSContext* aCx)
 {
+  if (js::GetContextCompartment(aCx) != js::GetObjectCompartment(GetWrapperPreserveColor())) {
+    MOZ_CRASH("Looks like bug 1488480/1405521, with ClearDocumentDependentSlots in a bogus compartment");
+  }
+
   // If JSAPI OOMs here, there is basically nothing we can do to recover safely.
   if (!Window_Binding::ClearCachedDocumentValue(aCx, this) ||
       !Window_Binding::ClearCachedPerformanceValue(aCx, this)) {
@@ -7677,11 +7761,6 @@ nsGlobalWindowInner::CreateImageBitmap(JSContext* aCx,
                                        const ImageBitmapSource& aImage,
                                        ErrorResult& aRv)
 {
-  if (aImage.IsArrayBuffer() || aImage.IsArrayBufferView()) {
-    aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
-    return nullptr;
-  }
-
   return ImageBitmap::Create(this, aImage, Nothing(), aRv);
 }
 
@@ -7691,32 +7770,7 @@ nsGlobalWindowInner::CreateImageBitmap(JSContext* aCx,
                                        int32_t aSx, int32_t aSy, int32_t aSw, int32_t aSh,
                                        ErrorResult& aRv)
 {
-  if (aImage.IsArrayBuffer() || aImage.IsArrayBufferView()) {
-    aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
-    return nullptr;
-  }
-
   return ImageBitmap::Create(this, aImage, Some(gfx::IntRect(aSx, aSy, aSw, aSh)), aRv);
-}
-
-already_AddRefed<mozilla::dom::Promise>
-nsGlobalWindowInner::CreateImageBitmap(JSContext* aCx,
-                                       const ImageBitmapSource& aImage,
-                                       int32_t aOffset, int32_t aLength,
-                                       ImageBitmapFormat aFormat,
-                                       const Sequence<ChannelPixelLayout>& aLayout,
-                                       ErrorResult& aRv)
-{
-  if (!DOMPrefs::ImageBitmapExtensionsEnabled()) {
-    aRv.Throw(NS_ERROR_TYPE_ERR);
-    return nullptr;
-  }
-  if (aImage.IsArrayBuffer() || aImage.IsArrayBufferView()) {
-    return ImageBitmap::Create(this, aImage, aOffset, aLength, aFormat, aLayout,
-                               aRv);
-  }
-  aRv.Throw(NS_ERROR_TYPE_ERR);
-  return nullptr;
 }
 
 mozilla::dom::TabGroup*
@@ -7788,7 +7842,7 @@ nsGlobalWindowInner::GetPaintWorklet(ErrorResult& aRv)
       return nullptr;
     }
 
-    mPaintWorklet = new Worklet(this, principal, Worklet::ePaintWorklet);
+    mPaintWorklet = PaintWorkletImpl::CreateWorklet(this, principal);
   }
 
   return mPaintWorklet;

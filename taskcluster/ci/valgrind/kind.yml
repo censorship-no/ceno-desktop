@@ -33,7 +33,7 @@ jobs:
                 PERFHERDER_EXTRA_OPTIONS: valgrind
         run:
             using: mozharness
-            actions: [get-secrets build valgrind-test]
+            actions: [get-secrets, build, valgrind-test]
             custom-build-variant-cfg: valgrind
             config:
                 - builds/releng_base_firefox.py
@@ -43,8 +43,9 @@ jobs:
             tooltool-downloads: public
             need-xvfb: true
         toolchains:
+            - linux64-binutils
             - linux64-clang
-            - linux64-gcc
             - linux64-rust
+            - linux64-cbindgen
             - linux64-sccache
             - linux64-node

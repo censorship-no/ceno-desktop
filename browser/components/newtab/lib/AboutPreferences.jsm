@@ -11,7 +11,6 @@ const {actionTypes: at} = ChromeUtils.import("resource://activity-stream/common/
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 
 const PREFERENCES_LOADED_EVENT = "home-pane-loaded";
-const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
 // These "section" objects are formatted in a way to be similar to the ones from
 // SectionsManager to construct the preferences view.
@@ -20,21 +19,21 @@ const PREFS_BEFORE_SECTIONS = [
     id: "search",
     pref: {
       feed: "showSearch",
-      titleString: "prefs_search_header"
+      titleString: "prefs_search_header",
     },
-    icon: "chrome://browser/skin/search-glass.svg"
+    icon: "chrome://browser/skin/search-glass.svg",
   },
   {
     id: "topsites",
     pref: {
       feed: "feeds.topsites",
       titleString: "settings_pane_topsites_header",
-      descString: "prefs_topsites_description"
+      descString: "prefs_topsites_description",
     },
     icon: "topsites",
     maxRows: 4,
-    rowsPref: "topSitesRows"
-  }
+    rowsPref: "topSitesRows",
+  },
 ];
 const PREFS_AFTER_SECTIONS = [
   {
@@ -42,10 +41,10 @@ const PREFS_AFTER_SECTIONS = [
     pref: {
       feed: "feeds.snippets",
       titleString: "settings_pane_snippets_header",
-      descString: "prefs_snippets_description"
+      descString: "prefs_snippets_description",
     },
-    icon: "info"
-  }
+    icon: "info",
+  },
 ];
 
 // This CSS is added to the whole about:preferences page
@@ -127,7 +126,7 @@ this.AboutPreferences = class AboutPreferences {
   renderPreferences({document, Preferences, gHomePane}, strings, prefStructure) {
     // Helper to create a new element and append it
     const createAppend = (tag, parent) => parent.appendChild(
-      document.createElementNS(XUL_NS, tag));
+      document.createXULElement(tag));
 
     // Helper to get strings and format with values if necessary
     const formatString = id => {
@@ -164,7 +163,8 @@ this.AboutPreferences = class AboutPreferences {
     contentsGroup.id = "homeContentsGroup";
     contentsGroup.setAttribute("data-subcategory", "contents");
     const caption = createAppend("caption", contentsGroup);
-    caption.setAttribute("label", formatString("prefs_home_header"));
+    const captionLabel = createAppend("label", caption);
+    captionLabel.setAttribute("value", formatString("prefs_home_header"));
     const description = createAppend("description", contentsGroup);
     description.textContent = formatString("prefs_home_description");
 
@@ -176,13 +176,13 @@ this.AboutPreferences = class AboutPreferences {
         icon = "webextension",
         maxRows,
         rowsPref,
-        shouldHidePref
+        shouldHidePref,
       } = sectionData;
       const {
         feed: name,
         titleString,
         descString,
-        nestedPrefs = []
+        nestedPrefs = [],
       } = prefData || {};
 
       // Don't show any sections that we don't want to expose in preferences UI
@@ -213,8 +213,8 @@ this.AboutPreferences = class AboutPreferences {
         const link = createAppend("label", sponsoredHbox);
         link.classList.add("learn-sponsored");
         link.classList.add("text-link");
-        link.setAttribute("href", sectionData.disclaimer.link.href);
-        link.textContent = formatString("prefs_topstories_sponsored_learn_more");
+        link.setAttribute("href", sectionData.learnMore.link.href);
+        link.textContent = formatString(sectionData.learnMore.link.id);
       }
 
       // Add more details for the section (e.g., description, more prefs)

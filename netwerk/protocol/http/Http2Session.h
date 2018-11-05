@@ -248,6 +248,7 @@ public:
   void SendPing() override;
   MOZ_MUST_USE bool MaybeReTunnel(nsAHttpTransaction *) override;
   bool UseH2Deps() { return mUseH2Deps; }
+  void SetCleanShutdown(bool) override;
 
   // overload of nsAHttpTransaction
   MOZ_MUST_USE nsresult ReadSegmentsAgain(nsAHttpSegmentReader *, uint32_t, uint32_t *, bool *) final;
@@ -260,6 +261,7 @@ public:
   void Received421(nsHttpConnectionInfo *ci);
 
   void SendPriorityFrame(uint32_t streamID, uint32_t dependsOn, uint8_t weight);
+  void IncrementTrrCounter() { mTrrStreams++; }
 
 private:
 
@@ -328,6 +330,8 @@ private:
   MOZ_MUST_USE nsresult NetworkRead(nsAHttpSegmentWriter *, char *, uint32_t, uint32_t *);
 
   void Shutdown();
+
+  nsresult SessionError(enum errorType);
 
   // This is intended to be nsHttpConnectionMgr:nsConnectionHandle taken
   // from the first transaction on this session. That object contains the
@@ -566,6 +570,8 @@ private:
 
   bool mCheckNetworkStallsWithTFO;
   PRIntervalTime mLastRequestBytesSentTime;
+
+  bool mPeerFailedHandshake;
 private:
 /// connect tunnels
   void DispatchOnTunnel(nsAHttpTransaction *, nsIInterfaceRequestor *);
@@ -574,6 +580,7 @@ private:
   void UnRegisterTunnel(Http2Stream *);
   uint32_t FindTunnelCount(nsHttpConnectionInfo *);
   nsDataHashtable<nsCStringHashKey, uint32_t> mTunnelHash;
+  uint32_t mTrrStreams;
 };
 
 } // namespace net

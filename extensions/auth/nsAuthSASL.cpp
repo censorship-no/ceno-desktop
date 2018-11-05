@@ -43,19 +43,17 @@ nsAuthSASL::Init(const char *serviceName,
     serviceFlags |= REQ_MUTUAL_AUTH;
 
     // Find out whether we should be trying SSPI or not
-    const char *contractID = NS_AUTH_MODULE_CONTRACTID_PREFIX "kerb-gss";
+    const char *authType = "kerb-gss";
 
     nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
     if (prefs) {
         bool val;
         rv = prefs->GetBoolPref(kNegotiateAuthSSPI, &val);
         if (NS_SUCCEEDED(rv) && val)
-            contractID = NS_AUTH_MODULE_CONTRACTID_PREFIX "kerb-sspi";
+            authType = "kerb-sspi";
     }
 
-    mInnerModule = do_CreateInstance(contractID, &rv);
-    // if we can't create the GSSAPI module, then bail
-    NS_ENSURE_SUCCESS(rv, rv);
+    MOZ_ALWAYS_TRUE(mInnerModule = nsIAuthModule::CreateInstance(authType));
 
     mInnerModule->Init(serviceName, serviceFlags, nullptr, nullptr, nullptr);
 
@@ -105,10 +103,6 @@ nsAuthSASL::GetNextToken(const void *inToken,
         NS_CopyUnicodeToNative(mUsername, userbuf);
         messageLen = userbuf.Length() + 4 + 1;
         message = (char *)moz_xmalloc(messageLen);
-        if (!message) {
-          Reset();
-          return NS_ERROR_OUT_OF_MEMORY;
-        }
         message[0] = 0x01; // No security layer
         message[1] = 0x00;
         message[2] = 0x00;

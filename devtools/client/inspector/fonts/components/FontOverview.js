@@ -22,7 +22,7 @@ class FontOverview extends PureComponent {
     return {
       fontData: PropTypes.shape(Types.fontData).isRequired,
       fontOptions: PropTypes.shape(Types.fontOptions).isRequired,
-      onPreviewFonts: PropTypes.func.isRequired,
+      onPreviewTextChange: PropTypes.func.isRequired,
       onToggleFontHighlight: PropTypes.func.isRequired,
     };
   }
@@ -38,76 +38,60 @@ class FontOverview extends PureComponent {
     const {
       fontData,
       fontOptions,
-      onPreviewFonts,
+      onPreviewTextChange,
       onToggleFontHighlight,
     } = this.props;
     const { fonts } = fontData;
-
-    // If the font editor is enabled, show the fonts in a collapsed accordion.
-    // The editor already displays fonts, in another way, rendering twice is not desired.
-    if (Services.prefs.getBoolPref(PREF_FONT_EDITOR)) {
-      return fonts.length ?
-        Accordion({
-          items: [
-            {
-              header: getStr("fontinspector.renderedFontsInPageHeader"),
-              component: FontList,
-              componentProps: {
-                fonts,
-                fontOptions,
-                onPreviewFonts,
-                onToggleFontHighlight,
-              },
-              opened: false
-            }
-          ]
-        })
-        :
-        null;
-    }
 
     return fonts.length ?
       FontList({
         fonts,
         fontOptions,
-        onPreviewFonts,
+        onPreviewTextChange,
         onToggleFontHighlight,
       })
       :
       dom.div(
         {
-          className: "devtools-sidepanel-no-result"
+          className: "devtools-sidepanel-no-result",
         },
-        getStr("fontinspector.noFontsOnSelectedElement")
+        getStr("fontinspector.noFontsUsedOnCurrentElement")
       );
   }
 
-  renderOtherFonts() {
+  renderFonts() {
     const {
       fontData,
       fontOptions,
-      onPreviewFonts,
+      onPreviewTextChange,
     } = this.props;
-    const { otherFonts } = fontData;
 
-    if (!otherFonts.length) {
+    const header = Services.prefs.getBoolPref(PREF_FONT_EDITOR)
+      ? getStr("fontinspector.allFontsOnPageHeader")
+      : getStr("fontinspector.otherFontsInPageHeader");
+
+    const fonts = Services.prefs.getBoolPref(PREF_FONT_EDITOR)
+      ? fontData.allFonts
+      : fontData.otherFonts;
+
+    if (!fonts.length) {
       return null;
     }
 
     return Accordion({
       items: [
         {
-          header: getStr("fontinspector.otherFontsInPageHeader"),
+          header,
           component: FontList,
           componentProps: {
             fontOptions,
-            fonts: otherFonts,
-            onPreviewFonts,
-            onToggleFontHighlight: this.onToggleFontHighlightGlobal
+            fonts,
+            onPreviewTextChange,
+            onToggleFontHighlight: this.onToggleFontHighlightGlobal,
           },
-          opened: false
-        }
-      ]
+          opened: false,
+        },
+      ],
     });
   }
 
@@ -116,8 +100,9 @@ class FontOverview extends PureComponent {
       {
         id: "font-container",
       },
-      this.renderElementFonts(),
-      this.renderOtherFonts()
+      // Render element fonts only when the Font Editor is not enabled.
+      !Services.prefs.getBoolPref(PREF_FONT_EDITOR) && this.renderElementFonts(),
+      this.renderFonts()
     );
   }
 }

@@ -11,22 +11,23 @@ from __future__ import absolute_import, print_function, unicode_literals
 import os
 import sys
 import json
+import shutil
 import socket
 import subprocess
 
+import mozfile
 from mach.decorators import CommandProvider, Command
 from mozboot.util import get_state_dir
 from mozbuild.base import MozbuildObject, MachCommandBase
-from mozpack.copier import FileCopier
-from mozpack.manifests import InstallManifest
+from mozbuild.base import MachCommandConditions as conditions
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 BENCHMARK_REPOSITORY = 'https://github.com/mozilla/perf-automation'
-BENCHMARK_REVISION = '6beb3d3e22abce8cf8e2e89bc45acd4152258f12'
+BENCHMARK_REVISION = '2720cdc790828952964524bb44ce8b4c14670e90'
 
 
 class RaptorRunner(MozbuildObject):
-    def run_test(self, raptor_args):
+    def run_test(self, raptor_args, app=None):
         """
         We want to do couple of things before running raptor
         1. Clone mozharness
@@ -34,20 +35,20 @@ class RaptorRunner(MozbuildObject):
         3. Run mozharness
         """
 
-        self.init_variables(raptor_args)
+        self.init_variables(raptor_args, app=app)
         self.setup_benchmarks()
         self.make_config()
         self.write_config()
         self.make_args()
         return self.run_mozharness()
 
-    def init_variables(self, raptor_args):
+    def init_variables(self, raptor_args, app=None):
         self.raptor_dir = os.path.join(self.topsrcdir, 'testing', 'raptor')
         self.mozharness_dir = os.path.join(self.topsrcdir, 'testing',
                                            'mozharness')
         self.config_file_path = os.path.join(self._topobjdir, 'testing',
                                              'raptor-in_tree_conf.json')
-        self.binary_path = self.get_binary_path()
+        self.binary_path = self.get_binary_path() if app != 'geckoview' else None
         self.virtualenv_script = os.path.join(self.topsrcdir, 'third_party', 'python',
                                               'virtualenv', 'virtualenv.py')
         self.virtualenv_path = os.path.join(self._topobjdir, 'testing',
@@ -66,6 +67,13 @@ class RaptorRunner(MozbuildObject):
         # Set up the external repo
         external_repo_path = os.path.join(get_state_dir()[0], 'performance-tests')
 
+        try:
+            subprocess.check_output(['git', '--version'])
+        except Exception as ex:
+            print("Git is not available! Please install git and "
+                  "ensure it is included in the terminal path")
+            raise ex
+
         if not os.path.isdir(external_repo_path):
             subprocess.check_call(['git', 'clone', BENCHMARK_REPOSITORY, external_repo_path])
         else:
@@ -74,24 +82,30 @@ class RaptorRunner(MozbuildObject):
 
         subprocess.check_call(['git', 'checkout', BENCHMARK_REVISION], cwd=external_repo_path)
 
-        # Link benchmarks to the objdir
+        # Link or copy benchmarks to the objdir
         benchmark_paths = (
             os.path.join(external_repo_path, 'benchmarks'),
             os.path.join(self.topsrcdir, 'third_party', 'webkit', 'PerformanceTests'),
         )
-        manifest = InstallManifest()
+
+        benchmark_dest = os.path.join(self.topobjdir, 'testing', 'raptor', 'benchmarks')
+        if not os.path.isdir(benchmark_dest):
+            os.makedirs(benchmark_dest)
 
         for benchmark_path in benchmark_paths:
-            for path in os.listdir(benchmark_path):
-                abspath = os.path.join(benchmark_path, path)
-                if not os.path.isdir(abspath) or path.startswith('.'):
+            for name in os.listdir(benchmark_path):
+                path = os.path.join(benchmark_path, name)
+                dest = os.path.join(benchmark_dest, name)
+                if not os.path.isdir(path) or name.startswith('.'):
                     continue
 
-                manifest.add_link(abspath, path)
-
-        copier = FileCopier()
-        manifest.populate_registry(copier)
-        copier.copy(os.path.join(self.topobjdir, 'testing', 'raptor', 'benchmarks'))
+                if hasattr(os, 'symlink'):
+                    if not os.path.exists(dest):
+                        os.symlink(path, dest)
+                else:
+                    # Clobber the benchmark in case a recent update removed any files.
+                    mozfile.remove(dest)
+                    shutil.copytree(path, dest)
 
     def make_config(self):
         default_actions = ['populate-webroot', 'install-chrome', 'create-virtualenv', 'run-tests']
@@ -154,10 +168,22 @@ class MachRaptor(MachCommandBase):
              description='Run raptor performance tests.',
              parser=create_parser)
     def run_raptor_test(self, **kwargs):
+
+        build_obj = MozbuildObject.from_environment(cwd=HERE)
+
+        if conditions.is_android(build_obj) or kwargs['app'] == 'geckoview':
+            from mozrunner.devices.android_device import verify_android_device
+            if not verify_android_device(build_obj, install=True, app=kwargs['binary']):
+                return 1
+
+        debug_command = '--debug-command'
+        if debug_command in sys.argv:
+            sys.argv.remove(debug_command)
+
         raptor = self._spawn(RaptorRunner)
 
         try:
-            return raptor.run_test(sys.argv[2:])
+            return raptor.run_test(sys.argv[2:], app=kwargs['app'])
         except Exception as e:
             print(str(e))
             return 1

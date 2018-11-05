@@ -5,6 +5,7 @@
 from __future__ import absolute_import, print_function
 
 import os
+import posixpath
 import re
 import time
 
@@ -40,7 +41,8 @@ class ADBAndroid(ADBDevice):
                  timeout=300,
                  verbose=False,
                  device_ready_retry_wait=20,
-                 device_ready_retry_attempts=3):
+                 device_ready_retry_attempts=3,
+                 require_root=True):
         """Initializes the ADBAndroid object.
 
         :param device: When a string is passed, it is interpreted as the
@@ -65,11 +67,19 @@ class ADBAndroid(ADBDevice):
         :param adb_port: port of the adb server to connect to.
         :type adb_port: integer or None
         :param str logger_name: logging logger name. Defaults to 'adb'.
+        :param timeout: The default maximum time in
+            seconds for any spawned adb process to complete before
+            throwing an ADBTimeoutError.  This timeout is per adb call. The
+            total time spent may exceed this value. If it is not
+            specified, the value defaults to 300.
+        :type timeout: integer or None
+        :param bool verbose: provide verbose output
         :param integer device_ready_retry_wait: number of seconds to wait
             between attempts to check if the device is ready after a
             reboot.
         :param integer device_ready_retry_attempts: number of attempts when
             checking if a device is ready.
+        :param bool require_root: check that we have root permissions on device
 
         :raises: * ADBError
                  * ADBTimeoutError
@@ -78,26 +88,71 @@ class ADBAndroid(ADBDevice):
         ADBDevice.__init__(self, device=device, adb=adb,
                            adb_host=adb_host, adb_port=adb_port,
                            test_root=test_root,
-                           logger_name=logger_name, timeout=timeout,
+                           logger_name=logger_name,
+                           timeout=timeout,
                            verbose=verbose,
                            device_ready_retry_wait=device_ready_retry_wait,
-                           device_ready_retry_attempts=device_ready_retry_attempts)
-        # https://source.android.com/devices/tech/security/selinux/index.html
-        # setenforce
-        # usage:  setenforce [ Enforcing | Permissive | 1 | 0 ]
-        # getenforce returns either Enforcing or Permissive
-
-        try:
-            self.selinux = True
-            if self.shell_output('getenforce', timeout=timeout) != 'Permissive':
-                self._logger.info('Setting SELinux Permissive Mode')
-                self.shell_output("setenforce Permissive", timeout=timeout, root=True)
-        except (ADBError, ADBRootError) as e:
-            self._logger.warning('Unable to set SELinux Permissive due to %s.' % e)
-            self.selinux = False
-
+                           device_ready_retry_attempts=device_ready_retry_attempts,
+                           require_root=require_root)
+        self._selinux = None
+        self.enforcing = 'Permissive'
         self.version = int(self.shell_output("getprop ro.build.version.sdk",
                                              timeout=timeout))
+        # Beginning in Android 8.1 /data/anr/traces.txt no longer contains
+        # a single file traces.txt but instead will contain individual files
+        # for each stack.
+        # See https://github.com/aosp-mirror/platform_build/commit/
+        # fbba7fe06312241c7eb8c592ec2ac630e4316d55
+        stack_trace_dir = self.shell_output("getprop dalvik.vm.stack-trace-dir",
+                                            timeout=timeout)
+        if not stack_trace_dir:
+            stack_trace_file = self.shell_output("getprop dalvik.vm.stack-trace-file",
+                                                 timeout=timeout)
+            if stack_trace_file:
+                stack_trace_dir = posixpath.dirname(stack_trace_file)
+            else:
+                stack_trace_dir = '/data/anr'
+        self.stack_trace_dir = stack_trace_dir
+
+    # Properties to manage SELinux on the device:
+    # https://source.android.com/devices/tech/security/selinux/index.html
+    # setenforce [ Enforcing | Permissive | 1 | 0 ]
+    # getenforce returns either Enforcing or Permissive
+
+    @property
+    def selinux(self):
+        """Returns True if SELinux is supported, False otherwise.
+        """
+        if self._selinux is None:
+            self._selinux = (self.enforcing != '')
+        return self._selinux
+
+    @property
+    def enforcing(self):
+        try:
+            enforce = self.shell_output('getenforce')
+        except ADBError as e:
+            enforce = ''
+            self._logger.warning('Unable to get SELinux enforcing due to %s.' % e)
+        return enforce
+
+    @enforcing.setter
+    def enforcing(self, value):
+        """Set SELinux mode.
+        :param str value: The new SELinux mode. Should be one of
+            Permissive, 0, Enforcing, 1 but it is not validated.
+
+        We do not attempt to set SELinux when _require_root is False.  This
+        allows experimentation with running unrooted devices.
+        """
+        try:
+            if not self._require_root:
+                self._logger.info('Ignoring attempt to set SELinux %s.' % value)
+            else:
+                self._logger.info('Setting SELinux %s' % value)
+                self.shell_output("setenforce %s" % value, root=True)
+        except (ADBError, ADBRootError) as e:
+            self._logger.warning('Unable to set SELinux Permissive due to %s.' % e)
 
     def reboot(self, timeout=None):
         """Reboots the device.
@@ -237,10 +292,8 @@ class ADBAndroid(ADBDevice):
                     failure = "Device state: %s" % state
                     success = False
                 else:
-                    if (self.selinux and self.shell_output('getenforce',
-                                                           timeout=timeout) != 'Permissive'):
-                        self._logger.info('Setting SELinux Permissive Mode')
-                        self.shell_output("setenforce Permissive", timeout=timeout, root=True)
+                    if self.enforcing != 'Permissive':
+                        self.enforcing = 'Permissive'
                     if self.is_dir(ready_path, timeout=timeout):
                         self.rmdir(ready_path, timeout=timeout)
                     self.mkdir(ready_path, timeout=timeout)
@@ -292,6 +345,30 @@ class ADBAndroid(ADBDevice):
 
     # Application management methods
 
+    def grant_runtime_permissions(self, app_name, timeout=None):
+        """
+        Grant required runtime permissions to the specified app
+        (typically org.mozilla.fennec_$USER).
+
+        :param str: app_name: Name of application (e.g. `org.mozilla.fennec`)
+        """
+        try:
+            if self.version >= version_codes.M:
+                permissions = [
+                    'android.permission.WRITE_EXTERNAL_STORAGE',
+                    'android.permission.READ_EXTERNAL_STORAGE',
+                    'android.permission.ACCESS_COARSE_LOCATION',
+                    'android.permission.ACCESS_FINE_LOCATION',
+                    'android.permission.CAMERA',
+                    'android.permission.RECORD_AUDIO',
+                ]
+                self._logger.info("Granting important runtime permissions to %s" % app_name)
+                for permission in permissions:
+                    self.shell_output('pm grant %s %s' % (app_name, permission))
+        except ADBError as e:
+            self._logger.warning("Unable to grant runtime permissions to %s due to %s" %
+                                 (app_name, e))
+
     def install_app(self, apk_path, replace=False, timeout=None):
         """Installs an app on the device.
 
@@ -308,8 +385,6 @@ class ADBAndroid(ADBDevice):
                  * ADBError
         """
         cmd = ["install"]
-        if self.version >= version_codes.M:
-            cmd.append("-g")
         if replace:
             cmd.append("-r")
         cmd.append(apk_path)
@@ -321,14 +396,13 @@ class ADBAndroid(ADBDevice):
     def is_app_installed(self, app_name, timeout=None):
         """Returns True if an app is installed on the device.
 
-        :param str app_name: The name of the app to be checked.
-        :param timeout: The maximum time in
-            seconds for any spawned adb process to complete before
-            throwing an ADBTimeoutError.
-            This timeout is per adb call. The total time spent
-            may exceed this value. If it is not specified, the value
-            set in the ADB constructor is used.
+        :param str app_name: name of the app to be checked.
+        :param timeout: maximum time in seconds for any spawned
+            adb process to complete before throwing an ADBTimeoutError.
+            This timeout is per adb call. If it is not specified,
+            the value set in the ADB constructor is used.
         :type timeout: integer or None
+
         :raises: * ADBTimeoutError
                  * ADBError
         """
@@ -336,12 +410,12 @@ class ADBAndroid(ADBDevice):
         data = self.shell_output("pm list package %s" % app_name, timeout=timeout)
         if pm_error_string in data:
             raise ADBError(pm_error_string)
-        if app_name not in data:
-            return False
-        return True
+        output = [line for line in data.splitlines() if line.strip()]
+        return any(['package:{}'.format(app_name) == out for out in output])
 
     def launch_application(self, app_name, activity_name, intent, url=None,
                            extras=None, wait=True, fail_if_running=True,
+                           grant_runtime_permissions=True,
                            timeout=None):
         """Launches an Android application
 
@@ -356,6 +430,8 @@ class ADBAndroid(ADBDevice):
             returning.
         :param bool fail_if_running: Raise an exception if instance of
             application is already running.
+        :param bool grant_runtime_permissions: Grant special runtime
+            permissions.
         :param timeout: The maximum time in
             seconds for any spawned adb process to complete before
             throwing an ADBTimeoutError.
@@ -373,6 +449,9 @@ class ADBAndroid(ADBDevice):
         if fail_if_running and self.process_exist(app_name, timeout=timeout):
             raise ADBError("Only one instance of an application may be running "
                            "at once")
+
+        if grant_runtime_permissions:
+            self.grant_runtime_permissions(app_name)
 
         acmd = ["am", "start"] + \
             ["-W" if wait else '', "-n", "%s/%s" % (app_name, activity_name)]

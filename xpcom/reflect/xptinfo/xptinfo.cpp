@@ -9,6 +9,8 @@
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/ArrayUtils.h"
 
+#include "jsfriendapi.h"
+
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace xpt::detail;
@@ -60,53 +62,6 @@ nsXPTInterfaceInfo::Method(uint16_t aIndex) const
   return xpt::detail::GetMethod(mMethods + aIndex);
 }
 
-
-////////////////////////////////////////////////
-// nsIInterfaceInfo backcompat implementation //
-////////////////////////////////////////////////
-
-nsresult
-nsXPTInterfaceInfo::GetName(char** aName) const
-{
-  *aName = moz_xstrdup(Name());
-  return NS_OK;
-}
-
-nsresult
-nsXPTInterfaceInfo::IsScriptable(bool* aRes) const
-{
-  *aRes = IsScriptable();
-  return NS_OK;
-}
-
-nsresult
-nsXPTInterfaceInfo::IsBuiltinClass(bool* aRes) const
-{
-  *aRes = IsBuiltinClass();
-  return NS_OK;
-}
-
-nsresult
-nsXPTInterfaceInfo::GetParent(const nsXPTInterfaceInfo** aParent) const
-{
-  *aParent = GetParent();
-  return NS_OK;
-}
-
-nsresult
-nsXPTInterfaceInfo::GetMethodCount(uint16_t* aMethodCount) const
-{
-  *aMethodCount = MethodCount();
-  return NS_OK;
-}
-
-nsresult
-nsXPTInterfaceInfo::GetConstantCount(uint16_t* aConstantCount) const
-{
-  *aConstantCount = ConstantCount();
-  return NS_OK;
-}
-
 nsresult
 nsXPTInterfaceInfo::GetMethodInfo(uint16_t aIndex, const nsXPTMethodInfo** aInfo) const
 {
@@ -127,44 +82,21 @@ nsXPTInterfaceInfo::GetConstant(uint16_t aIndex,
   return NS_ERROR_FAILURE;
 }
 
-nsresult
-nsXPTInterfaceInfo::IsIID(const nsIID* aIID, bool* aIs) const
-{
-  *aIs = mIID == *aIID;
-  return NS_OK;
-}
+////////////////////////////////////
+// nsXPTMethodInfo symbol helpers //
+////////////////////////////////////
 
-nsresult
-nsXPTInterfaceInfo::GetNameShared(const char** aName) const
+void
+nsXPTMethodInfo::GetSymbolDescription(JSContext* aCx, nsACString& aID) const
 {
-  *aName = Name();
-  return NS_OK;
-}
+  JS::RootedSymbol symbol(aCx, GetSymbol(aCx));
+  JSString* desc = JS::GetSymbolDescription(symbol);
+  MOZ_ASSERT(JS_StringHasLatin1Chars(desc));
 
-nsresult
-nsXPTInterfaceInfo::GetIIDShared(const nsIID** aIID) const
-{
-  *aIID = &IID();
-  return NS_OK;
-}
+  JS::AutoAssertNoGC nogc(aCx);
+  size_t length;
+  const JS::Latin1Char* chars = JS_GetLatin1StringCharsAndLength(
+    aCx, nogc, desc, &length);
 
-nsresult
-nsXPTInterfaceInfo::IsFunction(bool* aRetval) const
-{
-  *aRetval = IsFunction();
-  return NS_OK;
-}
-
-nsresult
-nsXPTInterfaceInfo::HasAncestor(const nsIID* aIID, bool* aRetval) const
-{
-  *aRetval = HasAncestor(*aIID);
-  return NS_OK;
-}
-
-nsresult
-nsXPTInterfaceInfo::IsMainProcessScriptableOnly(bool* aRetval) const
-{
-  *aRetval = IsMainProcessScriptableOnly();
-  return NS_OK;
+  aID.AssignASCII(reinterpret_cast<const char*>(chars), length);
 }

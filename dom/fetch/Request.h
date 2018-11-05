@@ -143,6 +143,22 @@ public:
     mRequest->SetBody(aStream, aBodyLength);
   }
 
+  using FetchBody::BodyBlobURISpec;
+
+  const nsACString&
+  BodyBlobURISpec() const
+  {
+    return mRequest->BodyBlobURISpec();
+  }
+
+  using FetchBody::BodyLocalPath;
+
+  const nsAString&
+  BodyLocalPath() const
+  {
+    return mRequest->BodyLocalPath();
+  }
+
   static already_AddRefed<Request>
   Constructor(const GlobalObject& aGlobal, const RequestOrUSVString& aInput,
               const RequestInit& aInit, ErrorResult& rv);
@@ -167,9 +183,9 @@ public:
   AbortSignal*
   GetOrCreateSignal();
 
-  // This can return a null AbortSignal.
-  AbortSignal*
-  GetSignal() const override;
+  // This can return a null AbortSignalImpl.
+  AbortSignalImpl*
+  GetSignalImpl() const override;
 
 private:
   ~Request();

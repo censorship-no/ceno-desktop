@@ -6,12 +6,12 @@
 
 #include "ImageDocument.h"
 #include "mozilla/ComputedStyle.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/ImageDocumentBinding.h"
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/MouseEvent.h"
+#include "mozilla/StaticPrefs.h"
 #include "nsRect.h"
 #include "nsIImageLoadingContent.h"
 #include "nsGenericHTMLElement.h"
@@ -47,7 +47,7 @@
 //XXX A hack needed for Firefox's site specific zoom.
 static bool IsSiteSpecific()
 {
-  return !mozilla::dom::DOMPrefs::ResistFingerprintingEnabled() &&
+  return !mozilla::StaticPrefs::privacy_resistFingerprinting() &&
          mozilla::Preferences::GetBool("browser.zoom.siteSpecific", false);
 }
 
@@ -200,7 +200,11 @@ ImageDocument::Init()
 JSObject*
 ImageDocument::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return ImageDocument_Binding::Wrap(aCx, this, aGivenProto);
+  JSObject* obj = ImageDocument_Binding::Wrap(aCx, this, aGivenProto);
+  if (!obj) {
+      MOZ_CRASH("Looks like bug 1488480/1405521, with ImageDocument::WrapNode failing");
+  }
+  return obj;
 }
 
 nsresult
@@ -236,7 +240,7 @@ ImageDocument::Destroy()
 {
   if (mImageContent) {
     // Remove our event listener from the image content.
-    nsCOMPtr<EventTarget> target = do_QueryInterface(mImageContent);
+    nsCOMPtr<EventTarget> target = mImageContent;
     target->RemoveEventListener(NS_LITERAL_STRING("load"), this, false);
     target->RemoveEventListener(NS_LITERAL_STRING("click"), this, false);
 
@@ -282,7 +286,7 @@ ImageDocument::SetScriptGlobalObject(nsIScriptGlobalObject* aScriptGlobalObject)
         CreateSyntheticDocument();
       NS_ASSERTION(NS_SUCCEEDED(rv), "failed to create synthetic document");
 
-      target = do_QueryInterface(mImageContent);
+      target = mImageContent;
       target->AddEventListener(NS_LITERAL_STRING("load"), this, false);
       target->AddEventListener(NS_LITERAL_STRING("click"), this, false);
     }
@@ -304,7 +308,8 @@ ImageDocument::SetScriptGlobalObject(nsIScriptGlobalObject* aScriptGlobalObject)
 
 void
 ImageDocument::OnPageShow(bool aPersisted,
-                          EventTarget* aDispatchStartTarget)
+                          EventTarget* aDispatchStartTarget,
+                          bool aOnlySystemGroup)
 {
   if (aPersisted) {
     mOriginalZoomLevel = IsSiteSpecific() ? 1.0 : GetZoomLevel();
@@ -315,7 +320,8 @@ ImageDocument::OnPageShow(bool aPersisted,
   RefPtr<ImageDocument> kungFuDeathGrip(this);
   UpdateSizeFromLayout();
 
-  MediaDocument::OnPageShow(aPersisted, aDispatchStartTarget);
+  MediaDocument::OnPageShow(aPersisted, aDispatchStartTarget,
+                            aOnlySystemGroup);
 }
 
 NS_IMETHODIMP

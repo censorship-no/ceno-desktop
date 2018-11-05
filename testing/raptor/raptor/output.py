@@ -51,6 +51,7 @@ class Output(object):
                 'extraOptions': test.extra_options,
                 'subtests': subtests,
                 'lowerIsBetter': test.lower_is_better,
+                'unit': test.unit,
                 'alertThreshold': float(test.alert_threshold)
             }
 
@@ -75,12 +76,27 @@ class Output(object):
                     new_subtest = {}
                     new_subtest['name'] = test.name + "-" + measurement_name
                     new_subtest['replicates'] = replicates
-                    new_subtest['lowerIsBetter'] = test.lower_is_better
+                    new_subtest['lowerIsBetter'] = test.subtest_lower_is_better
                     new_subtest['alertThreshold'] = float(test.alert_threshold)
                     new_subtest['value'] = 0
-                    new_subtest['unit'] = test.unit
+                    new_subtest['unit'] = test.subtest_unit
 
+                    # ignore first value due to 1st pageload noise
+                    LOG.info("ignoring the first %s value due to initial pageload noise"
+                             % measurement_name)
                     filtered_values = filter.ignore_first(new_subtest['replicates'], 1)
+
+                    # for pageload tests that measure TTFI: TTFI is not guaranteed to be available
+                    # everytime; the raptor measure.js webext will substitute a '-1' value in the
+                    # cases where TTFI is not available, which is acceptable; however we don't want
+                    # to include those '-1' TTFI values in our final results calculations
+                    if measurement_name == "ttfi":
+                        filtered_values = filter.ignore_negative(filtered_values)
+                        # we've already removed the first pageload value; if there aren't any more
+                        # valid TTFI values available for this pageload just remove it from results
+                        if len(filtered_values) < 1:
+                            continue
+
                     new_subtest['value'] = filter.median(filtered_values)
 
                     vals.append([new_subtest['value'], new_subtest['name']])
@@ -97,6 +113,12 @@ class Output(object):
                     subtests, vals = self.parseWebaudioOutput(test)
                 elif 'unity-webgl' in test.measurements:
                     subtests, vals = self.parseUnityWebGLOutput(test)
+                elif 'assorted-dom' in test.measurements:
+                    subtests, vals = self.parseAssortedDomOutput(test)
+                elif 'wasm-misc' in test.measurements:
+                    subtests, vals = self.parseWASMMiscOutput(test)
+                elif 'wasm-godot' in test.measurements:
+                    subtests, vals = self.parseWASMGodotOutput(test)
                 suite['subtests'] = subtests
 
             else:
@@ -142,12 +164,88 @@ class Output(object):
                 # for each pagecycle, build a list of subtests and append all related replicates
                 if sub not in _subtests.keys():
                     # subtest not added yet, first pagecycle, so add new one
-                    _subtests[sub] = {'unit': test.unit,
+                    _subtests[sub] = {'unit': test.subtest_unit,
                                       'alertThreshold': float(test.alert_threshold),
-                                      'lowerIsBetter': test.lower_is_better,
+                                      'lowerIsBetter': test.subtest_lower_is_better,
                                       'name': sub,
                                       'replicates': []}
                 _subtests[sub]['replicates'].extend([round(x, 3) for x in replicates])
+
+        vals = []
+        subtests = []
+        names = _subtests.keys()
+        names.sort(reverse=True)
+        for name in names:
+            _subtests[name]['value'] = filter.median(_subtests[name]['replicates'])
+            subtests.append(_subtests[name])
+            vals.append([_subtests[name]['value'], name])
+
+        return subtests, vals
+
+    def parseWASMMiscOutput(self, test):
+        '''
+          {u'wasm-misc': [
+            [[{u'name': u'validate', u'time': 163.44000000000005},
+              ...
+              {u'name': u'__total__', u'time': 63308.434904788155}]],
+            ...
+            [[{u'name': u'validate', u'time': 129.42000000000002},
+              {u'name': u'__total__', u'time': 63181.24089257814}]]
+           ]}
+        '''
+        _subtests = {}
+        data = test.measurements['wasm-misc']
+        for page_cycle in data:
+            for item in page_cycle[0]:
+                # for each pagecycle, build a list of subtests and append all related replicates
+                sub = item['name']
+                if sub not in _subtests.keys():
+                    # subtest not added yet, first pagecycle, so add new one
+                    _subtests[sub] = {'unit': test.subtest_unit,
+                                      'alertThreshold': float(test.alert_threshold),
+                                      'lowerIsBetter': test.subtest_lower_is_better,
+                                      'name': sub,
+                                      'replicates': []}
+                _subtests[sub]['replicates'].append(item['time'])
+
+        vals = []
+        subtests = []
+        names = _subtests.keys()
+        names.sort(reverse=True)
+        for name in names:
+            _subtests[name]['value'] = filter.median(_subtests[name]['replicates'])
+            subtests.append(_subtests[name])
+            vals.append([_subtests[name]['value'], name])
+
+        return subtests, vals
+
+    def parseWASMGodotOutput(self, test):
+        '''
+            {u'wasm-godot': [
+                {
+                  "name": "wasm-instantiate",
+                  "time": 349
+                },{
+                  "name": "engine-instantiate",
+                  "time": 1263
+                ...
+                }]}
+        '''
+        _subtests = {}
+        data = test.measurements['wasm-godot']
+        print (data)
+        for page_cycle in data:
+            for item in page_cycle[0]:
+                # for each pagecycle, build a list of subtests and append all related replicates
+                sub = item['name']
+                if sub not in _subtests.keys():
+                    # subtest not added yet, first pagecycle, so add new one
+                    _subtests[sub] = {'unit': test.subtest_unit,
+                                      'alertThreshold': float(test.alert_threshold),
+                                      'lowerIsBetter': test.subtest_lower_is_better,
+                                      'name': sub,
+                                      'replicates': []}
+                _subtests[sub]['replicates'].append(item['time'])
 
         vals = []
         subtests = []
@@ -189,9 +287,9 @@ class Output(object):
                 replicates = [item['duration']]
                 if sub not in _subtests.keys():
                     # subtest not added yet, first pagecycle, so add new one
-                    _subtests[sub] = {'unit': test.unit,
+                    _subtests[sub] = {'unit': test.subtest_unit,
                                       'alertThreshold': float(test.alert_threshold),
-                                      'lowerIsBetter': test.lower_is_better,
+                                      'lowerIsBetter': test.subtest_lower_is_better,
                                       'name': sub,
                                       'replicates': []}
                 _subtests[sub]['replicates'].extend([round(x, 3) for x in replicates])
@@ -244,9 +342,9 @@ class Output(object):
 
                 if sub not in _subtests.keys():
                     # subtest not added yet, first pagecycle, so add new one
-                    _subtests[sub] = {'unit': test.unit,
+                    _subtests[sub] = {'unit': test.subtest_unit,
                                       'alertThreshold': float(test.alert_threshold),
-                                      'lowerIsBetter': test.lower_is_better,
+                                      'lowerIsBetter': test.subtest_lower_is_better,
                                       'name': sub,
                                       'replicates': []}
                 _subtests[sub]['replicates'].extend([replicate])
@@ -270,22 +368,14 @@ class Output(object):
                 # for each pagecycle, build a list of subtests and append all related replicates
                 if sub not in _subtests.keys():
                     # subtest not added yet, first pagecycle, so add new one
-                    _subtests[sub] = {'unit': test.unit,
+                    _subtests[sub] = {'unit': test.subtest_unit,
                                       'alertThreshold': float(test.alert_threshold),
-                                      'lowerIsBetter': test.lower_is_better,
+                                      'lowerIsBetter': test.subtest_lower_is_better,
                                       'name': sub,
                                       'replicates': []}
                 _subtests[sub]['replicates'].extend([round(x, 3) for x in replicates])
 
-        total_subtest = {
-            'unit': test.unit,
-            'alertThreshold': float(test.alert_threshold),
-            'lowerIsBetter': test.lower_is_better,
-            'replicates': [],
-            'name': 'benchmark_score',
-            'value': 0
-        }
-        subtests = [total_subtest]
+        subtests = []
         vals = []
 
         names = _subtests.keys()
@@ -324,9 +414,9 @@ class Output(object):
                 sub = item['benchmark']
                 if sub not in _subtests.keys():
                     # subtest not added yet, first pagecycle, so add new one
-                    _subtests[sub] = {'unit': test.unit,
+                    _subtests[sub] = {'unit': test.subtest_unit,
                                       'alertThreshold': float(test.alert_threshold),
-                                      'lowerIsBetter': test.lower_is_better,
+                                      'lowerIsBetter': test.subtest_lower_is_better,
                                       'name': sub,
                                       'replicates': []}
                 _subtests[sub]['replicates'].append(item['result'])
@@ -339,6 +429,47 @@ class Output(object):
             _subtests[name]['value'] = filter.median(_subtests[name]['replicates'])
             subtests.append(_subtests[name])
             vals.append([_subtests[name]['value'], name])
+
+        return subtests, vals
+
+    def parseAssortedDomOutput(self, test):
+        # each benchmark 'index' becomes a subtest; each pagecycle / iteration
+        # of the test has multiple values
+
+        # this is the format we receive the results in from the benchmark
+        # i.e. this is ONE pagecycle of assorted-dom ('test' is a valid subtest name btw):
+
+        # {u'worker-getname-performance-getter': 5.9, u'window-getname-performance-getter': 6.1,
+        # u'window-getprop-performance-getter': 6.1, u'worker-getprop-performance-getter': 6.1,
+        # u'test': 5.8, u'total': 30}
+
+        # the 'total' is provided for us from the benchmark; the overall score will be the mean of
+        # the totals from all pagecycles; but keep all the subtest values for the logs/json
+
+        _subtests = {}
+        data = test.measurements['assorted-dom']
+        for pagecycle in data:
+            for _sub, _value in pagecycle[0].iteritems():
+                # build a list of subtests and append all related replicates
+                if _sub not in _subtests.keys():
+                    # subtest not added yet, first pagecycle, so add new one
+                    _subtests[_sub] = {'unit': test.subtest_unit,
+                                       'alertThreshold': float(test.alert_threshold),
+                                       'lowerIsBetter': test.subtest_lower_is_better,
+                                       'name': _sub,
+                                       'replicates': []}
+                _subtests[_sub]['replicates'].extend([_value])
+
+        vals = []
+        subtests = []
+        names = _subtests.keys()
+        names.sort(reverse=True)
+        for name in names:
+            _subtests[name]['value'] = round(filter.median(_subtests[name]['replicates']), 2)
+            subtests.append(_subtests[name])
+            # only use the 'total's to compute the overall result
+            if name == 'total':
+                vals.append([_subtests[name]['value'], name])
 
         return subtests, vals
 
@@ -363,9 +494,10 @@ class Output(object):
 
         # the output that treeherder expects to find
         extra_opts = self.summarized_results['suites'][0].get('extraOptions', [])
-        if 'geckoProfile' not in extra_opts:
+        if 'gecko_profile' not in extra_opts:
             LOG.info("PERFHERDER_DATA: %s" % json.dumps(self.summarized_results))
-
+        else:
+            LOG.info("gecko profiling enabled - not posting results for perfherder")
         json.dump(self.summarized_results, open(results_path, 'w'), indent=2,
                   sort_keys=True)
 
@@ -426,6 +558,22 @@ class Output(object):
         return filter.mean(results)
 
     @classmethod
+    def wasm_misc_score(cls, val_list):
+        """
+        wasm_misc_score: self reported as '__total__'
+        """
+        results = [i for i, j in val_list if j == '__total__']
+        return filter.mean(results)
+
+    @classmethod
+    def wasm_godot_score(cls, val_list):
+        """
+        wasm_godot_score: first-interactive mean
+        """
+        results = [i for i, j in val_list if j == 'first-interactive']
+        return filter.mean(results)
+
+    @classmethod
     def stylebench_score(cls, val_list):
         """
         stylebench_score: https://bug-172968-attachments.webkit.org/attachment.cgi?id=319888
@@ -477,6 +625,11 @@ class Output(object):
         results = [i for i, j in val_list]
         return sum(results)
 
+    @classmethod
+    def assorted_dom_score(cls, val_list):
+        results = [i for i, j in val_list]
+        return round(filter.geometric_mean(results), 2)
+
     def construct_summary(self, vals, testname):
         if testname.startswith('raptor-v8_7'):
             return self.v8_Metric(vals)
@@ -494,6 +647,12 @@ class Output(object):
             return self.unity_webgl_score(vals)
         elif testname.startswith('raptor-webaudio'):
             return self.webaudio_score(vals)
+        elif testname.startswith('raptor-assorted-dom'):
+            return self.assorted_dom_score(vals)
+        elif testname.startswith('raptor-wasm-misc'):
+            return self.wasm_misc_score(vals)
+        elif testname.startswith('raptor-wasm-godot'):
+            return self.wasm_godot_score(vals)
         elif len(vals) > 1:
             return round(filter.geometric_mean([i for i, j in vals]), 2)
         else:

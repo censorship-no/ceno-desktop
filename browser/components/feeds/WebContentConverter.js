@@ -240,8 +240,8 @@ WebContentConverterRegistrar.prototype = {
                                       haveWindow ? aBrowserOrWindow : null);
 
     // Now Ask the user and provide the proper callback
-    let message = this._getFormattedString("addProtocolHandler",
-                                           [aTitle, uri.host, aProtocol]);
+    let message = this._getFormattedString("addProtocolHandlerMessage",
+                                           [uri.host, aProtocol]);
 
     let notificationIcon = uri.prePath + "/favicon.ico";
     let notificationValue = "Protocol Registration: " + aProtocol;
@@ -273,7 +273,7 @@ WebContentConverterRegistrar.prototype = {
           let hs = Cc["@mozilla.org/uriloader/handler-service;1"].
                    getService(Ci.nsIHandlerService);
           hs.store(handlerInfo);
-        }
+        },
     };
     let notificationBox = browser.getTabBrowser().getNotificationBox(browser);
     notificationBox.appendNotification(message,
@@ -342,7 +342,7 @@ WebContentConverterRegistrarContent.prototype = {
   /**
    * See nsISupports
    */
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIWebContentHandlerRegistrar])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIWebContentHandlerRegistrar]),
 };
 
 this.NSGetFactory =

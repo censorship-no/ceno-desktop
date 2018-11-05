@@ -27,12 +27,11 @@ class SVGClipPathElement final : public SVGClipPathElementBase
 protected:
   friend nsresult (::NS_NewSVGClipPathElement(nsIContent **aResult,
                                               already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGClipPathElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGClipPathElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
 public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedEnumeration> ClipPathUnits();

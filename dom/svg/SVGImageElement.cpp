@@ -33,16 +33,16 @@ SVGImageElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 
 nsSVGElement::LengthInfo SVGImageElement::sLengthInfo[4] =
 {
-  { &nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
-  { &nsGkAtoms::y, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
-  { &nsGkAtoms::width, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
-  { &nsGkAtoms::height, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
+  { nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
+  { nsGkAtoms::y, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
+  { nsGkAtoms::width, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
+  { nsGkAtoms::height, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
 };
 
 nsSVGElement::StringInfo SVGImageElement::sStringInfo[2] =
 {
-  { &nsGkAtoms::href, kNameSpaceID_None, true },
-  { &nsGkAtoms::href, kNameSpaceID_XLink, true }
+  { nsGkAtoms::href, kNameSpaceID_None, true },
+  { nsGkAtoms::href, kNameSpaceID_XLink, true }
 };
 
 //----------------------------------------------------------------------
@@ -55,8 +55,8 @@ NS_IMPL_ISUPPORTS_INHERITED(SVGImageElement, SVGImageElementBase,
 //----------------------------------------------------------------------
 // Implementation
 
-SVGImageElement::SVGImageElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGImageElementBase(aNodeInfo)
+SVGImageElement::SVGImageElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  : SVGImageElementBase(std::move(aNodeInfo))
 {
   // We start out broken
   AddStatesSilently(NS_EVENT_STATE_BROKEN);
@@ -114,6 +114,12 @@ SVGImageElement::Href()
          : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }
 
+void
+SVGImageElement::GetDecoding(nsAString& aValue)
+{
+  GetEnumAttr(nsGkAtoms::decoding, kDecodingTableDefault->tag, aValue);
+}
+
 //----------------------------------------------------------------------
 
 nsresult
@@ -152,6 +158,24 @@ SVGImageElement::AsyncEventRunning(AsyncEventDispatcher* aEvent)
 //----------------------------------------------------------------------
 // nsIContent methods:
 
+bool
+SVGImageElement::ParseAttribute(int32_t aNamespaceID,
+                                 nsAtom* aAttribute,
+                                 const nsAString& aValue,
+                                 nsIPrincipal* aMaybeScriptedPrincipal,
+                                 nsAttrValue& aResult)
+{
+  if (aNamespaceID == kNameSpaceID_None) {
+    if (aAttribute == nsGkAtoms::decoding) {
+      return aResult.ParseEnumValue(aValue, kDecodingTable, false,
+                                    kDecodingTableDefault);
+    }
+  }
+
+  return SVGImageElementBase::ParseAttribute(aNamespaceID, aAttribute, aValue,
+                                             aMaybeScriptedPrincipal, aResult);
+}
+
 nsresult
 SVGImageElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                               const nsAttrValue* aValue,
@@ -168,6 +192,12 @@ SVGImageElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
     } else {
       CancelImageRequests(aNotify);
     }
+  } else if (aName == nsGkAtoms::decoding &&
+             aNamespaceID == kNameSpaceID_None) {
+    // Request sync or async image decoding.
+    SetSyncDecodingHint(aValue &&
+                        static_cast<ImageDecodingType>(aValue->GetEnumValue())
+                          == ImageDecodingType::Sync);
   }
   return SVGImageElementBase::AfterSetAttr(aNamespaceID, aName,
                                            aValue, aOldValue,
@@ -315,12 +345,12 @@ SVGImageElement::GetStringInfo()
 }
 
 nsresult
-SVGImageElement::CopyInnerTo(Element* aDest, bool aPreallocateChildren)
+SVGImageElement::CopyInnerTo(Element* aDest)
 {
   if (aDest->OwnerDoc()->IsStaticDocument()) {
     CreateStaticImageClone(static_cast<SVGImageElement*>(aDest));
   }
-  return SVGImageElementBase::CopyInnerTo(aDest, aPreallocateChildren);
+  return SVGImageElementBase::CopyInnerTo(aDest);
 }
 
 } // namespace dom

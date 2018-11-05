@@ -8,6 +8,8 @@ const nsIAccessibleStateChangeEvent =
   Ci.nsIAccessibleStateChangeEvent;
 const nsIAccessibleCaretMoveEvent =
   Ci.nsIAccessibleCaretMoveEvent;
+const nsIAccessibleScrollingEvent =
+  Ci.nsIAccessibleScrollingEvent;
 const nsIAccessibleTextChangeEvent =
   Ci.nsIAccessibleTextChangeEvent;
 const nsIAccessibleVirtualCursorChangeEvent =
@@ -927,7 +929,7 @@ function normalizeAccTreeObj(aObj) {
   if (roleName in nsIAccessibleRole) {
     return {
       role: nsIAccessibleRole[roleName],
-      children: aObj[key]
+      children: aObj[key],
     };
   }
   return aObj;

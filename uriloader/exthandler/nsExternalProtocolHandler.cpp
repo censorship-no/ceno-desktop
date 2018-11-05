@@ -422,6 +422,12 @@ NS_IMETHODIMP nsExtProtocolChannel::NotifyTrackingProtectionDisabled()
   return NS_OK;
 }
 
+NS_IMETHODIMP nsExtProtocolChannel::NotifyTrackingCookieBlocked(uint32_t aRejectedReason)
+{
+  // nothing to do
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsExtProtocolChannel::SetClassifierMatchedInfo(const nsACString& aList,
                                                              const nsACString& aProvider,
                                                              const nsACString& aFullHash)
@@ -430,7 +436,7 @@ NS_IMETHODIMP nsExtProtocolChannel::SetClassifierMatchedInfo(const nsACString& a
   return NS_OK;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::NotifyTrackingResource()
+NS_IMETHODIMP nsExtProtocolChannel::NotifyTrackingResource(bool aIsThirdParty)
 {
   // nothing to do
   return NS_OK;

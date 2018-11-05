@@ -8,7 +8,6 @@
 
 #include "nsAutoPtr.h"
 #include "nsIConsoleService.h"
-#include "nsIDocument.h"
 #include "nsIEffectiveTLDService.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIStreamLoader.h"
@@ -22,7 +21,6 @@
 #include "nsISimpleEnumerator.h"
 #include "nsITimer.h"
 #include "nsIUploadChannel2.h"
-#include "nsPIDOMWindow.h"
 #include "nsServiceManagerUtils.h"
 #include "nsDebug.h"
 #include "nsISupportsPrimitives.h"
@@ -1234,26 +1232,6 @@ ServiceWorkerManager::GetActiveWorkerInfoForScope(const OriginAttributes& aOrigi
   return registration->GetActive();
 }
 
-ServiceWorkerInfo*
-ServiceWorkerManager::GetActiveWorkerInfoForDocument(nsIDocument* aDocument)
-{
-  MOZ_ASSERT(NS_IsMainThread());
-
-  Maybe<ClientInfo> clientInfo(aDocument->GetClientInfo());
-  if (clientInfo.isNothing()) {
-    return nullptr;
-  }
-
-  RefPtr<ServiceWorkerRegistrationInfo> registration;
-  GetClientRegistration(clientInfo.ref(), getter_AddRefs(registration));
-
-  if (!registration) {
-    return nullptr;
-  }
-
-  return registration->GetActive();
-}
-
 namespace {
 
 class UnregisterJobCallback final : public ServiceWorkerJob::Callback
@@ -1628,31 +1606,6 @@ ServiceWorkerManager::StoreRegistration(
   }
 
   mActor->SendRegister(data);
-}
-
-already_AddRefed<ServiceWorkerRegistrationInfo>
-ServiceWorkerManager::GetServiceWorkerRegistrationInfo(nsPIDOMWindowInner* aWindow) const
-{
-  MOZ_ASSERT(aWindow);
-  nsCOMPtr<nsIDocument> document = aWindow->GetExtantDoc();
-  return GetServiceWorkerRegistrationInfo(document);
-}
-
-already_AddRefed<ServiceWorkerRegistrationInfo>
-ServiceWorkerManager::GetServiceWorkerRegistrationInfo(nsIDocument* aDoc) const
-{
-  MOZ_ASSERT(aDoc);
-  nsCOMPtr<nsIURI> documentURI = aDoc->GetDocumentURI();
-  nsCOMPtr<nsIPrincipal> principal = aDoc->NodePrincipal();
-  RefPtr<ServiceWorkerRegistrationInfo> reg =
-    GetServiceWorkerRegistrationInfo(principal, documentURI);
-  if (reg) {
-    auto storageAllowed = nsContentUtils::StorageAllowedForDocument(aDoc);
-    if (storageAllowed != nsContentUtils::StorageAccess::eAllow) {
-      reg = nullptr;
-    }
-  }
-  return reg.forget();
 }
 
 already_AddRefed<ServiceWorkerRegistrationInfo>
@@ -2481,6 +2434,20 @@ ServiceWorkerManager::Update(nsIPrincipal* aPrincipal,
                                                nsCString(aScope));
 }
 
+namespace {
+
+void
+RejectUpdateWithInvalidStateError(ServiceWorkerUpdateFinishCallback& aCallback)
+{
+  ErrorResult error(NS_ERROR_DOM_INVALID_STATE_ERR);
+  aCallback.UpdateFailed(error);
+
+  // In case the callback does not consume the exception
+  error.SuppressException();
+}
+
+}
+
 void
 ServiceWorkerManager::UpdateInternal(nsIPrincipal* aPrincipal,
                                      const nsACString& aScope,
@@ -2506,12 +2473,12 @@ ServiceWorkerManager::UpdateInternal(nsIPrincipal* aPrincipal,
   // If newestWorker is null, return a promise rejected with "InvalidStateError"
   RefPtr<ServiceWorkerInfo> newest = registration->Newest();
   if (!newest) {
-    ErrorResult error(NS_ERROR_DOM_INVALID_STATE_ERR);
-    aCallback->UpdateFailed(error);
+    RejectUpdateWithInvalidStateError(*aCallback);
+    return;
+  }
 
-    // In case the callback does not consume the exception
-    error.SuppressException();
-
+  if (newest->State() == ServiceWorkerState::Installing) {
+    RejectUpdateWithInvalidStateError(*aCallback);
     return;
   }
 

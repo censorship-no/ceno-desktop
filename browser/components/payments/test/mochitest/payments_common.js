@@ -1,7 +1,7 @@
 "use strict";
 
 /* exported asyncElementRendered, promiseStateChange, promiseContentToChromeMessage, deepClone,
-   PTU, registerConsoleFilter */
+   PTU, registerConsoleFilter, fillField, importDialogDependencies */
 
 const PTU = SpecialPowers.Cu.import("resource://testing-common/PaymentTestUtils.jsm", {})
                             .PaymentTestUtils;
@@ -43,8 +43,55 @@ function promiseContentToChromeMessage(messageType) {
   });
 }
 
+/**
+ * Import the templates and stylesheets from the real shipping dialog to avoid
+ * duplication in the tests.
+ * @param {HTMLIFrameElement} templateFrame - Frame to copy the resources from
+ * @param {HTMLElement} destinationEl - Where to append the copied resources
+ */
+function importDialogDependencies(templateFrame, destinationEl) {
+  let templates = templateFrame.contentDocument.querySelectorAll("template");
+  isnot(templates, null, "Check some templates found");
+  for (let template of templates) {
+    let imported = document.importNode(template, true);
+    destinationEl.appendChild(imported);
+  }
+
+  let baseURL = new URL("../../res/", window.location.href);
+  let stylesheetLinks = templateFrame.contentDocument.querySelectorAll("link[rel~='stylesheet']");
+  for (let stylesheet of stylesheetLinks) {
+    let imported = document.importNode(stylesheet, true);
+    imported.href = new URL(imported.getAttribute("href"), baseURL);
+    destinationEl.appendChild(imported);
+  }
+}
+
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
+}
+
+/**
+ * @param {HTMLElement} field
+ * @param {string} value
+ * @note This is async in case we need to make it async to handle focus in the future.
+ * @note Keep in sync with the copy in head.js
+ */
+async function fillField(field, value) {
+  field.focus();
+  if (field.localName == "select") {
+    if (field.value == value) {
+      // Do nothing
+      return;
+    }
+    field.value = value;
+    field.dispatchEvent(new Event("input", {bubbles: true}));
+    field.dispatchEvent(new Event("change", {bubbles: true}));
+    return;
+  }
+  while (field.value) {
+    sendKey("BACK_SPACE");
+  }
+  sendString(value);
 }
 
 /**
@@ -65,6 +112,17 @@ SpecialPowers.registerConsoleListener(function onConsoleMessage(msg) {
   if (msg.category == "CSP_CSPViolationWithURI" && msg.errorMessage.includes("at inline")) {
     // Ignore unknown CSP error.
     return;
+  }
+  if (msg.message && msg.message.includes("Security Error: Content at http://mochi.test:8888")) {
+    // Check for same-origin policy violations and ignore specific errors
+    if (msg.message.includes("icon-credit-card-generic.svg") ||
+        msg.message.includes("accepted-cards.css") ||
+        msg.message.includes("editDialog-shared.css") ||
+        msg.message.includes("editAddress.css") ||
+        msg.message.includes("editDialog.css") ||
+        msg.message.includes("editCreditCard.css")) {
+      return;
+    }
   }
   if (msg.message == "SENTINEL") {
     filterFunction = null;

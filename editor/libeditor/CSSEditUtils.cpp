@@ -65,7 +65,7 @@ void ProcessDefaultValue(const nsAString* aInputString,
                          const char* aPrependString,
                          const char* aAppendString)
 {
-  CopyASCIItoUTF16(aDefaultValueString, aOutputString);
+  CopyASCIItoUTF16(MakeStringSpan(aDefaultValueString), aOutputString);
 }
 
 static
@@ -92,11 +92,11 @@ void ProcessExtendedValue(const nsAString* aInputString,
   aOutputString.Truncate();
   if (aInputString) {
     if (aPrependString) {
-      AppendASCIItoUTF16(aPrependString, aOutputString);
+      AppendASCIItoUTF16(MakeStringSpan(aPrependString), aOutputString);
     }
     aOutputString.Append(*aInputString);
     if (aAppendString) {
-      AppendASCIItoUTF16(aAppendString, aOutputString);
+      AppendASCIItoUTF16(MakeStringSpan(aAppendString), aOutputString);
     }
   }
 }
@@ -453,7 +453,7 @@ CSSEditUtils::SetCSSProperty(Element& aElement,
     return NS_ERROR_NOT_AVAILABLE;
   }
   RefPtr<HTMLEditor> htmlEditor(mHTMLEditor);
-  return htmlEditor->DoTransaction(transaction);
+  return htmlEditor->DoTransactionInternal(transaction);
 }
 
 nsresult
@@ -485,7 +485,7 @@ CSSEditUtils::RemoveCSSProperty(Element& aElement,
     return NS_ERROR_NOT_AVAILABLE;
   }
   RefPtr<HTMLEditor> htmlEditor(mHTMLEditor);
-  return htmlEditor->DoTransaction(transaction);
+  return htmlEditor->DoTransactionInternal(transaction);
 }
 
 // static

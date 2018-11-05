@@ -22,7 +22,9 @@
     }
 
     @media (min-width: $break-point-widest) and (max-width: $break-point-widest + 2 * $card-width) {
-      :nth-child(3n) {
+      // 3n for normal cards, 4n for compact cards
+      :nth-child(3n),
+      :nth-child(4n) {
         @include context-menu-open-left;
       }
     }
@@ -62,6 +64,30 @@
     @media (min-width: $break-point-widest) {
       height: $card-height-large;
     }
+  }
+}
+
+.top-stories-bottom-container {
+  color: var(--newtab-section-navigation-text-color);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: $topic-margin-top;
+  display: flex;
+  justify-content: space-between;
+
+  a {
+    color: var(--newtab-link-secondary-color);
+    font-weight: bold;
+
+    &.more-recommendations {
+      font-weight: normal;
+      font-size: 13px;
+    }
+  }
+
+  @media (min-width: $break-point-large) {
+    line-height: 16px;
+    height: 16px;
   }
 }
 

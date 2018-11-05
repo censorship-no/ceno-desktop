@@ -344,7 +344,7 @@ const loadListener = {
     const winID = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
     const curWinID = win.windowUtils.outerWindowID;
 
-    logger.debug(`Received observer notification ${topic} for ${winID}`);
+    logger.debug(`Received observer notification ${topic}`);
 
     switch (topic) {
       // In the case when the currently selected frame is closed,
@@ -621,10 +621,10 @@ function deleteSession() {
  *     JSON serialisable object to accompany the message.  Defaults to
  *     an empty dictionary.
  */
-function sendToServer(uuid, data = undefined) {
+let sendToServer = (uuid, data = undefined) => {
   let channel = new proxy.AsyncMessageChannel(sendAsyncMessage.bind(this));
   channel.reply(uuid, data);
-}
+};
 
 /**
  * Send asynchronous reply with value to chrome.
@@ -788,6 +788,8 @@ async function releaseActions() {
       action.inputsToCancel.reverse(), 0, curContainer.frame);
   action.inputsToCancel.length = 0;
   action.inputStateMap.clear();
+
+  event.DoubleClickTracker.resetClick();
 }
 
 /**
@@ -1302,11 +1304,12 @@ function isElementSelected(el) {
 }
 
 async function sendKeysToElement(el, val) {
-  await interaction.sendKeysToElement(
-      el, val,
-      capabilities.get("moz:accessibilityChecks"),
-      capabilities.get("moz:webdriverClick"),
-  );
+  let opts = {
+    strictFileInteractability: capabilities.get("strictFileInteractability"),
+    accessibilityChecks: capabilities.get("moz:accessibilityChecks"),
+    webdriverClick: capabilities.get("moz:webdriverClick"),
+  };
+  await interaction.sendKeysToElement(el, val, opts);
 }
 
 /** Clear the text of an element. */
@@ -1645,22 +1648,20 @@ async function reftestWait(url, remote) {
         observer.observe(root, {attributes: true});
       });
     }
-
-    logger.debug("Waiting for rendering");
-
-    await new Promise(resolve => {
-      let maybeResolve = () => {
-        if (flushRendering()) {
-          win.addEventListener("MozAfterPaint", maybeResolve, {once: true});
-        } else {
-          win.setTimeout(resolve, 0);
-        }
-      };
-      maybeResolve();
-    });
-  } else {
-    flushRendering();
   }
+
+  logger.debug("Waiting for rendering");
+
+  await new Promise(resolve => {
+    let maybeResolve = () => {
+      if (flushRendering()) {
+        win.addEventListener("MozAfterPaint", maybeResolve, {once: true});
+      } else {
+        win.setTimeout(resolve, 0);
+      }
+    };
+    maybeResolve();
+  });
 
   if (remote) {
     windowUtils.updateLayerTree();

@@ -54,7 +54,7 @@ LINE_OFFSETS = {
 """Maps a flake8 error to a lineoffset tuple.
 
 The offset is of the form (lineno_offset, num_lines) and is passed
-to the lineoffset property of `ResultContainer`.
+to the lineoffset property of an `Issue`.
 """
 
 # We use sys.prefix to find executables as that gets modified with
@@ -82,12 +82,8 @@ class Flake8Process(ProcessHandlerMixin):
             print('Non JSON output from linter, will not be processed: {}'.format(line))
             return
 
-        if 'code' in res:
-            if res['code'].startswith('W'):
-                res['level'] = 'warning'
-
-            if res['code'] in LINE_OFFSETS:
-                res['lineoffset'] = LINE_OFFSETS[res['code']]
+        if res.get('code') in LINE_OFFSETS:
+            res['lineoffset'] = LINE_OFFSETS[res['code']]
 
         results.append(result.from_config(self.config, **res))
 
@@ -133,8 +129,8 @@ def lint(paths, config, **lintargs):
         '--in-place', '--recursive',
     ]
 
-    if 'exclude' in lintargs:
-        fix_cmdargs.extend(['--exclude', ','.join(lintargs['exclude'])])
+    if config.get('exclude'):
+        fix_cmdargs.extend(['--exclude', ','.join(config['exclude'])])
 
     # Run any paths with a .flake8 file in the directory separately so
     # it gets picked up. This means only .flake8 files that live in

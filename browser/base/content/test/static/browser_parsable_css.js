@@ -27,10 +27,6 @@ let whitelist = [
   {sourceName: /highlighters\.css$/i,
    errorMessage: /Unknown pseudo-class.*moz-native-anonymous/i,
    isFromDevTools: true},
-  // Responsive Design Mode CSS uses a UA-only pseudo-class, see Bug 1241714.
-  {sourceName: /responsive-ua\.css$/i,
-   errorMessage: /Unknown pseudo-class.*moz-dropdown-list/i,
-   isFromDevTools: true},
   // UA-only media features.
   {sourceName: /\b(autocomplete-item|svg)\.css$/,
    errorMessage: /Expected media feature name but found \u2018-moz.*/i,
@@ -67,10 +63,6 @@ let whitelist = [
    intermittent: true,
    errorMessage: /Property contained reference to invalid variable.*background/i,
    isFromDevTools: true},
-  {sourceName: /devtools\/skin\/animationinspector\.css$/i,
-   intermittent: true,
-   errorMessage: /Property contained reference to invalid variable.*color/i,
-   isFromDevTools: true},
 ];
 
 if (!Services.prefs.getBoolPref("layout.css.xul-box-display-values.content.enabled")) {
@@ -78,7 +70,7 @@ if (!Services.prefs.getBoolPref("layout.css.xul-box-display-values.content.enabl
   whitelist.push({
     sourceName: /(skin\/shared\/Heartbeat|((?:res|gre-resources)\/(ua|html)))\.css$/i,
     errorMessage: /Error in parsing value for .*\bdisplay\b/i,
-    isFromDevTools: false
+    isFromDevTools: false,
   });
 }
 
@@ -86,27 +78,24 @@ if (!Services.prefs.getBoolPref("full-screen-api.unprefix.enabled")) {
   whitelist.push({
     sourceName: /(?:res|gre-resources)\/(ua|html)\.css$/i,
     errorMessage: /Unknown pseudo-class .*\bfullscreen\b/i,
-    isFromDevTools: false
+    isFromDevTools: false,
   }, {
     // PDFjs is futureproofing its pseudoselectors, and those rules are dropped.
     sourceName: /web\/viewer\.css$/i,
     errorMessage: /Unknown pseudo-class .*\bfullscreen\b/i,
-    isFromDevTools: false
+    isFromDevTools: false,
+  });
+}
+
+if (!Services.prefs.getBoolPref("layout.css.scrollbar-width.enabled")) {
+  whitelist.push({
+    sourceName: /(?:res|gre-resources)\/forms\.css$/i,
+    errorMessage: /Unknown property .*\bscrollbar-width\b/i,
+    isFromDevTools: false,
   });
 }
 
 let propNameWhitelist = [
-  // These are CSS custom properties that we found a definition of but
-  // no reference to.
-  // Bug 1441837
-  {propName: "--in-content-category-text-active",
-   isFromDevTools: false},
-  // Bug 1441929
-  {propName: "--theme-search-overlays-semitransparent",
-   isFromDevTools: true},
-  // Bug 1441878
-  {propName: "--theme-codemirror-gutter-background",
-   isFromDevTools: true},
   // These custom properties are retrieved directly from CSSOM
   // in videocontrols.xml to get pre-defined style instead of computed
   // dimensions, which is why they are not referenced by CSS.
@@ -129,10 +118,6 @@ let propNameWhitelist = [
   {propName: "--positionDurationBox-width",
    isFromDevTools: false},
   {propName: "--positionDurationBox-width-long",
-   isFromDevTools: false},
-  // Used on Linux
-  {propName: "--in-content-box-background-odd",
-   platforms: ["win", "macosx"],
    isFromDevTools: false},
 
   // These variables are used in a shorthand, but the CSS parser deletes the values

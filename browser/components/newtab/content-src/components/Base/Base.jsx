@@ -24,10 +24,23 @@ function addLocaleDataForReactIntl(locale) {
   addLocaleData([{locale, parentLocale: "en"}]);
 }
 
+// Returns a function will not be continuously triggered when called. The
+// function will be triggered if called again after `wait` milliseconds.
+function debounce(func, wait) {
+  let timer;
+  return (...args) => {
+    if (timer) { return; }
+
+    let wakeUp = () => { timer = null; };
+
+    timer = setTimeout(wakeUp, wait);
+    func.apply(this, args);
+  };
+}
+
 export class _Base extends React.PureComponent {
   componentWillMount() {
-    const {App, locale} = this.props;
-    this.sendNewTabRehydrated(App);
+    const {locale} = this.props;
     addLocaleDataForReactIntl(locale);
     if (this.props.isFirstrun) {
       global.document.body.classList.add("welcome", "hide-main");
@@ -48,9 +61,8 @@ export class _Base extends React.PureComponent {
     this.updateTheme();
   }
 
-  componentWillUpdate({App}) {
+  componentWillUpdate() {
     this.updateTheme();
-    this.sendNewTabRehydrated(App);
   }
 
   updateTheme() {
@@ -59,19 +71,9 @@ export class _Base extends React.PureComponent {
       // If we skipped the about:welcome overlay and removed the CSS classes
       // we don't want to add them back to the Activity Stream view
       document.body.classList.contains("welcome") ? "welcome" : "",
-      document.body.classList.contains("hide-main") ? "hide-main" : ""
+      document.body.classList.contains("hide-main") ? "hide-main" : "",
     ].filter(v => v).join(" ");
     global.document.body.className = bodyClassName;
-  }
-
-  // The NEW_TAB_REHYDRATED event is used to inform feeds that their
-  // data has been consumed e.g. for counting the number of tabs that
-  // have rendered that data.
-  sendNewTabRehydrated(App) {
-    if (App && App.initialized && !this.renderNotified) {
-      this.props.dispatch(ac.AlsoToMain({type: at.NEW_TAB_REHYDRATED, data: {}}));
-      this.renderNotified = true;
-    }
   }
 
   render() {
@@ -80,18 +82,15 @@ export class _Base extends React.PureComponent {
     const {initialized} = App;
 
     const prefs = props.Prefs.values;
-    if ((prefs.asrouterExperimentEnabled || prefs.asrouterOnboardingCohort > 0) && window.location.hash === "#asrouter") {
-      return (<ASRouterAdmin />);
+    if (prefs["asrouter.devtoolsEnabled"]) {
+      if (window.location.hash === "#asrouter") {
+        return (<ASRouterAdmin />);
+      }
+      console.log("ASRouter devtools enabled. To access visit %cabout:newtab#asrouter", "font-weight: bold"); // eslint-disable-line no-console
     }
 
     if (!props.isPrerendered && !initialized) {
       return null;
-    }
-
-    // Until we can delete the existing onboarding tour, just hide the onboarding button when users are in
-    // the new simplified onboarding experiment. CSS hacks ftw
-    if (prefs.asrouterOnboardingCohort > 0) {
-      global.document.body.classList.add("hide-onboarding");
     }
 
     return (<IntlProvider locale={locale} messages={strings}>
@@ -106,6 +105,25 @@ export class BaseContent extends React.PureComponent {
   constructor(props) {
     super(props);
     this.openPreferences = this.openPreferences.bind(this);
+    this.onWindowScroll = debounce(this.onWindowScroll.bind(this), 5);
+    this.state = {fixedSearch: false};
+  }
+
+  componentDidMount() {
+    global.addEventListener("scroll", this.onWindowScroll);
+  }
+
+  componentWillUnmount() {
+    global.removeEventListener("scroll", this.onWindowScroll);
+  }
+
+  onWindowScroll() {
+    const SCROLL_THRESHOLD = 34;
+    if (global.scrollY > SCROLL_THRESHOLD && !this.state.fixedSearch) {
+      this.setState({fixedSearch: true});
+    } else if (global.scrollY <= SCROLL_THRESHOLD && this.state.fixedSearch) {
+      this.setState({fixedSearch: false});
+    }
   }
 
   openPreferences() {
@@ -120,10 +138,13 @@ export class BaseContent extends React.PureComponent {
     const prefs = props.Prefs.values;
 
     const shouldBeFixedToTop = PrerenderData.arePrefsValid(name => prefs[name]);
+    const noSectionsEnabled = !prefs["feeds.topsites"] && props.Sections.filter(section => section.enabled).length === 0;
 
     const outerClassName = [
       "outer-wrapper",
-      shouldBeFixedToTop && "fixed-to-top"
+      shouldBeFixedToTop && "fixed-to-top",
+      prefs.showSearch && this.state.fixedSearch && !noSectionsEnabled && "fixed-search",
+      prefs.showSearch && noSectionsEnabled && "only-search",
     ].filter(v => v).join(" ");
 
     return (
@@ -133,7 +154,7 @@ export class BaseContent extends React.PureComponent {
             {prefs.showSearch &&
               <div className="non-collapsible-section">
                 <ErrorBoundary>
-                  <Search />
+                  <Search showLogo={noSectionsEnabled} />
                 </ErrorBoundary>
               </div>
             }
@@ -154,4 +175,4 @@ export class BaseContent extends React.PureComponent {
   }
 }
 
-export const Base = connect(state => ({App: state.App, Prefs: state.Prefs}))(_Base);
+export const Base = connect(state => ({App: state.App, Prefs: state.Prefs, Sections: state.Sections}))(_Base);

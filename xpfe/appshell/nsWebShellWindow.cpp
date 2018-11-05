@@ -74,9 +74,6 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-/* Define Class IDs */
-static NS_DEFINE_CID(kWindowCID,           NS_WINDOW_CID);
-
 #define SIZE_PERSISTENCE_TIMEOUT 500 // msec
 
 nsWebShellWindow::nsWebShellWindow(uint32_t aChromeFlags)
@@ -145,14 +142,11 @@ nsresult nsWebShellWindow::Initialize(nsIXULWindow* aParent,
   // Create top level window
   if (gfxPlatform::IsHeadless()) {
     mWindow = nsIWidget::CreateHeadlessWidget();
-    if (!mWindow) {
-      return NS_ERROR_FAILURE;
-    }
   } else {
-    mWindow = do_CreateInstance(kWindowCID, &rv);
-    if (NS_OK != rv) {
-      return rv;
-    }
+    mWindow = nsIWidget::CreateTopLevelWindow();
+  }
+  if (!mWindow) {
+    return NS_ERROR_FAILURE;
   }
 
   /* This next bit is troublesome. We carry two different versions of a pointer
@@ -192,7 +186,7 @@ nsresult nsWebShellWindow::Initialize(nsIXULWindow* aParent,
 
   // Make sure to set the item type on the docshell _before_ calling
   // Create() so it knows what type it is.
-  nsCOMPtr<nsIDocShellTreeItem> docShellAsItem(do_QueryInterface(mDocShell));
+  nsCOMPtr<nsIDocShellTreeItem> docShellAsItem(mDocShell);
   NS_ENSURE_TRUE(docShellAsItem, NS_ERROR_FAILURE);
   NS_ENSURE_SUCCESS(EnsureChromeTreeOwner(), NS_ERROR_FAILURE);
 
@@ -248,7 +242,7 @@ nsresult nsWebShellWindow::Initialize(nsIXULWindow* aParent,
     NS_ConvertUTF8toUTF16 urlString(tmpStr);
     nsCOMPtr<nsIWebNavigation> webNav(do_QueryInterface(mDocShell));
     NS_ENSURE_TRUE(webNav, NS_ERROR_FAILURE);
-    rv = webNav->LoadURI(urlString.get(),
+    rv = webNav->LoadURI(urlString,
                          nsIWebNavigation::LOAD_FLAGS_NONE,
                          nullptr,
                          nullptr,
@@ -478,7 +472,7 @@ nsWebShellWindow::WindowActivated()
 
   // focusing the window could cause it to close, so keep a reference to it
   nsCOMPtr<nsPIDOMWindowOuter> window = mDocShell ? mDocShell->GetWindow() : nullptr;
-  nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (fm && window)
     fm->WindowRaised(window);
 
@@ -495,8 +489,8 @@ nsWebShellWindow::WindowDeactivated()
 
   nsCOMPtr<nsPIDOMWindowOuter> window =
     mDocShell ? mDocShell->GetWindow() : nullptr;
-  nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
-  if (fm && window)
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
+  if (fm && window && !fm->IsTestMode())
     fm->WindowLowered(window);
 }
 
@@ -682,7 +676,9 @@ nsWebShellWindow::OnStatusChange(nsIWebProgress* aWebProgress,
 NS_IMETHODIMP
 nsWebShellWindow::OnSecurityChange(nsIWebProgress *aWebProgress,
                                    nsIRequest *aRequest,
-                                   uint32_t state)
+                                   uint32_t aOldState,
+                                   uint32_t aState,
+                                   const nsAString& aContentBlockingLogJSON)
 {
   MOZ_ASSERT_UNREACHABLE("notification excluded in AddProgressListener(...)");
   return NS_OK;

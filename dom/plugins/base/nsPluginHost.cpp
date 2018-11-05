@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <stdio.h>
 #include "prio.h"
-#include "nsExceptionHandler.h"
 #include "nsNPAPIPlugin.h"
 #include "nsNPAPIPluginStreamListener.h"
 #include "nsNPAPIPluginInstance.h"
@@ -794,6 +793,12 @@ nsPluginHost::InstantiatePluginInstance(const nsACString& aMimeType, nsIURI* aUR
     return NS_ERROR_FAILURE;
   }
 
+  // Plugins are not supported when recording or replaying executions.
+  // See bug 1483232.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    return NS_ERROR_FAILURE;
+  }
+
   RefPtr<nsPluginInstanceOwner> instanceOwner = new nsPluginInstanceOwner();
   if (!instanceOwner) {
     return NS_ERROR_OUT_OF_MEMORY;
@@ -1160,8 +1165,6 @@ nsPluginHost::GetPluginTags(uint32_t* aPluginCount, nsIPluginTag*** aResults)
 
   *aResults = static_cast<nsIPluginTag**>
                          (moz_xmalloc((fakeCount + count) * sizeof(**aResults)));
-  if (!*aResults)
-    return NS_ERROR_OUT_OF_MEMORY;
 
   *aPluginCount = count + fakeCount;
 
@@ -1863,7 +1866,7 @@ nsPluginHost::SiteHasData(nsIPluginTag* plugin, const nsACString& domain,
 
   // Get the list of sites from the plugin
   nsCOMPtr<GetSitesClosure> closure(new GetSitesClosure(domain, this));
-  rv = library->NPP_GetSitesWithData(nsCOMPtr<nsIGetSitesWithDataCallback>(do_QueryInterface(closure)));
+  rv = library->NPP_GetSitesWithData(nsCOMPtr<nsIGetSitesWithDataCallback>(closure));
   NS_ENSURE_SUCCESS(rv, rv);
   // Spin the event loop while we wait for the async call to GetSitesWithData
   SpinEventLoopUntil([&]() { return !closure->keepWaiting; });
@@ -3638,8 +3641,7 @@ nsPluginHost::ParsePostBufferToFixHeaders(const char *inPostData, uint32_t inPos
     int cntSingleLF = singleLF.Length();
     newBufferLen += cntSingleLF;
 
-    if (!(*outPostData = p = (char*)moz_xmalloc(newBufferLen)))
-      return NS_ERROR_OUT_OF_MEMORY;
+    *outPostData = p = (char*)moz_xmalloc(newBufferLen);
 
     // deal with single LF
     const char *s = inPostData;
@@ -3667,8 +3669,7 @@ nsPluginHost::ParsePostBufferToFixHeaders(const char *inPostData, uint32_t inPos
     // to keep ContentLenHeader+value followed by data
     uint32_t l = sizeof(ContentLenHeader) + sizeof(CRLFCRLF) + 32;
     newBufferLen = dataLen + l;
-    if (!(*outPostData = p = (char*)moz_xmalloc(newBufferLen)))
-      return NS_ERROR_OUT_OF_MEMORY;
+    *outPostData = p = (char*)moz_xmalloc(newBufferLen);
     headersLen = snprintf(p, l,"%s: %u%s", ContentLenHeader, dataLen, CRLFCRLF);
     if (headersLen == l) { // if snprintf has ate all extra space consider this as an error
       free(p);

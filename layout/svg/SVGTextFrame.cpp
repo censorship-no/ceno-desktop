@@ -350,7 +350,7 @@ GetBaselinePosition(nsTextFrame* aFrame,
     case NS_STYLE_DOMINANT_BASELINE_MIDDLE:
       return aFrame->GetLogicalBaseline(writingMode) -
         SVGContentUtils::GetFontXHeight(aFrame) / 2.0 *
-        aFrame->PresContext()->AppUnitsPerCSSPixel() * aFontSizeScaleFactor;
+        AppUnitsPerCSSPixel() * aFontSizeScaleFactor;
 
     case NS_STYLE_DOMINANT_BASELINE_TEXT_AFTER_EDGE:
     case NS_STYLE_DOMINANT_BASELINE_IDEOGRAPHIC:
@@ -888,7 +888,7 @@ TextRenderedRun::GetTransformFromRunUserSpaceToFrameUserSpace(
 
   // Translate by the horizontal distance into the text frame this
   // rendered run is.
-  gfxFloat appPerCssPx = nsPresContext::AppUnitsPerCSSPixel();
+  gfxFloat appPerCssPx = AppUnitsPerCSSPixel();
   gfxPoint t = IsVertical() ? gfxPoint(0, start / appPerCssPx)
                             : gfxPoint(start / appPerCssPx, 0);
   return m.PreTranslate(t);
@@ -2724,7 +2724,8 @@ CharIterator::MatchesFilter() const
  * An nsCharClipDisplayItem that obtains its left and right clip edges from a
  * TextRenderedRun object.
  */
-class SVGCharClipDisplayItem : public nsCharClipDisplayItem {
+class SVGCharClipDisplayItem final : public nsCharClipDisplayItem
+{
 public:
   explicit SVGCharClipDisplayItem(const TextRenderedRun& aRun)
     : nsCharClipDisplayItem(aRun.mFrame)
@@ -2747,7 +2748,7 @@ public:
  * cannot be done directly (e.g. if we are using an SVG pattern fill, stroking
  * the text, etc.).
  */
-class SVGTextDrawPathCallbacks : public nsTextFrame::DrawPathCallbacks
+class SVGTextDrawPathCallbacks final : public nsTextFrame::DrawPathCallbacks
 {
   typedef mozilla::image::imgDrawingParams imgDrawingParams;
 
@@ -3066,7 +3067,8 @@ SVGTextDrawPathCallbacks::StrokeGeometry()
 // ----------------------------------------------------------------------------
 // Display list item
 
-class nsDisplaySVGText : public nsDisplayItem {
+class nsDisplaySVGText final : public nsDisplayItem
+{
 public:
   nsDisplaySVGText(nsDisplayListBuilder* aBuilder, SVGTextFrame* aFrame)
     : nsDisplayItem(aBuilder, aFrame)
@@ -3111,7 +3113,7 @@ nsDisplaySVGText::HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
 
   gfxPoint userSpacePt =
     gfxPoint(userSpacePtInAppUnits.x, userSpacePtInAppUnits.y) /
-      frame->PresContext()->AppUnitsPerCSSPixel();
+      AppUnitsPerCSSPixel();
 
   nsIFrame* target = frame->GetFrameForPoint(userSpacePt);
   if (target) {
@@ -3395,8 +3397,7 @@ SVGTextFrame::HandleAttributeChangeInDescendant(Element* aElement,
       // Blow away our reference, if any
       nsIFrame* childElementFrame = aElement->GetPrimaryFrame();
       if (childElementFrame) {
-        childElementFrame->DeleteProperty(
-          SVGObserverUtils::HrefAsTextPathProperty());
+        SVGObserverUtils::RemoveTextPathObserver(childElementFrame);
         NotifyGlyphMetricsChange();
       }
     }
@@ -3812,7 +3813,7 @@ SVGTextFrame::ReflowSVG()
     mRect.SetEmpty();
   } else {
     mRect =
-      nsLayoutUtils::RoundGfxRectToAppRect(r.ToThebesRect(), nsPresContext::AppUnitsPerCSSPixel());
+      nsLayoutUtils::RoundGfxRectToAppRect(r.ToThebesRect(), AppUnitsPerCSSPixel());
 
     // Due to rounding issues when we have a transform applied, we sometimes
     // don't include an additional row of pixels.  For now, just inflate our
@@ -3873,7 +3874,7 @@ SVGTextFrame::GetBBoxContribution(const Matrix &aToBBoxUserspace,
   SVGBBox bbox;
 
   if (aFlags & nsSVGUtils::eForGetClientRects) {
-    Rect rect = NSRectToRect(mRect, PresContext()->AppUnitsPerCSSPixel());
+    Rect rect = NSRectToRect(mRect, AppUnitsPerCSSPixel());
     if (!rect.IsEmpty()) {
       bbox = aToBBoxUserspace.TransformBounds(rect);
     }
@@ -4981,46 +4982,6 @@ SVGTextFrame::AdjustPositionsForClusters()
   }
 }
 
-SVGGeometryElement*
-SVGTextFrame::GetTextPathGeometryElement(nsIFrame* aTextPathFrame)
-{
-  nsSVGTextPathProperty *property =
-    aTextPathFrame->GetProperty(SVGObserverUtils::HrefAsTextPathProperty());
-
-  if (!property) {
-    nsIContent* content = aTextPathFrame->GetContent();
-    SVGTextPathElement* tp = static_cast<SVGTextPathElement*>(content);
-    nsAutoString href;
-    if (tp->mStringAttributes[SVGTextPathElement::HREF].IsExplicitlySet()) {
-      tp->mStringAttributes[SVGTextPathElement::HREF]
-        .GetAnimValue(href, tp);
-    } else {
-      tp->mStringAttributes[SVGTextPathElement::XLINK_HREF]
-        .GetAnimValue(href, tp);
-    }
-
-    if (href.IsEmpty()) {
-      return nullptr; // no URL
-    }
-
-    nsCOMPtr<nsIURI> targetURI;
-    nsCOMPtr<nsIURI> base = content->GetBaseURI();
-    nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(targetURI), href,
-                                              content->GetUncomposedDoc(), base);
-
-    property = SVGObserverUtils::GetTextPathProperty(
-      targetURI,
-      aTextPathFrame,
-      SVGObserverUtils::HrefAsTextPathProperty());
-    if (!property)
-      return nullptr;
-  }
-
-  Element* element = property->GetReferencedElement();
-  return (element && element->IsNodeOfType(nsINode::eSHAPE)) ?
-    static_cast<SVGGeometryElement*>(element) : nullptr;
-}
-
 already_AddRefed<Path>
 SVGTextFrame::GetTextPath(nsIFrame* aTextPathFrame)
 {
@@ -5032,7 +4993,8 @@ SVGTextFrame::GetTextPath(nsIFrame* aTextPathFrame)
     return tp->mPath.GetAnimValue().BuildPathForMeasuring();
   }
 
-  SVGGeometryElement* geomElement = GetTextPathGeometryElement(aTextPathFrame);
+  SVGGeometryElement* geomElement =
+    SVGObserverUtils::GetAndObserveTextPathsPath(aTextPathFrame);
   if (!geomElement) {
     return nullptr;
   }
@@ -5064,10 +5026,11 @@ SVGTextFrame::GetOffsetScale(nsIFrame* aTextPathFrame)
     return 1.0;
   }
 
-  SVGGeometryElement* geomElement = GetTextPathGeometryElement(aTextPathFrame);
-  if (!geomElement)
+  SVGGeometryElement* geomElement =
+    SVGObserverUtils::GetAndObserveTextPathsPath(aTextPathFrame);
+  if (!geomElement) {
     return 1.0;
-
+  }
   return geomElement->GetPathLengthScale(SVGGeometryElement::eForTextPath);
 }
 
@@ -5261,11 +5224,14 @@ SVGTextFrame::DoGlyphPositioning()
   SVGTextContentElement* element = static_cast<SVGTextContentElement*>(GetContent());
   nsSVGLength2* textLengthAttr =
     element->GetAnimatedLength(nsGkAtoms::textLength);
+  uint16_t lengthAdjust =
+    element->EnumAttributes()[SVGTextContentElement::LENGTHADJUST].GetAnimValue();
   bool adjustingTextLength = textLengthAttr->IsExplicitlySet();
   float expectedTextLength = textLengthAttr->GetAnimValue(element);
 
-  if (adjustingTextLength && expectedTextLength < 0.0f) {
-    // If textLength="" is less than zero, ignore it.
+  if (adjustingTextLength &&
+      (expectedTextLength < 0.0f || lengthAdjust == LENGTHADJUST_UNKNOWN)) {
+    // If textLength="" is less than zero or lengthAdjust is unknown, ignore it.
     adjustingTextLength = false;
   }
 
@@ -5314,8 +5280,6 @@ SVGTextFrame::DoGlyphPositioning()
     float actualTextLength =
       static_cast<float>(presContext->AppUnitsToGfxUnits(frameLength) * factor);
 
-    uint16_t lengthAdjust =
-      element->EnumAttributes()[SVGTextContentElement::LENGTHADJUST].GetAnimValue();
     switch (lengthAdjust) {
       case LENGTHADJUST_SPACINGANDGLYPHS:
         // Scale the glyphs and their positions.
@@ -5683,7 +5647,7 @@ SVGTextFrame::TransformFramePointToTextChild(const Point& aPoint,
   // account when transforming the point from the ancestor frame down
   // to this one.
   float cssPxPerDevPx = nsPresContext::AppUnitsToFloatCSSPixels(presContext->AppUnitsPerDevPixel());
-  float factor = nsPresContext::AppUnitsPerCSSPixel();
+  float factor = AppUnitsPerCSSPixel();
   Point framePosition(NSAppUnitsToFloatPixels(mRect.x, factor),
                       NSAppUnitsToFloatPixels(mRect.y, factor));
   Point pointInUserSpace = aPoint * cssPxPerDevPx + framePosition;
@@ -5790,7 +5754,7 @@ SVGTextFrame::TransformFrameRectFromTextChild(const nsRect& aRect,
 
   // Subtract the mRect offset from the result, as our user space for
   // this frame is relative to the top-left of mRect.
-  float factor = nsPresContext::AppUnitsPerCSSPixel();
+  float factor = AppUnitsPerCSSPixel();
   gfxPoint framePosition(NSAppUnitsToFloatPixels(mRect.x, factor),
                          NSAppUnitsToFloatPixels(mRect.y, factor));
 

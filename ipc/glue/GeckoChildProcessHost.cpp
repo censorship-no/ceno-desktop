@@ -143,7 +143,8 @@ auto
 GeckoChildProcessHost::GetPathToBinary(FilePath& exePath, GeckoProcessType processType) -> BinaryPathType
 {
   if (sRunSelfAsContentProc &&
-      (processType == GeckoProcessType_Content || processType == GeckoProcessType_GPU)) {
+      (processType == GeckoProcessType_Content || processType == GeckoProcessType_GPU ||
+       processType == GeckoProcessType_VR)) {
 #if defined(OS_WIN)
     wchar_t exePathBuf[MAXPATHLEN];
     if (!::GetModuleFileNameW(nullptr, exePathBuf, MAXPATHLEN)) {
@@ -330,17 +331,9 @@ void GeckoChildProcessHost::InitWindowsGroupID()
 bool
 GeckoChildProcessHost::SyncLaunch(std::vector<std::string> aExtraOpts, int aTimeoutMs)
 {
-  PrepareLaunch();
-
-  MessageLoop* ioLoop = XRE_GetIOMessageLoop();
-  NS_ASSERTION(MessageLoop::current() != ioLoop, "sync launch from the IO thread NYI");
-
-  ioLoop->PostTask(NewNonOwningRunnableMethod<std::vector<std::string>>(
-    "ipc::GeckoChildProcessHost::RunPerformAsyncLaunch",
-    this,
-    &GeckoChildProcessHost::RunPerformAsyncLaunch,
-    aExtraOpts));
-
+  if (!AsyncLaunch(std::move(aExtraOpts))) {
+    return false;
+  }
   return WaitUntilConnected(aTimeoutMs);
 }
 
@@ -351,18 +344,14 @@ GeckoChildProcessHost::AsyncLaunch(std::vector<std::string> aExtraOpts)
 
   MessageLoop* ioLoop = XRE_GetIOMessageLoop();
 
+  // Currently this can't fail (see the MOZ_ALWAYS_SUCCEEDS in
+  // MessageLoop::PostTask_Helper), but in the future it possibly
+  // could, in which case this method could return false.
   ioLoop->PostTask(NewNonOwningRunnableMethod<std::vector<std::string>>(
     "ipc::GeckoChildProcessHost::RunPerformAsyncLaunch",
     this,
     &GeckoChildProcessHost::RunPerformAsyncLaunch,
     aExtraOpts));
-
-  // This may look like the sync launch wait, but we only delay as
-  // long as it takes to create the channel.
-  MonitorAutoLock lock(mMonitor);
-  while (mProcessState < CHANNEL_INITIALIZED) {
-    lock.Wait();
-  }
 
   return true;
 }
@@ -407,14 +396,9 @@ GeckoChildProcessHost::WaitUntilConnected(int32_t aTimeoutMs)
 bool
 GeckoChildProcessHost::LaunchAndWaitForProcessHandle(StringVector aExtraOpts)
 {
-  PrepareLaunch();
-
-  MessageLoop* ioLoop = XRE_GetIOMessageLoop();
-  ioLoop->PostTask(NewNonOwningRunnableMethod<std::vector<std::string>>(
-    "ipc::GeckoChildProcessHost::RunPerformAsyncLaunch",
-    this,
-    &GeckoChildProcessHost::RunPerformAsyncLaunch,
-    aExtraOpts));
+  if (!AsyncLaunch(std::move(aExtraOpts))) {
+    return false;
+  }
 
   MonitorAutoLock lock(mMonitor);
   while (mProcessState < PROCESS_CREATED) {
@@ -477,7 +461,10 @@ GeckoChildProcessHost::GetChildLogName(const char* origLogName,
     // points or symlinks or the sandbox will reject rules to allow writing.
     std::wstring resolvedPath(NS_ConvertUTF8toUTF16(absPath).get());
     if (widget::WinUtils::ResolveJunctionPointsAndSymLinks(resolvedPath)) {
-      AppendUTF16toUTF8(resolvedPath.c_str(), buffer);
+      AppendUTF16toUTF8(
+        MakeSpan(reinterpret_cast<const char16_t*>(resolvedPath.data()),
+                 resolvedPath.size()),
+        buffer);
     } else
 #endif
     {
@@ -492,55 +479,6 @@ GeckoChildProcessHost::GetChildLogName(const char* origLogName,
   // Append child-specific postfix to name
   buffer.AppendLiteral(".child-");
   buffer.AppendInt(mChildCounter);
-}
-
-bool
-GeckoChildProcessHost::PerformAsyncLaunch(std::vector<std::string> aExtraOpts)
-{
-#ifdef MOZ_GECKO_PROFILER
-  AutoSetProfilerEnvVarsForChildProcess profilerEnvironment;
-#endif
-
-  // - Note: this code is not called re-entrantly, nor are restoreOrig*LogName
-  //   or mChildCounter touched by any other thread, so this is safe.
-  ++mChildCounter;
-
-  const char* origNSPRLogName = PR_GetEnv("NSPR_LOG_FILE");
-  const char* origMozLogName = PR_GetEnv("MOZ_LOG_FILE");
-
-  if (origNSPRLogName) {
-    nsAutoCString nsprLogName;
-    GetChildLogName(origNSPRLogName, nsprLogName);
-    mLaunchOptions->env_map[ENVIRONMENT_LITERAL("NSPR_LOG_FILE")]
-        = ENVIRONMENT_STRING(nsprLogName);
-  }
-  if (origMozLogName) {
-    nsAutoCString mozLogName;
-    GetChildLogName(origMozLogName, mozLogName);
-    mLaunchOptions->env_map[ENVIRONMENT_LITERAL("MOZ_LOG_FILE")]
-        = ENVIRONMENT_STRING(mozLogName);
-  }
-
-  // `RUST_LOG_CHILD` is meant for logging child processes only.
-  nsAutoCString childRustLog(PR_GetEnv("RUST_LOG_CHILD"));
-  if (!childRustLog.IsEmpty()) {
-    mLaunchOptions->env_map[ENVIRONMENT_LITERAL("RUST_LOG")]
-        = ENVIRONMENT_STRING(childRustLog);
-  }
-
-#if defined(XP_LINUX) && defined(MOZ_CONTENT_SANDBOX)
-  if (!mTmpDirName.IsEmpty()) {
-    // Point a bunch of things that might want to write from content to our
-    // shiny new content-process specific tmpdir
-    mLaunchOptions->env_map[ENVIRONMENT_LITERAL("TMPDIR")] =
-      ENVIRONMENT_STRING(mTmpDirName);
-    // Partial fix for bug 1380051 (not persistent - should be)
-    mLaunchOptions->env_map[ENVIRONMENT_LITERAL("MESA_GLSL_CACHE_DIR")] =
-      ENVIRONMENT_STRING(mTmpDirName);
-  }
-#endif
-
-  return PerformAsyncLaunchInternal(aExtraOpts);
 }
 
 bool
@@ -611,6 +549,12 @@ AddAppDirToCommandLine(std::vector<std::string>& aCmdLine)
                                  NS_GET_IID(nsIFile),
                                  getter_AddRefs(profileDir));
       if (NS_SUCCEEDED(rv)) {
+        // If the profile doesn't exist, normalization will
+        // fail. But we don't return an error here because some
+        // tests require startup with a missing profile dir.
+        // For users, almost universally, the profile will be in
+        // the home directory and normalization isn't required.
+        mozilla::Unused << profileDir->Normalize();
         nsAutoCString path;
         MOZ_ALWAYS_SUCCEEDS(profileDir->GetNativePath(path));
         aCmdLine.push_back("-profile");
@@ -622,8 +566,51 @@ AddAppDirToCommandLine(std::vector<std::string>& aCmdLine)
 }
 
 bool
-GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExtraOpts)
+GeckoChildProcessHost::PerformAsyncLaunch(std::vector<std::string> aExtraOpts)
 {
+#ifdef MOZ_GECKO_PROFILER
+  AutoSetProfilerEnvVarsForChildProcess profilerEnvironment;
+#endif
+
+  // - Note: this code is not called re-entrantly, nor are restoreOrig*LogName
+  //   or mChildCounter touched by any other thread, so this is safe.
+  ++mChildCounter;
+
+  const char* origNSPRLogName = PR_GetEnv("NSPR_LOG_FILE");
+  const char* origMozLogName = PR_GetEnv("MOZ_LOG_FILE");
+
+  if (origNSPRLogName) {
+    nsAutoCString nsprLogName;
+    GetChildLogName(origNSPRLogName, nsprLogName);
+    mLaunchOptions->env_map[ENVIRONMENT_LITERAL("NSPR_LOG_FILE")]
+        = ENVIRONMENT_STRING(nsprLogName);
+  }
+  if (origMozLogName) {
+    nsAutoCString mozLogName;
+    GetChildLogName(origMozLogName, mozLogName);
+    mLaunchOptions->env_map[ENVIRONMENT_LITERAL("MOZ_LOG_FILE")]
+        = ENVIRONMENT_STRING(mozLogName);
+  }
+
+  // `RUST_LOG_CHILD` is meant for logging child processes only.
+  nsAutoCString childRustLog(PR_GetEnv("RUST_LOG_CHILD"));
+  if (!childRustLog.IsEmpty()) {
+    mLaunchOptions->env_map[ENVIRONMENT_LITERAL("RUST_LOG")]
+        = ENVIRONMENT_STRING(childRustLog);
+  }
+
+#if defined(XP_LINUX) && defined(MOZ_CONTENT_SANDBOX)
+  if (!mTmpDirName.IsEmpty()) {
+    // Point a bunch of things that might want to write from content to our
+    // shiny new content-process specific tmpdir
+    mLaunchOptions->env_map[ENVIRONMENT_LITERAL("TMPDIR")] =
+      ENVIRONMENT_STRING(mTmpDirName);
+    // Partial fix for bug 1380051 (not persistent - should be)
+    mLaunchOptions->env_map[ENVIRONMENT_LITERAL("MESA_GLSL_CACHE_DIR")] =
+      ENVIRONMENT_STRING(mTmpDirName);
+  }
+#endif
+
   // We rely on the fact that InitializeChannel() has already been processed
   // on the IO thread before this point is reached.
   if (!GetChannel()) {
@@ -760,7 +747,7 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
 
   // Tmp dir that the GPU process should use for crash reports. This arg is
   // always populated (but possibly with an empty value) for a GPU child process.
-  if (mProcessType == GeckoProcessType_GPU) {
+  if (mProcessType == GeckoProcessType_GPU || mProcessType == GeckoProcessType_VR) {
     nsCOMPtr<nsIFile> file;
     CrashReporter::GetChildProcessTmpDir(getter_AddRefs(file));
     nsAutoCString path;
@@ -997,6 +984,11 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
         shouldSandboxCurrentProcess = true;
       }
       break;
+    case GeckoProcessType_VR:
+      if (mSandboxLevel > 0 && !PR_GetEnv("MOZ_DISABLE_VR_SANDBOX")) {
+        // TODO: Implement sandbox for VR process, Bug 1430043.
+      }
+      break;
     case GeckoProcessType_Default:
     default:
       MOZ_CRASH("Bad process type in GeckoChildProcessHost");
@@ -1079,6 +1071,7 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
     // child processes.
     if (mProcessType == GeckoProcessType_Content ||
         mProcessType == GeckoProcessType_GPU ||
+        mProcessType == GeckoProcessType_VR ||
         mProcessType == GeckoProcessType_GMPlugin) {
       if (!mSandboxBroker.AddTargetPeer(process)) {
         NS_WARNING("Failed to add content process as target peer.");
@@ -1215,7 +1208,7 @@ GeckoChildProcessHost::LaunchAndroidService(const char* type,
 
   // XXX: this processing depends entirely on the internals of
   // ContentParent::LaunchSubprocess()
-  // GeckoChildProcessHost::PerformAsyncLaunchInternal(), and the order in
+  // GeckoChildProcessHost::PerformAsyncLaunch(), and the order in
   // which they append to fds_to_remap. There must be a better way to do it.
   // See bug 1440207.
   int32_t prefsFd = fds_to_remap[0].first;

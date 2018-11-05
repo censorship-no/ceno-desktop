@@ -32,7 +32,7 @@ class MainFrame extends Component {
       accessibility: PropTypes.object.isRequired,
       walker: PropTypes.object.isRequired,
       enabled: PropTypes.bool.isRequired,
-      dispatch: PropTypes.func.isRequired
+      dispatch: PropTypes.func.isRequired,
     };
   }
 
@@ -44,8 +44,6 @@ class MainFrame extends Component {
   }
 
   componentWillMount() {
-    // Need inspector for many things such as dom node preview etc.
-    gToolbox.loadTool("inspector");
     this.props.accessibility.on("init", this.resetAccessibility);
     this.props.accessibility.on("shutdown", this.resetAccessibility);
     this.props.walker.on("document-ready", this.resetAccessibility);
@@ -109,9 +107,9 @@ class MainFrame extends Component {
           endPanelControl: true,
           startPanel: div({
             className: "main-panel",
-            role: "presentation"
+            role: "presentation",
           }, AccessibilityTree({ walker })),
-          endPanel: RightSidebar(),
+          endPanel: RightSidebar({ walker }),
           vert: this.useLandscapeMode,
         })
       ));
@@ -119,7 +117,7 @@ class MainFrame extends Component {
 }
 
 const mapStateToProps = ({ ui }) => ({
-  enabled: ui.enabled
+  enabled: ui.enabled,
 });
 
 // Exports from this module

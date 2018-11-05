@@ -58,14 +58,17 @@ class BaselineFrame
         HAS_DEBUG_MODE_OSR_INFO = 1 << 10,
 
         // This flag is intended for use whenever the frame is settled on a
-        // native code address without a corresponding ICEntry. In this case,
-        // the frame contains an explicit bytecode offset for frame iterators.
+        // native code address without a corresponding RetAddrEntry. In this
+        // case, the frame contains an explicit bytecode offset for frame
+        // iterators.
         //
         // There can also be an override pc if the frame has had its
         // environment chain unwound to a pc during exception handling that is
         // different from its current pc.
         //
-        // This flag should never be set when we're executing JIT code.
+        // This flag should never be set on the top frame while we're
+        // executing JIT code. In debug builds, it is checked before and
+        // after VM calls.
         HAS_OVERRIDE_PC = 1 << 11,
 
         // If set, we're handling an exception for this frame. This is set for
@@ -213,11 +216,13 @@ class BaselineFrame
 
   public:
     Value newTarget() const {
-        if (isEvalFrame())
+        if (isEvalFrame()) {
             return *evalNewTargetAddress();
+        }
         MOZ_ASSERT(isFunctionFrame());
-        if (callee()->isArrow())
+        if (callee()->isArrow()) {
             return callee()->getExtendedSlot(FunctionExtended::ARROW_NEWTARGET_SLOT);
+        }
         if (isConstructing()) {
             return *(Value*)(reinterpret_cast<const uint8_t*>(this) +
                              BaselineFrame::Size() +
@@ -230,8 +235,9 @@ class BaselineFrame
         return flags_ & HAS_RVAL;
     }
     MutableHandleValue returnValue() {
-        if (!hasReturnValue())
+        if (!hasReturnValue()) {
             addressOfReturnValue()->setUndefined();
+        }
         return MutableHandleValue::fromMarkedLocation(addressOfReturnValue());
     }
     void setReturnValue(const Value& v) {
@@ -321,8 +327,9 @@ class BaselineFrame
     }
 
     BaselineDebugModeOSRInfo* getDebugModeOSRInfo() {
-        if (flags_ & HAS_DEBUG_MODE_OSR_INFO)
+        if (flags_ & HAS_DEBUG_MODE_OSR_INFO) {
             return debugModeOSRInfo();
+        }
         return nullptr;
     }
 
@@ -344,8 +351,9 @@ class BaselineFrame
     }
 
     jsbytecode* maybeOverridePc() const {
-        if (hasOverridePc())
+        if (hasOverridePc()) {
             return overridePc();
+        }
         return nullptr;
     }
 

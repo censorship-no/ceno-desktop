@@ -54,15 +54,10 @@ var gLanguagesDialog = {
     }
 
     // 1) Read the available languages out of language.properties
-    var strings = bundleAccepted.strings;
 
     let localeCodes = [];
     let localeValues = [];
-    while (strings.hasMoreElements()) {
-      var currString = strings.getNext();
-      if (!(currString instanceof Ci.nsIPropertyElement))
-        break;
-
+    for (let currString of bundleAccepted.strings) {
       var property = currString.key.split("."); // ab[-cd].accept
       if (property[1] == "accept") {
         localeCodes.push(property[0]);
@@ -97,7 +92,7 @@ var gLanguagesDialog = {
       let localeCode = locale.code;
       if (locale.isVisible &&
           (!(localeCode in this._acceptLanguages) || !this._acceptLanguages[localeCode])) {
-        var menuitem = document.createElement("menuitem");
+        var menuitem = document.createXULElement("menuitem");
         menuitem.id = localeCode;
         document.l10n.setAttributes(menuitem, "languages-code-format", {
           locale: locale.name,
@@ -111,7 +106,7 @@ var gLanguagesDialog = {
 
     // Sort the list of languages by name
     let comp = new Services.intl.Collator(undefined, {
-      usage: "sort"
+      usage: "sort",
     });
 
     let items = Array.from(frag.children);
@@ -138,8 +133,8 @@ var gLanguagesDialog = {
       return;
     var languages = preference.value.toLowerCase().split(/\s*,\s*/);
     for (var i = 0; i < languages.length; ++i) {
-      var listitem = document.createElement("richlistitem");
-      var label = document.createElement("label");
+      var listitem = document.createXULElement("richlistitem");
+      var label = document.createXULElement("label");
       listitem.appendChild(label);
       listitem.id = languages[i];
       if (languages[i] == this._selectedItemID)
@@ -340,5 +335,5 @@ var gLanguagesDialog = {
 
   writeSpoofEnglish() {
     return document.getElementById("spoofEnglish").checked ? 2 : 1;
-  }
+  },
 };

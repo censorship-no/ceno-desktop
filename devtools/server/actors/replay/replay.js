@@ -141,7 +141,11 @@ function addScript(script) {
 const gScriptSources = new IdMap();
 
 function addScriptSource(source) {
-  gScriptSources.add(source);
+  // Tolerate redundant attempts to add the same source, as we might see
+  // onNewScript calls for different scripts with the same source.
+  if (!gScriptSources.getId(source)) {
+    gScriptSources.add(source);
+  }
 }
 
 function considerScript(script) {
@@ -238,14 +242,32 @@ Services.obs.addObserver({
 
     const contents = {};
     for (const id in apiMessage) {
-      if (id != "wrappedJSObject") {
+      if (id != "wrappedJSObject" && id != "arguments") {
         contents[id] = JSON.parse(JSON.stringify(apiMessage[id]));
       }
+    }
+
+    // Message arguments are preserved as debuggee values.
+    if (apiMessage.arguments) {
+      contents.arguments = apiMessage.arguments.map(makeDebuggeeValue);
     }
 
     newConsoleMessage("ConsoleAPI", null, contents);
   },
 }, "console-api-log-event");
+
+function convertConsoleMessage(contents) {
+  const result = {};
+  for (const id in contents) {
+    if (id == "arguments" && contents.messageType == "ConsoleAPI") {
+      // Copy arguments over as debuggee values.
+      result.arguments = contents.arguments.map(convertValue);
+    } else {
+      result[id] = contents[id];
+    }
+  }
+  return result;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Position Handler State
@@ -366,7 +388,7 @@ function EnsurePositionHandler(position) {
           offset: position.offset,
           frameIndex: countScriptFrames() - 1,
         });
-      }
+      },
     });
     break;
   case "OnPop":
@@ -442,6 +464,16 @@ function convertCompletionValue(value) {
   throw new Error("Unexpected completion value");
 }
 
+function makeDebuggeeValue(value) {
+  if (value && typeof value == "object") {
+    assert(!(value instanceof Debugger.Object));
+    const global = Cu.getGlobalForObject(value);
+    const dbgGlobal = dbg.makeGlobalObjectReference(global);
+    return dbgGlobal.makeDebuggeeValue(value);
+  }
+  return value;
+}
+
 // eslint-disable-next-line no-unused-vars
 function ClearPausedState() {
   gPausedObjects = new IdMap();
@@ -465,6 +497,22 @@ function getScriptData(id) {
   };
 }
 
+function getSourceData(id) {
+  const source = gScriptSources.getObject(id);
+  const introductionScript = gScripts.getId(source.introductionScript);
+  return {
+    id: id,
+    text: source.text,
+    url: source.url,
+    displayURL: source.displayURL,
+    elementAttributeName: source.elementAttributeName,
+    introductionScript,
+    introductionOffset: introductionScript ? source.introductionOffset : undefined,
+    introductionType: source.introductionType,
+    sourceMapURL: source.sourceMapURL,
+  };
+}
+
 function forwardToScript(name) {
   return request => gScripts.getObject(request.id)[name](request.value);
 }
@@ -475,10 +523,30 @@ function forwardToScript(name) {
 
 const gRequestHandlers = {
 
+  repaint() {
+    if (!RecordReplayControl.maybeDivergeFromRecording()) {
+      return {};
+    }
+    return RecordReplayControl.repaint();
+  },
+
   findScripts(request) {
+    const query = Object.assign({}, request.query);
+    if ("global" in query) {
+      query.global = gPausedObjects.getObject(query.global);
+    }
+    if ("source" in query) {
+      query.source = gScriptSources.getObject(query.source);
+      if (!query.source) {
+        return [];
+      }
+    }
+    const scripts = dbg.findScripts(query);
     const rv = [];
-    gScripts.forEach((id) => {
-      rv.push(getScriptData(id));
+    scripts.forEach(script => {
+      if (considerScript(script)) {
+        rv.push(getScriptData(gScripts.getId(script)));
+      }
     });
     return rv;
   },
@@ -495,20 +563,16 @@ const gRequestHandlers = {
     return RecordReplayControl.getContent(request.url);
   },
 
+  findSources(request) {
+    const sources = [];
+    gScriptSources.forEach((id) => {
+      sources.push(getSourceData(id));
+    });
+    return sources;
+  },
+
   getSource(request) {
-    const source = gScriptSources.getObject(request.id);
-    const introductionScript = gScripts.getId(source.introductionScript);
-    return {
-      id: request.id,
-      text: source.text,
-      url: source.url,
-      displayURL: source.displayURL,
-      elementAttributeName: source.elementAttributeName,
-      introductionScript,
-      introductionOffset: introductionScript ? source.introductionOffset : undefined,
-      introductionType: source.introductionType,
-      sourceMapURL: source.sourceMapURL,
-    };
+    return getSourceData(request.id);
   },
 
   getObject(request) {
@@ -556,7 +620,7 @@ const gRequestHandlers = {
         name: "Unknown properties",
         desc: {
           value: "Recording divergence in getObjectProperties",
-          enumerable: true
+          enumerable: true,
         },
       }];
     }
@@ -647,11 +711,11 @@ const gRequestHandlers = {
   },
 
   findConsoleMessages(request) {
-    return gConsoleMessages;
+    return gConsoleMessages.map(convertConsoleMessage);
   },
 
   getNewConsoleMessage(request) {
-    return gConsoleMessages[gConsoleMessages.length - 1];
+    return convertConsoleMessage(gConsoleMessages[gConsoleMessages.length - 1]);
   },
 };
 
@@ -663,8 +727,14 @@ function ProcessRequest(request) {
     }
     return { exception: "No handler for " + request.type };
   } catch (e) {
-    RecordReplayControl.dump("ReplayDebugger Record/Replay Error: " + e + "\n");
-    return { exception: "" + e };
+    let msg;
+    try {
+      msg = "" + e;
+    } catch (ee) {
+      msg = "Unknown";
+    }
+    RecordReplayControl.dump("ReplayDebugger Record/Replay Error: " + msg + "\n");
+    return { exception: msg };
   }
 }
 

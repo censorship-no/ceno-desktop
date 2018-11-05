@@ -592,9 +592,7 @@ void
 nsXMLContentSerializer::GenerateNewPrefix(nsAString& aPrefix)
 {
   aPrefix.Assign('a');
-  char buf[128];
-  SprintfLiteral(buf, "%d", mPrefixIndex++);
-  AppendASCIItoUTF16(buf, aPrefix);
+  aPrefix.AppendInt(mPrefixIndex++);
 }
 
 bool
@@ -1183,6 +1181,7 @@ static const uint16_t kGTVal = 62;
 
 // This table indexes into kEntityStrings[].
 static const uint8_t kEntities[] = {
+  // clang-format off
   _, _, _, _, _, _, _, _, _, _,
   _, _, _, _, _, _, _, _, _, _,
   _, _, _, _, _, _, _, _, _, _,
@@ -1190,10 +1189,12 @@ static const uint8_t kEntities[] = {
   _, _, _, _, _, _, _, _, _, _,
   _, _, _, _, _, _, _, _, _, _,
   3, _, 4
+  // clang-format on
 };
 
 // This table indexes into kEntityStrings[].
 static const uint8_t kAttrEntities[] = {
+  // clang-format off
   _, _, _, _, _, _, _, _, _, 5,
   6, _, _, 7, _, _, _, _, _, _,
   _, _, _, _, _, _, _, _, _, _,
@@ -1201,6 +1202,7 @@ static const uint8_t kAttrEntities[] = {
   _, _, _, _, _, _, _, _, _, _,
   _, _, _, _, _, _, _, _, _, _,
   3, _, 4
+  // clang-format on
 };
 
 #undef _
@@ -1251,7 +1253,10 @@ nsXMLContentSerializer::AppendAndTranslateEntities(const nsAString& aStr,
 
     NS_ENSURE_TRUE(aOutputStr.Append(fragmentStart, advanceLength, mozilla::fallible), false);
     if (entityText) {
-      NS_ENSURE_TRUE(AppendASCIItoUTF16(entityText, aOutputStr, mozilla::fallible), false);
+      NS_ENSURE_TRUE(AppendASCIItoUTF16(mozilla::MakeStringSpan(entityText),
+                                        aOutputStr,
+                                        mozilla::fallible),
+                     false);
       advanceLength++;
     }
   }

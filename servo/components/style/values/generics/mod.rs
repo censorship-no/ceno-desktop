@@ -20,6 +20,7 @@ pub mod box_;
 pub mod color;
 pub mod column;
 pub mod counters;
+pub mod easing;
 pub mod effects;
 pub mod flex;
 pub mod font;
@@ -27,6 +28,7 @@ pub mod font;
 pub mod gecko;
 pub mod grid;
 pub mod image;
+pub mod length;
 pub mod position;
 pub mod rect;
 pub mod size;
@@ -157,14 +159,37 @@ impl SpecifiedValueInfo for CounterStyleOrNone {
 
 /// A wrapper of Non-negative values.
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
-#[derive(Animate, Clone, ComputeSquaredDistance, Copy, Debug, Hash, MallocSizeOf,
-         PartialEq, PartialOrd, SpecifiedValueInfo, ToAnimatedZero,
-         ToComputedValue, ToCss)]
+#[derive(
+    Animate,
+    Clone,
+    ComputeSquaredDistance,
+    Copy,
+    Debug,
+    Hash,
+    MallocSizeOf,
+    PartialEq,
+    PartialOrd,
+    SpecifiedValueInfo,
+    ToAnimatedZero,
+    ToComputedValue,
+    ToCss,
+)]
 pub struct NonNegative<T>(pub T);
 
 /// A wrapper of greater-than-or-equal-to-one values.
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
-#[derive(Animate, Clone, ComputeSquaredDistance, Copy, Debug, MallocSizeOf,
-         PartialEq, PartialOrd, SpecifiedValueInfo, ToAnimatedZero,
-         ToComputedValue, ToCss)]
+#[derive(
+    Animate,
+    Clone,
+    ComputeSquaredDistance,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    PartialOrd,
+    SpecifiedValueInfo,
+    ToAnimatedZero,
+    ToComputedValue,
+    ToCss,
+)]
 pub struct GreaterThanOrEqualToOne<T>(pub T);

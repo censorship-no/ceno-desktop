@@ -85,7 +85,15 @@ bool IsContentXBLCompartment(JS::Compartment* compartment);
 bool IsContentXBLScope(JS::Realm* realm);
 bool IsInContentXBLScope(JSObject* obj);
 
+bool IsUAWidgetCompartment(JS::Compartment* compartment);
+bool IsUAWidgetScope(JS::Realm* realm);
+bool IsInUAWidgetScope(JSObject* obj);
+
 bool IsInSandboxCompartment(JSObject* obj);
+
+bool MightBeWebContentCompartment(JS::Compartment* compartment);
+
+void SetCompartmentChangedDocumentDomain(JS::Compartment* compartment);
 
 // Return a raw XBL scope object corresponding to contentScope, which must
 // be an object whose global is a DOM window.
@@ -103,12 +111,19 @@ bool IsInSandboxCompartment(JSObject* obj);
 JSObject*
 GetXBLScope(JSContext* cx, JSObject* contentScope);
 
+JSObject*
+GetUAWidgetScope(JSContext* cx, nsIPrincipal* principal);
+
+JSObject*
+GetUAWidgetScope(JSContext* cx, JSObject* contentScope);
+
 inline JSObject*
 GetXBLScopeOrGlobal(JSContext* cx, JSObject* obj)
 {
     MOZ_ASSERT(!js::IsCrossCompartmentWrapper(obj));
-    if (IsInContentXBLScope(obj))
+    if (IsInContentXBLScope(obj)) {
         return JS::GetNonCCWObjectGlobal(obj);
+    }
     return GetXBLScope(cx, obj);
 }
 
@@ -265,8 +280,9 @@ public:
         bool ignored;
         JSString* str = JS_NewMaybeExternalString(cx, literal, length,
                                                   &sLiteralFinalizer, &ignored);
-        if (!str)
+        if (!str) {
             return false;
+        }
         rval.setString(str);
         return true;
     }
@@ -280,8 +296,9 @@ public:
                                                   atom->GetLength(),
                                                   &sDynamicAtomFinalizer,
                                                   &sharedAtom);
-        if (!str)
+        if (!str) {
             return false;
+        }
         if (sharedAtom) {
             // We only have non-owning atoms in DOMString for now.
             // nsDynamicAtom::AddRef is always-inline and defined in a
@@ -335,7 +352,7 @@ bool Base64Decode(JSContext* cx, JS::HandleValue val, JS::MutableHandleValue out
 bool NonVoidStringToJsval(JSContext* cx, nsAString& str, JS::MutableHandleValue rval);
 inline bool StringToJsval(JSContext* cx, nsAString& str, JS::MutableHandleValue rval)
 {
-    // From the T_DOMSTRING case in XPCConvert::NativeData2JS.
+    // From the T_ASTRING case in XPCConvert::NativeData2JS.
     if (str.IsVoid()) {
         rval.setNull();
         return true;
@@ -539,16 +556,22 @@ WindowGlobalOrNull(JSObject* aObj);
 nsGlobalWindowInner*
 CurrentWindowOrNull(JSContext* cx);
 
-void
-SimulateActivityCallback(bool aActive);
+class MOZ_RAII AutoScriptActivity
+{
+    bool mActive;
+    bool mOldValue;
+  public:
+    explicit AutoScriptActivity(bool aActive);
+    ~AutoScriptActivity();
+};
 
 // This function may be used off-main-thread, in which case it is benignly
 // racey.
 bool
 ShouldDiscardSystemSource();
 
-bool
-SharedMemoryEnabled();
+void
+SetPrefableRealmOptions(JS::RealmOptions &options);
 
 bool
 ExtraWarningsForSystemJS();
@@ -722,11 +745,31 @@ namespace dom {
 bool IsChromeOrXBL(JSContext* cx, JSObject* /* unused */);
 
 /**
- * Same as IsChromeOrXBL but can be used in worker threads as well.
+ * This is used to prevent UA widget code from directly creating and adopting
+ * nodes via the content document, since they should use the special
+ * create-and-insert apis instead.
  */
-bool ThreadSafeIsChromeOrXBL(JSContext* cx, JSObject* obj);
+bool IsNotUAWidget(JSContext* cx, JSObject* /* unused */);
+
+/**
+ * A test for whether WebIDL methods that should only be visible to
+ * chrome, XBL scopes, or UA Widget scopes.
+ */
+bool IsChromeOrXBLOrUAWidget(JSContext* cx, JSObject* /* unused */);
+
+/**
+ * Same as IsChromeOrXBLOrUAWidget but can be used in worker threads as well.
+ */
+bool ThreadSafeIsChromeOrXBLOrUAWidget(JSContext* cx, JSObject* obj);
 
 } // namespace dom
+
+/**
+ * Fill the given vector with the buildid.
+ */
+bool
+GetBuildId(JS::BuildIdCharVector* aBuildID);
+
 } // namespace mozilla
 
 #endif

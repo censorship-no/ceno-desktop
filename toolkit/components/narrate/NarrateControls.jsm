@@ -8,7 +8,6 @@ ChromeUtils.import("resource://gre/modules/narrate/VoiceSelect.jsm");
 ChromeUtils.import("resource://gre/modules/narrate/Narrator.jsm");
 ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.import("resource://gre/modules/AsyncPrefs.jsm");
-ChromeUtils.import("resource://gre/modules/TelemetryStopwatch.jsm");
 
 var EXPORTED_SYMBOLS = ["NarrateControls"];
 
@@ -124,7 +123,7 @@ NarrateControls.prototype = {
         return {
           label: this._createVoiceLabel(v),
           value: v.voiceURI,
-          selected: selectedVoice == v.voiceURI
+          selected: selectedVoice == v.voiceURI,
         };
       }).sort((a, b) => comparer(a.label, b.label));
 
@@ -132,7 +131,7 @@ NarrateControls.prototype = {
         options.unshift({
           label: gStrings.GetStringFromName("defaultvoice"),
           value: "automatic",
-          selected: selectedVoice == "automatic"
+          selected: selectedVoice == "automatic",
         });
         this.voiceSelect.addOptions(options);
       }
@@ -281,5 +280,5 @@ NarrateControls.prototype = {
 
   get voice() {
     return this.voiceSelect.value;
-  }
+  },
 };

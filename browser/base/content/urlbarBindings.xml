@@ -21,24 +21,60 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
           xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
           xmlns:xbl="http://www.mozilla.org/xbl">
 
-  <binding id="urlbar" extends="chrome://global/content/bindings/autocomplete.xml#autocomplete">
-
+  <binding id="urlbar" extends="chrome://global/content/bindings/textbox.xml#textbox">
     <content sizetopopup="pref">
-      <xul:hbox flex="1" class="urlbar-textbox-container">
+      <xul:hbox flex="1" class="urlbar-textbox-container" tooltip="aHTMLTooltip">
         <children includes="image|deck|stack|box"/>
         <xul:moz-input-box anonid="moz-input-box"
                   class="urlbar-input-box"
-                  flex="1" xbl:inherits="tooltiptext=inputtooltiptext">
+                  flex="1">
           <children/>
           <html:input anonid="scheme"
                       class="urlbar-scheme textbox-input"
                       required="required"
                       xbl:inherits="textoverflow,focused"/>
           <html:input anonid="input"
-                      class="autocomplete-textbox urlbar-input textbox-input"
+                      class="urlbar-input textbox-input"
                       allowevents="true"
                       inputmode="mozAwesomebar"
-                      xbl:inherits="tooltiptext=inputtooltiptext,value,maxlength,disabled,size,readonly,placeholder,tabindex,accesskey,focused,textoverflow"/>
+                      xbl:inherits="value,maxlength,disabled,size,readonly,placeholder,tabindex,accesskey,focused,textoverflow"/>
+        </xul:moz-input-box>
+        <xul:image anonid="urlbar-go-button"
+                   class="urlbar-go-button urlbar-icon"
+                   onclick="gURLBar.handleCommand(event);"
+                   tooltiptext="&goEndCap.tooltip;"
+                   xbl:inherits="pageproxystate,parentfocused=focused,usertyping"/>
+        <xul:dropmarker anonid="historydropmarker"
+                        class="urlbar-history-dropmarker urlbar-icon chromeclass-toolbar-additional"
+                        tooltiptext="&urlbar.openHistoryPopup.tooltip;"
+                        allowevents="true"
+                        xbl:inherits="open,parentfocused=focused,usertyping"/>
+        <children includes="hbox"/>
+      </xul:hbox>
+      <xul:popupset anonid="popupset"
+                    class="autocomplete-result-popupset"/>
+      <children includes="toolbarbutton"/>
+    </content>
+  </binding>
+
+  <binding id="legacy-urlbar" extends="chrome://global/content/bindings/autocomplete.xml#autocomplete">
+
+    <content sizetopopup="pref">
+      <xul:hbox flex="1" class="urlbar-textbox-container" tooltip="aHTMLTooltip">
+        <children includes="image|deck|stack|box"/>
+        <xul:moz-input-box anonid="moz-input-box"
+                  class="urlbar-input-box"
+                  flex="1">
+          <children/>
+          <html:input anonid="scheme"
+                      class="urlbar-scheme textbox-input"
+                      required="required"
+                      xbl:inherits="textoverflow,focused"/>
+          <html:input anonid="input"
+                      class="urlbar-input textbox-input"
+                      allowevents="true"
+                      inputmode="mozAwesomebar"
+                      xbl:inherits="value,maxlength,disabled,size,readonly,placeholder,tabindex,accesskey,focused,textoverflow"/>
         </xul:moz-input-box>
         <xul:image anonid="urlbar-go-button"
                    class="urlbar-go-button urlbar-icon"
@@ -63,6 +99,11 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
       </field>
 
       <constructor><![CDATA[
+        // UrlbarInput compatibility shims
+        this.document = document;
+        this.window = window;
+        this.textbox = this;
+
         this._prefs = Cc["@mozilla.org/preferences-service;1"]
                         .getService(Ci.nsIPrefService)
                         .getBranch("browser.urlbar.");
@@ -82,9 +123,9 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
         this.speculativeConnectEnabled = this._prefs.getBoolPref("speculativeConnect.enabled");
         this.urlbarSearchSuggestEnabled = this._prefs.getBoolPref("suggest.searches");
         this.timeout = this._prefs.getIntPref("delay");
-        this._formattingEnabled = this._prefs.getBoolPref("formatting.enabled");
         this._mayTrimURLs = this._prefs.getBoolPref("trimURLs");
         this._adoptIntoActiveWindow = this._prefs.getBoolPref("switchTabs.adoptIntoActiveWindow");
+        this._ctrlCanonizesURLs = this._prefs.getBoolPref("ctrlCanonizesURLs");
         this.inputField.controllers.insertControllerAt(0, this._copyCutController);
         this.inputField.addEventListener("paste", this);
         this.inputField.addEventListener("mousedown", this);
@@ -93,6 +134,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
         this.inputField.addEventListener("overflow", this);
         this.inputField.addEventListener("underflow", this);
         this.inputField.addEventListener("scrollend", this);
+        window.addEventListener("resize", this);
 
         var textBox = document.getAnonymousElementByAttribute(this,
                                                 "anonid", "moz-input-box");
@@ -111,10 +153,10 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             pasteAndGo.setAttribute("disabled", "true");
         });
 
-        var insertLocation = cxmenu.firstChild;
-        while (insertLocation.nextSibling &&
+        var insertLocation = cxmenu.firstElementChild;
+        while (insertLocation.nextElementSibling &&
                insertLocation.getAttribute("cmd") != "cmd_paste")
-          insertLocation = insertLocation.nextSibling;
+          insertLocation = insertLocation.nextElementSibling;
         if (insertLocation) {
           pasteAndGo = document.createXULElement("menuitem");
           let label = Services.strings.createBundle("chrome://browser/locale/browser.properties").
@@ -123,7 +165,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
           pasteAndGo.setAttribute("anonid", "paste-and-go");
           pasteAndGo.setAttribute("oncommand",
               "gURLBar.select(); goDoCommand('cmd_paste'); gURLBar.handleCommand();");
-          cxmenu.insertBefore(pasteAndGo, insertLocation.nextSibling);
+          cxmenu.insertBefore(pasteAndGo, insertLocation.nextElementSibling);
         }
 
         this.popup.addEventListener("popupshowing", () => {
@@ -158,6 +200,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
         this.inputField.removeEventListener("overflow", this);
         this.inputField.removeEventListener("underflow", this);
         this.inputField.removeEventListener("scrollend", this);
+        window.removeEventListener("resize", this);
 
         if (this._deferredKeyEventTimeout) {
           clearTimeout(this._deferredKeyEventTimeout);
@@ -171,8 +214,8 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
         this.popup.oneOffSearchButtons.textbox = null;
       ]]></destructor>
 
-      <field name="scheme" readonly="true">
-        document.getAnonymousElementByAttribute(this, "anonid", "scheme");
+      <field name="valueFormatter" readonly="true">
+        new UrlbarValueFormatter(this);
       </field>
 
       <field name="goButton">
@@ -272,6 +315,9 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
               break;
             case KeyEvent.DOM_VK_TAB:
               this.userSelectionBehavior = "tab";
+              // The user is explicitly making a selection, so the popup
+              // should get accessibility focus.
+              this.popup.richlistbox.suppressMenuItemEvent = false;
               break;
             case KeyEvent.DOM_VK_UP:
             case KeyEvent.DOM_VK_DOWN:
@@ -279,6 +325,9 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             case KeyEvent.DOM_VK_PAGE_DOWN:
               if (this.userSelectionBehavior != "tab")
                 this.userSelectionBehavior = "arrow";
+              // The user is explicitly making a selection, so the popup
+              // should get accessibility focus.
+              this.popup.richlistbox.suppressMenuItemEvent = false;
               break;
           }
           if (!this.popup.disableKeyNavigation) {
@@ -323,8 +372,12 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
           // At this point, no events have been deferred for this search, and we
           // need to decide whether `event` is the first one that should be.
+          if (!this._keyCodesToDefer.has(event.keyCode) &&
+              !(/Mac/.test(navigator.platform) &&
+                event.ctrlKey &&
+                (event.key === "n" || event.key === "p") &&
+                this.popupOpen)) {
 
-          if (!this._keyCodesToDefer.has(event.keyCode)) {
             // Not a key that should trigger deferring.
             return false;
           }
@@ -510,160 +563,13 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
         ]]></body>
       </method>
 
-      <field name="_formattingEnabled">true</field>
+      <!--
+        This method tries to apply styling to the text in the input, depending
+        on the text.  See the _format* methods.
+      -->
       <method name="formatValue">
         <body><![CDATA[
-          // Used to avoid re-entrance in async callbacks.
-          let instance = this._formattingInstance = {};
-
-          if (!this.editor)
-            return;
-
-          // Cleanup previously set styles.
-          this.scheme.value = "";
-          let controller, strikeOut, selection;
-          if (this._formattingEnabled) {
-            controller = this.editor.selectionController;
-            strikeOut = controller.getSelection(controller.SELECTION_URLSTRIKEOUT);
-            strikeOut.removeAllRanges();
-            selection = controller.getSelection(controller.SELECTION_URLSECONDARY);
-            selection.removeAllRanges();
-            this.formatScheme(controller.SELECTION_URLSTRIKEOUT, true);
-            this.formatScheme(controller.SELECTION_URLSECONDARY, true);
-            this.inputField.style.setProperty("--urlbar-scheme-size", "0px");
-          }
-
-          let textNode = this.editor.rootElement.firstChild;
-          let value = textNode.textContent;
-          if (!value)
-            return;
-
-          if (this.focused)
-            return;
-
-          // Get the URL from the fixup service:
-          let flags = Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
-                      Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
-          let uriInfo;
-          try {
-            uriInfo = Services.uriFixup.getFixupURIInfo(value, flags);
-          } catch (ex) {}
-          // Ignore if we couldn't make a URI out of this, the URI resulted in a search,
-          // or the URI has a non-http(s)/ftp protocol.
-          if (!uriInfo ||
-              !uriInfo.fixedURI ||
-              uriInfo.keywordProviderName ||
-              !["http", "https", "ftp"].includes(uriInfo.fixedURI.scheme)) {
-            return;
-          }
-
-          // If we trimmed off the http scheme, ensure we stick it back on before
-          // trying to figure out what domain we're accessing, so we don't get
-          // confused by user:pass@host http URLs. We later use
-          // trimmedLength to ensure we don't count the length of a trimmed protocol
-          // when determining which parts of the URL to highlight as "preDomain".
-          let trimmedLength = 0;
-          if (uriInfo.fixedURI.scheme == "http" && !value.startsWith("http://")) {
-            value = "http://" + value;
-            trimmedLength = "http://".length;
-          }
-
-          let matchedURL = value.match(/^(([a-z]+:\/\/)(?:[^\/#?]+@)?)(\S+?)(?::\d+)?\s*(?:[\/#?]|$)/);
-          if (!matchedURL)
-            return;
-
-          let [, preDomain, schemeWSlashes, domain] = matchedURL;
-          // We strip http, so we should not show the scheme box for it.
-          if (!this._mayTrimURLs || schemeWSlashes != "http://") {
-            this.scheme.value = schemeWSlashes;
-            this.inputField.style.setProperty("--urlbar-scheme-size",
-                                              schemeWSlashes.length + "ch");
-          }
-
-          // Make sure the host is always visible. Since it is aligned on
-          // the first strong directional character, we set the overflow
-          // appropriately.
-          this.selectionStart = this.selectionEnd = 0;
-          window.requestAnimationFrame(() => {
-            // Check for re-entrance. On focus change this formatting code is
-            // invoked regardless, thus this should be enough.
-            if (this._formattingInstance != instance)
-              return;
-            let isDomainRTL = window.windowUtils.getDirectionFromText(domain);
-            // In the future, for example in bug 525831, we may add a forceRTL
-            // char just after the domain, and in such a case we should not
-            // scroll to the left.
-            if (isDomainRTL && value[preDomain.length + domain.length] != "\u200E") {
-              this.inputField.scrollLeft = this.inputField.scrollLeftMax;
-            }
-          });
-
-          if (!this._formattingEnabled)
-            return;
-
-          this.formatScheme(controller.SELECTION_URLSECONDARY);
-
-          // Strike out the "https" part if mixed active content is loaded.
-          if (this.getAttribute("pageproxystate") == "valid" &&
-              value.startsWith("https:") &&
-              gBrowser.securityUI.state &
-                Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT) {
-            let range = document.createRange();
-            range.setStart(textNode, 0);
-            range.setEnd(textNode, 5);
-            strikeOut.addRange(range);
-            this.formatScheme(controller.SELECTION_URLSTRIKEOUT);
-          }
-
-          let baseDomain = domain;
-          let subDomain = "";
-          try {
-            baseDomain = Services.eTLD.getBaseDomainFromHost(uriInfo.fixedURI.host);
-            if (!domain.endsWith(baseDomain)) {
-              // getBaseDomainFromHost converts its resultant to ACE.
-              let IDNService = Cc["@mozilla.org/network/idn-service;1"]
-                               .getService(Ci.nsIIDNService);
-              baseDomain = IDNService.convertACEtoUTF8(baseDomain);
-            }
-          } catch (e) {}
-          if (baseDomain != domain) {
-            subDomain = domain.slice(0, -baseDomain.length);
-          }
-
-          let rangeLength = preDomain.length + subDomain.length - trimmedLength;
-          if (rangeLength) {
-            let range = document.createRange();
-            range.setStart(textNode, 0);
-            range.setEnd(textNode, rangeLength);
-            selection.addRange(range);
-          }
-
-          let startRest = preDomain.length + domain.length - trimmedLength;
-          if (startRest < value.length - trimmedLength) {
-            let range = document.createRange();
-            range.setStart(textNode, startRest);
-            range.setEnd(textNode, value.length - trimmedLength);
-            selection.addRange(range);
-          }
-        ]]></body>
-      </method>
-
-      <method name="formatScheme">
-        <parameter name="selectionType"/>
-        <parameter name="clear"/>
-        <body><![CDATA[
-          let editor = this.scheme.editor;
-          let controller = editor.selectionController;
-          let textNode = editor.rootElement.firstChild;
-          let selection = controller.getSelection(selectionType);
-          if (clear) {
-            selection.removeAllRanges();
-          } else {
-            let r = document.createRange();
-            r.setStart(textNode, 0);
-            r.setEnd(textNode, textNode.textContent.length);
-            selection.addRange(r);
-          }
+          this.valueFormatter.update();
         ]]></body>
       </method>
 
@@ -676,7 +582,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
           // don't revert to last valid url unless page is NOT loading
           // and user is NOT key-scrolling through autocomplete list
           if (!XULBrowserWindow.isBusy && !isScrolling) {
-            URLBarSetURI();
+            URLBarSetURI(null, true);
 
             // If the value isn't empty and the urlbar has focus, select the value.
             if (this.value && this.hasAttribute("focused"))
@@ -695,11 +601,16 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
           let isMouseEvent = event instanceof MouseEvent;
           let reuseEmpty = !isMouseEvent;
           let where = undefined;
-          if (isMouseEvent) {
-            where = whereToOpenLink(event, false, false);
+          if (!isMouseEvent && event && event.altKey) {
+            // We support using 'alt' to open in a tab, because ctrl/shift
+            // might be used for canonizing URLs:
+            where = event.shiftKey ? "tabshifted" : "tab";
+          } else if (!isMouseEvent && this._ctrlCanonizesURLs && event && event.ctrlKey) {
+            // If we're allowing canonization, and this is a key event with ctrl
+            // pressed, open in current tab to allow ctrl-enter to canonize URL.
+            where = "current";
           } else {
-            let altEnter = event && event.altKey;
-            where = altEnter ? "tab" : "current";
+            where = whereToOpenLink(event, false, false);
           }
           if (this.openInTab) {
             if (where == "current") {
@@ -709,7 +620,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             }
             reuseEmpty = true;
           }
-          if (where == "tab" && reuseEmpty && isTabEmpty(gBrowser.selectedTab)) {
+          if (where == "tab" && reuseEmpty && gBrowser.selectedTab.isEmpty) {
             where = "current";
           }
           return where;
@@ -745,9 +656,6 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             return;
           }
 
-          BrowserUsageTelemetry.recordUrlbarSelectedResultMethod(
-            event, this.userSelectionBehavior);
-
           // Determine whether to use the selected one-off search button.  In
           // one-off search buttons parlance, "selected" means that the button
           // has been navigated to via the keyboard.  So we want to use it if
@@ -772,6 +680,9 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
           if (!url) {
             return;
           }
+
+          BrowserUsageTelemetry.recordUrlbarSelectedResultMethod(
+            event, this.userSelectionBehavior);
 
           let mayInheritPrincipal = false;
           let postData = null;
@@ -810,7 +721,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
                 break;
               case "keyword":
                 if (action.params.postData) {
-                  postData = getPostDataStream(action.params.postData);
+                  postData = UrlbarUtils.getPostDataStream(action.params.postData);
                 }
                 mayInheritPrincipal = true;
                 url = action.params.url;
@@ -825,11 +736,17 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
                   };
 
                   if (switchToTabHavingURI(url, false, loadOpts) &&
-                      isTabEmpty(prevTab)) {
+                      prevTab.isEmpty) {
                     gBrowser.removeTab(prevTab);
                   }
                   return;
                 }
+
+                // Once we get here, we got a switchtab action but the user
+                // bypassed it by pressing shift/meta/ctrl. Those modifiers
+                // might otherwise affect where we open - we always want to
+                // open in the current tab.
+                where = "current";
                 break;
               case "searchengine":
                 if (selectedOneOff && selectedOneOff.engine) {
@@ -838,7 +755,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
                 }
                 const actionDetails = {
                   isSuggestion: !!action.params.searchSuggestion,
-                  isAlias: !!action.params.alias
+                  alias: action.params.alias,
                 };
                 [url, postData] = this._parseAndRecordSearchEngineLoad(
                   action.params.engineName,
@@ -866,7 +783,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
               new URL(url);
             } catch (ex) {
               let lastLocationChange = browser.lastLocationChange;
-              getShortcutOrURIAndPostData(url).then(data => {
+              UrlbarUtils.getShortcutOrURIAndPostData(url).then(data => {
                 if (where != "current" ||
                     browser.lastLocationChange == lastLocationChange) {
                   this._loadURL(data.url, browser, data.postData, where,
@@ -916,7 +833,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             browser.initialPageLoadedFromURLBar = url;
           }
           try {
-            addToUrlbarHistory(url);
+            UrlbarUtils.addToUrlbarHistory(url, window);
           } catch (ex) {
             // Things may go wrong when adding url to session history,
             // but don't let that interfere with the loading of the url.
@@ -932,11 +849,11 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             params.targetBrowser = browser;
             params.indicateErrorPageLoad = true;
             params.allowPinnedTabHostChange = true;
-            params.disallowInheritPrincipal = !mayInheritPrincipal;
             params.allowPopups = url.startsWith("javascript:");
           } else {
             params.initiatingDoc = document;
           }
+          params.allowInheritPrincipal = mayInheritPrincipal;
 
           if (openUILinkParams) {
             for (let key in openUILinkParams) {
@@ -962,6 +879,9 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
               this.handleRevert();
             }
           }
+
+          // Ensure the start of the URL is visible for usability reasons.
+          this.selectionStart = this.selectionEnd = 0;
         ]]></body>
       </method>
 
@@ -1004,40 +924,19 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
           // Only add the suffix when the URL bar value isn't already "URL-like",
           // and only if we get a keyboard event, to match user expectations.
           if (!/^\s*[^.:\/\s]+(?:\/.*|\s*)$/i.test(aUrl) ||
-              !(aTriggeringEvent instanceof KeyboardEvent)) {
+              !this._ctrlCanonizesURLs ||
+              !(aTriggeringEvent instanceof KeyboardEvent) ||
+              !aTriggeringEvent.ctrlKey) {
             return;
           }
 
-          let url = aUrl;
-          let accel = AppConstants.platform == "macosx" ?
-                      aTriggeringEvent.metaKey :
-                      aTriggeringEvent.ctrlKey;
-          let shift = aTriggeringEvent.shiftKey;
-          let suffix = "";
-
-          switch (true) {
-            case (accel && shift):
-              suffix = ".org/";
-              break;
-            case (shift):
-              suffix = ".net/";
-              break;
-            case (accel):
-              try {
-                suffix = Services.prefs.getCharPref("browser.fixup.alternate.suffix");
-                if (suffix.charAt(suffix.length - 1) != "/")
-                  suffix += "/";
-              } catch (e) {
-                suffix = ".com/";
-              }
-              break;
+          let suffix = Services.prefs.getCharPref("browser.fixup.alternate.suffix", ".com/");
+          if (!suffix.endsWith("/")) {
+            suffix += "/";
           }
-
-          if (!suffix)
-            return;
 
           // trim leading/trailing spaces (bug 233205)
-          url = url.trim();
+          let url = aUrl.trim();
 
           // Tack www. and suffix on.  If user has appended directories, insert
           // suffix before them (bug 279035).  Be careful not to get two slashes.
@@ -1055,15 +954,15 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
       <method name="_initURLTooltip">
         <body><![CDATA[
-          if (this.focused || !this.hasAttribute("textoverflow"))
+          if (this.focused || !this._inOverflow)
             return;
-          this.inputField.setAttribute("tooltiptext", this.value);
+          this.inputField.setAttribute("title", this.value);
         ]]></body>
       </method>
 
       <method name="_hideURLTooltip">
         <body><![CDATA[
-          this.inputField.removeAttribute("tooltiptext");
+          this.inputField.removeAttribute("title");
         ]]></body>
       </method>
 
@@ -1141,7 +1040,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             this.handleCommand(null, undefined, undefined, triggeringPrincipal);
             // Force not showing the dropped URI immediately.
             gBrowser.userTypedValue = null;
-            URLBarSetURI();
+            URLBarSetURI(null, true);
           }
         ]]></body>
       </method>
@@ -1280,7 +1179,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
                    (aCommand != "cmd_cut" || !this.urlbar.readOnly) &&
                    this.urlbar.selectionStart < this.urlbar.selectionEnd;
           },
-          onEvent(aEventName) {}
+          onEvent(aEventName) {},
         })
       ]]></field>
 
@@ -1301,8 +1200,8 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
               case "delay":
                 this.timeout = this._prefs.getIntPref(aData);
                 break;
-              case "formatting.enabled":
-                this._formattingEnabled = this._prefs.getBoolPref(aData);
+              case "ctrlCanonizesURLs":
+                this._ctrlCanonizesURLs = this._prefs.getBoolPref(aData);
                 break;
               case "speculativeConnect.enabled":
                 this.speculativeConnectEnabled = this._prefs.getBoolPref(aData);
@@ -1343,8 +1242,10 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
       <method name="_enableOrDisableOneOffSearches">
         <body><![CDATA[
-          let enable = this._prefs.getBoolPref("oneOffSearches");
-          this.popup.enableOneOffSearches(enable);
+          this.popup.toggleOneOffSearches(
+            this._prefs.getBoolPref("oneOffSearches"),
+            "pref"
+          );
         ]]></body>
       </method>
 
@@ -1395,20 +1296,31 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             case "mouseout":
               this._hideURLTooltip();
               break;
-            case "overflow":
-              if (!this.value) {
-                // We initially get a spurious overflow event from the
-                // anonymous div containing the placeholder text; bail out.
+            case "overflow": {
+              const targetIsPlaceholder =
+                !aEvent.originalTarget.classList.contains("anonymous-div");
+              // We only care about the non-placeholder text.
+              // This shouldn't be needed, see bug 1487036.
+              if (targetIsPlaceholder) {
                 break;
               }
               this._inOverflow = true;
               this.updateTextOverflow();
               break;
-            case "underflow":
+            }
+            case "underflow": {
+              const targetIsPlaceholder =
+                !aEvent.originalTarget.classList.contains("anonymous-div");
+              // We only care about the non-placeholder text.
+              // This shouldn't be needed, see bug 1487036.
+              if (targetIsPlaceholder) {
+                break;
+              }
               this._inOverflow = false;
               this.updateTextOverflow();
               this._hideURLTooltip();
               break;
+            }
             case "scrollend":
               this.updateTextOverflow();
               break;
@@ -1417,6 +1329,26 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
               // to handle cases like backspace, autofill or repeated searches.
               // Ensure to clear those internal caches when switching tabs.
               this.controller.resetInternalState();
+              break;
+            case "resize":
+              if (aEvent.target == window) {
+                // Close the popup since it would be wrongly sized, we'll
+                // recalculate a proper size on reopening. For example, this may
+                // happen when using special OS resize functions like Win+Arrow.
+                this.closePopup();
+
+                // Make sure the host remains visible in the input field
+                // when the window is resized.  We don't want to
+                // hurt resize performance though, so do this only after resize
+                // events have stopped and a small timeout has elapsed.
+                if (this._resizeThrottleTimeout) {
+                  clearTimeout(this._resizeThrottleTimeout);
+                }
+                this._resizeThrottleTimeout = setTimeout(() => {
+                  this._resizeThrottleTimeout = null;
+                  this.valueFormatter.ensureFormattedHostVisible();
+                }, 100);
+              }
               break;
           }
         ]]></body>
@@ -1553,10 +1485,20 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             } else {
               this.removeAttribute("usertyping");
             }
+            // If the popup already had accessibility focus, bring it back to
+            // the input, since the user is editing.
+            if (!this.popup.richlistbox.suppressMenuItemEvent &&
+                this.popup.richlistbox.currentItem) {
+              this.popup.richlistbox.currentItem._fireEvent("DOMMenuItemInactive");
+            }
+            // The user is typing, so don't give accessibility focus to the
+            // popup, even if an item gets automatically selected.
+            this.popup.richlistbox.suppressMenuItemEvent = true;
             // Only wait for a result when we are sure to get one.  In some
             // cases, like when pasting the same exact text, we may not fire
             // a new search and we won't get a result.
-            if (this.mController.handleText()) {
+            this._onInputHandledText = this.mController.handleText();
+            if (this._onInputHandledText) {
               this.gotResultForCurrentQuery = false;
               this._searchStartDate = Cu.now();
               this._deferredKeyEventQueue = [];
@@ -1599,9 +1541,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
           }
 
           let canonizeValue = this.value;
-          if (event.shiftKey || (AppConstants.platform === "macosx" ?
-                                 event.metaKey :
-                                 event.ctrlKey)) {
+          if (event.ctrlKey) {
             let action = this._parseActionUrl(canonizeValue);
             if (action && "searchSuggestion" in action.params) {
               canonizeValue = action.params.searchSuggestion;
@@ -1694,6 +1634,54 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
                 this._showSearchSuggestionNotificationOnMouseFocus = false;
               }
             }
+          }
+        ]]></body>
+      </method>
+
+      <!--
+        Sets the input's value, starts a search, and opens the popup.
+
+        @param  value
+                The input's value will be set to this value, and the search will
+                use it as its query.
+      -->
+      <method name="search">
+        <parameter name="value"/>
+        <body><![CDATA[
+          // Hide the suggestions notification if the search uses an "@engine"
+          // search engine alias.
+          if (value.trim()[0] == "@") {
+            let which = this.whichSearchSuggestionsNotification;
+            this._whichSearchSuggestionsNotification = "none";
+            this.popup.addEventListener("popuphidden", () => {
+              this._whichSearchSuggestionsNotification = which;
+            }, {once: true});
+          }
+
+          // We want the value to be treated as text that the user typed.  It
+          // should go through the controller.handleText() path in onInput() so
+          // that gBrowser.userTypedValue, this.valueIsTyped, etc. are set and
+          // nsAutoCompleteController::HandleText() is called.  Set this.value
+          // and fire an input event to do that.  (If we set this.textValue we'd
+          // get an input event for free, but it would also set mIgnoreInput,
+          // skipping all of the above requirements.)
+          this.focus();
+          this.value = value;
+
+          // Avoid selecting the text if this method is called twice in a row.
+          this.selectionStart = -1;
+
+          let event = document.createEvent("Events");
+          event.initEvent("input", true, true);
+          this.dispatchEvent(event);
+
+          // handleText() ignores the value if it's the same as the previous
+          // value, but we want consecutive searches with the same value to be
+          // possible.  If handleText() returned false, then manually start a
+          // new search here.
+          if (!this._onInputHandledText) {
+            this.gotResultForCurrentQuery = false;
+            this.controller.startSearch(value);
           }
         ]]></body>
       </method>
@@ -1871,12 +1859,12 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
                        flex="1"/>
       <xul:hbox anonid="footer">
         <children/>
-        <xul:vbox anonid="one-off-search-buttons"
-                  class="search-one-offs"
-                  compact="true"
-                  includecurrentengine="true"
-                  disabletab="true"
-                  flex="1"/>
+        <xul:search-one-offs anonid="one-off-search-buttons"
+                             class="search-one-offs"
+                             compact="true"
+                             includecurrentengine="true"
+                             disabletab="true"
+                             flex="1"/>
       </xul:hbox>
     </content>
 
@@ -1914,8 +1902,6 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
                                                 "one-off-search-buttons");
       </field>
 
-      <field name="_oneOffSearchesEnabled">false</field>
-
       <field name="_overrideValue">null</field>
       <property name="overrideValue"
                 onget="return this._overrideValue;"
@@ -1933,10 +1919,30 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
         ]]></body>
       </method>
 
-      <method name="enableOneOffSearches">
+      <field name="_oneOffSearchesEnabledByReason">new Map()</field>
+
+      <method name="toggleOneOffSearches">
         <parameter name="enable"/>
+        <parameter name="reason"/>
         <body><![CDATA[
-          this._oneOffSearchesEnabled = enable;
+          this._oneOffSearchesEnabledByReason.set(reason || "runtime", enable);
+          this._syncOneOffSearchesEnabled();
+        ]]></body>
+      </method>
+
+      <method name="_syncOneOffSearchesEnabled">
+        <body><![CDATA[
+          // If the popup hasn't ever been opened yet, then don't actually do
+          // anything.  (The popup will still be hidden in that case.)  The
+          // input adds a popupshowing listener that will call this method back
+          // and lazily initialize the one-off buttons the first time the popup
+          // opens.  There are performance tests that fail if we don't do this.
+          if (this.hidden) {
+            return;
+          }
+
+          let enable = Array.from(this._oneOffSearchesEnabledByReason.values())
+                            .every(v => v);
           if (enable) {
             this.oneOffSearchButtons.telemetryOrigin = "urlbar";
             this.oneOffSearchButtons.style.display = "-moz-box";
@@ -1952,6 +1958,12 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
           }
         ]]></body>
       </method>
+
+      <property name="oneOffSearchesEnabled" readonly="true">
+        <getter><![CDATA[
+          return this.oneOffSearchButtons.style.display != "none";
+        ]]></getter>
+      </property>
 
       <!-- Override this so that navigating between items results in an item
            always being selected. -->
@@ -2181,12 +2193,21 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             window.windowUtils.getBoundsWithoutFlushing(document.getElementById("nav-bar")).bottom -
             window.windowUtils.getBoundsWithoutFlushing(aInput).bottom);
 
+          if (!this.richlistbox.suppressMenuItemEvent && this.richlistbox.currentItem) {
+            // The richlistbox fired a DOMMenuItemActive for accessibility,
+            // but because the popup isn't open yet, accessibility will ignore
+            // it. Therefore, fire it again once the popup opens.
+            this.addEventListener("popupshown", () => {
+              this.richlistbox.currentItem._fireEvent("DOMMenuItemActive");
+            }, {once: true});
+          }
+
           this.openPopup(aElement, "after_start", 0, yOffset, false, false);
 
           // Do this immediately after we've requested the popup to open. This
           // will cause sync reflows but prevents flickering.
           if (needsHandleOverUnderflow) {
-            for (let item of this.richlistbox.childNodes) {
+            for (let item of this.richlistbox.children) {
               item.handleOverUnderflow();
             }
           }
@@ -2203,7 +2224,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
           }
           let lastRowCount = this._lastRowCount;
           // Figure out how many rows to show
-          let rows = this.richlistbox.childNodes;
+          let rows = this.richlistbox.children;
           this._lastRowCount = rows.length;
           let numRows = Math.min(this.matchCount, this.maxRows, rows.length);
 
@@ -2338,25 +2359,6 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
         </body>
       </method>
 
-      <method name="_selectedOneOffChanged">
-        <body><![CDATA[
-          // Update all searchengine result items to use the newly selected
-          // engine.
-          for (let item of this.richlistbox.childNodes) {
-            if (item.collapsed) {
-              break;
-            }
-            let url = item.getAttribute("url");
-            if (url) {
-              let action = item._parseActionUrl(url);
-              if (action && action.type == "searchengine") {
-                item._adjustAcItem();
-              }
-            }
-          }
-        ]]></body>
-      </method>
-
       <!-- This handles keypress changes to the selection among the one-off
            search buttons and between the one-offs and the listbox.  It returns
            true if the keypress was consumed and false if not. -->
@@ -2448,13 +2450,27 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
           <![CDATA[
             // If nothing is selected yet, select the first result if it is a
             // pre-selected "heuristic" result.  (See UnifiedComplete.js.)
-            if (this.selectedIndex == -1 && this._isFirstResultHeuristic) {
-              // Don't fire DOMMenuItemActive so that screen readers still see
-              // the input as being focused.
-              this.richlistbox.suppressMenuItemEvent = true;
+            let selectHeuristic =
+              this.selectedIndex == -1 && this._isFirstResultHeuristic;
+            if (selectHeuristic) {
               this.input.controller.setInitiallySelectedIndex(0);
-              this.richlistbox.suppressMenuItemEvent = false;
             }
+
+            // If this is the heuristic result of a new search, format its
+            // search alias in the input or remove the formatting of the
+            // previous alias, as necessary.  We need to check selectHeuristic
+            // because the result may have already been added but only now is
+            // being selected, and we need to check gotResultForCurrentQuery
+            // because the result may be from the previous search and already
+            // selected and is now being reused.
+            if (selectHeuristic || !this.input.gotResultForCurrentQuery) {
+              this.input.formatValue();
+
+              // Also, hide the one-off search buttons if the user is using, or
+              // starting to use, an "@engine" search engine alias.
+              this.toggleOneOffSearches(this.input.value.trim()[0] != "@");
+            }
+
             // If this is the first time we get the result from the current
             // search and we are not in the private context, we can speculatively
             // connect to the intended site as a performance optimization.
@@ -2471,7 +2487,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
                          this.input.urlbarSearchSuggestEnabled) {
                 // Preconnect to the current search engine only if the search
                 // suggestions are enabled.
-                let engine = Services.search.currentEngine;
+                let engine = Services.search.defaultEngine;
                 engine.speculativeConnect({window,
                                            originAttributes: gBrowser.contentPrincipal.originAttributes});
               }
@@ -2593,9 +2609,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
               child.style.display;
             child.style.display = "none";
           }
-          let XUL_NS =
-            "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-          let iframe = document.createElementNS(XUL_NS, "iframe");
+          let iframe = document.createXULElement("iframe");
           iframe.setAttribute("type", "content");
           iframe.setAttribute("flex", "1");
           iframe.style.transition = "height 100ms";
@@ -2608,7 +2622,33 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
     <handlers>
 
       <handler event="SelectedOneOffButtonChanged"><![CDATA[
-        this._selectedOneOffChanged();
+        // Update all searchengine result items to use the newly selected
+        // engine.
+        for (let item of this.richlistbox.children) {
+          if (item.collapsed) {
+            break;
+          }
+          let url = item.getAttribute("url");
+          if (url) {
+            let action = item._parseActionUrl(url);
+            if (action && action.type == "searchengine") {
+              item._adjustAcItem();
+            }
+          }
+        }
+
+        // If the selection moved from the results to the one-off settings
+        // button, then call formatValue to remove the formatting of the search
+        // alias in the input, if any.  In all other cases the alias formatting
+        // is removed when the input's value setter calls formatValue, but in
+        // this specific case, at the time that formatValue is called,
+        // oneOffSearchButtons.selectedButton is still null, so the formatting
+        // is not removed.  The settings button is selected right after that.
+        if (this.oneOffSearchButtons.selectedButton ==
+              this.oneOffSearchButtons.settingsButtonCompact &&
+            (!event.detail || !event.detail.previousSelectedButton)) {
+          this.input.formatValue();
+        }
       ]]></handler>
 
       <handler event="mousedown"><![CDATA[
@@ -2710,7 +2750,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             configurable: true,
             enumerable: true,
             writable: true,
-            value: module.DownloadUtils
+            value: module.DownloadUtils,
           });
           return module.DownloadUtils;
         ]]></getter>
@@ -2733,9 +2773,8 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
         <parameter name="aMaxProgress"/>
         <body><![CDATA[
           if (aMaxProgress == -1) {
-            this.progressmeter.setAttribute("mode", "undetermined");
+            this.progressmeter.removeAttribute("value");
           } else {
-            this.progressmeter.setAttribute("mode", "determined");
             this.progressmeter.setAttribute("value", (aProgress * 100) / aMaxProgress);
           }
 
@@ -2805,14 +2844,10 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
           if (downloadingCount == 0) {
             this.destroy();
-            if (Services.prefs.getBoolPref("xpinstall.customConfirmationUI", false)) {
-              this.progressmeter.setAttribute("mode", "undetermined");
-              let status = gNavigatorBundle.getString("addonDownloadVerifying");
-              this.progresstext.setAttribute("value", status);
-              this.progresstext.setAttribute("tooltiptext", status);
-            } else {
-              PopupNotifications.remove(this.notification);
-            }
+            this.progressmeter.removeAttribute("value");
+            let status = gNavigatorBundle.getString("addonDownloadVerifying");
+            this.progresstext.setAttribute("value", status);
+            this.progresstext.setAttribute("tooltiptext", status);
           } else {
             this.setProgress(progress, maxProgress);
           }

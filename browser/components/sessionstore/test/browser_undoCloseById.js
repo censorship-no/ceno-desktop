@@ -8,7 +8,7 @@
 ChromeUtils.import("resource:///modules/sessionstore/SessionStore.jsm");
 
 async function openAndCloseTab(window, url) {
-  let tab = window.gBrowser.addTab(url);
+  let tab = BrowserTestUtils.addTab(window.gBrowser, url);
   await promiseBrowserLoaded(tab.linkedBrowser, true, url);
   await TabStateFlusher.flush(tab.linkedBrowser);
   await promiseRemoveTabAndSessionState(tab);
@@ -17,7 +17,7 @@ async function openAndCloseTab(window, url) {
 async function openWindow(url) {
   let win = await promiseNewWindowLoaded();
   let flags = Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY;
-  win.gBrowser.selectedBrowser.loadURI(url, { flags });
+  BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, url, { flags });
   await promiseBrowserLoaded(win.gBrowser.selectedBrowser, true, url);
   return win;
 }

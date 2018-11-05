@@ -13,14 +13,11 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/RandomNum.h"
 #include "mozilla/Unused.h"
 #include "mozilla/WrappingOperations.h"
 
 #include <cmath>
-#include <fcntl.h>
-#ifdef XP_UNIX
-# include <unistd.h>
-#endif
 
 #include "fdlibm.h"
 #include "jsapi.h"
@@ -36,75 +33,9 @@
 
 #include "vm/JSObject-inl.h"
 
-#if defined(XP_WIN)
-// #define needed to link in RtlGenRandom(), a.k.a. SystemFunction036.  See the
-// "Community Additions" comment on MSDN here:
-// https://msdn.microsoft.com/en-us/library/windows/desktop/aa387694.aspx
-# define SystemFunction036 NTAPI SystemFunction036
-# include <ntsecapi.h>
-# undef SystemFunction036
-#endif
-
-#if defined(ANDROID) || defined(XP_DARWIN) || defined(__DragonFly__) || \
-    defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
-# include <stdlib.h>
-# define HAVE_ARC4RANDOM
-#endif
-
-#if defined(__linux__)
-# include <linux/random.h> // For GRND_NONBLOCK.
-# include <sys/syscall.h> // For SYS_getrandom.
-
-// Older glibc versions don't define SYS_getrandom, so we define it here if
-// it's not available. See bug 995069.
-# if defined(__x86_64__)
-#  define GETRANDOM_NR 318
-# elif defined(__i386__)
-#  define GETRANDOM_NR 355
-# elif defined(__aarch64__)
-#  define GETRANDOM_NR 278
-# elif defined(__arm__)
-#  define GETRANDOM_NR 384
-# elif defined(__powerpc__)
-#  define GETRANDOM_NR 359
-# elif defined(__s390__)
-#  define GETRANDOM_NR 349
-# elif defined(__mips__)
-#  include <sgidefs.h>
-#  if _MIPS_SIM == _MIPS_SIM_ABI32
-#    define GETRANDOM_NR 4353
-#  elif _MIPS_SIM == _MIPS_SIM_ABI64
-#    define GETRANDOM_NR 5313
-#  elif _MIPS_SIM == _MIPS_SIM_NABI32
-#    define GETRANDOM_NR 6317
-#  endif
-# endif
-
-# if defined(SYS_getrandom)
-// We have SYS_getrandom. Use it to check GETRANDOM_NR. Only do this if we set
-// GETRANDOM_NR so tier 3 platforms with recent glibc are not forced to define
-// it for no good reason.
-#  if defined(GETRANDOM_NR)
-static_assert(GETRANDOM_NR == SYS_getrandom,
-              "GETRANDOM_NR should match the actual SYS_getrandom value");
-#  endif
-# else
-#  define SYS_getrandom GETRANDOM_NR
-# endif
-
-# if defined(GRND_NONBLOCK)
-static_assert(GRND_NONBLOCK == 1, "If GRND_NONBLOCK is not 1 the #define below is wrong");
-# else
-#  define GRND_NONBLOCK 1
-# endif
-
-#endif // defined(__linux__)
-
 using namespace js;
 
 using mozilla::Abs;
-using mozilla::NumberEqualsInt32;
-using mozilla::NumberIsInt32;
 using mozilla::ExponentComponent;
 using mozilla::FloatingPoint;
 using mozilla::IsFinite;
@@ -112,13 +43,17 @@ using mozilla::IsInfinite;
 using mozilla::IsNaN;
 using mozilla::IsNegative;
 using mozilla::IsNegativeZero;
-using mozilla::PositiveInfinity;
+using mozilla::Maybe;
 using mozilla::NegativeInfinity;
+using mozilla::NumberEqualsInt32;
+using mozilla::NumberIsInt32;
+using mozilla::PositiveInfinity;
 using mozilla::WrappingMultiply;
 using JS::ToNumber;
 using JS::GenericNaN;
 
 static const JSConstDoubleSpec math_constants[] = {
+    // clang-format off
     {"E"      ,  M_E       },
     {"LOG2E"  ,  M_LOG2E   },
     {"LOG10E" ,  M_LOG10E  },
@@ -128,6 +63,7 @@ static const JSConstDoubleSpec math_constants[] = {
     {"SQRT2"  ,  M_SQRT2   },
     {"SQRT1_2",  M_SQRT1_2 },
     {nullptr  ,  0         }
+    // clang-format on
 };
 
 typedef double (*UnaryMathFunctionType)(double);
@@ -137,8 +73,9 @@ static bool
 math_function(JSContext* cx, HandleValue val, MutableHandleValue res)
 {
     double x;
-    if (!ToNumber(cx, val, &x))
+    if (!ToNumber(cx, val, &x)) {
         return false;
+    }
 
     // NB: Always stored as a double so the math function can be inlined
     // through MMathFunction.
@@ -169,8 +106,9 @@ bool
 js::math_abs_handle(JSContext* cx, js::HandleValue v, js::MutableHandleValue r)
 {
     double x;
-    if (!ToNumber(cx, v, &x))
+    if (!ToNumber(cx, v, &x)) {
         return false;
+    }
 
     double z = Abs(x);
     r.setNumber(z);
@@ -233,7 +171,7 @@ js::math_atan(JSContext* cx, unsigned argc, Value* vp)
 double
 js::ecmaAtan2(double y, double x)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
     return fdlibm::atan2(y, x);
 }
 
@@ -241,12 +179,14 @@ bool
 js::math_atan2_handle(JSContext* cx, HandleValue y, HandleValue x, MutableHandleValue res)
 {
     double dy;
-    if (!ToNumber(cx, y, &dy))
+    if (!ToNumber(cx, y, &dy)) {
         return false;
+    }
 
     double dx;
-    if (!ToNumber(cx, x, &dx))
+    if (!ToNumber(cx, x, &dx)) {
         return false;
+    }
 
     double z = ecmaAtan2(dy, dx);
     res.setDouble(z);
@@ -264,7 +204,7 @@ js::math_atan2(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_ceil_impl(double x)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
     return fdlibm::ceil(x);
 }
 
@@ -304,8 +244,9 @@ js::math_clz32(JSContext* cx, unsigned argc, Value* vp)
     }
 
     uint32_t n;
-    if (!ToUint32(cx, args[0], &n))
+    if (!ToUint32(cx, args[0], &n)) {
         return false;
+    }
 
     if (n == 0) {
         args.rval().setInt32(32);
@@ -345,7 +286,7 @@ js::math_exp(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_floor_impl(double x)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
     return fdlibm::floor(x);
 }
 
@@ -353,8 +294,9 @@ bool
 js::math_floor_handle(JSContext* cx, HandleValue v, MutableHandleValue r)
 {
     double d;
-    if (!ToNumber(cx, v, &d))
+    if (!ToNumber(cx, v, &d)) {
         return false;
+    }
 
     double z = math_floor_impl(d);
     r.setNumber(z);
@@ -379,10 +321,12 @@ bool
 js::math_imul_handle(JSContext* cx, HandleValue lhs, HandleValue rhs, MutableHandleValue res)
 {
     int32_t a = 0, b = 0;
-    if (!lhs.isUndefined() && !ToInt32(cx, lhs, &a))
+    if (!lhs.isUndefined() && !ToInt32(cx, lhs, &a)) {
         return false;
-    if (!rhs.isUndefined() && !ToInt32(cx, rhs, &b))
+    }
+    if (!rhs.isUndefined() && !ToInt32(cx, rhs, &b)) {
         return false;
+    }
 
     res.setInt32(WrappingMultiply(a, b));
     return true;
@@ -410,8 +354,9 @@ bool
 js::RoundFloat32(JSContext* cx, HandleValue arg, MutableHandleValue res)
 {
     float f;
-    if (!RoundFloat32(cx, arg, &f))
+    if (!RoundFloat32(cx, arg, &f)) {
         return false;
+    }
 
     res.setDouble(static_cast<double>(f));
     return true;
@@ -434,7 +379,7 @@ js::math_fround(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_log_impl(double x)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
     return fdlibm::log(x);
 }
 
@@ -453,11 +398,12 @@ js::math_log(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_max_impl(double x, double y)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
 
     // Math.max(num, NaN) => NaN, Math.max(-0, +0) => +0
-    if (x > y || IsNaN(x) || (x == y && IsNegative(y)))
+    if (x > y || IsNaN(x) || (x == y && IsNegative(y))) {
         return x;
+    }
     return y;
 }
 
@@ -469,8 +415,9 @@ js::math_max(JSContext* cx, unsigned argc, Value* vp)
     double maxval = NegativeInfinity<double>();
     for (unsigned i = 0; i < args.length(); i++) {
         double x;
-        if (!ToNumber(cx, args[i], &x))
+        if (!ToNumber(cx, args[i], &x)) {
             return false;
+        }
         maxval = math_max_impl(x, maxval);
     }
     args.rval().setNumber(maxval);
@@ -480,11 +427,12 @@ js::math_max(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_min_impl(double x, double y)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
 
     // Math.min(num, NaN) => NaN, Math.min(-0, +0) => -0
-    if (x < y || IsNaN(x) || (x == y && IsNegativeZero(x)))
+    if (x < y || IsNaN(x) || (x == y && IsNegativeZero(x))) {
         return x;
+    }
     return y;
 }
 
@@ -496,8 +444,9 @@ js::math_min(JSContext* cx, unsigned argc, Value* vp)
     double minval = PositiveInfinity<double>();
     for (unsigned i = 0; i < args.length(); i++) {
         double x;
-        if (!ToNumber(cx, args[i], &x))
+        if (!ToNumber(cx, args[i], &x)) {
             return false;
+        }
         minval = math_min_impl(x, minval);
     }
     args.rval().setNumber(minval);
@@ -509,15 +458,18 @@ js::minmax_impl(JSContext* cx, bool max, HandleValue a, HandleValue b, MutableHa
 {
     double x, y;
 
-    if (!ToNumber(cx, a, &x))
+    if (!ToNumber(cx, a, &x)) {
         return false;
-    if (!ToNumber(cx, b, &y))
+    }
+    if (!ToNumber(cx, b, &y)) {
         return false;
+    }
 
-    if (max)
+    if (max) {
         res.setNumber(math_max_impl(x, y));
-    else
+    } else {
         res.setNumber(math_min_impl(x, y));
+    }
 
     return true;
 }
@@ -525,7 +477,7 @@ js::minmax_impl(JSContext* cx, bool max, HandleValue a, HandleValue b, MutableHa
 double
 js::powi(double x, int32_t y)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
     uint32_t n = Abs(y);
     double m = x;
     double p = 1;
@@ -554,36 +506,41 @@ js::powi(double x, int32_t y)
 double
 js::ecmaPow(double x, double y)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
 
     /*
      * Use powi if the exponent is an integer-valued double. We don't have to
      * check for NaN since a comparison with NaN is always false.
      */
     int32_t yi;
-    if (NumberEqualsInt32(y, &yi))
+    if (NumberEqualsInt32(y, &yi)) {
         return powi(x, yi);
+    }
 
     /*
      * Because C99 and ECMA specify different behavior for pow(),
      * we need to wrap the libm call to make it ECMA compliant.
      */
-    if (!IsFinite(y) && (x == 1.0 || x == -1.0))
+    if (!IsFinite(y) && (x == 1.0 || x == -1.0)) {
         return GenericNaN();
+    }
 
     /* pow(x, +-0) is always 1, even for x = NaN (MSVC gets this wrong). */
-    if (y == 0)
+    if (y == 0) {
         return 1;
+    }
 
     /*
      * Special case for square roots. Note that pow(x, 0.5) != sqrt(x)
      * when x = -0.0, so we have to guard for this.
      */
     if (IsFinite(x) && x != 0.0) {
-        if (y == 0.5)
+        if (y == 0.5) {
             return sqrt(x);
-        if (y == -0.5)
+        }
+        if (y == -0.5) {
             return 1.0 / sqrt(x);
+        }
     }
     return pow(x, y);
 }
@@ -594,12 +551,14 @@ js::math_pow(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
 
     double x;
-    if (!ToNumber(cx, args.get(0), &x))
+    if (!ToNumber(cx, args.get(0), &x)) {
         return false;
+    }
 
     double y;
-    if (!ToNumber(cx, args.get(1), &y))
+    if (!ToNumber(cx, args.get(1), &y)) {
         return false;
+    }
 
     double z = ecmaPow(x, y);
     args.rval().setNumber(z);
@@ -609,35 +568,13 @@ js::math_pow(JSContext* cx, unsigned argc, Value* vp)
 uint64_t
 js::GenerateRandomSeed()
 {
-    uint64_t seed = 0;
-
-#if defined(XP_WIN)
-    MOZ_ALWAYS_TRUE(RtlGenRandom(&seed, sizeof(seed)));
-#elif defined(HAVE_ARC4RANDOM)
-    seed = (static_cast<uint64_t>(arc4random()) << 32) | arc4random();
-#elif defined(XP_UNIX)
-    bool done = false;
-# if defined(__linux__)
-    // Try the relatively new getrandom syscall first. It's the preferred way
-    // on Linux as /dev/urandom may not work inside chroots and is harder to
-    // sandbox (see bug 995069).
-    int ret = syscall(SYS_getrandom, &seed, sizeof(seed), GRND_NONBLOCK);
-    done = (ret == sizeof(seed));
-# endif
-    if (!done) {
-        int fd = open("/dev/urandom", O_RDONLY);
-        if (fd >= 0) {
-            mozilla::Unused << read(fd, static_cast<void*>(&seed), sizeof(seed));
-            close(fd);
-        }
-    }
-#else
-# error "Platform needs to implement GenerateRandomSeed()"
-#endif
-
-    // Also mix in PRMJ_Now() in case we couldn't read random bits from the OS.
-    uint64_t timestamp = PRMJ_Now();
-    return seed ^ timestamp ^ (timestamp << 32);
+    Maybe<uint64_t> maybeSeed = mozilla::RandomUint64();
+    
+    return maybeSeed.valueOrFrom([] {
+        // Use PRMJ_Now() in case we couldn't read random bits from the OS.
+        uint64_t timestamp = PRMJ_Now();
+        return timestamp ^ (timestamp << 32);
+    });
 }
 
 void
@@ -680,8 +617,9 @@ bool
 js::math_round_handle(JSContext* cx, HandleValue arg, MutableHandleValue res)
 {
     double d;
-    if (!ToNumber(cx, arg, &d))
+    if (!ToNumber(cx, arg, &d)) {
         return false;
+    }
 
     d = math_round_impl(d);
     res.setNumber(d);
@@ -706,15 +644,17 @@ template float js::GetBiggestNumberLessThan<>(float x);
 double
 js::math_round_impl(double x)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
 
     int32_t ignored;
-    if (NumberEqualsInt32(x, &ignored))
+    if (NumberEqualsInt32(x, &ignored)) {
         return x;
+    }
 
     /* Some numbers are so big that adding 0.5 would give the wrong number. */
-    if (ExponentComponent(x) >= int_fast16_t(FloatingPoint<double>::kExponentShift))
+    if (ExponentComponent(x) >= int_fast16_t(FloatingPoint<double>::kExponentShift)) {
         return x;
+    }
 
     double add = (x >= 0) ? GetBiggestNumberLessThan(0.5) : 0.5;
     return std::copysign(fdlibm::floor(x + add), x);
@@ -726,12 +666,14 @@ js::math_roundf_impl(float x)
     AutoUnsafeCallWithABI unsafe;
 
     int32_t ignored;
-    if (NumberEqualsInt32(x, &ignored))
+    if (NumberEqualsInt32(x, &ignored)) {
         return x;
+    }
 
     /* Some numbers are so big that adding 0.5 would give the wrong number. */
-    if (ExponentComponent(x) >= int_fast16_t(FloatingPoint<float>::kExponentShift))
+    if (ExponentComponent(x) >= int_fast16_t(FloatingPoint<float>::kExponentShift)) {
         return x;
+    }
 
     float add = (x >= 0) ? GetBiggestNumberLessThan(0.5f) : 0.5f;
     return std::copysign(fdlibm::floorf(x + add), x);
@@ -753,7 +695,7 @@ js::math_round(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_sin_impl(double x)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
     return sin(x);
 }
 
@@ -786,7 +728,7 @@ js::math_sincos_impl(double x, double *sin, double *cos)
 double
 js::math_sqrt_impl(double x)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
     return sqrt(x);
 }
 
@@ -949,7 +891,7 @@ js::math_atanh(JSContext* cx, unsigned argc, Value* vp)
 double
 js::ecmaHypot(double x, double y)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
     return fdlibm::hypot(x, y);
 }
 
@@ -978,8 +920,9 @@ js::hypot4(double x, double y, double z, double w)
         return mozilla::PositiveInfinity<double>();
     }
 
-    if (mozilla::IsNaN(x) || mozilla::IsNaN(y) || mozilla::IsNaN(z) || mozilla::IsNaN(w))
+    if (mozilla::IsNaN(x) || mozilla::IsNaN(y) || mozilla::IsNaN(z) || mozilla::IsNaN(w)) {
         return GenericNaN();
+    }
 
     double scale = 0;
     double sumsq = 1;
@@ -1013,10 +956,12 @@ js::math_hypot_handle(JSContext* cx, HandleValueArray args, MutableHandleValue r
     // given. Do that here as well to get the same results.
     if (args.length() == 2) {
         double x, y;
-        if (!ToNumber(cx, args[0], &x))
+        if (!ToNumber(cx, args[0], &x)) {
             return false;
-        if (!ToNumber(cx, args[1], &y))
+        }
+        if (!ToNumber(cx, args[1], &y)) {
             return false;
+        }
 
         double result = ecmaHypot(x, y);
         res.setDouble(result);
@@ -1031,13 +976,15 @@ js::math_hypot_handle(JSContext* cx, HandleValueArray args, MutableHandleValue r
 
     for (unsigned i = 0; i < args.length(); i++) {
         double x;
-        if (!ToNumber(cx, args[i], &x))
+        if (!ToNumber(cx, args[i], &x)) {
             return false;
+        }
 
         isInfinite |= mozilla::IsInfinite(x);
         isNaN |= mozilla::IsNaN(x);
-        if (isInfinite || isNaN)
+        if (isInfinite || isNaN) {
             continue;
+        }
 
         hypot_step(scale, sumsq, x);
     }
@@ -1052,7 +999,7 @@ js::math_hypot_handle(JSContext* cx, HandleValueArray args, MutableHandleValue r
 double
 js::math_trunc_impl(double x)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
     return fdlibm::trunc(x);
 }
 
@@ -1067,8 +1014,9 @@ bool
 js::math_trunc_handle(JSContext* cx, HandleValue v, MutableHandleValue r)
 {
     double x;
-    if (!ToNumber(cx, v, &x))
+    if (!ToNumber(cx, v, &x)) {
         return false;
+    }
 
     r.setNumber(math_trunc_impl(x));
     return true;
@@ -1089,10 +1037,11 @@ js::math_trunc(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_sign_impl(double x)
 {
-    AutoUnsafeCallWithABI unsafe;
+    AutoUnsafeCallWithABI unsafe(UnsafeABIStrictness::AllowPendingExceptions);
 
-    if (mozilla::IsNaN(x))
+    if (mozilla::IsNaN(x)) {
         return GenericNaN();
+    }
 
     return x == 0 ? x : x < 0 ? -1 : 1;
 }
@@ -1101,8 +1050,9 @@ bool
 js::math_sign_handle(JSContext* cx, HandleValue v, MutableHandleValue r)
 {
     double x;
-    if (!ToNumber(cx, v, &x))
+    if (!ToNumber(cx, v, &x)) {
         return false;
+    }
 
     r.setNumber(math_sign_impl(x));
     return true;
@@ -1142,6 +1092,7 @@ math_toSource(JSContext* cx, unsigned argc, Value* vp)
 }
 
 static const JSFunctionSpec math_static_methods[] = {
+    // clang-format off
     JS_FN(js_toSource_str,  math_toSource,        0, 0),
     JS_INLINABLE_FN("abs",    math_abs,             1, 0, MathAbs),
     JS_INLINABLE_FN("acos",   math_acos,            1, 0, MathACos),
@@ -1179,26 +1130,33 @@ static const JSFunctionSpec math_static_methods[] = {
     JS_INLINABLE_FN("sign",   math_sign,            1, 0, MathSign),
     JS_INLINABLE_FN("cbrt",   math_cbrt,            1, 0, MathCbrt),
     JS_FS_END
+    // clang-format on
 };
 
 JSObject*
 js::InitMathClass(JSContext* cx, Handle<GlobalObject*> global)
 {
     RootedObject proto(cx, GlobalObject::getOrCreateObjectPrototype(cx, global));
-    if (!proto)
+    if (!proto) {
         return nullptr;
+    }
     RootedObject Math(cx, NewObjectWithGivenProto(cx, &MathClass, proto, SingletonObject));
-    if (!Math)
+    if (!Math) {
         return nullptr;
+    }
 
-    if (!JS_DefineProperty(cx, global, js_Math_str, Math, JSPROP_RESOLVING))
+    if (!JS_DefineProperty(cx, global, js_Math_str, Math, JSPROP_RESOLVING)) {
         return nullptr;
-    if (!JS_DefineFunctions(cx, Math, math_static_methods))
+    }
+    if (!JS_DefineFunctions(cx, Math, math_static_methods)) {
         return nullptr;
-    if (!JS_DefineConstDoubles(cx, Math, math_constants))
+    }
+    if (!JS_DefineConstDoubles(cx, Math, math_constants)) {
         return nullptr;
-    if (!DefineToStringTag(cx, Math, cx->names().Math))
+    }
+    if (!DefineToStringTag(cx, Math, cx->names().Math)) {
         return nullptr;
+    }
 
     global->setConstructor(JSProto_Math, ObjectValue(*Math));
 

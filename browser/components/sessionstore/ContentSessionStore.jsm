@@ -10,9 +10,6 @@ ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
 ChromeUtils.import("resource://gre/modules/Services.jsm", this);
 
-ChromeUtils.defineModuleGetter(this, "TelemetryStopwatch",
-  "resource://gre/modules/TelemetryStopwatch.jsm");
-
 function debug(msg) {
   Services.console.logStringMessage("SessionStoreContent: " + msg);
 }
@@ -22,10 +19,6 @@ ChromeUtils.defineModuleGetter(this, "FormData",
 
 ChromeUtils.defineModuleGetter(this, "ContentRestore",
   "resource:///modules/sessionstore/ContentRestore.jsm");
-ChromeUtils.defineModuleGetter(this, "DocShellCapabilities",
-  "resource:///modules/sessionstore/DocShellCapabilities.jsm");
-ChromeUtils.defineModuleGetter(this, "ScrollPosition",
-  "resource://gre/modules/ScrollPosition.jsm");
 ChromeUtils.defineModuleGetter(this, "SessionHistory",
   "resource://gre/modules/sessionstore/SessionHistory.jsm");
 ChromeUtils.defineModuleGetter(this, "SessionStorage",
@@ -298,27 +291,13 @@ class SessionHistoryListener extends Handler {
     this.collectFrom(oldIndex);
   }
 
-  OnHistoryGoBack(backURI) {
-    // We ought to collect the previously current entry as well, see bug 1350567.
-    this.collectFrom(kLastIndex);
-    return true;
-  }
-
-  OnHistoryGoForward(forwardURI) {
-    // We ought to collect the previously current entry as well, see bug 1350567.
-    this.collectFrom(kLastIndex);
-    return true;
-  }
-
   OnHistoryGotoIndex(index, gotoURI) {
     // We ought to collect the previously current entry as well, see bug 1350567.
     this.collectFrom(kLastIndex);
-    return true;
   }
 
   OnHistoryPurge(numEntries) {
     this.collect();
-    return true;
   }
 
   OnHistoryReload(reloadURI, reloadFlags) {
@@ -328,14 +307,6 @@ class SessionHistoryListener extends Handler {
 
   OnHistoryReplaceEntry(index) {
     this.collect();
-  }
-
-  OnLengthChanged(aCount) {
-    // Ignore, the method is implemented so that XPConnect doesn't throw!
-  }
-
-  OnIndexChanged(aIndex) {
-    // Ignore, the method is implemented so that XPConnect doesn't throw!
   }
 }
 SessionHistoryListener.prototype.QueryInterface =
@@ -375,7 +346,7 @@ class ScrollPositionListener extends Handler {
   }
 
   collect() {
-    return mapFrameTree(this.mm, ScrollPosition.collect);
+    return mapFrameTree(this.mm, ssu.collectScrollPosition.bind(ssu));
   }
 }
 
@@ -440,9 +411,7 @@ class DocShellCapabilitiesListener extends Handler {
   }
 
   onPageLoadStarted() {
-    // The order of docShell capabilities cannot change while we're running
-    // so calling join() without sorting before is totally sufficient.
-    let caps = DocShellCapabilities.collect(this.mm.docShell).join(",");
+    let caps = ssu.collectDocShellCapabilities(this.mm.docShell);
 
     // Send new data only when the capability list changes.
     if (caps != this._latestCapabilities) {
@@ -536,7 +505,15 @@ class SessionStorageListener extends Handler {
     if (!this._changes[domain]) {
       this._changes[domain] = {};
     }
-    this._changes[domain][key] = newValue;
+
+    // If the key isn't defined, then .clear() was called, and we send
+    // up null for this domain to indicate that storage has been cleared
+    // for it.
+    if (!key) {
+      this._changes[domain] = null;
+    } else {
+      this._changes[domain][key] = newValue;
+    }
 
     this.messageQueue.push("storagechange", () => {
       let tmp = this._changes;
@@ -935,7 +912,7 @@ class ContentSessionStore {
         // Tell SessionStore.jsm that it may want to restore some more tabs,
         // since it restores a max of MAX_CONCURRENT_TAB_RESTORES at a time.
         this.mm.sendAsyncMessage("SessionStore:restoreTabContentComplete", {epoch});
-      }
+      },
     });
 
     if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_DEFAULT) {

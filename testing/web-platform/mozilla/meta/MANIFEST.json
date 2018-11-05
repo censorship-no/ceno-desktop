@@ -298,11 +298,6 @@
      {}
     ]
    ],
-   "wasm/js/indexeddb.js": [
-    [
-     {}
-    ]
-   ],
    "wasm/js/int_exprs.wast.js": [
     [
      {}
@@ -868,12 +863,6 @@
      {}
     ]
    ],
-   "wasm/indexeddb.js.html": [
-    [
-     "/_mozilla/wasm/indexeddb.js.html",
-     {}
-    ]
-   ],
    "wasm/int_exprs.wast.js.html": [
     [
      "/_mozilla/wasm/int_exprs.wast.js.html",
@@ -1048,7 +1037,7 @@
    "testharness"
   ],
   "binast/large.binjs": [
-   "202d7338774eb4ab676661259af1fa22295be541",
+   "13b3792b4fedd62f9b121d743e1f4df93b1290d1",
    "support"
   ],
   "binast/large.https.html": [
@@ -1064,7 +1053,7 @@
    "support"
   ],
   "binast/small.binjs": [
-   "307ad0a68b1d5aa27c4ab35f6bd628cb919959fa",
+   "c44ec17e2c8b2fca5e426fd9e2a633478dd97c54",
    "support"
   ],
   "binast/small.https.html": [
@@ -1415,10 +1404,6 @@
    "d684d926f4328482dd5a41cee07ea2d4c472cdb2",
    "testharness"
   ],
-  "wasm/indexeddb.js.html": [
-   "f7f6d778cc350b5db5d938f0e276df8befbcb464",
-   "testharness"
-  ],
   "wasm/int_exprs.wast.js.html": [
    "b2fce1586af5a68d17a03e97a56595760a0b0fc2",
    "testharness"
@@ -1571,10 +1556,6 @@
    "ce2c6f93b8102fdd0d9fde9c038c1261858a3056",
    "support"
   ],
-  "wasm/js/indexeddb.js": [
-   "f6e18fb66be0fa51219f1759940fd66f913c0629",
-   "support"
-  ],
   "wasm/js/int_exprs.wast.js": [
    "c7b1a5cd565107a9d2ed860c88bbbda7f20c111f",
    "support"
@@ -1584,7 +1565,7 @@
    "support"
   ],
   "wasm/js/jsapi.js": [
-   "c0b9c4a200b6ec7132d81d48259ec97e2a047ae8",
+   "b7f30d280b9d5cb37c3c007e31e1717ca4290601",
    "support"
   ],
   "wasm/js/labels.wast.js": [
@@ -1785,5 +1766,5 @@
   ]
  },
  "url_base": "/_mozilla/",
- "version": 4
+ "version": 5
 }

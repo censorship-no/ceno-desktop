@@ -68,21 +68,21 @@ add_task(async function test_check_success() {
     last_modified: 1100,
     host: "localhost",
     bucket: "some-other-bucket",
-    collection: "test-collection"
+    collection: "test-collection",
   }, {
     id: "254cbb9e-6888-4d9f-8e60-58b74faa8778",
     last_modified: 1000,
     host: "localhost",
     bucket: "test-bucket",
-    collection: "test-collection"
+    collection: "test-collection",
   }]));
 
   // add a test kinto client that will respond to lastModified information
-  // for a collection called 'test-collection'
+  // for a collection called 'test-collection'.
+  // Let's use a bucket that is not the default one (`test-bucket`).
+  Services.prefs.setCharPref("services.settings.test_bucket", "test-bucket");
+  const c = RemoteSettings("test-collection", { bucketNamePref: "services.settings.test_bucket" });
   let maybeSyncCalled = false;
-  const c = RemoteSettings("test-collection", {
-    bucketName: "test-bucket",
-  });
   c.maybeSync = () => { maybeSyncCalled = true; };
 
   // Ensure that the remote-settings-changes-polled notification works
@@ -91,7 +91,7 @@ add_task(async function test_check_success() {
     observe(aSubject, aTopic, aData) {
       Services.obs.removeObserver(this, "remote-settings-changes-polled");
       notificationObserved = true;
-    }
+    },
   };
   Services.obs.addObserver(observer, "remote-settings-changes-polled");
 
@@ -126,7 +126,7 @@ add_task(async function test_update_timer_interface() {
     last_modified: 42,
     host: "localhost",
     bucket: "main",
-    collection: "whatever-collection"
+    collection: "whatever-collection",
   }]));
 
   await new Promise((resolve) => {
@@ -135,7 +135,7 @@ add_task(async function test_update_timer_interface() {
       observe(aSubject, aTopic, aData) {
         Services.obs.removeObserver(this, e);
         resolve();
-      }
+      },
     };
     Services.obs.addObserver(changesPolledObserver, e);
     remoteSettings.notify(null);
@@ -169,7 +169,7 @@ add_task(async function test_check_up_to_date() {
     observe(aSubject, aTopic, aData) {
       Services.obs.removeObserver(this, "remote-settings-changes-polled");
       notificationObserved = true;
-    }
+    },
   };
   Services.obs.addObserver(observer, "remote-settings-changes-polled");
 
@@ -197,6 +197,37 @@ add_task(async function test_check_up_to_date() {
 add_task(clear_state);
 
 
+add_task(async function test_expected_timestamp() {
+  function withCacheBust(request, response) {
+    const entries = [{
+      id: "695c2407-de79-4408-91c7-70720dd59d78",
+      last_modified: 1100,
+      host: "localhost",
+      bucket: "main",
+      collection: "with-cache-busting",
+    }];
+    if (request.queryString == `_expected=${encodeURIComponent('"42"')}`) {
+      response.write(JSON.stringify({
+        data: entries,
+      }));
+    }
+    response.setHeader("ETag", '"1100"');
+    response.setHeader("Date", (new Date()).toUTCString());
+    response.setStatusLine(null, 200, "OK");
+  }
+  server.registerPathHandler(CHANGES_PATH, withCacheBust);
+
+  const c = RemoteSettings("with-cache-busting");
+  let maybeSyncCalled = false;
+  c.maybeSync = () => { maybeSyncCalled = true; };
+
+  await RemoteSettings.pollChanges({ expectedTimestamp: '"42"'});
+
+  Assert.ok(maybeSyncCalled, "maybeSync was called");
+});
+add_task(clear_state);
+
+
 add_task(async function test_success_with_partial_list() {
   function partialList(request, response) {
     const entries = [{
@@ -204,22 +235,22 @@ add_task(async function test_success_with_partial_list() {
       last_modified: 43,
       host: "localhost",
       bucket: "main",
-      collection: "cid-1"
+      collection: "cid-1",
     }, {
       id: "98a34576-bcd6-423f-abc2-1d290b776ed8",
       last_modified: 42,
       host: "localhost",
       bucket: "main",
-      collection: "test-collection"
+      collection: "poll-test-collection",
     }];
     if (request.queryString == `_since=${encodeURIComponent('"42"')}`) {
       response.write(JSON.stringify({
-        data: entries.slice(0, 1)
+        data: entries.slice(0, 1),
       }));
       response.setHeader("ETag", '"43"');
     } else {
       response.write(JSON.stringify({
-        data: entries
+        data: entries,
       }));
       response.setHeader("ETag", '"42"');
     }
@@ -228,14 +259,14 @@ add_task(async function test_success_with_partial_list() {
   }
   server.registerPathHandler(CHANGES_PATH, partialList);
 
-  const c = RemoteSettings("test-collection");
+  const c = RemoteSettings("poll-test-collection");
   let maybeSyncCount = 0;
   c.maybeSync = () => { maybeSyncCount++; };
 
   await RemoteSettings.pollChanges();
   await RemoteSettings.pollChanges();
 
-  // On the second call, the server does not mention the test-collection
+  // On the second call, the server does not mention the poll-test-collection
   // and maybeSync() is not called.
   Assert.equal(maybeSyncCount, 1, "maybeSync should not be called twice");
 });
@@ -261,6 +292,19 @@ add_task(async function test_server_bad_json() {
 add_task(clear_state);
 
 
+add_task(async function test_server_404_response() {
+  function simulateDummy404(request, response) {
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
+    response.write("<html></html>");
+    response.setStatusLine(null, 404, "OK");
+  }
+  server.registerPathHandler(CHANGES_PATH, simulateDummy404);
+
+  await RemoteSettings.pollChanges(); // Does not fail when running from tests.
+});
+add_task(clear_state);
+
+
 add_task(async function test_server_error() {
   const startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
 
@@ -282,7 +326,7 @@ add_task(async function test_server_error() {
     observe(aSubject, aTopic, aData) {
       Services.obs.removeObserver(this, "remote-settings-changes-polled");
       notificationObserved = true;
-    }
+    },
   };
   Services.obs.addObserver(observer, "remote-settings-changes-polled");
   Services.prefs.setIntPref(PREF_LAST_UPDATE, 42);
@@ -395,7 +439,7 @@ add_task(async function test_backoff() {
     last_modified: 1300,
     host: "localhost",
     bucket: "some-bucket",
-    collection: "some-collection"
+    collection: "some-collection",
   }]));
   Services.prefs.setCharPref(PREF_SETTINGS_SERVER_BACKOFF, `${Date.now() - 1000}`);
 
@@ -441,26 +485,27 @@ add_task(async function test_syncs_clients_with_local_database() {
     last_modified: 10000,
     host: "localhost",
     bucket: "main",
-    collection: "some-unknown"
+    collection: "some-unknown",
   }, {
     id: "39f57e4e-6023-11e8-8b74-77c8dedfb389",
     last_modified: 9000,
     host: "localhost",
     bucket: "blocklists",
-    collection: "addons"
+    collection: "addons",
   }, {
     id: "9a594c1a-601f-11e8-9c8a-33b2239d9113",
     last_modified: 8000,
     host: "localhost",
     bucket: "main",
-    collection: "recipes"
+    collection: "recipes",
   }]));
 
   // This simulates what remote-settings would do when initializing a local database.
   // We don't want to instantiate a client using the RemoteSettings() API
   // since we want to test «unknown» clients that have a local database.
-  await (new Kinto.adapters.IDB("blocklists/addons")).saveLastModified(42);
-  await (new Kinto.adapters.IDB("main/recipes")).saveLastModified(43);
+  const dbName = "remote-settings";
+  await (new Kinto.adapters.IDB("blocklists/addons", { dbName })).saveLastModified(42);
+  await (new Kinto.adapters.IDB("main/recipes", { dbName })).saveLastModified(43);
 
   let error;
   try {
@@ -489,19 +534,19 @@ add_task(async function test_syncs_clients_with_local_dump() {
     last_modified: 10000,
     host: "localhost",
     bucket: "main",
-    collection: "some-unknown"
+    collection: "some-unknown",
   }, {
     id: "39f57e4e-6023-11e8-8b74-77c8dedfb389",
     last_modified: 9000,
     host: "localhost",
     bucket: "blocklists",
-    collection: "addons"
+    collection: "addons",
   }, {
     id: "9a594c1a-601f-11e8-9c8a-33b2239d9113",
     last_modified: 8000,
     host: "localhost",
     bucket: "main",
-    collection: "example"
+    collection: "example",
   }]));
 
   let error;
@@ -528,17 +573,17 @@ add_task(async function test_adding_client_resets_last_etag() {
       last_modified: 42,
       host: "localhost",
       bucket: "main",
-      collection: "a-collection"
+      collection: "a-collection",
     }];
     if (request.queryString == `_since=${encodeURIComponent('"42"')}`) {
       response.write(JSON.stringify({
-        data: entries.slice(0, 1)
+        data: entries.slice(0, 1),
       }));
       response.setHeader("ETag", '"42"');
       response.setStatusLine(null, 304, "Not Modified");
     } else {
       response.write(JSON.stringify({
-        data: entries
+        data: entries,
       }));
       response.setHeader("ETag", '"42"');
       response.setStatusLine(null, 200, "OK");

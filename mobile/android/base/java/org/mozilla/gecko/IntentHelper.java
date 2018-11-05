@@ -11,10 +11,12 @@ import org.mozilla.gecko.preferences.GeckoPreferences;
 import org.mozilla.gecko.util.ActivityResultHandler;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
+import org.mozilla.gecko.util.FileUtils;
 import org.mozilla.gecko.util.GeckoBundle;
+import org.mozilla.gecko.util.IntentUtils;
+import org.mozilla.gecko.util.StrictModeContext;
 import org.mozilla.gecko.widget.ExternalIntentDuringPrivateBrowsingPromptFragment;
 
-import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.Context;
@@ -39,6 +41,7 @@ import java.util.Locale;
 
 import static org.mozilla.gecko.Tabs.INTENT_EXTRA_SESSION_UUID;
 import static org.mozilla.gecko.Tabs.INTENT_EXTRA_TAB_ID;
+import static org.mozilla.gecko.util.FileUtils.getFilePathFromUri;
 
 public final class IntentHelper implements BundleEventListener {
 
@@ -318,41 +321,21 @@ public final class IntentHelper implements BundleEventListener {
                                         context.getResources().getString(R.string.share_title));
         }
 
-        Uri uri = normalizeUriScheme(targetURI.indexOf(':') >= 0 ? Uri.parse(targetURI) : new Uri.Builder().scheme(targetURI).build());
+        Uri uri = IntentUtils.normalizeUri(targetURI);
+
         if (!TextUtils.isEmpty(mimeType)) {
             Intent intent = getIntentForActionString(action);
             intent.setDataAndType(uri, mimeType);
             return intent;
         }
 
-        if (!GeckoAppShell.isUriSafeForScheme(uri)) {
+        if (!IntentUtils.isUriSafeForScheme(targetURI)) {
             return null;
         }
 
         final String scheme = uri.getScheme();
         if ("intent".equals(scheme) || "android-app".equals(scheme)) {
-            final Intent intent;
-            try {
-                intent = Intent.parseUri(targetURI, 0);
-            } catch (final URISyntaxException e) {
-                Log.e(LOGTAG, "Unable to parse URI - " + e);
-                return null;
-            }
-
-            final Uri data = intent.getData();
-            if (data != null && "file".equals(normalizeUriScheme(data).getScheme())) {
-                Log.w(LOGTAG, "Blocked intent with \"file://\" data scheme.");
-                return null;
-            }
-
-            // Only open applications which can accept arbitrary data from a browser.
-            intent.addCategory(Intent.CATEGORY_BROWSABLE);
-
-            // Prevent site from explicitly opening our internal activities, which can leak data.
-            intent.setComponent(null);
-            nullIntentSelector(intent);
-
-            return intent;
+            return IntentUtils.getSafeIntent(uri);
         }
 
         // Compute our most likely intent, then check to see if there are any
@@ -427,31 +410,6 @@ public final class IntentHelper implements BundleEventListener {
         return intent;
     }
 
-    // We create a separate method to better encapsulate the @TargetApi use.
-    @TargetApi(15)
-    private static void nullIntentSelector(final Intent intent) {
-        intent.setSelector(null);
-    }
-
-    /**
-     * Return a <code>Uri</code> instance which is equivalent to <code>u</code>,
-     * but with a guaranteed-lowercase scheme as if the API level 16 method
-     * <code>u.normalizeScheme</code> had been called.
-     *
-     * @param u the <code>Uri</code> to normalize.
-     * @return a <code>Uri</code>, which might be <code>u</code>.
-     */
-    private static Uri normalizeUriScheme(final Uri u) {
-        final String scheme = u.getScheme();
-        final String lower  = scheme.toLowerCase(Locale.US);
-        if (lower.equals(scheme)) {
-            return u;
-        }
-
-        // Otherwise, return a new URI with a normalized scheme.
-        return u.buildUpon().scheme(lower).build();
-    }
-
     @Override // BundleEventHandler
     public void handleMessage(final String event, final GeckoBundle message,
                               final EventCallback callback) {
@@ -478,15 +436,22 @@ public final class IntentHelper implements BundleEventListener {
         callback.sendSuccess(getHandlersForIntent(intent));
     }
 
+    @SuppressWarnings("try")
     private void open(final GeckoBundle message) {
-        openUriExternal(message.getString("url", ""),
-                        message.getString("mime", ""),
-                        message.getString("packageName", ""),
-                        message.getString("className", ""),
-                        message.getString("action", ""),
-                        message.getString("title", ""), false);
+        // Bug 1450449 - this is most likely a document from the publicly accessible storage which
+        // isn't owned exclusively by Firefox, so there's no real benefit to using content:// URIs
+        // here.
+        try (StrictModeContext unused = StrictModeContext.allowAllVmPolicies()) {
+            openUriExternal(message.getString("url", ""),
+                            message.getString("mime", ""),
+                            message.getString("packageName", ""),
+                            message.getString("className", ""),
+                            message.getString("action", ""),
+                            message.getString("title", ""), false);
+        }
     }
 
+    @SuppressWarnings("try")
     private void openForResult(final GeckoBundle message, final EventCallback callback) {
         Intent intent = getOpenURIIntent(getContext(),
                                          message.getString("url", ""),
@@ -503,7 +468,10 @@ public final class IntentHelper implements BundleEventListener {
             return;
         }
         final ResultHandler handler = new ResultHandler(callback);
-        try {
+        // Bug 1450449 - this is most likely a document from the publicly accessible storage which
+        // isn't owned exclusively by Firefox, so there's no real benefit to using content:// URIs
+        // here.
+        try (StrictModeContext unused = StrictModeContext.allowAllVmPolicies()) {
             ActivityHandlerHelper.startIntentForActivity(activity, intent, handler);
         } catch (SecurityException e) {
             Log.w(LOGTAG, "Forbidden to launch activity.", e);
@@ -539,6 +507,13 @@ public final class IntentHelper implements BundleEventListener {
             // Don't log the exception to prevent leaking URIs.
             Log.w(LOGTAG, "Unable to parse Intent URI - loading about:neterror");
             errorResponse.putBoolean("isFallback", false);
+            callback.sendError(errorResponse);
+            return;
+        }
+
+        if (FileUtils.isContentUri(uri)) {
+            errorResponse.putString("uri", getFilePathFromUri(getContext(), intent.getData()));
+            errorResponse.putBoolean("isFallback", true);
             callback.sendError(errorResponse);
             return;
         }

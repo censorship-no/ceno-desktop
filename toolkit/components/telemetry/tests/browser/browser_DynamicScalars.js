@@ -10,8 +10,8 @@ async function waitForProcessesScalars(aProcesses, aKeyed,
                                        aAdditionalCondition = (data) => true) {
   await ContentTaskUtils.waitForCondition(() => {
     const scalars = aKeyed ?
-      Services.telemetry.snapshotKeyedScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN) :
-      Services.telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+      Services.telemetry.getSnapshotForKeyedScalars("main", false) :
+      Services.telemetry.getSnapshotForScalars("main", false);
     return aProcesses.every(p => Object.keys(scalars).includes(p))
            && aAdditionalCondition(scalars);
   });
@@ -20,7 +20,7 @@ async function waitForProcessesScalars(aProcesses, aKeyed,
 add_task(async function test_setup() {
   // Make sure the newly spawned content processes will have extended Telemetry enabled.
   await SpecialPowers.pushPrefEnv({
-    set: [[TelemetryUtils.Preferences.OverridePreRelease, true]]
+    set: [[TelemetryUtils.Preferences.OverridePreRelease, true]],
   });
   // And take care of the already initialized one as well.
   let canRecordExtended = Services.telemetry.canRecordExtended;
@@ -37,12 +37,12 @@ add_task(async function test_recording() {
     "pre_content_spawn": {
       kind: Ci.nsITelemetry.SCALAR_TYPE_COUNT,
       keyed: false,
-      record_on_release: true
+      record_on_release: true,
     },
     "pre_content_spawn_expiration": {
       kind: Ci.nsITelemetry.SCALAR_TYPE_COUNT,
       keyed: false,
-      release_channel_collection: true
+      release_channel_collection: true,
     },
   });
 
@@ -65,18 +65,18 @@ add_task(async function test_recording() {
         "post_content_spawn": {
           kind: Ci.nsITelemetry.SCALAR_TYPE_BOOLEAN,
           keyed: false,
-          release_channel_collection: false
+          release_channel_collection: false,
         },
         "post_content_spawn_keyed": {
           kind: Ci.nsITelemetry.SCALAR_TYPE_COUNT,
           keyed: true,
-          release_channel_collection: true
+          release_channel_collection: true,
         },
         "pre_content_spawn_expiration": {
           kind: Ci.nsITelemetry.SCALAR_TYPE_COUNT,
           keyed: false,
           release_channel_collection: true,
-          expired: true
+          expired: true,
         },
       });
 
@@ -98,7 +98,7 @@ add_task(async function test_recording() {
 
   // Verify the content of the snapshots.
   const scalars =
-      Services.telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+      Services.telemetry.getSnapshotForScalars("main", false);
   ok("dynamic" in scalars,
      "The scalars must contain the 'dynamic' process section");
   ok("telemetry.test.dynamic.pre_content_spawn" in scalars.dynamic,
@@ -115,8 +115,7 @@ add_task(async function test_recording() {
   // Wait for the dynamic scalars to appear in the keyed snapshots.
   await waitForProcessesScalars(["dynamic"], true);
 
-  const keyedScalars =
-      Services.telemetry.snapshotKeyedScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+  const keyedScalars = Services.telemetry.getSnapshotForKeyedScalars("main", false);
   ok("dynamic" in keyedScalars,
      "The keyed scalars must contain the 'dynamic' process section");
   ok("telemetry.test.dynamic.post_content_spawn_keyed" in keyedScalars.dynamic,
@@ -136,7 +135,7 @@ add_task(async function test_aggregation() {
     "test_aggregation": {
       kind: Ci.nsITelemetry.SCALAR_TYPE_COUNT,
       keyed: false,
-      record_on_release: true
+      record_on_release: true,
     },
   });
 

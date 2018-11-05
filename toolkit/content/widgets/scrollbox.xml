@@ -18,10 +18,6 @@
   </binding>
 
   <binding id="arrowscrollbox" extends="chrome://global/content/bindings/general.xml#basecontrol">
-    <resources>
-      <stylesheet src="chrome://global/skin/scrollbox.css"/>
-    </resources>
-
     <content>
       <xul:toolbarbutton class="scrollbutton-up"
                          anonid="scrollbutton-up"
@@ -104,6 +100,12 @@
           this.setAttribute("smoothscroll", !!val);
           return val;
         ]]></setter>
+      </property>
+
+      <property name="scrollBoxObject" readonly="true">
+        <getter><![CDATA[
+          return this._scrollbox.boxObject;
+        ]]></getter>
       </property>
 
       <property name="scrollClientRect" readonly="true">
@@ -223,13 +225,13 @@
           while (index < 0 && nextElement) {
             if (this._canScrollToElement(nextElement))
               targetElement = nextElement;
-            nextElement = nextElement.previousSibling;
+            nextElement = nextElement.previousElementSibling;
             index++;
           }
           while (index > 0 && nextElement) {
             if (this._canScrollToElement(nextElement))
               targetElement = nextElement;
-            nextElement = nextElement.nextSibling;
+            nextElement = nextElement.nextElementSibling;
             index--;
           }
           if (!targetElement)
@@ -241,11 +243,11 @@
 
       <method name="_getScrollableElements">
         <body><![CDATA[
-          var nodes = this.childNodes;
+          var nodes = this.children;
           if (nodes.length == 1 &&
               nodes[0].localName == "children" &&
               nodes[0].namespaceURI == "http://www.mozilla.org/xbl") {
-            nodes = document.getBindingParent(this).childNodes;
+            nodes = document.getBindingParent(this).children;
           }
 
           return Array.filter(nodes, this._canScrollToElement, this);
@@ -652,7 +654,7 @@
           const scrollDelta = 0.5 * timePassed * scrollIndex;
           this.scrollbox.scrollByPixels(scrollDelta, true);
           this.requestHandle = window.requestAnimationFrame(this.sample.bind(this));
-        }
+        },
       })]]></field>
 
       <method name="_startScroll">
@@ -752,8 +754,8 @@
             // so don't scroll too far
             if (targetElement)
               targetElement = scrollBack ?
-                              targetElement.nextSibling :
-                              targetElement.previousSibling;
+                              targetElement.nextElementSibling :
+                              targetElement.previousElementSibling;
           }
 
           if (!targetElement) {

@@ -8,7 +8,7 @@ requestLongerTimeout(2);
 
 const TEST_URL_BASES = [
   "http://example.org/browser/browser/base/content/test/urlbar/dummy_page.html#tabmatch",
-  "http://example.org/browser/browser/base/content/test/urlbar/moz.png#tabmatch"
+  "http://example.org/browser/browser/base/content/test/urlbar/moz.png#tabmatch",
 ];
 
 const RESTRICT_TOKEN_OPENPAGE = "%";
@@ -59,7 +59,7 @@ add_task(async function step_3() {
 add_task(async function step_4() {
   info("Running step 4 - ensure we don't register subframes as open pages");
   let tab = BrowserTestUtils.addTab(gBrowser);
-  tab.linkedBrowser.loadURI('data:text/html,<body><iframe src=""></iframe></body>');
+  BrowserTestUtils.loadURI(tab.linkedBrowser, 'data:text/html,<body><iframe src=""></iframe></body>');
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   await ContentTask.spawn(tab.linkedBrowser, null, async function() {
@@ -82,7 +82,7 @@ add_task(async function step_6() {
   info("Running step 6 - check swapBrowsersAndCloseOther preserves registered switch-to-tab result");
   let tabToKeep = BrowserTestUtils.addTab(gBrowser);
   let tab = BrowserTestUtils.addTab(gBrowser);
-  tab.linkedBrowser.loadURI("about:mozilla");
+  BrowserTestUtils.loadURI(tab.linkedBrowser, "about:mozilla");
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   gBrowser.updateBrowserRemoteness(tabToKeep.linkedBrowser, tab.linkedBrowser.isRemoteBrowser);
@@ -132,16 +132,14 @@ function loadTab(tab, url) {
   });
 
   info("Loading page: " + url);
-  tab.linkedBrowser.loadURI(url);
+  BrowserTestUtils.loadURI(tab.linkedBrowser, url);
   return Promise.all([ loaded, visited ]);
 }
 
 function ensure_opentabs_match_db() {
   var tabs = {};
 
-  var winEnum = Services.wm.getEnumerator("navigator:browser");
-  while (winEnum.hasMoreElements()) {
-    let browserWin = winEnum.getNext();
+  for (let browserWin of Services.wm.getEnumerator("navigator:browser")) {
     // skip closed-but-not-destroyed windows
     if (browserWin.closed)
       continue;
@@ -207,7 +205,7 @@ function checkAutocompleteResults(aExpected, aCallback) {
     QueryInterface: ChromeUtils.generateQI([
       Ci.nsIAutoCompleteInput,
       Ci.nsIAutoCompletePopup,
-    ])
+    ]),
   };
 
   info("Searching open pages.");

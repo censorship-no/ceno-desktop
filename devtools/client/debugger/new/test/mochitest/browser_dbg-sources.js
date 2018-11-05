@@ -3,19 +3,6 @@
 
 // Tests that the source tree works.
 
-async function waitForSourceCount(dbg, i) {
-  // We are forced to wait until the DOM nodes appear because the
-  // source tree batches its rendering.
-  await waitUntil(() => {
-    return findAllElements(dbg, "sourceNodes").length === i;
-  }, `waiting for ${i} sources`);
-}
-
-async function assertSourceCount(dbg, count) {
-  await waitForSourceCount(dbg, count);
-  is(findAllElements(dbg, "sourceNodes").length, count, `${count} sources`);
-}
-
 function getLabel(dbg, index) {
   return findElement(dbg, "sourceNode", index)
     .textContent.trim()
@@ -53,7 +40,7 @@ add_task(async function() {
 
   ok(fourthNode.classList.contains("focused"), "4th node is focused");
   ok(selectedSource.includes("nested-source.js"), "nested-source is selected");
-
+  await assertNodeIsFocused(dbg, 4);
   await waitForSelectedSource(dbg, "nested-source");
 
   // Make sure new sources appear in the list.
@@ -64,6 +51,7 @@ add_task(async function() {
   });
 
   await waitForSourceCount(dbg, 9);
+  await assertNodeIsFocused(dbg, 4);
   is(
     getLabel(dbg, 7),
     "math.min.js",

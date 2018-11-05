@@ -12,7 +12,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   FormHistory: "resource://gre/modules/FormHistory.jsm",
-  TelemetryStopwatch: "resource://gre/modules/TelemetryStopwatch.jsm",
   ContextualIdentityService: "resource://gre/modules/ContextualIdentityService.jsm",
 });
 
@@ -255,7 +254,7 @@ var Sanitizer = {
       shutdownClient.addBlocker("sanitize.js: Sanitize",
         promise,
         {
-          fetchState: () => ({ progress })
+          fetchState: () => ({ progress }),
         }
       );
     }
@@ -295,7 +294,7 @@ var Sanitizer = {
 
   QueryInterface: ChromeUtils.generateQI([
     Ci.nsiObserver,
-    Ci.nsISupportsWeakReference
+    Ci.nsISupportsWeakReference,
   ]),
 
   // This method is meant to be used by tests.
@@ -314,7 +313,7 @@ var Sanitizer = {
         TelemetryStopwatch.start("FX_SANITIZE_CACHE", refObj);
         await clearData(range, Ci.nsIClearDataService.CLEAR_ALL_CACHES);
         TelemetryStopwatch.finish("FX_SANITIZE_CACHE", refObj);
-      }
+      },
     },
 
     cookies: {
@@ -331,7 +330,7 @@ var Sanitizer = {
     offlineApps: {
       async clear(range) {
         await clearData(range, Ci.nsIClearDataService.CLEAR_DOM_STORAGES);
-      }
+      },
     },
 
     history: {
@@ -341,7 +340,7 @@ var Sanitizer = {
         await clearData(range, Ci.nsIClearDataService.CLEAR_HISTORY |
                                Ci.nsIClearDataService.CLEAR_SESSION_HISTORY);
         TelemetryStopwatch.finish("FX_SANITIZE_HISTORY", refObj);
-      }
+      },
     },
 
     formdata: {
@@ -351,9 +350,7 @@ var Sanitizer = {
         TelemetryStopwatch.start("FX_SANITIZE_FORMDATA", refObj);
         try {
           // Clear undo history of all search bars.
-          let windows = Services.wm.getEnumerator("navigator:browser");
-          while (windows.hasMoreElements()) {
-            let currentWindow = windows.getNext();
+          for (let currentWindow of Services.wm.getEnumerator("navigator:browser")) {
             let currentDocument = currentWindow.document;
 
             // searchBar.textbox may not exist due to the search bar binding
@@ -395,7 +392,7 @@ var Sanitizer = {
               },
               handleCompletion() {
                 resolve();
-              }
+              },
             });
           });
         } catch (ex) {
@@ -406,7 +403,7 @@ var Sanitizer = {
         if (seenException) {
           throw seenException;
         }
-      }
+      },
     },
 
     downloads: {
@@ -415,7 +412,7 @@ var Sanitizer = {
         TelemetryStopwatch.start("FX_SANITIZE_DOWNLOADS", refObj);
         await clearData(range, Ci.nsIClearDataService.CLEAR_DOWNLOADS);
         TelemetryStopwatch.finish("FX_SANITIZE_DOWNLOADS", refObj);
-      }
+      },
     },
 
     sessions: {
@@ -425,7 +422,7 @@ var Sanitizer = {
         await clearData(range, Ci.nsIClearDataService.CLEAR_AUTH_TOKENS |
                                Ci.nsIClearDataService.CLEAR_AUTH_CACHE);
         TelemetryStopwatch.finish("FX_SANITIZE_SESSIONS", refObj);
-      }
+      },
     },
 
     siteSettings: {
@@ -437,7 +434,7 @@ var Sanitizer = {
                                Ci.nsIClearDataService.CLEAR_DOM_PUSH_NOTIFICATIONS |
                                Ci.nsIClearDataService.CLEAR_SECURITY_SETTINGS);
         TelemetryStopwatch.finish("FX_SANITIZE_SITESETTINGS", refObj);
-      }
+      },
     },
 
     openWindows: {
@@ -466,10 +463,8 @@ var Sanitizer = {
         let startDate = existingWindow.performance.now();
 
         // First check if all these windows are OK with being closed:
-        let windowEnumerator = Services.wm.getEnumerator("navigator:browser");
         let windowList = [];
-        while (windowEnumerator.hasMoreElements()) {
-          let someWin = windowEnumerator.getNext();
+        for (let someWin of Services.wm.getEnumerator("navigator:browser")) {
           windowList.push(someWin);
           // If someone says "no" to a beforeunload prompt, we abort here:
           if (!this._canCloseWindow(someWin)) {
@@ -563,7 +558,7 @@ var Sanitizer = {
         }
         newWindow.focus();
         await promiseReady;
-      }
+      },
     },
 
     pluginData: {
@@ -637,7 +632,7 @@ async function sanitizeInternal(items, aItemsToClear, progress, options = {}) {
       handles.push({ name,
                      promise: item.clear(range, options)
                                   .then(() => progress[name] = "cleared",
-                                        ex => annotateError(name, ex))
+                                        ex => annotateError(name, ex)),
                    });
     } catch (ex) {
       annotateError(name, ex);
@@ -690,9 +685,7 @@ async function sanitizeOnShutdown(progress) {
   await sanitizeSessionPrincipals();
 
   // Let's see if we have to forget some particular site.
-  let enumerator = Services.perms.enumerator;
-  while (enumerator.hasMoreElements()) {
-    let permission = enumerator.getNext().QueryInterface(Ci.nsIPermission);
+  for (let permission of Services.perms.enumerator) {
     if (permission.type == "cookie" && permission.capability == Ci.nsICookiePermission.ACCESS_SESSION) {
       await sanitizeSessionPrincipal(permission.principal);
     }
@@ -744,30 +737,77 @@ async function sanitizeSessionPrincipals() {
     principals.push(sw.principal);
   }
 
+  // Let's take the list of unique hosts+OA from cookies.
+  let enumerator = Services.cookies.enumerator;
+  let hosts = new Set();
+  for (let cookie of enumerator) {
+    hosts.add(cookie.rawHost + ChromeUtils.originAttributesToSuffix(cookie.originAttributes));
+  }
+
+  hosts.forEach(host => {
+    // Cookies and permissions are handled by origin/host. Doesn't matter if we
+    // use http: or https: schema here.
+    principals.push(
+      Services.scriptSecurityManager.createCodebasePrincipalFromOrigin("https://" + host));
+  });
+
   await maybeSanitizeSessionPrincipals(principals);
 }
 
-// This method receives a list of principals and it checks if some of them need
-// to be sanitize.
+// This method receives a list of principals and it checks if some of them or
+// some of their sub-domain need to be sanitize.
 async function maybeSanitizeSessionPrincipals(principals) {
   let promises = [];
 
-  for (let i = 0; i < principals.length; ++i) {
-    let p = Services.perms.testPermissionFromPrincipal(principals[i], "cookie");
-    if (p != Ci.nsICookiePermission.ACCESS_ALLOW &&
-        p != Ci.nsICookiePermission.ACCESS_ALLOW_FIRST_PARTY_ONLY &&
-        p != Ci.nsICookiePermission.ACCESS_LIMIT_THIRD_PARTY) {
-      promises.push(sanitizeSessionPrincipal(principals[i]));
+  principals.forEach(principal => {
+    if (!cookiesAllowedForDomainOrSubDomain(principal)) {
+      promises.push(sanitizeSessionPrincipal(principal));
+    }
+  });
+
+  return Promise.all(promises);
+}
+
+function cookiesAllowedForDomainOrSubDomain(principal) {
+  // If we have the 'cookie' permission for this principal, let's return
+  // immediately.
+  let p = Services.perms.testPermissionFromPrincipal(principal, "cookie");
+  if (p == Ci.nsICookiePermission.ACCESS_ALLOW ||
+      p == Ci.nsICookiePermission.ACCESS_ALLOW_FIRST_PARTY_ONLY ||
+      p == Ci.nsICookiePermission.ACCESS_LIMIT_THIRD_PARTY) {
+    return true;
+  }
+
+  if (p == Ci.nsICookiePermission.ACCESS_DENY ||
+      p == Ci.nsICookiePermission.ACCESS_SESSION) {
+    return false;
+  }
+
+  for (let perm of Services.perms.enumerator) {
+    if (perm.type != "cookie") {
+      continue;
+    }
+
+    if (!ChromeUtils.isOriginAttributesEqual(principal.originAttributes,
+                                             perm.principal.originAttributes)) {
+      continue;
+    }
+
+    // We don't care about scheme, port, and anything else.
+    if (Services.eTLD.hasRootDomain(perm.principal.URI.host,
+                                    principal.URI.host)) {
+      return cookiesAllowedForDomainOrSubDomain(perm.principal);
     }
   }
 
-  return Promise.all(promises);
+  return false;
 }
 
 async function sanitizeSessionPrincipal(principal) {
   await new Promise(resolve => {
     Services.clearData.deleteDataFromPrincipal(principal, true /* user request */,
-                                               Ci.nsIClearDataService.CLEAR_DOM_STORAGES,
+                                               Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
+                                               Ci.nsIClearDataService.CLEAR_COOKIES,
                                                resolve);
   });
 }

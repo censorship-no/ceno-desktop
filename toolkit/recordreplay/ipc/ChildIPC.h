@@ -11,6 +11,8 @@
 #include "mozilla/gfx/2D.h"
 #include "Units.h"
 
+namespace IPC { class Message; }
+
 namespace mozilla {
 
 class VsyncObserver;
@@ -18,54 +20,45 @@ class VsyncObserver;
 namespace recordreplay {
 namespace child {
 
-// Naively replaying a child process execution will not perform any IPC. When
-// the replaying process attempts to make system calls that communicate with
-// the parent, function redirections are invoked that simply replay the values
-// which those calls produced in the original recording.
-//
-// The replayed process needs to be able to communicate with the parent in some
-// ways, however. IPDL messages need to be sent to the compositor in the parent
-// to render graphics, and the parent needs to send messages to the client to
-// control and debug the replay.
-//
-// This file manages the real IPC which occurs in a replaying process. New
-// threads --- which did not existing while recording --- are spawned to manage
-// IPC with the middleman process, and IPDL actors are created up front for use
-// in communicating with the middleman using the PReplay protocol.
-
-///////////////////////////////////////////////////////////////////////////////
-// Public API
-///////////////////////////////////////////////////////////////////////////////
+// This file has the public API for definitions used in facilitating IPC
+// between a child recording/replaying process and the middleman process.
 
 // Initialize replaying IPC state. This is called once during process startup,
 // and is a no-op if the process is not recording/replaying.
 void InitRecordingOrReplayingProcess(int* aArgc, char*** aArgv);
 
+// Get the IDs of the middleman and parent processes.
 base::ProcessId MiddlemanProcessId();
 base::ProcessId ParentProcessId();
 
-void SetVsyncObserver(VsyncObserver* aObserver);
-void NotifyVsyncObserver();
+// Create a normal checkpoint, if execution has not diverged from the recording.
+void CreateCheckpoint();
 
-void NotifyPaint();
+///////////////////////////////////////////////////////////////////////////////
+// Painting Coordination
+///////////////////////////////////////////////////////////////////////////////
+
+// Tell the child code about any singleton vsync observer that currently
+// exists. This is used to trigger artifical vsyncs that paint the current
+// graphics when paused.
+void SetVsyncObserver(VsyncObserver* aObserver);
+
+// Called before processing incoming vsyncs from the UI process. Returns false
+// if the vsync should be ignored.
+bool OnVsync();
+
+// Tell the child code about any ongoing painting activity. When a paint is
+// about to happen, the main thread calls NotifyPaintStart, and when the
+// compositor thread finishes the paint it calls NotifyPaintComplete.
 void NotifyPaintStart();
 void NotifyPaintComplete();
-void WaitForPaintToComplete();
 
+// Get a draw target which the compositor thread can paint to.
 already_AddRefed<gfx::DrawTarget> DrawTargetForRemoteDrawing(LayoutDeviceIntSize aSize);
 
-// Notify the middleman that the recording was flushed.
-void NotifyFlushedRecording();
-
-// Notify the middleman about an AlwaysMarkMajorCheckpoints directive.
-void NotifyAlwaysMarkMajorCheckpoints();
-
-// Report a fatal error to the middleman process.
-void ReportFatalError(const char* aFormat, ...);
-
-// Mark a time span when the main thread is idle.
-void BeginIdleTime();
-void EndIdleTime();
+// Called to ignore IPDL messages sent after diverging from the recording,
+// except for those needed for compositing.
+bool SuppressMessageAfterDiverge(IPC::Message* aMsg);
 
 } // namespace child
 } // namespace recordreplay

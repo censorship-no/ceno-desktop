@@ -88,7 +88,6 @@ fn gen_field(ctx: &BindgenContext, ty_item: &Item, name: &str) -> quote::Tokens 
         TypeKind::Enum(..) |
         TypeKind::TypeParam |
         TypeKind::UnresolvedTypeRef(..) |
-        TypeKind::BlockPointer |
         TypeKind::Reference(..) |
         TypeKind::ObjCInterface(..) |
         TypeKind::ObjCId |
@@ -115,10 +114,18 @@ fn gen_field(ctx: &BindgenContext, ty_item: &Item, name: &str) -> quote::Tokens 
                 &self. #name_ident [..] == &other. #name_ident [..]
             }
         },
+        TypeKind::Vector(_, len) => {
+            let self_ids = 0..len;
+            let other_ids = 0..len;
+            quote! {
+                #(self.#self_ids == other.#other_ids &&)* true
+            }
+        },
 
         TypeKind::ResolvedTypeRef(t) |
         TypeKind::TemplateAlias(t, _) |
-        TypeKind::Alias(t) => {
+        TypeKind::Alias(t) |
+        TypeKind::BlockPointer(t) => {
             let inner_item = ctx.resolve_item(t);
             gen_field(ctx, inner_item, name)
         }

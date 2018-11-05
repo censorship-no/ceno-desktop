@@ -41,7 +41,6 @@ exports.CSS_PROPERTIES = {
       "ease-in-out",
       "ease-out",
       "forwards",
-      "frames",
       "infinite",
       "inherit",
       "initial",
@@ -167,7 +166,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -1230,7 +1228,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -1293,7 +1290,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -1496,7 +1492,6 @@ exports.CSS_PROPERTIES = {
       "ease-in-out",
       "ease-out",
       "forwards",
-      "frames",
       "infinite",
       "inherit",
       "initial",
@@ -1622,7 +1617,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -1630,6 +1624,146 @@ exports.CSS_PROPERTIES = {
       "step-start",
       "steps",
       "unset"
+    ]
+  },
+  "-webkit-appearance": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-appearance"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-gtk-info-bar",
+      "-moz-mac-active-source-list-selection",
+      "-moz-mac-disclosure-button-closed",
+      "-moz-mac-disclosure-button-open",
+      "-moz-mac-fullscreen-button",
+      "-moz-mac-help-button",
+      "-moz-mac-source-list",
+      "-moz-mac-source-list-selection",
+      "-moz-mac-vibrancy-dark",
+      "-moz-mac-vibrancy-light",
+      "-moz-mac-vibrant-titlebar-dark",
+      "-moz-mac-vibrant-titlebar-light",
+      "-moz-menulist-button",
+      "-moz-win-borderless-glass",
+      "-moz-win-browsertabbar-toolbox",
+      "-moz-win-communications-toolbox",
+      "-moz-win-exclude-glass",
+      "-moz-win-glass",
+      "-moz-win-media-toolbox",
+      "-moz-window-button-box",
+      "-moz-window-button-box-maximized",
+      "-moz-window-button-close",
+      "-moz-window-button-maximize",
+      "-moz-window-button-minimize",
+      "-moz-window-button-restore",
+      "-moz-window-frame-bottom",
+      "-moz-window-frame-left",
+      "-moz-window-frame-right",
+      "-moz-window-titlebar",
+      "-moz-window-titlebar-maximized",
+      "button",
+      "button-arrow-down",
+      "button-arrow-next",
+      "button-arrow-previous",
+      "button-arrow-up",
+      "button-bevel",
+      "button-focus",
+      "caret",
+      "checkbox",
+      "checkbox-container",
+      "checkbox-label",
+      "checkmenuitem",
+      "dialog",
+      "dualbutton",
+      "groupbox",
+      "inherit",
+      "initial",
+      "inner-spin-button",
+      "listbox",
+      "listitem",
+      "menuarrow",
+      "menubar",
+      "menucheckbox",
+      "menuimage",
+      "menuitem",
+      "menuitemtext",
+      "menulist",
+      "menulist-button",
+      "menulist-text",
+      "menulist-textfield",
+      "menupopup",
+      "menuradio",
+      "menuseparator",
+      "meterbar",
+      "meterchunk",
+      "none",
+      "number-input",
+      "progressbar",
+      "progressbar-vertical",
+      "progresschunk",
+      "progresschunk-vertical",
+      "radio",
+      "radio-container",
+      "radio-label",
+      "radiomenuitem",
+      "range",
+      "range-thumb",
+      "resizer",
+      "resizerpanel",
+      "scale-horizontal",
+      "scale-vertical",
+      "scalethumb-horizontal",
+      "scalethumb-vertical",
+      "scalethumbend",
+      "scalethumbstart",
+      "scalethumbtick",
+      "scrollbar",
+      "scrollbar-horizontal",
+      "scrollbar-small",
+      "scrollbar-vertical",
+      "scrollbarbutton-down",
+      "scrollbarbutton-left",
+      "scrollbarbutton-right",
+      "scrollbarbutton-up",
+      "scrollbarthumb-horizontal",
+      "scrollbarthumb-vertical",
+      "scrollbartrack-horizontal",
+      "scrollbartrack-vertical",
+      "scrollcorner",
+      "searchfield",
+      "separator",
+      "spinner",
+      "spinner-downbutton",
+      "spinner-textfield",
+      "spinner-upbutton",
+      "splitter",
+      "statusbar",
+      "statusbarpanel",
+      "tab",
+      "tab-scroll-arrow-back",
+      "tab-scroll-arrow-forward",
+      "tabpanel",
+      "tabpanels",
+      "textfield",
+      "textfield-multiline",
+      "toolbar",
+      "toolbarbutton",
+      "toolbarbutton-dropdown",
+      "toolbargripper",
+      "toolbox",
+      "tooltip",
+      "treeheader",
+      "treeheadercell",
+      "treeheadersortarrow",
+      "treeitem",
+      "treeline",
+      "treetwisty",
+      "treetwistyopen",
+      "treeview",
+      "unset",
+      "window"
     ]
   },
   "-webkit-backface-visibility": {
@@ -2538,7 +2672,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -2601,7 +2734,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -2809,6 +2941,7 @@ exports.CSS_PROPERTIES = {
       "rotate",
       "scale",
       "translate",
+      "offset-path",
       "scroll-behavior",
       "scroll-snap-type-x",
       "scroll-snap-type-y",
@@ -2911,8 +3044,7 @@ exports.CSS_PROPERTIES = {
       "-moz-user-modify",
       "-moz-user-focus",
       "caret-color",
-      "scrollbar-face-color",
-      "scrollbar-track-color",
+      "scrollbar-color",
       "text-anchor",
       "color-interpolation",
       "color-interpolation-filters",
@@ -3000,6 +3132,7 @@ exports.CSS_PROPERTIES = {
       "text-decoration-color",
       "initial-letter",
       "ime-mode",
+      "scrollbar-width",
       "-moz-user-select",
       "-moz-window-dragging",
       "-moz-force-broken-image-icon",
@@ -3062,7 +3195,6 @@ exports.CSS_PROPERTIES = {
       "ease-in-out",
       "ease-out",
       "forwards",
-      "frames",
       "infinite",
       "inherit",
       "initial",
@@ -3188,7 +3320,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -4742,6 +4873,7 @@ exports.CSS_PROPERTIES = {
       "margin-box",
       "none",
       "padding-box",
+      "path",
       "polygon",
       "stroke-box",
       "unset",
@@ -6214,6 +6346,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-crisp-edges",
       "auto",
+      "crisp-edges",
       "inherit",
       "initial",
       "optimizequality",
@@ -7274,6 +7407,20 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "offset-path": {
+    "isInherited": false,
+    "subproperties": [
+      "offset-path"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "path",
+      "unset"
+    ]
+  },
   "opacity": {
     "isInherited": false,
     "subproperties": [
@@ -7868,10 +8015,12 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
+      "block",
       "both",
       "horizontal",
       "inherit",
       "initial",
+      "inline",
       "none",
       "unset",
       "vertical"
@@ -8056,6 +8205,43 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "scrollbar-color": {
+    "isInherited": true,
+    "subproperties": [
+      "scrollbar-color"
+    ],
+    "supports": [
+      2
+    ],
+    "values": [
+      "COLOR",
+      "auto",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "scrollbar-width": {
+    "isInherited": false,
+    "subproperties": [
+      "scrollbar-width"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "thin",
+      "unset"
+    ]
+  },
   "shape-image-threshold": {
     "isInherited": false,
     "subproperties": [
@@ -8111,6 +8297,7 @@ exports.CSS_PROPERTIES = {
       "margin-box",
       "none",
       "padding-box",
+      "path",
       "polygon",
       "radial-gradient",
       "repeating-linear-gradient",
@@ -8655,6 +8842,7 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "capitalize",
+      "full-size-kana",
       "full-width",
       "inherit",
       "initial",
@@ -8794,7 +8982,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -8857,7 +9044,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -9137,6 +9323,10 @@ exports.PREFERENCES = [
     "layout.css.scroll-behavior.property-enabled"
   ],
   [
+    "scrollbar-width",
+    "layout.css.scrollbar-width.enabled"
+  ],
+  [
     "text-justify",
     "layout.css.text-justify.enabled"
   ],
@@ -9185,6 +9375,10 @@ exports.PREFERENCES = [
     "layout.css.font-variations.enabled"
   ],
   [
+    "offset-path",
+    "layout.css.motion-path.enabled"
+  ],
+  [
     "rotate",
     "layout.css.individual-transform.enabled"
   ],
@@ -9195,6 +9389,10 @@ exports.PREFERENCES = [
   [
     "scroll-snap-coordinate",
     "layout.css.scroll-snap.enabled"
+  ],
+  [
+    "scrollbar-color",
+    "layout.css.scrollbar-color.enabled"
   ],
   [
     "shape-outside",
@@ -9211,14 +9409,6 @@ exports.PREFERENCES = [
   [
     "scroll-snap-points-y",
     "layout.css.scroll-snap.enabled"
-  ],
-  [
-    "scrollbar-face-color",
-    "layout.css.scrollbar-colors.enabled"
-  ],
-  [
-    "scrollbar-track-color",
-    "layout.css.scrollbar-colors.enabled"
   ],
   [
     "scroll-snap-destination",

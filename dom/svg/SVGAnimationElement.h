@@ -28,7 +28,7 @@ class SVGAnimationElement : public SVGAnimationElementBase,
                             public SVGTests
 {
 protected:
-  explicit SVGAnimationElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGAnimationElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   nsresult Init();
   virtual ~SVGAnimationElement();
 
@@ -39,8 +39,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(SVGAnimationElement,
                                            SVGAnimationElementBase)
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override = 0;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override = 0;
 
   // nsIContent specializations
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,

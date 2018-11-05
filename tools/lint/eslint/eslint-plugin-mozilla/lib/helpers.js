@@ -11,6 +11,7 @@ const estraverse = require("estraverse");
 const path = require("path");
 const fs = require("fs");
 const ini = require("ini-parser");
+const recommendedConfig = require("./configs/recommended");
 
 var gModules = null;
 var gRootDir = null;
@@ -33,17 +34,17 @@ const callExpressionDefinitions = [
   /^DevToolsUtils\.defineLazyGetter\(this, "(\w+)"/,
   /^Object\.defineProperty\(this, "(\w+)"/,
   /^Reflect\.defineProperty\(this, "(\w+)"/,
-  /^this\.__defineGetter__\("(\w+)"/
+  /^this\.__defineGetter__\("(\w+)"/,
 ];
 
 const callExpressionMultiDefinitions = [
   "XPCOMUtils.defineLazyGlobalGetters(this,",
   "XPCOMUtils.defineLazyModuleGetters(this,",
-  "XPCOMUtils.defineLazyServiceGetters(this,"
+  "XPCOMUtils.defineLazyServiceGetters(this,",
 ];
 
 const imports = [
-  /^(?:Cu|Components\.utils|ChromeUtils)\.import\(".*\/((.*?)\.jsm?)"(?:, this)?\)/
+  /^(?:Cu|Components\.utils|ChromeUtils)\.import\(".*\/((.*?)\.jsm?)"(?:, this)?\)/,
 ];
 
 const workerImportFilenameMatch = /(.*\/)*(.*?\.jsm?)/;
@@ -67,14 +68,17 @@ module.exports = {
    *
    * @param  {String} sourceText
    *         Text containing valid JavaScript.
+   * @param  {Object} astOptions
+   *         Extra configuration to pass to the espree parser, these will override
+   *         the configuration from getPermissiveConfig().
    *
    * @return {Object}
    *         The resulting AST.
    */
-  getAST(sourceText) {
+  getAST(sourceText, astOptions = {}) {
     // Use a permissive config file to allow parsing of anything that Espree
     // can parse.
-    var config = this.getPermissiveConfig();
+    let config = {...this.getPermissiveConfig(), ...astOptions};
 
     return espree.parse(sourceText, config);
   },
@@ -152,7 +156,7 @@ module.exports = {
           throw new Error("Left more nodes than entered.");
         }
         parents.pop();
-      }
+      },
     });
     if (parents.length) {
       throw new Error("Entered more nodes than left.");
@@ -265,7 +269,7 @@ module.exports = {
       return express.arguments[0].elements.map(literal => {
         return {
           name: literal.value,
-          writable: false
+          writable: false,
         };
       });
     }
@@ -294,7 +298,7 @@ module.exports = {
           // of them.
           let explicit = globalModules[match[1]].length == 1;
           return globalModules[match[1]].map(name => ({
-            name, writable: true, explicit
+            name, writable: true, explicit,
           }));
         }
 
@@ -411,9 +415,18 @@ module.exports = {
       loc: true,
       comment: true,
       attachComment: true,
-      ecmaVersion: 9,
-      sourceType: "script"
+      ecmaVersion: this.getECMAVersion(),
+      sourceType: "script",
     };
+  },
+
+  /**
+   * Returns the ECMA version of the recommended config.
+   *
+   * @return {Number} The ECMA version of the recommended config.
+   */
+  getECMAVersion() {
+    return recommendedConfig.parserOptions.ecmaVersion;
   },
 
   /**
@@ -530,7 +543,7 @@ module.exports = {
 
         manifests.push({
           file: path.join(dir, name),
-          manifest
+          manifest,
         });
       } catch (e) {
       }
@@ -733,5 +746,5 @@ module.exports = {
 
   getSavedRuleData(rule) {
     return require("./rules/saved-rules-data.json").rulesData[rule];
-  }
+  },
 };

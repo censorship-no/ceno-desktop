@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Şəkli yükləmək mümkün olmadı. Fərqli ünvan yoxlayın.",
   "pocket_read_more": "Məşhur Mövzular:",
   "pocket_read_even_more": "Daha çox hekayə gör",
+  "pocket_more_reccommendations": "Daha Çox Tövsiyyələr",
+  "pocket_how_it_works": "Bu necə işləyir",
+  "pocket_cta_button": "Pocket əldə edin",
+  "pocket_cta_text": "Sevdiyiniz məqalələri Pocket-də saxlayın və möhtəşəm yeni yazıları kəşf edin.",
   "highlights_empty_state": "İnternetdə gəzməyə başlayın, burada ziyarət edəcəyiniz və ya əlfəcinləyəcəyiniz məqalə, video və digər səhifələri göstərəcəyik.",
   "topstories_empty_state": "Hamısını oxudunuz. Yeni {provider} məqalələri üçün daha sonra təkrar yoxlayın. Gözləyə bilmirsiz? Məşhur mövzu seçərək internetdən daha çox gözəl məqalələr tapın.",
   "manual_migration_explanation2": "Firefox səyyahını digər səyyahlardan olan əlfəcin, tarixçə və parollar ilə yoxlayın.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Bölməni İdarə et",
   "section_menu_action_manage_webext": "Uzantını idarə et",
   "section_menu_action_add_topsite": "Qabaqcıl Sayt əlavə et",
+  "section_menu_action_add_search_engine": "Axtarış mühərriyi əlavə et",
   "section_menu_action_move_up": "Yuxarı daşı",
   "section_menu_action_move_down": "Aşağı daşı",
   "section_menu_action_privacy_notice": "Məxfilik Bildirişi",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "İstifadə Şərtləri",
   "firstrun_privacy_notice": "Məxfilik Bildirişi",
   "firstrun_continue_to_login": "Davam et",
-  "firstrun_skip_login": "Bu addımı keç"
+  "firstrun_skip_login": "Bu addımı keç",
+  "context_menu_title": "Menyunu aç",
+  "pocket_learn_more": "Ətraflı Öyrən"
 };

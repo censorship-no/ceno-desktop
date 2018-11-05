@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "तस्बिर लोड गर्न असफल भयो । फरक URL प्रयास गर्नुहोस् ।",
   "pocket_read_more": "लोकप्रिय शीर्षकहरू:",
   "pocket_read_even_more": "अरू कथा देखाउनुहोस्",
+  "pocket_more_reccommendations": "More Recommendations",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "Get Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "ब्राउज गर्न सुरू गर्नुहोस्, र हामी केहि उत्कृष्ट लेखहरू, भिडियोहरू, र अन्य पृष्ठहरू जुन तपाईंले भर्खरै भ्रमण गर्नुभएको वा पुस्तकचिनो राख्नुभएको छ यहाँ देखाउँछौ ।",
   "topstories_empty_state": "अहिले यति नै । {provider} बाट थप शीर्ष कथाहरूको हेर्नका लागि पछि फेरि जाँच गर्नुहोस् । अाफुलाई रोक्न सक्नुहुदैन ? वेबभरिका राम्रा कथाहरु भेटाउन कुनै एउटा लोकप्रिय विषय छान्नुहोस् । ",
   "manual_migration_explanation2": "अन्य ब्राउजरका पुस्तकचिनोहरु, इतिहास र गोप्यशब्दहरु सहित Firefox प्रयोग गर्नुहोस् ।",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "खण्ड प्रबन्ध गर्नुहोस्",
   "section_menu_action_manage_webext": "Manage Extension",
   "section_menu_action_add_topsite": "शीर्ष साइट थप्नुहोस्",
+  "section_menu_action_add_search_engine": "Add Search Engine",
   "section_menu_action_move_up": "माथि सार्नुहोस्",
   "section_menu_action_move_down": "तल सार्नुहोस्",
   "section_menu_action_privacy_notice": "गोपनीयता नीति",
@@ -101,5 +106,6 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Terms of Service",
   "firstrun_privacy_notice": "Privacy Notice",
   "firstrun_continue_to_login": "Continue",
-  "firstrun_skip_login": "Skip this step"
+  "firstrun_skip_login": "Skip this step",
+  "context_menu_title": "Open menu"
 };

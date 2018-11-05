@@ -2,12 +2,12 @@ const PREF_MULTISELECT_TABS = "browser.tabs.multiselect";
 
 add_task(async function setPref() {
     await SpecialPowers.pushPrefEnv({
-        set: [[PREF_MULTISELECT_TABS, true]]
+        set: [[PREF_MULTISELECT_TABS, true]],
     });
 });
 
 add_task(async function test() {
-    let tab1 = await addTab();
+    let tab1 = gBrowser.selectedTab;
     let tab2 = await addTab();
     let tab3 = await addTab();
 
@@ -18,7 +18,6 @@ add_task(async function test() {
 
     is(gBrowser.multiSelectedTabsCount, 0, "Zero multiselected tabs");
 
-    await BrowserTestUtils.switchTab(gBrowser, tab1);
     await triggerClickOn(tab2, { ctrlKey: true });
 
     ok(tab1.multiselected, "Tab1 is multiselected");
@@ -50,6 +49,9 @@ add_task(async function test() {
     ok(tab1.pinned, "Tab1 is pinned");
     ok(tab2.pinned, "Tab2 is pinned");
     ok(!tab3.pinned, "Tab3 is unpinned");
+    is(tab1._tPos, 0, "Tab1 should still be first after pinning");
+    is(tab2._tPos, 1, "Tab2 should still be second after pinning");
+    is(tab3._tPos, 2, "Tab3 should still be third after pinning");
 
     // Check the context menu with a multiselected and pinned tab
     updateTabContextMenu(tab2);
@@ -68,8 +70,10 @@ add_task(async function test() {
     ok(!tab1.pinned, "Tab1 is unpinned");
     ok(!tab2.pinned, "Tab2 is unpinned");
     ok(!tab3.pinned, "Tab3 is unpinned");
+    is(tab1._tPos, 0, "Tab1 should still be first after unpinning");
+    is(tab2._tPos, 1, "Tab2 should still be second after unpinning");
+    is(tab3._tPos, 2, "Tab3 should still be third after unpinning");
 
-    BrowserTestUtils.removeTab(tab1);
     BrowserTestUtils.removeTab(tab2);
     BrowserTestUtils.removeTab(tab3);
 });

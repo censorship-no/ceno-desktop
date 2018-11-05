@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Изображението не може да бъде заредено. Опитайте с друг адрес.",
   "pocket_read_more": "Популярни теми:",
   "pocket_read_even_more": "Повече публикации",
+  "pocket_more_reccommendations": "Повече препоръчани",
+  "pocket_how_it_works": "Как работи",
+  "pocket_cta_button": "Вземете Pocket",
+  "pocket_cta_text": "Запазете статиите, които харесвате в Pocket и заредете ума си с увлекателни четива.",
   "highlights_empty_state": "Разглеждайте и тук ще ви покажем някои от най-добрите статии, видео и други страници, които сте посетили или отметнали наскоро.",
   "topstories_empty_state": "Разгледахте всичко. Проверете по-късно за повече истории от {provider}. Нямате търпение? Изберете популярна тема, за да откриете повече истории от цялата Мрежа.",
   "manual_migration_explanation2": "Опитайте Firefox с отметките, историята и паролите от друг мрежови четец.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Управление на раздела",
   "section_menu_action_manage_webext": "Управление на добавката",
   "section_menu_action_add_topsite": "Добавяне на често посещавана страница",
+  "section_menu_action_add_search_engine": "Добавяне на търсеща машина",
   "section_menu_action_move_up": "Преместване нагоре",
   "section_menu_action_move_down": "Преместване надолу",
   "section_menu_action_privacy_notice": "Политика за личните данни",
@@ -98,8 +103,10 @@ window.gActivityStreamStrings = {
   "firstrun_email_input_placeholder": "адрес на електронна поща",
   "firstrun_invalid_input": "Необходим е валиден адрес на ел. поща",
   "firstrun_extra_legal_links": "Продължавайки, вие се съгласявате с {terms} и {privacy}.",
-  "firstrun_terms_of_service": "Условията на услугата",
-  "firstrun_privacy_notice": "Политиката за лични данни",
+  "firstrun_terms_of_service": "условията на услугата",
+  "firstrun_privacy_notice": "политиката за лични данни",
   "firstrun_continue_to_login": "Продължаване",
-  "firstrun_skip_login": "Пропускане"
+  "firstrun_skip_login": "Пропускане",
+  "context_menu_title": "Open menu",
+  "pocket_learn_more": "Научете повече"
 };

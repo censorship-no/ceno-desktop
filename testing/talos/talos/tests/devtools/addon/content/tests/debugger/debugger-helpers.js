@@ -55,7 +55,7 @@ function waitForDispatch(dbg, type) {
       },
       run: (dispatch, getState, action) => {
         resolve(action);
-      }
+      },
     });
   });
 }
@@ -122,6 +122,14 @@ function waitForSources(dbg, expectedSources) {
   return waitForState(dbg, countSources, "count sources");
 }
 
+function waitForSource(dbg, sourceURL) {
+  const { selectors } = dbg;
+  function hasSource(state) {
+    return selectors.getSourceByURL(state, sourceURL);
+  }
+  return waitForState(dbg, hasSource, `has source ${sourceURL}`);
+}
+
 async function waitForPaused(dbg) {
   const onLoadedScope = waitForLoadedScopes(dbg);
   const onStateChange =  waitForState(
@@ -158,7 +166,7 @@ function createContext(panel) {
     selectors,
     getState: store.getState,
     win: panel.panelWin,
-    store
+    store,
   };
 }
 exports.createContext = createContext;
@@ -201,7 +209,7 @@ function evalInContent(dbg, tab, testFunction) {
 async function openDebuggerAndLog(label, expected) {
   const onLoad = async (toolbox, panel) => {
     const dbg = await createContext(panel);
-    await waitForSources(dbg, expected.sources);
+    await waitForSource(dbg, expected.sourceURL);
     await selectSource(dbg, expected.file);
     await waitForText(dbg, expected.file, expected.text);
     await waitForMetaData(dbg);
@@ -231,7 +239,7 @@ async function addBreakpoint(dbg, line, url) {
   const location = {
     sourceId: source.id,
     line,
-    column: 0
+    column: 0,
   };
   const onDispatched = waitForDispatch(dbg, "ADD_BREAKPOINT");
   dbg.actions.addBreakpoint(location);

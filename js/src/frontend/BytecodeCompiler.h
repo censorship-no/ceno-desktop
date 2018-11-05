@@ -11,8 +11,8 @@
 
 #include "NamespaceImports.h"
 
+#include "js/CompileOptions.h"
 #include "vm/Scope.h"
-#include "vm/StringType.h"
 #include "vm/TraceLogging.h"
 
 class JSLinearString;
@@ -20,7 +20,6 @@ class JSLinearString;
 namespace js {
 
 class LazyScript;
-class LifoAlloc;
 class ModuleObject;
 class ScriptSourceObject;
 
@@ -31,36 +30,39 @@ class FunctionBox;
 class ParseNode;
 
 JSScript*
-CompileGlobalScript(JSContext* cx, LifoAlloc& alloc, ScopeKind scopeKind,
-                    const ReadOnlyCompileOptions& options,
-                    SourceBufferHolder& srcBuf,
+CompileGlobalScript(JSContext* cx, ScopeKind scopeKind,
+                    const JS::ReadOnlyCompileOptions& options,
+                    JS::SourceBufferHolder& srcBuf,
                     ScriptSourceObject** sourceObjectOut = nullptr);
 
 #if defined(JS_BUILD_BINAST)
 
 JSScript*
 CompileGlobalBinASTScript(JSContext *cx, LifoAlloc& alloc,
-                          const ReadOnlyCompileOptions& options,
+                          const JS::ReadOnlyCompileOptions& options,
                           const uint8_t* src, size_t len,
                           ScriptSourceObject** sourceObjectOut = nullptr);
+
+MOZ_MUST_USE bool
+CompileLazyBinASTFunction(JSContext* cx, Handle<LazyScript*> lazy, const uint8_t* buf, size_t length);
 
 #endif // JS_BUILD_BINAST
 
 JSScript*
-CompileEvalScript(JSContext* cx, LifoAlloc& alloc,
-                  HandleObject scopeChain, HandleScope enclosingScope,
-                  const ReadOnlyCompileOptions& options,
-                  SourceBufferHolder& srcBuf,
+CompileEvalScript(JSContext* cx, HandleObject environment,
+                  HandleScope enclosingScope,
+                  const JS::ReadOnlyCompileOptions& options,
+                  JS::SourceBufferHolder& srcBuf,
                   ScriptSourceObject** sourceObjectOut = nullptr);
 
 ModuleObject*
-CompileModule(JSContext* cx, const ReadOnlyCompileOptions& options,
-              SourceBufferHolder& srcBuf);
+CompileModule(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+              JS::SourceBufferHolder& srcBuf);
 
 ModuleObject*
-CompileModule(JSContext* cx, const ReadOnlyCompileOptions& options,
-              SourceBufferHolder& srcBuf, LifoAlloc& alloc,
-              ScriptSourceObject** sourceObjectOut = nullptr);
+CompileModule(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+              JS::SourceBufferHolder& srcBuf,
+              ScriptSourceObject** sourceObjectOut);
 
 MOZ_MUST_USE bool
 CompileLazyFunction(JSContext* cx, Handle<LazyScript*> lazy, const char16_t* chars, size_t length);
@@ -79,31 +81,31 @@ CompileLazyFunction(JSContext* cx, Handle<LazyScript*> lazy, const char16_t* cha
 //
 MOZ_MUST_USE bool
 CompileStandaloneFunction(JSContext* cx, MutableHandleFunction fun,
-                          const ReadOnlyCompileOptions& options,
+                          const JS::ReadOnlyCompileOptions& options,
                           JS::SourceBufferHolder& srcBuf,
                           const mozilla::Maybe<uint32_t>& parameterListEnd,
                           HandleScope enclosingScope = nullptr);
 
 MOZ_MUST_USE bool
 CompileStandaloneGenerator(JSContext* cx, MutableHandleFunction fun,
-                           const ReadOnlyCompileOptions& options,
+                           const JS::ReadOnlyCompileOptions& options,
                            JS::SourceBufferHolder& srcBuf,
                            const mozilla::Maybe<uint32_t>& parameterListEnd);
 
 MOZ_MUST_USE bool
 CompileStandaloneAsyncFunction(JSContext* cx, MutableHandleFunction fun,
-                               const ReadOnlyCompileOptions& options,
+                               const JS::ReadOnlyCompileOptions& options,
                                JS::SourceBufferHolder& srcBuf,
                                const mozilla::Maybe<uint32_t>& parameterListEnd);
 
 MOZ_MUST_USE bool
 CompileStandaloneAsyncGenerator(JSContext* cx, MutableHandleFunction fun,
-                                const ReadOnlyCompileOptions& options,
+                                const JS::ReadOnlyCompileOptions& options,
                                 JS::SourceBufferHolder& srcBuf,
                                 const mozilla::Maybe<uint32_t>& parameterListEnd);
 
 ScriptSourceObject*
-CreateScriptSourceObject(JSContext* cx, const ReadOnlyCompileOptions& options,
+CreateScriptSourceObject(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
                          const mozilla::Maybe<uint32_t>& parameterListEnd = mozilla::Nothing());
 
 /*
@@ -118,13 +120,21 @@ CreateScriptSourceObject(JSContext* cx, const ReadOnlyCompileOptions& options,
 bool
 IsIdentifier(JSLinearString* str);
 
+bool
+IsIdentifierNameOrPrivateName(JSLinearString* str);
+
 /*
  * As above, but taking chars + length.
  */
 bool
-IsIdentifier(const char* chars, size_t length);
+IsIdentifier(const Latin1Char* chars, size_t length);
 bool
 IsIdentifier(const char16_t* chars, size_t length);
+
+bool
+IsIdentifierNameOrPrivateName(const Latin1Char* chars, size_t length);
+bool
+IsIdentifierNameOrPrivateName(const char16_t* chars, size_t length);
 
 /* True if str is a keyword. Defined in TokenStream.cpp. */
 bool

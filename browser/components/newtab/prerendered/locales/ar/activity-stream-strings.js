@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "فشل تحميل الصورة. جرّب مسارا آخر.",
   "pocket_read_more": "المواضيع الشائعة:",
   "pocket_read_even_more": "اعرض المزيد من الأخبار",
+  "pocket_more_reccommendations": "مقترحات أخرى",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "نزِّل بوكِت",
+  "pocket_cta_text": "احفظ القصص التي تحبّها في بوكِت، وزوّد عقلك بمقالات رائعة.",
   "highlights_empty_state": "ابدأ التصفح وسنعرض أمامك بعض المقالات والفيديوهات والمواقع الأخرى التي زرتها حديثا أو أضفتها إلى العلامات هنا.",
   "topstories_empty_state": "لا جديد. تحقق لاحقًا للحصول على مزيد من أهم الأخبار من {provider}. لا يمكنك الانتظار؟ اختر موضوعًا شائعًا للعثور على المزيد من القصص الرائعة من جميع أنحاء الوِب.",
   "manual_migration_explanation2": "جرب فَيَرفُكس مع العلامات، و التأريخ، و كلمات السر من متصفح آخر.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "أدِر القسم",
   "section_menu_action_manage_webext": "أدِر الامتداد",
   "section_menu_action_add_topsite": "أضف موقعًا شائعًا",
+  "section_menu_action_add_search_engine": "أضِف محرك بحث",
   "section_menu_action_move_up": "انقل لأعلى",
   "section_menu_action_move_down": "انقل لأسفل",
   "section_menu_action_privacy_notice": "تنويه الخصوصية",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "بنود الخدمة",
   "firstrun_privacy_notice": "تنويه الخصوصية",
   "firstrun_continue_to_login": "تابِع",
-  "firstrun_skip_login": "تجاوز هذه الخطوة"
+  "firstrun_skip_login": "تجاوز هذه الخطوة",
+  "context_menu_title": "افتح القائمة",
+  "pocket_learn_more": "اطّلع على المزيد"
 };

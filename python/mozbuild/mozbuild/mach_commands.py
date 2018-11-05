@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import yaml
 
 from collections import OrderedDict
 
@@ -287,6 +288,7 @@ class CargoProvider(MachCommandBase):
             'gkrust-gtest': 'toolkit/library/gtest/rust',
             'js': 'js/rust',
             'mozjs_sys': 'js/src',
+            'baldrdash': 'js/src/wasm/cranelift',
             'geckodriver': 'testing/geckodriver',
         }
 
@@ -601,19 +603,12 @@ class GTestCommands(MachCommandBase):
 
         active_backend = config.substs.get('BUILD_BACKENDS', [None])[0]
         if 'Tup' in active_backend:
-            gtest_build_path = mozpath.join(self.topobjdir, '<gtest>')
+            gtest_build_target = mozpath.join(self.topobjdir, '<gtest>')
         else:
-            # This path happens build the necessary parts of the tree in the
-            # Make backend due to the odd nature of partial tree builds.
-            gtest_build_path = mozpath.relpath(mozpath.join(self.topobjdir,
-                                                            'toolkit', 'library',
-                                                            'gtest', 'rust'),
-                                               self.topsrcdir)
+            gtest_build_target = 'recurse_gtest'
 
-        os.environ[b'LINK_GTEST_DURING_COMPILE'] = b'1'
         res = self._mach_context.commands.dispatch('build', self._mach_context,
-                                                   what=[gtest_build_path])
-        del os.environ[b'LINK_GTEST_DURING_COMPILE']
+                                                   what=[gtest_build_target])
         if res:
             print("Could not build xul-gtest")
             return res
@@ -624,6 +619,10 @@ class GTestCommands(MachCommandBase):
 
         app_path = self.get_binary_path('app')
         args = [app_path, '-unittest', '--gtest_death_test_style=threadsafe'];
+
+        if sys.platform.startswith('win') and \
+            'MOZ_LAUNCHER_PROCESS' in self.defines:
+            args.append('--wait-for-browser')
 
         if debug or debugger or debugger_args:
             args = self.prepend_debugger_args(args, debugger, debugger_args)
@@ -852,6 +851,8 @@ class RunProgram(MachCommandBase):
         help='Set the specified pref before starting the program. Can be set multiple times. Prefs can also be set in ~/.mozbuild/machrc in the [runprefs] section - see `./mach settings` for more information.')
     @CommandArgument('--temp-profile', action='store_true', group=prog_group,
         help='Run the program using a new temporary profile created inside the objdir.')
+    @CommandArgument('--macos-open', action='store_true', group=prog_group,
+        help="On macOS, run the program using the open(1) command. Per open(1), the browser is launched \"just as if you had double-clicked the file's icon\". The browser can not be launched under a debugger with this option.")
 
     @CommandArgumentGroup('debugging')
     @CommandArgument('--debug', action='store_true', group='debugging',
@@ -875,8 +876,8 @@ class RunProgram(MachCommandBase):
     @CommandArgument('--show-dump-stats', action='store_true', group='DMD',
         help='Show stats when doing dumps.')
     def run(self, params, remote, background, noprofile, disable_e10s,
-        enable_crash_reporter, setpref, temp_profile, debug, debugger,
-        debugger_args, dmd, mode, stacks, show_dump_stats):
+        enable_crash_reporter, setpref, temp_profile, macos_open, debug,
+        debugger, debugger_args, dmd, mode, stacks, show_dump_stats):
 
         if conditions.is_android(self):
             # Running Firefox for Android is completely different
@@ -901,7 +902,23 @@ class RunProgram(MachCommandBase):
                 print(e)
                 return 1
 
-            args = [binpath]
+            args = []
+            if macos_open:
+                if debug:
+                    print("The browser can not be launched in the debugger "
+                        "when using the macOS open command.")
+                    return 1
+                try:
+                    m = re.search(r'^.+\.app', binpath)
+                    apppath = m.group(0)
+                    args = ['open', apppath, '--args']
+                except Exception as e:
+                    print("Couldn't get the .app path from the binary path. "
+                        "The macOS open option can only be used on macOS")
+                    print(e)
+                    return 1
+            else:
+                args = [binpath]
 
             if params:
                 args.extend(params)
@@ -911,6 +928,10 @@ class RunProgram(MachCommandBase):
 
             if not background and sys.platform == 'darwin':
                 args.append('-foreground')
+
+            if sys.platform.startswith('win') and \
+               'MOZ_LAUNCHER_PROCESS' in self.defines:
+                args.append('-wait-for-browser')
 
             no_profile_option_given = \
                 all(p not in params for p in ['-profile', '--profile', '-P'])
@@ -1267,7 +1288,7 @@ class PackageFrontend(MachCommandBase):
         help='Use the given url as tooltool server')
     @CommandArgument('--no-unpack', action='store_true',
         help='Do not unpack any downloaded file')
-    @CommandArgument('--retry', type=int, default=0,
+    @CommandArgument('--retry', type=int, default=4,
         help='Number of times to retry failed downloads')
     @CommandArgument('--artifact-manifest', metavar='FILE',
         help='Store a manifest about the downloaded taskcluster artifacts')
@@ -1351,9 +1372,16 @@ class PackageFrontend(MachCommandBase):
 
         class ArtifactRecord(DownloadRecord):
             def __init__(self, task_id, artifact_name):
-                cot = cache._download_manager.session.get(
-                    get_artifact_url(task_id, 'public/chainOfTrust.json.asc'))
-                cot.raise_for_status()
+                for _ in redo.retrier(attempts=retry+1, sleeptime=60):
+                    cot = cache._download_manager.session.get(
+                        get_artifact_url(task_id, 'public/chainOfTrust.json.asc'))
+                    if cot.status_code >= 500:
+                        continue
+                    cot.raise_for_status()
+                    break
+                else:
+                    cot.raise_for_status()
+
                 digest = algorithm = None
                 data = {}
                 # The file is GPG-signed, but we don't care about validating
@@ -1392,7 +1420,7 @@ class PackageFrontend(MachCommandBase):
                     setup=record.setup)
 
         if from_build:
-            if 'TASK_ID' in os.environ:
+            if 'MOZ_AUTOMATION' in os.environ:
                 self.log(logging.ERROR, 'artifact', {},
                          'Do not use --from-build in automation; all dependencies '
                          'should be determined in the decision task.')
@@ -1630,7 +1658,7 @@ class StaticAnalysis(MachCommandBase):
     """Utilities for running C++ static analysis checks and format."""
 
     # List of file extension to consider (should start with dot)
-    _format_include_extensions = ('.cpp', '.c', '.h')
+    _format_include_extensions = ('.cpp', '.c', '.h', '.java')
     # File contaning all paths to exclude from formatting
     _format_ignore_file = '.clang-format-ignore'
 
@@ -1676,14 +1704,8 @@ class StaticAnalysis(MachCommandBase):
         self.log_manager.enable_all_structured_loggers()
 
         rc = self._build_compile_db(verbose=verbose)
-        if rc != 0:
-            return rc
-
-        rc = self._build_export(jobs=jobs, verbose=verbose)
-        if rc != 0:
-            return rc
-
-        rc = self._get_clang_tools(verbose=verbose)
+        rc = rc or self._build_export(jobs=jobs, verbose=verbose)
+        rc = rc or self._get_clang_tools(verbose=verbose)
         if rc != 0:
             return rc
 
@@ -1700,6 +1722,7 @@ class StaticAnalysis(MachCommandBase):
 
         cwd = self.topobjdir
         self._compilation_commands_path = self.topobjdir
+        self._clang_tidy_config = self._get_clang_tidy_config()
         args = self._get_clang_tidy_command(
             checks=checks, header_filter=header_filter, sources=source, jobs=jobs, fix=fix)
 
@@ -1707,12 +1730,152 @@ class StaticAnalysis(MachCommandBase):
 
         footer = StaticAnalysisFooter(self.log_manager.terminal, monitor)
         with StaticAnalysisOutputManager(self.log_manager, monitor, footer) as output:
-            rc = self.run_process(args=args, line_handler=output.on_line, cwd=cwd)
+            rc = self.run_process(args=args, ensure_exit_code=False, line_handler=output.on_line, cwd=cwd)
 
             self.log(logging.WARNING, 'warning_summary',
                      {'count': len(monitor.warnings_db)},
                      '{count} warnings present.')
+        if rc != 0:
             return rc
+        # if we are building firefox for android it might be nice to
+        # also analyze the java code base
+        if self.substs['MOZ_BUILD_APP'] == 'mobile/android':
+            rc = self.check_java(source, jobs, strip, verbose, skip_export=True)
+        return rc
+
+    @StaticAnalysisSubCommand('static-analysis', 'check-java',
+                              'Run infer on the java codebase.')
+    @CommandArgument('source', nargs='*', default=['mobile'],
+                     help='Source files to be analyzed. '
+                          'Can be omitted, in which case the entire code base '
+                          'is analyzed.  The source argument is ignored if '
+                          'there is anything fed through stdin, in which case '
+                          'the analysis is only performed on the files changed '
+                          'in the patch streamed through stdin.  This is called '
+                          'the diff mode.')
+    @CommandArgument('--checks', '-c', default=[], metavar='checks', nargs='*',
+                     help='Static analysis checks to enable.')
+    @CommandArgument('--jobs', '-j', default='0', metavar='jobs', type=int,
+                     help='Number of concurrent jobs to run.'
+                     ' Default is the number of CPUs.')
+    @CommandArgument('--task', '-t', type=str,
+                     default='compileLocalWithGeckoBinariesDebugSources',
+                     help='Which gradle tasks to use to compile the java codebase.')
+    def check_java(self, source=['mobile'], jobs=2, strip=1, verbose=False, checks=[],
+                   task='compileLocalWithGeckoBinariesDebugSources',
+                   skip_export=False):
+        self._set_log_level(verbose)
+        self.log_manager.enable_all_structured_loggers()
+        if self.substs['MOZ_BUILD_APP'] != 'mobile/android':
+            self.log(logging.WARNING, 'static-analysis', {},
+                     'Cannot check java source code unless you are building for android!')
+            return 1
+        rc = self._check_for_java()
+        if rc != 0:
+            return 1
+        # if source contains the whole mobile folder, then we just have to
+        # analyze everything
+        check_all = any(i.rstrip(os.sep).split(os.sep)[-1] == 'mobile' for i in source)
+        # gather all java sources from the source variable
+        java_sources = []
+        if not check_all:
+            java_sources = self._get_java_files(source)
+            if not java_sources:
+                return 0
+        if not skip_export:
+            rc = self._build_export(jobs=jobs, verbose=verbose)
+            if rc != 0:
+                return rc
+        rc = self._get_infer(verbose=verbose)
+        if rc != 0:
+            self.log(logging.WARNING, 'static-analysis', {},
+                     'This command is only available for linux64!')
+            return rc
+        # which checkers to use, and which folders to exclude
+        all_checkers, third_party_path = self._get_infer_config()
+        checkers, excludes = self._get_infer_args(
+            checks=checks or all_checkers,
+            third_party_path=third_party_path
+        )
+        rc = rc or self._gradle(['clean'])  # clean so that we can recompile
+        # infer capture command
+        capture_cmd = [self._infer_path, 'capture'] + excludes + ['--']
+        rc = rc or self._gradle([task], infer_args=capture_cmd, verbose=verbose)
+        tmp_file, args = self._get_infer_source_args(java_sources)
+        # infer analyze command
+        analysis_cmd = [self._infer_path, 'analyze', '--keep-going'] +  \
+            checkers + args
+        rc = rc or self.run_process(args=analysis_cmd, cwd=self.topsrcdir, pass_thru=True)
+        if tmp_file:
+            tmp_file.close()
+        return rc
+
+    def _get_java_files(self, sources):
+        java_sources = []
+        for i in sources:
+            f = mozpath.join(self.topsrcdir, i)
+            if os.path.isdir(f):
+                for root, dirs, files in os.walk(f):
+                    dirs.sort()
+                    for file in sorted(files):
+                        if file.endswith('.java'):
+                            java_sources.append(mozpath.join(root, file))
+            elif f.endswith('.java'):
+                java_sources.append(f)
+        return java_sources
+
+    def _get_infer_source_args(self, sources):
+        '''Return the arguments to only analyze <sources>'''
+        if not sources:
+            return (None, [])
+        # create a temporary file in which we place all sources
+        # this is used by the analysis command to only analyze certain files
+        f = tempfile.NamedTemporaryFile()
+        for source in sources:
+            f.write(source+'\n')
+        f.flush()
+        return (f, ['--changed-files-index', f.name])
+
+    def _get_infer_config(self):
+        '''Load the infer config file.'''
+        checkers = []
+        tp_path = ''
+        with open(mozpath.join(self.topsrcdir, 'tools',
+                               'infer', 'config.yaml')) as f:
+            try:
+                config = yaml.safe_load(f)
+                for item in config['infer_checkers']:
+                    if item['publish']:
+                        checkers.append(item['name'])
+                tp_path = mozpath.join(self.topsrcdir, config['third_party'])
+            except Exception as e:
+                print('Looks like config.yaml is not valid, so we are unable '
+                      'to determine default checkers, and which folder to '
+                      'exclude, using defaults provided by infer')
+        return checkers, tp_path
+
+    def _get_infer_args(self, checks, third_party_path):
+        '''Return the arguments which include the checkers <checks>, and
+        excludes all folder in <third_party_path>.'''
+        checkers = ['-a', 'checkers']
+        excludes = []
+        for checker in checks:
+            checkers.append('--' + checker)
+        with open(third_party_path) as f:
+            for line in f:
+                excludes.append('--skip-analysis-in-path')
+                excludes.append(line.strip('\n'))
+        return checkers, excludes
+
+    def _get_clang_tidy_config(self):
+        try:
+            file_handler = open(mozpath.join(self.topsrcdir, "tools", "clang-tidy", "config.yaml"))
+            config = yaml.safe_load(file_handler)
+        except Exception:
+                print('Looks like config.yaml is not valid, we are going to use default'
+                      ' values for the rest of the analysis.')
+                return None
+        return config
 
     def _get_clang_tidy_command(self, checks, header_filter, sources, jobs, fix):
 
@@ -1730,6 +1893,14 @@ class StaticAnalysis(MachCommandBase):
         # the source files or folders.
         common_args += ['-header-filter=%s' % (header_filter
                                               if len(header_filter) else '|'.join(sources))]
+
+        # From our configuration file, config.yaml, we build the configuration list, for
+        # the checkers that are used. These configuration options are used to better fit
+        # the checkers to our code.
+        cfg = self._get_checks_config()
+        if cfg:
+            common_args += ['-config=%s' % yaml.dump(cfg)]
+
         if fix:
             common_args += '-fix'
 
@@ -1737,6 +1908,47 @@ class StaticAnalysis(MachCommandBase):
             self.virtualenv_manager.python_path, self._run_clang_tidy_path, '-j',
             str(jobs), '-p', self._compilation_commands_path
         ] + common_args + sources
+
+    def _check_for_java(self):
+        '''Check if javac can be found.'''
+        import distutils
+        java = self.substs.get('JAVA')
+        java = java or os.getenv('JAVA_HOME')
+        java = java or distutils.spawn.find_executable('javac')
+        error = 'javac was not found! Please install javac and either add it to your PATH, '
+        error += 'set JAVA_HOME, or add the following to your mozconfig:\n'
+        error += '  --with-java-bin-path=/path/to/java/bin/'
+        if not java:
+            self.log(logging.ERROR, 'ERROR: static-analysis', {}, error)
+            return 1
+        return 0
+
+    def _gradle(self, args, infer_args=None, verbose=False, autotest=False,
+                suppress_output=True):
+        infer_args = infer_args or []
+        if autotest:
+            cwd = mozpath.join(self.topsrcdir, 'tools', 'infer', 'test')
+            gradle = mozpath.join(cwd, 'gradlew')
+        else:
+            gradle = self.substs['GRADLE']
+            cwd = self.topsrcdir
+        extra_env = {
+            'GRADLE_OPTS': '-Dfile.encoding=utf-8',  # see mobile/android/mach_commands.py
+            'JAVA_TOOL_OPTIONS': '-Dfile.encoding=utf-8',
+        }
+        if suppress_output:
+            devnull = open(os.devnull, 'w')
+            return subprocess.call(
+                infer_args + [gradle] + args,
+                env=dict(os.environ, **extra_env),
+                cwd=cwd, stdout=devnull, stderr=subprocess.STDOUT, close_fds=True)
+        else:
+            return self.run_process(
+                infer_args + [gradle] + args,
+                append_env=extra_env,
+                pass_thru=True,  # Allow user to run gradle interactively.
+                ensure_exit_code=False,  # Don't throw on non-zero exit code.
+                cwd=cwd)
 
     @StaticAnalysisSubCommand('static-analysis', 'autotest',
                               'Run the auto-test suite in order to determine that'
@@ -1746,7 +1958,8 @@ class StaticAnalysis(MachCommandBase):
                      ' this baseline we will test future results.')
     @CommandArgument('--intree-tool', '-i', default=False, action='store_true',
                      help='Use a pre-aquired in-tree clang-tidy package.')
-    @CommandArgument('checker_names', nargs='*', default=[], help='Checkers that are going to be auto-tested.')
+    @CommandArgument('checker_names', nargs='*', default=[],
+                     help='Checkers that are going to be auto-tested.')
     def autotest(self, verbose=False, dump_results=False, intree_tool=False, checker_names=[]):
         # If 'dump_results' is True than we just want to generate the issues files for each
         # checker in particulat and thus 'force_download' becomes 'False' since we want to
@@ -1754,10 +1967,7 @@ class StaticAnalysis(MachCommandBase):
         self._set_log_level(verbose)
         self._dump_results = dump_results
 
-        force_download = True
-
-        if self._dump_results:
-            force_download = False
+        force_download = not self._dump_results
 
         # Function return codes
         self.TOOLS_SUCCESS = 0
@@ -1768,23 +1978,26 @@ class StaticAnalysis(MachCommandBase):
         self.TOOLS_CHECKER_RESULT_FILE_NOT_FOUND = 5
         self.TOOLS_CHECKER_DIFF_FAILED = 6
         self.TOOLS_CHECKER_NOT_FOUND = 7
+        self.TOOLS_CHECKER_FAILED_FILE = 8
+        self.TOOLS_CHECKER_LIST_EMPTY = 9
+        self.TOOLS_GRADLE_FAILED = 10
 
         # Configure the tree or download clang-tidy package, depending on the option that we choose
         if intree_tool:
             _, config, _ = self._get_config_environment()
             clang_tools_path = self.topsrcdir
             self._clang_tidy_path = mozpath.join(
-                clang_tools_path, "clang", "bin",
+                clang_tools_path, "clang-tidy", "bin",
                 "clang-tidy" + config.substs.get('BIN_SUFFIX', ''))
             self._clang_format_path = mozpath.join(
-                clang_tools_path, "clang", "bin",
+                clang_tools_path, "clang-tidy", "bin",
                 "clang-format" + config.substs.get('BIN_SUFFIX', ''))
             self._clang_apply_replacements = mozpath.join(
-                clang_tools_path, "clang", "bin",
+                clang_tools_path, "clang-tidy", "bin",
                 "clang-apply-replacements" + config.substs.get('BIN_SUFFIX', ''))
-            self._run_clang_tidy_path = mozpath.join(clang_tools_path, "clang", "share",
+            self._run_clang_tidy_path = mozpath.join(clang_tools_path, "clang-tidy", "share",
                                                      "clang", "run-clang-tidy.py")
-            self._clang_format_diff = mozpath.join(clang_tools_path, "clang", "share",
+            self._clang_format_diff = mozpath.join(clang_tools_path, "clang-tidy", "share",
                                                    "clang", "clang-format-diff.py")
 
             # Ensure that clang-tidy is present
@@ -1793,20 +2006,20 @@ class StaticAnalysis(MachCommandBase):
             rc = self._get_clang_tools(force=force_download, verbose=verbose)
 
         if rc != 0:
-            self.log(logging.ERROR, 'ERROR: static-analysis', {}, 'clang-tidy unable to locate package.')
+            self.log(logging.ERROR, 'ERROR: static-analysis', {},
+                     'clang-tidy unable to locate package.')
             return self.TOOLS_FAILED_DOWNLOAD
 
         self._clang_tidy_base_path = mozpath.join(self.topsrcdir, "tools", "clang-tidy")
 
         # For each checker run it
-        f = open(mozpath.join(self._clang_tidy_base_path, "config.yaml"))
-        import yaml
-        config = yaml.safe_load(f)
+        self._clang_tidy_config = self._get_clang_tidy_config()
         platform, _ = self.platform
 
-        if platform not in config['platforms']:
-            self.log(logging.ERROR, 'static-analysis', {},"RUNNING: clang-tidy autotest for platform {} not supported.".format(platform))
-            return TOOLS_UNSUPORTED_PLATFORM
+        if platform not in self._clang_tidy_config['platforms']:
+            self.log(logging.ERROR, 'static-analysis', {},
+                     "RUNNING: clang-tidy autotest for platform {} not supported.".format(platform))
+            return self.TOOLS_UNSUPORTED_PLATFORM
 
         import concurrent.futures
         import multiprocessing
@@ -1826,30 +2039,95 @@ class StaticAnalysis(MachCommandBase):
         self._clang_tidy_checks = [c.strip() for c in available_checks if c]
 
         # Build the dummy compile_commands.json
-        self._compilation_commands_path = self._create_temp_compilation_db(config)
-
+        self._compilation_commands_path = self._create_temp_compilation_db(self._clang_tidy_config)
+        checkers_test_batch = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
-            for item in config['clang_checkers']:
-                # Do not test mozilla specific checks nor the default '-*'
-                if not (item['publish'] and ('restricted-platforms' in item
-                                             and platform not in item['restricted-platforms']
-                                             or 'restricted-platforms' not in item)
-                        and item['name'] not in ['mozilla-*', '-*'] and
-                        (checker_names == [] or item['name'] in checker_names)):
+            for item in self._clang_tidy_config['clang_checkers']:
+                # Skip if any of the following statements is true:
+                # 1. Checker attribute 'publish' is False.
+                not_published = not bool(item.get('publish', True))
+                # 2. Checker has restricted-platforms and current platform is not of them.
+                ignored_platform = 'restricted-platforms' in item and platform not in item['restricted-platforms']
+                # 3. Checker name is mozilla-* or -*.
+                ignored_checker = item['name'] in ['mozilla-*', '-*']
+                # 4. List checker_names is passed and the current checker is not part of the
+                #    list or 'publish' is False
+                checker_not_in_list = checker_names and (item['name'] not in checker_names or not_published)
+                if not_published or \
+                   ignored_platform or \
+                   ignored_checker or \
+                   checker_not_in_list:
                     continue
+                checkers_test_batch.append(item['name'])
                 futures.append(executor.submit(self._verify_checker, item))
 
+            error_code = self.TOOLS_SUCCESS
             for future in concurrent.futures.as_completed(futures):
+                # Wait for every task to finish
                 ret_val = future.result()
                 if ret_val != self.TOOLS_SUCCESS:
-                    # Also delete the tmp folder
+                    # We are interested only in one error and we don't break
+                    # the execution of for loop since we want to make sure that all
+                    # tasks finished.
+                    error_code = ret_val
+
+            if error_code != self.TOOLS_SUCCESS:
+                self.log(logging.INFO, 'static-analysis', {}, "FAIL: clang-tidy some tests failed.")
+                # Also delete the tmp folder
+                shutil.rmtree(self._compilation_commands_path)
+                return error_code
+
+            # Run the analysis on all checkers at the same time only if we don't dump results.
+            if not self._dump_results:
+                ret_val = self._run_analysis_batch(checkers_test_batch)
+                if ret_val != self.TOOLS_SUCCESS:
                     shutil.rmtree(self._compilation_commands_path)
                     return ret_val
 
         self.log(logging.INFO, 'static-analysis', {}, "SUCCESS: clang-tidy all tests passed.")
         # Also delete the tmp folder
         shutil.rmtree(self._compilation_commands_path)
+        return self._autotest_infer(intree_tool, force_download, verbose)
+
+    def _run_analysis(self, checks, header_filter, sources, jobs=1, fix=False, print_out=False):
+        cmd = self._get_clang_tidy_command(
+            checks=checks, header_filter=header_filter,
+            sources=sources,
+            jobs=jobs, fix=fix)
+
+        try:
+            clang_output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode('utf-8')
+        except subprocess.CalledProcessError as e:
+            print(e.output)
+            return None
+        return self._parse_issues(clang_output)
+
+    def _run_analysis_batch(self, items):
+        self.log(logging.INFO, 'static-analysis', {},"RUNNING: clang-tidy checker batch analysis.")
+        if not len(items):
+            self.log(logging.ERROR, 'static-analysis', {}, "ERROR: clang-tidy checker list is empty!")
+            return self.TOOLS_CHECKER_LIST_EMPTY
+
+        issues = self._run_analysis(
+            checks='-*,' + ",".join(items), header_filter='',
+            sources=[mozpath.join(self._clang_tidy_base_path, "test", checker) + '.cpp' for checker in items], print_out=True)
+
+        if issues is None:
+            return self.TOOLS_CHECKER_FAILED_FILE
+
+        for checker in items:
+            test_file_path_json = mozpath.join(self._clang_tidy_base_path, "test", checker) + '.json'
+             # Read the pre-determined issues
+            baseline_issues = self._get_autotest_stored_issues(test_file_path_json)
+            found = all([element_base in issues for element_base in baseline_issues])
+
+            if not found:
+                self.log(
+                    logging.ERROR, 'static-analysis', {},
+                    "ERROR: clang-tidy auto-test failed for checker {0} in multiple files process unit.".
+                    format(checker))
+                return self.TOOLS_CHECKER_DIFF_FAILED
         return self.TOOLS_SUCCESS
 
     def _create_temp_compilation_db(self, config):
@@ -1863,7 +2141,7 @@ class StaticAnalysis(MachCommandBase):
                 file = item['name'] + '.cpp'
                 element = {}
                 element["directory"] = director
-                element["command"] = 'cpp '+ file
+                element["command"] = 'cpp ' + file
                 element["file"] = mozpath.join(director, file)
                 compile_commands.append(element)
 
@@ -1872,14 +2150,137 @@ class StaticAnalysis(MachCommandBase):
 
             return directory
 
+    def _autotest_infer(self, intree_tool, force_download, verbose):
+        # infer is not available on other platforms, but autotest should work even without
+        # it being installed
+        if self.platform[0] == 'linux64':
+            rc = self._check_for_java()
+            if rc != 0:
+                return 1
+            rc = self._get_infer(force=force_download, verbose=verbose, intree_tool=intree_tool)
+            if rc != 0:
+                self.log(logging.ERROR, 'ERROR: static-analysis', {},
+                         'infer unable to locate package.')
+                return self.TOOLS_FAILED_DOWNLOAD
+            self.__infer_tool = mozpath.join(self.topsrcdir, 'tools', 'infer')
+            self.__infer_test_folder = mozpath.join(self.__infer_tool, 'test')
+
+            import concurrent.futures
+            import multiprocessing
+            max_workers = multiprocessing.cpu_count()
+            self.log(logging.INFO, 'static-analysis', {},
+                     "RUNNING: infer autotest for platform {0} with {1} workers.".format(
+                         self.platform[0], max_workers))
+            # clean previous autotest if it exists
+            rc = self._gradle(['autotest:clean'], autotest=True)
+            if rc != 0:
+                return rc
+            import yaml
+            with open(mozpath.join(self.__infer_tool, 'config.yaml')) as f:
+                config = yaml.safe_load(f)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = []
+                for item in config['infer_checkers']:
+                    if item['publish']:
+                        futures.append(executor.submit(self._verify_infer_checker, item))
+                # this is always included in check-java, but not in config.yaml
+                futures.append(executor.submit(self._verify_infer_checker,
+                                               {'name': 'checkers'}))
+                for future in concurrent.futures.as_completed(futures):
+                    ret_val = future.result()
+                    if ret_val != self.TOOLS_SUCCESS:
+                        return ret_val
+            self.log(logging.INFO, 'static-analysis', {}, "SUCCESS: infer all tests passed.")
+        else:
+            self.log(logging.WARNING, 'static-analysis', {},
+                     "Skipping infer autotest, because it is only available on linux64!")
+        return self.TOOLS_SUCCESS
+
+    def _verify_infer_checker(self, item):
+        '''Given a checker, this method verifies the following:
+          1. if there is a `checker`.json and `checker`.java file in
+             `tools/infer/test/autotest/src`
+          2. if running infer on `checker`.java yields the same result as `checker`.json
+        An `item` is simply a dictionary, which needs to have a `name` field set, which is the
+        name of the checker.
+        '''
+        def to_camelcase(str):
+            return ''.join([s.capitalize() for s in str.split('-')])
+        check = item['name']
+        test_file_path = mozpath.join(self.__infer_tool, 'test', 'autotest', 'src',
+                                      'main', 'java', to_camelcase(check))
+        test_file_path_java = test_file_path + '.java'
+        test_file_path_json = test_file_path + '.json'
+        self.log(logging.INFO, 'static-analysis', {}, "RUNNING: infer check {}.".format(check))
+        # Verify if the test file exists for this checker
+        if not os.path.exists(test_file_path_java):
+            self.log(logging.ERROR, 'static-analysis', {},
+                     "ERROR: infer check {} doesn't have a test file.".format(check))
+            return self.TOOLS_CHECKER_NO_TEST_FILE
+        # run infer on a particular test file
+        out_folder = mozpath.join(self.__infer_test_folder, 'test-infer-{}'.format(check))
+        if check == 'checkers':
+            check_arg = ['-a', 'checkers']
+        else:
+            check_arg = ['--{}-only'.format(check)]
+        infer_args = [self._infer_path, 'run'] + check_arg + ['-o', out_folder, '--']
+        gradle_args = ['autotest:compileInferTest{}'.format(to_camelcase(check))]
+        rc = self._gradle(gradle_args, infer_args=infer_args, autotest=True)
+        if rc != 0:
+            self.log(logging.ERROR, 'static-analysis', {},
+                     "ERROR: infer failed to execute gradle {}.".format(gradle_args))
+            return self.TOOLS_GRADLE_FAILED
+        issues = json.load(open(mozpath.join(out_folder, 'report.json')))
+        # remove folder that infer creates because the issues are loaded into memory
+        import shutil
+        shutil.rmtree(out_folder)
+        # Verify to see if we got any issues, if not raise exception
+        if not issues:
+            self.log(
+                logging.ERROR, 'static-analysis', {},
+                "ERROR: infer check {0} did not find any issues in its associated test suite."
+                .format(check)
+            )
+            return self.TOOLS_CHECKER_RETURNED_NO_ISSUES
+        if self._dump_results:
+            self._build_autotest_result(test_file_path_json, issues)
+        else:
+            if not os.path.exists(test_file_path_json):
+                # Result file for test not found maybe regenerate it?
+                self.log(
+                    logging.ERROR, 'static-analysis', {},
+                    "ERROR: infer result file not found for check {0}".format(check)
+                )
+                return self.TOOLS_CHECKER_RESULT_FILE_NOT_FOUND
+            # Read the pre-determined issues
+            baseline_issues = self._get_autotest_stored_issues(test_file_path_json)
+
+            def ordered(obj):
+                if isinstance(obj, dict):
+                    return sorted((k, ordered(v)) for k, v in obj.items())
+                if isinstance(obj, list):
+                    return sorted(ordered(x) for x in obj)
+                return obj
+            # Compare the two lists
+            if ordered(issues) != ordered(baseline_issues):
+                error_str = "ERROR: in check {} Expected: ".format(check)
+                error_str += '\n' + json.dumps(baseline_issues, indent=2)
+                error_str += '\n Got:\n' + json.dumps(issues, indent=2)
+                self.log(logging.ERROR, 'static-analysis', {},
+                         'ERROR: infer autotest for check {} failed, check stdout for more details'
+                         .format(check))
+                print(error_str)
+                return self.TOOLS_CHECKER_DIFF_FAILED
+        return self.TOOLS_SUCCESS
+
     @StaticAnalysisSubCommand('static-analysis', 'install',
                               'Install the static analysis helper tool')
     @CommandArgument('source', nargs='?', type=str,
-                     help='Where to fetch a local archive containing the static-analysis and format helper tool.'
-                          'It will be installed in ~/.mozbuild/clang-tools/.'
-                          'Can be omitted, in which case the latest clang-tools '
-                          ' helper for the platform would be automatically '
-                          'detected and installed.')
+                     help='Where to fetch a local archive containing the static-analysis and '
+                     'format helper tool.'
+                          'It will be installed in ~/.mozbuild/clang-tools and ~/.mozbuild/infer.'
+                          'Can be omitted, in which case the latest clang-tools and infer '
+                          'helper for the platform would be automatically detected and installed.')
     @CommandArgument('--skip-cache', action='store_true',
                      help='Skip all local caches to force re-fetching the helper tool.',
                      default=False)
@@ -1887,6 +2288,10 @@ class StaticAnalysis(MachCommandBase):
         self._set_log_level(verbose)
         rc = self._get_clang_tools(force=True, skip_cache=skip_cache,
                                    source=source, verbose=verbose)
+        if rc == 0:
+            # XXX ignore the return code because if it fails or not, infer is
+            # not mandatory, but clang-tidy is
+            self._get_infer(force=True, skip_cache=skip_cache, verbose=verbose)
         return rc
 
     @StaticAnalysisSubCommand('static-analysis', 'clear-cache',
@@ -1895,20 +2300,31 @@ class StaticAnalysis(MachCommandBase):
         self._set_log_level(verbose)
         rc = self._get_clang_tools(force=True, download_if_needed=True, skip_cache=True,
                                    verbose=verbose)
+        if rc == 0:
+            self._get_infer(force=True, download_if_needed=True, skip_cache=True,
+                            verbose=verbose)
         if rc != 0:
             return rc
-
-        self._artifact_manager.artifact_clear_cache()
+        return self._artifact_manager.artifact_clear_cache()
 
     @StaticAnalysisSubCommand('static-analysis', 'print-checks',
                               'Print a list of the static analysis checks performed by default')
     def print_checks(self, verbose=False):
         self._set_log_level(verbose)
         rc = self._get_clang_tools(verbose=verbose)
+        if rc == 0:
+            rc = self._get_infer(verbose=verbose)
         if rc != 0:
             return rc
         args = [self._clang_tidy_path, '-list-checks', '-checks=%s' % self._get_checks()]
-        return self._run_command_in_objdir(args=args, pass_thru=True)
+        rc = self._run_command_in_objdir(args=args, pass_thru=True)
+        if rc != 0:
+            return rc
+        checkers, _ = self._get_infer_config()
+        print('Infer checks:')
+        for checker in checkers:
+            print(' '*4 + checker)
+        return 0
 
     @Command('clang-format',  category='misc', description='Run clang-format on current changes')
     @CommandArgument('--show', '-s', action='store_true', default=False,
@@ -1939,7 +2355,8 @@ class StaticAnalysis(MachCommandBase):
         test_file_path_cpp = test_file_path + '.cpp'
         test_file_path_json = test_file_path + '.json'
 
-        self.log(logging.INFO, 'static-analysis', {},"RUNNING: clang-tidy checker {}.".format(check))
+        self.log(logging.INFO, 'static-analysis', {},
+                 "RUNNING: clang-tidy checker {}.".format(check))
 
         # Verify if this checker actually exists
         if not check in self._clang_tidy_checks:
@@ -1951,24 +2368,21 @@ class StaticAnalysis(MachCommandBase):
             self.log(logging.ERROR, 'static-analysis', {}, "ERROR: clang-tidy checker {} doesn't have a test file.".format(check))
             return self.TOOLS_CHECKER_NO_TEST_FILE
 
-        cmd = self._get_clang_tidy_command(
-            checks='-*,' + check, header_filter='', sources=[test_file_path_cpp], jobs=1, fix=False)
-
-        clang_output = subprocess.check_output(
-            cmd, stderr=subprocess.STDOUT).decode('utf-8')
-
-        issues = self._parse_issues(clang_output)
+        issues = self._run_analysis(
+            checks='-*,' + check, header_filter='', sources=[test_file_path_cpp])
+        if issues is None:
+            return self.TOOLS_CHECKER_FAILED_FILE
 
         # Verify to see if we got any issues, if not raise exception
         if not issues:
             self.log(
                 logging.ERROR, 'static-analysis', {},
-                "ERROR: clang-tidy checker {0} did not find any issues in it\'s associated test suite.".
+                "ERROR: clang-tidy checker {0} did not find any issues in its associated test file.".
                 format(check))
-            return self.CHECKER_RETURNED_NO_ISSUES
+            return self.TOOLS_CHECKER_RETURNED_NO_ISSUES
 
         if self._dump_results:
-            self._build_autotest_result(test_file_path_json, issues)
+            self._build_autotest_result(test_file_path_json, json.dumps(issues))
         else:
             if not os.path.exists(test_file_path_json):
                 # Result file for test not found maybe regenerate it?
@@ -1982,7 +2396,6 @@ class StaticAnalysis(MachCommandBase):
 
             # Compare the two lists
             if issues != baseline_issues:
-                print("Clang output: {}".format(clang_output))
                 self.log(
                     logging.ERROR, 'static-analysis', {},
                     "ERROR: clang-tidy auto-test failed for checker {0} Expected: {1} Got: {2}".
@@ -1992,7 +2405,7 @@ class StaticAnalysis(MachCommandBase):
 
     def _build_autotest_result(self, file, issues):
         with open(file, 'w') as f:
-            json.dump(issues, f, indent=4, sort_keys=True)
+            f.write(issues)
 
     def _get_autotest_stored_issues(self, file):
         with open(file) as f:
@@ -2023,22 +2436,45 @@ class StaticAnalysis(MachCommandBase):
             header_group = header.groups()
             element = [header_group[3], header_group[4], header_group[5]]
             issues.append(element)
-        return json.dumps(issues)
+        return issues
 
     def _get_checks(self):
         checks = '-*'
-        import yaml
-        with open(mozpath.join(self.topsrcdir, "tools", "clang-tidy", "config.yaml")) as f:
-            try:
-                config = yaml.safe_load(f)
-                for item in config['clang_checkers']:
-                    if item['publish']:
-                        checks += ',' + item['name']
-            except Exception:
-                print('Looks like config.yaml is not valid, so we are unable to '
-                      'determine default checkers, using \'-checks=-*,mozilla-*\'')
-                checks += ',mozilla-*'
-        return checks
+        try:
+            config = self._clang_tidy_config
+            for item in config['clang_checkers']:
+                if item.get('publish', True):
+                    checks += ',' + item['name']
+        except Exception:
+            print('Looks like config.yaml is not valid, so we are unable to '
+                    'determine default checkers, using \'-checks=-*,mozilla-*\'')
+            checks += ',mozilla-*'
+        finally:
+            return checks
+
+    def _get_checks_config(self):
+        config_list = []
+        checker_config = {}
+        try:
+            config = self._clang_tidy_config
+            for checker in config['clang_checkers']:
+                if checker.get('publish', True) and 'config' in checker:
+                    for checker_option in checker['config']:
+                        # Verify if the format of the Option is correct,
+                        # possibilities are:
+                        # 1. CheckerName.Option
+                        # 2. Option -> that will become CheckerName.Option
+                        if not checker_option['key'].startswith(checker['name']):
+                            checker_option['key'] = "{}.{}".format(
+                                checker['name'], checker_option['key'])
+                    config_list += checker['config']
+            checker_config['CheckOptions'] = config_list
+        except Exception:
+            print('Looks like config.yaml is not valid, so we are unable to '
+                    'determine configuration for checkers, so using default')
+            checker_config = None
+        finally:
+            return checker_config
 
     def _get_config_environment(self):
         ran_configure = False
@@ -2118,19 +2554,18 @@ class StaticAnalysis(MachCommandBase):
             return rc
 
         clang_tools_path = mozpath.join(self._mach_context.state_dir, "clang-tools")
-        self._clang_tidy_path = mozpath.join(clang_tools_path, "clang", "bin",
+        self._clang_tidy_path = mozpath.join(clang_tools_path, "clang-tidy", "bin",
                                              "clang-tidy" + config.substs.get('BIN_SUFFIX', ''))
         self._clang_format_path = mozpath.join(
-            clang_tools_path, "clang", "bin",
+            clang_tools_path, "clang-tidy", "bin",
             "clang-format" + config.substs.get('BIN_SUFFIX', ''))
         self._clang_apply_replacements = mozpath.join(
-            clang_tools_path, "clang", "bin",
+            clang_tools_path, "clang-tidy", "bin",
             "clang-apply-replacements" + config.substs.get('BIN_SUFFIX', ''))
-        self._run_clang_tidy_path = mozpath.join(clang_tools_path, "clang", "share", "clang",
+        self._run_clang_tidy_path = mozpath.join(clang_tools_path, "clang-tidy", "share", "clang",
                                                  "run-clang-tidy.py")
-        self._clang_format_diff = mozpath.join(clang_tools_path, "clang", "share", "clang",
+        self._clang_format_diff = mozpath.join(clang_tools_path, "clang-tidy", "share", "clang",
                                                "clang-format-diff.py")
-
         if os.path.exists(self._clang_tidy_path) and \
            os.path.exists(self._clang_format_path) and \
            os.path.exists(self._clang_apply_replacements) and \
@@ -2230,6 +2665,49 @@ class StaticAnalysis(MachCommandBase):
                         pattern = pattern[1:]
                     args += [':({0}){1}'.format(','.join(magics), pattern)]
         return args
+
+    def _get_infer(self, force=False, skip_cache=False, download_if_needed=True,
+                   verbose=False, intree_tool=False):
+        rc, config, _ = self._get_config_environment()
+        if rc != 0:
+            return rc
+        infer_path = self.topsrcdir if intree_tool else \
+            mozpath.join(self._mach_context.state_dir, 'infer')
+        self._infer_path = mozpath.join(infer_path, 'infer', 'bin', 'infer' +
+                                        config.substs.get('BIN_SUFFIX', ''))
+        if intree_tool:
+            return not os.path.exists(self._infer_path)
+        if os.path.exists(self._infer_path) and not force:
+            return 0
+        else:
+            if os.path.isdir(infer_path) and download_if_needed:
+                # The directory exists, perhaps it's corrupted?  Delete it
+                # and start from scratch.
+                import shutil
+                shutil.rmtree(infer_path)
+                return self._get_infer(force=force, skip_cache=skip_cache,
+                                       verbose=verbose,
+                                       download_if_needed=download_if_needed)
+            os.mkdir(infer_path)
+            self._artifact_manager = PackageFrontend(self._mach_context)
+            if not download_if_needed:
+                return 0
+            job, _ = self.platform
+            if job != 'linux64':
+                return -1
+            else:
+                job += '-infer'
+            # We want to unpack data in the infer mozbuild folder
+            currentWorkingDir = os.getcwd()
+            os.chdir(infer_path)
+            rc = self._artifact_manager.artifact_toolchain(verbose=verbose,
+                                                           skip_cache=skip_cache,
+                                                           from_build=[job],
+                                                           no_unpack=False,
+                                                           retry=0)
+            # Change back the cwd
+            os.chdir(currentWorkingDir)
+            return rc
 
     def _run_clang_format_diff(self, clang_format_diff, clang_format, show):
         # Run clang-format on the diff
@@ -2378,6 +2856,9 @@ class Vendor(MachCommandBase):
 
     @SubCommand('vendor', 'python',
                 description='Vendor Python packages from pypi.org into third_party/python')
+    @CommandArgument('--with-windows-wheel', action='store_true',
+        help='Vendor a wheel for Windows along with the source package',
+        default=False)
     @CommandArgument('packages', default=None, nargs='*', help='Packages to vendor. If omitted, packages and their dependencies defined in Pipfile.lock will be vendored. If Pipfile has been modified, then Pipfile.lock will be regenerated. Note that transient dependencies may be updated when running this command.')
     def vendor_python(self, **kwargs):
         from mozbuild.vendor_python import VendorPython
@@ -2508,19 +2989,27 @@ class Repackage(MachCommandBase):
         help='Mar binary path')
     @CommandArgument('--output', '-o', type=str, required=True,
         help='Output filename')
-    def repackage_mar(self, input, mar, output):
+    @CommandArgument('--format', type=str, default='lzma',
+        choices=('lzma', 'bz2'),
+        help='Mar format')
+    def repackage_mar(self, input, mar, output, format):
         from mozbuild.repackaging.mar import repackage_mar
-        repackage_mar(self.topsrcdir, input, mar, output)
+        repackage_mar(self.topsrcdir, input, mar, output, format)
 
 @CommandProvider
 class Analyze(MachCommandBase):
     """ Get information about a file in the build graph """
-    @Command('summarize', category='misc',
-        description='Get incremental build cost for a file (or files) from the tup database.')
+    @Command('analyze', category='misc',
+        description='Analyze the build graph.')
+    def analyze(self):
+        print("Usage: ./mach analyze [files|report] [args...]")
+
+    @SubCommand('analyze', 'files',
+        description='Get incremental build cost for file(s) from the tup database.')
     @CommandArgument('--path', help='Path to tup db',
         default=None)
-    @CommandArgument('files', nargs='*', help='Files to summarize')
-    def summarize(self, path, files):
+    @CommandArgument('files', nargs='*', help='Files to analyze')
+    def analyze_files(self, path, files):
         from mozbuild.analyze.graph import Graph
         if path is None:
             path = mozpath.join(self.topsrcdir, '.tup', 'db')
@@ -2533,3 +3022,53 @@ class Analyze(MachCommandBase):
             print ('Could not find a valid tup db in ' + path, res, sep='\n')
             return 1
 
+    @SubCommand('analyze', 'all',
+        description='Get a report of files changed within the last n days and their corresponding build cost.')
+    @CommandArgument('--days', '-d', type=int, default=14,
+        help='Number of days to include in the report.')
+    @CommandArgument('--format', default='pretty',
+        choices=['pretty', 'csv', 'json', 'html'],
+        help='Print or export data in the given format.')
+    @CommandArgument('--limit', type=int, default=None,
+        help='Get the top n most expensive files from the report.')
+    @CommandArgument('--path', help='Path to cost_dict.gz',
+        default=None)
+    def analyze_report(self, days, format, limit, path):
+        from mozbuild.analyze.hg import Report
+        self._activate_virtualenv()
+        try:
+            self.virtualenv_manager.install_pip_package('tablib==0.12.1')
+        except Exception:
+            print ('Could not install tablib via pip.')
+            return 1
+        if path is None:
+            # go find tup db and make a cost_dict
+            from mozbuild.analyze.graph import Graph
+            db_path = mozpath.join(self.topsrcdir, '.tup', 'db')
+            if os.path.isfile(db_path):
+                g = Graph(db_path)
+                r = Report(days, cost_dict=g.get_cost_dict())
+                g.close()
+                r.generate_output(format, limit, self.topobjdir)
+            else:
+                res = 'Please specify the location of cost_dict.gz with --path.'
+                print ('Could not find %s to make a cost dictionary.' % db_path, res, sep='\n')
+                return 1
+        else:
+            # path to cost_dict.gz was specified
+            if os.path.isfile(path):
+                r = Report(days, path)
+                r.generate_output(format, limit, self.topobjdir)
+            else:
+                res = 'Please specify the location of cost_dict.gz with --path.'
+                print ('Could not find cost_dict.gz at %s' % path, res, sep='\n')
+                return 1
+
+
+@SettingsProvider
+class TelemetrySettings():
+    config_settings = [
+        ('build.telemetry', 'boolean', """
+Enable submission of build system telemetry.
+        """.strip(), False),
+    ]

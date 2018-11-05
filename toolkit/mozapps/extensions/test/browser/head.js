@@ -30,11 +30,9 @@ const PREF_DISCOVER_ENABLED = "extensions.getAddons.showPane";
 const PREF_XPI_ENABLED = "xpinstall.enabled";
 const PREF_UPDATEURL = "extensions.update.url";
 const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
-const PREF_CUSTOM_XPINSTALL_CONFIRMATION_UI = "xpinstall.customConfirmationUI";
 const PREF_UI_LASTCATEGORY = "extensions.ui.lastCategory";
 
 const MANAGER_URI = "about:addons";
-const INSTALL_URI = "chrome://mozapps/content/xpinstall/xpinstallConfirm.xul";
 const PREF_LOGGING_ENABLED = "extensions.logging.enabled";
 const PREF_STRICT_COMPAT = "extensions.strictCompatibility";
 
@@ -57,7 +55,6 @@ var gTestsRun = 0;
 var gTestStart = null;
 
 var gRestorePrefs = [{name: PREF_LOGGING_ENABLED},
-                     {name: PREF_CUSTOM_XPINSTALL_CONFIRMATION_UI},
                      {name: "extensions.webservice.discoverURL"},
                      {name: "extensions.update.url"},
                      {name: "extensions.update.background.url"},
@@ -87,18 +84,14 @@ for (let pref of gRestorePrefs) {
 // Turn logging on for all tests
 Services.prefs.setBoolPref(PREF_LOGGING_ENABLED, true);
 
-Services.prefs.setBoolPref(PREF_CUSTOM_XPINSTALL_CONFIRMATION_UI, false);
-
 function promiseFocus(window) {
   return new Promise(resolve => waitForFocus(resolve, window));
 }
 
 // Helper to register test failures and close windows if any are left open
 function checkOpenWindows(aWindowID) {
-  let windows = Services.wm.getEnumerator(aWindowID);
   let found = false;
-  while (windows.hasMoreElements()) {
-    let win = windows.getNext().QueryInterface(Ci.nsIDOMWindow);
+  for (let win of Services.wm.getEnumerator(aWindowID)) {
     if (!win.closed) {
       found = true;
       win.close();
@@ -110,8 +103,7 @@ function checkOpenWindows(aWindowID) {
 
 // Tools to disable and re-enable the background update and blocklist timers
 // so that tests can protect themselves from unwanted timer events.
-var gCatMan = Cc["@mozilla.org/categorymanager;1"]
-                .getService(Ci.nsICategoryManager);
+var gCatMan = Services.catMan;
 // Default values from toolkit/mozapps/extensions/extensions.manifest, but disable*UpdateTimer()
 // records the actual value so we can put it back in enable*UpdateTimer()
 var backgroundUpdateConfig = "@mozilla.org/addons/integration;1,getService,addon-background-update-timer,extensions.update.interval,86400";
@@ -241,18 +233,18 @@ var get_tooltip_info = async function(addon) {
   await promise;
 
   let expectedName = addon.getAttribute("name");
-  ok(tiptext.substring(0, expectedName.length), expectedName,
+  is(tiptext.substring(0, expectedName.length), expectedName,
      "Tooltip should always start with the expected name");
 
   if (expectedName.length == tiptext.length) {
     return {
       name: tiptext,
-      version: undefined
+      version: undefined,
     };
   }
   return {
     name: tiptext.substring(0, expectedName.length),
-    version: tiptext.substring(expectedName.length + 1)
+    version: tiptext.substring(expectedName.length + 1),
   };
 };
 
@@ -604,7 +596,7 @@ CategoryUtilities.prototype = {
 
   openType(aCategoryType, aCallback) {
     return this.open(this.get(aCategoryType), aCallback);
-  }
+  },
 };
 
 function CertOverrideListener(host, bits) {
@@ -622,14 +614,13 @@ CertOverrideListener.prototype = {
 
   QueryInterface: ChromeUtils.generateQI(["nsIBadCertListener2", "nsIInterfaceRequestor"]),
 
-  notifyCertProblem(socketInfo, sslStatus, targetHost) {
-    var cert = sslStatus.QueryInterface(Ci.nsISSLStatus)
-                        .serverCert;
+  notifyCertProblem(socketInfo, secInfo, targetHost) {
+    var cert = secInfo.serverCert;
     var cos = Cc["@mozilla.org/security/certoverride;1"].
               getService(Ci.nsICertOverrideService);
     cos.rememberValidityOverride(this.host, -1, cert, this.bits, false);
     return true;
-  }
+  },
 };
 
 // Add overrides for the bad certificates
@@ -1197,7 +1188,7 @@ MockAddon.prototype = {
         AddonManagerPrivate.callAddonListeners("onDisabled", this);
       }
     }
-  }
+  },
 };
 
 /** *** Mock AddonInstall object for the Mock Provider *****/
@@ -1339,7 +1330,7 @@ MockInstall.prototype = {
     }
 
     return result;
-  }
+  },
 };
 
 function waitForCondition(condition, nextTest, errorMsg) {
@@ -1389,10 +1380,57 @@ function promiseNotification(id = "addon-webext-permissions") {
       let notification = PopupNotifications.getNotification(id);
       if (notification) {
         PopupNotifications.panel.removeEventListener("popupshown", popupshown);
-        PopupNotifications.panel.firstChild.button.click();
+        PopupNotifications.panel.firstElementChild.button.click();
         resolve();
       }
     }
     PopupNotifications.panel.addEventListener("popupshown", popupshown);
+  });
+}
+
+/**
+ * Wait for the given PopupNotification to display
+ *
+ * @param {string} name
+ *        The name of the notification to wait for.
+ *
+ * @returns {Promise}
+ *          Resolves with the notification window.
+ */
+function promisePopupNotificationShown(name = "addon-webext-permissions") {
+  return new Promise(resolve => {
+    function popupshown() {
+      let notification = PopupNotifications.getNotification(name);
+      if (!notification) { return; }
+
+      ok(notification, `${name} notification shown`);
+      ok(PopupNotifications.isPanelOpen, "notification panel open");
+
+      PopupNotifications.panel.removeEventListener("popupshown", popupshown);
+      resolve(PopupNotifications.panel.firstChild);
+    }
+    PopupNotifications.panel.addEventListener("popupshown", popupshown);
+  });
+}
+
+function acceptAppMenuNotificationWhenShown(id) {
+  ChromeUtils.import("resource://gre/modules/AppMenuNotifications.jsm");
+  return new Promise(resolve => {
+    function popupshown() {
+      let notification = AppMenuNotifications.activeNotification;
+      if (!notification) { return; }
+
+      is(notification.id, id, `${id} notification shown`);
+      ok(PanelUI.isNotificationPanelOpen, "notification panel open");
+
+      PanelUI.notificationPanel.removeEventListener("popupshown", popupshown);
+
+      let popupnotificationID = PanelUI._getPopupId(notification);
+      let popupnotification = document.getElementById(popupnotificationID);
+      popupnotification.button.click();
+
+      resolve();
+    }
+    PanelUI.notificationPanel.addEventListener("popupshown", popupshown);
   });
 }

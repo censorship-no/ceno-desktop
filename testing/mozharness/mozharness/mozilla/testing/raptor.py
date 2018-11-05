@@ -4,6 +4,7 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import argparse
 import copy
 import json
 import os
@@ -19,6 +20,7 @@ import mozharness
 from mozharness.base.errors import PythonErrorList
 from mozharness.base.log import OutputParser, DEBUG, ERROR, CRITICAL, INFO
 from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
+from mozharness.mozilla.testing.android import AndroidMixin
 from mozharness.base.vcs.vcsbase import MercurialScript
 from mozharness.mozilla.testing.codecoverage import (
     CodeCoverageMixin,
@@ -43,7 +45,7 @@ RaptorErrorList = PythonErrorList + [
 ]
 
 
-class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
+class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin):
     """
     install and run raptor tests
     """
@@ -55,7 +57,7 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
           }],
         [["--app"],
          {"default": "firefox",
-          "choices": ["firefox", "chrome"],
+          "choices": ["firefox", "chrome", "geckoview"],
           "dest": "app",
           "help": "name of the application we are testing (default: firefox)"
           }],
@@ -76,6 +78,50 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
             "default": False,
             "help": "Tries to enable the WebRender compositor.",
         }],
+        [["--geckoProfile"], {
+            "dest": "gecko_profile",
+            "action": "store_true",
+            "default": False,
+            "help": argparse.SUPPRESS
+        }],
+        [["--geckoProfileInterval"], {
+            "dest": "gecko_profile_interval",
+            "type": "int",
+            "help": argparse.SUPPRESS
+        }],
+        [["--geckoProfileEntries"], {
+            "dest": "gecko_profile_entries",
+            "type": "int",
+            "help": argparse.SUPPRESS
+        }],
+        [["--gecko-profile"], {
+            "dest": "gecko_profile",
+            "action": "store_true",
+            "default": False,
+            "help": "Whether or not to profile the test run and save the profile results"
+        }],
+        [["--gecko-profile-interval"], {
+            "dest": "gecko_profile_interval",
+            "type": "int",
+            "help": "The interval between samples taken by the profiler (milliseconds)"
+        }],
+        [["--gecko-profile-entries"], {
+            "dest": "gecko_profile_entries",
+            "type": "int",
+            "help": "How many samples to take with the profiler"
+        }],
+        [["--page-cycles"], {
+            "dest": "page_cycles",
+            "type": "int",
+            "help": "How many times to repeat loading the test page (for page load tests); "
+                    "for benchmark tests this is how many times the benchmark test will be run"
+        }],
+        [["--page-timeout"], {
+            "dest": "page_timeout",
+            "type": "int",
+            "help": "How long to wait (ms) for one page_cycle to complete, before timing out"
+        }],
+
     ] + testing_config_options + copy.deepcopy(code_coverage_config_options)
 
     def __init__(self, **kwargs):
@@ -109,16 +155,21 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
         if self.run_local:
             # raptor initiated locally, get app from command line args
             # which are passed in from mach inside 'raptor_cmd_line_args'
+            # cmd line args can be in two formats depending on how user entered them
+            # i.e. "--app=geckoview" or separate as "--app", "geckoview" so we have to
+            # check each cmd line arg individually
             self.app = "firefox"
             if 'raptor_cmd_line_args' in self.config:
-                for next_arg in self.config['raptor_cmd_line_args']:
-                    if "chrome" in next_arg:
-                        self.app = "chrome"
-                        break
+                for app in ['chrome', 'geckoview']:
+                    for next_arg in self.config['raptor_cmd_line_args']:
+                        if app in next_arg:
+                            self.app = app
+                            break
         else:
             # raptor initiated in production via mozharness
             self.test = self.config['test']
             self.app = self.config.get("app", "firefox")
+            self.binary_path = self.config.get("binary_path", None)
 
         self.installer_url = self.config.get("installer_url")
         self.raptor_json_url = self.config.get("raptor_json_url")
@@ -127,8 +178,11 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
         self.repo_path = self.config.get("repo_path")
         self.obj_path = self.config.get("obj_path")
         self.test = None
-        self.gecko_profile = self.config.get('gecko_profile')
+        self.gecko_profile = self.config.get('gecko_profile') or \
+            "--geckoProfile" in self.config.get("raptor_cmd_line_args", [])
         self.gecko_profile_interval = self.config.get('gecko_profile_interval')
+        self.gecko_profile_entries = self.config.get('gecko_profile_entries')
+        self.test_packages_url = self.config.get('test_packages_url')
 
     # We accept some configuration options from the try commit message in the
     # format mozharness: <options>. Example try commit message: mozharness:
@@ -142,6 +196,10 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
                 gecko_results.extend(
                     ['--geckoProfileInterval', str(self.gecko_profile_interval)]
                 )
+            if self.gecko_profile_entries:
+                gecko_results.extend(
+                    ['--geckoProfileEntries', str(self.gecko_profile_entries)]
+                )
         return gecko_results
 
     def query_abs_dirs(self):
@@ -151,6 +209,7 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
         abs_dirs['abs_blob_upload_dir'] = os.path.join(abs_dirs['abs_work_dir'],
                                                        'blobber_upload_dir')
         abs_dirs['abs_test_install_dir'] = os.path.join(abs_dirs['abs_work_dir'], 'tests')
+
         self.abs_dirs = abs_dirs
         return self.abs_dirs
 
@@ -246,15 +305,15 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
         # binary path; if testing on firefox the binary path already came from mozharness/pro;
         # otherwise the binary path is forwarded from cmd line arg (raptor_cmd_line_args)
         kw_options['app'] = self.app
-        if self.app == "firefox":
+        if self.app == "firefox" or (self.app == "geckoview" and not self.run_local):
             binary_path = self.binary_path or self.config.get('binary_path')
             if not binary_path:
                 self.fatal("Raptor requires a path to the binary.")
             kw_options['binary'] = binary_path
-        else:
+        else:  # running on google chrome
             if not self.run_local:
-                # in production we aready installed google chrome, so set the binary path for arg
-                # when running locally a --binary arg as passed in, already in raptor_cmd_line_args
+                # when running locally we already set the chrome binary above in init; here
+                # in production we aready installed chrome, so set the binary path to our install
                 kw_options['binary'] = self.chrome_path
 
         # options overwritten from **kw
@@ -295,6 +354,9 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
     # clobber defined in BaseScript
 
     def download_and_extract(self, extract_dirs=None, suite_categories=None):
+        if 'MOZ_FETCHES' in os.environ:
+            self.fetch_content()
+
         return super(Raptor, self).download_and_extract(
             suite_categories=['common', 'raptor']
         )
@@ -320,6 +382,11 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
                                      'lib',
                                      os.path.basename(_python_interp),
                                      'site-packages')
+
+            # if  running gecko profiling  install the requirements
+            if self.gecko_profile:
+                self._install_view_gecko_profile_req()
+
             sys.path.append(_path)
             return
 
@@ -352,6 +419,27 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
             requirements=[os.path.join(self.raptor_path,
                                        'requirements.txt')]
         )
+
+        # if  running gecko profiling  install the requirements
+        if self.gecko_profile:
+            self._install_view_gecko_profile_req()
+
+    def install(self):
+        if self.app == "geckoview":
+            self.install_apk(self.installer_path)
+        else:
+            super(Raptor, self).install()
+
+    def _install_view_gecko_profile_req(self):
+        # if running locally and gecko profiing is on, we will be using the
+        # view-gecko-profile tool which has its own requirements too
+        if self.gecko_profile and self.run_local:
+            tools = os.path.join(self.config['repo_path'], 'testing', 'tools')
+            view_gecko_profile_req = os.path.join(tools,
+                                                  'view_gecko_profile',
+                                                  'requirements.txt')
+            self.info("installing requirements for the view-gecko-profile tool")
+            self.install_module(requirements=[view_gecko_profile_req])
 
     def _validate_treeherder_data(self, parser):
         # late import is required, because install is done in create_virtualenv
@@ -423,6 +511,12 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
         env['SCRIPTSPATH'] = scripts_path
         env['EXTERNALTOOLSPATH'] = external_tools_path
 
+        # disable "GC poisoning" Bug# 1499043
+        env['JSGC_DISABLE_POISONING'] = '1'
+
+        # needed to load unsigned raptor webext on moz-beta
+        env['MOZ_DISABLE_NONLOCAL_CONNECTIONS'] = '1'
+
         if self.repo_path is not None:
             env['MOZ_DEVELOPER_REPO_DIR'] = self.repo_path
         if self.obj_path is not None:
@@ -449,6 +543,9 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
 
             return bool(debug_opts.intersection(cmdline))
 
+        if self.app == "geckoview":
+            self.logcat_start()
+
         command = [python, run_tests] + options + mozlog_opts
         if launch_in_debug_mode(command):
             raptor_process = subprocess.Popen(command, cwd=self.workdir, env=env)
@@ -458,6 +555,10 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
                                                 output_timeout=output_timeout,
                                                 output_parser=parser,
                                                 env=env)
+
+        if self.app == "geckoview":
+            self.logcat_stop()
+
         if parser.minidump_output:
             self.info("Looking at the minidump files for debugging purposes...")
             for item in parser.minidump_output:
@@ -466,12 +567,12 @@ class Raptor(TestingMixin, MercurialScript, CodeCoverageMixin):
         elif '--no-upload-results' not in options:
             if not self.gecko_profile:
                 self._validate_treeherder_data(parser)
-                if not self.run_local:
-                    # copy results to upload dir so they are included as an artifact
-                    self.info("copying raptor results to upload dir:")
-                    dest = os.path.join(env['MOZ_UPLOAD_DIR'], 'perfherder-data.json')
-                    self.info(str(dest))
-                    self._artifact_perf_data(dest)
+            if not self.run_local:
+                # copy results to upload dir so they are included as an artifact
+                self.info("copying raptor results to upload dir:")
+                dest = os.path.join(env['MOZ_UPLOAD_DIR'], 'perfherder-data.json')
+                self.info(str(dest))
+                self._artifact_perf_data(dest)
 
 
 class RaptorOutputParser(OutputParser):

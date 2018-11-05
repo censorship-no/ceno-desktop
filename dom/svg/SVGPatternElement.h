@@ -34,7 +34,7 @@ class SVGPatternElement final : public SVGPatternElementBase
 protected:
   friend nsresult (::NS_NewSVGPatternElement(nsIContent **aResult,
                                              already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGPatternElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGPatternElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
 public:
@@ -43,15 +43,14 @@ public:
   // nsIContent interface
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* name) const override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // nsSVGSVGElement methods:
   virtual bool HasValidDimensions() const override;
 
   virtual mozilla::nsSVGAnimatedTransformList*
     GetAnimatedTransformList(uint32_t aFlags = 0) override;
-  virtual nsAtom* GetTransformListAttrName() const override {
+  virtual nsStaticAtom* GetTransformListAttrName() const override {
     return nsGkAtoms::patternTransform;
   }
 

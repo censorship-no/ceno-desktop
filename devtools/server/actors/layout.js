@@ -6,13 +6,19 @@
 
 const { Cu } = require("chrome");
 const { Actor, ActorClassWithSpec } = require("devtools/shared/protocol");
-const { flexboxSpec, gridSpec, layoutSpec } = require("devtools/shared/specs/layout");
-const nodeFilterConstants = require("devtools/shared/dom-node-filter-constants");
+const {
+  flexboxSpec,
+  flexItemSpec,
+  gridSpec,
+  layoutSpec,
+} = require("devtools/shared/specs/layout");
+const { SHOW_ELEMENT } = require("devtools/shared/dom-node-filter-constants");
 const { getStringifiableFragments } =
   require("devtools/server/actors/utils/css-grid-utils");
 
-loader.lazyRequireGetter(this, "nodeConstants", "devtools/shared/dom-node-constants");
+loader.lazyRequireGetter(this, "getCSSStyleRules", "devtools/shared/inspector/css-logic", true);
 loader.lazyRequireGetter(this, "CssLogic", "devtools/server/actors/inspector/css-logic", true);
+loader.lazyRequireGetter(this, "nodeConstants", "devtools/shared/dom-node-constants");
 
 /**
  * Set of actors the expose the CSS layout information to the devtools protocol clients.
@@ -21,7 +27,8 @@ loader.lazyRequireGetter(this, "CssLogic", "devtools/server/actors/inspector/css
  * layout-related information from the document.
  *
  * The |Flexbox| actor provides the container node information to inspect the flexbox
- * container.
+ * container. It is also used to return an array of |FlexItem| actors which provide the
+ * flex item information.
  *
  * The |Grid| actor provides the grid fragment information to inspect the grid container.
  */
@@ -52,8 +59,18 @@ const FlexboxActor = ActorClassWithSpec(flexboxSpec, {
       return this.actorID;
     }
 
+    const styles = CssLogic.getComputedStyle(this.containerEl);
+
     const form = {
       actor: this.actorID,
+      // The computed style properties of the flex container.
+      properties: {
+        "align-content": styles.alignContent,
+        "align-items": styles.alignItems,
+        "flex-direction": styles.flexDirection,
+        "flex-wrap": styles.flexWrap,
+        "justify-content": styles.justifyContent,
+      },
     };
 
     // If the WalkerActor already knows the container element, then also return its
@@ -61,6 +78,146 @@ const FlexboxActor = ActorClassWithSpec(flexboxSpec, {
     // cases.
     if (this.walker.hasNode(this.containerEl)) {
       form.containerNodeActorID = this.walker.getNode(this.containerEl).actorID;
+    }
+
+    return form;
+  },
+
+  /**
+   * Returns an array of FlexItemActor objects for all the flex item elements contained
+   * in the flex container element.
+   *
+   * @return {Array} An array of FlexItemActor objects.
+   */
+  getFlexItems() {
+    if (isNodeDead(this.containerEl)) {
+      return [];
+    }
+
+    const flex = this.containerEl.getAsFlexContainer();
+    if (!flex) {
+      return [];
+    }
+
+    const flexItemActors = [];
+    const { crossAxisDirection, mainAxisDirection } = flex;
+
+    for (const line of flex.getLines()) {
+      for (const item of line.getItems()) {
+        flexItemActors.push(new FlexItemActor(this, item.node, {
+          crossAxisDirection,
+          mainAxisDirection,
+          crossMaxSize: item.crossMaxSize,
+          crossMinSize: item.crossMinSize,
+          mainBaseSize: item.mainBaseSize,
+          mainDeltaSize: item.mainDeltaSize,
+          mainMaxSize: item.mainMaxSize,
+          mainMinSize: item.mainMinSize,
+          lineGrowthState: line.growthState,
+          clampState: item.clampState,
+        }));
+      }
+    }
+
+    return flexItemActors;
+  },
+});
+
+/**
+ * The FlexItemActor provides information about a flex items' data.
+ */
+const FlexItemActor = ActorClassWithSpec(flexItemSpec, {
+  /**
+   * @param  {FlexboxActor} flexboxActor
+   *         The FlexboxActor instance.
+   * @param  {DOMNode} element
+   *         The flex item element.
+   * @param  {Object} flexItemSizing
+   *         The flex item sizing data.
+   */
+  initialize(flexboxActor, element, flexItemSizing) {
+    Actor.prototype.initialize.call(this, flexboxActor.conn);
+
+    this.containerEl = flexboxActor.containerEl;
+    this.element = element;
+    this.flexItemSizing = flexItemSizing;
+    this.walker = flexboxActor.walker;
+  },
+
+  destroy() {
+    Actor.prototype.destroy.call(this);
+
+    this.containerEl = null;
+    this.element = null;
+    this.flexItemSizing = null;
+    this.walker = null;
+  },
+
+  form(detail) {
+    if (detail === "actorid") {
+      return this.actorID;
+    }
+
+    const { mainAxisDirection } = this.flexItemSizing;
+    const dimension = mainAxisDirection.startsWith("horizontal") ? "width" : "height";
+
+    // Find the authored sizing properties for this item.
+    const properties = {
+      "flex-basis": "",
+      "flex-grow": "",
+      "flex-shrink": "",
+      [`min-${dimension}`]: "",
+      [`max-${dimension}`]: "",
+      [dimension]: "",
+    };
+
+    const isElementNode = this.element.nodeType === this.element.ELEMENT_NODE;
+
+    if (isElementNode) {
+      for (const name in properties) {
+        let value = "";
+        // Look first on the element style.
+        if (this.element.style &&
+            this.element.style[name] && this.element.style[name] !== "auto") {
+          value = this.element.style[name];
+        } else {
+          // And then on the rules that apply to the element.
+          // getCSSStyleRules returns rules from least to most specific, so override
+          // values as we find them.
+          const cssRules = getCSSStyleRules(this.element);
+          for (const rule of cssRules) {
+            const rulePropertyValue = rule.style.getPropertyValue(name);
+            if (rulePropertyValue && rulePropertyValue !== "auto") {
+              value = rulePropertyValue;
+            }
+          }
+        }
+
+        properties[name] = value;
+      }
+    }
+
+    // Also find some computed sizing properties that will be useful for this item.
+    const { flexGrow, flexShrink } = isElementNode
+      ? CssLogic.getComputedStyle(this.element)
+      : { flexGrow: null, flexShrink: null };
+    const computedStyle = { flexGrow, flexShrink };
+
+    const form = {
+      actor: this.actorID,
+      // The flex item sizing data.
+      flexItemSizing: this.flexItemSizing,
+      // The authored style properties of the flex item.
+      properties,
+      // The computed style properties of the flex item.
+      computedStyle,
+    };
+
+    // If the WalkerActor already knows the flex item element, then also return its
+    // ActorID so we avoid the client from doing another round trip to get it in many
+    // cases.
+    if (this.walker.hasNode(this.element)) {
+      form.nodeActorID = this.walker.getNode(this.element).actorID;
     }
 
     return form;
@@ -142,20 +299,23 @@ const LayoutActor = ActorClassWithSpec(layoutSpec, {
   },
 
   /**
-   * Helper function for getCurrentGrid and getCurrentFlexbox. Returns the grid or
-   * flex container (whichever is requested) found by iterating on the given selected
-   * node. The current node can be a grid/flex container or grid/flex item. If it is a
-   * grid/flex item, returns the parent grid/flex container. Otherwise, returns null
-   * if the current or parent node is not a grid/flex container.
+   * Helper function for getAsFlexItem, getCurrentGrid and getCurrentFlexbox. Returns the
+   * grid or flex container (whichever is requested) found by iterating on the given
+   * selected node. The current node can be a grid/flex container or grid/flex item.
+   * If it is a grid/flex item, returns the parent grid/flex container. Otherwise, returns
+   * null if the current or parent node is not a grid/flex container.
    *
    * @param  {Node|NodeActor} node
    *         The node to start iterating at.
-   * @param {String} type
+   * @param  {String} type
    *         Can be "grid" or "flex", the display type we are searching for.
-   * @return {GridActor|FlexboxActor|Null} The GridActor or FlexboxActor of the
+   * @param  {Boolean|null} onlyLookAtCurrentNode
+   *         Whether or not to consider only the current node's display (ie, don't walk
+   *         up the tree).
+   * @return {GridActor|FlexboxActor|null} The GridActor or FlexboxActor of the
    * grid/flex container of the give node. Otherwise, returns null.
    */
-  getCurrentDisplay(node, type) {
+  getCurrentDisplay(node, type, onlyLookAtCurrentNode) {
     if (isNodeDead(node)) {
       return null;
     }
@@ -165,24 +325,33 @@ const LayoutActor = ActorClassWithSpec(layoutSpec, {
       node = node.rawNode;
     }
 
-    const treeWalker = this.walker.getDocumentWalker(node,
-      nodeFilterConstants.SHOW_ELEMENT);
+    const treeWalker = this.walker.getDocumentWalker(node, SHOW_ELEMENT);
     let currentNode = treeWalker.currentNode;
     let displayType = this.walker.getNode(currentNode).displayType;
 
-    if (!displayType) {
-      return null;
+    // If the node is an element, check first if it is itself a flex or a grid.
+    if (currentNode.nodeType === currentNode.ELEMENT_NODE) {
+      if (!displayType) {
+        return null;
+      }
+
+      if (type == "flex") {
+        if (displayType == "inline-flex" || displayType == "flex") {
+          return new FlexboxActor(this, currentNode);
+        } else if (onlyLookAtCurrentNode) {
+          return null;
+        }
+      } else if (type == "grid" &&
+                 (displayType == "inline-grid" || displayType == "grid")) {
+        return new GridActor(this, currentNode);
+      }
     }
 
-    if (type == "flex" &&
-        (displayType == "inline-flex" || displayType == "flex")) {
-      return new FlexboxActor(this, currentNode);
-    } else if (type == "grid" &&
-               (displayType == "inline-grid" || displayType == "grid")) {
-      return new GridActor(this, currentNode);
-    }
-
-    // Otherwise, check if this is a flex item or the parent node is a flex container.
+    // Otherwise, check if this is a flex/grid item or the parent node is a flex/grid
+    // container.
+    // Note that text nodes that are children of flex/grid containers are wrapped in
+    // anonymous containers, so even if their displayType getter returns null we still
+    // want to walk up the chain to find their container.
     while ((currentNode = treeWalker.parentNode())) {
       if (!currentNode) {
         break;
@@ -215,7 +384,7 @@ const LayoutActor = ActorClassWithSpec(layoutSpec, {
    *
    * @param  {Node|NodeActor} node
    *         The node to start iterating at.
-   * @return {GridActor|Null} The GridActor of the grid container of the give node.
+   * @return {GridActor|null} The GridActor of the grid container of the given node.
    * Otherwise, returns null.
    */
   getCurrentGrid(node) {
@@ -230,11 +399,17 @@ const LayoutActor = ActorClassWithSpec(layoutSpec, {
    *
    * @param  {Node|NodeActor} node
    *         The node to start iterating at.
-   * @return {FlexboxActor|Null} The FlexboxActor of the flex container of the give node.
+   * @param  {Boolean|null} onlyLookAtParents
+   *         Whether or not to only consider the parent node of the given node.
+   * @return {FlexboxActor|null} The FlexboxActor of the flex container of the given node.
    * Otherwise, returns null.
    */
-  getCurrentFlexbox(node) {
-    return this.getCurrentDisplay(node, "flex");
+  getCurrentFlexbox(node, onlyLookAtParents) {
+    if (onlyLookAtParents) {
+      node = node.rawNode.parentNode;
+    }
+
+    return this.getCurrentDisplay(node, "flex", onlyLookAtParents);
   },
 
   /**
@@ -277,5 +452,6 @@ function isNodeDead(node) {
 }
 
 exports.FlexboxActor = FlexboxActor;
+exports.FlexItemActor = FlexItemActor;
 exports.GridActor = GridActor;
 exports.LayoutActor = LayoutActor;

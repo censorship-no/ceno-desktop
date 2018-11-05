@@ -29,6 +29,7 @@ namespace jit {
 class MacroAssembler;
 struct Register;
 class Label;
+enum class FrameType;
 } // namespace jit
 
 namespace wasm {
@@ -43,6 +44,8 @@ class ModuleSegment;
 struct CallableOffsets;
 struct FuncOffsets;
 struct Frame;
+
+typedef JS::ProfilingFrameIterator::RegisterState RegisterState;
 
 // Iterates over a linear group of wasm frames of a single wasm JitActivation,
 // called synchronously from C++ in the wasm thread. It will stop at the first
@@ -64,6 +67,7 @@ class WasmFrameIter
     unsigned lineOrBytecode_;
     Frame* fp_;
     uint8_t* unwoundIonCallerFP_;
+    jit::FrameType unwoundIonFrameType_;
     Unwind unwind_;
     void** unwoundAddressOfReturnAddress_;
 
@@ -88,6 +92,7 @@ class WasmFrameIter
     void** unwoundAddressOfReturnAddress() const;
     bool debugEnabled() const;
     DebugFrame* debugFrame() const;
+    jit::FrameType unwoundIonFrameType() const;
     uint8_t* unwoundIonCallerFP() const { return unwoundIonCallerFP_; }
 };
 
@@ -186,7 +191,7 @@ class ProfilingFrameIterator
     // Start unwinding at the innermost activation given the register state when
     // the thread was suspended.
     ProfilingFrameIterator(const jit::JitActivation& activation,
-                           const JS::ProfilingFrameIterator::RegisterState& state);
+                           const RegisterState& state);
 
     void operator++();
     bool done() const { return !codeRange_ && exitReason_.isNone(); }
@@ -225,17 +230,6 @@ GenerateFunctionPrologue(jit::MacroAssembler& masm, const FuncTypeIdDesc& funcTy
 void
 GenerateFunctionEpilogue(jit::MacroAssembler& masm, unsigned framePushed, FuncOffsets* offsets);
 
-// Given a fault at pc with register fp, return the faulting instance if there
-// is such a plausible instance, and otherwise null.
-
-Instance*
-LookupFaultingInstance(const ModuleSegment& codeSegment, void* pc, void* fp);
-
-// Return whether the given PC is in wasm code.
-
-bool
-InCompiledCode(void* pc);
-
 // Describes register state and associated code at a given call frame.
 
 struct UnwindState
@@ -246,8 +240,6 @@ struct UnwindState
     const CodeRange* codeRange;
     UnwindState() : fp(nullptr), pc(nullptr), code(nullptr), codeRange(nullptr) {}
 };
-
-typedef JS::ProfilingFrameIterator::RegisterState RegisterState;
 
 // Ensures the register state at a call site is consistent: pc must be in the
 // code range of the code described by fp. This prevents issues when using
@@ -263,6 +255,19 @@ typedef JS::ProfilingFrameIterator::RegisterState RegisterState;
 bool
 StartUnwinding(const RegisterState& registers, UnwindState* unwindState,
                bool* unwoundCaller);
+
+// Bit set as the lowest bit of a frame pointer, used in two different mutually
+// exclusive situations:
+// - either it's a low bit tag in a FramePointer value read from the
+// Frame::callerFP of an inner wasm frame. This indicates the previous call
+// frame has been set up by a JIT caller that directly called into a wasm
+// function's body. This is only stored in Frame::callerFP for a wasm frame
+// called from JIT code, and thus it can not appear in a JitActivation's
+// exitFP.
+// - or it's the low big tag set when exiting wasm code in JitActivation's
+// exitFP.
+
+constexpr uintptr_t ExitOrJitEntryFPTag = 0x1;
 
 } // namespace wasm
 } // namespace js

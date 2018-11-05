@@ -11,12 +11,13 @@
 #include "base/message_loop.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "FrameMetrics.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
 
 namespace mozilla {
 namespace layers {
+
+struct FrameMetrics;
 
 class WheelScrollAnimation;
 class KeyboardScrollAnimation;
@@ -30,6 +31,19 @@ public:
 
   virtual bool DoSample(FrameMetrics& aFrameMetrics,
                         const TimeDuration& aDelta) = 0;
+
+  /**
+   * Attempt to apply a translation to the animation in response to content
+   * providing a relative scroll offset update.
+   *
+   * @param aShiftDelta the amount to translate the animation in app units
+   * @returns Whether the animation was able to translate. If false, the
+   *    animation must be canceled.
+   */
+  virtual bool ApplyContentShift(const CSSPoint& aShiftDelta)
+  {
+    return false;
+  }
 
   bool Sample(FrameMetrics& aFrameMetrics,
               const TimeDuration& aDelta) {

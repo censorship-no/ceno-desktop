@@ -6,6 +6,8 @@
 #ifndef mozilla_SandboxPolicies_h
 #define mozilla_SandboxPolicies_h
 
+#define MAX_TESTING_READ_PATHS 4
+
 namespace mozilla {
 
 static const char pluginSandboxRules[] = R"SANDBOX_LITERAL(
@@ -50,16 +52,17 @@ static const char contentSandboxRules[] = R"SANDBOX_LITERAL(
   (define sandbox-level-3 (param "SANDBOX_LEVEL_3"))
   (define macosMinorVersion (string->number (param "MAC_OS_MINOR")))
   (define appPath (param "APP_PATH"))
-  (define appBinaryPath (param "APP_BINARY_PATH"))
-  (define appdir-path (param "APP_DIR"))
   (define hasProfileDir (param "HAS_SANDBOXED_PROFILE"))
   (define profileDir (param "PROFILE_DIR"))
+  (define hasWindowServer (param "HAS_WINDOW_SERVER"))
   (define home-path (param "HOME_PATH"))
   (define debugWriteDir (param "DEBUG_WRITE_DIR"))
   (define testingReadPath1 (param "TESTING_READ_PATH1"))
   (define testingReadPath2 (param "TESTING_READ_PATH2"))
   (define testingReadPath3 (param "TESTING_READ_PATH3"))
   (define testingReadPath4 (param "TESTING_READ_PATH4"))
+  (define parentPort (param "PARENT_PORT"))
+  (define crashPort (param "CRASH_PORT"))
 
   (if (string=? should-log "TRUE")
     (deny default)
@@ -81,12 +84,12 @@ static const char contentSandboxRules[] = R"SANDBOX_LITERAL(
       (subpath "/System")
       (subpath "/usr/lib")
       (subpath "/Library/GPUBundles")
-      (subpath appdir-path))
+      (subpath appPath))
     (allow file-read*
         (subpath "/System")
         (subpath "/usr/lib")
         (subpath "/Library/GPUBundles")
-        (subpath appdir-path)))
+        (subpath appPath)))
 
   ; Allow read access to standard system paths.
   (allow file-read*
@@ -185,6 +188,14 @@ static const char contentSandboxRules[] = R"SANDBOX_LITERAL(
     (ipc-posix-name-regex #"^CFPBS:"))
 
   (allow signal (target self))
+  (if (string? parentPort)
+    (allow mach-lookup (global-name parentPort)))
+  (if (string? crashPort)
+    (allow mach-lookup (global-name crashPort)))
+  (if (string=? hasWindowServer "TRUE")
+    (allow mach-lookup (global-name "com.apple.windowserver.active")))
+  (allow mach-lookup (global-name "com.apple.coreservices.launchservicesd"))
+  (allow mach-lookup (global-name "com.apple.lsd.mapdb"))
 
   (if (>= macosMinorVersion 13)
     (allow mach-lookup
@@ -230,9 +241,7 @@ static const char contentSandboxRules[] = R"SANDBOX_LITERAL(
       (home-subpath "/Library/Colors")
       (home-subpath "/Library/Keyboard Layouts")
       (home-subpath "/Library/Input Methods")
-      (home-subpath "/Library/Spelling")
-      (literal appPath)
-      (literal appBinaryPath))
+      (home-subpath "/Library/Spelling"))
 
   (if (defined? 'file-map-executable)
     (begin
@@ -256,9 +265,7 @@ static const char contentSandboxRules[] = R"SANDBOX_LITERAL(
 
   (allow file-read-metadata (home-subpath "/Library"))
 
-  (allow file-read-metadata
-    (literal "/private/var")
-    (subpath "/private/var/folders"))
+  (allow file-read-metadata (subpath "/private/var"))
 
   ; bug 1303987
   (if (string? debugWriteDir)
@@ -476,6 +483,10 @@ static const char flashPluginSandboxRules[] = R"SANDBOX_LITERAL(
          (iokit-user-client-class "AGPMClient")
          (iokit-user-client-class "AppleGraphicsControlClient")
          (iokit-user-client-class "AppleGraphicsPolicyClient"))
+  ; Camera access
+  (allow iokit-open
+         (iokit-user-client-class "IOUSBDeviceUserClientV2")
+         (iokit-user-client-class "IOUSBInterfaceUserClientV2"))
 
   ; Network
   (allow file-read*
@@ -642,7 +653,6 @@ static const char flashPluginSandboxRules[] = R"SANDBOX_LITERAL(
       (local-name "com.apple.tsm.portname")
       (global-name "com.apple.axserver")
       (global-name "com.apple.pbs.fetch_services")
-      (global-name "com.apple.tccd.system")
       (global-name "com.apple.tsm.uiserver")
       (global-name "com.apple.inputmethodkit.launchagent")
       (global-name "com.apple.inputmethodkit.launcher")
@@ -651,6 +661,14 @@ static const char flashPluginSandboxRules[] = R"SANDBOX_LITERAL(
       (global-name "com.apple.windowserver.active")
       (global-name "com.apple.trustd.agent")
       (global-name "com.apple.ocspd"))
+  ; Required for camera access
+  (allow mach-lookup
+      (global-name "com.apple.tccd")
+      (global-name "com.apple.tccd.system")
+      (global-name "com.apple.cmio.AppleCameraAssistant")
+      (global-name "com.apple.cmio.IIDCVideoAssistant")
+      (global-name "com.apple.cmio.AVCAssistant")
+      (global-name "com.apple.cmio.VDCAssistant"))
   ; bug 1475707
   (if (= macosMinorVersion 9)
      (allow mach-lookup (global-name "com.apple.xpcd")))
@@ -781,15 +799,22 @@ static const char flashPluginSandboxRules[] = R"SANDBOX_LITERAL(
   (allow file-read*
       (literal "/Library/Preferences/com.apple.security.plist")
       (subpath "/private/var/db/mds"))
-  ; Tests revealed file-write-{data,create,flags} required for some encrypted
-  ; video playback. Allowing file-write* to match system profiles.
+
+  ; Additional read/write paths needed for encrypted video playback.
+  ; Tests revealed file-write-{data,create,flags} are required for the
+  ; accesses to the mds files. file-write-{data,create,mode,unlink}
+  ; required for CertStore.dat access. Allow file-write* to match system
+  ; profiles and for better compatibilty.
   (allow file-read* file-write*
-      (cache-literal "/mds/mds.lock")
-      (cache-literal "/mds/mdsDirectory.db_")
-      (cache-literal "/mds/mdsDirectory.db_")
-      (cache-literal "/mds/mdsObject.db")
-      (cache-literal "/mds/mdsObject.db_")
-      (require-all (vnode-type REGULAR-FILE)))
+      (require-all
+          (vnode-type REGULAR-FILE)
+          (require-any
+              (cache-literal "/mds/mds.lock")
+              (cache-literal "/mds/mdsDirectory.db")
+              (cache-literal "/mds/mdsDirectory.db_")
+              (cache-literal "/mds/mdsObject.db")
+              (cache-literal "/mds/mdsObject.db_")
+              (tempDir-regex "/TemporaryItems/[^/]+/CertStore.dat"))))
 
   (allow network-bind (local ip))
 

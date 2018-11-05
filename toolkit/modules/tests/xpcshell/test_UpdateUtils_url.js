@@ -56,7 +56,7 @@ function getServicePack() {
       {wServicePackMinor: WORD},
       {wSuiteMask: WORD},
       {wProductType: BYTE},
-      {wReserved: BYTE}
+      {wReserved: BYTE},
       ]);
 
   let kernel32 = ctypes.open("kernel32");
@@ -102,7 +102,7 @@ function getProcArchitecture() {
       {dwProcessorType: DWORD},
       {dwAllocationGranularity: DWORD},
       {wProcessorLevel: WORD},
-      {wProcessorRevision: WORD}
+      {wProcessorRevision: WORD},
       ]);
 
   let kernel32 = ctypes.open("kernel32");
@@ -312,13 +312,6 @@ add_task(async function test_distribution_version() {
   gDefaultPrefBranch.setCharPref(PREF_DISTRIBUTION_VERSION, "test_distro_version");
   Assert.equal(await getResult(url), "test_distro_version",
                "the url param for %DISTRIBUTION_VERSION%" + MSG_SHOULD_EQUAL);
-});
-
-add_task(async function test_custom() {
-  Services.prefs.setCharPref("app.update.custom", "custom");
-  let url = URL_PREFIX + "%CUSTOM%/";
-  Assert.equal(await getResult(url), "custom",
-               "the url query string for %CUSTOM%" + MSG_SHOULD_EQUAL);
 });
 
 // url constructed with %SYSTEM_CAPABILITIES%

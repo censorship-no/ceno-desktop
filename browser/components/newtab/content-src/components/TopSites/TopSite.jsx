@@ -4,7 +4,8 @@ import {
   MIN_CORNER_FAVICON_SIZE,
   MIN_RICH_FAVICON_SIZE,
   TOP_SITES_CONTEXT_MENU_OPTIONS,
-  TOP_SITES_SOURCE
+  TOP_SITES_SEARCH_SHORTCUTS_CONTEXT_MENU_OPTIONS,
+  TOP_SITES_SOURCE,
 } from "./TopSitesConstants";
 import {LinkMenu} from "content-src/components/LinkMenu/LinkMenu";
 import React from "react";
@@ -16,6 +17,7 @@ export class TopSiteLink extends React.PureComponent {
     super(props);
     this.state = {screenshotImage: null};
     this.onDragEvent = this.onDragEvent.bind(this);
+    this.onKeyPress = this.onKeyPress.bind(this);
   }
 
   /*
@@ -53,6 +55,10 @@ export class TopSiteLink extends React.PureComponent {
         }
         break;
       case "mousedown":
+        // Block the scroll wheel from appearing for middle clicks on search top sites
+        if (event.button === 1 && this.props.link.searchTopSite) {
+          event.preventDefault();
+        }
         // Reset at the first mouse event of a potential drag
         this.dragged = false;
         break;
@@ -107,9 +113,18 @@ export class TopSiteLink extends React.PureComponent {
     ScreenshotUtils.maybeRevokeBlobObjectURL(this.state.screenshotImage);
   }
 
+  onKeyPress(event) {
+    // If we have tabbed to a search shortcut top site, and we click 'enter',
+    // we should execute the onClick function. This needs to be added because
+    // search top sites are anchor tags without an href. See bug 1483135
+    if (this.props.link.searchTopSite && event.key === "Enter") {
+      this.props.onClick(event);
+    }
+  }
+
   render() {
     const {children, className, defaultStyle, isDraggable, link, onClick, title} = this.props;
-    const topSiteOuterClassName = `top-site-outer${className ? ` ${className}` : ""}${link.isDragged ? " dragged" : ""}`;
+    const topSiteOuterClassName = `top-site-outer${className ? ` ${className}` : ""}${link.isDragged ? " dragged" : ""}${link.searchTopSite ? " search-shortcut" : ""}`;
     const {tippyTopIcon, faviconSize} = link;
     const [letterFallback] = title;
     let imageClassName;
@@ -120,19 +135,26 @@ export class TopSiteLink extends React.PureComponent {
     let hasScreenshotImage = this.state.screenshotImage && this.state.screenshotImage.url;
     if (defaultStyle) { // force no styles (letter fallback) even if the link has imagery
       smallFaviconFallback = false;
+    } else if (link.searchTopSite) {
+      imageClassName = "top-site-icon rich-icon";
+      imageStyle = {
+        backgroundColor: link.backgroundColor,
+        backgroundImage: `url(${tippyTopIcon})`,
+      };
+      smallFaviconStyle = {backgroundImage:  `url(${tippyTopIcon})`};
     } else if (link.customScreenshotURL) {
       // assume high quality custom screenshot and use rich icon styles and class names
       imageClassName = "top-site-icon rich-icon";
       imageStyle = {
         backgroundColor: link.backgroundColor,
-        backgroundImage: hasScreenshotImage ? `url(${this.state.screenshotImage.url})` : "none"
+        backgroundImage: hasScreenshotImage ? `url(${this.state.screenshotImage.url})` : "none",
       };
     } else if (tippyTopIcon || faviconSize >= MIN_RICH_FAVICON_SIZE) {
       // styles and class names for top sites with rich icons
       imageClassName = "top-site-icon rich-icon";
       imageStyle = {
         backgroundColor: link.backgroundColor,
-        backgroundImage: `url(${tippyTopIcon || link.favicon})`
+        backgroundImage: `url(${tippyTopIcon || link.favicon})`,
       };
     } else {
       // styles and class names for top sites with screenshot + small icon in top left corner
@@ -156,14 +178,15 @@ export class TopSiteLink extends React.PureComponent {
         onClick: this.onDragEvent,
         onDragEnd: this.onDragEvent,
         onDragStart: this.onDragEvent,
-        onMouseDown: this.onDragEvent
+        onMouseDown: this.onDragEvent,
       };
     }
     return (<li className={topSiteOuterClassName} onDrop={this.onDragEvent} onDragOver={this.onDragEvent} onDragEnter={this.onDragEvent} onDragLeave={this.onDragEvent} {...draggableProps}>
       <div className="top-site-inner">
-         <a href={link.url} onClick={onClick}>
+         <a href={!link.searchTopSite && link.url} tabIndex="0" onKeyPress={this.onKeyPress} onClick={onClick} draggable={true}>
             <div className="tile" aria-hidden={true} data-fallback={letterFallback}>
               <div className={imageClassName} style={imageStyle} />
+              {link.searchTopSite && <div className="top-site-icon search-topsite" />}
               {showSmallFavicon && <div
                 className="top-site-icon default-icon"
                 data-fallback={smallFaviconFallback && letterFallback}
@@ -182,7 +205,7 @@ export class TopSiteLink extends React.PureComponent {
 TopSiteLink.defaultProps = {
   title: "",
   link: {},
-  isDraggable: true
+  isDraggable: true,
 };
 
 export class TopSite extends React.PureComponent {
@@ -203,6 +226,11 @@ export class TopSite extends React.PureComponent {
     if (this.props.link.isPinned) {
       value.card_type = "pinned";
     }
+    if (this.props.link.searchTopSite) {
+      // Set the card_type as "search" regardless of its pinning status
+      value.card_type = "search";
+      value.search_vendor = this.props.link.hostname;
+    }
     return {value};
   }
 
@@ -210,7 +238,7 @@ export class TopSite extends React.PureComponent {
     this.props.dispatch(ac.UserEvent(Object.assign({
       event,
       source: TOP_SITES_SOURCE,
-      action_position: this.props.index
+      action_position: this.props.index,
     }, this._getTelemetryInfo())));
   }
 
@@ -221,10 +249,17 @@ export class TopSite extends React.PureComponent {
     // specified as a property on the link.
     event.preventDefault();
     const {altKey, button, ctrlKey, metaKey, shiftKey} = event;
-    this.props.dispatch(ac.OnlyToMain({
-      type: at.OPEN_LINK,
-      data: Object.assign(this.props.link, {event: {altKey, button, ctrlKey, metaKey, shiftKey}})
-    }));
+    if (!this.props.link.searchTopSite) {
+      this.props.dispatch(ac.OnlyToMain({
+        type: at.OPEN_LINK,
+        data: Object.assign(this.props.link, {event: {altKey, button, ctrlKey, metaKey, shiftKey}}),
+      }));
+    } else {
+      this.props.dispatch(ac.OnlyToMain({
+        type: at.FILL_SEARCH_TERM,
+        data: {label: this.props.link.label},
+      }));
+    }
   }
 
   onMenuButtonClick(event) {
@@ -244,7 +279,7 @@ export class TopSite extends React.PureComponent {
     const title = link.label || link.hostname;
     return (<TopSiteLink {...props} onClick={this.onLinkClick} onDragEvent={this.props.onDragEvent} className={`${props.className || ""}${isContextMenuOpen ? " active" : ""}`} title={title}>
         <div>
-          <button className="context-menu-button icon" onClick={this.onMenuButtonClick}>
+          <button className="context-menu-button icon" title={this.props.intl.formatMessage({id: "context_menu_title"})} onClick={this.onMenuButtonClick}>
             <span className="sr-only">
               <FormattedMessage id="context_menu_button_sr" values={{title}} />
             </span>
@@ -254,7 +289,7 @@ export class TopSite extends React.PureComponent {
               dispatch={props.dispatch}
               index={props.index}
               onUpdate={this.onMenuUpdate}
-              options={TOP_SITES_CONTEXT_MENU_OPTIONS}
+              options={link.searchTopSite ? TOP_SITES_SEARCH_SHORTCUTS_CONTEXT_MENU_OPTIONS : TOP_SITES_CONTEXT_MENU_OPTIONS}
               site={link}
               siteInfo={this._getTelemetryInfo()}
               source={TOP_SITES_SOURCE} />
@@ -265,7 +300,7 @@ export class TopSite extends React.PureComponent {
 }
 TopSite.defaultProps = {
   link: {},
-  onActivate() {}
+  onActivate() {},
 };
 
 export class TopSitePlaceholder extends React.PureComponent {
@@ -295,7 +330,7 @@ export class _TopSiteList extends React.PureComponent {
       draggedIndex: null,
       draggedSite: null,
       draggedTitle: null,
-      topSitesPreview: null
+      topSitesPreview: null,
     };
   }
 
@@ -323,7 +358,7 @@ export class _TopSiteList extends React.PureComponent {
     this.props.dispatch(ac.UserEvent({
       event,
       source: TOP_SITES_SOURCE,
-      action_position: index
+      action_position: index,
     }));
   }
 
@@ -335,7 +370,7 @@ export class _TopSiteList extends React.PureComponent {
           draggedIndex: index,
           draggedSite: link,
           draggedTitle: title,
-          activeIndex: null
+          activeIndex: null,
         });
         this.userEvent("DRAG", index);
         break;
@@ -361,11 +396,13 @@ export class _TopSiteList extends React.PureComponent {
               site: {
                 url: this.state.draggedSite.url,
                 label: this.state.draggedTitle,
-                customScreenshotURL: this.state.draggedSite.customScreenshotURL
+                customScreenshotURL: this.state.draggedSite.customScreenshotURL,
+                // Only if the search topsites experiment is enabled
+                ...(this.state.draggedSite.searchTopSite && {searchTopSite: true}),
               },
               index,
-              draggedFromIndex: this.state.draggedIndex
-            }
+              draggedFromIndex: this.state.draggedIndex,
+            },
           }));
           this.userEvent("DROP", index);
         }
@@ -433,7 +470,7 @@ export class _TopSiteList extends React.PureComponent {
     const commonProps = {
       onDragEvent: this.onDragEvent,
       dispatch: props.dispatch,
-      intl: props.intl
+      intl: props.intl,
     };
     // We assign a key to each placeholder slot. We need it to be independent
     // of the slot index (i below) so that the keys used stay the same during
@@ -449,7 +486,7 @@ export class _TopSiteList extends React.PureComponent {
       const link = topSites[i] && Object.assign({}, topSites[i], {iconType: this.props.topSiteIconType(topSites[i])});
       const slotProps = {
         key: link ? link.url : holeIndex++,
-        index: i
+        index: i,
       };
       if (i >= maxNarrowVisibleIndex) {
         slotProps.className = "hide-for-narrow";

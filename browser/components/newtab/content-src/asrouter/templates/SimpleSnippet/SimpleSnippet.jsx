@@ -1,5 +1,6 @@
 import {Button} from "../../components/Button/Button";
 import React from "react";
+import {RichText} from "../../components/RichText/RichText";
 import {safeURI} from "../../template-utils";
 import {SnippetBase} from "../../components/SnippetBase/SnippetBase";
 
@@ -12,7 +13,19 @@ export class SimpleSnippet extends React.PureComponent {
   }
 
   onButtonClick() {
-    this.props.sendUserActionTelemetry({event: "CLICK_BUTTON", id: this.props.UISurface});
+    if (this.props.provider !== "preview") {
+      this.props.sendUserActionTelemetry({event: "CLICK_BUTTON", id: this.props.UISurface});
+    }
+    const {button_url} = this.props.content;
+    // If button_url is defined handle it as OPEN_URL action
+    const type = this.props.content.button_action || (button_url && "OPEN_URL");
+    this.props.onAction({
+      type,
+      data: {args: this.props.content.button_action_args || button_url},
+    });
+    if (!this.props.content.do_not_autoblock) {
+      this.props.onBlock();
+    }
   }
 
   renderTitle() {
@@ -25,29 +38,45 @@ export class SimpleSnippet extends React.PureComponent {
     return titleIcon ? <span className="titleIcon" style={{backgroundImage: `url("${titleIcon}")`}} /> : null;
   }
 
-  renderButton(className) {
+  renderButton() {
     const {props} = this;
+    if (!props.content.button_action && !props.onButtonClick && !props.content.button_url) {
+      return null;
+    }
+
     return (<Button
-      className={className}
-      onClick={this.onButtonClick}
-      url={props.content.button_url}
+      onClick={props.onButtonClick || this.onButtonClick}
       color={props.content.button_color}
       backgroundColor={props.content.button_background_color}>
       {props.content.button_label}
     </Button>);
   }
 
+  renderText() {
+    const {props} = this;
+    return (<RichText text={props.content.text}
+      customElements={this.props.customElements}
+      localization_id="text"
+      links={props.content.links}
+      sendClick={props.sendClick} />);
+  }
+
   render() {
     const {props} = this;
-    const hasLink = props.content.button_url && props.content.button_type === "anchor";
-    const hasButton = props.content.button_url && !props.content.button_type;
-    const className = `SimpleSnippet${props.content.tall ? " tall" : ""}`;
-    return (<SnippetBase {...props} className={className}>
+    let className = "SimpleSnippet";
+    if (props.className) {
+      className += ` ${props.className}`;
+    }
+    if (props.content.tall) {
+      className += " tall";
+    }
+    return (<SnippetBase {...props} className={className} textStyle={this.props.textStyle}>
       <img src={safeURI(props.content.icon) || DEFAULT_ICON_PATH} className="icon" />
       <div>
-        {this.renderTitleIcon()} {this.renderTitle()} <p className="body">{props.richText || props.content.text}</p> {hasLink ? this.renderButton("ASRouterAnchor") : null}
+        {this.renderTitleIcon()} {this.renderTitle()} <p className="body">{this.renderText()}</p>
+        {this.props.extraContent}
       </div>
-      {hasButton ? <div>{this.renderButton()}</div> : null}
+      {<div>{this.renderButton()}</div>}
     </SnippetBase>);
   }
 }

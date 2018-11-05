@@ -393,8 +393,8 @@ NS_IMPL_ISUPPORTS(HTMLCanvasElementObserver, nsIObserver)
 
 // ---------------------------------------------------------------------------
 
-HTMLCanvasElement::HTMLCanvasElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : nsGenericHTMLElement(aNodeInfo),
+HTMLCanvasElement::HTMLCanvasElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  : nsGenericHTMLElement(std::move(aNodeInfo)),
     mResetLayer(true) ,
     mWriteOnly(false)
 {}
@@ -577,14 +577,12 @@ HTMLCanvasElement::GetOriginalCanvas()
 }
 
 nsresult
-HTMLCanvasElement::CopyInnerTo(Element* aDest,
-                               bool aPreallocateChildren)
+HTMLCanvasElement::CopyInnerTo(HTMLCanvasElement* aDest)
 {
-  nsresult rv = nsGenericHTMLElement::CopyInnerTo(aDest, aPreallocateChildren);
+  nsresult rv = nsGenericHTMLElement::CopyInnerTo(aDest);
   NS_ENSURE_SUCCESS(rv, rv);
   if (aDest->OwnerDoc()->IsStaticDocument()) {
-    HTMLCanvasElement* dest = static_cast<HTMLCanvasElement*>(aDest);
-    dest->mOriginalCanvas = this;
+    aDest->mOriginalCanvas = this;
 
     // We make sure that the canvas is not zero sized since that would cause
     // the DrawImage call below to return an error, which would cause printing
@@ -592,15 +590,14 @@ HTMLCanvasElement::CopyInnerTo(Element* aDest,
     nsIntSize size = GetWidthHeight();
     if (size.height > 0 && size.width > 0) {
       nsCOMPtr<nsISupports> cxt;
-      dest->GetContext(NS_LITERAL_STRING("2d"), getter_AddRefs(cxt));
+      aDest->GetContext(NS_LITERAL_STRING("2d"), getter_AddRefs(cxt));
       RefPtr<CanvasRenderingContext2D> context2d =
         static_cast<CanvasRenderingContext2D*>(cxt.get());
       if (context2d && !mPrintCallback) {
         CanvasImageSource source;
         source.SetAsHTMLCanvasElement() = this;
         ErrorResult err;
-        context2d->DrawImage(source,
-                             0.0, 0.0, err);
+        context2d->DrawImage(source, 0.0, 0.0, err);
         rv = err.StealNSResult();
       }
     }
@@ -673,9 +670,8 @@ HTMLCanvasElement::ToDataURL(JSContext* aCx, const nsAString& aType,
                              nsIPrincipal& aSubjectPrincipal,
                              ErrorResult& aRv)
 {
-  // do a trust check if this is a write-only canvas
-  if (mWriteOnly &&
-      !nsContentUtils::CallerHasPermission(aCx, nsGkAtoms::all_urlsPermission)) {
+  // mWriteOnly check is redundant, but optimizes for the common case.
+  if (mWriteOnly && !CallerCanRead(aCx)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
   }
@@ -884,9 +880,8 @@ HTMLCanvasElement::ToBlob(JSContext* aCx,
                           nsIPrincipal& aSubjectPrincipal,
                           ErrorResult& aRv)
 {
-  // do a trust check if this is a write-only canvas
-  if (mWriteOnly &&
-      !nsContentUtils::CallerHasPermission(aCx, nsGkAtoms::all_urlsPermission)) {
+  // mWriteOnly check is redundant, but optimizes for the common case.
+  if (mWriteOnly && !CallerCanRead(aCx)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
   }
@@ -1096,7 +1091,34 @@ HTMLCanvasElement::IsWriteOnly()
 void
 HTMLCanvasElement::SetWriteOnly()
 {
+  mExpandedReader = nullptr;
   mWriteOnly = true;
+}
+
+void
+HTMLCanvasElement::SetWriteOnly(nsIPrincipal* aExpandedReader)
+{
+  mExpandedReader = aExpandedReader;
+  mWriteOnly = true;
+}
+
+bool
+HTMLCanvasElement::CallerCanRead(JSContext* aCx)
+{
+  if (!mWriteOnly) {
+    return true;
+  }
+
+  nsIPrincipal* prin = nsContentUtils::SubjectPrincipal(aCx);
+
+  // If mExpandedReader is set, this canvas was tainted only by
+  // mExpandedReader's resources. So allow reading if the subject
+  // principal subsumes mExpandedReader.
+  if (mExpandedReader && prin->Subsumes(mExpandedReader)) {
+    return true;
+  }
+
+  return nsContentUtils::PrincipalHasPermission(prin, nsGkAtoms::all_urlsPermission);
 }
 
 void

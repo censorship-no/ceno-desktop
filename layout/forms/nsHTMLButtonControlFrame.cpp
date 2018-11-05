@@ -145,7 +145,7 @@ nscoord
 nsHTMLButtonControlFrame::GetMinISize(gfxContext* aRenderingContext)
 {
   nscoord result;
-  DISPLAY_MIN_WIDTH(this, result);
+  DISPLAY_MIN_INLINE_SIZE(this, result);
   if (StyleDisplay()->IsContainSize()) {
     result = 0;
   } else {
@@ -161,7 +161,7 @@ nscoord
 nsHTMLButtonControlFrame::GetPrefISize(gfxContext* aRenderingContext)
 {
   nscoord result;
-  DISPLAY_PREF_WIDTH(this, result);
+  DISPLAY_PREF_INLINE_SIZE(this, result);
   if (StyleDisplay()->IsContainSize()) {
     result = 0;
   } else {
@@ -195,7 +195,7 @@ nsHTMLButtonControlFrame::Reflow(nsPresContext* aPresContext,
   MOZ_ASSERT(!firstKid->GetNextSibling(),
              "Button should have exactly one child frame");
   MOZ_ASSERT(firstKid->Style()->GetPseudo() ==
-             nsCSSAnonBoxes::buttonContent,
+             nsCSSAnonBoxes::buttonContent(),
              "Button's child frame has unexpected pseudo type!");
 
   // XXXbz Eventually we may want to check-and-bail if
@@ -249,6 +249,16 @@ nsHTMLButtonControlFrame::ReflowButtonContents(nsPresContext* aPresContext,
   ReflowOutput contentsDesiredSize(aButtonReflowInput);
   childPos.B(wm) = 0; // This will be set properly later, after reflowing the
                       // child to determine its size.
+
+  const LayoutFrameType frameType = aFirstKid->Type();
+  if (frameType == LayoutFrameType::FlexContainer ||
+      frameType == LayoutFrameType::GridContainer) {
+    contentsReflowInput.ComputedBSize() = aButtonReflowInput.ComputedBSize();
+    contentsReflowInput.ComputedMinBSize() =
+      aButtonReflowInput.ComputedMinBSize();
+    contentsReflowInput.ComputedMaxBSize() =
+      aButtonReflowInput.ComputedMaxBSize();
+  }
 
   // We just pass a dummy containerSize here, as the child will be
   // repositioned later by FinishReflowChild.

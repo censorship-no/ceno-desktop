@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "La imagen no se pudo cargar. Intente una URL diferente.",
   "pocket_read_more": "Temas populares:",
   "pocket_read_even_more": "Ver más historias",
+  "pocket_more_reccommendations": "Más recomendaciones",
+  "pocket_how_it_works": "Cómo funciona",
+  "pocket_cta_button": "Obtener Pocket",
+  "pocket_cta_text": "Guarda las historias que quieras en Pocket y llena tu mente con fascinantes lecturas.",
   "highlights_empty_state": "Empieza a navegar, y nosotros te mostraremos aquí algunos de los mejores artículos, videos y otras páginas que hayas visitado recientemente o marcado.",
   "topstories_empty_state": "Ya estás al día. Vuelve luego y busca más historias de {provider}. ¿No puedes esperar? Selecciona un tema popular y encontrarás más historias interesantes por toda la web.",
   "manual_migration_explanation2": "Prueba Firefox con los marcadores, historial y contraseñas de otro navegador.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Administrar sección",
   "section_menu_action_manage_webext": "Gestionar extensión",
   "section_menu_action_add_topsite": "Agregar sitio popular",
+  "section_menu_action_add_search_engine": "Agregar motor de búsqueda",
   "section_menu_action_move_up": "Subir",
   "section_menu_action_move_down": "Bajar",
   "section_menu_action_privacy_notice": "Política de privacidad",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Términos del servicio",
   "firstrun_privacy_notice": "Política de privacidad",
   "firstrun_continue_to_login": "Continuar",
-  "firstrun_skip_login": "Saltar este paso"
+  "firstrun_skip_login": "Saltar este paso",
+  "context_menu_title": "Abrir menú",
+  "pocket_learn_more": "Saber más"
 };

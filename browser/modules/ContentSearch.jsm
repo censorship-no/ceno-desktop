@@ -149,7 +149,7 @@ var ContentSearch = {
    */
   focusInput(messageManager) {
     messageManager.sendAsyncMessage(OUTBOUND_MESSAGE, {
-      type: "FocusInput"
+      type: "FocusInput",
     });
   },
 
@@ -246,7 +246,10 @@ var ContentSearch = {
       // UI to prevent further interaction before we start loading.
       this._reply(msg, "Blur");
       browser.loadURI(submission.uri.spec, {
-        postData: submission.postData
+        postData: submission.postData,
+        triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({
+          userContextId: win.gBrowser.selectedBrowser.getAttribute("userContextId"),
+        }),
       });
     } else {
       let params = {
@@ -331,7 +334,7 @@ var ContentSearch = {
       currentEngine: await this._currentEngineObj(),
     };
     if (uriFlag) {
-      state.currentEngine.iconBuffer = Services.search.currentEngine.getIconURLBySize(16, 16);
+      state.currentEngine.iconBuffer = Services.search.defaultEngine.getIconURLBySize(16, 16);
     }
     let pref = Services.prefs.getCharPref("browser.search.hiddenOneOffs");
     let hiddenList = pref ? pref.split(",") : [];
@@ -345,7 +348,7 @@ var ContentSearch = {
         name: engine.name,
         iconBuffer,
         hidden: hiddenList.includes(engine.name),
-        identifier: engine.identifier
+        identifier: engine.identifier,
       });
     }
     return state;
@@ -417,7 +420,7 @@ var ContentSearch = {
   },
 
   _onMessageSetCurrentEngine(msg, data) {
-    Services.search.currentEngine = Services.search.getEngineByName(data);
+    Services.search.defaultEngine = Services.search.getEngineByName(data);
   },
 
   _onMessageManageEngines(msg) {
@@ -456,7 +459,7 @@ var ContentSearch = {
     if (msg.target.contentWindow) {
       engine.speculativeConnect({
         window: msg.target.contentWindow,
-        originAttributes: msg.target.contentPrincipal.originAttributes
+        originAttributes: msg.target.contentPrincipal.originAttributes,
       });
     }
   },
@@ -507,7 +510,7 @@ var ContentSearch = {
   },
 
   async _currentEngineObj() {
-    let engine = Services.search.currentEngine;
+    let engine = Services.search.defaultEngine;
     let favicon = engine.getIconURLBySize(16, 16);
     let placeholder = this._stringBundle.formatStringFromName(
       "searchWithEngine", [engine.name], 1);

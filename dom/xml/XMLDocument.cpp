@@ -608,31 +608,36 @@ XMLDocument::DocAddSizeOfExcludingThis(nsWindowSizes& aWindowSizes) const
 // nsIDocument interface
 
 nsresult
-XMLDocument::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                   bool aPreallocateChildren) const
+XMLDocument::Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const
 {
   NS_ASSERTION(aNodeInfo->NodeInfoManager() == mNodeInfoManager,
                "Can't import this document into another document!");
 
   RefPtr<XMLDocument> clone = new XMLDocument();
-  nsresult rv = CloneDocHelper(clone, aPreallocateChildren);
+  nsresult rv = CloneDocHelper(clone);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // State from XMLDocument
   clone->mAsync = mAsync;
   clone->mIsPlainDocument = mIsPlainDocument;
 
-  return CallQueryInterface(clone.get(), aResult);
+  clone.forget(aResult);
+  return NS_OK;
 }
 
 JSObject*
 XMLDocument::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 {
+  JSObject* obj;
   if (mIsPlainDocument) {
-    return Document_Binding::Wrap(aCx, this, aGivenProto);
+    obj = Document_Binding::Wrap(aCx, this, aGivenProto);
+  } else {
+    obj = XMLDocument_Binding::Wrap(aCx, this, aGivenProto);
   }
-
-  return XMLDocument_Binding::Wrap(aCx, this, aGivenProto);
+  if (!obj) {
+      MOZ_CRASH("Looks like bug 1488480/1405521, with XMLDocument::WrapNode failing");
+  }
+  return obj;
 }
 
 } // namespace dom

@@ -40,6 +40,8 @@
 #include "mozilla/dom/Promise.h"
 #include "nsNetUtil.h"
 
+#define MOZ_CALLS_ENABLED_PREF "dom.datatransfer.mozAtAPIs"
+
 namespace mozilla {
 namespace dom {
 
@@ -1155,23 +1157,12 @@ DataTransfer::ConvertFromVariant(nsIVariant* aVariant,
 
     nsCOMPtr<nsIFlavorDataProvider> fdp = do_QueryInterface(data);
     if (fdp) {
-      // for flavour data providers, use kFlavorHasDataProvider (which has the
-      // value 0) as the length.
+      // For flavour data providers, use 0 as the length.
       fdp.forget(aSupports);
-      *aLength = nsITransferable::kFlavorHasDataProvider;
-    }
-    else {
-      // wrap the item in an nsISupportsInterfacePointer
-      nsCOMPtr<nsISupportsInterfacePointer> ptrSupports =
-        do_CreateInstance(NS_SUPPORTS_INTERFACE_POINTER_CONTRACTID);
-      if (!ptrSupports) {
-        return false;
-      }
-
-      ptrSupports->SetData(data);
-      ptrSupports.forget(aSupports);
-
-      *aLength = sizeof(nsISupportsInterfacePointer *);
+      *aLength = 0;
+    } else {
+      data.forget(aSupports);
+      *aLength = sizeof(nsISupports *);
     }
 
     return true;
@@ -1521,6 +1512,23 @@ DataTransfer::SetMode(DataTransfer::Mode aMode)
   } else {
     mMode = aMode;
   }
+}
+
+/* static */
+bool
+DataTransfer::MozAtAPIsEnabled(JSContext* aCx, JSObject* aObj /*unused*/)
+{
+  // Read the pref
+  static bool sPrefCached = false;
+  static bool sPrefCacheValue = false;
+
+  if (!sPrefCached) {
+    sPrefCached = true;
+    Preferences::AddBoolVarCache(&sPrefCacheValue, MOZ_CALLS_ENABLED_PREF);
+  }
+
+  // We can expose moz* APIs if we are chrome code or if pref is enabled
+  return nsContentUtils::IsSystemCaller(aCx) || sPrefCacheValue;
 }
 
 } // namespace dom

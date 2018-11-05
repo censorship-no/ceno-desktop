@@ -18,11 +18,10 @@
 <pre id="test">
 <script clas="testbody" type="application/javascript">
   const video = document.getElementById("video");
-  const muteButton = getAnonElementWithinVideoByAttribute(video, "anonid", "muteButton");
-  const volumeStack = getAnonElementWithinVideoByAttribute(video, "anonid", "volumeStack");
+  const muteButton = getElementWithinVideo(video, "muteButton");
+  const volumeStack = getElementWithinVideo(video, "volumeStack");
 
   add_task(async function setup() {
-    await new Promise(resolve => window.addEventListener("load", resolve));
     await SpecialPowers.pushPrefEnv({"set": [["media.cache_size", 40000]]});
     await new Promise(resolve => {
       video.src = "video.ogg";

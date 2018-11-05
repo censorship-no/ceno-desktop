@@ -24,20 +24,16 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "nsDragService.h"
+#include "mozwayland/mozwayland.h"
 
 #include "imgIContainer.h"
 
 #include <gtk/gtk.h>
 #include <poll.h>
-#include <sys/epoll.h>
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
-#include <gtk/gtk.h>
-#include <gdk/gdkwayland.h>
 #include <errno.h>
-
-#include "wayland/gtk-primary-selection-client-protocol.h"
 
 const char*
 nsRetrievalContextWayland::sTextMimeTypes[TEXT_MIME_TYPES_NUM] =
@@ -153,7 +149,7 @@ DataOffer::GetData(wl_display* aDisplay, const char* aMimeType,
 
     GIOChannel *channel = g_io_channel_unix_new(pipe_fd[0]);
     GError* error = nullptr;
-    char* clipboardData;
+    char* clipboardData = nullptr;
 
     g_io_channel_set_encoding(channel, nullptr, &error);
     if (!error) {
@@ -292,7 +288,7 @@ data_offer_action(void *data,
  *                     the compositor after matching the source/destination
  *                     side actions.
  */
-static const struct wl_data_offer_listener data_offer_listener = {
+static const moz_wl_data_offer_listener data_offer_listener = {
     data_offer_offer,
     data_offer_source_actions,
     data_offer_action
@@ -301,7 +297,8 @@ static const struct wl_data_offer_listener data_offer_listener = {
 WaylandDataOffer::WaylandDataOffer(wl_data_offer* aWaylandDataOffer)
   : mWaylandDataOffer(aWaylandDataOffer)
 {
-    wl_data_offer_add_listener(mWaylandDataOffer, &data_offer_listener, this);
+    wl_data_offer_add_listener(mWaylandDataOffer,
+        (struct wl_data_offer_listener *)&data_offer_listener, this);
 }
 
 WaylandDataOffer::~WaylandDataOffer(void)
@@ -470,13 +467,17 @@ nsRetrievalContextWayland::SetClipboardDataOffer(wl_data_offer *aWaylandDataOffe
     // Delete existing clipboard data offer
     mClipboardOffer = nullptr;
 
-    DataOffer* dataOffer =
-        static_cast<DataOffer*>(g_hash_table_lookup(mActiveOffers,
-                                                    aWaylandDataOffer));
-    NS_ASSERTION(dataOffer, "We're missing clipboard data offer!");
-    if (dataOffer) {
-        g_hash_table_remove(mActiveOffers, aWaylandDataOffer);
-        mClipboardOffer = dataOffer;
+    // null aWaylandDataOffer indicates that our clipboard content
+    // is no longer valid and should be release.
+    if (aWaylandDataOffer != nullptr) {
+        DataOffer* dataOffer =
+            static_cast<DataOffer*>(g_hash_table_lookup(mActiveOffers,
+                                                        aWaylandDataOffer));
+        NS_ASSERTION(dataOffer, "We're missing stored clipboard data offer!");
+        if (dataOffer) {
+            g_hash_table_remove(mActiveOffers, aWaylandDataOffer);
+            mClipboardOffer = dataOffer;
+        }
     }
 }
 

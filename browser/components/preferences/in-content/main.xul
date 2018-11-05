@@ -100,7 +100,8 @@
 #endif
 
     <vbox id="browserContainersbox" hidden="true">
-      <hbox id="browserContainersExtensionContent" align="center">
+      <hbox id="browserContainersExtensionContent"
+            align="center" class="extension-controlled">
         <description control="disableContainersExtension" flex="1" />
         <button id="disableContainersExtension"
                 class="extension-controlled-button accessory-button"
@@ -285,14 +286,20 @@
 
   <vbox id="browserLanguagesBox" align="start" hidden="true">
     <description flex="1" controls="chooseBrowserLanguage" data-l10n-id="choose-browser-language-description"/>
-    <menulist id="defaultBrowserLanguage" class="accessory-button" oncommand="gMainPane.onBrowserLanguageChange(event)" flex="1">
-      <menupopup/>
-    </menulist>
+    <hbox>
+      <menulist id="defaultBrowserLanguage" oncommand="gMainPane.onBrowserLanguageChange(event)">
+        <menupopup/>
+      </menulist>
+      <button id="manageBrowserLanguagesButton"
+              class="accessory-button"
+              data-l10n-id="manage-browser-languages-button"
+              oncommand="gMainPane.showBrowserLanguages({search: false})"/>
+    </hbox>
   </vbox>
   <hbox id="confirmBrowserLanguage" class="message-bar" align="center" hidden="true">
     <image class="message-bar-icon"/>
     <hbox class="message-bar-content" align="center" flex="1">
-      <description flex="1"/>
+      <description class="message-bar-description" flex="1"/>
       <button class="message-bar-button" oncommand="gMainPane.confirmBrowserLanguageChange()"/>
     </hbox>
   </hbox>
@@ -305,7 +312,7 @@
               class="accessory-button"
               data-l10n-id="choose-button"
               search-l10n-ids="
-                languages-window.title,
+                webpage-languages-window.title,
                 languages-description,
                 languages-customize-moveup.label,
                 languages-customize-movedown.label,
@@ -452,7 +459,10 @@
               class="accessory-button"
               data-l10n-id="update-history"
               preference="app.update.disable_button.showUpdateHistory"
-              searchkeywords="&history.title; &history2.intro;"/>
+              search-l10n-ids="
+                history-title,
+                history-intro
+              "/>
     </vbox>
 #endif
   </hbox>
@@ -606,6 +616,7 @@
           <menuitem label="5" value="5"/>
           <menuitem label="6" value="6"/>
           <menuitem label="7" value="7"/>
+          <menuitem label="8" value="8"/>
         </menupopup>
       </menulist>
     </hbox>
@@ -646,18 +657,25 @@
   <checkbox id="searchStartTyping"
             data-l10n-id="browsing-search-on-start-typing"
             preference="accessibility.typeaheadfind"/>
+  <hbox align="center" data-subcategory="cfr">
+    <checkbox id="cfrRecommendations"
+            class="tail-with-learn-more"
+            data-l10n-id="browsing-cfr-recommendations"
+            preference="browser.newtabpage.activity-stream.asrouter.userprefs.cfr"/>
+    <label id="cfrLearnMore" class="learnMore text-link" data-l10n-id="browsing-cfr-recommendations-learn-more"/>
+  </hbox>
 </groupbox>
 
 <hbox id="networkProxyCategory"
       class="subcategory"
       hidden="true"
       data-category="paneGeneral">
-  <label class="header-name" flex="1" data-l10n-id="network-proxy-title"/>
+  <label class="header-name" flex="1" data-l10n-id="network-settings-title"/>
 </hbox>
 
-<!-- Network Proxy-->
+<!-- Network Settings-->
 <groupbox id="connectionGroup" data-category="paneGeneral" hidden="true">
-  <caption class="search-header" hidden="true"><label data-l10n-id="network-proxy-title"/></caption>
+  <caption class="search-header" hidden="true"><label data-l10n-id="network-settings-title"/></caption>
 
   <hbox align="center">
     <hbox align="center" flex="1">
@@ -675,6 +693,7 @@
               class="accessory-button"
               icon="network"
               data-l10n-id="network-proxy-connection-settings"
+              searchkeywords="doh trr"
               search-l10n-ids="
                 connection-window.title,
                 connection-proxy-option-no.label,
@@ -694,7 +713,9 @@
                 connection-proxy-autotype.label,
                 connection-proxy-reload.label,
                 connection-proxy-autologin.label,
-                connection-proxy-socks-remote-dns.label
+                connection-proxy-socks-remote-dns.label,
+                connection-dns-over-https,
+                connection-dns-over-https-url
             " />
     </hbox>
   </hbox>

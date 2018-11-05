@@ -149,7 +149,7 @@ var gSearchPane = {
     // This is called each time something affects the list of engines.
     let list = document.getElementById("defaultEngine");
     // Set selection to the current default engine.
-    let currentEngine = Services.search.currentEngine.name;
+    let currentEngine = Services.search.defaultEngine.name;
 
     // If the current engine isn't in the list any more, select the first item.
     let engines = gEngineView._engineStore._engines;
@@ -391,10 +391,10 @@ var gSearchPane = {
   },
 
   setDefaultEngine() {
-    Services.search.currentEngine =
+    Services.search.defaultEngine =
       document.getElementById("defaultEngine").selectedItem.engine;
     ExtensionSettingsStore.setByUser(SEARCH_TYPE, SEARCH_KEY);
-  }
+  },
 };
 
 function onDragEngineStart(event) {
@@ -536,7 +536,7 @@ EngineStore.prototype = {
     this._engines.forEach(function(e) {
       e.uri = e.originalEngine.uri;
     });
-  }
+  },
 };
 
 function EngineView(aEngineStore) {
@@ -686,5 +686,5 @@ EngineView.prototype = {
   },
   performAction(action) { },
   performActionOnRow(action, index) { },
-  performActionOnCell(action, index, column) { }
+  performActionOnCell(action, index, column) { },
 };

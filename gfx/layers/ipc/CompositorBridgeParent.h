@@ -117,10 +117,10 @@ public:
   virtual void ApplyAsyncProperties(LayerTransactionParent* aLayerTree,
                                     TransformsToSkip aSkip) = 0;
   virtual void SetTestAsyncScrollOffset(const LayersId& aLayersId,
-                                        const FrameMetrics::ViewID& aScrollId,
+                                        const ScrollableLayerGuid::ViewID& aScrollId,
                                         const CSSPoint& aPoint) = 0;
   virtual void SetTestAsyncZoom(const LayersId& aLayersId,
-                                const FrameMetrics::ViewID& aScrollId,
+                                const ScrollableLayerGuid::ViewID& aScrollId,
                                 const LayerToParentLayerScale& aZoom) = 0;
   virtual void FlushApzRepaints(const LayersId& aLayersId) = 0;
   virtual void GetAPZTestData(const LayersId& aLayersId,
@@ -164,7 +164,7 @@ public:
                            CrossProcessMutexHandle aMutexHandle,
                            LayersId aLayersId,
                            uint32_t aApzcId) override;
-  bool StopSharingMetrics(FrameMetrics::ViewID aScrollId,
+  bool StopSharingMetrics(ScrollableLayerGuid::ViewID aScrollId,
                           uint32_t aApzcId) override;
 
   virtual bool IsRemote() const {
@@ -174,6 +174,9 @@ public:
   virtual void ForceComposeToTarget(gfx::DrawTarget* aTarget, const gfx::IntRect* aRect = nullptr) {
     MOZ_CRASH();
   }
+
+  virtual void NotifyMemoryPressure() {}
+  virtual void AccumulateMemoryReport(wr::MemoryReport*) {}
 
 protected:
   ~CompositorBridgeParentBase() override;
@@ -236,6 +239,9 @@ public:
 
   mozilla::ipc::IPCResult RecvAllPluginsCaptured() override;
 
+  virtual void NotifyMemoryPressure() override;
+  virtual void AccumulateMemoryReport(wr::MemoryReport*) override;
+
   void ActorDestroy(ActorDestroyReason why) override;
 
   void ShadowLayersUpdated(LayerTransactionParent* aLayerTree,
@@ -249,10 +255,10 @@ public:
                             TransformsToSkip aSkip) override;
   CompositorAnimationStorage* GetAnimationStorage();
   void SetTestAsyncScrollOffset(const LayersId& aLayersId,
-                                const FrameMetrics::ViewID& aScrollId,
+                                const ScrollableLayerGuid::ViewID& aScrollId,
                                 const CSSPoint& aPoint) override;
   void SetTestAsyncZoom(const LayersId& aLayersId,
-                        const FrameMetrics::ViewID& aScrollId,
+                        const ScrollableLayerGuid::ViewID& aScrollId,
                         const LayerToParentLayerScale& aZoom) override;
   void FlushApzRepaints(const LayersId& aLayersId) override;
   void GetAPZTestData(const LayersId& aLayersId,
@@ -274,6 +280,7 @@ public:
   bool IsSameProcess() const override;
 
   void NotifyWebRenderError(wr::WebRenderError aError);
+  void NotifyWebRenderContextPurge();
   void NotifyPipelineRendered(const wr::PipelineId& aPipelineId,
                               const wr::Epoch& aEpoch,
                               TimeStamp& aCompositeStart,
@@ -474,15 +481,13 @@ public:
     return mOptions;
   }
 
-  TimeDuration GetVsyncInterval() const {
+  TimeDuration GetVsyncInterval() const override {
     // the variable is called "rate" but really it's an interval
     return mVsyncRate;
   }
 
   PWebRenderBridgeParent* AllocPWebRenderBridgeParent(const wr::PipelineId& aPipelineId,
-                                                      const LayoutDeviceIntSize& aSize,
-                                                      TextureFactoryIdentifier* aTextureFactoryIdentifier,
-                                                      wr::IdNamespace* aIdNamespace) override;
+                                                      const LayoutDeviceIntSize& aSize) override;
   bool DeallocPWebRenderBridgeParent(PWebRenderBridgeParent* aActor) override;
   RefPtr<WebRenderBridgeParent> GetWebRenderBridgeParent() const;
   Maybe<TimeStamp> GetTestingTimeStamp() const;
@@ -502,6 +507,8 @@ public:
     return mEGLSurfaceSize;
   }
 #endif // defined(MOZ_WIDGET_ANDROID)
+
+  WebRenderBridgeParent* GetWrBridge() { return mWrBridge; }
 
 private:
 
@@ -569,12 +576,7 @@ protected:
   static void Setup();
 
   /**
-   * Destroys the compositor thread and global compositor map.
-   */
-  static void Shutdown();
-
-  /**
-   * Finish the shutdown operation on the compositor thread.
+   * Remaning cleanups after the compositore thread is gone.
    */
   static void FinishShutdown();
 

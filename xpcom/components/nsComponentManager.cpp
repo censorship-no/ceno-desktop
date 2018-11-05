@@ -17,6 +17,7 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsCategoryManager.h"
 #include "nsCategoryManagerUtils.h"
+#include "nsLayoutModule.h"
 #include "mozilla/MemoryReporting.h"
 #include "nsIConsoleService.h"
 #include "nsIObserverService.h"
@@ -38,6 +39,7 @@
 #include "ManifestParser.h"
 #include "nsNetUtil.h"
 #include "mozilla/Services.h"
+#include "mozJSComponentLoader.h"
 
 #include "mozilla/GenericFactory.h"
 #include "nsSupportsPrimitives.h"
@@ -70,24 +72,7 @@ static LazyLogModule nsComponentManagerLog("nsComponentManager");
  #define SHOW_CI_ON_EXISTING_SERVICE
 #endif
 
-// Bloated registry buffer size to improve startup performance -- needs to
-// be big enough to fit the entire file into memory or it'll thrash.
-// 512K is big enough to allow for some future growth in the registry.
-#define BIG_REGISTRY_BUFLEN   (512*1024)
-
-// Common Key Names
-const char xpcomComponentsKeyName[] = "software/mozilla/XPCOM/components";
-const char xpcomKeyName[] = "software/mozilla/XPCOM";
-
-// Common Value Names
-const char fileSizeValueName[] = "FileSize";
-const char lastModValueName[] = "LastModTimeStamp";
-const char nativeComponentType[] = "application/x-mozilla-native";
-const char staticComponentType[] = "application/x-mozilla-static";
-
 NS_DEFINE_CID(kCategoryManagerCID, NS_CATEGORYMANAGER_CID);
-
-#define UID_STRING_LENGTH 39
 
 nsresult
 nsGetServiceFromCategory::operator()(const nsIID& aIID,
@@ -280,7 +265,7 @@ static nsTArray<const mozilla::Module*>* sExtraStaticModules;
 // Dummy class to define a range-iterator for the static modules.
 class AllStaticModules {};
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) || (defined(__clang__) && defined(__MINGW32__))
 
 #  pragma section(".kPStaticModules$A", read)
 NSMODULE_ASAN_BLACKLIST __declspec(allocate(".kPStaticModules$A"), dllexport)
@@ -357,18 +342,22 @@ nsComponentManagerImpl::Init()
 
   nsCategoryManager::GetSingleton()->SuppressNotifications(true);
 
-  RegisterModule(&kXPCOMModule, nullptr);
+  RegisterModule(&kXPCOMModule);
 
   for (auto module : AllStaticModules()) {
     if (module) { // On local Windows builds, the list may contain null
                   // pointers from padding.
-      RegisterModule(module, nullptr);
+      RegisterModule(module);
     }
   }
 
   for (uint32_t i = 0; i < sExtraStaticModules->Length(); ++i) {
-    RegisterModule((*sExtraStaticModules)[i], nullptr);
+    RegisterModule((*sExtraStaticModules)[i]);
   }
+
+  // This needs to be called very early, before anything in nsLayoutModule is
+  // used, and before any calls are made into the JS engine.
+  nsLayoutModuleInitialize();
 
   bool loadChromeManifests = (XRE_GetProcessType() != GeckoProcessType_GPU);
   if (loadChromeManifests) {
@@ -480,13 +469,32 @@ template<typename T>
 static void
 AssertNotStackAllocated(T* aPtr)
 {
-  // The main thread's stack should be allocated at the top of our address
-  // space. Anything stack allocated should be above us on the stack, and
-  // therefore above our first argument pointer.
-  // Only this is apparently not the case on Windows.
-#if !(defined(XP_WIN) || defined(ANDROID))
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(uintptr_t(aPtr) < uintptr_t(&aPtr));
+  // On all of our supported platforms, the stack grows down. Any address
+  // located below the address of our argument is therefore guaranteed not to be
+  // stack-allocated by the caller.
+  //
+  // For addresses above our argument, things get trickier. The main thread
+  // stack is traditionally placed at the top of the program's address space,
+  // but that is becoming less reliable as more and more systems adopt address
+  // space layout randomization strategies, so we have to guess how much space
+  // above our argument pointer we need to care about.
+  //
+  // On most systems, we're guaranteed at least several KiB at the top of each
+  // stack for TLS. We'd probably be safe assuming at least 4KiB in the stack
+  // segment above our argument address, but safer is... well, safer.
+  //
+  // For threads with huge stacks, it's theoretically possible that we could
+  // wind up being passed a stack-allocated string from farther up the stack,
+  // but this is a best-effort thing, so we'll assume we only care about the
+  // immediate caller. For that case, max 2KiB per stack frame is probably a
+  // reasonable guess most of the time, and is less than the ~4KiB that we
+  // expect for TLS, so go with that to avoid the risk of bumping into heap
+  // data just above the stack.
+#ifdef DEBUG
+  static constexpr size_t kFuzz = 2048;
+
+  MOZ_ASSERT(uintptr_t(aPtr) < uintptr_t(&aPtr) ||
+             uintptr_t(aPtr) > uintptr_t(&aPtr) + kFuzz);
 #endif
 }
 
@@ -502,8 +510,7 @@ AsLiteralCString(const char* aStr)
 }
 
 void
-nsComponentManagerImpl::RegisterModule(const mozilla::Module* aModule,
-                                       FileLocation* aFile)
+nsComponentManagerImpl::RegisterModule(const mozilla::Module* aModule)
 {
   mLock.AssertNotCurrentThreadOwns();
 
@@ -518,19 +525,8 @@ nsComponentManagerImpl::RegisterModule(const mozilla::Module* aModule,
     // category manager.
     MutexLock lock(mLock);
 
-    KnownModule* m;
-    if (aFile) {
-      nsCString uri;
-      aFile->GetURIString(uri);
-      NS_ASSERTION(!mKnownModules.Get(uri),
-                   "Must not register a binary module twice.");
-
-      m = new KnownModule(aModule, *aFile);
-      mKnownModules.Put(uri, m);
-    } else {
-      m = new KnownModule(aModule);
-      mKnownStaticModules.AppendElement(m);
-    }
+    KnownModule* m = new KnownModule(aModule);
+    mKnownStaticModules.AppendElement(m);
 
     if (aModule->mCIDs) {
       const mozilla::Module::CIDEntry* entry;
@@ -784,30 +780,21 @@ nsComponentManagerImpl::RereadChromeManifests(bool aChromeOnly)
 }
 
 bool
-nsComponentManagerImpl::KnownModule::EnsureLoader()
-{
-  if (!mLoader) {
-    nsCString extension;
-    mFile.GetURIString(extension);
-    CutExtension(extension);
-    mLoader =
-      nsComponentManagerImpl::gComponentManager->LoaderForExtension(extension);
-  }
-  return !!mLoader;
-}
-
-bool
 nsComponentManagerImpl::KnownModule::Load()
 {
   if (mFailed) {
     return false;
   }
   if (!mModule) {
-    if (!EnsureLoader()) {
+    nsCString extension;
+    mFile.GetURIString(extension);
+    CutExtension(extension);
+    if (!extension.Equals("js")) {
       return false;
     }
 
-    mModule = mLoader->LoadModule(mFile);
+    RefPtr<mozJSComponentLoader> loader = mozJSComponentLoader::Get();
+    mModule = loader->LoadModule(mFile);
 
     if (!mModule) {
       mFailed = true;
@@ -854,7 +841,6 @@ nsresult nsComponentManagerImpl::Shutdown(void)
   // Release all cached factories
   mContractIDs.Clear();
   mFactories.Clear(); // XXX release the objects, don't just clear
-  mLoaderMap.Clear();
   mKnownModules.Clear();
   mKnownStaticModules.Clear();
 
@@ -1059,7 +1045,7 @@ nsComponentManagerImpl::CreateInstance(const nsCID& aClass,
     rv = factory->CreateInstance(aDelegate, aIID, aResult);
     if (NS_SUCCEEDED(rv) && !*aResult) {
       NS_ERROR("Factory did not return an object but returned success!");
-      rv = NS_ERROR_SERVICE_NOT_FOUND;
+      rv = NS_ERROR_SERVICE_NOT_AVAILABLE;
     }
   } else {
     // Translate error values
@@ -1142,7 +1128,7 @@ nsComponentManagerImpl::CreateInstanceByContractID(const char* aContractID,
     rv = factory->CreateInstance(aDelegate, aIID, aResult);
     if (NS_SUCCEEDED(rv) && !*aResult) {
       NS_ERROR("Factory did not return an object but returned success!");
-      rv = NS_ERROR_SERVICE_NOT_FOUND;
+      rv = NS_ERROR_SERVICE_NOT_AVAILABLE;
     }
   } else {
     // Translate error values
@@ -1303,7 +1289,7 @@ nsComponentManagerImpl::GetService(const nsCID& aClass,
   }
   if (NS_SUCCEEDED(rv) && !service) {
     NS_ERROR("Factory did not return an object but returned success");
-    return NS_ERROR_SERVICE_NOT_FOUND;
+    return NS_ERROR_SERVICE_NOT_AVAILABLE;
   }
 
 #ifdef DEBUG
@@ -1504,7 +1490,7 @@ nsComponentManagerImpl::GetServiceByContractID(const char* aContractID,
   }
   if (NS_SUCCEEDED(rv) && !service) {
     NS_ERROR("Factory did not return an object but returned success");
-    return NS_ERROR_SERVICE_NOT_FOUND;
+    return NS_ERROR_SERVICE_NOT_AVAILABLE;
   }
 
 #ifdef DEBUG
@@ -1529,23 +1515,6 @@ nsComponentManagerImpl::GetServiceByContractID(const char* aContractID,
   (*sresult)->AddRef();
 
   return NS_OK;
-}
-
-already_AddRefed<mozilla::ModuleLoader>
-nsComponentManagerImpl::LoaderForExtension(const nsACString& aExt)
-{
-  nsCOMPtr<mozilla::ModuleLoader> loader = mLoaderMap.Get(aExt);
-  if (!loader) {
-    loader = do_GetServiceFromCategory(NS_LITERAL_CSTRING("module-loader"),
-                                       aExt);
-    if (!loader) {
-      return nullptr;
-    }
-
-    mLoaderMap.Put(aExt, loader);
-  }
-
-  return loader.forget();
 }
 
 NS_IMETHODIMP
@@ -1756,8 +1725,6 @@ nsComponentManagerImpl::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf)
 {
   size_t n = aMallocSizeOf(this);
 
-  n += mLoaderMap.ShallowSizeOfExcludingThis(aMallocSizeOf);
-
   n += mFactories.ShallowSizeOfExcludingThis(aMallocSizeOf);
   for (auto iter = mFactories.ConstIter(); !iter.Done(); iter.Next()) {
     n += iter.Data()->SizeOfIncludingThis(aMallocSizeOf);
@@ -1784,7 +1751,6 @@ nsComponentManagerImpl::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf)
 
   // Measurement of the following members may be added later if DMD finds it is
   // worthwhile:
-  // - mLoaderMap's keys and values
   // - mMon
   // - sModuleLocations' entries
   // - mKnownStaticModules' entries?
@@ -1929,8 +1895,7 @@ XRE_AddStaticComponent(const mozilla::Module* aComponent)
   if (nsComponentManagerImpl::gComponentManager &&
       nsComponentManagerImpl::NORMAL ==
         nsComponentManagerImpl::gComponentManager->mStatus) {
-    nsComponentManagerImpl::gComponentManager->RegisterModule(aComponent,
-                                                              nullptr);
+    nsComponentManagerImpl::gComponentManager->RegisterModule(aComponent);
   }
 
   return NS_OK;

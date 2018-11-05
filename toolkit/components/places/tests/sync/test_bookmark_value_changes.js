@@ -1,6 +1,13 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+let unfiledFolderId;
+
+add_task(async function setup() {
+  unfiledFolderId =
+    await PlacesUtils.promiseItemId(PlacesUtils.bookmarks.unfiledGuid);
+});
+
 add_task(async function test_value_combo() {
   let buf = await openMirror("value_combo");
 
@@ -112,7 +119,7 @@ add_task(async function test_value_combo() {
   let localItemIds = await PlacesUtils.promiseManyItemIds(["fxBmk_______",
     "tFolder_____", "tbBmk_______", "bzBmk_______", "mozBmk______"]);
   observer.check([{
-    name: "onItemAdded",
+    name: "bookmark-added",
     params: { itemId: localItemIds.get("fxBmk_______"),
               parentId: PlacesUtils.toolbarFolderId, index: 0,
               type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
@@ -121,15 +128,15 @@ add_task(async function test_value_combo() {
               parentGuid: PlacesUtils.bookmarks.toolbarGuid,
               source: PlacesUtils.bookmarks.SOURCES.SYNC },
   }, {
-    name: "onItemAdded",
+    name: "bookmark-added",
     params: { itemId: localItemIds.get("tFolder_____"),
               parentId: PlacesUtils.toolbarFolderId,
               index: 1, type: PlacesUtils.bookmarks.TYPE_FOLDER,
-              urlHref: null, title: "Mail", guid: "tFolder_____",
+              urlHref: "", title: "Mail", guid: "tFolder_____",
               parentGuid: PlacesUtils.bookmarks.toolbarGuid,
               source: PlacesUtils.bookmarks.SOURCES.SYNC },
   }, {
-    name: "onItemAdded",
+    name: "bookmark-added",
     params: { itemId: localItemIds.get("tbBmk_______"),
               parentId: localItemIds.get("tFolder_____"), index: 0,
               type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
@@ -669,7 +676,7 @@ add_task(async function test_keywords_complex() {
     "bookmarkAAA1", "bookmarkBBB1", "bookmarkBBBB", "bookmarkCCCC",
     "bookmarkDDDD", "bookmarkEEEE"]);
   let expectedNotifications = [{
-    name: "onItemAdded",
+    name: "bookmark-added",
     params: { itemId: localItemIds.get("bookmarkAAAA"),
               parentId: PlacesUtils.bookmarksMenuFolderId, index: 0,
               type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
@@ -678,7 +685,7 @@ add_task(async function test_keywords_complex() {
               parentGuid: PlacesUtils.bookmarks.menuGuid,
               source: PlacesUtils.bookmarks.SOURCES.SYNC },
   }, {
-    name: "onItemAdded",
+    name: "bookmark-added",
     params: { itemId: localItemIds.get("bookmarkAAA1"),
               parentId: PlacesUtils.bookmarksMenuFolderId, index: 1,
               type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
@@ -687,9 +694,9 @@ add_task(async function test_keywords_complex() {
               parentGuid: PlacesUtils.bookmarks.menuGuid,
               source: PlacesUtils.bookmarks.SOURCES.SYNC },
   }, {
-    name: "onItemAdded",
+    name: "bookmark-added",
     params: { itemId: localItemIds.get("bookmarkBBB1"),
-              parentId: PlacesUtils.unfiledBookmarksFolderId, index: 0,
+              parentId: unfiledFolderId, index: 0,
               type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
               urlHref: "http://example.com/b", title: "B",
               guid: "bookmarkBBB1",
@@ -1063,7 +1070,7 @@ add_task(async function test_date_added() {
   let idsToUpload = inspectChangeRecords(changesToUpload);
   deepEqual(idsToUpload, {
     updated: ["bookmarkAAAA"],
-    deleted: []
+    deleted: [],
   }, "Should flag A for weak reupload");
 
   let localItemIds = await PlacesUtils.promiseManyItemIds(["bookmarkAAAA",
@@ -1261,7 +1268,7 @@ add_task(async function test_duplicate_url_rows() {
     params: { itemId: localItemIds.get("bookmarkCCCC"), property: "title",
               isAnnoProperty: false, newValue: "C (remote)",
               type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-              parentId: PlacesUtils.unfiledBookmarksFolderId,
+              parentId: unfiledFolderId,
               guid: "bookmarkCCCC",
               parentGuid: PlacesUtils.bookmarks.unfiledGuid, oldValue: "C",
               source: PlacesUtils.bookmarks.SOURCES.SYNC },

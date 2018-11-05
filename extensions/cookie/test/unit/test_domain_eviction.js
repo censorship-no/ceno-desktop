@@ -19,6 +19,9 @@ function continue_test()
 
 function* do_run_test()
 {
+  // Set quotaPerHost to maxPerHost - 1, so there is only one cookie
+  // will be evicted everytime.
+  Services.prefs.setIntPref("network.cookie.quotaPerHost", 49);
   // Set the base domain limit to 50 so we have a known value.
   Services.prefs.setIntPref("network.cookie.maxPerHost", 50);
 
@@ -56,10 +59,7 @@ function* do_run_test()
   setCookies("tasty.horse.radish", 50, futureExpiry);
   Assert.equal(countCookies("horse.radish", "horse.radish"), 50);
 
-  let enumerator = Services.cookiemgr.enumerator;
-  while (enumerator.hasMoreElements()) {
-    let cookie = enumerator.getNext().QueryInterface(Ci.nsICookie2);
-
+  for (let cookie of Services.cookiemgr.enumerator) {
     if (cookie.host == "horse.radish")
       do_throw("cookies not evicted by lastAccessed order");
   }
@@ -68,18 +68,16 @@ function* do_run_test()
   let shortExpiry = Math.floor(Date.now() / 1000 + 2);
   setCookies("captchart.com", 49, futureExpiry);
   Services.cookiemgr.add("captchart.com", "", "test100", "eviction",
-    false, false, false, shortExpiry, {});
+    false, false, false, shortExpiry, {}, Ci.nsICookie2.SAMESITE_UNSET);
   do_timeout(2100, continue_test);
   yield;
 
   Assert.equal(countCookies("captchart.com", "captchart.com"), 50);
   Services.cookiemgr.add("captchart.com", "", "test200", "eviction",
-    false, false, false, futureExpiry, {});
+    false, false, false, futureExpiry, {}, Ci.nsICookie2.SAMESITE_UNSET);
   Assert.equal(countCookies("captchart.com", "captchart.com"), 50);
 
-  enumerator = Services.cookiemgr.getCookiesFromHost("captchart.com", {});
-  while (enumerator.hasMoreElements()) {
-    let cookie = enumerator.getNext().QueryInterface(Ci.nsICookie2);
+  for (let cookie of Services.cookiemgr.getCookiesFromHost("captchart.com", {})) {
     Assert.ok(cookie.expiry == futureExpiry);
   }
 
@@ -92,7 +90,7 @@ setCookies(aHost, aNumber, aExpiry)
 {
   for (let i = 0; i < aNumber; ++i)
     Services.cookiemgr.add(aHost, "", "test" + i, "eviction",
-      false, false, false, aExpiry, {});
+      false, false, false, aExpiry, {}, Ci.nsICookie2.SAMESITE_UNSET);
 }
 
 // count how many cookies are within domain 'aBaseDomain', using three
@@ -104,14 +102,10 @@ setCookies(aHost, aNumber, aExpiry)
 function
 countCookies(aBaseDomain, aHost)
 {
-  let enumerator = Services.cookiemgr.enumerator;
-
   // count how many cookies are within domain 'aBaseDomain' using the cookie
   // enumerator.
   let cookies = [];
-  while (enumerator.hasMoreElements()) {
-    let cookie = enumerator.getNext().QueryInterface(Ci.nsICookie2);
-
+  for (let cookie of Services.cookiemgr.enumerator) {
     if (cookie.host.length >= aBaseDomain.length &&
         cookie.host.slice(cookie.host.length - aBaseDomain.length) == aBaseDomain)
       cookies.push(cookie);
@@ -123,10 +117,7 @@ countCookies(aBaseDomain, aHost)
     cookies.length);
   Assert.equal(Services.cookiemgr.countCookiesFromHost(aHost), cookies.length);
 
-  enumerator = Services.cookiemgr.getCookiesFromHost(aHost, {});
-  while (enumerator.hasMoreElements()) {
-    let cookie = enumerator.getNext().QueryInterface(Ci.nsICookie2);
-
+  for (let cookie of Services.cookiemgr.getCookiesFromHost(aHost, {})) {
     if (cookie.host.length >= aBaseDomain.length &&
         cookie.host.slice(cookie.host.length - aBaseDomain.length) == aBaseDomain) {
       let found = false;

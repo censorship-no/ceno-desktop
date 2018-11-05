@@ -96,6 +96,7 @@ struct FileInfo {
       // We use the escape character to indicate the objdir nature.
       // Note that output also has the `/' already placed
       Interesting = true;
+      Generated = true;
       Realname.replace(0, Objdir.length(), GENERATED);
       return;
     }
@@ -105,6 +106,7 @@ struct FileInfo {
     // Srcdir or anything outside Srcdir.
     Interesting = (Rname.length() > Srcdir.length()) &&
                   (Rname.compare(0, Srcdir.length(), Srcdir) == 0);
+    Generated = false;
     if (Interesting) {
       // Remove the trailing `/' as well.
       Realname.erase(0, Srcdir.length() + 1);
@@ -113,6 +115,7 @@ struct FileInfo {
   std::string Realname;
   std::vector<std::string> Output;
   bool Interesting;
+  bool Generated;
 };
 
 class IndexConsumer;
@@ -330,6 +333,14 @@ private:
     if (Filename.length() == 0 && Backup.length() != 0) {
       return Backup;
     }
+    if (F->Generated) {
+      // Since generated files may be different on different platforms,
+      // we need to include a platform-specific thing in the hash. Otherwise
+      // we can end up with hash collisions where different symbols from
+      // different platforms map to the same thing.
+      char* Platform = getenv("MOZSEARCH_PLATFORM");
+      Filename = std::string(Platform ? Platform : "") + std::string("@") + Filename;
+    }
     return hash(Filename + std::string("@") + locationToString(Loc));
   }
 
@@ -387,7 +398,7 @@ private:
     } else if (const FieldDecl *D2 = dyn_cast<FieldDecl>(Decl)) {
       const RecordDecl *Record = D2->getParent();
       return std::string("F_<") + getMangledName(Ctx, Record) + ">_" +
-             toString(D2->getFieldIndex());
+             D2->getNameAsString();
     } else if (const EnumConstantDecl *D2 = dyn_cast<EnumConstantDecl>(Decl)) {
       const DeclContext *DC = Decl->getDeclContext();
       if (const NamedDecl *Named = dyn_cast<NamedDecl>(DC)) {
@@ -468,7 +479,8 @@ public:
       AutoLockFile Lock(Filename);
 
       if (!Lock.success()) {
-        continue;
+        fprintf(stderr, "Unable to lock file %s\n", Filename.c_str());
+        exit(1);
       }
 
       std::vector<std::string> Lines;
@@ -478,7 +490,7 @@ public:
       // there. This ensures that header files that are included multiple times
       // in different ways are analyzed completely.
       char Buffer[65536];
-      FILE *Fp = Lock.openFile("r");
+      FILE *Fp = Lock.openFile("rb");
       if (!Fp) {
         fprintf(stderr, "Unable to open input file %s\n", Filename.c_str());
         exit(1);
@@ -498,7 +510,7 @@ public:
 
       // Overwrite the output file with the merged data. Since we have the lock,
       // this will happen atomically.
-      Fp = Lock.openFile("w");
+      Fp = Lock.openFile("wb");
       if (!Fp) {
         fprintf(stderr, "Unable to open output file %s\n", Filename.c_str());
         exit(1);

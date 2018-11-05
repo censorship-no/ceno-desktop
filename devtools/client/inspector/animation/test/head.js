@@ -10,19 +10,15 @@ Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/inspector/test/head.js", this);
 
 const FRAME_SCRIPT_URL = CHROME_URL_ROOT + "doc_frame_script.js";
-const TAB_NAME = "newanimationinspector";
+const TAB_NAME = "animationinspector";
 
 const ANIMATION_L10N =
   new LocalizationHelper("devtools/client/locales/animationinspector.properties");
-
-// Enable new animation inspector.
-Services.prefs.setBoolPref("devtools.new-animationinspector.enabled", true);
 
 // Auto clean-up when a test ends.
 // Clean-up all prefs that might have been changed during a test run
 // (safer here because if the test fails, then the pref is never reverted)
 registerCleanupFunction(() => {
-  Services.prefs.clearUserPref("devtools.new-animationinspector.enabled");
   Services.prefs.clearUserPref("devtools.toolsidebar-width.inspector");
 });
 
@@ -47,15 +43,13 @@ const openAnimationInspector = async function() {
  * @return {Promise} that resolves when the toolbox has closed.
  */
 const closeAnimationInspector = async function() {
-  const target = TargetFactory.forTab(gBrowser.selectedTab);
+  const target = await TargetFactory.forTab(gBrowser.selectedTab);
   return gDevTools.closeToolbox(target);
 };
 
 /**
  * Some animation features are not enabled by default in release/beta channels
- * yet including:
- *   * parts of the Web Animations API (Bug 1264101), and
- *   * the frames() timing function (Bug 1379582).
+ * yet including parts of the Web Animations API.
  */
 const enableAnimationFeatures = function() {
   return new Promise(resolve => {
@@ -64,7 +58,7 @@ const enableAnimationFeatures = function() {
       ["dom.animations-api.getAnimations.enabled", true],
       ["dom.animations-api.implicit-keyframes.enabled", true],
       ["dom.animations-api.timelines.enabled", true],
-      ["layout.css.frames-timing.enabled", true],
+      ["layout.css.step-position-jump.enabled", true],
     ]}, resolve);
   });
 };
@@ -291,34 +285,23 @@ const clickOnTargetNode = async function(animationInspector, panel, index) {
  *
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} mouseDownPosition
- *        rate on scrubber controller pane.
- *        This method calculates
- *        `mouseDownPosition * offsetWidth + offsetLeft of scrubber controller pane`
- *        as the clientX of MouseEvent.
- * @param {Number} mouseMovePosition
+ * @param {Number} mouseMovePixel
  *        Dispatch mousemove event with mouseMovePosition after mousedown.
- *        Calculation for clinetX is same to above.
  * @param {Number} mouseYPixel
  *        Y of mouse in pixel.
  */
 const dragOnCurrentTimeScrubber = async function(animationInspector,
                                                  panel,
-                                                 mouseDownPosition,
-                                                 mouseMovePosition,
+                                                 mouseMovePixel,
                                                  mouseYPixel) {
   const controllerEl = panel.querySelector(".current-time-scrubber");
-  const bounds = controllerEl.getBoundingClientRect();
-  const mousedonwX = bounds.width * mouseDownPosition;
-  const mousemoveX = bounds.width * mouseMovePosition;
-
-  info(`Drag on scrubber from ${ mousedonwX } to ${ mousemoveX }`);
-  EventUtils.synthesizeMouse(controllerEl, mousedonwX, mouseYPixel,
+  info(`Drag scrubber to X ${ mouseMovePixel }`);
+  EventUtils.synthesizeMouse(controllerEl, 0, mouseYPixel,
                              { type: "mousedown" }, controllerEl.ownerGlobal);
   await waitForSummaryAndDetail(animationInspector);
-  EventUtils.synthesizeMouse(controllerEl, mousemoveX, mouseYPixel,
+  EventUtils.synthesizeMouse(controllerEl, mouseMovePixel, mouseYPixel,
                              { type: "mousemove" }, controllerEl.ownerGlobal);
-  EventUtils.synthesizeMouse(controllerEl, mousemoveX, mouseYPixel,
+  EventUtils.synthesizeMouse(controllerEl, mouseMovePixel, mouseYPixel,
                              { type: "mouseup" }, controllerEl.ownerGlobal);
   await waitForSummaryAndDetail(animationInspector);
 };
@@ -420,7 +403,7 @@ const mouseOutOnTargetNode = function(animationInspector, panel, index) {
 const selectAnimationInspector = async function(inspector) {
   await inspector.toolbox.selectTool("inspector");
   const onUpdated = inspector.once("inspector-updated");
-  inspector.sidebar.select("newanimationinspector");
+  inspector.sidebar.select("animationinspector");
   await onUpdated;
   await waitForRendering(inspector.animationinspector);
 };
@@ -452,12 +435,11 @@ const selectNodeAndWaitForAnimations = async function(data, inspector, reason = 
  * Send keyboard event of space to given panel.
  *
  * @param {AnimationInspector} animationInspector
- * @param {DOMElement} panel
- *        #animation-container element.
+ * @param {DOMElement} target element.
  */
-const sendSpaceKeyEvent = async function(animationInspector, panel) {
-  panel.focus();
-  EventUtils.sendKey("SPACE", panel.ownerGlobal);
+const sendSpaceKeyEvent = async function(animationInspector, element) {
+  element.focus();
+  EventUtils.sendKey("SPACE", element.ownerGlobal);
   await waitForSummaryAndDetail(animationInspector);
 };
 
@@ -570,6 +552,51 @@ const waitForRendering = async function(animationInspector) {
   ]);
 };
 
+// Wait until an action of `type` is dispatched. If it's part of an
+// async operation, wait until the `status` field is "done" or "error"
+function _afterDispatchDone(store, type) {
+  return new Promise(resolve => {
+    store.dispatch({
+      // Normally we would use `services.WAIT_UNTIL`, but use the
+      // internal name here so tests aren't forced to always pass it
+      // in
+      type: "@@service/waitUntil",
+      predicate: action => {
+        if (action.type === type) {
+          return true;
+        }
+        return false;
+      },
+      run: (dispatch, getState, action) => {
+        resolve(action);
+      },
+    });
+  });
+}
+
+/**
+ * Wait for a specific action type to be dispatch.
+ * If an async action, will wait for it to be done.
+ * This is a custom waitForDispatch, and rather than having a number to wait on
+ * the function has a callback, that returns a number. This allows us to wait for
+ * an unknown number of dispatches.
+ *
+ * @memberof mochitest/waits
+ * @param {Object} inspector
+ * @param {String} type
+ * @param {Function} repeat
+ * @return {Promise}
+ * @static
+ */
+async function waitForDispatch(inspector, type, repeat) {
+  let count = 0;
+
+  while (count < repeat()) {
+    await _afterDispatchDone(inspector.store, type);
+    count++;
+  }
+}
+
 /**
  * Wait for rendering of animation keyframes.
  *
@@ -644,22 +671,18 @@ function assertAnimationsCurrentTime(animationInspector, time) {
  * Check whether the animations are pausing.
  *
  * @param {AnimationInspector} animationInspector
- * @param {DOMElement} panel
- *        #animation-container element.
  */
-function assertAnimationsPausing(animationInspector, panel) {
-  assertAnimationsPausingOrRunning(animationInspector, panel, true);
+function assertAnimationsPausing(animationInspector) {
+  assertAnimationsPausingOrRunning(animationInspector, true);
 }
 
 /**
  * Check whether the animations are pausing/running.
  *
  * @param {AnimationInspector} animationInspector
- * @param {DOMElement} panel
- *        #animation-container element.
  * @param {boolean} shouldPause
  */
-function assertAnimationsPausingOrRunning(animationInspector, panel, shouldPause) {
+function assertAnimationsPausingOrRunning(animationInspector, shouldPause) {
   const hasRunningAnimation =
     animationInspector.state.animations.some(({state}) => state.playState === "running");
 
@@ -674,11 +697,9 @@ function assertAnimationsPausingOrRunning(animationInspector, panel, shouldPause
  * Check whether the animations are running.
  *
  * @param {AnimationInspector} animationInspector
- * @param {DOMElement} panel
- *        #animation-container element.
  */
-function assertAnimationsRunning(animationInspector, panel) {
-  assertAnimationsPausingOrRunning(animationInspector, panel, false);
+function assertAnimationsRunning(animationInspector) {
+  assertAnimationsPausingOrRunning(animationInspector, false);
 }
 
 /**

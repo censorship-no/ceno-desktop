@@ -32,10 +32,8 @@ var EXPORTED_SYMBOLS = [ "DownloadLastDir" ];
 
 ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-let nonPrivateLoadContext = Cc["@mozilla.org/loadcontext;1"].
-                              createInstance(Ci.nsILoadContext);
-let privateLoadContext = Cc["@mozilla.org/privateloadcontext;1"].
-                              createInstance(Ci.nsILoadContext);
+let nonPrivateLoadContext = Cu.createLoadContext();
+let privateLoadContext = Cu.createPrivateLoadContext();
 
 var observer = {
   QueryInterface: ChromeUtils.generateQI(["nsIObserver",
@@ -59,7 +57,7 @@ var observer = {
         cps2.removeByName(LAST_DIR_PREF, privateLoadContext);
         break;
     }
-  }
+  },
 };
 
 Services.obs.addObserver(observer, "last-pb-context-exited", true);
@@ -143,7 +141,7 @@ DownloadLastDir.prototype = {
           }
         }
         aCallback(file);
-      }
+      },
     });
   },
 
@@ -167,5 +165,5 @@ DownloadLastDir.prototype = {
     } else if (Services.prefs.prefHasUserValue(LAST_DIR_PREF)) {
       Services.prefs.clearUserPref(LAST_DIR_PREF);
     }
-  }
+  },
 };

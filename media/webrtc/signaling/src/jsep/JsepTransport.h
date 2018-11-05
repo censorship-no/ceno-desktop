@@ -92,6 +92,8 @@ public:
     *this = orig;
   }
 
+  ~JsepTransport() {}
+
   JsepTransport& operator=(const JsepTransport& orig)
   {
     if (this != &orig) {
@@ -99,6 +101,8 @@ public:
       mDtls.reset(orig.mDtls ? new JsepDtlsTransport(*orig.mDtls) : nullptr);
       mTransportId = orig.mTransportId;
       mComponents = orig.mComponents;
+      mLocalUfrag = orig.mLocalUfrag;
+      mLocalPwd = orig.mLocalPwd;
     }
     return *this;
   }
@@ -109,6 +113,8 @@ public:
     mTransportId.clear();
     mIce.reset();
     mDtls.reset();
+    mLocalUfrag.clear();
+    mLocalPwd.clear();
   }
 
   // Unique identifier for this transport within this call. Group?
@@ -120,11 +126,8 @@ public:
 
   // Number of required components.
   size_t mComponents;
-
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(JsepTransport);
-
-protected:
-  ~JsepTransport() {}
+  std::string mLocalUfrag;
+  std::string mLocalPwd;
 };
 
 } // namespace mozilla

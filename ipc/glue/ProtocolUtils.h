@@ -33,6 +33,7 @@
 #include "mozilla/Scoped.h"
 #include "mozilla/UniquePtr.h"
 #include "MainThreadUtils.h"
+#include "nsICrashReporter.h"
 #include "nsILabelableRunnable.h"
 
 #if defined(ANDROID) && defined(DEBUG)
@@ -79,6 +80,10 @@ class NeckoParent;
 } // namespace net
 
 namespace ipc {
+
+#ifdef FUZZING
+class ProtocolFuzzerHelper;
+#endif
 
 class MessageChannel;
 
@@ -139,6 +144,10 @@ class IToplevelProtocol;
 
 class IProtocol : public HasResultCodes
 {
+#ifdef FUZZING
+  friend class mozilla::ipc::ProtocolFuzzerHelper;
+#endif
+
 public:
     enum ActorDestroyReason {
         FailedConstructor,
@@ -419,6 +428,10 @@ public:
 
     class ToplevelState final : public ProtocolState
     {
+#ifdef FUZZING
+      friend class mozilla::ipc::ProtocolFuzzerHelper;
+#endif
+
     public:
         ToplevelState(const char* aName, IToplevelProtocol* aProtocol, Side aSide);
 
@@ -760,7 +773,7 @@ DuplicateHandle(HANDLE aSourceHandle,
  */
 void AnnotateSystemError();
 
-enum class State
+enum class LivenessState
 {
   Dead,
   Null,
@@ -768,9 +781,9 @@ enum class State
 };
 
 bool
-StateTransition(bool aIsDelete, State* aNext);
+StateTransition(bool aIsDelete, LivenessState* aNext);
 
-enum class ReEntrantDeleteState
+enum class ReEntrantDeleteLivenessState
 {
   Dead,
   Null,
@@ -781,7 +794,7 @@ enum class ReEntrantDeleteState
 bool
 ReEntrantDeleteStateTransition(bool aIsDelete,
                                bool aIsDeleteReply,
-                               ReEntrantDeleteState* aNext);
+                               ReEntrantDeleteLivenessState* aNext);
 
 /**
  * An endpoint represents one end of a partially initialized IPDL channel. To
@@ -914,9 +927,9 @@ private:
 };
 
 #if defined(XP_MACOSX)
-void AnnotateCrashReportWithErrno(const char* tag, int error);
+void AnnotateCrashReportWithErrno(CrashReporter::Annotation tag, int error);
 #else
-static inline void AnnotateCrashReportWithErrno(const char* tag, int error)
+static inline void AnnotateCrashReportWithErrno(CrashReporter::Annotation tag, int error)
 {}
 #endif
 
@@ -936,7 +949,8 @@ CreateEndpoints(const PrivateIPDLInterface& aPrivate,
   TransportDescriptor parentTransport, childTransport;
   nsresult rv;
   if (NS_FAILED(rv = CreateTransport(aParentDestPid, &parentTransport, &childTransport))) {
-    AnnotateCrashReportWithErrno("IpcCreateEndpointsNsresult", int(rv));
+    AnnotateCrashReportWithErrno(
+      CrashReporter::Annotation::IpcCreateEndpointsNsresult, int(rv));
     return rv;
   }
 

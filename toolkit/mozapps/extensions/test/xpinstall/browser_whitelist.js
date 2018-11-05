@@ -10,10 +10,10 @@ function test() {
   Harness.setup();
 
   var triggers = encodeURIComponent(JSON.stringify({
-    "Unsigned XPI": TESTROOT + "amosigned.xpi"
+    "Unsigned XPI": TESTROOT + "amosigned.xpi",
   }));
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "installtrigger.html?" + triggers);
 }
 
 function allow_blocked(installInfo) {

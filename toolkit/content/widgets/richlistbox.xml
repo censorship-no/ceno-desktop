@@ -117,14 +117,11 @@
         <parameter name="aLabel"/>
         <parameter name="aValue"/>
         <body>
-          const XULNS =
-            "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-
           var item =
-            this.ownerDocument.createElementNS(XULNS, "richlistitem");
+            this.ownerDocument.createXULElement("richlistitem");
           item.setAttribute("value", aValue);
 
-          var label = this.ownerDocument.createElementNS(XULNS, "label");
+          var label = this.ownerDocument.createXULElement("label");
           label.setAttribute("value", aLabel);
           label.setAttribute("flex", "1");
           label.setAttribute("crop", "end");
@@ -163,7 +160,7 @@
             // widgets) won't loop the children.
             this._selecting = {
               item: this.getItemAtIndex(val),
-              index: val
+              index: val,
             };
             this.selectItem(this._selecting.item);
             delete this._selecting;
@@ -586,7 +583,7 @@
           <![CDATA[
             let iface = Ci.nsIDOMXULSelectControlItemElement;
             let children = Array.from(this.childNodes)
-                                .filter(node => node instanceof iface);
+                                .filter(node => node.nodeType == 1 && node instanceof iface);
             if (this.dir == "reverse" && this._mayReverse) {
               children.reverse();
             }
@@ -630,8 +627,8 @@
                 } else {
                   // XXX hack around a bug in ensureElementIsVisible as it will
                   // scroll beyond the last element, bug 493645.
-                  var previousElement = this.dir == "reverse" ? currentItem.nextSibling :
-                                                                currentItem.previousSibling;
+                  var previousElement = this.dir == "reverse" ? currentItem.nextElementSibling :
+                                                                currentItem.previousElementSibling;
                   this.ensureElementIsVisible(previousElement);
                 }
               }
@@ -891,6 +888,10 @@
           if (this.getRowCount() > 0) {
             if (this.currentIndex == -1) {
               this.currentIndex = this.getIndexOfFirstVisibleRow();
+              let currentItem = this.getItemAtIndex(this.currentIndex);
+              if (currentItem) {
+                this.selectItem(currentItem);
+              }
             } else {
               this.currentItem._fireEvent("DOMMenuItemActive");
             }

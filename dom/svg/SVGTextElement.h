@@ -20,7 +20,7 @@ typedef SVGTextPositioningElement SVGTextElementBase;
 class SVGTextElement final : public SVGTextElementBase
 {
 protected:
-  explicit SVGTextElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGTextElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
   friend nsresult (::NS_NewSVGTextElement(nsIContent **aResult,
@@ -30,8 +30,7 @@ public:
   // nsIContent interface
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
 protected:
   virtual EnumAttributesInfo GetEnumInfo() override;

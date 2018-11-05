@@ -56,12 +56,15 @@
 #include "nsWeakReference.h"
 #include "nsIRedirectHistoryEntry.h"
 
+#include "ApplicationReputationTelemetryUtils.h"
+
 using mozilla::ArrayLength;
 using mozilla::BasePrincipal;
 using mozilla::OriginAttributes;
 using mozilla::Preferences;
 using mozilla::TimeStamp;
 using mozilla::Telemetry::Accumulate;
+using mozilla::Telemetry::AccumulateCategorical;
 using mozilla::intl::LocaleService;
 using safe_browsing::ClientDownloadRequest;
 using safe_browsing::ClientDownloadRequest_CertificateChain;
@@ -132,6 +135,13 @@ private:
     SERVER_RESPONSE_INVALID = 2,
   };
 
+  // The target filename for the downloaded file.
+  nsCString mFileName;
+
+  // True if extension of this file matches any extension in the
+  // kBinaryFileExtensions list.
+  bool mIsBinaryFile;
+
   // Number of blocklist and allowlist hits we have seen.
   uint32_t mBlocklistCount;
   uint32_t mAllowlistCount;
@@ -170,8 +180,8 @@ private:
   // NULLs.
   nsCString mResponse;
 
-  // Returns true if the file is likely to be binary.
-  bool IsBinaryFile();
+  // The clock records the start time of a remote lookup request, used by telemetry.
+  PRIntervalTime mTelemetryRemoteRequestStartMs;
 
   // Returns the type of download binary for the file.
   ClientDownloadRequest::DownloadType GetDownloadType(const nsACString& aFilename);
@@ -394,6 +404,7 @@ NS_IMPL_ISUPPORTS(PendingLookup,
 
 PendingLookup::PendingLookup(nsIApplicationReputationQuery* aQuery,
                              nsIApplicationReputationCallback* aCallback) :
+  mIsBinaryFile(false),
   mBlocklistCount(0),
   mAllowlistCount(0),
   mQuery(aQuery),
@@ -556,6 +567,7 @@ static const char* const kBinaryFileExtensions[] = {
     ".osas", // AppleScript
     ".osax", // AppleScript
     //".out", // Linux binary
+    ".oxt", // OpenOffice extension, can execute arbitrary code
     //".paf", // PortableApps package
     //".paq8f",
     //".paq8jd",
@@ -726,30 +738,81 @@ static const char* const kBinaryFileExtensions[] = {
     //".zpaq",
 };
 
-bool
-PendingLookup::IsBinaryFile()
-{
-  nsCString fileName;
-  nsresult rv = mQuery->GetSuggestedFileName(fileName);
-  if (NS_FAILED(rv)) {
-    LOG(("No suggested filename [this = %p]", this));
-    return false;
-  }
-  LOG(("Suggested filename: %s [this = %p]", fileName.get(), this));
+static const char* const kDmgFileExtensions[] = {
+    ".cdr",
+    ".dart",
+    ".dc42",
+    ".diskcopy42",
+    ".dmg",
+    ".dmgpart",
+    ".dvdr",
+    ".img",
+    ".imgpart",
+    ".iso",
+    ".ndif",
+    ".smi",
+    ".sparsebundle",
+    ".sparseimage",
+    ".toast",
+    ".udif",
+};
 
-  for (size_t i = 0; i < ArrayLength(kBinaryFileExtensions); ++i) {
-    if (StringEndsWith(fileName,
-                       nsDependentCString(kBinaryFileExtensions[i]))) {
+static const char* const kRarFileExtensions[] = {
+    ".r00",
+    ".r01",
+    ".r02",
+    ".r03",
+    ".r04",
+    ".r05",
+    ".r06",
+    ".r07",
+    ".r08",
+    ".r09",
+    ".r10",
+    ".r11",
+    ".r12",
+    ".r13",
+    ".r14",
+    ".r15",
+    ".r16",
+    ".r17",
+    ".r18",
+    ".r19",
+    ".r20",
+    ".r21",
+    ".r22",
+    ".r23",
+    ".r24",
+    ".r25",
+    ".r26",
+    ".r27",
+    ".r28",
+    ".r29",
+    ".rar",
+};
+
+static const char* const kZipFileExtensions[] = {
+    ".zip", // Generic archive
+    ".zipx", // WinZip
+};
+
+// Returns true if the file extension matches one in the given array.
+static bool
+IsFileType(const nsACString& aFilename, const char* const aFileExtensions[],
+           const size_t aLength)
+{
+  for (size_t i = 0; i < aLength; ++i) {
+    if (StringEndsWith(aFilename, nsDependentCString(aFileExtensions[i]))) {
       return true;
     }
   }
-
   return false;
 }
 
 ClientDownloadRequest::DownloadType
 PendingLookup::GetDownloadType(const nsACString& aFilename) {
-  MOZ_ASSERT(IsBinaryFile());
+  MOZ_ASSERT(IsFileType(aFilename, kBinaryFileExtensions,
+                        ArrayLength(kBinaryFileExtensions)));
 
   // From https://cs.chromium.org/chromium/src/chrome/common/safe_browsing/download_protection_util.cc?l=17
   if (StringEndsWith(aFilename, NS_LITERAL_CSTRING(".zip"))) {
@@ -794,12 +857,8 @@ PendingLookup::LookupNext()
   // Look up all of the URLs that could allow or block this download.
   // Blocklist first.
 
-  // If any of mAnylistSpecs or mBlocklistSpecs matched the blocklist,
-  // go ahead and block.
-  if (mBlocklistCount > 0) {
-    return OnComplete(true, NS_OK,
-                      nsIApplicationReputationService::VERDICT_DANGEROUS);
-  }
+  // If a url is in blocklist we should call PendingLookup::OnComplete directly.
+  MOZ_ASSERT(mBlocklistCount == 0);
 
   int index = mAnylistSpecs.Length() - 1;
   nsCString spec;
@@ -808,7 +867,10 @@ PendingLookup::LookupNext()
     spec = mAnylistSpecs[index];
     mAnylistSpecs.RemoveElementAt(index);
     RefPtr<PendingDBLookup> lookup(new PendingDBLookup(this));
-    return lookup->LookupSpec(spec, LookupType::BothLists);
+
+    // We don't need to check whitelist if the file is not a binary file.
+    auto type = mIsBinaryFile ? LookupType::BothLists : LookupType::BlocklistOnly;
+    return lookup->LookupSpec(spec, type);
   }
 
   index = mBlocklistSpecs.Length() - 1;
@@ -827,6 +889,8 @@ PendingLookup::LookupNext()
     return OnComplete(false, NS_OK);
   }
 
+  MOZ_ASSERT_IF(!mIsBinaryFile, mAllowlistSpecs.Length() == 0);
+
   // Only binary signatures remain.
   index = mAllowlistSpecs.Length() - 1;
   if (index >= 0) {
@@ -837,12 +901,34 @@ PendingLookup::LookupNext()
     return lookup->LookupSpec(spec, LookupType::AllowlistOnly);
   }
 
+  if (!mFileName.IsEmpty()) {
+    AccumulateCategorical(mIsBinaryFile ?
+                          mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_BINARY::BinaryFile :
+                          mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_BINARY::NonBinaryFile);
+  } else {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_BINARY::MissingFilename);
+  }
+
+  if (IsFileType(mFileName, kDmgFileExtensions,
+                 ArrayLength(kDmgFileExtensions))) {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_BINARY_ARCHIVE::DmgFile);
+  } else if (IsFileType(mFileName, kRarFileExtensions,
+                        ArrayLength(kRarFileExtensions))) {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_BINARY_ARCHIVE::RarFile);
+  } else if (IsFileType(mFileName, kZipFileExtensions,
+                        ArrayLength(kZipFileExtensions))) {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_BINARY_ARCHIVE::ZipFile);
+  } else if (mIsBinaryFile) {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_BINARY_ARCHIVE::OtherBinaryFile);
+  }
+
   // There are no more URIs to check against local list. If the file is
   // not eligible for remote lookup, bail.
-  if (!IsBinaryFile()) {
+  if (!mIsBinaryFile) {
     LOG(("Not eligible for remote lookups [this=%p]", this));
     return OnComplete(false, NS_OK);
   }
+
   nsresult rv = SendRemoteQuery();
   if (NS_FAILED(rv)) {
     return OnComplete(false, rv);
@@ -1176,19 +1262,34 @@ PendingLookup::DoLookupInternal()
     LOG(("ApplicationReputation: Got no redirects [this=%p]", this));
   }
 
-  // Extract the signature and parse certificates so we can use it to check
-  // whitelists.
-  nsCOMPtr<nsIArray> sigArray;
-  rv = mQuery->GetSignatureInfo(getter_AddRefs(sigArray));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (sigArray) {
-    rv = ParseCertificates(sigArray);
-    NS_ENSURE_SUCCESS(rv, rv);
+  rv = mQuery->GetSuggestedFileName(mFileName);
+  if (NS_SUCCEEDED(rv) && !mFileName.IsEmpty()) {
+    mIsBinaryFile = IsFileType(mFileName, kBinaryFileExtensions,
+                               ArrayLength(kBinaryFileExtensions));
+    LOG(("Suggested filename: %s [binary = %d, this = %p]",
+         mFileName.get(), mIsBinaryFile, this));
+  } else {
+    nsAutoCString errorName;
+    mozilla::GetErrorName(rv, errorName);
+    LOG(("No suggested filename [rv = %s, this = %p]", errorName.get(), this));
+    mFileName = EmptyCString();
   }
 
-  rv = GenerateWhitelistStrings();
-  NS_ENSURE_SUCCESS(rv, rv);
+  // We can skip parsing certificate for non-binary files because we only
+  // check local block list for them.
+  if (mIsBinaryFile) {
+    nsCOMPtr<nsIArray> sigArray;
+    rv = mQuery->GetSignatureInfo(getter_AddRefs(sigArray));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (sigArray) {
+      rv = ParseCertificates(sigArray);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+
+    rv = GenerateWhitelistStrings();
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   // Start the call chain.
   return LookupNext();
@@ -1370,12 +1471,10 @@ PendingLookup::SendRemoteQueryInternal()
   nsCString sha256Hash;
   rv = mQuery->GetSha256Hash(sha256Hash);
   NS_ENSURE_SUCCESS(rv, rv);
-  mRequest.mutable_digests()->set_sha256(sha256Hash.Data());
-  nsCString fileName;
-  rv = mQuery->GetSuggestedFileName(fileName);
-  NS_ENSURE_SUCCESS(rv, rv);
-  mRequest.set_file_basename(fileName.get());
-  mRequest.set_download_type(GetDownloadType(fileName));
+  mRequest.mutable_digests()->set_sha256(
+    std::string(sha256Hash.Data(), sha256Hash.Length()));
+  mRequest.set_file_basename(mFileName.get());
+  mRequest.set_download_type(GetDownloadType(mFileName));
 
   if (mRequest.signature().trusted()) {
     LOG(("Got signed binary for remote application reputation check "
@@ -1383,6 +1482,24 @@ PendingLookup::SendRemoteQueryInternal()
   } else {
     LOG(("Got unsigned binary for remote application reputation check "
          "[this = %p]", this));
+  }
+
+  // Look for truncated hashes (see bug 1190020)
+  const auto originalHashLength = sha256Hash.Length();
+  if (originalHashLength == 0) {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_HASH_LENGTH::OriginalHashEmpty);
+  } else if (originalHashLength < 32) {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_HASH_LENGTH::OriginalHashTooShort);
+  } else if (originalHashLength > 32) {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_HASH_LENGTH::OriginalHashTooLong);
+  } else if (!mRequest.has_digests()) {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_HASH_LENGTH::MissingDigest);
+  } else if (!mRequest.digests().has_sha256()) {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_HASH_LENGTH::MissingSha256);
+  } else if (mRequest.digests().sha256().size() != originalHashLength) {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_HASH_LENGTH::InvalidSha256);
+  } else {
+    AccumulateCategorical(mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_HASH_LENGTH::ValidHash);
   }
 
   // Serialize the protocol buffer to a string. This can only fail if we are
@@ -1439,6 +1556,8 @@ PendingLookup::SendRemoteQueryInternal()
   uint32_t timeoutMs = Preferences::GetUint(PREF_SB_DOWNLOADS_REMOTE_TIMEOUT, 10000);
   NS_NewTimerWithCallback(getter_AddRefs(mTimeoutTimer),
                           this, timeoutMs, nsITimer::TYPE_ONE_SHOT);
+
+  mTelemetryRemoteRequestStartMs = PR_IntervalNow();
 
   rv = mChannel->AsyncOpen2(this);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1515,8 +1634,19 @@ PendingLookup::OnStopRequest(nsIRequest *aRequest,
 
   bool shouldBlock = false;
   uint32_t verdict = nsIApplicationReputationService::VERDICT_SAFE;
-  Accumulate(mozilla::Telemetry::APPLICATION_REPUTATION_REMOTE_LOOKUP_TIMEOUT,
-    false);
+
+  if (aResult != NS_ERROR_NET_TIMEOUT) {
+    Accumulate(mozilla::Telemetry::APPLICATION_REPUTATION_REMOTE_LOOKUP_TIMEOUT,
+      false);
+
+    MOZ_ASSERT(mTelemetryRemoteRequestStartMs > 0);
+    int32_t msecs =
+      PR_IntervalToMilliseconds(PR_IntervalNow() - mTelemetryRemoteRequestStartMs);
+
+    MOZ_ASSERT(msecs >= 0);
+    mozilla::Telemetry::Accumulate(
+      mozilla::Telemetry::APPLICATION_REPUTATION_REMOTE_LOOKUP_RESPONSE_TIME, msecs);
+  }
 
   nsresult rv = OnStopRequestInternal(aRequest, aContext, aResult,
                                       &shouldBlock, &verdict);
@@ -1533,6 +1663,7 @@ PendingLookup::OnStopRequestInternal(nsIRequest *aRequest,
   if (NS_FAILED(aResult)) {
     Accumulate(mozilla::Telemetry::APPLICATION_REPUTATION_SERVER,
       SERVER_RESPONSE_FAILED);
+    AccumulateCategorical(NSErrorToLabel(aResult));
     return aResult;
   }
 
@@ -1543,6 +1674,8 @@ PendingLookup::OnStopRequestInternal(nsIRequest *aRequest,
   if (NS_FAILED(rv)) {
     Accumulate(mozilla::Telemetry::APPLICATION_REPUTATION_SERVER,
       SERVER_RESPONSE_FAILED);
+    AccumulateCategorical(
+      mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_SERVER_2::FailGetChannel);
     return rv;
   }
 
@@ -1551,12 +1684,15 @@ PendingLookup::OnStopRequestInternal(nsIRequest *aRequest,
   if (NS_FAILED(rv)) {
     Accumulate(mozilla::Telemetry::APPLICATION_REPUTATION_SERVER,
       SERVER_RESPONSE_FAILED);
+    AccumulateCategorical(
+      mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_SERVER_2::FailGetResponse);
     return rv;
   }
 
   if (status != 200) {
     Accumulate(mozilla::Telemetry::APPLICATION_REPUTATION_SERVER,
       SERVER_RESPONSE_FAILED);
+    AccumulateCategorical(HTTPStatusToLabel(status));
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -1571,6 +1707,9 @@ PendingLookup::OnStopRequestInternal(nsIRequest *aRequest,
 
   Accumulate(mozilla::Telemetry::APPLICATION_REPUTATION_SERVER,
     SERVER_RESPONSE_VALID);
+  AccumulateCategorical(
+    mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_SERVER_2::ResponseValid);
+
   // Clamp responses 0-7, we only know about 0-4 for now.
   Accumulate(mozilla::Telemetry::APPLICATION_REPUTATION_SERVER_VERDICT,
     std::min<uint32_t>(response.verdict(), 7));

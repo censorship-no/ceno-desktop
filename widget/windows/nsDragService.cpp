@@ -68,7 +68,7 @@ nsDragService::~nsDragService()
 
 bool
 nsDragService::CreateDragImage(nsINode *aDOMNode,
-                               nsIScriptableRegion *aRegion,
+                               const Maybe<CSSIntRegion>& aRegion,
                                SHDRAGIMAGE *psdi)
 {
   if (!psdi)
@@ -165,13 +165,13 @@ nsDragService::CreateDragImage(nsINode *aDOMNode,
 //-------------------------------------------------------------------------
 nsresult
 nsDragService::InvokeDragSessionImpl(nsIArray* anArrayTransferables,
-                                     nsIScriptableRegion* aRegion,
+                                     const Maybe<CSSIntRegion>& aRegion,
                                      uint32_t aActionType)
 {
   // Try and get source URI of the items that are being dragged
   nsIURI *uri = nullptr;
 
-  nsCOMPtr<nsIDocument> doc(do_QueryInterface(mSourceDocument));
+  nsCOMPtr<nsIDocument> doc(mSourceDocument);
   if (doc) {
     uri = doc->GetDocumentURI();
   }
@@ -198,9 +198,6 @@ nsDragService::InvokeDragSessionImpl(nsIArray* anArrayTransferables,
       nsCOMPtr<nsITransferable> trans =
           do_QueryElementAt(anArrayTransferables, i);
       if (trans) {
-        // set the requestingPrincipal on the transferable
-        trans->SetRequestingPrincipal(mSourceNode->NodePrincipal());
-        trans->SetContentPolicyType(mContentPolicyType);
         RefPtr<IDataObject> dataObj;
         rv = nsClipboard::CreateNativeDataObject(trans,
                                                  getter_AddRefs(dataObj), uri);
@@ -217,9 +214,6 @@ nsDragService::InvokeDragSessionImpl(nsIArray* anArrayTransferables,
     nsCOMPtr<nsITransferable> trans =
         do_QueryElementAt(anArrayTransferables, 0);
     if (trans) {
-      // set the requestingPrincipal on the transferable
-      trans->SetRequestingPrincipal(mSourceNode->NodePrincipal());
-      trans->SetContentPolicyType(mContentPolicyType);
       rv = nsClipboard::CreateNativeDataObject(trans,
                                                getter_AddRefs(itemToDrag),
                                                uri);
@@ -654,7 +648,7 @@ nsDragService::UpdateDragImage(nsINode* aImage, int32_t aImageX, int32_t aImageY
                                  CLSCTX_INPROC_SERVER,
                                  IID_IDragSourceHelper, (void**)&pdsh))) {
     SHDRAGIMAGE sdi;
-    if (CreateDragImage(mSourceNode, nullptr, &sdi)) {
+    if (CreateDragImage(mSourceNode, Nothing(), &sdi)) {
       nsNativeDragTarget::DragImageChanged();
       if (FAILED(pdsh->InitializeFromBitmap(&sdi, mDataObject)))
         DeleteObject(sdi.hbmpDragImage);

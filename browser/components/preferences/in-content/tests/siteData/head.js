@@ -175,7 +175,8 @@ const mockSiteDataManager = {
       // Add some cookies if needed.
       for (let i = 0; i < (site.cookies || 0); i++) {
         Services.cookies.add(uri.host, uri.pathQueryRef, Cu.now(), i,
-          false, false, false, Date.now() + 1000 * 60 * 60);
+          false, false, false, Date.now() + 1000 * 60 * 60, {},
+          Ci.nsICookie2.SAMESITE_UNSET);
       }
     }
   },
@@ -185,7 +186,7 @@ const mockSiteDataManager = {
     this.fakeSites = null;
     this._SiteDataManager._qms = this._originalQMS;
     this._SiteDataManager._removeQuotaUsage = this._originalRemoveQuotaUsage;
-  }
+  },
 };
 
 function promiseCookiesCleared() {

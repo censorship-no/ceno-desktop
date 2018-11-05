@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "చిత్రాన్ని లోడు చెయ్యలేకపోయాం. మరో చిరునామా ప్రయత్నించండి.",
   "pocket_read_more": "ప్రముఖ అంశాలు:",
   "pocket_read_even_more": "మరిన్ని కథలను వీక్షించండి",
+  "pocket_more_reccommendations": "మరిన్ని సిఫారసులు",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "Get Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "విహారించడం మొదలుపెట్టండి, మీరు ఈమధ్య చూసిన లేదా ఇష్టపడిన గొప్ప వ్యాసాలను, వీడియోలను, ఇతర పేజీలను ఇక్కడ చూపిస్తాం.",
   "topstories_empty_state": "మీరు పట్టుబడ్డారు. {provider} నుండి మరింత అగ్ర కథనాల కోసం తరువాత తనిఖీ చేయండి. వేచి ఉండలేరా? జాలములోని అంతటి నుండి మరింత గొప్ప కథనాలను కనుగొనడానికి ప్రసిద్ధ అంశం ఎంచుకోండి.",
   "manual_migration_explanation2": "మరొక విహారిణి లోని ఇష్టాంశాలు, చరిత్ర, సంకేతపదాలతో Firefoxను ప్రయత్నించండి.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "విభాగ నిర్వహణ",
   "section_menu_action_manage_webext": "పొడగింత నిర్వహణ",
   "section_menu_action_add_topsite": "మేటి సైటును చేర్చు",
+  "section_menu_action_add_search_engine": "శోధన యంత్రాన్ని చేర్చు",
   "section_menu_action_move_up": "పైకి జరుపు",
   "section_menu_action_move_down": "కిందకి జరుపు",
   "section_menu_action_privacy_notice": "అంతరంగికత గమనిక",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "సేవా నియమాలు",
   "firstrun_privacy_notice": "అంతరంగికత గమనిక",
   "firstrun_continue_to_login": "కొనసాగు",
-  "firstrun_skip_login": "ఈ అంచెను దాటవేయి"
+  "firstrun_skip_login": "ఈ అంచెను దాటవేయి",
+  "context_menu_title": "Open menu",
+  "pocket_learn_more": "ఇంకా తెలుసుకోండి"
 };

@@ -28,7 +28,7 @@ add_task(async function testMessagesAppear() {
 
   const message = await waitFor(() => findMessage(hud,
     "The resource at \u201chttp://tracking.example.com/\u201d was " +
-    "blocked because tracking protection is enabled"));
+    "blocked because content blocking is enabled"));
 
   await testClickOpenNewTab(hud, message);
 });
@@ -41,7 +41,7 @@ async function testClickOpenNewTab(hud, message) {
   checkLink({
     ...linkSimulation,
     expectedLink: LEARN_MORE_URI,
-    expectedTab: "tab"
+    expectedTab: "tab",
   });
 }
 

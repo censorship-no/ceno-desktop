@@ -26,6 +26,7 @@
 #include "nsContentUtils.h"
 #include "nsPersistentProperties.h"
 #include "nsQueryObject.h"
+#include "nsSimpleEnumerator.h"
 #include "nsStringStream.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/ResultExtensions.h"
@@ -82,7 +83,6 @@ static const char kContentBundles[][52] = {
   "chrome://global/locale/xbl.properties",
   "chrome://global/locale/xul.properties",
   "chrome://necko/locale/necko.properties",
-  "chrome://onboarding/locale/onboarding.properties",
 };
 
 static bool
@@ -261,14 +261,19 @@ private:
 NS_DEFINE_STATIC_IID_ACCESSOR(SharedStringBundle, SHAREDSTRINGBUNDLE_IID)
 
 
-class StringMapEnumerator final : public nsISimpleEnumerator
+class StringMapEnumerator final : public nsSimpleEnumerator
 {
-  NS_DECL_ISUPPORTS
+public:
   NS_DECL_NSISIMPLEENUMERATOR
 
   explicit StringMapEnumerator(SharedStringMap* aStringMap)
     : mStringMap(aStringMap)
   {}
+
+  const nsID& DefaultInterface() override
+  {
+    return NS_GET_IID(nsIPropertyElement);
+  }
 
 protected:
   virtual ~StringMapEnumerator() = default;
@@ -278,8 +283,6 @@ private:
 
   uint32_t mIndex = 0;
 };
-
-NS_IMPL_ISUPPORTS(StringMapEnumerator, nsISimpleEnumerator)
 
 template <typename T, typename... Args>
 already_AddRefed<T>

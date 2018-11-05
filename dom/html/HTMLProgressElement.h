@@ -19,12 +19,11 @@ namespace dom {
 class HTMLProgressElement final : public nsGenericHTMLElement
 {
 public:
-  explicit HTMLProgressElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLProgressElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   EventStates IntrinsicState() const override;
 
-  nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult,
-                 bool aPreallocateChildren) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                               const nsAString& aValue,

@@ -5,13 +5,17 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/Promise-inl.h"
 
 #include "js/Debug.h"
 
 #include "mozilla/Atomics.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/EventStateManager.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ResultExtensions.h"
+#include "mozilla/Unused.h"
 
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
@@ -87,24 +91,39 @@ Promise::~Promise()
 
 // static
 already_AddRefed<Promise>
-Promise::Create(nsIGlobalObject* aGlobal, ErrorResult& aRv)
+Promise::Create(nsIGlobalObject* aGlobal,
+                ErrorResult& aRv,
+                PropagateUserInteraction aPropagateUserInteraction)
 {
   if (!aGlobal) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
   RefPtr<Promise> p = new Promise(aGlobal);
-  p->CreateWrapper(nullptr, aRv);
+  p->CreateWrapper(nullptr, aRv, aPropagateUserInteraction);
   if (aRv.Failed()) {
     return nullptr;
   }
   return p.forget();
 }
 
+bool
+Promise::MaybePropagateUserInputEventHandling()
+{
+  JS::PromiseUserInputEventHandlingState state =
+    EventStateManager::IsHandlingUserInput() ?
+      JS::PromiseUserInputEventHandlingState::HadUserInteractionAtCreation :
+      JS::PromiseUserInputEventHandlingState::DidntHaveUserInteractionAtCreation;
+  JS::Rooted<JSObject*> p(RootingCx(), mPromiseObj);
+  return JS::SetPromiseUserInputEventHandlingState(p, state);
+}
+
 // static
 already_AddRefed<Promise>
 Promise::Resolve(nsIGlobalObject* aGlobal, JSContext* aCx,
-                 JS::Handle<JS::Value> aValue, ErrorResult& aRv)
+                 JS::Handle<JS::Value> aValue,
+                 ErrorResult& aRv,
+                 PropagateUserInteraction aPropagateUserInteraction)
 {
   JSAutoRealm ar(aCx, aGlobal->GetGlobalJSObject());
   JS::Rooted<JSObject*> p(aCx,
@@ -114,7 +133,7 @@ Promise::Resolve(nsIGlobalObject* aGlobal, JSContext* aCx,
     return nullptr;
   }
 
-  return CreateFromExisting(aGlobal, p);
+  return CreateFromExisting(aGlobal, p, aPropagateUserInteraction);
 }
 
 // static
@@ -130,13 +149,18 @@ Promise::Reject(nsIGlobalObject* aGlobal, JSContext* aCx,
     return nullptr;
   }
 
-  return CreateFromExisting(aGlobal, p);
+  // This promise will never be resolved, so we pass
+  // eDontPropagateUserInteraction for aPropagateUserInteraction
+  // unconditionally.
+  return CreateFromExisting(aGlobal, p, eDontPropagateUserInteraction);
 }
 
 // static
 already_AddRefed<Promise>
 Promise::All(JSContext* aCx,
-             const nsTArray<RefPtr<Promise>>& aPromiseList, ErrorResult& aRv)
+             const nsTArray<RefPtr<Promise>>& aPromiseList,
+             ErrorResult& aRv,
+             PropagateUserInteraction aPropagateUserInteraction)
 {
   JS::Rooted<JSObject*> globalObj(aCx, JS::CurrentGlobalOrNull(aCx));
   if (!globalObj) {
@@ -172,7 +196,7 @@ Promise::All(JSContext* aCx,
     return nullptr;
   }
 
-  return CreateFromExisting(global, result);
+  return CreateFromExisting(global, result, aPropagateUserInteraction);
 }
 
 void
@@ -227,7 +251,51 @@ Promise::Then(JSContext* aCx,
 }
 
 void
-Promise::CreateWrapper(JS::Handle<JSObject*> aDesiredProto, ErrorResult& aRv)
+PromiseNativeThenHandlerBase::ResolvedCallback(JSContext* aCx,
+                                               JS::Handle<JS::Value> aValue)
+{
+  RefPtr<Promise> promise = CallResolveCallback(aCx, aValue);
+  mPromise->MaybeResolve(promise);
+}
+
+void
+PromiseNativeThenHandlerBase::RejectedCallback(JSContext* aCx,
+                                               JS::Handle<JS::Value> aValue)
+{
+  mPromise->MaybeReject(aCx, aValue);
+}
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(PromiseNativeThenHandlerBase)
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(PromiseNativeThenHandlerBase)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPromise)
+  tmp->Traverse(cb);
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(PromiseNativeThenHandlerBase)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPromise)
+  tmp->Unlink();
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PromiseNativeThenHandlerBase)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+NS_INTERFACE_MAP_END
+
+NS_IMPL_CYCLE_COLLECTING_ADDREF(PromiseNativeThenHandlerBase)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(PromiseNativeThenHandlerBase)
+
+Result<RefPtr<Promise>, nsresult>
+Promise::ThenWithoutCycleCollection(
+  const std::function<already_AddRefed<Promise>(JSContext* aCx,
+                                                JS::HandleValue aValue)>& aCallback)
+{
+  return ThenWithCycleCollectedArgs(aCallback);
+}
+
+void
+Promise::CreateWrapper(JS::Handle<JSObject*> aDesiredProto,
+                       ErrorResult& aRv,
+                       PropagateUserInteraction aPropagateUserInteraction)
 {
   AutoJSAPI jsapi;
   if (!jsapi.Init(mGlobal)) {
@@ -240,6 +308,9 @@ Promise::CreateWrapper(JS::Handle<JSObject*> aDesiredProto, ErrorResult& aRv)
     JS_ClearPendingException(cx);
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
+  }
+  if (aPropagateUserInteraction == ePropagateUserInteraction) {
+    Unused << MaybePropagateUserInputEventHandling();
   }
 }
 
@@ -447,12 +518,17 @@ Promise::HandleException(JSContext* aCx)
 // static
 already_AddRefed<Promise>
 Promise::CreateFromExisting(nsIGlobalObject* aGlobal,
-                            JS::Handle<JSObject*> aPromiseObj)
+                            JS::Handle<JSObject*> aPromiseObj,
+                            PropagateUserInteraction aPropagateUserInteraction)
 {
   MOZ_ASSERT(js::GetObjectCompartment(aGlobal->GetGlobalJSObject()) ==
              js::GetObjectCompartment(aPromiseObj));
   RefPtr<Promise> p = new Promise(aGlobal);
   p->mPromiseObj = aPromiseObj;
+  if (aPropagateUserInteraction == ePropagateUserInteraction &&
+      !p->MaybePropagateUserInputEventHandling()) {
+    return nullptr;
+  }
   return p.forget();
 }
 
@@ -489,12 +565,6 @@ Promise::ReportRejectedPromise(JSContext* aCx, JS::HandleObject aPromise)
 
   JS::Rooted<JS::Value> result(aCx, JS::GetPromiseResult(aPromise));
 
-  js::ErrorReport report(aCx);
-  if (!report.init(aCx, result, js::ErrorReport::NoSideEffects)) {
-    JS_ClearPendingException(aCx);
-    return;
-  }
-
   RefPtr<xpc::ErrorReport> xpcReport = new xpc::ErrorReport();
   bool isMainThread = MOZ_LIKELY(NS_IsMainThread());
   bool isChrome = isMainThread ? nsContentUtils::IsSystemPrincipal(nsContentUtils::ObjectPrincipal(aPromise))
@@ -502,8 +572,23 @@ Promise::ReportRejectedPromise(JSContext* aCx, JS::HandleObject aPromise)
   nsGlobalWindowInner* win = isMainThread
     ? xpc::WindowGlobalOrNull(aPromise)
     : nullptr;
-  xpcReport->Init(report.report(), report.toStringResult().c_str(), isChrome,
-                  win ? win->AsInner()->WindowID() : 0);
+
+  js::ErrorReport report(aCx);
+  if (report.init(aCx, result, js::ErrorReport::NoSideEffects)) {
+    xpcReport->Init(report.report(), report.toStringResult().c_str(), isChrome,
+                    win ? win->AsInner()->WindowID() : 0);
+  } else {
+    JS_ClearPendingException(aCx);
+
+    RefPtr<Exception> exn;
+    if (result.isObject() &&
+        (NS_SUCCEEDED(UNWRAP_OBJECT(DOMException, &result, exn)) ||
+         NS_SUCCEEDED(UNWRAP_OBJECT(Exception, &result, exn)))) {
+      xpcReport->Init(aCx, exn, isChrome, win ? win->AsInner()->WindowID() : 0);
+    } else {
+      return;
+    }
+  }
 
   // Now post an event to do the real reporting async
   RefPtr<nsIRunnable> event = new AsyncErrorReporter(xpcReport);

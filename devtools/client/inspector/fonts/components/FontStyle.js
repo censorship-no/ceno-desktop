@@ -41,12 +41,12 @@ class FontStyle extends PureComponent {
       ),
       dom.div(
         {
-          className: "font-control-input"
+          className: "font-control-input",
         },
         dom.input(
           {
             checked: this.props.value === "italic" || this.props.value === "oblique",
-            className: "font-value-toggle",
+            className: "devtools-checkbox-toggle",
             name: this.name,
             onChange: this.onToggle,
             type: "checkbox",

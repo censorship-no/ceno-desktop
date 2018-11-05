@@ -39,7 +39,7 @@ var subtests = [
                    "subtst_privbrowsing_3.html", // 7
                    "subtst_privbrowsing_3.html", // 8
                    "subtst_privbrowsing_4.html", // 9
-                   "subtst_privbrowsing_3.html" // 10
+                   "subtst_privbrowsing_3.html", // 10
                ];
 var observer;
 
@@ -213,7 +213,7 @@ function testOnWindow(aIsPrivate, aCallback) {
     whenDelayedStartupFinished(win, function() {
       win.addEventListener("DOMContentLoaded", function onInnerLoad() {
         if (win.content.location.href != contentPage) {
-          win.gBrowser.loadURI(contentPage);
+          BrowserTestUtils.loadURI(win.gBrowser, contentPage);
           return;
         }
         win.removeEventListener("DOMContentLoaded", onInnerLoad, true);
@@ -224,7 +224,7 @@ function testOnWindow(aIsPrivate, aCallback) {
           SimpleTest.executeSoon(function() { aCallback(win); });
         }, false, true);
       }, true);
-      SimpleTest.executeSoon(function() { win.gBrowser.loadURI(contentPage); });
+      SimpleTest.executeSoon(function() { BrowserTestUtils.loadURI(win.gBrowser, contentPage); });
     });
   }, {capture: true, once: true});
 }

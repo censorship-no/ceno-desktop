@@ -125,6 +125,55 @@ class DidCompositeObserver {
     virtual void DidComposite() = 0;
 };
 
+class FrameRecorder {
+public:
+  /**
+   * Record (and return) frame-intervals and paint-times for frames which were presented
+   *   between calling StartFrameTimeRecording and StopFrameTimeRecording.
+   *
+   * - Uses a cyclic buffer and serves concurrent consumers, so if Stop is called too late
+   *     (elements were overwritten since Start), result is considered invalid and hence empty.
+   * - Buffer is capable of holding 10 seconds @ 60fps (or more if frames were less frequent).
+   *     Can be changed (up to 1 hour) via pref: toolkit.framesRecording.bufferSize.
+   * - Note: the first frame-interval may be longer than expected because last frame
+   *     might have been presented some time before calling StartFrameTimeRecording.
+   */
+
+  /**
+   * Returns a handle which represents current recording start position.
+   */
+  virtual uint32_t StartFrameTimeRecording(int32_t aBufferSize);
+
+  /**
+   *  Clears, then populates aFrameIntervals with the recorded frame timing
+   *  data. The array will be empty if data was overwritten since
+   *  aStartIndex was obtained.
+   */
+  virtual void StopFrameTimeRecording(uint32_t         aStartIndex,
+                                      nsTArray<float>& aFrameIntervals);
+
+  void RecordFrame();
+private:
+  struct FramesTimingRecording
+  {
+    // Stores state and data for frame intervals and paint times recording.
+    // see LayerManager::StartFrameTimeRecording() at Layers.cpp for more details.
+    FramesTimingRecording()
+      : mNextIndex(0)
+      , mLatestStartIndex(0)
+      , mCurrentRunStartIndex(0)
+      , mIsPaused(true)
+    {}
+    nsTArray<float> mIntervals;
+    TimeStamp mLastFrameTime;
+    uint32_t mNextIndex;
+    uint32_t mLatestStartIndex;
+    uint32_t mCurrentRunStartIndex;
+    bool mIsPaused;
+  };
+  FramesTimingRecording mRecording;
+};
+
 /*
  * Motivation: For truly smooth animation and video playback, we need to
  * be able to compose frames and render them on a dedicated thread (i.e.
@@ -173,7 +222,7 @@ class DidCompositeObserver {
  * Layers are refcounted. The layer manager holds a reference to the
  * root layer, and each container layer holds a reference to its children.
  */
-class LayerManager {
+class LayerManager : public FrameRecorder {
   NS_INLINE_DECL_REFCOUNTING(LayerManager)
 
 protected:
@@ -365,7 +414,7 @@ public:
    * other layers in the tree which share the same ViewID.
    * Can be called any time.
    */
-  FrameMetrics::ViewID GetRootScrollableLayerId();
+  ScrollableLayerGuid::ViewID GetRootScrollableLayerId();
 
   /**
    * Returns a LayerMetricsWrapper containing the Root
@@ -617,33 +666,6 @@ public:
    */
   void LogSelf(const char* aPrefix="");
 
-  /**
-   * Record (and return) frame-intervals and paint-times for frames which were presented
-   *   between calling StartFrameTimeRecording and StopFrameTimeRecording.
-   *
-   * - Uses a cyclic buffer and serves concurrent consumers, so if Stop is called too late
-   *     (elements were overwritten since Start), result is considered invalid and hence empty.
-   * - Buffer is capable of holding 10 seconds @ 60fps (or more if frames were less frequent).
-   *     Can be changed (up to 1 hour) via pref: toolkit.framesRecording.bufferSize.
-   * - Note: the first frame-interval may be longer than expected because last frame
-   *     might have been presented some time before calling StartFrameTimeRecording.
-   */
-
-  /**
-   * Returns a handle which represents current recording start position.
-   */
-  virtual uint32_t StartFrameTimeRecording(int32_t aBufferSize);
-
-  /**
-   *  Clears, then populates aFrameIntervals with the recorded frame timing
-   *  data. The array will be empty if data was overwritten since
-   *  aStartIndex was obtained.
-   */
-  virtual void StopFrameTimeRecording(uint32_t         aStartIndex,
-                                      nsTArray<float>& aFrameIntervals);
-
-  void RecordFrame();
-
   static bool IsLogEnabled();
   static mozilla::LogModule* GetLog();
 
@@ -734,25 +756,6 @@ protected:
   TimeStamp mAnimationReadyTime;
   // The count of pixels that were painted in the current transaction.
   uint32_t mPaintedPixelCount;
-private:
-  struct FramesTimingRecording
-  {
-    // Stores state and data for frame intervals and paint times recording.
-    // see LayerManager::StartFrameTimeRecording() at Layers.cpp for more details.
-    FramesTimingRecording()
-      : mNextIndex(0)
-      , mLatestStartIndex(0)
-      , mCurrentRunStartIndex(0)
-      , mIsPaused(true)
-    {}
-    nsTArray<float> mIntervals;
-    TimeStamp mLastFrameTime;
-    uint32_t mNextIndex;
-    uint32_t mLatestStartIndex;
-    uint32_t mCurrentRunStartIndex;
-    bool mIsPaused;
-  };
-  FramesTimingRecording mRecording;
 
 public:
   /*
@@ -760,9 +763,9 @@ public:
    * per-scrollid basis. This is used for empty transactions that push over
    * scroll position updates to the APZ code.
    */
-  virtual bool SetPendingScrollUpdateForNextTransaction(FrameMetrics::ViewID aScrollId,
+  virtual bool SetPendingScrollUpdateForNextTransaction(ScrollableLayerGuid::ViewID aScrollId,
                                                         const ScrollUpdateInfo& aUpdateInfo);
-  Maybe<ScrollUpdateInfo> GetPendingScrollInfoUpdate(FrameMetrics::ViewID aScrollId);
+  Maybe<ScrollUpdateInfo> GetPendingScrollInfoUpdate(ScrollableLayerGuid::ViewID aScrollId);
   void ClearPendingScrollInfoUpdate();
 protected:
   ScrollUpdatesMap mPendingScrollUpdates;
@@ -1222,7 +1225,7 @@ public:
    *     fixed position items need to shift accordingly. This value is made up
    *     combining appropriate values from mozilla::SideBits.
    */
-  void SetFixedPositionData(FrameMetrics::ViewID aScrollId,
+  void SetFixedPositionData(ScrollableLayerGuid::ViewID aScrollId,
                             const LayerPoint& aAnchor,
                             int32_t aSides)
   {
@@ -1241,7 +1244,7 @@ public:
    * dimension, while that component of the scroll position lies within either
    * interval, the layer should not move relative to its scrolling container.
    */
-  void SetStickyPositionData(FrameMetrics::ViewID aScrollId,
+  void SetStickyPositionData(ScrollableLayerGuid::ViewID aScrollId,
                              LayerRectAbsolute aOuter, LayerRectAbsolute aInner)
   {
     if (mSimpleAttrs.SetStickyPositionData(aScrollId, aOuter, aInner)) {
@@ -1316,10 +1319,10 @@ public:
   bool GetIsFixedPosition() { return mSimpleAttrs.IsFixedPosition(); }
   bool GetTransformIsPerspective() const { return mSimpleAttrs.GetTransformIsPerspective(); }
   bool GetIsStickyPosition() { return mSimpleAttrs.IsStickyPosition(); }
-  FrameMetrics::ViewID GetFixedPositionScrollContainerId() { return mSimpleAttrs.GetFixedPositionScrollContainerId(); }
+  ScrollableLayerGuid::ViewID GetFixedPositionScrollContainerId() { return mSimpleAttrs.GetFixedPositionScrollContainerId(); }
   LayerPoint GetFixedPositionAnchor() { return mSimpleAttrs.GetFixedPositionAnchor(); }
   int32_t GetFixedPositionSides() { return mSimpleAttrs.GetFixedPositionSides(); }
-  FrameMetrics::ViewID GetStickyScrollContainerId() { return mSimpleAttrs.GetStickyScrollContainerId(); }
+  ScrollableLayerGuid::ViewID GetStickyScrollContainerId() { return mSimpleAttrs.GetStickyScrollContainerId(); }
   const LayerRectAbsolute& GetStickyScrollRangeOuter() { return mSimpleAttrs.GetStickyScrollRangeOuter(); }
   const LayerRectAbsolute& GetStickyScrollRangeInner() { return mSimpleAttrs.GetStickyScrollRangeInner(); }
   const ScrollbarData& GetScrollbarData() const { return mSimpleAttrs.GetScrollbarData(); }
@@ -2223,11 +2226,7 @@ public:
    * NOTE: Since this layer has an intermediate surface it follows
    *       that LayerPixel == RenderTargetPixel
    */
-  RenderTargetIntRect GetIntermediateSurfaceRect()
-  {
-    NS_ASSERTION(mUseIntermediateSurface, "Must have intermediate surface");
-    return RenderTargetIntRect::FromUnknownRect(GetLocalVisibleRegion().ToUnknownRegion().GetBounds());
-  }
+  RenderTargetIntRect GetIntermediateSurfaceRect();
 
   /**
    * Returns true if this container has more than one non-empty child

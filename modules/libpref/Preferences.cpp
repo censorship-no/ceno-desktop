@@ -19,6 +19,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/PContent.h"
 #include "mozilla/HashFunctions.h"
+#include "mozilla/HashTable.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
@@ -71,6 +72,7 @@
 #include "nsQuickSort.h"
 #include "nsReadableUtils.h"
 #include "nsRefPtrHashtable.h"
+#include "nsRelativeFilePref.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
@@ -537,15 +539,6 @@ public:
 
   // Other operations.
 
-  bool MatchEntry(const char* aPrefName)
-  {
-    if (!mName || !aPrefName) {
-      return false;
-    }
-
-    return strcmp(mName, aPrefName) == 0;
-  }
-
   bool GetBoolValue(PrefValueKind aKind = PrefValueKind::User) const
   {
     MOZ_ASSERT(IsTypeBool());
@@ -954,33 +947,20 @@ private:
   PrefValue mUserValue;
 };
 
-class PrefEntry : public PLDHashEntryHdr
+struct PrefHasher
 {
-public:
-  Pref* mPref; // Note: this is never null in a live entry.
+  using Key = mozilla::UniquePtr<Pref>;
+  using Lookup = const char*;
 
-  static bool MatchEntry(const PLDHashEntryHdr* aEntry, const void* aKey)
+  static HashNumber hash(const Lookup& aLookup) { return HashString(aLookup); }
+
+  static bool match(const Key& aKey, const Lookup& aLookup)
   {
-    auto entry = static_cast<const PrefEntry*>(aEntry);
-    auto prefName = static_cast<const char*>(aKey);
+    if (!aLookup || !aKey->Name()) {
+      return false;
+    }
 
-    return entry->mPref->MatchEntry(prefName);
-  }
-
-  static void InitEntry(PLDHashEntryHdr* aEntry, const void* aKey)
-  {
-    auto entry = static_cast<PrefEntry*>(aEntry);
-    auto prefName = static_cast<const char*>(aKey);
-
-    entry->mPref = new Pref(prefName);
-  }
-
-  static void ClearEntry(PLDHashTable* aTable, PLDHashEntryHdr* aEntry)
-  {
-    auto entry = static_cast<PrefEntry*>(aEntry);
-
-    delete entry->mPref;
-    entry->mPref = nullptr;
+    return strcmp(aLookup, aKey->Name()) == 0;
   }
 };
 
@@ -1300,7 +1280,9 @@ private:
   uintptr_t mNextAndMatchKind;
 };
 
-static PLDHashTable* gHashTable;
+using PrefsHashTable = mozilla::HashSet<mozilla::UniquePtr<Pref>, PrefHasher>;
+
+static PrefsHashTable* gHashTable;
 
 // The callback list contains all the priority callbacks followed by the
 // non-priority callbacks. gLastPriorityNode records where the first part ends.
@@ -1348,22 +1330,16 @@ AddAccessCount(const char* aPrefName)
 static bool gCallbacksInProgress = false;
 static bool gShouldCleanupDeadNodes = false;
 
-static PLDHashTableOps pref_HashTableOps = {
-  PLDHashTable::HashStringKey, PrefEntry::MatchEntry,
-  PLDHashTable::MoveEntryStub, PrefEntry::ClearEntry,
-  PrefEntry::InitEntry,
-};
-
 class PrefsHashIter
 {
-  using Iterator = decltype(gHashTable->Iter());
+  using Iterator = decltype(gHashTable->modIter());
   using ElemType = Pref*;
 
   Iterator mIter;
 
 public:
-  explicit PrefsHashIter(PLDHashTable* aTable)
-    : mIter(aTable->Iter())
+  explicit PrefsHashIter(PrefsHashTable* aTable)
+    : mIter(aTable->modIter())
   {
   }
 
@@ -1390,7 +1366,7 @@ public:
       if (mDone) {
         return nullptr;
       }
-      return static_cast<PrefEntry*>(Iter().Get())->mPref;
+      return Iter().get().get();
     }
     ElemType get() const { return const_cast<Elem*>(this)->get(); }
 
@@ -1399,13 +1375,13 @@ public:
 
     operator ElemType() { return get(); }
 
-    void Remove() { Iter().Remove(); }
+    void Remove() { Iter().remove(); }
 
     Elem& operator++()
     {
       MOZ_ASSERT(!mDone);
-      Iter().Next();
-      mDone = Iter().Done();
+      Iter().next();
+      mDone = Iter().done();
       return *this;
     }
 
@@ -1415,14 +1391,14 @@ public:
     }
   };
 
-  Elem begin() { return Elem(*this, mIter.Done()); }
+  Elem begin() { return Elem(*this, mIter.done()); }
 
   Elem end() { return Elem(*this, true); }
 };
 
 class PrefsIter
 {
-  using Iterator = decltype(gHashTable->Iter());
+  using Iterator = decltype(gHashTable->iter());
   using ElemType = PrefWrapper;
 
   using HashElem = PrefsHashIter::Elem;
@@ -1431,7 +1407,7 @@ class PrefsIter
   using ElemTypeVariant = Variant<HashElem, SharedElem>;
 
   SharedPrefMap* mSharedMap;
-  PLDHashTable* mHashTable;
+  PrefsHashTable* mHashTable;
   PrefsHashIter mIter;
 
   ElemTypeVariant mPos;
@@ -1440,7 +1416,7 @@ class PrefsIter
   Maybe<PrefWrapper> mEntry;
 
 public:
-  PrefsIter(PLDHashTable* aHashTable, SharedPrefMap* aSharedMap)
+  PrefsIter(PrefsHashTable* aHashTable, SharedPrefMap* aSharedMap)
     : mSharedMap(aSharedMap)
     , mHashTable(aHashTable)
     , mIter(aHashTable)
@@ -1530,9 +1506,9 @@ public:
 
     void SkipDuplicates()
     {
-      while (!mDone && (mParent.IteratingBase()
-                          ? !!mParent.mHashTable->Search(ref().Name())
-                          : ref().IsTypeNone())) {
+      while (!mDone &&
+             (mParent.IteratingBase() ? mParent.mHashTable->has(ref().Name())
+                                      : ref().IsTypeNone())) {
         Next();
       }
     }
@@ -1620,7 +1596,7 @@ pref_savePrefs()
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  PrefSaveData savedPrefs(gHashTable->EntryCount());
+  PrefSaveData savedPrefs(gHashTable->count());
 
   for (auto& pref : PrefsIter(gHashTable, gSharedMap)) {
     nsAutoCString prefValueStr;
@@ -1648,25 +1624,19 @@ static bool gContentProcessPrefsAreInited = false;
 
 #endif // DEBUG
 
-static PrefEntry*
-pref_HashTableLookupInner(const char* aPrefName)
+static Pref*
+pref_HashTableLookup(const char* aPrefName)
 {
   MOZ_ASSERT(NS_IsMainThread() || mozilla::ServoStyleSet::IsInServoTraversal());
 
   MOZ_ASSERT_IF(!XRE_IsParentProcess(), gContentProcessPrefsAreInited);
 
-  return static_cast<PrefEntry*>(gHashTable->Search(aPrefName));
-}
-
-static Pref*
-pref_HashTableLookup(const char* aPrefName)
-{
-  PrefEntry* entry = pref_HashTableLookupInner(aPrefName);
-  if (!entry) {
-    return nullptr;
-  }
-
-  return entry->mPref;
+  // We use readonlyThreadsafeLookup() because we often have concurrent lookups
+  // from multiple Stylo threads. This is safe because those threads cannot
+  // modify gHashTable, and the main thread is blocked while Stylo threads are
+  // doing these lookups.
+  auto p = gHashTable->readonlyThreadsafeLookup(aPrefName);
+  return p ? p->get() : nullptr;
 }
 
 // While notifying preference callbacks, this holds the wrapper for the
@@ -1717,11 +1687,11 @@ pref_LookupForModify(const char* aPrefName,
     return wrapper->as<Pref*>();
   }
 
-  auto entry = static_cast<PrefEntry*>(gHashTable->Add(aPrefName, fallible));
-  if (!entry) {
+  Pref* pref = new Pref(aPrefName);
+  if (!gHashTable->putNew(aPrefName, pref)) {
+    delete pref;
     return Err(NS_ERROR_OUT_OF_MEMORY);
   }
-  Pref* pref = entry->mPref;
   pref->FromWrapper(*wrapper);
   return pref;
 }
@@ -1754,15 +1724,16 @@ pref_SetPref(const char* aPrefName,
   }
 
   if (!pref) {
-    auto entry = static_cast<PrefEntry*>(gHashTable->Add(aPrefName, fallible));
-    if (!entry) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-    pref = entry->mPref;
-
-    if (pref->IsTypeNone()) {
-      // New entry. Set the type.
+    auto p = gHashTable->lookupForAdd(aPrefName);
+    if (!p) {
+      pref = new Pref(aPrefName);
       pref->SetType(aType);
+      if (!gHashTable->add(p, pref)) {
+        delete pref;
+        return NS_ERROR_OUT_OF_MEMORY;
+      }
+    } else {
+      pref = p->get();
     }
   }
 
@@ -2081,7 +2052,7 @@ public:
     mCanonical = canonical;
   }
 
-  // Copy constructor needs to be explicit or the linker complains.
+  // This is explicitly not a copy constructor.
   explicit PrefCallback(const PrefCallback*& aCopy)
     : mDomain(aCopy->mDomain)
     , mBranch(aCopy->mBranch)
@@ -2091,6 +2062,9 @@ public:
   {
     MOZ_COUNT_CTOR(PrefCallback);
   }
+
+  PrefCallback(const PrefCallback&) = delete;
+  PrefCallback(PrefCallback&&) = default;
 
   ~PrefCallback() { MOZ_COUNT_DTOR(PrefCallback); }
 
@@ -2309,21 +2283,6 @@ private:
   nsCOMPtr<nsISupportsString> mUnicodeString;
 };
 
-class nsRelativeFilePref : public nsIRelativeFilePref
-{
-public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIRELATIVEFILEPREF
-
-  nsRelativeFilePref();
-
-private:
-  virtual ~nsRelativeFilePref();
-
-  nsCOMPtr<nsIFile> mFile;
-  nsCString mRelativeToKey;
-};
-
 //----------------------------------------------------------------------------
 // nsPrefBranch
 //----------------------------------------------------------------------------
@@ -2435,6 +2394,7 @@ nsPrefBranch::GetFloatPref(const char* aPrefName, float* aRetVal)
   nsAutoCString stringVal;
   nsresult rv = GetCharPref(aPrefName, stringVal);
   if (NS_SUCCEEDED(rv)) {
+    // ToFloat() does a locale-independent conversion.
     *aRetVal = stringVal.ToFloat(&rv);
   }
 
@@ -2668,11 +2628,9 @@ nsPrefBranch::GetComplexValue(const char* aPrefName,
       return rv;
     }
 
-    nsCOMPtr<nsIRelativeFilePref> relativePref;
-    rv = NS_NewRelativeFilePref(theFile, key, getter_AddRefs(relativePref));
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
+    nsCOMPtr<nsIRelativeFilePref> relativePref = new nsRelativeFilePref();
+    Unused << relativePref->SetFile(theFile);
+    Unused << relativePref->SetRelativeToKey(key);
 
     relativePref.forget(reinterpret_cast<nsIRelativeFilePref**>(aRetVal));
     return NS_OK;
@@ -2898,16 +2856,14 @@ nsPrefBranch::DeleteBranch(const char* aStartingAt)
   const nsACString& branchNameNoDot =
     Substring(branchName, 0, branchName.Length() - 1);
 
-  for (auto iter = gHashTable->Iter(); !iter.Done(); iter.Next()) {
-    Pref* pref = static_cast<PrefEntry*>(iter.Get())->mPref;
-
+  for (auto iter = gHashTable->modIter(); !iter.done(); iter.next()) {
     // The first disjunct matches branches: e.g. a branch name "foo.bar."
     // matches a name "foo.bar.baz" (but it won't match "foo.barrel.baz").
     // The second disjunct matches leaf nodes: e.g. a branch name "foo.bar."
     // matches a name "foo.bar" (by ignoring the trailing '.').
-    nsDependentCString name(pref->Name());
+    nsDependentCString name(iter.get()->Name());
     if (StringBeginsWith(name, branchName) || name.Equals(branchNameNoDot)) {
-      iter.Remove();
+      iter.remove();
       // The saved callback pref may be invalid now.
       gCallbackPref = nullptr;
     }
@@ -2959,14 +2915,8 @@ nsPrefBranch::GetChildList(const char* aStartingAt,
       // back to us because if they do we are going to add mPrefRoot again.
       const nsCString& element = prefArray[dwIndex];
       outArray[dwIndex] =
-        (char*)nsMemory::Clone(element.get() + mPrefRoot.Length(),
-                               element.Length() - mPrefRoot.Length() + 1);
-
-      if (!outArray[dwIndex]) {
-        // We ran out of memory... this is annoying.
-        NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(dwIndex, outArray);
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
+        (char*)moz_xmemdup(element.get() + mPrefRoot.Length(),
+                           element.Length() - mPrefRoot.Length() + 1);
     }
     *aChildArray = outArray;
   }
@@ -3281,6 +3231,9 @@ Preferences::HandleDirty()
 static nsresult
 openPrefFile(nsIFile* aFile, PrefValueKind aKind);
 
+static nsresult
+parsePrefData(const nsCString& aData, PrefValueKind aKind);
+
 // clang-format off
 static const char kPrefFileHeader[] =
   "// Mozilla User Preferences"
@@ -3557,10 +3510,9 @@ PreferenceServiceReporter::CollectReports(
   Preferences::AddSizeOfIncludingThis(mallocSizeOf, sizes);
 
   if (gHashTable) {
-    sizes.mHashTable += gHashTable->ShallowSizeOfIncludingThis(mallocSizeOf);
-    for (auto iter = gHashTable->Iter(); !iter.Done(); iter.Next()) {
-      Pref* pref = static_cast<PrefEntry*>(iter.Get())->mPref;
-      pref->AddSizeOfIncludingThis(mallocSizeOf, sizes);
+    sizes.mHashTable += gHashTable->shallowSizeOfIncludingThis(mallocSizeOf);
+    for (auto iter = gHashTable->iter(); !iter.done(); iter.next()) {
+      iter.get()->AddSizeOfIncludingThis(mallocSizeOf, sizes);
     }
   }
 
@@ -3872,10 +3824,8 @@ Preferences::GetInstanceForService()
 
   MOZ_ASSERT(!gHashTable);
   gHashTable =
-    new PLDHashTable(&pref_HashTableOps,
-                     sizeof(PrefEntry),
-                     (XRE_IsParentProcess() ? kHashTableInitialLengthParent
-                                            : kHashTableInitialLengthContent));
+    new PrefsHashTable(XRE_IsParentProcess() ? kHashTableInitialLengthParent
+                                             : kHashTableInitialLengthContent);
 
   gTelemetryLoadData =
     new nsDataHashtable<nsCStringHashKey, TelemetryLoadData>();
@@ -3941,6 +3891,11 @@ Preferences::GetInstanceForService()
       gCacheDataDesc = "AddObserver(\"profile-before-change\") failed";
       return nullptr;
     }
+  }
+
+  const char* defaultPrefs = getenv("MOZ_DEFAULT_PREFS");
+  if (defaultPrefs) {
+    parsePrefData(nsCString(defaultPrefs), PrefValueKind::Default);
   }
 
   gCacheDataDesc = "set by GetInstanceForService() (2)";
@@ -4040,8 +3995,8 @@ Preferences::SerializePreferences(nsCString& aStr)
 
   aStr.Truncate();
 
-  for (auto iter = gHashTable->Iter(); !iter.Done(); iter.Next()) {
-    Pref* pref = static_cast<PrefEntry*>(iter.Get())->mPref;
+  for (auto iter = gHashTable->iter(); !iter.done(); iter.next()) {
+    Pref* pref = iter.get().get();
     if (!pref->IsTypeNone() && pref->HasAdvisablySizedValues()) {
       pref->SerializeAndAppend(aStr);
     }
@@ -4083,10 +4038,8 @@ Preferences::EnsureSnapshot(size_t* aSize)
   if (!gSharedMap) {
     SharedPrefMapBuilder builder;
 
-    for (auto iter = gHashTable->Iter(); !iter.Done(); iter.Next()) {
-      Pref* pref = static_cast<PrefEntry*>(iter.Get())->mPref;
-
-      pref->AddToMap(builder);
+    for (auto iter = gHashTable->iter(); !iter.done(); iter.next()) {
+      iter.get()->AddToMap(builder);
     }
 
     gSharedMap = new SharedPrefMap(std::move(builder));
@@ -4100,7 +4053,9 @@ Preferences::EnsureSnapshot(size_t* aSize)
     // we can initialize the hashtable with the expected number of per-session
     // changed preferences, rather than the expected total number of
     // preferences.
-    gHashTable->ClearAndPrepareForLength(kHashTableInitialLengthContent);
+    gHashTable->clearAndCompact();
+    Unused << gHashTable->reserve(kHashTableInitialLengthContent);
+
     gPrefNameArena.Clear();
   }
 
@@ -4219,7 +4174,9 @@ Preferences::ResetPrefs()
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  gHashTable->ClearAndPrepareForLength(kHashTableInitialLengthParent);
+  gHashTable->clearAndCompact();
+  Unused << gHashTable->reserve(kHashTableInitialLengthParent);
+
   gPrefNameArena.Clear();
 
   return InitInitialObjects(/* isStartup */ false).isOk() ? NS_OK
@@ -4234,8 +4191,8 @@ Preferences::ResetUserPrefs()
   MOZ_ASSERT(NS_IsMainThread());
 
   Vector<const char*> prefNames;
-  for (auto iter = gHashTable->Iter(); !iter.Done(); iter.Next()) {
-    Pref* pref = static_cast<PrefEntry*>(iter.Get())->mPref;
+  for (auto iter = gHashTable->modIter(); !iter.done(); iter.next()) {
+    Pref* pref = iter.get().get();
 
     if (pref->HasUserValue()) {
       if (!prefNames.append(pref->Name())) {
@@ -4244,7 +4201,7 @@ Preferences::ResetUserPrefs()
 
       pref->ClearUserValue();
       if (!pref->HasDefaultValue()) {
-        iter.Remove();
+        iter.remove();
       }
     }
   }
@@ -4312,12 +4269,17 @@ Preferences::SetPreference(const dom::Pref& aDomPref)
 
   const char* prefName = aDomPref.name().get();
 
-  auto entry = static_cast<PrefEntry*>(gHashTable->Add(prefName, fallible));
-  if (!entry) {
-    return;
+  Pref* pref;
+  auto p = gHashTable->lookupForAdd(prefName);
+  if (!p) {
+    pref = new Pref(prefName);
+    if (!gHashTable->add(p, pref)) {
+      delete pref;
+      return;
+    }
+  } else {
+    pref = p->get();
   }
-
-  Pref* pref = entry->mPref;
 
   bool valueChanged = false;
   pref->FromDomPref(aDomPref, &valueChanged);
@@ -4338,7 +4300,7 @@ Preferences::SetPreference(const dom::Pref& aDomPref)
     if (gSharedMap->Has(pref->Name())) {
       pref->SetType(PrefType::None);
     } else {
-      gHashTable->RemoveEntry(entry);
+      gHashTable->remove(prefName);
     }
     pref = nullptr;
   }
@@ -4659,6 +4621,20 @@ openPrefFile(nsIFile* aFile, PrefValueKind aKind)
   Parser parser;
   if (!parser.Parse(
         filename, aKind, NS_ConvertUTF16toUTF8(path).get(), startTime, data)) {
+    return NS_ERROR_FILE_CORRUPTED;
+  }
+
+  return NS_OK;
+}
+
+static nsresult
+parsePrefData(const nsCString& aData, PrefValueKind aKind)
+{
+  TimeStamp startTime = TimeStamp::Now();
+  const nsCString path = NS_LITERAL_CSTRING("$MOZ_DEFAULT_PREFS");
+
+  Parser parser;
+  if (!parser.Parse(path, aKind, path.get(), startTime, aData)) {
     return NS_ERROR_FILE_CORRUPTED;
   }
 
@@ -5082,6 +5058,7 @@ Preferences::GetFloat(const char* aPrefName,
   nsAutoCString result;
   nsresult rv = Preferences::GetCString(aPrefName, result, aKind);
   if (NS_SUCCEEDED(rv)) {
+    // ToFloat() does a locale-independent conversion.
     *aResult = result.ToFloat(&rv);
   }
   return rv;
@@ -5291,7 +5268,7 @@ Preferences::ClearUser(const char* aPrefName)
 
     if (!pref->HasDefaultValue()) {
       if (!gSharedMap || !gSharedMap->Has(pref->Name())) {
-        gHashTable->Remove(aPrefName);
+        gHashTable->remove(aPrefName);
       } else {
         pref->SetType(PrefType::None);
       }
@@ -5892,7 +5869,9 @@ static void
 SetPref_float(const char* aName, float aDefaultValue)
 {
   PrefValue value;
-  nsPrintfCString defaultValue("%f", aDefaultValue);
+  // Convert the value in a locale-independent way.
+  nsAutoCString defaultValue;
+  defaultValue.AppendFloat(aDefaultValue);
   value.mStringVal = defaultValue.get();
   pref_SetPref(aName,
                PrefType::String,
@@ -6020,8 +5999,7 @@ InitVarCachePref(const nsACString& aName,
   }
 }
 
-// XXX: this will eventually become used
-MOZ_MAYBE_UNUSED static void
+static void
 InitVarCachePref(const nsACString& aName,
                  float* aCache,
                  float aDefaultValue,
@@ -6085,11 +6063,9 @@ StaticPrefs::InitAll(bool aIsStartup)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(Preferences,
                                          Preferences::GetInstanceForService)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsPrefLocalizedString, Init)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsRelativeFilePref)
 
 static NS_DEFINE_CID(kPrefServiceCID, NS_PREFSERVICE_CID);
 static NS_DEFINE_CID(kPrefLocalizedStringCID, NS_PREFLOCALIZEDSTRING_CID);
-static NS_DEFINE_CID(kRelativeFilePrefCID, NS_RELATIVEFILEPREF_CID);
 
 static mozilla::Module::CIDEntry kPrefCIDs[] = {
   { &kPrefServiceCID, true, nullptr, PreferencesConstructor },
@@ -6097,14 +6073,12 @@ static mozilla::Module::CIDEntry kPrefCIDs[] = {
     false,
     nullptr,
     nsPrefLocalizedStringConstructor },
-  { &kRelativeFilePrefCID, false, nullptr, nsRelativeFilePrefConstructor },
   { nullptr }
 };
 
 static mozilla::Module::ContractIDEntry kPrefContracts[] = {
   { NS_PREFSERVICE_CONTRACTID, &kPrefServiceCID },
   { NS_PREFLOCALIZEDSTRING_CONTRACTID, &kPrefLocalizedStringCID },
-  { NS_RELATIVEFILEPREF_CONTRACTID, &kRelativeFilePrefCID },
   { nullptr }
 };
 

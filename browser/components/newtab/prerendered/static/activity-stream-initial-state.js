@@ -3,10 +3,16 @@ window.gActivityStreamPrerenderedState = {
   "TopSites": {
     "initialized": false,
     "rows": [],
-    "editForm": null
+    "editForm": null,
+    "showSearchShortcutsForm": false,
+    "searchShortcuts": []
   },
   "App": {
     "initialized": false
+  },
+  "ASRouter": {
+    "initialized": false,
+    "allowLegacySnippets": null
   },
   "Snippets": {
     "initialized": false
@@ -54,5 +60,10 @@ window.gActivityStreamPrerenderedState = {
       "order": 2,
       "initialized": false
     }
-  ]
+  ],
+  "Pocket": {
+    "isUserLoggedIn": null,
+    "pocketCta": {},
+    "waitingForSpoc": true
+  }
 };

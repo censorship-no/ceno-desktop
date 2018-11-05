@@ -1,122 +1,103 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.clearSelectedLocation = exports.setPendingSelectedLocation = exports.setSelectedLocation = undefined;
-exports.selectSourceURL = selectSourceURL;
-exports.selectSource = selectSource;
-exports.selectLocation = selectLocation;
-exports.selectSpecificLocation = selectSpecificLocation;
-exports.selectSpecificSource = selectSpecificSource;
-exports.jumpToMappedLocation = jumpToMappedLocation;
-exports.jumpToMappedSelectedLocation = jumpToMappedSelectedLocation;
-
-var _devtoolsSourceMap = require("devtools/client/shared/source-map/index.js");
-
-var _ast = require("../ast");
-
-var _ui = require("../ui");
-
-var _prettyPrint = require("./prettyPrint");
-
-var _tabs = require("./tabs");
-
-var _loadSourceText = require("./loadSourceText");
-
-var _prefs = require("../../utils/prefs");
-
-var _source = require("../../utils/source");
-
-var _location = require("../../utils/location");
-
-var _sourceMaps = require("../../utils/source-maps");
-
-var _selectors = require("../../selectors/index");
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+// @flow
 
 /**
  * Redux actions for the sources state
  * @module actions/sources
  */
-const setSelectedLocation = exports.setSelectedLocation = (source, location) => ({
+
+import { isOriginalId } from "devtools-source-map";
+
+import { getSourceFromId } from "../../reducers/sources";
+import { getSourcesForTabs } from "../../reducers/tabs";
+import { setOutOfScopeLocations, setSymbols } from "../ast";
+import { closeActiveSearch, updateActiveFileSearch } from "../ui";
+
+import { togglePrettyPrint } from "./prettyPrint";
+import { addTab, closeTab } from "../tabs";
+import { loadSourceText } from "./loadSourceText";
+
+import { prefs } from "../../utils/prefs";
+import { shouldPrettyPrint, isMinified } from "../../utils/source";
+import { createLocation } from "../../utils/location";
+import { getMappedLocation } from "../../utils/source-maps";
+
+import {
+  getSource,
+  getSourceByURL,
+  getPrettySource,
+  getActiveSearch,
+  getSelectedLocation,
+  getSelectedSource
+} from "../../selectors";
+
+import type { Location, Position, Source } from "../../types";
+import type { ThunkArgs } from "../types";
+
+export const setSelectedLocation = (source: Source, location: Location) => ({
   type: "SET_SELECTED_LOCATION",
   source,
   location
 });
 
-const setPendingSelectedLocation = exports.setPendingSelectedLocation = (url, options) => ({
+export const setPendingSelectedLocation = (url: string, options: Object) => ({
   type: "SET_PENDING_SELECTED_LOCATION",
   url: url,
   line: options.location ? options.location.line : null
 });
 
-const clearSelectedLocation = exports.clearSelectedLocation = () => ({
+export const clearSelectedLocation = () => ({
   type: "CLEAR_SELECTED_LOCATION"
 });
+
 /**
  * Deterministically select a source that has a given URL. This will
  * work regardless of the connection status or if the source exists
- * yet. This exists mostly for external things to interact with the
+ * yet.
+ *
+ * This exists mostly for external things to interact with the
  * debugger.
  *
  * @memberof actions/sources
  * @static
  */
-
-
-function selectSourceURL(url, options = {}) {
-  return async ({
-    dispatch,
-    getState
-  }) => {
-    const source = (0, _selectors.getSourceByURL)(getState(), url);
-
-    if (source) {
-      const sourceId = source.id;
-      const location = (0, _location.createLocation)({ ...options.location,
-        sourceId
-      });
-      await dispatch(selectLocation(location));
-    } else {
-      dispatch(setPendingSelectedLocation(url, options));
+export function selectSourceURL(url: string, options: Position = { line: 1 }) {
+  return async ({ dispatch, getState, sourceMaps }: ThunkArgs) => {
+    const source = getSourceByURL(getState(), url);
+    if (!source) {
+      return dispatch(setPendingSelectedLocation(url, options));
     }
+
+    const sourceId = source.id;
+    const location = createLocation({ ...options, sourceId });
+    return dispatch(selectLocation(location));
   };
 }
+
 /**
  * @memberof actions/sources
  * @static
  */
-
-
-function selectSource(sourceId) {
-  return async ({
-    dispatch
-  }) => {
-    const location = (0, _location.createLocation)({
-      sourceId
-    });
-    return await dispatch(selectLocation(location));
+export function selectSource(sourceId: string) {
+  return async ({ dispatch }: ThunkArgs) => {
+    const location = createLocation({ sourceId });
+    return await dispatch(selectSpecificLocation(location));
   };
 }
+
 /**
  * @memberof actions/sources
  * @static
  */
-
-
-function selectLocation(location, {
-  checkPrettyPrint = true
-} = {}) {
-  return async ({
-    dispatch,
-    getState,
-    client
-  }) => {
-    const currentSource = (0, _selectors.getSelectedSource)(getState());
+export function selectLocation(
+  location: Location,
+  { keepContext = true }: Object = {}
+) {
+  return async ({ dispatch, getState, sourceMaps, client }: ThunkArgs) => {
+    const currentSource = getSelectedSource(getState());
 
     if (!client) {
       // No connection, do nothing. This happens when the debugger is
@@ -124,109 +105,97 @@ function selectLocation(location, {
       return;
     }
 
-    const source = (0, _selectors.getSource)(getState(), location.sourceId);
-
+    let source = getSource(getState(), location.sourceId);
     if (!source) {
       // If there is no source we deselect the current selected source
       return dispatch(clearSelectedLocation());
     }
 
-    const activeSearch = (0, _selectors.getActiveSearch)(getState());
-
-    if (activeSearch !== "file") {
-      dispatch((0, _ui.closeActiveSearch)());
+    const activeSearch = getActiveSearch(getState());
+    if (activeSearch && activeSearch !== "file") {
+      dispatch(closeActiveSearch());
     }
 
-    dispatch((0, _tabs.addTab)(source.url, 0));
+    // Preserve the current source map context (original / generated)
+    // when navigting to a new location.
+    const selectedSource = getSelectedSource(getState());
+    if (
+      keepContext &&
+      selectedSource &&
+      isOriginalId(selectedSource.id) != isOriginalId(location.sourceId)
+    ) {
+      location = await getMappedLocation(getState(), sourceMaps, location);
+      source = getSourceFromId(getState(), location.sourceId);
+    }
+
+    const tabSources = getSourcesForTabs(getState());
+    if (!tabSources.includes(source)) {
+      dispatch(addTab(source));
+    }
+
     dispatch(setSelectedLocation(source, location));
-    await dispatch((0, _loadSourceText.loadSourceText)(source));
-    const loadedSource = (0, _selectors.getSource)(getState(), source.id);
+
+    await dispatch(loadSourceText(source));
+    const loadedSource = getSource(getState(), source.id);
 
     if (!loadedSource) {
       // If there was a navigation while we were loading the loadedSource
       return;
     }
 
-    if (checkPrettyPrint && _prefs.prefs.autoPrettyPrint && !(0, _selectors.getPrettySource)(getState(), loadedSource.id) && (0, _source.shouldPrettyPrint)(loadedSource) && (0, _source.isMinified)(loadedSource)) {
-      await dispatch((0, _prettyPrint.togglePrettyPrint)(loadedSource.id));
-      dispatch((0, _tabs.closeTab)(loadedSource.url));
+    if (
+      keepContext &&
+      prefs.autoPrettyPrint &&
+      !getPrettySource(getState(), loadedSource.id) &&
+      shouldPrettyPrint(loadedSource) &&
+      isMinified(loadedSource)
+    ) {
+      await dispatch(togglePrettyPrint(loadedSource.id));
+      dispatch(closeTab(loadedSource));
     }
 
-    dispatch((0, _ast.setSymbols)(loadedSource.id));
-    dispatch((0, _ast.setOutOfScopeLocations)()); // If a new source is selected update the file search results
+    dispatch(setSymbols(loadedSource.id));
+    dispatch(setOutOfScopeLocations());
 
-    const newSource = (0, _selectors.getSelectedSource)(getState());
-
+    // If a new source is selected update the file search results
+    const newSource = getSelectedSource(getState());
     if (currentSource && currentSource !== newSource) {
-      dispatch((0, _ui.updateActiveFileSearch)());
+      dispatch(updateActiveFileSearch());
     }
   };
 }
+
 /**
  * @memberof actions/sources
  * @static
  */
-
-
-function selectSpecificLocation(location) {
-  return selectLocation(location, {
-    checkPrettyPrint: false
-  });
+export function selectSpecificLocation(location: Location) {
+  return selectLocation(location, { keepContext: false });
 }
+
 /**
  * @memberof actions/sources
  * @static
  */
-
-
-function selectSpecificSource(sourceId) {
-  return async ({
-    dispatch
-  }) => {
-    const location = (0, _location.createLocation)({
-      sourceId
-    });
-    return await dispatch(selectSpecificLocation(location));
-  };
-}
-/**
- * @memberof actions/sources
- * @static
- */
-
-
-function jumpToMappedLocation(location) {
-  return async function ({
-    dispatch,
-    getState,
-    client,
-    sourceMaps
-  }) {
+export function jumpToMappedLocation(location: Location) {
+  return async function({ dispatch, getState, client, sourceMaps }: ThunkArgs) {
     if (!client) {
       return;
     }
 
-    const source = (0, _selectors.getSource)(getState(), location.sourceId);
-    let pairedLocation;
+    const pairedLocation = await getMappedLocation(
+      getState(),
+      sourceMaps,
+      location
+    );
 
-    if ((0, _devtoolsSourceMap.isOriginalId)(location.sourceId)) {
-      pairedLocation = await (0, _sourceMaps.getGeneratedLocation)(getState(), source, location, sourceMaps);
-    } else {
-      pairedLocation = await sourceMaps.getOriginalLocation(location, source);
-    }
-
-    return dispatch(selectLocation({ ...pairedLocation
-    }));
+    return dispatch(selectSpecificLocation({ ...pairedLocation }));
   };
 }
 
-function jumpToMappedSelectedLocation() {
-  return async function ({
-    dispatch,
-    getState
-  }) {
-    const location = (0, _selectors.getSelectedLocation)(getState());
-
+export function jumpToMappedSelectedLocation() {
+  return async function({ dispatch, getState }: ThunkArgs) {
+    const location = getSelectedLocation(getState());
     if (!location) {
       return;
     }

@@ -18,10 +18,8 @@ class WebGLSampler final
     : public nsWrapperCache
     , public WebGLRefCountedObject<WebGLSampler>
     , public LinkedListElement<WebGLSampler>
+    , public CacheInvalidator
 {
-    friend class WebGLContext2;
-    friend class WebGLTexture;
-
     NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLSampler)
     NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLSampler)
 
@@ -41,7 +39,7 @@ public:
 
     virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> givenProto) override;
 
-    void SamplerParameter(const char* funcName, GLenum pname, const FloatOrInt& param);
+    void SamplerParameter(GLenum pname, const FloatOrInt& param);
 
     const auto& State() const { return mState; }
 };

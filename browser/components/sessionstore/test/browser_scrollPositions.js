@@ -116,7 +116,7 @@ add_task(async function test_scroll_background_tabs() {
   pushPrefs(["browser.sessionstore.restore_on_demand", true]);
 
   let newWin = await BrowserTestUtils.openNewBrowserWindow();
-  let tab = newWin.gBrowser.addTab(URL);
+  let tab = BrowserTestUtils.addTab(newWin.gBrowser, URL);
   let browser = tab.linkedBrowser;
   await BrowserTestUtils.browserLoaded(browser);
 
@@ -125,7 +125,7 @@ add_task(async function test_scroll_background_tabs() {
   await checkScroll(tab, {scroll: SCROLL_STR}, "scroll on first page is fine");
 
   // Navigate to a different page and scroll there as well.
-  browser.loadURI(URL2);
+  BrowserTestUtils.loadURI(browser, URL2);
   await BrowserTestUtils.browserLoaded(browser);
 
   // Scroll down a little.

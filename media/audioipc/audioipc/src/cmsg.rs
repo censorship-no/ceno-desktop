@@ -5,8 +5,8 @@
 
 use bytes::{BufMut, Bytes, BytesMut};
 use libc::{self, cmsghdr};
-use std::{convert, mem, ops, slice};
 use std::os::unix::io::RawFd;
+use std::{convert, mem, ops, slice};
 
 #[derive(Clone, Debug)]
 pub struct Fds {
@@ -108,6 +108,8 @@ impl ControlMsgBuilder {
 
             let cmsghdr = cmsghdr {
                 cmsg_len: cmsg_len as _,
+                #[cfg(target_env = "musl")]
+                __pad1: 0,
                 cmsg_level: level,
                 cmsg_type: kind,
             };

@@ -709,15 +709,15 @@ ImageBridgeChild::UpdateTextureFactoryIdentifier(const TextureFactoryIdentifier&
                             aIdentifier.mParentBackend != LayersBackend::LAYERS_WR;
   // D3DTexture might become obsolte. To prevent to use obsoleted D3DTexture,
   // drop all ImageContainers' ImageClients.
+
+  bool needsDrop = disablingWebRender;
+
 #if defined(XP_WIN)
   RefPtr<ID3D11Device> device = gfx::DeviceManagerDx::Get()->GetImageDevice();
-  bool needsDrop = !!mImageDevice &&
-                   mImageDevice != device &&
-                   GetCompositorBackendType() == LayersBackend::LAYERS_D3D11 ||
-                   disablingWebRender;
+  needsDrop |= !!mImageDevice &&
+               mImageDevice != device &&
+               GetCompositorBackendType() == LayersBackend::LAYERS_D3D11;
   mImageDevice = device;
-#else
-  bool needsDrop = disablingWebRender;
 #endif
 
   IdentifyTextureHost(aIdentifier);
@@ -997,22 +997,38 @@ ImageBridgeChild::RecvParentAsyncMessages(InfallibleTArray<AsyncParentMessageDat
   return IPC_OK();
 }
 
+RefPtr<ImageContainerListener>
+ImageBridgeChild::FindListener(const CompositableHandle& aHandle)
+{
+  RefPtr<ImageContainerListener> listener;
+  MutexAutoLock lock(mContainerMapLock);
+  auto it = mImageContainerListeners.find(aHandle.Value());
+  if (it != mImageContainerListeners.end()) {
+    listener = it->second;
+  }
+  return listener;
+}
+
 mozilla::ipc::IPCResult
 ImageBridgeChild::RecvDidComposite(InfallibleTArray<ImageCompositeNotification>&& aNotifications)
 {
   for (auto& n : aNotifications) {
-    RefPtr<ImageContainerListener> listener;
-    {
-      MutexAutoLock lock(mContainerMapLock);
-      auto it = mImageContainerListeners.find(n.compositable().Value());
-      if (it != mImageContainerListeners.end()) {
-        listener = it->second;
-      }
-    }
+    RefPtr<ImageContainerListener> listener = FindListener(n.compositable());
     if (listener) {
       listener->NotifyComposite(n);
     }
   }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+ImageBridgeChild::RecvReportFramesDropped(const CompositableHandle& aHandle, const uint32_t& aFrames)
+{
+  RefPtr<ImageContainerListener> listener = FindListener(aHandle);
+  if (listener) {
+    listener->NotifyDropped(aFrames);
+  }
+
   return IPC_OK();
 }
 

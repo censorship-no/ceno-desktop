@@ -65,13 +65,13 @@ class Transaction
 public:
   Transaction()
     : mTargetRotation(ROTATION_0)
-    , mTargetOrientation(dom::eScreenOrientation_None)
+    , mTargetOrientation(hal::eScreenOrientation_None)
     , mOpen(false)
     , mRotationChanged(false)
   {}
 
   void Begin(const gfx::IntRect& aTargetBounds, ScreenRotation aRotation,
-             dom::ScreenOrientationInternal aOrientation)
+             hal::ScreenOrientation aOrientation)
   {
     mOpen = true;
     mTargetBounds = aTargetBounds;
@@ -142,7 +142,7 @@ public:
   ShadowableLayerSet mSimpleMutants;
   gfx::IntRect mTargetBounds;
   ScreenRotation mTargetRotation;
-  dom::ScreenOrientationInternal mTargetOrientation;
+  hal::ScreenOrientation mTargetOrientation;
 
 private:
   bool mOpen;
@@ -285,7 +285,7 @@ ShadowLayerForwarder::~ShadowLayerForwarder()
 void
 ShadowLayerForwarder::BeginTransaction(const gfx::IntRect& aTargetBounds,
                                        ScreenRotation aRotation,
-                                       dom::ScreenOrientationInternal aOrientation)
+                                       hal::ScreenOrientation aOrientation)
 {
   MOZ_ASSERT(IPCOpen(), "no manager to forward to");
   MOZ_ASSERT(mTxn->Finished(), "uncommitted txn?");
@@ -771,10 +771,6 @@ ShadowLayerForwarder::EndTransaction(const nsIntRegion& aRegionToClear,
   // finish. If it does we don't have to delay messages at all.
   GetCompositorBridgeChild()->PostponeMessagesIfAsyncPainting();
 
-  if (recordreplay::IsRecordingOrReplaying()) {
-    recordreplay::child::NotifyPaintStart();
-  }
-
   MOZ_LAYERS_LOG(("[LayersForwarder] sending transaction..."));
   RenderTraceScope rendertrace3("Forward Transaction", "000093");
   if (!mShadowManager->SendUpdate(info)) {
@@ -782,13 +778,13 @@ ShadowLayerForwarder::EndTransaction(const nsIntRegion& aRegionToClear,
     return false;
   }
 
-  if (recordreplay::IsRecordingOrReplaying()) {
-    recordreplay::child::WaitForPaintToComplete();
-  }
-
   if (startTime) {
     mPaintTiming.sendMs() = (TimeStamp::Now() - startTime.value()).ToMilliseconds();
     mShadowManager->SendRecordPaintTimes(mPaintTiming);
+  }
+
+  if (recordreplay::IsRecordingOrReplaying()) {
+    recordreplay::child::NotifyPaintStart();
   }
 
   *aSent = true;

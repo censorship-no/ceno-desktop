@@ -102,14 +102,16 @@ IsArray(JSContext* cx, HandleObject obj, IsArrayAnswer* answer);
  * Typical usage:
  *
  *     ObjectOpResult result;
- *     if (!DefineProperty(cx, obj, id, ..., result))
+ *     if (!DefineProperty(cx, obj, id, ..., result)) {
  *         return false;
- *     if (!result)
+ *     }
+ *     if (!result) {
  *         return result.reportError(cx, obj, id);
+ *     }
  *
  * Users don't have to call `result.report()`; another possible ending is:
  *
- *     argv.rval().setBoolean(bool(result));
+ *     argv.rval().setBoolean(result.reallyOk());
  *     return true;
  */
 class ObjectOpResult
@@ -161,8 +163,9 @@ class ObjectOpResult
      *
      * Always returns true, as a convenience. Typical usage will be:
      *
-     *     if (funny condition)
+     *     if (funny condition) {
      *         return result.fail(JSMSG_CANT_DO_THE_THINGS);
+     *     }
      *
      * The true return value indicates that no exception is pending, and it
      * would be OK to ignore the failure and continue.
@@ -202,6 +205,7 @@ class ObjectOpResult
     JS_PUBLIC_API(bool) failCantSetProto();
     JS_PUBLIC_API(bool) failNoNamedSetter();
     JS_PUBLIC_API(bool) failNoIndexedSetter();
+    JS_PUBLIC_API(bool) failNotDataDescriptor();
 
     uint32_t failureCode() const {
         MOZ_ASSERT(!ok());
@@ -223,8 +227,9 @@ class ObjectOpResult
      * -   Otherwise, do nothing and return true.
      */
     bool checkStrictErrorOrWarning(JSContext* cx, HandleObject obj, HandleId id, bool strict) {
-        if (ok())
+        if (ok()) {
             return true;
+        }
         return reportStrictErrorOrWarning(cx, obj, id, strict);
     }
 
@@ -686,8 +691,9 @@ struct MOZ_STATIC_CLASS ClassSpec
         static_assert(JSProto_Null == 0, "zeroed key must be null");
 
         // Default: Inherit from Object.
-        if (!(flags & ProtoKeyMask))
+        if (!(flags & ProtoKeyMask)) {
             return JSProto_Object;
+        }
 
         return JSProtoKey(flags & ProtoKeyMask);
     }

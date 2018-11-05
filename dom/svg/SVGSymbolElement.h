@@ -22,7 +22,7 @@ class SVGSymbolElement final : public SVGSymbolElementBase
 protected:
   friend nsresult (::NS_NewSVGSymbolElement(nsIContent **aResult,
                                             already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGSymbolElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGSymbolElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   ~SVGSymbolElement();
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
@@ -30,8 +30,7 @@ public:
   // interfaces:
   NS_DECL_ISUPPORTS_INHERITED
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };
 
 } // namespace dom

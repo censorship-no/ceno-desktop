@@ -13,15 +13,27 @@ import sys
 import mozinfo
 from manifestparser import TestManifest
 
+from mozharness.mozilla.fetches import FetchesMixin
 
-class SingleTestMixin(object):
+
+class SingleTestMixin(FetchesMixin):
     """Utility functions for per-test testing like test verification and per-test coverage."""
 
-    def __init__(self):
+    def __init__(self, **kwargs):
+        super(SingleTestMixin, self).__init__(**kwargs)
+
         self.suites = {}
         self.tests_downloaded = False
         self.reftest_test_dir = None
         self.jsreftest_test_dir = None
+        # Map from full test path on the test machine to a relative path in the source checkout.
+        # Use self._map_test_path_to_source(test_machine_path, source_path) to add a mapping.
+        self.test_src_path = {}
+
+    def _map_test_path_to_source(self, test_machine_path, source_path):
+        test_machine_path = test_machine_path.replace(os.sep, posixpath.sep)
+        source_path = source_path.replace(os.sep, posixpath.sep)
+        self.test_src_path[test_machine_path] = source_path
 
     def _is_gpu_suite(self, suite):
         if suite and (suite == 'gpu' or suite.startswith('webgl')):
@@ -38,6 +50,7 @@ class SingleTestMixin(object):
             (os.path.join(dirs['abs_xpcshell_dir'], 'tests', 'xpcshell.ini'), 'xpcshell'),
         ]
         tests_by_path = {}
+        all_disabled = []
         for (path, suite) in manifests:
             if os.path.exists(path):
                 man = TestManifest([path], strict=False)
@@ -47,11 +60,13 @@ class SingleTestMixin(object):
                 # specifies tests by path (it cannot distinguish between two or more
                 # tests with the same path specified in multiple manifests).
                 disabled = [t['relpath'] for t in active if 'disabled' in t]
+                all_disabled += disabled
                 new_by_path = {t['relpath']: (suite, t.get('subsuite'))
                                for t in active if 'disabled' not in t and
                                t['relpath'] not in disabled}
                 tests_by_path.update(new_by_path)
-                self.info("Per-test run updated with manifest %s" % path)
+                self.info("Per-test run updated with manifest %s (%d active, %d skipped)" %
+                          (path, len(new_by_path), len(disabled)))
 
         ref_manifests = [
             (os.path.join(dirs['abs_reftest_dir'], 'tests', 'layout',
@@ -66,10 +81,12 @@ class SingleTestMixin(object):
             if os.path.exists(path):
                 man = manifest.ReftestManifest()
                 man.load(path)
-                tests_by_path.update({
-                    os.path.relpath(t, self.reftest_test_dir): (suite, subsuite) for t in man.files
-                })
-                self.info("Per-test run updated with manifest %s" % path)
+                for t in man.files:
+                    relpath = os.path.relpath(t, self.reftest_test_dir)
+                    tests_by_path[relpath] = (suite, subsuite)
+                    self._map_test_path_to_source(t, relpath)
+                self.info("Per-test run updated with manifest %s (%d tests)" %
+                          (path, len(man.files)))
 
         suite = 'jsreftest'
         self.jsreftest_test_dir = os.path.join(dirs['abs_test_install_dir'], 'jsreftest', 'tests')
@@ -85,11 +102,14 @@ class SingleTestMixin(object):
                 epos = t.find('=')
                 if epos > 0:
                     relpath = t[epos+1:]
+                    test_path = os.path.join(self.jsreftest_test_dir, relpath)
                     relpath = os.path.join('js', 'src', 'tests', relpath)
+                    self._map_test_path_to_source(test_path, relpath)
                     tests_by_path.update({relpath: (suite, None)})
                 else:
                     self.warning("unexpected jsreftest test format: %s" % str(t))
-            self.info("Per-test run updated with manifest %s" % path)
+            self.info("Per-test run updated with manifest %s (%d tests)" %
+                      (path, len(man.files)))
 
         # for each changed file, determine if it is a test file, and what suite it is in
         for file in changed_files:
@@ -98,6 +118,10 @@ class SingleTestMixin(object):
             file = file.replace(posixpath.sep, os.sep)
             entry = tests_by_path.get(file)
             if not entry:
+                if file in all_disabled:
+                    self.info("'%s' has been skipped on this platform." % file)
+                if os.environ.get('MOZHARNESS_TEST_PATHS', None) is not None:
+                    self.fatal("Per-test run could not find requested test '%s'" % file)
                 continue
 
             if gpu and not self._is_gpu_suite(entry[1]):
@@ -107,8 +131,12 @@ class SingleTestMixin(object):
                 self.info("Per-test run (non-gpu) discarded gpu test %s (%s)" % (file, entry[1]))
                 continue
 
-            self.info("Per-test run found test %s (%s)" % (file, entry[0]))
+            self.info("Per-test run found test %s (%s/%s)" % (file, entry[0], entry[1]))
             subsuite_mapping = {
+                # Map (<suite>, <subsuite>): <full-suite>
+                #   <suite> is associated with a manifest, explicitly in code above
+                #   <subsuite> comes from "subsuite" tags in some manifest entries
+                #   <full-suite> is a unique id for the suite, matching desktop mozharness configs
                 ('browser-chrome', 'clipboard'): 'browser-chrome-clipboard',
                 ('chrome', 'clipboard'): 'chrome-clipboard',
                 ('plain', 'clipboard'): 'plain-clipboard',
@@ -146,26 +174,37 @@ class SingleTestMixin(object):
         execfile(paths_file, {"__file__": paths_file})
         import manifest as wptmanifest
         tests_root = os.path.join(dirs['abs_wpttest_dir'], "tests")
-        man_path = os.path.join(dirs['abs_wpttest_dir'], "meta", "MANIFEST.json")
-        man = wptmanifest.manifest.load(tests_root, man_path)
 
-        repo_tests_path = os.path.join("testing", "web-platform", "tests")
-        tests_path = os.path.join("tests", "web-platform", "tests")
-        for (type, path, test) in man:
-            if type not in ["testharness", "reftest", "wdspec"]:
-                continue
-            repo_path = os.path.join(repo_tests_path, path)
-            # manifest paths use os.sep (like backslash on Windows) but
-            # automation-relevance uses posixpath.sep
-            repo_path = repo_path.replace(os.sep, posixpath.sep)
-            if repo_path in changed_files:
-                self.info("found web-platform test file '%s', type %s" % (path, type))
-                suite_files = self.suites.get(type)
-                if not suite_files:
-                    suite_files = []
-                path = os.path.join(tests_path, path)
-                suite_files.append(path)
-                self.suites[type] = suite_files
+        for extra in ("", "mozilla"):
+            base_path = os.path.join(dirs['abs_wpttest_dir'], extra)
+            man_path = os.path.join(base_path, "meta", "MANIFEST.json")
+            man = wptmanifest.manifest.load(tests_root, man_path)
+            self.info("Per-test run updated with manifest %s" % man_path)
+
+            repo_tests_path = os.path.join("testing", "web-platform", extra, "tests")
+            tests_path = os.path.join("tests", "web-platform", extra, "tests")
+            for (type, path, test) in man:
+                if type not in ["testharness", "reftest", "wdspec"]:
+                    continue
+                repo_path = os.path.join(repo_tests_path, path)
+                # manifest paths use os.sep (like backslash on Windows) but
+                # automation-relevance uses posixpath.sep
+                repo_path = repo_path.replace(os.sep, posixpath.sep)
+                if repo_path in changed_files:
+                    self.info("Per-test run found web-platform test '%s', type %s" % (path, type))
+                    suite_files = self.suites.get(type)
+                    if not suite_files:
+                        suite_files = []
+                    test_path = os.path.join(tests_path, path)
+                    suite_files.append(test_path)
+                    self.suites[type] = suite_files
+                    self._map_test_path_to_source(test_path, repo_path)
+                    changed_files.remove(repo_path)
+
+        if os.environ.get('MOZHARNESS_TEST_PATHS', None) is not None:
+            for file in changed_files:
+                self.fatal("Per-test run could not find requested web-platform test '%s'" %
+                           file)
 
     def find_modified_tests(self):
         """
@@ -200,6 +239,8 @@ class SingleTestMixin(object):
         changed_files = set()
         if os.environ.get('MOZHARNESS_TEST_PATHS', None) is not None:
             changed_files |= set(os.environ['MOZHARNESS_TEST_PATHS'].split(':'))
+            self.info("Per-test run found explicit request in MOZHARNESS_TEST_PATHS:")
+            self.info(str(changed_files))
         else:
             # determine which files were changed on this push
             url = '%s/json-automationrelevance/%s' % (repository.rstrip('/'), revision)
@@ -309,9 +350,11 @@ class SingleTestMixin(object):
         if self.verify_enabled or self.per_test_coverage:
             if self.config.get('per_test_category') == "web-platform":
                 suites = self.suites.keys()
+                self.info("Per-test suites: %s" % suites)
             elif all_suites and self.tests_downloaded:
                 suites = dict((key, all_suites.get(key)) for key in
                               self.suites if key in all_suites.keys())
+                self.info("Per-test suites: %s" % suites)
             else:
                 # Until test zips are downloaded, manifests are not available,
                 # so it is not possible to determine which suites are active/

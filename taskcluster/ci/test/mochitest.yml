@@ -3,6 +3,10 @@ job-defaults:
         by-test-platform:
             android-em-7.0-x86/opt: geckoview-androidTest.apk
             default: null
+    serviceworker-e10s:
+        by-test-platform:
+            linux64/debug: both
+            default: false
     mozharness:
         script:
             by-test-platform:
@@ -33,10 +37,7 @@ job-defaults:
 
 mochitest:
     description: "Mochitest plain run"
-    suite:
-        by-test-platform:
-            linux64-jsdcov/opt: mochitest/plain-chunked-coverage
-            default: mochitest/plain-chunked
+    suite: mochitest/plain-chunked
     treeherder-symbol: M()
     loopback-video: true
     run-on-projects:
@@ -49,7 +50,6 @@ mochitest:
             default: default
     instance-size:
         by-test-platform:
-            linux64-jsdcov/opt: xlarge
             android-em.*: xlarge
             default: default
     virtualization:
@@ -58,13 +58,14 @@ mochitest:
             default: virtual
     chunks:
         by-test-platform:
-            android-em-4.3-arm7-api-16/debug: 48
+            android-em-4.3-arm7-api-16/debug: 60
             android-em-7.0-x86/opt: 4
             android-em.*: 24
             linux.*/debug: 16
             linux64-asan/opt: 10
             linux64-.*cov/opt: 10
             windows10-64-ccov/debug: 10
+            macosx64-ccov/debug: 10
             default: 5
     e10s:
         by-test-platform:
@@ -99,31 +100,27 @@ mochitest-a11y:
 
 mochitest-browser-chrome:
     description: "Mochitest browser-chrome run"
-    suite:
-        by-test-platform:
-            linux64-jsdcov/opt: mochitest/browser-chrome-coverage
-            default: mochitest/browser-chrome-chunked
+    suite: mochitest/browser-chrome-chunked
     treeherder-symbol: M(bc)
     loopback-video: true
     chunks:
         by-test-platform:
             linux.*/debug: 16
             linux64-asan/opt: 16
+            macosx64/debug: 12
             default: 7
     max-run-time:
         by-test-platform:
             linux64-.*cov/opt: 7200
             windows10-64-ccov/debug: 7200
+            macosx64-ccov/debug: 10800
             linux.*/debug: 5400
             default: 3600
     mozharness:
         mochitest-flavor: browser
         chunked: true
     # Bug 1281241: migrating to m3.large instances
-    instance-size:
-        by-test-platform:
-            linux64-jsdcov/opt: xlarge
-            default: default
+    instance-size: default
     allow-software-gl-layers: false
 
 browser-instrumentation:
@@ -200,6 +197,7 @@ mochitest-clipboard:
     max-run-time:
         by-test-platform:
             windows10-64-ccov/debug: 7200
+            macosx64-ccov/debug: 7200
             default: 3600
     e10s:
         by-test-platform:
@@ -214,26 +212,26 @@ mochitest-clipboard:
                     - --test-suite=mochitest-plain-clipboard
                 default:
                     - --mochitest-suite=plain-clipboard,chrome-clipboard,browser-chrome-clipboard
+    tier:
+        by-test-platform:
+            android-em-7.0-x86/opt: 3
+            default: default
 
 mochitest-devtools-chrome:
     description: "Mochitest devtools-chrome run"
-    suite:
-        by-test-platform:
-            linux64-jsdcov/opt: mochitest/mochitest-devtools-chrome-coverage
-            default: mochitest/mochitest-devtools-chrome-chunked
+    suite: mochitest/mochitest-devtools-chrome-chunked
     treeherder-symbol: M(dt)
     loopback-video: true
     max-run-time:
         by-test-platform:
             windows10-64-ccov/debug: 7200
+            macosx64-ccov/debug: 9000
             default: 5400
-    run-on-projects:
-        by-test-platform:
-            linux64-jsdcov/opt: ['try']  # jsdcov only on try, Bug 1442823
-            default: built-projects
     chunks:
         by-test-platform:
+            linux64-ccov/debug: 12
             windows10-64-ccov/debug: 10
+            macosx64-ccov/debug: 15
             default: 8
     mozharness:
         mochitest-flavor: chrome
@@ -277,6 +275,7 @@ mochitest-media:
     max-run-time:
         by-test-platform:
             windows10-64-ccov/debug: 7200
+            macosx64-ccov/debug: 7200
             default: 5400
     run-on-projects: built-projects
     loopback-video: true
@@ -338,6 +337,7 @@ mochitest-valgrind:
     # We could re-enable e10s later.
     # There's no intrinsic reason not to use it.
     e10s: false
+    serviceworker-e10s: false
     allow-software-gl-layers: false
     mozharness:
         mochitest-flavor: plain
@@ -360,6 +360,7 @@ mochitest-webgl1-core:
     max-run-time:
         by-test-platform:
             windows.*: 5400
+            macosx64-ccov/debug: 7200
             default: 3600
     # Bug 1296733: llvmpipe with mesa 9.2.1 lacks thread safety
     allow-software-gl-layers: false

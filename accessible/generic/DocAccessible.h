@@ -329,8 +329,8 @@ public:
    *       XBL bindings. Be careful the result of this method may be  senseless
    *       while it's called for XUL elements (where XBL is used widely).
    */
-  bool IsDependentID(const nsAString& aID) const
-    { return mDependentIDsHash.Get(aID, nullptr); }
+  bool IsDependentID(dom::Element* aElement, const nsAString& aID) const
+    { return GetRelProviders(aElement, aID); }
 
   /**
    * Initialize the newly created accessible and put it into document caches.
@@ -350,9 +350,7 @@ public:
   /**
    * Notify the document accessible that content was inserted.
    */
-  void ContentInserted(nsIContent* aContainerNode,
-                       nsIContent* aStartChildNode,
-                       nsIContent* aEndChildNode);
+  void ContentInserted(nsIContent* aStartChildNode, nsIContent* aEndChildNode);
 
   /**
    * Update the tree on content removal.
@@ -582,6 +580,18 @@ protected:
    */
   static void ScrollTimerCallback(nsITimer* aTimer, void* aClosure);
 
+  void DispatchScrollingEvent(uint32_t aEventType);
+
+  /**
+   * Check if an id attribute change affects aria-activedescendant and handle
+   * the aria-activedescendant change if appropriate.
+   * If the currently focused element has aria-activedescendant and an
+   * element's id changes to match this, the id was probably moved from the
+   * previous active descendant, thus making this element the new active
+   * descendant. In that case, accessible focus must be changed accordingly.
+   */
+  void ARIAActiveDescendantIDMaybeMoved(dom::Element* aElm);
+
 protected:
 
   /**
@@ -603,8 +613,9 @@ protected:
     mNodeToAccessibleMap;
 
   nsIDocument* mDocumentNode;
-    nsCOMPtr<nsITimer> mScrollWatchTimer;
-    uint16_t mScrollPositionChangedTicks; // Used for tracking scroll events
+  nsCOMPtr<nsITimer> mScrollWatchTimer;
+  uint16_t mScrollPositionChangedTicks; // Used for tracking scroll events
+  TimeStamp mLastScrollingDispatch;
 
   /**
    * Bit mask of document load states (@see LoadState).
@@ -663,12 +674,26 @@ protected:
     AttrRelProvider& operator =(const AttrRelProvider&);
   };
 
+  typedef nsTArray<nsAutoPtr<AttrRelProvider> > AttrRelProviders;
+  typedef nsClassHashtable<nsStringHashKey, AttrRelProviders> DependentIDsHashtable;
+
+  /**
+   * Returns/creates/removes attribute relation providers associated with
+   * a DOM document if the element is in uncomposed document or associated
+   * with shadow DOM the element is in.
+   */
+  AttrRelProviders* GetRelProviders(dom::Element* aElement,
+                                    const nsAString& aID) const;
+  AttrRelProviders* GetOrCreateRelProviders(dom::Element* aElement,
+                                            const nsAString& aID);
+  void RemoveRelProvidersIfEmpty(dom::Element* aElement,
+                                 const nsAString& aID);
+
   /**
    * The cache of IDs pointed by relation attributes.
    */
-  typedef nsTArray<nsAutoPtr<AttrRelProvider> > AttrRelProviderArray;
-  nsClassHashtable<nsStringHashKey, AttrRelProviderArray>
-    mDependentIDsHash;
+  nsClassHashtable<nsPtrHashKey<dom::DocumentOrShadowRoot>, DependentIDsHashtable>
+    mDependentIDsHashes;
 
   friend class RelatedAccIterator;
 

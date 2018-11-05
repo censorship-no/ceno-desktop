@@ -8,8 +8,8 @@ const TEST_URL = "data:text/html,test for dynamically registering and unregister
 var toolbox;
 
 function test() {
-  addTab(TEST_URL).then(tab => {
-    const target = TargetFactory.forTab(tab);
+  addTab(TEST_URL).then(async tab => {
+    const target = await TargetFactory.forTab(tab);
     gDevTools.showToolbox(target).then(testRegister);
   });
 }
@@ -50,12 +50,7 @@ function toolRegistered(toolId) {
 }
 
 function getAllBrowserWindows() {
-  const wins = [];
-  const enumerator = Services.wm.getEnumerator("navigator:browser");
-  while (enumerator.hasMoreElements()) {
-    wins.push(enumerator.getNext());
-  }
-  return wins;
+  return Array.from(Services.wm.getEnumerator("navigator:browser"));
 }
 
 function testUnregister() {

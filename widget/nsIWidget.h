@@ -23,6 +23,8 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/layers/LayersTypes.h"
+#include "mozilla/layers/ScrollableLayerGuid.h"
+#include "mozilla/layers/ZoomConstraints.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/gfx/Point.h"
@@ -30,10 +32,10 @@
 #include "nsDataHashtable.h"
 #include "nsIObserver.h"
 #include "nsIWidgetListener.h"
-#include "FrameMetrics.h"
 #include "Units.h"
 
 // forward declarations
+class   nsIBidiKeyboard;
 class   nsIRollupListener;
 class   imgIContainer;
 class   nsIContent;
@@ -58,11 +60,11 @@ namespace layers {
 class AsyncDragMetrics;
 class Compositor;
 class CompositorBridgeChild;
+struct FrameMetrics;
 class LayerManager;
 class LayerManagerComposite;
 class PLayerTransactionChild;
 class WebRenderBridgeChild;
-struct ScrollableLayerGuid;
 } // namespace layers
 namespace gfx {
 class DrawTarget;
@@ -577,6 +579,13 @@ class nsIWidget : public nsISupports
     virtual mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScale() = 0;
 
     /**
+     * Return the scaling factor between device pixels and the platform-
+     * dependent "desktop pixels" by looking up the screen by the position
+     * of the widget.
+     */
+    virtual mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScaleByScreen() = 0;
+
+    /**
      * Return the default scale factor for the window. This is the
      * default number of device pixels per CSS pixel to use. This should
      * depend on OS/platform settings such as the Mac's "UI scale factor"
@@ -777,6 +786,11 @@ class nsIWidget : public nsISupports
                         double aWidth,
                         double aHeight,
                         bool   aRepaint) = 0;
+
+    virtual mozilla::Maybe<bool> IsResizingNativeWidget()
+    {
+        return mozilla::Nothing();
+    }
 
     /**
      * Resize the widget so that the inner client area has the given size.
@@ -1696,6 +1710,27 @@ class nsIWidget : public nsISupports
     virtual void GetCompositorWidgetInitData(mozilla::widget::CompositorWidgetInitData* aInitData)
     {}
 
+    /**
+     * Setter/Getter of the system font setting for testing.
+     */
+    virtual nsresult SetSystemFont(const nsCString& aFontName)
+    {
+      return NS_ERROR_NOT_IMPLEMENTED;
+    }
+    virtual nsresult GetSystemFont(nsCString& aFontName)
+    {
+      return NS_ERROR_NOT_IMPLEMENTED;
+    }
+
+    virtual nsresult SetPrefersReducedMotionOverrideForTest(bool aValue)
+    {
+      return NS_ERROR_NOT_IMPLEMENTED;
+    }
+    virtual nsresult ResetPrefersReducedMotionOverrideForTest()
+    {
+      return NS_ERROR_NOT_IMPLEMENTED;
+    }
+
 private:
   class LongTapInfo
   {
@@ -1719,6 +1754,9 @@ private:
   };
 
   static void OnLongTapTimerCallback(nsITimer* aTimer, void* aClosure);
+
+  static already_AddRefed<nsIBidiKeyboard> CreateBidiKeyboardContentProcess();
+  static already_AddRefed<nsIBidiKeyboard> CreateBidiKeyboardInner();
 
   mozilla::UniquePtr<LongTapInfo> mLongTapTouchPoint;
   nsCOMPtr<nsITimer> mLongTapTimer;
@@ -1903,6 +1941,12 @@ public:
       return XRE_IsContentProcess();
     }
 
+    static already_AddRefed<nsIWidget>
+    CreateTopLevelWindow();
+
+    static already_AddRefed<nsIWidget>
+    CreateChildWindow();
+
     /**
      * Allocate and return a "puppet widget" that doesn't directly
      * correlate to a platform widget; platform events and data must
@@ -2016,7 +2060,7 @@ public:
     virtual int32_t RoundsWidgetCoordinatesTo() { return 1; }
 
     virtual void UpdateZoomConstraints(const uint32_t& aPresShellId,
-                                       const FrameMetrics::ViewID& aViewId,
+                                       const ScrollableLayerGuid::ViewID& aViewId,
                                        const mozilla::Maybe<ZoomConstraints>& aConstraints) {};
 
     /**
@@ -2034,7 +2078,7 @@ public:
       GetNativeTextEventDispatcherListener() = 0;
 
     virtual void ZoomToRect(const uint32_t& aPresShellId,
-                            const FrameMetrics::ViewID& aViewId,
+                            const ScrollableLayerGuid::ViewID& aViewId,
                             const CSSRect& aRect,
                             const uint32_t& aFlags) = 0;
 
@@ -2100,6 +2144,8 @@ public:
      */
     virtual void RecvScreenPixels(mozilla::ipc::Shmem&& aMem, const ScreenIntSize& aSize) = 0;
 #endif
+
+    static already_AddRefed<nsIBidiKeyboard> CreateBidiKeyboard();
 
 protected:
     /**

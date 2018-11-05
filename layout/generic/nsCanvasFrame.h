@@ -144,7 +144,8 @@ private:
  * We can also paint an "extra background color" behind the normal
  * background.
  */
-class nsDisplayCanvasBackgroundColor : public nsDisplaySolidColorBase {
+class nsDisplayCanvasBackgroundColor final : public nsDisplaySolidColorBase
+{
 public:
   nsDisplayCanvasBackgroundColor(nsDisplayListBuilder* aBuilder, nsIFrame *aFrame)
     : nsDisplaySolidColorBase(aBuilder, aFrame, NS_RGBA(0,0,0,0))
@@ -226,7 +227,9 @@ public:
   nsDisplayCanvasThemedBackground(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
     : nsDisplayThemedBackground(aBuilder, aFrame,
                                 aFrame->GetRectRelativeToSelf() + aBuilder->ToReferenceFrame(aFrame))
-  {}
+  {
+    nsDisplayThemedBackground::Init(aBuilder);
+  }
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
 

@@ -89,7 +89,8 @@ WebGLContext::GenerateWarning(const char* fmt, va_list ap) const
     }
 
     JSContext* cx = api.cx();
-    JS_ReportWarningASCII(cx, "WebGL warning: %s", buf);
+    const auto funcName = FuncName();
+    JS_ReportWarningASCII(cx, "WebGL warning: %s: %s", funcName, buf);
     if (!ShouldGenerateWarnings()) {
         JS_ReportWarningASCII(cx,
                               "WebGL: No further warnings will be reported for"
@@ -134,7 +135,8 @@ WebGLContext::GeneratePerfWarning(const char* fmt, ...) const
 
     ////
 
-    JS_ReportWarningASCII(cx, "WebGL perf warning: %s", buf);
+    const auto funcName = FuncName();
+    JS_ReportWarningASCII(cx, "WebGL perf warning: %s: %s", funcName, buf);
     mNumPerfWarnings++;
 
     if (!ShouldGeneratePerfWarnings()) {
@@ -187,17 +189,6 @@ WebGLContext::ErrorInvalidEnumInfo(const char* info, GLenum enumValue) const
     EnumName(enumValue, &name);
 
     return ErrorInvalidEnum("%s: invalid enum value %s", info, name.BeginReading());
-}
-
-void
-WebGLContext::ErrorInvalidEnumInfo(const char* info, const char* funcName,
-                                   GLenum enumValue) const
-{
-    nsCString name;
-    EnumName(enumValue, &name);
-
-    ErrorInvalidEnum("%s: %s: Invalid enum: 0x%04x (%s).", funcName, info,
-                     enumValue, name.BeginReading());
 }
 
 void
@@ -283,16 +274,13 @@ WebGLContext::ErrorName(GLenum error)
 }
 
 // This version is fallible and will return nullptr if unrecognized.
-static const char*
-GetEnumName(GLenum val)
+const char*
+GetEnumName(const GLenum val, const char* const defaultRet)
 {
     switch (val) {
 #define XX(x) case LOCAL_GL_##x: return #x
         XX(NONE);
         XX(ALPHA);
-        XX(ATC_RGB);
-        XX(ATC_RGBA_EXPLICIT_ALPHA);
-        XX(ATC_RGBA_INTERPOLATED_ALPHA);
         XX(COMPRESSED_RGBA_PVRTC_2BPPV1);
         XX(COMPRESSED_RGBA_PVRTC_4BPPV1);
         XX(COMPRESSED_RGBA_S3TC_DXT1_EXT);
@@ -609,13 +597,13 @@ GetEnumName(GLenum val)
 #undef XX
     }
 
-    return nullptr;
+    return defaultRet;
 }
 
 /*static*/ void
 WebGLContext::EnumName(GLenum val, nsCString* out_name)
 {
-    const char* name = GetEnumName(val);
+    const char* name = GetEnumName(val, nullptr);
     if (name) {
         *out_name = name;
         return;
@@ -624,56 +612,24 @@ WebGLContext::EnumName(GLenum val, nsCString* out_name)
     *out_name = nsPrintfCString("<enum 0x%04x>", val);
 }
 
+std::string
+EnumString(const GLenum val)
+{
+    const char* name = GetEnumName(val, nullptr);
+    if (name) {
+        return name;
+    }
+
+    const nsPrintfCString hex("<enum 0x%04x>", val);
+    return hex.BeginReading();
+}
+
 void
-WebGLContext::ErrorInvalidEnumArg(const char* funcName, const char* argName,
-                                  GLenum val) const
+WebGLContext::ErrorInvalidEnumArg(const char* argName, GLenum val) const
 {
     nsCString enumName;
     EnumName(val, &enumName);
-    ErrorInvalidEnum("%s: Bad `%s`: %s", funcName, argName, enumName.BeginReading());
-}
-
-bool
-IsCompressedTextureFormat(GLenum format)
-{
-    switch (format) {
-    case LOCAL_GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
-    case LOCAL_GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
-    case LOCAL_GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
-    case LOCAL_GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
-    case LOCAL_GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:
-    case LOCAL_GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:
-    case LOCAL_GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:
-    case LOCAL_GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:
-    case LOCAL_GL_ATC_RGB:
-    case LOCAL_GL_ATC_RGBA_EXPLICIT_ALPHA:
-    case LOCAL_GL_ATC_RGBA_INTERPOLATED_ALPHA:
-    case LOCAL_GL_COMPRESSED_RGB_PVRTC_4BPPV1:
-    case LOCAL_GL_COMPRESSED_RGB_PVRTC_2BPPV1:
-    case LOCAL_GL_COMPRESSED_RGBA_PVRTC_4BPPV1:
-    case LOCAL_GL_COMPRESSED_RGBA_PVRTC_2BPPV1:
-    case LOCAL_GL_ETC1_RGB8_OES:
-    case LOCAL_GL_COMPRESSED_R11_EAC:
-    case LOCAL_GL_COMPRESSED_SIGNED_R11_EAC:
-    case LOCAL_GL_COMPRESSED_RG11_EAC:
-    case LOCAL_GL_COMPRESSED_SIGNED_RG11_EAC:
-    case LOCAL_GL_COMPRESSED_RGB8_ETC2:
-    case LOCAL_GL_COMPRESSED_SRGB8_ETC2:
-    case LOCAL_GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:
-    case LOCAL_GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:
-    case LOCAL_GL_COMPRESSED_RGBA8_ETC2_EAC:
-    case LOCAL_GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:
-        return true;
-    default:
-        return false;
-    }
-}
-
-
-bool
-IsTextureFormatCompressed(TexInternalFormat format)
-{
-    return IsCompressedTextureFormat(format.get());
+    ErrorInvalidEnum("Bad `%s`: %s", argName, enumName.BeginReading());
 }
 
 GLenum
@@ -746,8 +702,8 @@ WebGLContext::AssertCachedBindings() const
     GetAndFlushUnderlyingGLErrors();
 
     if (IsWebGL2() || IsExtensionEnabled(WebGLExtensionID::OES_vertex_array_object)) {
-        GLuint bound = mBoundVertexArray ? mBoundVertexArray->GLName() : 0;
-        AssertUintParamCorrect(gl, LOCAL_GL_VERTEX_ARRAY_BINDING, bound);
+        AssertUintParamCorrect(gl, LOCAL_GL_VERTEX_ARRAY_BINDING,
+                               mBoundVertexArray->mGLName);
     }
 
     GLint stencilBits = 0;

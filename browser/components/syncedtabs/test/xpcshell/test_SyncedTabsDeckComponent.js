@@ -131,8 +131,8 @@ add_task(async function testObserver() {
     "component is notified of login change");
   Assert.equal(component.updatePanel.callCount, 4, "triggers panel update again");
 
-  Services.locale.setAvailableLocales(["ab-CD"]);
-  Services.locale.setRequestedLocales(["ab-CD"]);
+  Services.locale.availableLocales = ["ab-CD"];
+  Services.locale.requestedLocales = ["ab-CD"];
 
   Assert.ok(component.updateDir.calledTwice, "locale change triggers UI direction update");
 
@@ -146,10 +146,10 @@ add_task(async function testPanelStatus() {
   let listStore = new SyncedTabsListStore();
   let listComponent = {};
   let fxAccounts = {
-    getSignedInUser() {}
+    getSignedInUser() {},
   };
   let SyncedTabsMock = {
-    getTabClients() {}
+    getTabClients() {},
   };
 
   sinon.stub(listStore, "getData");
@@ -159,7 +159,7 @@ add_task(async function testPanelStatus() {
     fxAccounts,
     deckStore,
     listComponent,
-    SyncedTabs: SyncedTabsMock
+    SyncedTabs: SyncedTabsMock,
   });
 
   let account = null;
@@ -216,8 +216,8 @@ add_task(async function testActions() {
   let chromeWindowMock = {
     gSync: {
       openPrefs() {},
-      openConnectAnotherDevice() {}
-    }
+      openConnectAnotherDevice() {},
+    },
   };
   sinon.spy(chromeWindowMock.gSync, "openPrefs");
   sinon.spy(chromeWindowMock.gSync, "openConnectAnotherDevice");
@@ -227,7 +227,7 @@ add_task(async function testActions() {
 
   let component = new SyncedTabsDeckComponent({
     window: windowMock,
-    getChromeWindowMock
+    getChromeWindowMock,
   });
 
   component.openConnectDevice();

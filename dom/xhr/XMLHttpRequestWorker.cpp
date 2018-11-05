@@ -867,7 +867,8 @@ Proxy::Init()
                   ownerWindow ? ownerWindow->AsGlobal() : nullptr,
                   mWorkerPrivate->GetBaseURI(),
                   mWorkerPrivate->GetLoadGroup(),
-                  mWorkerPrivate->GetPerformanceStorage());
+                  mWorkerPrivate->GetPerformanceStorage(),
+                  mWorkerPrivate->CSPEventListener());
 
   mXHR->SetParameters(mMozAnon, mMozSystem);
   mXHR->SetClientInfoAndController(mClientInfo, mController);
@@ -1002,7 +1003,6 @@ Proxy::HandleEvent(Event* aEvent)
 
   {
     AutoSafeJSContext cx;
-    JSAutoRequest ar(cx);
 
     JS::Rooted<JS::Value> value(cx);
     if (!GetOrCreateDOMReflectorNoWrap(cx, mXHR, &value)) {
@@ -1298,13 +1298,6 @@ EventRunnable::WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
   XMLHttpRequestWorker* xhr = mProxy->mXMLHttpRequestPrivate;
   xhr->UpdateState(*state.get(), mUseCachedArrayBufferResponse);
 
-  if (mType.EqualsASCII(sEventStrings[STRING_readystatechange])) {
-    if (mReadyState == 4 && !mUploadEvent && !mProxy->mSeenLoadStart) {
-      // We've already dispatched premature abort events.
-      return true;
-    }
-  }
-
   if (mUploadEvent && !xhr->GetUploadObjectNoCreate()) {
     return true;
   }
@@ -1446,7 +1439,6 @@ SendRunnable::RunOnMainThread(ErrorResult& aRv)
 
   if (HasData()) {
     AutoSafeJSContext cx;
-    JSAutoRequest ar(cx);
 
     JS::Rooted<JSObject*> globalObject(cx, JS::CurrentGlobalOrNull(cx));
     if (NS_WARN_IF(!globalObject)) {

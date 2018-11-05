@@ -115,7 +115,6 @@ nsDiscriminatedUnion::ToManageableNumber(nsDiscriminatedUnion* aOutData) const
       }
       aOutData->mType = nsIDataType::VTYPE_DOUBLE;
       return NS_OK;
-    case nsIDataType::VTYPE_DOMSTRING:
     case nsIDataType::VTYPE_ASTRING:
       rv = AString2Double(*u.mAStringValue, &aOutData->u.mDoubleValue);
       if (NS_FAILED(rv)) {
@@ -219,7 +218,6 @@ nsDiscriminatedUnion::FreeArray()
     // The rest are illegal.
     case nsIDataType::VTYPE_VOID:
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
     case nsIDataType::VTYPE_UTF8STRING:
     case nsIDataType::VTYPE_CSTRING:
     case nsIDataType::VTYPE_WSTRING_SIZE_IS:
@@ -310,7 +308,6 @@ CloneArray(uint16_t aInType, const nsIID* aInIID,
 
     // The rest are illegal.
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
     case nsIDataType::VTYPE_UTF8STRING:
     case nsIDataType::VTYPE_CSTRING:
     case nsIDataType::VTYPE_STRING_SIZE_IS:
@@ -329,9 +326,6 @@ CloneArray(uint16_t aInType, const nsIID* aInIID,
 
   allocSize = aInCount * elementSize;
   *aOutValue = moz_xmalloc(allocSize);
-  if (!*aOutValue) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
 
   // Clone the elements.
 
@@ -404,7 +398,7 @@ CloneArray(uint16_t aInType, const nsIID* aInIID,
       for (i = aInCount; i > 0; i--) {
         char16_t* str = *(inp++);
         if (str) {
-          *(outp++) = NS_strdup(str);
+          *(outp++) = NS_xstrdup(str);
         } else {
           *(outp++) = nullptr;
         }
@@ -418,7 +412,6 @@ CloneArray(uint16_t aInType, const nsIID* aInIID,
     case nsIDataType::VTYPE_EMPTY_ARRAY:
     case nsIDataType::VTYPE_EMPTY:
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
     case nsIDataType::VTYPE_UTF8STRING:
     case nsIDataType::VTYPE_CSTRING:
     case nsIDataType::VTYPE_STRING_SIZE_IS:
@@ -663,7 +656,6 @@ nsDiscriminatedUnion::String2ID(nsID* aPid) const
     case nsIDataType::VTYPE_UTF8STRING:
       return aPid->Parse(PromiseFlatUTF8String(*u.mUTF8StringValue).get());
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
       pString = u.mAStringValue;
       break;
     case nsIDataType::VTYPE_WCHAR_STR:
@@ -701,7 +693,6 @@ nsDiscriminatedUnion::ConvertToID(nsID* aResult) const
       *aResult = u.iface.mInterfaceID;
       return NS_OK;
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
     case nsIDataType::VTYPE_UTF8STRING:
     case nsIDataType::VTYPE_CSTRING:
     case nsIDataType::VTYPE_CHAR_STR:
@@ -728,7 +719,6 @@ nsDiscriminatedUnion::ToString(nsACString& aOutString) const
   switch (mType) {
     // all the stuff we don't handle...
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
     case nsIDataType::VTYPE_UTF8STRING:
     case nsIDataType::VTYPE_CSTRING:
     case nsIDataType::VTYPE_CHAR_STR:
@@ -819,7 +809,6 @@ nsDiscriminatedUnion::ConvertToAString(nsAString& aResult) const
 {
   switch (mType) {
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
       aResult.Assign(*u.mAStringValue);
       return NS_OK;
     case nsIDataType::VTYPE_CSTRING:
@@ -829,7 +818,7 @@ nsDiscriminatedUnion::ConvertToAString(nsAString& aResult) const
       CopyUTF8toUTF16(*u.mUTF8StringValue, aResult);
       return NS_OK;
     case nsIDataType::VTYPE_CHAR_STR:
-      CopyASCIItoUTF16(u.str.mStringValue, aResult);
+      CopyASCIItoUTF16(mozilla::MakeStringSpan(u.str.mStringValue), aResult);
       return NS_OK;
     case nsIDataType::VTYPE_WCHAR_STR:
       aResult.Assign(u.wstr.mWStringValue);
@@ -862,7 +851,6 @@ nsDiscriminatedUnion::ConvertToACString(nsACString& aResult) const
 {
   switch (mType) {
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
       LossyCopyUTF16toASCII(*u.mAStringValue, aResult);
       return NS_OK;
     case nsIDataType::VTYPE_CSTRING:
@@ -905,7 +893,6 @@ nsDiscriminatedUnion::ConvertToAUTF8String(nsAUTF8String& aResult) const
 {
   switch (mType) {
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
       CopyUTF16toUTF8(*u.mAStringValue, aResult);
       return NS_OK;
     case nsIDataType::VTYPE_CSTRING:
@@ -924,7 +911,7 @@ nsDiscriminatedUnion::ConvertToAUTF8String(nsAUTF8String& aResult) const
                       aResult);
       return NS_OK;
     case nsIDataType::VTYPE_WCHAR_STR:
-      CopyUTF16toUTF8(u.wstr.mWStringValue, aResult);
+      CopyUTF16toUTF8(mozilla::MakeStringSpan(u.wstr.mWStringValue), aResult);
       return NS_OK;
     case nsIDataType::VTYPE_STRING_SIZE_IS:
       // XXX Extra copy, can be removed if we're sure CHAR_STR can
@@ -980,7 +967,6 @@ nsDiscriminatedUnion::ConvertToStringWithSize(uint32_t* aSize, char** aStr) cons
 
   switch (mType) {
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
       *aSize = u.mAStringValue->Length();
       *aStr = ToNewCString(*u.mAStringValue);
       break;
@@ -1052,7 +1038,6 @@ nsDiscriminatedUnion::ConvertToWStringWithSize(uint32_t* aSize, char16_t** aStr)
 
   switch (mType) {
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
       *aSize = u.mAStringValue->Length();
       *aStr = ToNewUnicode(*u.mAStringValue);
       break;
@@ -1249,7 +1234,6 @@ nsDiscriminatedUnion::SetFromVariant(nsIVariant* aValue)
     CASE__SET_FROM_VARIANT_TYPE(VTYPE_ID,     mIDValue,     ID)
 
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
     case nsIDataType::VTYPE_WCHAR_STR:
     case nsIDataType::VTYPE_WSTRING_SIZE_IS:
       CASE__SET_FROM_VARIANT_VTYPE_PROLOGUE(VTYPE_ASTRING);
@@ -1413,14 +1397,6 @@ nsDiscriminatedUnion::SetFromAString(const nsAString& aValue)
 }
 
 void
-nsDiscriminatedUnion::SetFromDOMString(const nsAString& aValue)
-{
-  DATA_SETTER_PROLOGUE;
-  u.mAStringValue = new nsString(aValue);
-  DATA_SETTER_EPILOGUE(VTYPE_DOMSTRING);
-}
-
-void
 nsDiscriminatedUnion::SetFromACString(const nsACString& aValue)
 {
   DATA_SETTER_PROLOGUE;
@@ -1496,10 +1472,7 @@ nsDiscriminatedUnion::SetFromStringWithSize(uint32_t aSize,
   if (!aValue) {
     return NS_ERROR_NULL_POINTER;
   }
-  if (!(u.str.mStringValue =
-        (char*)nsMemory::Clone(aValue, (aSize + 1) * sizeof(char)))) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  u.str.mStringValue = (char*) moz_xmemdup(aValue, (aSize + 1) * sizeof(char));
   u.str.mStringLength = aSize;
   DATA_SETTER_EPILOGUE(VTYPE_STRING_SIZE_IS);
   return NS_OK;
@@ -1512,10 +1485,8 @@ nsDiscriminatedUnion::SetFromWStringWithSize(uint32_t aSize,
   if (!aValue) {
     return NS_ERROR_NULL_POINTER;
   }
-  if (!(u.wstr.mWStringValue =
-        (char16_t*)nsMemory::Clone(aValue, (aSize + 1) * sizeof(char16_t)))) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  u.wstr.mWStringValue =
+    (char16_t*) moz_xmemdup(aValue, (aSize + 1) * sizeof(char16_t));
   u.wstr.mWStringLength = aSize;
   DATA_SETTER_EPILOGUE(VTYPE_WSTRING_SIZE_IS);
   return NS_OK;
@@ -1571,7 +1542,6 @@ nsDiscriminatedUnion::Cleanup()
     case nsIDataType::VTYPE_ID:
       break;
     case nsIDataType::VTYPE_ASTRING:
-    case nsIDataType::VTYPE_DOMSTRING:
       delete u.mAStringValue;
       break;
     case nsIDataType::VTYPE_CSTRING:
@@ -1741,14 +1711,6 @@ nsVariantBase::GetAsID(nsID* aResult)
 NS_IMETHODIMP
 nsVariantBase::GetAsAString(nsAString& aResult)
 {
-  return mData.ConvertToAString(aResult);
-}
-
-NS_IMETHODIMP
-nsVariantBase::GetAsDOMString(nsAString& aResult)
-{
-  // A DOMString maps to an AString internally, so we can re-use
-  // ConvertToAString here.
   return mData.ConvertToAString(aResult);
 }
 
@@ -1984,17 +1946,6 @@ nsVariantBase::SetAsAString(const nsAString& aValue)
     return NS_ERROR_OBJECT_IS_IMMUTABLE;
   }
   mData.SetFromAString(aValue);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsVariantBase::SetAsDOMString(const nsAString& aValue)
-{
-  if (!mWritable) {
-    return NS_ERROR_OBJECT_IS_IMMUTABLE;
-  }
-
-  mData.SetFromDOMString(aValue);
   return NS_OK;
 }
 

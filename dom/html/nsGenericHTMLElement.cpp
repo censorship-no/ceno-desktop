@@ -105,16 +105,15 @@ using namespace mozilla;
 using namespace mozilla::dom;
 
 nsresult
-nsGenericHTMLElement::CopyInnerTo(Element* aDst, bool aPreallocateChildren)
+nsGenericHTMLElement::CopyInnerTo(Element* aDst)
 {
   MOZ_ASSERT(!aDst->GetUncomposedDoc(),
              "Should not CopyInnerTo an Element in a document");
-  nsresult rv;
 
   bool reparse = (aDst->OwnerDoc() != OwnerDoc());
 
-  rv = static_cast<nsGenericHTMLElement*>(aDst)->mAttrs.
-         EnsureCapacityToClone(mAttrs, aPreallocateChildren);
+  nsresult rv =
+    static_cast<nsGenericHTMLElement*>(aDst)->mAttrs.EnsureCapacityToClone(mAttrs);
   NS_ENSURE_SUCCESS(rv, rv);
 
   int32_t i, count = GetAttrCount();
@@ -195,7 +194,7 @@ nsGenericHTMLElement::GetAccessKeyLabel(nsString& aLabel)
 }
 
 static bool
-IS_TABLE_CELL(LayoutFrameType frameType)
+IsTableCell(LayoutFrameType frameType)
 {
   return LayoutFrameType::TableCell == frameType ||
          LayoutFrameType::BCTableCell == frameType;
@@ -206,7 +205,7 @@ IsOffsetParent(nsIFrame* aFrame)
 {
   LayoutFrameType frameType = aFrame->Type();
 
-  if (IS_TABLE_CELL(frameType) || frameType == LayoutFrameType::Table) {
+  if (IsTableCell(frameType) || frameType == LayoutFrameType::Table) {
     // Per the IDL for Element, only td, th, and table are acceptable offsetParents
     // apart from body or positioned elements; we need to check the content type as
     // well as the frame type so we ignore anonymous tables created by an element
@@ -323,7 +322,7 @@ nsGenericHTMLElement::Spellcheck()
   for (node = this; node; node = node->GetParent()) {
     if (node->IsHTMLElement()) {
       static Element::AttrValuesArray strings[] =
-        {&nsGkAtoms::_true, &nsGkAtoms::_false, nullptr};
+        {nsGkAtoms::_true, nsGkAtoms::_false, nullptr};
       switch (node->AsElement()->FindAttrValueIn(kNameSpaceID_None,
                                                  nsGkAtoms::spellcheck, strings,
                                                  eCaseMatters)) {
@@ -551,7 +550,7 @@ nsGenericHTMLElement::CheckHandleEventForAnchorsPreconditions(
          IsHTMLElement(nsGkAtoms::area);
 }
 
-void 
+void
 nsGenericHTMLElement::GetEventTargetParentForAnchors(EventChainPreVisitor& aVisitor)
 {
   nsGenericHTMLElementBase::GetEventTargetParent(aVisitor);
@@ -1129,14 +1128,38 @@ nsGenericHTMLElement::ParseReferrerAttribute(const nsAString& aString,
                                              nsAttrValue& aResult)
 {
   static const nsAttrValue::EnumTable kReferrerTable[] = {
-    { net::kRPS_No_Referrer, static_cast<int16_t>(net::RP_No_Referrer) },
-    { net::kRPS_Origin, static_cast<int16_t>(net::RP_Origin) },
-    { net::kRPS_Origin_When_Cross_Origin, static_cast<int16_t>(net::RP_Origin_When_Crossorigin) },
-    { net::kRPS_No_Referrer_When_Downgrade, static_cast<int16_t>(net::RP_No_Referrer_When_Downgrade) },
-    { net::kRPS_Unsafe_URL, static_cast<int16_t>(net::RP_Unsafe_URL) },
-    { net::kRPS_Strict_Origin, static_cast<int16_t>(net::RP_Strict_Origin) },
-    { net::kRPS_Same_Origin, static_cast<int16_t>(net::RP_Same_Origin) },
-    { net::kRPS_Strict_Origin_When_Cross_Origin, static_cast<int16_t>(net::RP_Strict_Origin_When_Cross_Origin) },
+    {
+      ReferrerPolicyToString(net::RP_No_Referrer),
+      static_cast<int16_t>(net::RP_No_Referrer)
+    },
+    {
+      ReferrerPolicyToString(net::RP_Origin),
+      static_cast<int16_t>(net::RP_Origin)
+    },
+    {
+      ReferrerPolicyToString(net::RP_Origin_When_Crossorigin),
+      static_cast<int16_t>(net::RP_Origin_When_Crossorigin)
+    },
+    {
+      ReferrerPolicyToString(net::RP_No_Referrer_When_Downgrade),
+      static_cast<int16_t>(net::RP_No_Referrer_When_Downgrade)
+    },
+    {
+      ReferrerPolicyToString(net::RP_Unsafe_URL),
+      static_cast<int16_t>(net::RP_Unsafe_URL)
+    },
+    {
+      ReferrerPolicyToString(net::RP_Strict_Origin),
+      static_cast<int16_t>(net::RP_Strict_Origin)
+    },
+    {
+      ReferrerPolicyToString(net::RP_Same_Origin),
+      static_cast<int16_t>(net::RP_Same_Origin)
+    },
+    {
+      ReferrerPolicyToString(net::RP_Strict_Origin_When_Cross_Origin),
+      static_cast<int16_t>(net::RP_Strict_Origin_When_Cross_Origin)
+    },
     { nullptr, 0 }
   };
   return aResult.ParseEnumValue(aString, kReferrerTable, false);
@@ -1222,49 +1245,49 @@ nsGenericHTMLElement::MapCommonAttributesInto(const nsMappedAttributes* aAttribu
 
 /* static */ const nsGenericHTMLElement::MappedAttributeEntry
 nsGenericHTMLElement::sCommonAttributeMap[] = {
-  { &nsGkAtoms::contenteditable },
-  { &nsGkAtoms::lang },
-  { &nsGkAtoms::hidden },
+  { nsGkAtoms::contenteditable },
+  { nsGkAtoms::lang },
+  { nsGkAtoms::hidden },
   { nullptr }
 };
 
 /* static */ const Element::MappedAttributeEntry
 nsGenericHTMLElement::sImageMarginSizeAttributeMap[] = {
-  { &nsGkAtoms::width },
-  { &nsGkAtoms::height },
-  { &nsGkAtoms::hspace },
-  { &nsGkAtoms::vspace },
+  { nsGkAtoms::width },
+  { nsGkAtoms::height },
+  { nsGkAtoms::hspace },
+  { nsGkAtoms::vspace },
   { nullptr }
 };
 
 /* static */ const Element::MappedAttributeEntry
 nsGenericHTMLElement::sImageAlignAttributeMap[] = {
-  { &nsGkAtoms::align },
+  { nsGkAtoms::align },
   { nullptr }
 };
 
 /* static */ const Element::MappedAttributeEntry
 nsGenericHTMLElement::sDivAlignAttributeMap[] = {
-  { &nsGkAtoms::align },
+  { nsGkAtoms::align },
   { nullptr }
 };
 
 /* static */ const Element::MappedAttributeEntry
 nsGenericHTMLElement::sImageBorderAttributeMap[] = {
-  { &nsGkAtoms::border },
+  { nsGkAtoms::border },
   { nullptr }
 };
 
 /* static */ const Element::MappedAttributeEntry
 nsGenericHTMLElement::sBackgroundAttributeMap[] = {
-  { &nsGkAtoms::background },
-  { &nsGkAtoms::bgcolor },
+  { nsGkAtoms::background },
+  { nsGkAtoms::bgcolor },
   { nullptr }
 };
 
 /* static */ const Element::MappedAttributeEntry
 nsGenericHTMLElement::sBackgroundColorAttributeMap[] = {
-  { &nsGkAtoms::bgcolor },
+  { nsGkAtoms::bgcolor },
   { nullptr }
 };
 
@@ -1621,9 +1644,9 @@ nsGenericHTMLElement::TouchEventsEnabled(JSContext* aCx, JSObject* aGlobal)
 
 //----------------------------------------------------------------------
 
-nsGenericHTMLFormElement::nsGenericHTMLFormElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+nsGenericHTMLFormElement::nsGenericHTMLFormElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                                                    uint8_t aType)
-  : nsGenericHTMLElement(aNodeInfo)
+  : nsGenericHTMLElement(std::move(aNodeInfo))
   , nsIFormControl(aType)
   , mForm(nullptr)
   , mFieldSet(nullptr)
@@ -2157,10 +2180,17 @@ nsGenericHTMLFormElement::FormIdUpdated(Element* aOldElement,
 }
 
 bool
-nsGenericHTMLFormElement::IsElementDisabledForEvents(EventMessage aMessage,
+nsGenericHTMLFormElement::IsElementDisabledForEvents(WidgetEvent* aEvent,
                                                      nsIFrame* aFrame)
 {
-  switch (aMessage) {
+  MOZ_ASSERT(aEvent);
+
+  // Allow dispatch of CustomEvent and untrusted Events.
+  if (!aEvent->IsTrusted()) {
+    return false;
+  }
+
+  switch (aEvent->mMessage) {
     case eMouseMove:
     case eMouseOver:
     case eMouseOut:
@@ -2181,8 +2211,7 @@ nsGenericHTMLFormElement::IsElementDisabledForEvents(EventMessage aMessage,
 
   // FIXME(emilio): This poking at the style of the frame is slightly bogus
   // unless we flush before every event, which we don't really want to do.
-  if (aFrame &&
-      aFrame->StyleUserInterface()->mUserInput == StyleUserInput::None) {
+  if (aFrame && aFrame->StyleUI()->mUserInput == StyleUserInput::None) {
     return true;
   }
 
@@ -2418,8 +2447,9 @@ nsGenericHTMLFormElement::GetFormAction(nsString& aValue)
 void
 nsGenericHTMLElement::Click(CallerType aCallerType)
 {
-  if (HandlingClick())
+  if (IsDisabled() || HandlingClick()) {
     return;
+  }
 
   // Strong in case the event kills it
   nsCOMPtr<nsIDocument> doc = GetComposedDoc();
@@ -2702,9 +2732,9 @@ nsGenericHTMLElement::ChangeEditableState(int32_t aChange)
 //----------------------------------------------------------------------
 
 nsGenericHTMLFormElementWithState::nsGenericHTMLFormElementWithState(
-    already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo, uint8_t aType
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo, uint8_t aType
   )
-  : nsGenericHTMLFormElement(aNodeInfo, aType)
+  : nsGenericHTMLFormElement(std::move(aNodeInfo), aType)
 {
   mStateKey.SetIsVoid(true);
 }
@@ -2862,6 +2892,21 @@ nsGenericHTMLElement::IsEventAttributeNameInternal(nsAtom *aName)
   return nsContentUtils::IsEventAttributeName(aName, EventNameType_HTML);
 }
 
+void
+nsGenericHTMLElement::AttachAndSetUAShadowRoot()
+{
+  MOZ_DIAGNOSTIC_ASSERT(!CanAttachShadowDOM(),
+                        "Cannot be used to attach UI shadow DOM");
+  if (GetShadowRoot()) {
+    MOZ_ASSERT(GetShadowRoot()->IsUAWidget());
+    return;
+  }
+
+  RefPtr<ShadowRoot> shadowRoot =
+    AttachShadowWithoutNameChecks(ShadowRootMode::Closed);
+  shadowRoot->SetIsUAWidget();
+}
+
 /**
  * Construct a URI from a string, as an element.src attribute
  * would be set to. Helper for the media elements.
@@ -2896,10 +2941,13 @@ nsGenericHTMLElement::NewURIFromString(const nsAString& aURISpec,
   return NS_OK;
 }
 
-static bool
-IsOrHasAncestorWithDisplayNone(Element* aElement)
+// https://html.spec.whatwg.org/#being-rendered
+//
+// With a gotcha for display contents:
+//   https://github.com/whatwg/html/issues/3947
+static bool IsRendered(const Element& aElement)
 {
-  return !aElement->HasServoData() || Servo_Element_IsDisplayNone(aElement);
+  return aElement.GetPrimaryFrame() || aElement.IsDisplayContents();
 }
 
 void
@@ -2960,7 +3008,7 @@ nsGenericHTMLElement::GetInnerText(mozilla::dom::DOMString& aValue,
     doc->FlushPendingNotifications(FlushType::Layout);
   }
 
-  if (IsOrHasAncestorWithDisplayNone(this)) {
+  if (!IsRendered(*this)) {
     GetTextContentInternal(aValue, aError);
   } else {
     nsRange::GetInnerTextNoFlush(aValue, aError, this);
@@ -3006,10 +3054,10 @@ nsGenericHTMLElement::SetInnerText(const nsAString& aValue)
         break;
       }
       str.Truncate();
-      already_AddRefed<mozilla::dom::NodeInfo> ni =
+      RefPtr<mozilla::dom::NodeInfo> ni =
         NodeInfo()->NodeInfoManager()->GetNodeInfo(nsGkAtoms::br,
           nullptr, kNameSpaceID_XHTML, ELEMENT_NODE);
-      RefPtr<HTMLBRElement> br = new HTMLBRElement(ni);
+      RefPtr<HTMLBRElement> br = new HTMLBRElement(ni.forget());
       AppendChildTo(br, true);
     } else {
       str.Append(*s);

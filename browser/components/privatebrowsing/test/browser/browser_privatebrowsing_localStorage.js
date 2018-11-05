@@ -9,12 +9,11 @@
 
   let win = await BrowserTestUtils.openNewBrowserWindow({private: true});
 
-  win.gBrowser.selectedTab = win.gBrowser.addTab(page1);
+  win.gBrowser.selectedTab = BrowserTestUtils.addTab(win.gBrowser, page1);
   let browser = win.gBrowser.selectedBrowser;
   await BrowserTestUtils.browserLoaded(browser);
 
-  browser.loadURI(
-    "http://mochi.test:8888/browser/browser/components/privatebrowsing/test/browser/" +
+  BrowserTestUtils.loadURI(browser, "http://mochi.test:8888/browser/browser/components/privatebrowsing/test/browser/" +
     "browser_privatebrowsing_localStorage_page2.html");
   await BrowserTestUtils.browserLoaded(browser);
 

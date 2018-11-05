@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('Atomics')||!this.hasOwnProperty('BigInt')||!this.hasOwnProperty('SharedArrayBuffer')) -- Atomics,BigInt,SharedArrayBuffer is not enabled unconditionally
+// |reftest| skip-if(!this.hasOwnProperty('Atomics')||!this.hasOwnProperty('SharedArrayBuffer')) -- Atomics,SharedArrayBuffer is not enabled unconditionally
 // Copyright (C) 2018 Amal Hussein. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
@@ -20,7 +20,7 @@ info: |
           If value is undefined, then
           Let index be 0.
 includes: [atomicsHelper.js]
-features: [Atomics, BigInt, SharedArrayBuffer, TypedArray]
+features: [Atomics, SharedArrayBuffer, TypedArray]
 ---*/
 
 const RUNNING = 1;
@@ -51,7 +51,7 @@ $262.agent.waitUntil(i32a, RUNNING, 1);
 // Try to yield control to ensure the agent actually started to wait.
 $262.agent.tryYield();
 
-assert.sameValue(Atomics.wake(i32a, 0), 1, 'Atomics.wake(i32a, 0) returns 1');
+assert.sameValue(Atomics.notify(i32a, 0), 1, 'Atomics.notify(i32a, 0) returns 1');
 
 const lapse = $262.agent.getReport();
 

@@ -96,7 +96,8 @@ private:
     // This function may be called during reflow or painting. We should only
     // do this check in painting process since the PreEffectsBBoxProperty of
     // continuations are not set correctly while reflowing.
-    if (nsSVGIntegrationUtils::UsingEffectsForFrame(aFrame) && !aInReflow) {
+    if (nsSVGIntegrationUtils::UsingOverflowAffectingEffects(aFrame) &&
+        !aInReflow) {
       nsOverflowAreas* preTransformOverflows =
         aFrame->GetProperty(aFrame->PreTransformOverflowAreasProperty());
 
@@ -104,7 +105,7 @@ private:
                  "GetVisualOverflowRect() won't return the pre-effects rect!");
     }
 #endif
-    return aFrame->GetVisualOverflowRect();
+    return aFrame->GetVisualOverflowRectRelativeToSelf();
   }
 
   nsIFrame*     mFirstContinuation;
@@ -158,6 +159,14 @@ GetPreEffectsVisualOverflow(nsIFrame* aFirstContinuation,
 }
 
 bool
+nsSVGIntegrationUtils::UsingOverflowAffectingEffects(const nsIFrame* aFrame)
+{
+  // Currently overflow don't take account of SVG or other non-absolute
+  // positioned clipping, or masking.
+  return aFrame->StyleEffects()->HasFilters();
+}
+
+bool
 nsSVGIntegrationUtils::UsingEffectsForFrame(const nsIFrame* aFrame)
 {
   // Even when SVG display lists are disabled, returning true for SVG frames
@@ -172,7 +181,7 @@ nsSVGIntegrationUtils::UsingEffectsForFrame(const nsIFrame* aFrame)
 bool
 nsSVGIntegrationUtils::UsingMaskOrClipPathForFrame(const nsIFrame* aFrame)
 {
-  const nsStyleSVGReset *style = aFrame->StyleSVGReset();
+  const nsStyleSVGReset* style = aFrame->StyleSVGReset();
   return style->HasClipPath() || style->HasMask();
 }
 
@@ -238,7 +247,7 @@ nsSVGIntegrationUtils::GetSVGBBoxForNonSVGFrame(nsIFrame* aNonSVGFrame,
                                   GetOffsetToBoundingBox(firstFrame));
 
   return nsLayoutUtils::RectToGfxRect(r,
-           aNonSVGFrame->PresContext()->AppUnitsPerCSSPixel());
+           AppUnitsPerCSSPixel());
 }
 
 // XXX Since we're called during reflow, this method is broken for frames with
@@ -278,14 +287,24 @@ nsRect
     ComputePostEffectsVisualOverflowRect(nsIFrame* aFrame,
                                          const nsRect& aPreEffectsOverflowRect)
 {
-  NS_ASSERTION(!(aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT),
-                 "Don't call this on SVG child frames");
+  MOZ_ASSERT(!(aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT),
+             "Don't call this on SVG child frames");
+
+  MOZ_ASSERT(aFrame->StyleEffects()->HasFilters(),
+             "We should only be called if the frame is filtered, since filters "
+             "are the only effect that affects overflow.");
 
   nsIFrame* firstFrame =
     nsLayoutUtils::FirstContinuationOrIBSplitSibling(aFrame);
-  SVGObserverUtils::EffectProperties effectProperties =
-    SVGObserverUtils::GetEffectProperties(firstFrame);
-  if (!effectProperties.HasValidFilter()) {
+  // Note: we do not return here for eHasNoRefs since we must still handle any
+  // CSS filter functions.
+  // TODO: We currently pass nullptr instead of an nsTArray* here, but we
+  // actually should get the filter frames and then pass them into
+  // GetPostFilterBounds below!  See bug 1494263.
+  // TODO: we should really return an empty rect for eHasRefsSomeInvalid since
+  // in that case we disable painting of the element.
+  if (SVGObserverUtils::GetAndObserveFilters(firstFrame, nullptr) ==
+        SVGObserverUtils::eHasRefsSomeInvalid) {
     return aPreEffectsOverflowRect;
   }
 
@@ -300,7 +319,7 @@ nsRect
                                        aPreEffectsOverflowRect,
                                        firstFrameToBoundingBox,
                                        true),
-      aFrame->PresContext()->AppUnitsPerCSSPixel());
+      AppUnitsPerCSSPixel());
   overrideBBox.RoundOut();
 
   nsRect overflowRect =
@@ -319,22 +338,25 @@ nsSVGIntegrationUtils::AdjustInvalidAreaForSVGEffects(nsIFrame* aFrame,
     return nsIntRect();
   }
 
-  // Don't bother calling GetEffectProperties; the filter property should
-  // already have been set up during reflow/ComputeFrameEffectsRect
+  int32_t appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
   nsIFrame* firstFrame =
     nsLayoutUtils::FirstContinuationOrIBSplitSibling(aFrame);
-  nsSVGFilterProperty *prop = SVGObserverUtils::GetFilterProperty(firstFrame);
-  if (!prop || !prop->IsInObserverLists()) {
-    return aInvalidRegion;
-  }
 
-  int32_t appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
-
-  if (!prop || !prop->ReferencesValidResources()) {
+  // If we have any filters to observe then we should have started doing that
+  // during reflow/ComputeFrameEffectsRect, so we use GetFiltersIfObserving
+  // here to avoid needless work (or masking bugs by setting up observers at
+  // the wrong time).
+  if (!aFrame->StyleEffects()->HasFilters() ||
+      SVGObserverUtils::GetFiltersIfObserving(firstFrame, nullptr) ==
+        SVGObserverUtils::eHasRefsSomeInvalid) {
     // The frame is either not there or not currently available,
     // perhaps because we're in the middle of tearing stuff down.
     // Be conservative, return our visual overflow rect relative
     // to the reference frame.
+    // XXX we may get here purely due to an SVG mask, in which case there is
+    // no need to do this it causes over-invalidation. See:
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=1494110
+    // Do we still even need this for filters? If so, why?
     nsRect overflow = aFrame->GetVisualOverflowRect() + aToReferenceFrame;
     return overflow.ToOutsidePixels(appUnitsPerDevPixel);
   }
@@ -359,12 +381,16 @@ nsRect
 nsSVGIntegrationUtils::GetRequiredSourceForInvalidArea(nsIFrame* aFrame,
                                                        const nsRect& aDirtyRect)
 {
-  // Don't bother calling GetEffectProperties; the filter property should
-  // already have been set up during reflow/ComputeFrameEffectsRect
   nsIFrame* firstFrame =
     nsLayoutUtils::FirstContinuationOrIBSplitSibling(aFrame);
-  nsSVGFilterProperty *prop = SVGObserverUtils::GetFilterProperty(firstFrame);
-  if (!prop || !prop->ReferencesValidResources()) {
+
+  // If we have any filters to observe then we should have started doing that
+  // during reflow/ComputeFrameEffectsRect, so we use GetFiltersIfObserving
+  // here to avoid needless work (or masking bugs by setting up observers at
+  // the wrong time).
+  if (!aFrame->StyleEffects()->HasFilters() ||
+      SVGObserverUtils::GetFiltersIfObserving(firstFrame, nullptr) ==
+        SVGObserverUtils::eHasRefsSomeInvalid) {
     return aDirtyRect;
   }
 
@@ -394,7 +420,7 @@ nsSVGIntegrationUtils::HitTestFrameForEffects(nsIFrame* aFrame, const nsPoint& a
   }
   nsPoint pt = aPt + toUserSpace;
   gfxPoint userSpacePt =
-    gfxPoint(pt.x, pt.y) / aFrame->PresContext()->AppUnitsPerCSSPixel();
+    gfxPoint(pt.x, pt.y) / AppUnitsPerCSSPixel();
   return nsSVGUtils::HitTestClip(firstFrame, userSpacePt);
 }
 
@@ -579,7 +605,8 @@ CreateAndPaintMaskSurface(const PaintFramesParams& aParams,
                    aSC, aMaskFrames, maskSurfaceMatrix,
                    aOffsetToUserSpace);
 
-  if (aParams.imgParams.result != ImgDrawResult::SUCCESS) {
+  if (aParams.imgParams.result != ImgDrawResult::SUCCESS &&
+      aParams.imgParams.result != ImgDrawResult::SUCCESS_NOT_COMPLETE) {
     // Now we know the status of mask resource since we used it while painting.
     // According to the return value of PaintMaskSurface, we know whether mask
     // resource is resolvable or not.
@@ -720,9 +747,10 @@ nsSVGIntegrationUtils::IsMaskResourceReady(nsIFrame* aFrame)
 {
   nsIFrame* firstFrame =
     nsLayoutUtils::FirstContinuationOrIBSplitSibling(aFrame);
-  SVGObserverUtils::EffectProperties effectProperties =
-    SVGObserverUtils::GetEffectProperties(firstFrame);
-  nsTArray<nsSVGMaskFrame*> maskFrames = effectProperties.GetMaskFrames();
+  nsTArray<nsSVGMaskFrame*> maskFrames;
+  // XXX check return value?
+  SVGObserverUtils::GetAndObserveMasks(firstFrame, &maskFrames);
+
   const nsStyleSVGReset* svgReset = firstFrame->StyleSVGReset();
 
   for (uint32_t i = 0; i < maskFrames.Length(); i++) {
@@ -776,11 +804,6 @@ nsSVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams)
   }
 
   gfxContext& ctx = aParams.ctx;
-  nsIFrame* firstFrame =
-    nsLayoutUtils::FirstContinuationOrIBSplitSibling(frame);
-  SVGObserverUtils::EffectProperties effectProperties =
-    SVGObserverUtils::GetEffectProperties(firstFrame);
-
   RefPtr<DrawTarget> maskTarget = ctx.GetDrawTarget();
 
   if (maskUsage.shouldGenerateMaskLayer &&
@@ -796,7 +819,12 @@ nsSVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams)
                                                      SurfaceFormat::A8);
   }
 
-  nsTArray<nsSVGMaskFrame *> maskFrames = effectProperties.GetMaskFrames();
+  nsIFrame* firstFrame =
+    nsLayoutUtils::FirstContinuationOrIBSplitSibling(frame);
+  nsTArray<nsSVGMaskFrame*> maskFrames;
+  // XXX check return value?
+  SVGObserverUtils::GetAndObserveMasks(firstFrame, &maskFrames);
+
   AutoPopGroup autoPop;
   bool shouldPushOpacity = (maskUsage.opacity != 1.0) &&
                            (maskFrames.Length() != 1);
@@ -809,13 +837,13 @@ nsSVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams)
 
   // Paint clip-path-basic-shape onto ctx
   gfxContextAutoSaveRestore basicShapeSR;
-  if (maskUsage.shouldApplyBasicShape) {
+  if (maskUsage.shouldApplyBasicShapeOrPath) {
     matSR.SetContext(&ctx);
 
     MoveContextOriginToUserSpace(firstFrame, aParams);
 
     basicShapeSR.SetContext(&ctx);
-    nsCSSClipPathInstance::ApplyBasicShapeClip(ctx, frame);
+    nsCSSClipPathInstance::ApplyBasicShapeOrPathClip(ctx, frame);
     if (!maskUsage.shouldGenerateMaskLayer) {
       // Only have basic-shape clip-path effect. Fill clipped region by
       // opaque white.
@@ -848,7 +876,9 @@ nsSVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams)
     Matrix clipMaskTransform;
     gfxMatrix cssPxToDevPxMatrix = nsSVGUtils::GetCSSPxToDevPxMatrix(frame);
 
-    nsSVGClipPathFrame *clipPathFrame = effectProperties.GetClipPathFrame();
+    nsSVGClipPathFrame* clipPathFrame;
+    // XXX check return value?
+    SVGObserverUtils::GetAndObserveClipPath(firstFrame, &clipPathFrame);
     RefPtr<SourceSurface> maskSurface =
       maskUsage.shouldGenerateMaskLayer ? maskTarget->Snapshot() : nullptr;
     clipPathFrame->PaintClipMask(ctx, frame, cssPxToDevPxMatrix,
@@ -859,10 +889,10 @@ nsSVGIntegrationUtils::PaintMask(const PaintFramesParams& aParams)
   return true;
 }
 
-void
-nsSVGIntegrationUtils::PaintMaskAndClipPath(const PaintFramesParams& aParams)
+template<class T>
+void PaintMaskAndClipPathInternal(const PaintFramesParams& aParams, const T& aPaintChild)
 {
-  MOZ_ASSERT(UsingMaskOrClipPathForFrame(aParams.frame),
+  MOZ_ASSERT(nsSVGIntegrationUtils::UsingMaskOrClipPathForFrame(aParams.frame),
              "Should not use this method when no mask or clipPath effect"
              "on this frame");
 
@@ -895,17 +925,18 @@ nsSVGIntegrationUtils::PaintMaskAndClipPath(const PaintFramesParams& aParams)
   gfxContext& context = aParams.ctx;
   gfxContextMatrixAutoSaveRestore matrixAutoSaveRestore(&context);
 
-  /* Properties are added lazily and may have been removed by a restyle,
-     so make sure all applicable ones are set again. */
   nsIFrame* firstFrame =
     nsLayoutUtils::FirstContinuationOrIBSplitSibling(frame);
-  SVGObserverUtils::EffectProperties effectProperties =
-    SVGObserverUtils::GetEffectProperties(firstFrame);
 
-  nsSVGClipPathFrame *clipPathFrame = effectProperties.GetClipPathFrame();
+  nsSVGClipPathFrame* clipPathFrame;
+  // XXX check return value?
+  SVGObserverUtils::GetAndObserveClipPath(firstFrame, &clipPathFrame);
+
+  nsTArray<nsSVGMaskFrame*> maskFrames;
+  // XXX check return value?
+  SVGObserverUtils::GetAndObserveMasks(firstFrame, &maskFrames);
 
   gfxMatrix cssPxToDevPxMatrix = nsSVGUtils::GetCSSPxToDevPxMatrix(frame);
-  nsTArray<nsSVGMaskFrame*> maskFrames = effectProperties.GetMaskFrames();
 
   bool shouldGenerateMask = (maskUsage.opacity != 1.0f ||
                              maskUsage.shouldGenerateClipMaskLayer ||
@@ -979,7 +1010,7 @@ nsSVGIntegrationUtils::PaintMaskAndClipPath(const PaintFramesParams& aParams)
     }
 
     if (shouldPushMask) {
-      if (aParams.layerManager->GetRoot()->GetContentFlags() &
+      if (aParams.layerManager && aParams.layerManager->GetRoot()->GetContentFlags() &
           Layer::CONTENT_COMPONENT_ALPHA) {
         context.PushGroupAndCopyBackground(gfxContentType::COLOR_ALPHA,
                                            opacityApplied
@@ -997,28 +1028,23 @@ nsSVGIntegrationUtils::PaintMaskAndClipPath(const PaintFramesParams& aParams)
   /* If this frame has only a trivial clipPath, set up cairo's clipping now so
    * we can just do normal painting and get it clipped appropriately.
    */
-  if (maskUsage.shouldApplyClipPath || maskUsage.shouldApplyBasicShape) {
+  if (maskUsage.shouldApplyClipPath || maskUsage.shouldApplyBasicShapeOrPath) {
     gfxContextMatrixAutoSaveRestore matSR(&context);
 
     MoveContextOriginToUserSpace(firstFrame, aParams);
 
     MOZ_ASSERT(!maskUsage.shouldApplyClipPath ||
-               !maskUsage.shouldApplyBasicShape);
+               !maskUsage.shouldApplyBasicShapeOrPath);
     if (maskUsage.shouldApplyClipPath) {
       clipPathFrame->ApplyClipPath(context, frame, cssPxToDevPxMatrix);
     } else {
-      nsCSSClipPathInstance::ApplyBasicShapeClip(context, frame);
+      nsCSSClipPathInstance::ApplyBasicShapeOrPathClip(context, frame);
     }
   }
 
   /* Paint the child */
   context.SetMatrix(matrixAutoSaveRestore.Matrix());
-  BasicLayerManager* basic = aParams.layerManager->AsBasicLayerManager();
-  RefPtr<gfxContext> oldCtx = basic->GetTarget();
-  basic->SetTarget(&context);
-  aParams.layerManager->EndTransaction(FrameLayerBuilder::DrawPaintedLayer,
-                                       aParams.builder);
-  basic->SetTarget(oldCtx);
+  aPaintChild();
 
   if (gfxPrefs::DrawMaskLayer()) {
     gfxContextAutoSaveRestore saver(&context);
@@ -1036,7 +1062,7 @@ nsSVGIntegrationUtils::PaintMaskAndClipPath(const PaintFramesParams& aParams)
         maskUsage.shouldGenerateClipMaskLayer) {
       overlayColor.g = 1.0f; // green represents clip-path:<clip-source>.
     }
-    if (maskUsage.shouldApplyBasicShape) {
+    if (maskUsage.shouldApplyBasicShapeOrPath) {
       overlayColor.b = 1.0f; // blue represents
                              // clip-path:<basic-shape>||<geometry-box>.
     }
@@ -1045,7 +1071,7 @@ nsSVGIntegrationUtils::PaintMaskAndClipPath(const PaintFramesParams& aParams)
     context.Fill();
   }
 
-  if (maskUsage.shouldApplyClipPath || maskUsage.shouldApplyBasicShape) {
+  if (maskUsage.shouldApplyClipPath || maskUsage.shouldApplyBasicShapeOrPath) {
     context.PopClip();
   }
 
@@ -1053,6 +1079,27 @@ nsSVGIntegrationUtils::PaintMaskAndClipPath(const PaintFramesParams& aParams)
     context.PopGroupAndBlend();
   }
 
+}
+
+
+void
+nsSVGIntegrationUtils::PaintMaskAndClipPath(const PaintFramesParams& aParams)
+{
+  PaintMaskAndClipPathInternal(aParams, [&] {
+    gfxContext& context = aParams.ctx;
+    BasicLayerManager* basic = aParams.layerManager->AsBasicLayerManager();
+    RefPtr<gfxContext> oldCtx = basic->GetTarget();
+    basic->SetTarget(&context);
+    aParams.layerManager->EndTransaction(FrameLayerBuilder::DrawPaintedLayer,
+                                         aParams.builder);
+    basic->SetTarget(oldCtx);
+  });
+}
+
+void
+nsSVGIntegrationUtils::PaintMaskAndClipPath(const PaintFramesParams& aParams, const std::function<void()>& aPaintChild)
+{
+  PaintMaskAndClipPathInternal(aParams, aPaintChild);
 }
 
 void
@@ -1077,10 +1124,16 @@ nsSVGIntegrationUtils::PaintFilter(const PaintFramesParams& aParams)
      so make sure all applicable ones are set again. */
   nsIFrame* firstFrame =
     nsLayoutUtils::FirstContinuationOrIBSplitSibling(frame);
-  SVGObserverUtils::EffectProperties effectProperties =
-    SVGObserverUtils::GetEffectProperties(firstFrame);
-
-  if (effectProperties.HasInvalidFilter()) {
+  // Note: we do not return here for eHasNoRefs since we must still handle any
+  // CSS filter functions.
+  // TODO: We currently pass nullptr instead of an nsTArray* here, but we
+  // actually should get the filter frames and then pass them into
+  // PaintFilteredFrame below!  See bug 1494263.
+  // XXX: Do we need to check for eHasRefsSomeInvalid here given that
+  // nsDisplayFilter::BuildLayer returns nullptr for eHasRefsSomeInvalid?
+  // Or can we just assert !eHasRefsSomeInvalid?
+  if (SVGObserverUtils::GetAndObserveFilters(firstFrame, nullptr) ==
+        SVGObserverUtils::eHasRefsSomeInvalid) {
     return;
   }
 

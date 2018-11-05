@@ -95,7 +95,7 @@ nsPrefetchNode::nsPrefetchNode(nsPrefetchService *aService,
     , mBytesRead(0)
     , mShouldFireLoadEvent(false)
 {
-    nsCOMPtr<nsIWeakReference> source = do_GetWeakReference(aSource);
+    nsWeakPtr source = do_GetWeakReference(aSource);
     mSources.AppendElement(source);
 }
 
@@ -728,10 +728,9 @@ nsPrefetchService::Preload(nsIURI *aURI,
     //
 
     if (aPolicyType == nsIContentPolicy::TYPE_INVALID) {
-        nsCOMPtr<nsINode> domNode = do_QueryInterface(aSource);
-        if (domNode && domNode->IsInComposedDoc()) {
+        if (aSource && aSource->IsInComposedDoc()) {
             RefPtr<AsyncEventDispatcher> asyncDispatcher =
-                new AsyncEventDispatcher(domNode,
+                new AsyncEventDispatcher(aSource,
                                          NS_LITERAL_STRING("error"),
                                          CanBubble::eNo,
                                          ChromeOnlyDispatch::eNo);
@@ -748,7 +747,7 @@ nsPrefetchService::Preload(nsIURI *aURI,
         if ((mCurrentNodes[i]->mPolicyType == aPolicyType) &&
             NS_SUCCEEDED(mCurrentNodes[i]->mURI->Equals(aURI, &equals)) &&
             equals) {
-            nsCOMPtr<nsIWeakReference> source = do_GetWeakReference(aSource);
+            nsWeakPtr source = do_GetWeakReference(aSource);
             if (mCurrentNodes[i]->mSources.IndexOf(source) ==
                 mCurrentNodes[i]->mSources.NoIndex) {
                 LOG(("URL is already being preloaded, add a new reference "
@@ -772,10 +771,9 @@ nsPrefetchService::Preload(nsIURI *aURI,
     if (NS_SUCCEEDED(rv)) {
         mCurrentNodes.AppendElement(enqueuedNode);
     } else {
-        nsCOMPtr<nsINode> domNode = do_QueryInterface(aSource);
-        if (domNode && domNode->IsInComposedDoc()) {
+        if (aSource && aSource->IsInComposedDoc()) {
             RefPtr<AsyncEventDispatcher> asyncDispatcher =
-                new AsyncEventDispatcher(domNode,
+                new AsyncEventDispatcher(aSource,
                                          NS_LITERAL_STRING("error"),
                                          CanBubble::eNo,
                                          ChromeOnlyDispatch::eNo);
@@ -833,7 +831,7 @@ nsPrefetchService::Prefetch(nsIURI *aURI,
         bool equals;
         if (NS_SUCCEEDED(mCurrentNodes[i]->mURI->Equals(aURI, &equals)) &&
             equals) {
-            nsCOMPtr<nsIWeakReference> source = do_GetWeakReference(aSource);
+            nsWeakPtr source = do_GetWeakReference(aSource);
             if (mCurrentNodes[i]->mSources.IndexOf(source) ==
                 mCurrentNodes[i]->mSources.NoIndex) {
                 LOG(("URL is already being prefetched, add a new reference "
@@ -855,7 +853,7 @@ nsPrefetchService::Prefetch(nsIURI *aURI,
         bool equals;
         RefPtr<nsPrefetchNode> node = nodeIt->get();
         if (NS_SUCCEEDED(node->mURI->Equals(aURI, &equals)) && equals) {
-            nsCOMPtr<nsIWeakReference> source = do_GetWeakReference(aSource);
+            nsWeakPtr source = do_GetWeakReference(aSource);
             if (node->mSources.IndexOf(source) ==
                 node->mSources.NoIndex) {
                 LOG(("URL is already being prefetched, add a new reference "
@@ -902,7 +900,7 @@ nsPrefetchService::CancelPrefetchPreloadURI(nsIURI* aURI,
         bool equals;
         if (NS_SUCCEEDED(mCurrentNodes[i]->mURI->Equals(aURI, &equals)) &&
             equals) {
-            nsCOMPtr<nsIWeakReference> source = do_GetWeakReference(aSource);
+            nsWeakPtr source = do_GetWeakReference(aSource);
             if (mCurrentNodes[i]->mSources.IndexOf(source) !=
                 mCurrentNodes[i]->mSources.NoIndex) {
                 mCurrentNodes[i]->mSources.RemoveElement(source);
@@ -924,7 +922,7 @@ nsPrefetchService::CancelPrefetchPreloadURI(nsIURI* aURI,
         bool equals;
         RefPtr<nsPrefetchNode> node = nodeIt->get();
         if (NS_SUCCEEDED(node->mURI->Equals(aURI, &equals)) && equals) {
-            nsCOMPtr<nsIWeakReference> source = do_GetWeakReference(aSource);
+            nsWeakPtr source = do_GetWeakReference(aSource);
             if (node->mSources.IndexOf(source) !=
                 node->mSources.NoIndex) {
 
@@ -1030,7 +1028,9 @@ nsPrefetchService::OnStatusChange(nsIWebProgress* aWebProgress,
 NS_IMETHODIMP 
 nsPrefetchService::OnSecurityChange(nsIWebProgress *aWebProgress, 
                                     nsIRequest *aRequest, 
-                                    uint32_t state)
+                                    uint32_t aOldState,
+                                    uint32_t aState,
+                                    const nsAString& aContentBlockingLogJSON)
 {
     MOZ_ASSERT_UNREACHABLE("notification excluded in AddProgressListener(...)");
     return NS_OK;

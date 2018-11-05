@@ -2189,7 +2189,7 @@ add_task(async function test_showContainingDirectory() {
 
   let download = await Downloads.createDownload({
     source: { url: httpUrl("source.txt") },
-    target: ""
+    target: "",
   });
 
   let promiseDirectoryShown = waitForDirectoryShown();
@@ -2211,7 +2211,7 @@ add_task(async function test_showContainingDirectory() {
 
   download = await Downloads.createDownload({
     source: { url: httpUrl("source.txt") },
-    target: targetPath
+    target: targetPath,
   });
 
   promiseDirectoryShown = waitForDirectoryShown();
@@ -2235,7 +2235,7 @@ add_task(async function test_launch() {
         source: httpUrl("source.txt"),
         target: getTempFile(TEST_TARGET_FILE_NAME).path,
         launcherPath,
-        launchWhenSucceeded: true
+        launchWhenSucceeded: true,
       });
 
       try {
@@ -2284,7 +2284,7 @@ add_task(async function test_launcherPath_invalid() {
   let download = await Downloads.createDownload({
     source: { url: httpUrl("source.txt") },
     target: { path: getTempFile(TEST_TARGET_FILE_NAME).path },
-    launcherPath: " "
+    launcherPath: " ",
   });
 
   let promiseDownloadLaunched = new Promise(resolve => {
@@ -2415,10 +2415,8 @@ add_task(async function test_history() {
   Assert.equal(lastKnownTitle, expectedFile.leafName);
 
   let expectedFileURI = Services.io.newFileURI(expectedFile);
-  let destFileURI = PlacesUtils.annotations.getPageAnnotation(
-    Services.io.newURI(sourceUrl),
-    "downloads/destinationFileURI");
-  Assert.equal(destFileURI, expectedFileURI.spec,
+  let pageInfo = await PlacesUtils.history.fetch(sourceUrl, {includeAnnotations: true});
+  Assert.equal(pageInfo.annotations.get("downloads/destinationFileURI"), expectedFileURI.spec,
     "Should have saved the correct download target annotation.");
 
   // Restart and complete the download after clearing history.

@@ -2,7 +2,7 @@
 
 const STATE = {
   entries: [{url: "about:robots"}, {url: "about:mozilla"}],
-  selected: 2
+  selected: 2,
 };
 
 /**
@@ -31,6 +31,8 @@ var testSwitchToTab = async function(url, options) {
   ss.setTabState(tab, JSON.stringify(STATE));
   ok(tab.hasAttribute("pending"), "tab is pending");
   await promise;
+
+  options.triggeringPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
 
   // Switch-to-tab with a similar URI.
   switchToTabHavingURI(url, false, options);

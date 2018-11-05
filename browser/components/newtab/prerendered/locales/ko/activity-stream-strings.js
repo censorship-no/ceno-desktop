@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "이미지를 읽어오지 못했습니다. 다른 URL을 시도해 주세요.",
   "pocket_read_more": "인기 주제:",
   "pocket_read_even_more": "더 많은 이야기 보기",
+  "pocket_more_reccommendations": "더 많은 추천",
+  "pocket_how_it_works": "사용 방법",
+  "pocket_cta_button": "Pocket 받기",
+  "pocket_cta_text": "좋아하는 이야기를 Pocket에 저장하고 재미있게 읽어 보세요.",
   "highlights_empty_state": "브라우징을 시작하면 최근 방문하거나 북마크한 좋은 글이나 영상, 페이지를 여기에 보여줍니다.",
   "topstories_empty_state": "다 왔습니다. {provider}에서 제공하는 주요 기사를 다시 확인해 보세요. 기다릴 수가 없나요? 주제를 선택하면 웹에서 볼 수 있는 가장 재미있는 글을 볼 수 있습니다.",
   "manual_migration_explanation2": "다른 브라우저에 있는 북마크, 기록, 비밀번호를 사용해 Firefox를 이용해 보세요.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "섹션 관리",
   "section_menu_action_manage_webext": "부가 기능 관리",
   "section_menu_action_add_topsite": "인기 사이트 추가",
+  "section_menu_action_add_search_engine": "검색 엔진 추가",
   "section_menu_action_move_up": "위로 이동",
   "section_menu_action_move_down": "아래로 이동",
   "section_menu_action_privacy_notice": "개인 정보 보호 정책",
@@ -96,10 +101,12 @@ window.gActivityStreamStrings = {
   "firstrun_form_header": "이메일을 입력",
   "firstrun_form_sub_header": "해서 Firefox Sync 사용",
   "firstrun_email_input_placeholder": "이메일",
-  "firstrun_invalid_input": "Valid email required",
+  "firstrun_invalid_input": "유효한 이메일 필요함",
   "firstrun_extra_legal_links": "진행하면 {terms}과 {privacy}에 동의하게 됩니다.",
   "firstrun_terms_of_service": "이용 약관",
   "firstrun_privacy_notice": "개인 정보 보호 정책",
   "firstrun_continue_to_login": "계속",
-  "firstrun_skip_login": "단계 건너뛰기"
+  "firstrun_skip_login": "단계 건너뛰기",
+  "context_menu_title": "메뉴 열기",
+  "pocket_learn_more": "자세히 보기"
 };

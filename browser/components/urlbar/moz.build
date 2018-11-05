@@ -1,0 +1,22 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files("**"):
+    BUG_COMPONENT = ("Firefox", "Address Bar")
+
+EXTRA_JS_MODULES += [
+    'UrlbarController.jsm',
+    'UrlbarInput.jsm',
+    'UrlbarMatch.jsm',
+    'UrlbarPrefs.jsm',
+    'UrlbarProviderOpenTabs.jsm',
+    'UrlbarProvidersManager.jsm',
+    'UrlbarTokenizer.jsm',
+    'UrlbarUtils.jsm',
+    'UrlbarValueFormatter.jsm',
+    'UrlbarView.jsm',
+]
+
+BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
+XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']

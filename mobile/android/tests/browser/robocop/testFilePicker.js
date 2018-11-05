@@ -5,9 +5,7 @@
 
 "use strict";
 
-/* eslint-disable mozilla/use-chromeutils-import */
-
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 add_test(function filepicker_open() {
   let chromeWin = Services.wm.getMostRecentWindow("navigator:browser");
@@ -24,9 +22,7 @@ add_test(function filepicker_open() {
       do_print("File: " + fp.file.path);
       is(fp.file.path, "/mnt/sdcard/my-favorite-martian.png", "Retrieve the right martian file!");
 
-      let files = fp.files;
-      while (files.hasMoreElements()) {
-        let file = files.getNext().QueryInterface(Ci.nsIFile);
+      for (let file of fp.files) {
         do_print("File: " + file.path);
         is(file.path, "/mnt/sdcard/my-favorite-martian.png", "Retrieve the right martian file from array!");
       }
@@ -35,9 +31,7 @@ add_test(function filepicker_open() {
       do_print("DOMFile: " + file.mozFullPath);
       is(file.mozFullPath, "/mnt/sdcard/my-favorite-martian.png", "Retrieve the right martian DOM File!");
 
-      let e = fp.domFileOrDirectoryEnumerator;
-      while (e.hasMoreElements()) {
-        let domFile = e.getNext();
+      for (let domFile of fp.domFileOrDirectoryEnumerator) {
         do_print("DOMFile: " + domFile.mozFullPath);
         is(domFile.mozFullPath, "/mnt/sdcard/my-favorite-martian.png", "Retrieve the right martian file from domFileOrDirectoryEnumerator array!");
       }

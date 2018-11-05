@@ -12,7 +12,6 @@ DIRS += [
     'accessibility',
     'application',
     'canvasdebugger',
-    'commandline',
     'debugger',
     'dom',
     'framework',
@@ -35,6 +34,7 @@ DIRS += [
     'webaudioeditor',
     'webconsole',
     'webide',
+    'webreplay',
 ]
 
 JAR_MANIFESTS += ['jar.mn']

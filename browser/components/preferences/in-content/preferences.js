@@ -42,7 +42,7 @@ function register_module(categoryName, categoryObject) {
     init() {
       categoryObject.init();
       this.inited = true;
-    }
+    },
   });
 }
 
@@ -83,13 +83,19 @@ function init_all() {
   window.addEventListener("hashchange", onHashChange);
   gotoPref();
 
-  let helpButton = document.querySelector(".help-button > .text-link");
+  let helpButton = document.getElementById("helpButton");
   let helpUrl = Services.urlFormatter.formatURLPref("app.support.baseURL") + "preferences";
   helpButton.setAttribute("href", helpUrl);
 
+  document.getElementById("addonsButton")
+    .addEventListener("click", () => {
+      let mainWindow = window.docShell.rootTreeItem.domWindow;
+      mainWindow.BrowserOpenAddonsMgr();
+    });
+
   document.dispatchEvent(new CustomEvent("Initialized", {
     "bubbles": true,
-    "cancelable": true
+    "cancelable": true,
   }));
 }
 
@@ -182,10 +188,6 @@ function gotoPref(aCategory) {
   mainContent.scrollTop = 0;
 
   spotlight(subcategory);
-
-  Services.telemetry
-          .getHistogramById("FX_PREFERENCES_CATEGORY_OPENED_V2")
-          .add(telemetryBucketForCategory(friendlyName));
 }
 
 function search(aQuery, aAttribute) {
@@ -343,7 +345,7 @@ async function confirmRestartPrompt(aRestartToEnable, aDefaultButtonIndex,
                                     aWantRevertAsCancelButton,
                                     aWantRestartLaterButton) {
   let [
-    msg, title, restartButtonText, noRestartButtonText, restartLaterButtonText
+    msg, title, restartButtonText, noRestartButtonText, restartLaterButtonText,
   ] = await document.l10n.formatValues([
     {id: aRestartToEnable ?
       "feature-enable-requires-restart" : "feature-disable-requires-restart"},

@@ -518,8 +518,8 @@ var gSearchResultsPane = {
     if (anchorNode.tooltipNode) {
       return;
     }
-    let searchTooltip = anchorNode.ownerDocument.createElement("span");
-    let searchTooltipText = anchorNode.ownerDocument.createElement("span");
+    let searchTooltip = anchorNode.ownerDocument.createXULElement("span");
+    let searchTooltipText = anchorNode.ownerDocument.createXULElement("span");
     searchTooltip.className = "search-tooltip";
     searchTooltipText.textContent = query;
     searchTooltip.appendChild(searchTooltipText);
@@ -547,7 +547,9 @@ var gSearchResultsPane = {
   removeAllSearchTooltips() {
     for (let anchorNode of this.listSearchTooltips) {
       anchorNode.parentElement.classList.remove("search-tooltip-parent");
-      anchorNode.tooltipNode.remove();
+      if (anchorNode.tooltipNode) {
+        anchorNode.tooltipNode.remove();
+      }
       anchorNode.tooltipNode = null;
     }
     this.listSearchTooltips.clear();
@@ -561,5 +563,5 @@ var gSearchResultsPane = {
       node.removeAttribute("indicator");
     }
     this.listSearchMenuitemIndicators.clear();
-  }
+  },
 };

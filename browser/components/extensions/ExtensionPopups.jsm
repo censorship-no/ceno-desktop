@@ -33,8 +33,6 @@ const {
 
 const POPUP_LOAD_TIMEOUT_MS = 200;
 
-const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-
 function promisePopupShown(popup) {
   return new Promise(resolve => {
     if (popup.state == "open") {
@@ -239,10 +237,10 @@ class BasePopup {
   createBrowser(viewNode, popupURL = null) {
     let document = viewNode.ownerDocument;
 
-    let stack = document.createElementNS(XUL_NS, "stack");
+    let stack = document.createXULElement("stack");
     stack.setAttribute("class", "webextension-popup-stack");
 
-    let browser = document.createElementNS(XUL_NS, "browser");
+    let browser = document.createXULElement("browser");
     browser.setAttribute("type", "content");
     browser.setAttribute("disableglobalhistory", "true");
     browser.setAttribute("transparent", "true");
@@ -283,6 +281,12 @@ class BasePopup {
 
     stack.appendChild(browser);
     viewNode.appendChild(stack);
+    if (!this.extension.remote) {
+      // FIXME: bug 1494029 - this code used to rely on the browser binding
+      // accessing browser.contentWindow. This is a stopgap to continue doing
+      // that, but we should get rid of it in the long term.
+      browser.contentWindow; // eslint-disable-line no-unused-expressions
+    }
 
     ExtensionParent.apiManager.emit("extension-browser-inserted", browser);
 
@@ -311,10 +315,10 @@ class BasePopup {
       let mm = browser.messageManager;
 
       // Sets the context information for context menus.
-      mm.loadFrameScript("chrome://browser/content/content.js", true);
+      mm.loadFrameScript("chrome://browser/content/content.js", true, true);
 
       mm.loadFrameScript(
-        "chrome://extensions/content/ext-browser-content.js", false);
+        "chrome://extensions/content/ext-browser-content.js", false, true);
 
       mm.sendAsyncMessage("Extension:InitBrowser", {
         allowScriptsToClose: true,
@@ -388,7 +392,7 @@ BasePopup.instances = new DefaultWeakMap(() => new WeakMap());
 
 class PanelPopup extends BasePopup {
   constructor(extension, document, popupURL, browserStyle) {
-    let panel = document.createElement("panel");
+    let panel = document.createXULElement("panel");
     panel.setAttribute("id", makeWidgetId(extension.id) + "-panel");
     panel.setAttribute("class", "browser-extension-panel");
     panel.setAttribute("tabspecific", "true");
@@ -436,7 +440,7 @@ class ViewPopup extends BasePopup {
     let document = window.document;
 
     let createPanel = remote => {
-      let panel = document.createElement("panel");
+      let panel = document.createXULElement("panel");
       panel.setAttribute("type", "arrow");
       if (remote) {
         panel.setAttribute("remote", "true");

@@ -1,5 +1,7 @@
 "use strict";
 
+/* global info */
+
 var EXPORTED_SYMBOLS = ["PaymentTestUtils"];
 
 var PaymentTestUtils = {
@@ -22,6 +24,7 @@ var PaymentTestUtils = {
       try {
         await response.complete(result);
       } catch (ex) {
+        info(`Complete error: ${ex}`);
         completeException = {
           name: ex.name,
           message: ex.message,
@@ -29,6 +32,34 @@ var PaymentTestUtils = {
       }
       return {
         completeException,
+        response: response.toJSON(),
+        // XXX: Bug NNN: workaround for `details` not being included in `toJSON`.
+        methodDetails: response.details,
+      };
+    },
+
+    /**
+     * Add a retry handler to the existing `showPromise` to call .retry().
+     * @returns {Object} representing the PaymentResponse
+     */
+    addRetryHandler: async ({validationErrors, delayMs = 0}) => {
+      let response = await content.showPromise;
+      let retryException;
+
+      // delay the given # milliseconds
+      await new Promise(resolve => content.setTimeout(resolve, delayMs));
+
+      try {
+        await response.retry(Cu.cloneInto(validationErrors, content));
+      } catch (ex) {
+        info(`Retry error: ${ex}`);
+        retryException = {
+          name: ex.name,
+          message: ex.message,
+        };
+      }
+      return {
+        retryException,
         response: response.toJSON(),
         // XXX: Bug NNN: workaround for `details` not being included in `toJSON`.
         methodDetails: response.details,
@@ -81,28 +112,19 @@ var PaymentTestUtils = {
      * @param {PaymentMethodData[]} methodData
      * @param {PaymentDetailsInit} details
      * @param {PaymentOptions} options
+     * @returns {Object}
      */
     createAndShowRequest: ({methodData, details, options}) => {
-      const rq = new content.PaymentRequest(methodData, details, options);
+      const rq = new content.PaymentRequest(Cu.cloneInto(methodData, content), details, options);
       content.rq = rq; // assign it so we can retrieve it later
 
       const handle = content.windowUtils.setHandlingUserInput(true);
       content.showPromise = rq.show();
 
       handle.destruct();
-    },
-
-    /**
-     * Add a rejection handler for the `showPromise` created by createAndShowRequest
-     * and stash details of any eventual exception or response in `rqResult`
-     */
-    catchShowPromiseRejection: () => {
-      content.rqResult = {};
-      content.showPromise.then(res => content.rqResult.response = res)
-                         .catch(ex => content.rqResult.showException = {
-                           name: ex.name,
-                           message: ex.message,
-                         });
+      return {
+        requestId: rq.id,
+      };
     },
   },
 
@@ -112,14 +134,21 @@ var PaymentTestUtils = {
       let popupBox = Cu.waiveXrays(picker).dropdown.popupBox;
       let selectedOptionIndex = popupBox.selectedIndex;
       let selectedOption = Cu.waiveXrays(picker).dropdown.selectedOption;
-      return {
+
+      let result = {
         optionCount: popupBox.children.length,
         selectedOptionIndex,
+      };
+      if (!selectedOption) {
+        return result;
+      }
+
+      return Object.assign(result, {
         selectedOptionID: selectedOption.getAttribute("value"),
         selectedOptionLabel: selectedOption.getAttribute("label"),
         selectedOptionCurrency: selectedOption.getAttribute("amount-currency"),
         selectedOptionValue: selectedOption.getAttribute("amount-value"),
-      };
+      });
     },
 
     getShippingAddresses: () => {
@@ -147,6 +176,12 @@ var PaymentTestUtils = {
         doc.querySelector("address-picker[selected-state-key='selectedShippingAddress']");
       let select = Cu.waiveXrays(addressPicker).dropdown.popupBox;
       let option = select.querySelector(`[country="${country}"]`);
+      if (Cu.waiveXrays(doc.activeElement) == select) {
+        // If the <select> is already focused, blur and re-focus to reset the
+        // filter-as-you-type timer so that the synthesizeKey below will work
+        // correctly if this method was called recently.
+        select.blur();
+      }
       select.focus();
       // eslint-disable-next-line no-undef
       EventUtils.synthesizeKey(option.label, {}, content.window);
@@ -158,6 +193,12 @@ var PaymentTestUtils = {
         doc.querySelector("address-picker[selected-state-key='selectedShippingAddress']");
       let select = Cu.waiveXrays(addressPicker).dropdown.popupBox;
       let option = select.querySelector(`[guid="${guid}"]`);
+      if (Cu.waiveXrays(doc.activeElement) == select) {
+        // If the <select> is already focused, blur and re-focus to reset the
+        // filter-as-you-type timer so that the synthesizeKey below will work
+        // correctly if this method was called recently.
+        select.blur();
+      }
       select.focus();
       // eslint-disable-next-line no-undef
       EventUtils.synthesizeKey(option.label, {}, content.window);
@@ -169,9 +210,32 @@ var PaymentTestUtils = {
         doc.querySelector("shipping-option-picker");
       let select = Cu.waiveXrays(optionPicker).dropdown.popupBox;
       let option = select.querySelector(`[value="${value}"]`);
+      if (Cu.waiveXrays(doc.activeElement) == select) {
+        // If the <select> is already focused, blur and re-focus to reset the
+        // filter-as-you-type timer so that the synthesizeKey below will work
+        // correctly if this method was called recently.
+        select.blur();
+      }
       select.focus();
       // eslint-disable-next-line no-undef
       EventUtils.synthesizeKey(option.textContent, {}, content.window);
+    },
+
+    selectPaymentOptionByGuid: guid => {
+      let doc = content.document;
+      let methodPicker = doc.querySelector("payment-method-picker");
+      let select = Cu.waiveXrays(methodPicker).dropdown.popupBox;
+      let option = select.querySelector(`[value="${guid}"]`);
+      if (Cu.waiveXrays(doc.activeElement) == select) {
+        // If the <select> is already focused, blur and re-focus to reset the
+        // filter-as-you-type timer so that the synthesizeKey below will work
+        // correctly if this method was called recently.
+        select.blur();
+      }
+      select.focus();
+      // just type the first few characters to select the right option
+      // eslint-disable-next-line no-undef
+      EventUtils.synthesizeKey(option.textContent.substring(0, 4), {}, content.window);
     },
 
     /**
@@ -210,7 +274,9 @@ var PaymentTestUtils = {
      * @returns {undefined}
      */
     completePayment: () => {
-      content.document.getElementById("pay").click();
+      let button = content.document.getElementById("pay");
+      ok(!button.disabled, "Pay button should not be disabled when clicking it");
+      button.click();
     },
 
     setSecurityCode: ({securityCode}) => {
@@ -218,7 +284,7 @@ var PaymentTestUtils = {
       let picker = Cu.waiveXrays(content.document.querySelector("payment-method-picker"));
       // Unwaive to access the ChromeOnly `setUserInput` API.
       // setUserInput dispatches changes events.
-      Cu.unwaiveXrays(picker.securityCodeInput).setUserInput(securityCode);
+      Cu.unwaiveXrays(picker.securityCodeInput).querySelector("input").setUserInput(securityCode);
     },
   },
 
@@ -448,7 +514,7 @@ var PaymentTestUtils = {
       organization: "World Wide Web Consortium",
       "street-address": "1 Pommes Frittes Place",
       "address-level2": "Berlin",
-      "address-level1": "BE",
+      // address-level1 isn't used in our forms for Germany
       "postal-code": "02138",
       country: "DE",
       tel: "+16172535702",
@@ -475,12 +541,14 @@ var PaymentTestUtils = {
       "cc-exp-year": (new Date()).getFullYear() + 9,
       "cc-name": "John Doe",
       "cc-number": "4111111111111111",
+      "cc-type": "visa",
     },
     JaneMasterCard: {
       "cc-exp-month": 12,
       "cc-exp-year": (new Date()).getFullYear() + 9,
       "cc-name": "Jane McMaster-Card",
       "cc-number": "5555555555554444",
+      "cc-type": "mastercard",
     },
     MissingFields: {
       "cc-name": "Missy Fields",
@@ -491,6 +559,7 @@ var PaymentTestUtils = {
       "cc-exp-year": (new Date()).getFullYear() + 9,
       "cc-name": "Temp Name",
       "cc-number": "5105105105105100",
+      "cc-type": "mastercard",
     },
   },
 };

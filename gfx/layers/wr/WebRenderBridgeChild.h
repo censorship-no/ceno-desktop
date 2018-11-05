@@ -66,7 +66,8 @@ public:
 
   void AddWebRenderParentCommand(const WebRenderParentCommand& aCmd);
 
-  void UpdateResources(wr::IpcResourceUpdateQueue& aResources);
+  void UpdateResources(wr::IpcResourceUpdateQueue& aResources,
+                       bool aScheduleComposite = false);
   void BeginTransaction();
   void EndTransaction(const wr::LayoutSize& aContentSize,
                       wr::BuiltDisplayList& dl,
@@ -74,10 +75,12 @@ public:
                       const gfx::IntSize& aSize,
                       TransactionId aTransactionId,
                       const WebRenderScrollData& aScrollData,
+                      bool aContainsSVGroup,
                       const mozilla::TimeStamp& aRefreshStartTime,
                       const mozilla::TimeStamp& aTxnStartTime);
   void EndEmptyTransaction(const FocusTarget& aFocusTarget,
                            const ScrollUpdatesMap& aUpdates,
+                           Maybe<wr::IpcResourceUpdateQueue>& aResources,
                            uint32_t aPaintSequenceNumber,
                            TransactionId aTransactionId,
                            const mozilla::TimeStamp& aRefreshStartTime,
@@ -99,8 +102,6 @@ public:
   void AddPipelineIdForCompositable(const wr::PipelineId& aPipelineId,
                                     const CompositableHandle& aHandlee);
   void RemovePipelineIdForCompositable(const wr::PipelineId& aPipelineId);
-
-  void DeallocExternalImageId(const wr::ExternalImageId& aImageId);
 
   /// Release TextureClient that is bounded to ImageKey.
   /// It is used for recycling TextureClient.
@@ -143,9 +144,10 @@ public:
                   bool aBackfaceVisible,
                   const wr::GlyphOptions* aGlyphOptions = nullptr);
 
-  wr::FontInstanceKey GetFontKeyForScaledFont(gfx::ScaledFont* aScaledFont);
-  wr::FontKey GetFontKeyForUnscaledFont(gfx::UnscaledFont* aUnscaledFont);
-
+  wr::FontInstanceKey GetFontKeyForScaledFont(gfx::ScaledFont* aScaledFont,
+                                              wr::IpcResourceUpdateQueue* aResources = nullptr);
+  wr::FontKey GetFontKeyForUnscaledFont(gfx::UnscaledFont* aUnscaledFont,
+                                        wr::IpcResourceUpdateQueue* aResources = nullptr);
   void RemoveExpiredFontKeys(wr::IpcResourceUpdateQueue& aResources);
 
   void BeginClearCachedResources();

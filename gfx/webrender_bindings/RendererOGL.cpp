@@ -18,7 +18,11 @@
 namespace mozilla {
 namespace wr {
 
-wr::WrExternalImage LockExternalImage(void* aObj, wr::WrExternalImageId aId, uint8_t aChannelIndex)
+wr::WrExternalImage
+LockExternalImage(void* aObj,
+                  wr::WrExternalImageId aId,
+                  uint8_t aChannelIndex,
+                  wr::ImageRendering aRendering)
 {
   RendererOGL* renderer = reinterpret_cast<RendererOGL*>(aObj);
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
@@ -27,7 +31,7 @@ wr::WrExternalImage LockExternalImage(void* aObj, wr::WrExternalImageId aId, uin
     gfxCriticalNote << "Failed to lock ExternalImage for extId:" << AsUint64(aId);
     return InvalidToWrExternalImage();
   }
-  return texture->Lock(aChannelIndex, renderer->gl());
+  return texture->Lock(aChannelIndex, renderer->gl(), aRendering);
 }
 
 void UnlockExternalImage(void* aObj, wr::WrExternalImageId aId, uint8_t aChannelIndex)
@@ -63,7 +67,7 @@ RendererOGL::RendererOGL(RefPtr<RenderThread>&& aThread,
 RendererOGL::~RendererOGL()
 {
   MOZ_COUNT_DTOR(RendererOGL);
-  if (!mCompositor->gl()->MakeCurrent()) {
+  if (!mCompositor->MakeCurrent()) {
     gfxCriticalNote << "Failed to make render context current during destroying.";
     // Leak resources!
     return;
@@ -90,17 +94,23 @@ RendererOGL::Update()
     wr_renderer_set_debug_flags(mRenderer, mDebugFlags);
   }
 
-  if (gl()->MakeCurrent()) {
+  if (mCompositor->MakeCurrent()) {
     wr_renderer_update(mRenderer);
   }
 }
 
+static void
+DoNotifyWebRenderContextPurge(layers::CompositorBridgeParent* aBridge)
+{
+  aBridge->NotifyWebRenderContextPurge();
+}
+
 bool
-RendererOGL::UpdateAndRender(bool aReadback)
+RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize, const Maybe<Range<uint8_t>>& aReadbackBuffer, bool aHadSlowFrame)
 {
   uint32_t flags = gfx::gfxVars::WebRenderDebugFlags();
   // Disable debug flags during readback
-  if (aReadback) {
+  if (aReadbackBuffer.isSome()) {
     flags = 0;
   }
 
@@ -133,8 +143,16 @@ RendererOGL::UpdateAndRender(bool aReadback)
 
   auto size = mCompositor->GetBufferSize();
 
-  if (!wr_renderer_render(mRenderer, size.width, size.height)) {
+  if (!wr_renderer_render(mRenderer, size.width, size.height, aHadSlowFrame)) {
     NotifyWebRenderError(WebRenderError::RENDER);
+  }
+
+  if (aReadbackBuffer.isSome()) {
+    MOZ_ASSERT(aReadbackSize.isSome());
+    wr_renderer_readback(mRenderer,
+                         aReadbackSize.ref().width, aReadbackSize.ref().height,
+                         &aReadbackBuffer.ref()[0],
+                         aReadbackBuffer.ref().length());
   }
 
   mCompositor->EndFrame();
@@ -154,6 +172,26 @@ RendererOGL::UpdateAndRender(bool aReadback)
   //       textureHosts recycling.
 
   return true;
+}
+
+void
+RendererOGL::CheckGraphicsResetStatus()
+{
+  if (!mCompositor || !mCompositor->gl()) {
+    return;
+  }
+
+  gl::GLContext* gl = mCompositor->gl();
+  if (gl->IsSupported(gl::GLFeature::robustness)) {
+    GLenum resetStatus = gl->fGetGraphicsResetStatus();
+    if (resetStatus == LOCAL_GL_PURGED_CONTEXT_RESET_NV) {
+      layers::CompositorThreadHolder::Loop()->PostTask(NewRunnableFunction(
+        "DoNotifyWebRenderContextPurgeRunnable",
+        &DoNotifyWebRenderContextPurge,
+        mBridge
+      ));
+    }
+  }
 }
 
 void

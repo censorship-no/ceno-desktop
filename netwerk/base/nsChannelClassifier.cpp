@@ -12,6 +12,7 @@
 #include "nsIAddonPolicyService.h"
 #include "nsICacheEntry.h"
 #include "nsICachingChannel.h"
+#include "nsICookieService.h"
 #include "nsIChannel.h"
 #include "nsIClassOfService.h"
 #include "nsIDocShell.h"
@@ -21,7 +22,6 @@
 #include "nsIIOService.h"
 #include "nsIParentChannel.h"
 #include "nsIPermissionManager.h"
-#include "nsIPrivateBrowsingTrackingProtectionWhitelist.h"
 #include "nsIProtocolHandler.h"
 #include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
@@ -37,10 +37,12 @@
 #include "nsIUrlClassifierDBService.h"
 #include "nsIURLFormatter.h"
 
+#include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/net/HttpBaseChannel.h"
+#include "mozilla/net/TrackingDummyChannel.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs.h"
@@ -63,9 +65,18 @@ static LazyLogModule gChannelClassifierLog("nsChannelClassifier");
 
 #define URLCLASSIFIER_SKIP_HOSTNAMES       "urlclassifier.skipHostnames"
 #define URLCLASSIFIER_ANNOTATION_TABLE     "urlclassifier.trackingAnnotationTable"
+#define URLCLASSIFIER_ANNOTATION_TABLE_TEST_ENTRIES "urlclassifier.trackingAnnotationTable.testEntries"
 #define URLCLASSIFIER_ANNOTATION_WHITELIST "urlclassifier.trackingAnnotationWhitelistTable"
+#define URLCLASSIFIER_ANNOTATION_WHITELIST_TEST_ENTRIES "urlclassifier.trackingAnnotationWhitelistTable.testEntries"
 #define URLCLASSIFIER_TRACKING_TABLE       "urlclassifier.trackingTable"
+#define URLCLASSIFIER_TRACKING_TABLE_TEST_ENTRIES "urlclassifier.trackingTable.testEntries"
 #define URLCLASSIFIER_TRACKING_WHITELIST   "urlclassifier.trackingWhitelistTable"
+#define URLCLASSIFIER_TRACKING_WHITELIST_TEST_ENTRIES "urlclassifier.trackingWhitelistTable.testEntries"
+
+#define TABLE_TRACKING_BLACKLIST_PREF "tracking-blacklist-pref"
+#define TABLE_TRACKING_WHITELIST_PREF "tracking-whitelist-pref"
+#define TABLE_ANNOTATION_BLACKLIST_PREF "annotation-blacklist-pref"
+#define TABLE_ANNOTATION_WHITELIST_PREF "annotation-whitelist-pref"
 
 static const nsCString::size_type sMaxSpecLength = 128;
 
@@ -90,15 +101,23 @@ public:
 
   nsCString GetSkipHostnames() const { return mSkipHostnames; }
   nsCString GetAnnotationBlackList() const { return mAnnotationBlacklist; }
+  nsCString GetAnnotationBlackListExtraEntries() const { return mAnnotationBlacklistExtraEntries; }
   nsCString GetAnnotationWhiteList() const { return mAnnotationWhitelist; }
+  nsCString GetAnnotationWhiteListExtraEntries() const { return mAnnotationWhitelistExtraEntries; }
   nsCString GetTrackingBlackList() const { return mTrackingBlacklist; }
+  nsCString GetTrackingBlackListExtraEntries() { return mTrackingBlacklistExtraEntries; }
   nsCString GetTrackingWhiteList() const { return mTrackingWhitelist; }
+  nsCString GetTrackingWhiteListExtraEntries() { return mTrackingWhitelistExtraEntries; }
 
   void SetSkipHostnames(const nsACString& aHostnames) { mSkipHostnames = aHostnames; }
   void SetAnnotationBlackList(const nsACString& aList) { mAnnotationBlacklist = aList; }
+  void SetAnnotationBlackListExtraEntries(const nsACString& aList) { mAnnotationBlacklistExtraEntries = aList; }
   void SetAnnotationWhiteList(const nsACString& aList) { mAnnotationWhitelist = aList; }
+  void SetAnnotationWhiteListExtraEntries(const nsACString& aList) { mAnnotationWhitelistExtraEntries = aList; }
   void SetTrackingBlackList(const nsACString& aList) { mTrackingBlacklist = aList; }
+  void SetTrackingBlackListExtraEntries(const nsACString& aList) { mTrackingBlacklistExtraEntries = aList; }
   void SetTrackingWhiteList(const nsACString& aList) { mTrackingWhitelist = aList; }
+  void SetTrackingWhiteListExtraEntries(const nsACString& aList) { mTrackingWhitelistExtraEntries = aList; }
 
 private:
   friend class StaticAutoPtr<CachedPrefs>;
@@ -117,9 +136,13 @@ private:
 
   nsCString mSkipHostnames;
   nsCString mAnnotationBlacklist;
+  nsCString mAnnotationBlacklistExtraEntries;
   nsCString mAnnotationWhitelist;
+  nsCString mAnnotationWhitelistExtraEntries;
   nsCString mTrackingBlacklist;
+  nsCString mTrackingBlacklistExtraEntries;
   nsCString mTrackingWhitelist;
+  nsCString mTrackingWhitelistExtraEntries;
 
   static StaticAutoPtr<CachedPrefs> sInstance;
 };
@@ -144,20 +167,39 @@ CachedPrefs::OnPrefsChange(const char* aPref, CachedPrefs* aPrefs)
     Preferences::GetCString(URLCLASSIFIER_ANNOTATION_TABLE,
                             annotationBlacklist);
     aPrefs->SetAnnotationBlackList(annotationBlacklist);
+  } else if (!strcmp(aPref, URLCLASSIFIER_ANNOTATION_TABLE_TEST_ENTRIES)) {
+    nsAutoCString annotationBlacklistExtraEntries;
+    Preferences::GetCString(URLCLASSIFIER_ANNOTATION_TABLE_TEST_ENTRIES,
+                            annotationBlacklistExtraEntries);
+    aPrefs->SetAnnotationBlackListExtraEntries(annotationBlacklistExtraEntries);
   } else if (!strcmp(aPref, URLCLASSIFIER_ANNOTATION_WHITELIST)) {
     nsAutoCString annotationWhitelist;
     Preferences::GetCString(URLCLASSIFIER_ANNOTATION_WHITELIST,
                             annotationWhitelist);
     aPrefs->SetAnnotationWhiteList(annotationWhitelist);
+  } else if (!strcmp(aPref, URLCLASSIFIER_ANNOTATION_WHITELIST_TEST_ENTRIES)) {
+    nsAutoCString annotationWhitelistExtraEntries;
+    Preferences::GetCString(URLCLASSIFIER_ANNOTATION_WHITELIST_TEST_ENTRIES,
+                            annotationWhitelistExtraEntries);
+    aPrefs->SetAnnotationWhiteListExtraEntries(annotationWhitelistExtraEntries);
   } else if (!strcmp(aPref, URLCLASSIFIER_TRACKING_WHITELIST)) {
     nsCString trackingWhitelist;
     Preferences::GetCString(URLCLASSIFIER_TRACKING_WHITELIST,
                             trackingWhitelist);
     aPrefs->SetTrackingWhiteList(trackingWhitelist);
+  } else if (!strcmp(aPref, URLCLASSIFIER_TRACKING_WHITELIST_TEST_ENTRIES)) {
+    nsCString trackingWhitelistExtraEntries;
+    Preferences::GetCString(URLCLASSIFIER_TRACKING_WHITELIST_TEST_ENTRIES,
+                            trackingWhitelistExtraEntries);
+    aPrefs->SetTrackingWhiteListExtraEntries(trackingWhitelistExtraEntries);
   } else if (!strcmp(aPref, URLCLASSIFIER_TRACKING_TABLE)) {
     nsCString trackingBlacklist;
     Preferences::GetCString(URLCLASSIFIER_TRACKING_TABLE, trackingBlacklist);
     aPrefs->SetTrackingBlackList(trackingBlacklist);
+  } else if (!strcmp(aPref, URLCLASSIFIER_TRACKING_TABLE_TEST_ENTRIES)) {
+    nsCString trackingBlacklistExtraEntries;
+    Preferences::GetCString(URLCLASSIFIER_TRACKING_TABLE_TEST_ENTRIES, trackingBlacklistExtraEntries);
+    aPrefs->SetTrackingBlackListExtraEntries(trackingBlacklistExtraEntries);
   }
 }
 
@@ -175,11 +217,19 @@ CachedPrefs::Init()
   Preferences::RegisterCallbackAndCall(CachedPrefs::OnPrefsChange,
                                        URLCLASSIFIER_ANNOTATION_TABLE, this);
   Preferences::RegisterCallbackAndCall(CachedPrefs::OnPrefsChange,
+                                       URLCLASSIFIER_ANNOTATION_TABLE_TEST_ENTRIES, this);
+  Preferences::RegisterCallbackAndCall(CachedPrefs::OnPrefsChange,
                                        URLCLASSIFIER_ANNOTATION_WHITELIST, this);
+  Preferences::RegisterCallbackAndCall(CachedPrefs::OnPrefsChange,
+                                       URLCLASSIFIER_ANNOTATION_WHITELIST_TEST_ENTRIES, this);
   Preferences::RegisterCallbackAndCall(CachedPrefs::OnPrefsChange,
                                        URLCLASSIFIER_TRACKING_WHITELIST, this);
   Preferences::RegisterCallbackAndCall(CachedPrefs::OnPrefsChange,
+                                       URLCLASSIFIER_TRACKING_WHITELIST_TEST_ENTRIES, this);
+  Preferences::RegisterCallbackAndCall(CachedPrefs::OnPrefsChange,
                                        URLCLASSIFIER_TRACKING_TABLE, this);
+  Preferences::RegisterCallbackAndCall(CachedPrefs::OnPrefsChange,
+                                       URLCLASSIFIER_TRACKING_TABLE_TEST_ENTRIES, this);
 }
 
 // static
@@ -206,14 +256,65 @@ CachedPrefs::~CachedPrefs()
 
   Preferences::UnregisterCallback(CachedPrefs::OnPrefsChange, URLCLASSIFIER_SKIP_HOSTNAMES, this);
   Preferences::UnregisterCallback(CachedPrefs::OnPrefsChange, URLCLASSIFIER_ANNOTATION_TABLE, this);
+  Preferences::UnregisterCallback(CachedPrefs::OnPrefsChange, URLCLASSIFIER_ANNOTATION_TABLE_TEST_ENTRIES, this);
   Preferences::UnregisterCallback(CachedPrefs::OnPrefsChange, URLCLASSIFIER_ANNOTATION_WHITELIST, this);
+  Preferences::UnregisterCallback(CachedPrefs::OnPrefsChange, URLCLASSIFIER_ANNOTATION_WHITELIST_TEST_ENTRIES, this);
   Preferences::UnregisterCallback(CachedPrefs::OnPrefsChange, URLCLASSIFIER_TRACKING_WHITELIST, this);
+  Preferences::UnregisterCallback(CachedPrefs::OnPrefsChange, URLCLASSIFIER_TRACKING_WHITELIST_TEST_ENTRIES, this);
   Preferences::UnregisterCallback(CachedPrefs::OnPrefsChange, URLCLASSIFIER_TRACKING_TABLE, this);
+  Preferences::UnregisterCallback(CachedPrefs::OnPrefsChange, URLCLASSIFIER_TRACKING_TABLE_TEST_ENTRIES, this);
 }
 } // anonymous namespace
 
+static nsresult
+IsThirdParty(nsIChannel* aChannel, bool* aResult)
+{
+  NS_ENSURE_ARG(aResult);
+  *aResult = false;
+
+  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil = services::GetThirdPartyUtil();
+  if (NS_WARN_IF(!thirdPartyUtil)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsresult rv;
+  nsCOMPtr<nsIHttpChannelInternal> chan = do_QueryInterface(aChannel, &rv);
+  if (NS_FAILED(rv) || !chan) {
+    LOG(("nsChannelClassifier: Not an HTTP channel"));
+    return NS_OK;
+  }
+  nsCOMPtr<nsIURI> chanURI;
+  rv = aChannel->GetURI(getter_AddRefs(chanURI));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIURI> topWinURI;
+  rv = chan->GetTopWindowURI(getter_AddRefs(topWinURI));
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  if (!topWinURI) {
+    LOG(("nsChannelClassifier: No window URI\n"));
+  }
+
+  // Third party checks don't work for chrome:// URIs in mochitests, so just
+  // default to isThirdParty = true. We check isThirdPartyWindow to expand
+  // the list of domains that are considered first party (e.g., if
+  // facebook.com includes an iframe from fatratgames.com, all subsources
+  // included in that iframe are considered third-party with
+  // isThirdPartyChannel, even if they are not third-party w.r.t.
+  // facebook.com), and isThirdPartyChannel to prevent top-level navigations
+  // from being detected as third-party.
+  bool isThirdPartyChannel = true;
+  bool isThirdPartyWindow = true;
+  thirdPartyUtil->IsThirdPartyURI(chanURI, topWinURI, &isThirdPartyWindow);
+  thirdPartyUtil->IsThirdPartyChannel(aChannel, nullptr, &isThirdPartyChannel);
+
+  *aResult = isThirdPartyWindow && isThirdPartyChannel;
+  return NS_OK;
+}
+
 static void
-SetIsTrackingResourceHelper(nsIChannel* aChannel)
+SetIsTrackingResourceHelper(nsIChannel* aChannel, bool aIsThirdParty)
 {
   MOZ_ASSERT(aChannel);
 
@@ -222,12 +323,17 @@ SetIsTrackingResourceHelper(nsIChannel* aChannel)
   if (parentChannel) {
     // This channel is a parent-process proxy for a child process
     // request. We should notify the child process as well.
-    parentChannel->NotifyTrackingResource();
+    parentChannel->NotifyTrackingResource(aIsThirdParty);
   }
 
   RefPtr<HttpBaseChannel> httpChannel = do_QueryObject(aChannel);
   if (httpChannel) {
-    httpChannel->SetIsTrackingResource();
+    httpChannel->SetIsTrackingResource(aIsThirdParty);
+  }
+
+  RefPtr<TrackingDummyChannel> dummyChannel = do_QueryObject(aChannel);
+  if (dummyChannel) {
+    dummyChannel->SetIsTrackingResource();
   }
 }
 
@@ -365,12 +471,6 @@ nsChannelClassifier::ShouldEnableTrackingProtectionInternal(
     NS_ENSURE_ARG(result);
     *result = false;
 
-    nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
-      services::GetThirdPartyUtil();
-    if (NS_WARN_IF(!thirdPartyUtil)) {
-      return NS_ERROR_FAILURE;
-    }
-
     nsresult rv;
     nsCOMPtr<nsIHttpChannelInternal> chan = do_QueryInterface(aChannel, &rv);
     if (NS_FAILED(rv) || !chan) {
@@ -378,50 +478,43 @@ nsChannelClassifier::ShouldEnableTrackingProtectionInternal(
       return NS_OK;
     }
 
-    nsCOMPtr<nsIURI> topWinURI;
-    rv = chan->GetTopWindowURI(getter_AddRefs(topWinURI));
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    if (!topWinURI) {
-      LOG(("nsChannelClassifier[%p]: No window URI\n", this));
-    }
-
     nsCOMPtr<nsIURI> chanURI;
     rv = aChannel->GetURI(getter_AddRefs(chanURI));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    // Third party checks don't work for chrome:// URIs in mochitests, so just
-    // default to isThirdParty = true. We check isThirdPartyWindow to expand
-    // the list of domains that are considered first party (e.g., if
-    // facebook.com includes an iframe from fatratgames.com, all subsources
-    // included in that iframe are considered third-party with
-    // isThirdPartyChannel, even if they are not third-party w.r.t.
-    // facebook.com), and isThirdPartyChannel to prevent top-level navigations
-    // from being detected as third-party.
-    bool isThirdPartyChannel = true;
-    bool isThirdPartyWindow = true;
-    thirdPartyUtil->IsThirdPartyURI(chanURI, topWinURI, &isThirdPartyWindow);
-    thirdPartyUtil->IsThirdPartyChannel(aChannel, nullptr, &isThirdPartyChannel);
-    if (!isThirdPartyWindow || !isThirdPartyChannel) {
-      *result = false;
-      if (LOG_ENABLED()) {
-        nsCString spec = chanURI->GetSpecOrDefault();
-        spec.Truncate(std::min(spec.Length(), sMaxSpecLength));
-        LOG(("nsChannelClassifier[%p]: Skipping tracking protection checks "
-             "for first party or top-level load channel[%p] with uri %s",
-             this, aChannel, spec.get()));
+    // Only perform third-party checks for tracking protection
+    if (!aAnnotationsOnly) {
+      bool isThirdParty = false;
+      rv = IsThirdParty(aChannel, &isThirdParty);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        LOG(("nsChannelClassifier[%p]: IsThirdParty() failed", this));
+        return NS_OK;
       }
-      return NS_OK;
+      if (!isThirdParty) {
+        *result = false;
+        if (LOG_ENABLED()) {
+          nsCString spec = chanURI->GetSpecOrDefault();
+          spec.Truncate(std::min(spec.Length(), sMaxSpecLength));
+          LOG(("nsChannelClassifier[%p]: Skipping tracking protection checks "
+               "for first party or top-level load channel[%p] with uri %s",
+               this, aChannel, spec.get()));
+        }
+        return NS_OK;
+      }
     }
 
     if (AddonMayLoad(aChannel, chanURI)) {
         return NS_OK;
     }
 
-    nsCOMPtr<nsIIOService> ios = do_GetService(NS_IOSERVICE_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIIOService> ios = services::GetIOService();
+    NS_ENSURE_TRUE(ios, NS_ERROR_FAILURE);
+
+    nsCOMPtr<nsIURI> topWinURI;
+    rv = chan->GetTopWindowURI(getter_AddRefs(topWinURI));
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
 
     if (!topWinURI && CachedPrefs::GetInstance()->IsAllowListExample()) {
       LOG(("nsChannelClassifier[%p]: Allowlisting test domain\n", this));
@@ -430,66 +523,26 @@ nsChannelClassifier::ShouldEnableTrackingProtectionInternal(
       NS_ENSURE_SUCCESS(rv, rv);
     }
 
-    // Take the host/port portion so we can allowlist by site. Also ignore the
-    // scheme, since users who put sites on the allowlist probably don't expect
-    // allowlisting to depend on scheme.
-    nsCOMPtr<nsIURL> url = do_QueryInterface(topWinURI, &rv);
+    rv = AntiTrackingCommon::IsOnContentBlockingAllowList(topWinURI,
+                                                          NS_UsePrivateBrowsing(aChannel),
+                                                          aAnnotationsOnly ?
+                                                            AntiTrackingCommon::eTrackingAnnotations :
+                                                            AntiTrackingCommon::eTrackingProtection,
+                                                          mIsAllowListed);
     if (NS_FAILED(rv)) {
       return rv; // normal for some loads, no need to print a warning
     }
 
-    nsCString escaped(NS_LITERAL_CSTRING("https://"));
-    nsAutoCString temp;
-    rv = url->GetHostPort(temp);
-    NS_ENSURE_SUCCESS(rv, rv);
-    escaped.Append(temp);
-
-    // Stuff the whole thing back into a URI for the permission manager.
-    rv = ios->NewURI(escaped, nullptr, nullptr, getter_AddRefs(topWinURI));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsCOMPtr<nsIPermissionManager> permMgr =
-        do_GetService(NS_PERMISSIONMANAGER_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    uint32_t permissions = nsIPermissionManager::UNKNOWN_ACTION;
-    rv = permMgr->TestPermission(topWinURI, "trackingprotection", &permissions);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (permissions == nsIPermissionManager::ALLOW_ACTION) {
+    if (mIsAllowListed) {
+      *result = false;
       if (LOG_ENABLED()) {
         nsCString chanSpec = chanURI->GetSpecOrDefault();
         chanSpec.Truncate(std::min(chanSpec.Length(), sMaxSpecLength));
-        LOG(("nsChannelClassifier[%p]: User override on channel[%p] (%s) for %s",
-             this, aChannel, chanSpec.get(), escaped.get()));
+        LOG(("nsChannelClassifier[%p]: User override on channel[%p] (%s)",
+             this, aChannel, chanSpec.get()));
       }
-      mIsAllowListed = true;
-      *result = false;
     } else {
       *result = true;
-    }
-
-    // In Private Browsing Mode we also check against an in-memory list.
-    if (NS_UsePrivateBrowsing(aChannel)) {
-      nsCOMPtr<nsIPrivateBrowsingTrackingProtectionWhitelist> pbmtpWhitelist =
-          do_GetService(NS_PBTRACKINGPROTECTIONWHITELIST_CONTRACTID, &rv);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      bool exists = false;
-      rv = pbmtpWhitelist->ExistsInAllowList(topWinURI, &exists);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      if (exists) {
-        mIsAllowListed = true;
-        if (LOG_ENABLED()) {
-          nsCString chanSpec = chanURI->GetSpecOrDefault();
-          chanSpec.Truncate(std::min(chanSpec.Length(), sMaxSpecLength));
-          LOG(("nsChannelClassifier[%p]: User override (PBM) on channel[%p] (%s) for %s",
-               this, aChannel, chanSpec.get(), escaped.get()));
-        }
-      }
-
-      *result = !exists;
     }
 
     // Tracking protection will be enabled so return without updating
@@ -577,8 +630,9 @@ nsChannelClassifier::NotifyTrackingProtectionDisabled(nsIChannel *aChannel)
     }
     doc->SetHasTrackingContentLoaded(true);
     securityUI->GetState(&state);
+    const uint32_t oldState = state;
     state |= nsIWebProgressListener::STATE_LOADED_TRACKING_CONTENT;
-    eventSink->OnSecurityChange(nullptr, state);
+    eventSink->OnSecurityChange(nullptr, oldState, state, doc->GetContentBlockingLog());
 
     return NS_OK;
 }
@@ -869,21 +923,21 @@ nsChannelClassifier::SetBlockedContent(nsIChannel *channel,
   nsCOMPtr<nsIDocument> doc = docShell->GetDocument();
   NS_ENSURE_TRUE(doc, NS_OK);
 
+  nsCOMPtr<nsIURI> uri;
+  channel->GetURI(getter_AddRefs(uri));
   unsigned state;
   if (aErrorCode == NS_ERROR_TRACKING_URI) {
     state = nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT;
   } else {
     state = nsIWebProgressListener::STATE_BLOCKED_UNSAFE_CONTENT;
   }
-  pwin->NotifyContentBlockingState(state, channel);
+  pwin->NotifyContentBlockingState(state, channel, true, uri);
 
   // Log a warning to the web console.
-  nsCOMPtr<nsIURI> uri;
-  channel->GetURI(getter_AddRefs(uri));
   NS_ConvertUTF8toUTF16 spec(uri->GetSpecOrDefault());
   const char16_t* params[] = { spec.get() };
   const char* message = (aErrorCode == NS_ERROR_TRACKING_URI) ?
-    "TrackingUriBlocked" : "UnsafeUriBlocked";
+    "TrackerUriBlocked" : "UnsafeUriBlocked";
   nsCString category = (aErrorCode == NS_ERROR_TRACKING_URI) ?
     NS_LITERAL_CSTRING("Tracking Protection") :
     NS_LITERAL_CSTRING("Safe Browsing");
@@ -950,8 +1004,7 @@ TrackingURICallback::OnClassifyComplete(nsresult aErrorCode,
   const bool shouldEnableTrackingProtection =
     mChannelClassifier->ShouldEnableTrackingProtection();
   const bool shouldEnableTrackingAnnotation =
-    mChannelClassifier->ShouldEnableTrackingAnnotation() ||
-    StaticPrefs::privacy_restrict3rdpartystorage_enabled();
+    mChannelClassifier->ShouldEnableTrackingAnnotation();
   MOZ_ASSERT(shouldEnableTrackingProtection || shouldEnableTrackingAnnotation);
 
   LOG(("TrackingURICallback[%p]:OnClassifyComplete "
@@ -983,15 +1036,18 @@ TrackingURICallback::OnClassifyComplete(nsresult aErrorCode,
     bool inTrackingTable = false;
     bool inAnnotationTable = false;
 
+
     nsCCharSeparatedTokenizer tokenizer(aLists, ',');
     while (tokenizer.hasMoreTokens()) {
       const nsACString& list = tokenizer.nextToken();
       if (shouldEnableTrackingProtection && !inTrackingTable &&
-          FindInReadable(list, trackingTable)) {
+          (list == TABLE_TRACKING_BLACKLIST_PREF ||
+           FindInReadable(list, trackingTable))) {
         inTrackingTable = true;
       }
       if (shouldEnableTrackingAnnotation && !inAnnotationTable &&
-          FindInReadable(list, annotationTable)) {
+          (list == TABLE_ANNOTATION_BLACKLIST_PREF ||
+           FindInReadable(list, annotationTable))) {
         inAnnotationTable = true;
       }
     }
@@ -1034,10 +1090,14 @@ TrackingURICallback::OnClassifyComplete(nsresult aErrorCode,
     nsCCharSeparatedTokenizer tokenizer(aLists, ',');
     while (tokenizer.hasMoreTokens() && (isTracker || isAnnotation)) {
       const nsACString& list = tokenizer.nextToken();
-      if (isTracker && FindInReadable(list, trackingWhitelistTable)) {
+      if (isTracker &&
+          (list == TABLE_TRACKING_WHITELIST_PREF ||
+           FindInReadable(list, trackingWhitelistTable))) {
         isTracker = false;
       }
-      if (isAnnotation && FindInReadable(list, annotationWhitelistTable)) {
+      if (isAnnotation &&
+          (list == TABLE_ANNOTATION_WHITELIST_PREF ||
+           FindInReadable(list, annotationWhitelistTable))) {
         isAnnotation = false;
       }
     }
@@ -1189,36 +1249,44 @@ void
 TrackingURICallback::OnTrackerFound(nsresult aErrorCode)
 {
   nsCOMPtr<nsIChannel> channel = mChannelClassifier->GetChannel();
+  MOZ_ASSERT(channel);
   if (aErrorCode == NS_ERROR_TRACKING_URI &&
       mChannelClassifier->ShouldEnableTrackingProtection()) {
     mChannelClassifier->SetBlockedContent(channel, aErrorCode,
                                           mList, mProvider, mFullHash);
     LOG(("TrackingURICallback[%p]::OnTrackerFound, cancelling channel[%p]",
          mChannelClassifier.get(), channel.get()));
-    channel->Cancel(aErrorCode);
+    nsCOMPtr<nsIHttpChannelInternal> httpChannel = do_QueryInterface(channel);
+    if (httpChannel) {
+      Unused << httpChannel->CancelForTrackingProtection();
+    } else {
+      Unused << channel->Cancel(aErrorCode);
+    }
   } else {
     MOZ_ASSERT(aErrorCode == NS_ERROR_TRACKING_ANNOTATION_URI);
-    MOZ_ASSERT(mChannelClassifier->ShouldEnableTrackingAnnotation() ||
-               StaticPrefs::privacy_restrict3rdpartystorage_enabled());
+    MOZ_ASSERT(mChannelClassifier->ShouldEnableTrackingAnnotation());
+
+    bool isThirdPartyWithTopLevelWinURI = false;
+    nsresult rv = IsThirdParty(channel, &isThirdPartyWithTopLevelWinURI);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      LOG(("TrackingURICallback[%p]::OnTrackerFound IsThirdParty() failed",
+           mChannelClassifier.get()));
+      return; // we'll assume the channel is NOT third-party
+    }
 
     LOG(("TrackingURICallback[%p]::OnTrackerFound, annotating channel[%p]",
          mChannelClassifier.get(), channel.get()));
 
-    // Even with TP disabled, we still want to show the user that there
-    // are unblocked trackers on the site, so notify the UI that we loaded
-    // tracking content. UI code can treat this notification differently
-    // depending on whether TP is enabled or disabled.
-    mChannelClassifier->NotifyTrackingProtectionDisabled(channel);
+    SetIsTrackingResourceHelper(channel, isThirdPartyWithTopLevelWinURI);
 
-    SetIsTrackingResourceHelper(channel);
-    if (CachedPrefs::GetInstance()->IsLowerNetworkPriority()) {
-      nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
-        services::GetThirdPartyUtil();
-      bool result = false;
-      if (thirdPartyUtil &&
-          NS_SUCCEEDED(thirdPartyUtil->IsThirdPartyChannel(channel, nullptr,
-                                                           &result)) &&
-          result) {
+    if (isThirdPartyWithTopLevelWinURI) {
+      // Even with TP disabled, we still want to show the user that there
+      // are unblocked trackers on the site, so notify the UI that we loaded
+      // tracking content. UI code can treat this notification differently
+      // depending on whether TP is enabled or disabled.
+      mChannelClassifier->NotifyTrackingProtectionDisabled(channel);
+
+      if (CachedPrefs::GetInstance()->IsLowerNetworkPriority()) {
         LowerPriorityHelper(channel);
       }
     }
@@ -1300,12 +1368,18 @@ nsChannelClassifier::IsTrackerWhitelisted(nsIURI* aWhiteListURI,
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsAutoCString whitelist;
+  nsTArray<nsCString> whitelistExtraTables;
+  nsTArray<nsCString> whitelistExtraEntries;
   if (aUseAnnotationTable) {
     whitelist += CachedPrefs::GetInstance()->GetAnnotationWhiteList();
     whitelist += NS_LITERAL_CSTRING(",");
+    whitelistExtraTables.AppendElement(TABLE_ANNOTATION_WHITELIST_PREF);
+    whitelistExtraEntries.AppendElement(CachedPrefs::GetInstance()->GetAnnotationWhiteListExtraEntries());
   }
   if (aUseTrackingTable) {
     whitelist += CachedPrefs::GetInstance()->GetTrackingWhiteList();
+    whitelistExtraTables.AppendElement(TABLE_TRACKING_WHITELIST_PREF);
+    whitelistExtraEntries.AppendElement(CachedPrefs::GetInstance()->GetTrackingWhiteListExtraEntries());
   }
 
   if (whitelist.IsEmpty()) {
@@ -1316,6 +1390,8 @@ nsChannelClassifier::IsTrackerWhitelisted(nsIURI* aWhiteListURI,
   }
 
   return uriClassifier->AsyncClassifyLocalWithTables(aWhiteListURI, whitelist,
+                                                     whitelistExtraTables,
+                                                     whitelistExtraEntries,
                                                      aCallback);
 }
 
@@ -1421,7 +1497,7 @@ nsChannelClassifier::CheckIsTrackerWithLocalTable(std::function<void()>&& aCallb
   }
 
   const bool shouldEnableTrackingProtection = ShouldEnableTrackingProtection();
-  const bool shouldEnableTrackingAnnotation = ShouldEnableTrackingAnnotation() || StaticPrefs::privacy_restrict3rdpartystorage_enabled();
+  const bool shouldEnableTrackingAnnotation = ShouldEnableTrackingAnnotation();
   if (!shouldEnableTrackingProtection && !shouldEnableTrackingAnnotation) {
     return NS_ERROR_FAILURE;
   }
@@ -1433,12 +1509,18 @@ nsChannelClassifier::CheckIsTrackerWithLocalTable(std::function<void()>&& aCallb
   }
 
   nsAutoCString blacklist;
+  nsTArray<nsCString> blacklistExtraTables;
+  nsTArray<nsCString> blacklistExtraEntries;
   if (shouldEnableTrackingAnnotation) {
     blacklist += CachedPrefs::GetInstance()->GetAnnotationBlackList();
     blacklist += NS_LITERAL_CSTRING(",");
+    blacklistExtraTables.AppendElement(TABLE_ANNOTATION_BLACKLIST_PREF);
+    blacklistExtraEntries.AppendElement(CachedPrefs::GetInstance()->GetAnnotationBlackListExtraEntries());
   }
   if (shouldEnableTrackingProtection) {
     blacklist += CachedPrefs::GetInstance()->GetTrackingBlackList();
+    blacklistExtraTables.AppendElement(TABLE_TRACKING_BLACKLIST_PREF);
+    blacklistExtraEntries.AppendElement(CachedPrefs::GetInstance()->GetTrackingBlackListExtraEntries());
   }
   if (blacklist.IsEmpty()) {
     LOG_WARN(("nsChannelClassifier[%p]:CheckIsTrackerWithLocalTable blacklist is empty",
@@ -1456,7 +1538,10 @@ nsChannelClassifier::CheckIsTrackerWithLocalTable(std::function<void()>&& aCallb
     LOG(("nsChannelClassifier[%p]: Checking blacklist for uri=%s\n",
          this, spec.get()));
   }
-  return uriClassifier->AsyncClassifyLocalWithTables(uri, blacklist, callback);
+  return uriClassifier->AsyncClassifyLocalWithTables(uri, blacklist,
+                                                     blacklistExtraTables,
+                                                     blacklistExtraEntries,
+                                                     callback);
 }
 
 already_AddRefed<nsIChannel>

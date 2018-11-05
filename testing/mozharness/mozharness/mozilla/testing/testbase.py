@@ -20,6 +20,7 @@ from mozharness.base.python import (
     virtualenv_config_options,
 )
 from mozharness.mozilla.automation import AutomationMixin, TBPL_WARNING
+from mozharness.mozilla.fetches import FetchesMixin
 from mozharness.mozilla.structuredlog import StructuredOutputParser
 from mozharness.mozilla.testing.unittest import DesktopUnittestOutputParser
 from mozharness.mozilla.testing.try_tools import TryToolsMixin, try_config_options
@@ -102,7 +103,7 @@ testing_config_options = [
 
 # TestingMixin {{{1
 class TestingMixin(VirtualenvMixin, AutomationMixin, ResourceMonitoringMixin,
-                   TooltoolMixin, TryToolsMixin, VerifyToolsMixin):
+                   TooltoolMixin, TryToolsMixin, VerifyToolsMixin, FetchesMixin):
     """
     The steps to identify + download the proper bits for [browser] unit
     tests and Talos.
@@ -411,7 +412,6 @@ You can set this by specifying --test-url URL
                                     parent_dir=dirs['abs_work_dir'],
                                     error_level=FATAL)
         self.installer_path = os.path.realpath(source)
-        self.set_property("build_url", self.installer_url)
 
     def _download_and_extract_symbols(self):
         dirs = self.query_abs_dirs()
@@ -434,7 +434,6 @@ You can set this by specifying --test-url URL
             if not self.symbols_path:
                 self.symbols_path = os.path.join(dirs['abs_work_dir'], 'symbols')
 
-            self.set_property("symbols_url", self.symbols_url)
             if self.symbols_url:
                 self.download_unpack(self.symbols_url, self.symbols_path)
 

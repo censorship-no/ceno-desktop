@@ -24,7 +24,7 @@
 #include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 #include "nsIPrefLocalizedString.h"
-#include "nsISocketProviderService.h"
+#include "nsSocketProviderService.h"
 #include "nsISocketProvider.h"
 #include "nsPrintfCString.h"
 #include "nsCOMPtr.h"
@@ -61,6 +61,7 @@
 
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/net/NeckoParent.h"
+#include "mozilla/net/RequestContextService.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
@@ -221,6 +222,7 @@ nsHttpHandler::nsHttpHandler()
     , mThrottleReadInterval(500)
     , mThrottleHoldTime(600)
     , mThrottleMaxTime(3000)
+    , mSendWindowSize(1024)
     , mUrgentStartEnabled(true)
     , mTailBlockingEnabled(true)
     , mTailDelayQuantum(600)
@@ -509,13 +511,12 @@ nsHttpHandler::Init()
     rv = InitConnectionMgr();
     if (NS_FAILED(rv)) return rv;
 
-    mRequestContextService =
-        do_GetService("@mozilla.org/network/request-context-service;1");
+    mRequestContextService = RequestContextService::GetOrCreate();
 
-#if defined(ANDROID) || defined(MOZ_MULET)
+#if defined(ANDROID)
     mProductSub.AssignLiteral(MOZILLA_UAVERSION);
 #else
-    mProductSub.AssignLiteral(LEGACY_BUILD_ID);
+    mProductSub.AssignLiteral(LEGACY_UA_GECKO_TRAIL);
 #endif
 
 #if DEBUG
@@ -1053,20 +1054,6 @@ nsHttpHandler::InitUserAgentComponents()
     }
 #endif // ANDROID
 
-#ifdef MOZ_MULET
-    {
-        // Add the `Mobile` or `Tablet` or `TV` token when running in the b2g
-        // desktop simulator via preference.
-        nsAutoCString deviceType;
-        nsresult rv = Preferences::GetCString("devtools.useragent.device_type", deviceType);
-        if (NS_SUCCEEDED(rv)) {
-            mCompatDevice.Assign(deviceType);
-        } else {
-            mCompatDevice.AssignLiteral("Mobile");
-        }
-    }
-#endif // MOZ_MULET
-
 #ifndef MOZ_UA_OS_AGNOSTIC
     // Gather OS/CPU.
 #if defined(XP_WIN)
@@ -1456,8 +1443,8 @@ nsHttpHandler::PrefsChanged(const char *pref)
                 mDefaultSocketType.SetIsVoid(true);
             else {
                 // verify that this socket type is actually valid
-                nsCOMPtr<nsISocketProviderService> sps(
-                        do_GetService(NS_SOCKETPROVIDERSERVICE_CONTRACTID));
+                nsCOMPtr<nsISocketProviderService> sps =
+                  nsSocketProviderService::GetOrCreate();
                 if (sps) {
                     nsCOMPtr<nsISocketProvider> sp;
                     rv = sps->GetSocketProvider(sval.get(), getter_AddRefs(sp));
@@ -1743,6 +1730,11 @@ nsHttpHandler::PrefsChanged(const char *pref)
         Unused << mConnMgr->UpdateParam(nsHttpConnectionMgr::THROTTLING_MAX_TIME,
                                         mThrottleMaxTime);
       }
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("send_window_size"))) {
+      Unused << Preferences::GetInt(HTTP_PREF("send_window_size"), &val);
+      mSendWindowSize = val >= 0 ? val : 0;
     }
 
     if (PREF_CHANGED(HTTP_PREF("on_click_priority"))) {
@@ -2613,25 +2605,11 @@ nsHttpHandler::SpeculativeConnectInternal(nsIURI *aURI,
 }
 
 NS_IMETHODIMP
-nsHttpHandler::SpeculativeConnect(nsIURI *aURI,
-                                  nsIInterfaceRequestor *aCallbacks)
-{
-    return SpeculativeConnectInternal(aURI, nullptr, aCallbacks, false);
-}
-
-NS_IMETHODIMP
 nsHttpHandler::SpeculativeConnect2(nsIURI *aURI,
                                    nsIPrincipal *aPrincipal,
                                    nsIInterfaceRequestor *aCallbacks)
 {
     return SpeculativeConnectInternal(aURI, aPrincipal, aCallbacks, false);
-}
-
-NS_IMETHODIMP
-nsHttpHandler::SpeculativeAnonymousConnect(nsIURI *aURI,
-                                           nsIInterfaceRequestor *aCallbacks)
-{
-    return SpeculativeConnectInternal(aURI, nullptr, aCallbacks, true);
 }
 
 NS_IMETHODIMP
@@ -2809,6 +2787,19 @@ nsHttpHandler::IsBeforeLastActiveTabLoadOptimization(TimeStamp const &when)
 
   return !mLastActiveTabLoadOptimizationHit.IsNull() &&
          when <= mLastActiveTabLoadOptimizationHit;
+}
+
+void
+nsHttpHandler::BlacklistSpdy(const nsHttpConnectionInfo *ci)
+{
+    mConnMgr->BlacklistSpdy(ci);
+    mBlacklistedSpdyOrigins.PutEntry(ci->GetOrigin());
+}
+
+bool
+nsHttpHandler::IsSpdyBlacklisted(const nsHttpConnectionInfo *ci)
+{
+    return mBlacklistedSpdyOrigins.Contains(ci->GetOrigin());
 }
 
 } // namespace net

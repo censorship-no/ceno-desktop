@@ -29,7 +29,7 @@ add_task(async function setup() {
   // make sure userContext is enabled.
   await SpecialPowers.pushPrefEnv({"set": [
     ["privacy.userContext.enabled", true],
-    ["dom.ipc.processCount", 1]
+    ["dom.ipc.processCount", 1],
   ]});
 });
 
@@ -69,7 +69,7 @@ add_task(async function test() {
     await BrowserTestUtils.browserLoaded(browser);
 
     // get the title
-    let title = browser.contentDocumentAsCPOW.title.trim().split("|");
+    let title = browser.contentTitle.trim().split("|");
 
     // check each item in the title and validate it meets expectatations
     for (let part of title) {

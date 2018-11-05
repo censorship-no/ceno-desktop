@@ -227,17 +227,20 @@ EnvironmentCoordinateFunctionScript(JSScript* script, jsbytecode* pc);
  *
  * D. Frame scripts
  *
- * XUL frame scripts are always loaded with a NonSyntacticVariablesObject as a
- * "polluting global". This is done exclusively in
- * js::ExecuteInGlobalAndReturnScope.
+ * XUL frame scripts are loaded in the same global as components, with a
+ * NonSyntacticVariablesObject as a "polluting global", and a with environment
+ * wrapping a message manager object. This is done exclusively in
+ * js::ExecuteInScopeChainAndReturnNewScope.
  *
- *   Loader global
+ *   BackstagePass global
  *       |
  *   LexicalEnvironmentObject[this=global]
  *       |
  *   NonSyntacticVariablesObject
  *       |
- *   LexicalEnvironmentObject[this=global]
+ *   WithEnvironmentObject wrapping messageManager
+ *       |
+ *   LexicalEnvironmentObject[this=messageManager]
  *
  * D. XBL and DOM event handlers
  *
@@ -609,6 +612,10 @@ class NonSyntacticVariablesObject : public EnvironmentObject
     static NonSyntacticVariablesObject* create(JSContext* cx);
 };
 
+extern bool
+CreateNonSyntacticEnvironmentChain(JSContext* cx, JS::AutoObjectVector& envChain,
+                                   MutableHandleObject env, MutableHandleScope scope);
+
 // With environment objects on the run-time environment chain.
 class WithEnvironmentObject : public EnvironmentObject
 {
@@ -737,8 +744,9 @@ class MOZ_RAII EnvironmentIter
     }
 
     void operator++(int) {
-        if (hasAnyEnvironmentObject())
+        if (hasAnyEnvironmentObject()) {
             env_ = &env_->as<EnvironmentObject>().enclosingEnvironment();
+        }
         incrementScopeIter();
         settle();
     }
@@ -772,8 +780,9 @@ class MOZ_RAII EnvironmentIter
     }
 
     Scope* maybeScope() const {
-        if (si_)
+        if (si_) {
             return si_.scope();
+        }
         return nullptr;
     }
 
@@ -994,8 +1003,6 @@ class DebugEnvironments
     Zone* zone() const { return zone_; }
 
   private:
-    bool init();
-
     static DebugEnvironments* ensureRealmData(JSContext* cx);
 
     template <typename Environment, typename Scope>
@@ -1047,6 +1054,7 @@ class DebugEnvironments
     static void onPopLexical(JSContext* cx, const EnvironmentIter& ei);
     static void onPopLexical(JSContext* cx, AbstractFramePtr frame, jsbytecode* pc);
     static void onPopWith(AbstractFramePtr frame);
+    static void onPopModule(JSContext* cx, const EnvironmentIter& ei);
     static void onRealmUnsetIsDebuggee(Realm* realm);
 };
 
@@ -1076,17 +1084,21 @@ namespace js {
 inline bool
 IsSyntacticEnvironment(JSObject* env)
 {
-    if (!env->is<EnvironmentObject>())
+    if (!env->is<EnvironmentObject>()) {
         return false;
+    }
 
-    if (env->is<WithEnvironmentObject>())
+    if (env->is<WithEnvironmentObject>()) {
         return env->as<WithEnvironmentObject>().isSyntactic();
+    }
 
-    if (env->is<LexicalEnvironmentObject>())
+    if (env->is<LexicalEnvironmentObject>()) {
         return env->as<LexicalEnvironmentObject>().isSyntactic();
+    }
 
-    if (env->is<NonSyntacticVariablesObject>())
+    if (env->is<NonSyntacticVariablesObject>()) {
         return false;
+    }
 
     return true;
 }
@@ -1116,8 +1128,9 @@ IsNSVOLexicalEnvironment(JSObject* env)
 inline JSObject*
 MaybeUnwrapWithEnvironment(JSObject* env)
 {
-    if (env->is<WithEnvironmentObject>())
+    if (env->is<WithEnvironmentObject>()) {
         return &env->as<WithEnvironmentObject>().object();
+    }
     return env;
 }
 
@@ -1137,8 +1150,9 @@ IsFrameInitialEnvironment(AbstractFramePtr frame, SpecificEnvironment& env)
 
     // A function frame's CallObject, if present, is always the initial
     // environment.
-    if (mozilla::IsSame<SpecificEnvironment, CallObject>::value)
+    if (mozilla::IsSame<SpecificEnvironment, CallObject>::value) {
         return true;
+    }
 
     // For an eval frame, the VarEnvironmentObject, if present, is always the
     // initial environment.
@@ -1168,7 +1182,11 @@ CreateObjectsForEnvironmentChain(JSContext* cx, AutoObjectVector& chain,
                                  HandleObject terminatingEnv,
                                  MutableHandleObject envObj);
 
-ModuleObject* GetModuleObjectForScript(JSScript* script);
+ModuleObject*
+GetModuleObjectForScript(JSScript* script);
+
+Value
+FindScriptOrModulePrivateForScript(JSScript* script);
 
 ModuleEnvironmentObject* GetModuleEnvironmentForScript(JSScript* script);
 

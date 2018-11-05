@@ -5,7 +5,6 @@
 ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
                                "resource://gre/modules/PrivateBrowsingUtils.jsm");
 
-/* globals TabBase, WindowBase, TabTrackerBase, WindowTrackerBase, TabManagerBase, WindowManagerBase */
 /* globals EventDispatcher */
 ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 
@@ -172,6 +171,11 @@ class WindowTracker extends WindowTrackerBase {
     this.progressListeners = new DefaultWeakMap(() => new WeakMap());
   }
 
+  get topWindow() {
+    return Services.wm.getMostRecentWindow("navigator:browser") ||
+      Services.wm.getMostRecentWindow("navigator:geckoview");
+  }
+
   addProgressListener(window, listener) {
     let listeners = this.progressListeners.get(window);
     if (!listeners.has(listener)) {
@@ -295,9 +299,12 @@ class TabTracker extends TabTrackerBase {
 
     this.init();
 
+    let {browser, id} = win.BrowserApp.selectedTab;
+    let isPrivate = PrivateBrowsingUtils.isBrowserPrivate(browser);
     this._extensionPopupTabWeak = Cu.getWeakReference(win.BrowserApp.addTab(popup, {
       selected: true,
-      parentId: win.BrowserApp.selectedTab.id,
+      parentId: id,
+      isPrivate,
     }));
   }
 
@@ -461,6 +468,10 @@ Object.assign(global, {tabTracker, windowTracker});
 class Tab extends TabBase {
   get _favIconUrl() {
     return undefined;
+  }
+
+  get attention() {
+    return false;
   }
 
   get audible() {

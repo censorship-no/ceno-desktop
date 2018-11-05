@@ -8,6 +8,7 @@
 #include "platform.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/Logging.h"
 
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
@@ -66,6 +67,18 @@ ProfileBufferEntry::ProfileBufferEntry(Kind aKind, int aInt)
   : mKind(aKind)
 {
   u.mInt = aInt;
+}
+
+ProfileBufferEntry::ProfileBufferEntry(Kind aKind, int64_t aInt64)
+  : mKind(aKind)
+{
+  u.mInt64 = aInt64;
+}
+
+ProfileBufferEntry::ProfileBufferEntry(Kind aKind, uint64_t aUint64)
+  : mKind(aKind)
+{
+  u.mUint64 = aUint64;
 }
 
 // END ProfileBufferEntry
@@ -179,7 +192,15 @@ class MOZ_RAII AutoArraySchemaWriter
 public:
   AutoArraySchemaWriter(SpliceableJSONWriter& aWriter, UniqueJSONStrings& aStrings)
     : mJSONWriter(aWriter)
-    , mStrings(aStrings)
+    , mStrings(&aStrings)
+    , mNextFreeIndex(0)
+  {
+    mJSONWriter.StartArrayElement(SpliceableJSONWriter::SingleLineStyle);
+  }
+
+  explicit AutoArraySchemaWriter(SpliceableJSONWriter& aWriter)
+    : mJSONWriter(aWriter)
+    , mStrings(nullptr)
     , mNextFreeIndex(0)
   {
     mJSONWriter.StartArrayElement(SpliceableJSONWriter::SingleLineStyle);
@@ -189,7 +210,7 @@ public:
     mJSONWriter.EndArray();
   }
 
-  void IntElement(uint32_t aIndex, uint32_t aValue) {
+  void IntElement(uint64_t aIndex, uint64_t aValue) {
     FillUpTo(aIndex);
     mJSONWriter.IntElement(aValue);
   }
@@ -200,16 +221,18 @@ public:
   }
 
   void StringElement(uint32_t aIndex, const char* aValue) {
+    MOZ_RELEASE_ASSERT(mStrings);
     FillUpTo(aIndex);
-    mStrings.WriteElement(mJSONWriter, aValue);
+    mStrings->WriteElement(mJSONWriter, aValue);
   }
 
   // Write an element using a callback that takes a JSONWriter& and a
   // UniqueJSONStrings&.
   template<typename LambdaT>
   void FreeFormElement(uint32_t aIndex, LambdaT aCallback) {
+    MOZ_RELEASE_ASSERT(mStrings);
     FillUpTo(aIndex);
-    aCallback(mJSONWriter, mStrings);
+    aCallback(mJSONWriter, *mStrings);
   }
 
 private:
@@ -220,7 +243,7 @@ private:
   }
 
   SpliceableJSONWriter& mJSONWriter;
-  UniqueJSONStrings& mStrings;
+  UniqueJSONStrings* mStrings;
   uint32_t mNextFreeIndex;
 };
 
@@ -269,15 +292,16 @@ UniqueJSONStrings::GetOrAddIndex(const char* aStr)
 {
   nsDependentCString str(aStr);
 
-  uint32_t index;
-  if (mStringToIndexMap.Get(str, &index)) {
-    return index;
+  uint32_t count = mStringToIndexMap.Count();
+  auto entry = mStringToIndexMap.LookupForAdd(str);
+  if (entry) {
+    MOZ_ASSERT(entry.Data() < count);
+    return entry.Data();
   }
 
-  index = mStringToIndexMap.Count();
-  mStringToIndexMap.Put(str, index);
+  entry.OrInsert([&]{ return count; });
   mStringTableWriter.StringElement(aStr);
-  return index;
+  return count;
 }
 
 UniqueStacks::StackKey
@@ -343,6 +367,7 @@ UniqueStacks::FrameKey::NormalFrameData::operator==(const NormalFrameData& aOthe
 {
   return mLocation == aOther.mLocation &&
          mLine == aOther.mLine &&
+         mColumn == aOther.mColumn &&
          mCategory == aOther.mCategory;
 }
 
@@ -365,6 +390,9 @@ UniqueStacks::FrameKey::Hash() const
     }
     if (data.mLine.isSome()) {
       hash = AddToHash(hash, *data.mLine);
+    }
+    if (data.mColumn.isSome()) {
+      hash = AddToHash(hash, *data.mColumn);
     }
     if (data.mCategory.isSome()) {
       hash = AddToHash(hash, *data.mCategory);
@@ -392,16 +420,16 @@ UniqueStacks::UniqueStacks(JITFrameInfo&& aJITFrameInfo)
 
 uint32_t UniqueStacks::GetOrAddStackIndex(const StackKey& aStack)
 {
-  uint32_t index;
-  if (mStackToIndexMap.Get(aStack, &index)) {
-    MOZ_ASSERT(index < mStackToIndexMap.Count());
-    return index;
+  uint32_t count = mStackToIndexMap.Count();
+  auto entry = mStackToIndexMap.LookupForAdd(aStack);
+  if (entry) {
+    MOZ_ASSERT(entry.Data() < count);
+    return entry.Data();
   }
 
-  index = mStackToIndexMap.Count();
-  mStackToIndexMap.Put(aStack, index);
+  entry.OrInsert([&]{ return count; });
   StreamStack(aStack);
-  return index;
+  return count;
 }
 
 template<typename RangeT, typename PosT>
@@ -441,16 +469,17 @@ UniqueStacks::LookupFramesForJITAddressFromBufferPos(void* aJITAddress,
   nsTArray<FrameKey> frameKeys;
   for (const JITFrameKey& jitFrameKey : *jitFrameKeys) {
     FrameKey frameKey(jitFrameKey.mCanonicalAddress, jitFrameKey.mDepth, rangeIndex);
-    if (!mFrameToIndexMap.Contains(frameKey)) {
+    uint32_t index = mFrameToIndexMap.Count();
+    auto entry = mFrameToIndexMap.LookupForAdd(frameKey);
+    if (!entry) {
       // We need to add this frame to our frame table. The JSON for this frame
       // already exists in jitFrameInfoRange, we just need to splice it into
       // the frame table and give it an index.
-      uint32_t index = mFrameToIndexMap.Count();
       const nsCString* frameJSON =
         jitFrameInfoRange.mJITFrameToFrameJSONMap.Get(jitFrameKey);
       MOZ_RELEASE_ASSERT(frameJSON, "Should have cached JSON for this frame");
       mFrameTableWriter.Splice(frameJSON->get());
-      mFrameToIndexMap.Put(frameKey, index);
+      entry.OrInsert([&] { return index; });
     }
     frameKeys.AppendElement(std::move(frameKey));
   }
@@ -460,16 +489,16 @@ UniqueStacks::LookupFramesForJITAddressFromBufferPos(void* aJITAddress,
 uint32_t
 UniqueStacks::GetOrAddFrameIndex(const FrameKey& aFrame)
 {
-  uint32_t index;
-  if (mFrameToIndexMap.Get(aFrame, &index)) {
-    MOZ_ASSERT(index < mFrameToIndexMap.Count());
-    return index;
+  uint32_t count = mFrameToIndexMap.Count();
+  auto entry = mFrameToIndexMap.LookupForAdd(aFrame);
+  if (entry) {
+    MOZ_ASSERT(entry.Data() < count);
+    return entry.Data();
   }
 
-  index = mFrameToIndexMap.Count();
-  mFrameToIndexMap.Put(aFrame, index);
+  entry.OrInsert([&]{ return count; });
   StreamNonJITFrame(aFrame);
-  return index;
+  return count;
 }
 
 void UniqueStacks::SpliceFrameTableElements(SpliceableJSONWriter& aWriter)
@@ -508,7 +537,8 @@ UniqueStacks::StreamNonJITFrame(const FrameKey& aFrame)
     IMPLEMENTATION = 1,
     OPTIMIZATIONS = 2,
     LINE = 3,
-    CATEGORY = 4
+    COLUMN = 4,
+    CATEGORY = 5
   };
 
   AutoArraySchemaWriter writer(mFrameTableWriter, *mUniqueStrings);
@@ -517,6 +547,9 @@ UniqueStacks::StreamNonJITFrame(const FrameKey& aFrame)
   writer.StringElement(LOCATION, data.mLocation.get());
   if (data.mLine.isSome()) {
     writer.IntElement(LINE, *data.mLine);
+  }
+  if (data.mColumn.isSome()) {
+    writer.IntElement(COLUMN, *data.mColumn);
   }
   if (data.mCategory.isSome()) {
     writer.IntElement(CATEGORY, *data.mCategory);
@@ -626,7 +659,8 @@ StreamJITFrame(JSContext* aContext, SpliceableJSONWriter& aWriter,
     IMPLEMENTATION = 1,
     OPTIMIZATIONS = 2,
     LINE = 3,
-    CATEGORY = 4
+    COLUMN = 4,
+    CATEGORY = 5
   };
 
   AutoArraySchemaWriter writer(aWriter, aUniqueStrings);
@@ -785,7 +819,7 @@ private:
 // The sequences beginning with a ThreadId entry are known as "samples".
 //
 // (
-//   (
+//   ( /* Samples */
 //     ThreadId
 //     Time
 //     ( NativeLeafAddr
@@ -797,6 +831,16 @@ private:
 //     ResidentMemory?
 //     UnsharedMemory?
 //   )
+//   | ( ResidentMemory UnsharedMemory? Time)  /* Memory */
+//   | ( /* Counters */
+//       CounterId
+//       Time
+//       (
+//         CounterKey
+//         Count
+//         Number?
+//       )*
+//     )
 //   | CollectionStart
 //   | CollectionEnd
 //   | Pause
@@ -889,22 +933,23 @@ private:
 //     DynamicStringFragment("a800.bun")
 //     DynamicStringFragment("dle.js:2")
 //     DynamicStringFragment("5)")
+
+// Because this is a format entirely internal to the Profiler, any parsing
+// error indicates a bug in the ProfileBuffer writing or the parser itself,
+// or possibly flaky hardware.
+#define ERROR_AND_CONTINUE(msg) \
+  { \
+    fprintf(stderr, "ProfileBuffer parse error: %s", msg); \
+    MOZ_ASSERT(false, msg); \
+    continue; \
+  }
+
 void
 ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
                                    double aSinceTime,
                                    UniqueStacks& aUniqueStacks) const
 {
   UniquePtr<char[]> strbuf = MakeUnique<char[]>(kMaxFrameKeyLength);
-
-  // Because this is a format entirely internal to the Profiler, any parsing
-  // error indicates a bug in the ProfileBuffer writing or the parser itself,
-  // or possibly flaky hardware.
-  #define ERROR_AND_CONTINUE(msg) \
-    { \
-      fprintf(stderr, "ProfileBuffer parse error: %s", msg); \
-      MOZ_ASSERT(false, msg); \
-      continue; \
-    }
 
   EntryGetter e(*this);
 
@@ -918,8 +963,8 @@ ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
     //
     // - We skip samples that don't have an appropriate ThreadId or Time.
     //
-    // - We skip range Pause, Resume, CollectionStart, Marker, and CollectionEnd
-    //   entries between samples.
+    // - We skip range Pause, Resume, CollectionStart, Marker, Counter
+    //   and CollectionEnd entries between samples.
     while (e.Has()) {
       if (e.Get().IsThreadId()) {
         break;
@@ -1019,6 +1064,12 @@ ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
           e.Next();
         }
 
+        Maybe<unsigned> column;
+        if (e.Has() && e.Get().IsColumnNumber()) {
+          column = Some(unsigned(e.Get().u.mInt));
+          e.Next();
+        }
+
         Maybe<unsigned> category;
         if (e.Has() && e.Get().IsCategory()) {
           category = Some(unsigned(e.Get().u.mInt));
@@ -1026,7 +1077,7 @@ ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
         }
 
         stack = aUniqueStacks.AppendFrame(
-          stack, UniqueStacks::FrameKey(strbuf.get(), line, category));
+          stack, UniqueStacks::FrameKey(strbuf.get(), line, column, category));
 
       } else if (e.Get().IsJitReturnAddr()) {
         numFrames++;
@@ -1049,7 +1100,10 @@ ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
     }
 
     if (numFrames == 0) {
-      ERROR_AND_CONTINUE("expected one or more frame entries");
+      // It is possible to have empty stacks if native stackwalking is
+      // disabled. Skip samples with empty stacks. (See Bug 1497985).
+      // Thus, don't use ERROR_AND_CONTINUE, but just continue.
+      continue;
     }
 
     sample.mStack = aUniqueStacks.GetOrAddStackIndex(stack);
@@ -1080,8 +1134,6 @@ ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
 
     WriteSample(aWriter, *aUniqueStacks.mUniqueStrings, sample);
   }
-
-  #undef ERROR_AND_CONTINUE
 }
 
 void
@@ -1153,6 +1205,244 @@ ProfileBuffer::StreamMarkersToJSON(SpliceableJSONWriter& aWriter,
     e.Next();
   }
 }
+
+
+struct CounterKeyedSample
+{
+  double mTime;
+  uint64_t mNumber;
+  int64_t mCount;
+};
+
+typedef nsTArray<CounterKeyedSample> CounterKeyedSamples;
+
+static LazyLogModule sFuzzyfoxLog("Fuzzyfox");
+
+typedef nsDataHashtable<nsUint64HashKey, CounterKeyedSamples> CounterMap;
+
+void
+ProfileBuffer::StreamCountersToJSON(SpliceableJSONWriter& aWriter,
+                                    const TimeStamp& aProcessStartTime,
+                                    double aSinceTime) const
+{
+  // Because this is a format entirely internal to the Profiler, any parsing
+  // error indicates a bug in the ProfileBuffer writing or the parser itself,
+  // or possibly flaky hardware.
+
+  EntryGetter e(*this);
+  enum Schema : uint32_t {
+    TIME = 0,
+    NUMBER = 1,
+    COUNT = 2
+  };
+
+  // Stream all counters. We skip other entries, because we process them in
+  // StreamSamplesToJSON()/etc.
+  //
+  // Valid sequence in the buffer:
+  // CounterID
+  // Time
+  // ( CounterKey Count Number? )*
+  //
+  // And the JSON (example):
+  // "counters": {
+  //  "name": "malloc",
+  //  "category": "Memory",
+  //  "description": "Amount of allocated memory",
+  //  "sample_groups": {
+  //   "id": 0,
+  //   "samples": {
+  //    "schema": {"time": 0, "number": 1, "count": 2},
+  //    "data": [
+  //     [
+  //      16117.033968000002,
+  //      2446216,
+  //      6801320
+  //     ],
+  //     [
+  //      16118.037638,
+  //      2446216,
+  //      6801320
+  //     ],
+  //    ],
+  //   }
+  //  }
+  // },
+
+  // Build the map of counters and populate it
+  nsDataHashtable<nsVoidPtrHashKey, CounterMap> counters;
+
+  while (e.Has()) {
+    // skip all non-Counters, including if we start in the middle of a counter
+    if (e.Get().IsCounterId()) {
+      void* id = e.Get().u.mPtr;
+      CounterMap& counter = counters.GetOrInsert(id);
+      e.Next();
+      if (!e.Has() || !e.Get().IsTime()) {
+        ERROR_AND_CONTINUE("expected a Time entry");
+      }
+      double time = e.Get().u.mDouble;
+      if (time >= aSinceTime) {
+        e.Next();
+        while (e.Has() && e.Get().IsCounterKey()) {
+          uint64_t key = e.Get().u.mUint64;
+          CounterKeyedSamples& data = counter.GetOrInsert(key);
+          e.Next();
+          if (!e.Has() || !e.Get().IsCount()) {
+            ERROR_AND_CONTINUE("expected a Count entry");
+          }
+          int64_t count = e.Get().u.mUint64;
+          e.Next();
+          uint64_t number;
+          if (!e.Has() || !e.Get().IsNumber()) {
+            number = 0;
+          } else {
+            number = e.Get().u.mInt64;
+          }
+          CounterKeyedSample sample = {time, number, count};
+          data.AppendElement(sample);
+        }
+      } else {
+        // skip counter sample - only need to skip the initial counter
+        // id, then let the loop at the top skip the rest
+      }
+    }
+    e.Next();
+  }
+  // we have a map of a map of counter entries; dump them to JSON
+  if (counters.Count() == 0) {
+    return;
+  }
+
+  aWriter.StartArrayProperty("counters");
+  for (auto iter = counters.Iter(); !iter.Done(); iter.Next()) {
+    CounterMap& counter = iter.Data();
+    const BaseProfilerCount* base_counter = static_cast<const BaseProfilerCount*>(iter.Key());
+
+    aWriter.Start();
+    aWriter.StringProperty("name", base_counter->mLabel);
+    aWriter.StringProperty("category", base_counter->mCategory);
+    aWriter.StringProperty("description", base_counter->mDescription);
+
+    aWriter.StartObjectProperty("sample_groups");
+    for (auto counter_iter = counter.Iter(); !counter_iter.Done(); counter_iter.Next()) {
+      CounterKeyedSamples& samples = counter_iter.Data();
+      uint64_t key = counter_iter.Key();
+
+      size_t size = samples.Length();
+      if (size == 0) {
+        continue;
+      }
+      aWriter.IntProperty("id", static_cast<int64_t>(key));
+      aWriter.StartObjectProperty("samples");
+      {
+        // XXX Can we assume a missing count means 0?
+        JSONSchemaWriter schema(aWriter);
+        schema.WriteField("time");
+        schema.WriteField("number");
+        schema.WriteField("count");
+      }
+
+      aWriter.StartArrayProperty("data");
+      uint64_t previousNumber = 0;
+      int64_t previousCount = 0;
+      for (size_t i = 0; i < size; i++) {
+        // Encode as deltas, and only encode if different than the last sample
+        if (i == 0 || samples[i].mNumber != previousNumber || samples[i].mCount != previousCount) {
+          if (i != 0 && samples[i].mTime >= samples[i - 1].mTime) {
+            MOZ_LOG(sFuzzyfoxLog, mozilla::LogLevel::Error,
+              ("Fuzzyfox Profiler Assertion: %f >= %f", samples[i].mTime, samples[i - 1].mTime));
+          }
+          MOZ_ASSERT(i == 0 ||
+                     samples[i].mTime >= samples[i - 1].mTime);
+          MOZ_ASSERT(samples[i].mNumber >= previousNumber);
+
+          aWriter.StartArrayElement(SpliceableJSONWriter::SingleLineStyle);
+          aWriter.DoubleElement(samples[i].mTime);
+          aWriter.IntElement(samples[i].mNumber - previousNumber); // uint64_t
+          aWriter.IntElement(samples[i].mCount - previousCount); // int64_t
+          aWriter.EndArray();
+          previousNumber = samples[i].mNumber;
+          previousCount = samples[i].mCount;
+        }
+      }
+      aWriter.EndArray(); // data
+      aWriter.EndObject(); // samples
+    }
+    aWriter.EndObject(); // sample groups
+    aWriter.End(); // for each counter
+  }
+  aWriter.EndArray(); // counters
+}
+
+void
+ProfileBuffer::StreamMemoryToJSON(SpliceableJSONWriter& aWriter,
+                                  const TimeStamp& aProcessStartTime,
+                                  double aSinceTime) const
+{
+  enum Schema : uint32_t {
+    TIME = 0,
+    RSS = 1,
+    USS = 2
+  };
+
+  EntryGetter e(*this);
+
+  aWriter.StartObjectProperty("memory");
+  // Stream all memory (rss/uss) data. We skip other entries, because we
+  // process them in StreamSamplesToJSON()/etc.
+  aWriter.IntProperty("initial_heap", 0); // XXX FIX
+  aWriter.StartObjectProperty("samples");
+  {
+    JSONSchemaWriter schema(aWriter);
+    schema.WriteField("time");
+    schema.WriteField("rss");
+    schema.WriteField("uss");
+  }
+
+  aWriter.StartArrayProperty("data");
+  int64_t previous_rss = 0;
+  int64_t previous_uss = 0;
+  while (e.Has()) {
+    // valid sequence: Resident, Unshared?, Time
+    if (e.Get().IsResidentMemory()) {
+      int64_t rss = e.Get().u.mInt64;
+      int64_t uss = 0;
+      e.Next();
+      if (e.Has()) {
+        if (e.Get().IsUnsharedMemory()) {
+          uss = e.Get().u.mDouble;
+          e.Next();
+          if (!e.Has()) {
+            break;
+          }
+        }
+        if (e.Get().IsTime()) {
+          double time = e.Get().u.mDouble;
+          if (time >= aSinceTime &&
+              (previous_rss != rss || previous_uss != uss)) {
+            aWriter.StartArrayElement(SpliceableJSONWriter::SingleLineStyle);
+            aWriter.DoubleElement(time);
+            aWriter.IntElement(rss); // int64_t
+            if (uss != 0) {
+              aWriter.IntElement(uss); // int64_t
+            }
+            aWriter.EndArray();
+            previous_rss = rss;
+            previous_uss = uss;
+          }
+        } else {
+          ERROR_AND_CONTINUE("expected a Time entry");
+        }
+      }
+    }
+    e.Next();
+  }
+  aWriter.EndArray(); // data
+  aWriter.EndObject(); // samples
+  aWriter.EndObject(); // memory
+}
+#undef ERROR_AND_CONTINUE
 
 static void
 AddPausedRange(SpliceableJSONWriter& aWriter, const char* aReason,
@@ -1249,7 +1539,27 @@ ProfileBuffer::DuplicateLastSample(int aThreadId,
           (TimeStamp::Now() - aProcessStartTime).ToMilliseconds()));
         break;
       case ProfileBufferEntry::Kind::Marker:
-        // Don't copy markers
+      case ProfileBufferEntry::Kind::ResidentMemory:
+      case ProfileBufferEntry::Kind::UnsharedMemory:
+      case ProfileBufferEntry::Kind::CounterKey:
+      case ProfileBufferEntry::Kind::Number:
+      case ProfileBufferEntry::Kind::Count:
+      case ProfileBufferEntry::Kind::Responsiveness:
+        // Don't copy anything not part of a thread's stack sample
+        break;
+      case ProfileBufferEntry::Kind::CounterId:
+        // CounterId is normally followed by Time - if so, we'd like
+        // to skip it.  If we duplicate Time, it won't hurt anything, just
+        // waste buffer space (and this can happen if the CounterId has
+        // fallen off the end of the buffer, but Time (and Number/Count)
+        // are still in the buffer).
+        e.Next();
+        if (e.Has() && e.Get().GetKind() != ProfileBufferEntry::Kind::Time) {
+          // this would only happen if there was an invalid sequence
+          // in the buffer.  Don't skip it.
+          continue;
+        }
+        // we've skipped Time
         break;
       default: {
         // Copy anything else we don't know about.
@@ -1265,4 +1575,3 @@ ProfileBuffer::DuplicateLastSample(int aThreadId,
 
 // END ProfileBuffer
 ////////////////////////////////////////////////////////////////////////
-

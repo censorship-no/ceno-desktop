@@ -9,13 +9,15 @@ ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const {
   error,
+  stack,
   TimeoutError,
 } = ChromeUtils.import("chrome://marionette/content/error.js", {});
 const {Log} = ChromeUtils.import("chrome://marionette/content/log.js", {});
 
-XPCOMUtils.defineLazyGetter(this, "logger", Log.get);
+XPCOMUtils.defineLazyGetter(this, "log", Log.get);
 
 this.EXPORTED_SYMBOLS = [
+  "IdlePromise",
   "MessageManagerDestroyedPromise",
   "PollPromise",
   "Sleep",
@@ -184,6 +186,7 @@ function TimedPromise(fn, {timeout = 1500, throws = TimeoutError} = {}) {
         let err = new throws();
         reject(err);
       } else {
+        log.warn(`TimedPromise timed out after ${timeout} ms`, stack());
         resolve();
       }
     };
@@ -254,7 +257,7 @@ function Sleep(timeout) {
 function MessageManagerDestroyedPromise(messageManager) {
   return new Promise(resolve => {
     function observe(subject, topic) {
-      logger.debug(`Received observer notification ${topic}`);
+      log.debug(`Received observer notification ${topic}`);
 
       if (subject == messageManager) {
         Services.obs.removeObserver(this, "message-manager-disconnect");
@@ -263,5 +266,22 @@ function MessageManagerDestroyedPromise(messageManager) {
     }
 
     Services.obs.addObserver(observe, "message-manager-disconnect");
+  });
+}
+
+/**
+ * Throttle until the main thread is idle and `window` has performed
+ * an animation frame (in that order).
+ *
+ * @param {ChromeWindow} win
+ *     Window to request the animation frame from.
+ *
+ * @return Promise
+ */
+function IdlePromise(win) {
+  return new Promise(resolve => {
+    Services.tm.idleDispatchToMainThread(() => {
+      win.requestAnimationFrame(resolve);
+    });
   });
 }

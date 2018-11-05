@@ -6,23 +6,19 @@
 
 var bs = PlacesUtils.bookmarks;
 var hs = PlacesUtils.history;
+var os = PlacesUtils.observers;
 var anno = PlacesUtils.annotations;
 
 
 var bookmarksObserver = {
-  onBeginUpdateBatch() {
-    this._beginUpdateBatch = true;
-  },
-  onEndUpdateBatch() {
-    this._endUpdateBatch = true;
-  },
-  onItemAdded(id, folder, index, itemType, uri, title, dateAdded,
-                        guid) {
-    this._itemAddedId = id;
-    this._itemAddedParent = folder;
-    this._itemAddedIndex = index;
-    this._itemAddedURI = uri;
-    this._itemAddedTitle = title;
+  handlePlacesEvents(events) {
+    Assert.equal(events.length, 1);
+    let event = events[0];
+    bookmarksObserver._itemAddedId = event.id;
+    bookmarksObserver._itemAddedParent = event.parentId;
+    bookmarksObserver._itemAddedIndex = event.index;
+    bookmarksObserver._itemAddedURI = event.url ? Services.io.newURI(event.url) : null;
+    bookmarksObserver._itemAddedTitle = event.title;
 
     // Ensure that we've created a guid for this item.
     let stmt = DBConn().createStatement(
@@ -30,12 +26,19 @@ var bookmarksObserver = {
        FROM moz_bookmarks
        WHERE id = :item_id`
     );
-    stmt.params.item_id = id;
+    stmt.params.item_id = event.id;
     Assert.ok(stmt.executeStep());
     Assert.ok(!stmt.getIsNull(0));
     do_check_valid_places_guid(stmt.row.guid);
-    Assert.equal(stmt.row.guid, guid);
+    Assert.equal(stmt.row.guid, event.guid);
     stmt.finalize();
+  },
+
+  onBeginUpdateBatch() {
+    this._beginUpdateBatch = true;
+  },
+  onEndUpdateBatch() {
+    this._endUpdateBatch = true;
   },
   onItemRemoved(id, folder, index, itemType) {
     this._itemRemovedId = id;
@@ -66,7 +69,7 @@ var bookmarksObserver = {
   },
   QueryInterface: ChromeUtils.generateQI([
     Ci.nsINavBookmarkObserver,
-  ])
+  ]),
 };
 
 
@@ -77,13 +80,13 @@ var bmStartIndex = 0;
 
 add_task(async function test_bookmarks() {
   bs.addObserver(bookmarksObserver);
+  os.addListener(["bookmark-added"], bookmarksObserver.handlePlacesEvents);
 
   // test special folders
   Assert.ok(bs.placesRoot > 0);
   Assert.ok(bs.bookmarksMenuFolder > 0);
   Assert.ok(bs.tagsFolder > 0);
   Assert.ok(bs.toolbarFolder > 0);
-  Assert.ok(bs.unfiledBookmarksFolder > 0);
 
   // test getFolderIdForItem() with bogus item id will throw
   try {
@@ -101,7 +104,6 @@ add_task(async function test_bookmarks() {
   Assert.equal(bs.getFolderIdForItem(bs.bookmarksMenuFolder), bs.placesRoot);
   Assert.equal(bs.getFolderIdForItem(bs.tagsFolder), bs.placesRoot);
   Assert.equal(bs.getFolderIdForItem(bs.toolbarFolder), bs.placesRoot);
-  Assert.equal(bs.getFolderIdForItem(bs.unfiledBookmarksFolder), bs.placesRoot);
 
   // create a folder to hold all the tests
   // this makes the tests more tolerant of changes to default_places.html

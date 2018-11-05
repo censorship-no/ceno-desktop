@@ -19,7 +19,7 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 class VisibilityHandler extends Component {
   static get propTypes() {
     return {
-      children: PropTypes.element.isRequired
+      children: PropTypes.element.isRequired,
     };
   }
 
@@ -30,7 +30,7 @@ class VisibilityHandler extends Component {
   }
 
   componentDidMount() {
-    window.addEventListener("visibilitychange", this.onVisibilityChange);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
   }
 
   shouldComponentUpdate() {
@@ -38,7 +38,7 @@ class VisibilityHandler extends Component {
   }
 
   componentWillUnmount() {
-    window.removeEventListener("visibilitychange", this.onVisibilityChange);
+    document.removeEventListener("visibilitychange", this.onVisibilityChange);
   }
 
   onVisibilityChange() {

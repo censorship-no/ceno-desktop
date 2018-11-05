@@ -24,8 +24,8 @@ class SVGFECompositeElement : public SVGFECompositeElementBase
   friend nsresult (::NS_NewSVGFECompositeElement(nsIContent **aResult,
                                                  already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 protected:
-  explicit SVGFECompositeElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGFECompositeElementBase(aNodeInfo)
+  explicit SVGFECompositeElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGFECompositeElementBase(std::move(aNodeInfo))
   {
   }
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
@@ -42,8 +42,7 @@ public:
   virtual void GetSourceImageNames(nsTArray<nsSVGStringInfo>& aSources) override;
 
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedString> In1();

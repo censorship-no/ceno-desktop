@@ -26,8 +26,8 @@ class SVGFETurbulenceElement : public SVGFETurbulenceElementBase
   friend nsresult (::NS_NewSVGFETurbulenceElement(nsIContent **aResult,
                                                   already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 protected:
-  explicit SVGFETurbulenceElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGFETurbulenceElementBase(aNodeInfo)
+  explicit SVGFETurbulenceElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGFETurbulenceElementBase(std::move(aNodeInfo))
   {
   }
   virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
@@ -44,8 +44,7 @@ public:
           int32_t aNameSpaceID, nsAtom* aAttribute) const override;
   virtual nsSVGString& GetResultImageName() override { return mStringAttributes[RESULT]; }
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // WebIDL
   already_AddRefed<SVGAnimatedNumber> BaseFrequencyX();

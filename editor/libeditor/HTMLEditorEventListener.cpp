@@ -72,7 +72,7 @@ HTMLEditorEventListener::MouseDown(MouseEvent* aMouseEvent)
   // event is fired outside of the active editing host), we need to commit
   // composition because it will be change the selection to the clicked
   // point.  Then, we won't be able to commit the composition.
-  if (!EnsureCommitCompoisition()) {
+  if (!EnsureCommitComposition()) {
     return NS_OK;
   }
 
@@ -142,9 +142,8 @@ HTMLEditorEventListener::MouseDown(MouseEvent* aMouseEvent)
           selection->Collapse(parent, offset);
         } else {
           // Get enclosing link if in text so we can select the link
-          RefPtr<Element> linkElement =
-            htmlEditor->GetElementOrParentByTagName(NS_LITERAL_STRING("href"),
-                                                    node);
+          Element* linkElement =
+            htmlEditor->GetElementOrParentByTagName(*nsGkAtoms::href, node);
           if (linkElement) {
             element = linkElement;
           }
@@ -165,7 +164,7 @@ HTMLEditorEventListener::MouseDown(MouseEvent* aMouseEvent)
     }
     // HACK !!! Context click places the caret but the context menu consumes
     // the event; so we need to check resizing state ourselves
-    htmlEditor->CheckSelectionStateForAnonymousButtons(selection);
+    htmlEditor->CheckSelectionStateForAnonymousButtons();
 
     // Prevent bubbling if we changed selection or
     //   for all context clicks
@@ -184,14 +183,16 @@ HTMLEditorEventListener::MouseDown(MouseEvent* aMouseEvent)
 }
 
 nsresult
-HTMLEditorEventListener::MouseClick(MouseEvent* aMouseEvent)
+HTMLEditorEventListener::MouseClick(WidgetMouseEvent* aMouseClickEvent)
 {
   if (NS_WARN_IF(DetachedFromEditor())) {
     return NS_OK;
   }
 
-  RefPtr<EventTarget> target = aMouseEvent->GetTarget();
-  NS_ENSURE_TRUE(target, NS_ERROR_NULL_POINTER);
+  RefPtr<EventTarget> target = aMouseClickEvent->GetDOMEventTarget();
+  if (NS_WARN_IF(!target)) {
+    return NS_ERROR_FAILURE;
+  }
   nsCOMPtr<Element> element = do_QueryInterface(target);
   if (NS_WARN_IF(!element)) {
     return NS_ERROR_FAILURE;
@@ -206,7 +207,7 @@ HTMLEditorEventListener::MouseClick(MouseEvent* aMouseEvent)
     return NS_OK;
   }
 
-  return EditorEventListener::MouseClick(aMouseEvent);
+  return EditorEventListener::MouseClick(aMouseClickEvent);
 }
 
 } // namespace mozilla

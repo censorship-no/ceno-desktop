@@ -32,7 +32,6 @@
 #include "XULDocument.h"
 
 #include "nsIDOMXULButtonElement.h"
-#include "nsIDOMXULLabelElement.h"
 #include "nsIDOMXULSelectCntrlEl.h"
 #include "nsIDOMXULSelectCntrlItemEl.h"
 #include "nsINodeList.h"
@@ -66,6 +65,7 @@
 #include "nsIServiceManager.h"
 #include "nsWhitespaceTokenizer.h"
 #include "nsAttrName.h"
+#include "nsPersistentProperties.h"
 
 #include "mozilla/Assertions.h"
 #include "mozilla/BasicEvents.h"
@@ -712,7 +712,7 @@ Accessible::Bounds() const
 nsIntRect
 Accessible::BoundsInCSSPixels() const
 {
-  return BoundsInAppUnits().ToNearestPixels(mDoc->PresContext()->AppUnitsPerCSSPixel());
+  return BoundsInAppUnits().ToNearestPixels(AppUnitsPerCSSPixel());
 }
 
 void
@@ -804,36 +804,29 @@ Accessible::XULElmName(DocAccessible* aDocument,
    */
 
   // CASE #1 (via label attribute) -- great majority of the cases
-  nsCOMPtr<nsIDOMXULLabeledControlElement> labeledEl = do_QueryInterface(aElm);
-  if (labeledEl) {
-    labeledEl->GetLabel(aName);
+  nsCOMPtr<nsIDOMXULSelectControlItemElement> itemEl = do_QueryInterface(aElm);
+  if (itemEl) {
+    itemEl->GetLabel(aName);
   } else {
-    nsCOMPtr<nsIDOMXULSelectControlItemElement> itemEl = do_QueryInterface(aElm);
-    if (itemEl) {
-      itemEl->GetLabel(aName);
-    } else {
-      nsCOMPtr<nsIDOMXULSelectControlElement> select = do_QueryInterface(aElm);
-      // Use label if this is not a select control element which
-      // uses label attribute to indicate which option is selected
-      if (!select && aElm->IsElement()) {
-        aElm->AsElement()->GetAttribute(NS_LITERAL_STRING("label"), aName);
-      }
+    // Use @label if this is not a select control element, which uses label
+    // attribute to indicate, which option is selected.
+    nsCOMPtr<nsIDOMXULSelectControlElement> select = do_QueryInterface(aElm);
+    if (!select) {
+      aElm->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::label, aName);
     }
   }
 
   // CASES #2 and #3 ------ label as a child or <label control="id" ... > </label>
   if (aName.IsEmpty()) {
-    Accessible* labelAcc = nullptr;
+    Accessible* label = nullptr;
     XULLabelIterator iter(aDocument, aElm);
-    while ((labelAcc = iter.Next())) {
-      nsCOMPtr<nsIDOMXULLabelElement> xulLabel =
-        do_QueryInterface(labelAcc->GetContent());
+    while ((label = iter.Next())) {
       // Check if label's value attribute is used
-      if (xulLabel && NS_SUCCEEDED(xulLabel->GetValue(aName)) && aName.IsEmpty()) {
+      label->Elm()->GetAttr(kNameSpaceID_None, nsGkAtoms::value, aName);
+      if (aName.IsEmpty()) {
         // If no value attribute, a non-empty label must contain
         // children that define its text -- possibly using HTML
-        nsTextEquivUtils::
-          AppendTextEquivFromContent(labelAcc, labelAcc->GetContent(), &aName);
+        nsTextEquivUtils::AppendTextEquivFromContent(label, label->Elm(), &aName);
       }
     }
   }
@@ -952,6 +945,14 @@ Accessible::HandleAccEvent(AccEvent* aEvent)
           break;
         }
 #endif
+        case nsIAccessibleEvent::EVENT_SCROLLING_END:
+        case nsIAccessibleEvent::EVENT_SCROLLING: {
+          AccScrollingEvent* scrollingEvent = downcast_accEvent(aEvent);
+          ipcDoc->SendScrollingEvent(id, aEvent->GetEventType(),
+            scrollingEvent->ScrollX(), scrollingEvent->ScrollY(),
+            scrollingEvent->MaxScrollX(), scrollingEvent->MaxScrollY());
+          break;
+        }
         default:
           ipcDoc->SendEvent(id, aEvent->GetEventType());
       }
@@ -1014,8 +1015,7 @@ Accessible::Attributes()
 already_AddRefed<nsIPersistentProperties>
 Accessible::NativeAttributes()
 {
-  nsCOMPtr<nsIPersistentProperties> attributes =
-    do_CreateInstance(NS_PERSISTENTPROPERTIES_CONTRACTID);
+  RefPtr<nsPersistentProperties> attributes = new nsPersistentProperties();
 
   nsAutoString unused;
 
@@ -1047,6 +1047,20 @@ Accessible::NativeAttributes()
   GroupPos groupPos = GroupPosition();
   nsAccUtils::SetAccGroupAttrs(attributes, groupPos.level,
                                groupPos.setSize, groupPos.posInSet);
+
+  bool hierarchical = false;
+  uint32_t itemCount = AccGroupInfo::TotalItemCount(this, &hierarchical);
+  if (itemCount) {
+    nsAutoString itemCountStr;
+    itemCountStr.AppendInt(itemCount);
+    attributes->SetStringProperty(NS_LITERAL_CSTRING("child-item-count"),
+      itemCountStr, unused);
+  }
+
+  if (hierarchical) {
+    attributes->SetStringProperty(NS_LITERAL_CSTRING("hierarchical"),
+      NS_LITERAL_STRING("true"), unused);
+  }
 
   // If the accessible doesn't have own content (such as list item bullet or
   // xul tree item) then don't calculate content based attributes.
@@ -1535,8 +1549,9 @@ nsAtom*
 Accessible::LandmarkRole() const
 {
   const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
-  return roleMapEntry && roleMapEntry->IsOfType(eLandmark) ?
-    *(roleMapEntry->roleAtom) : nullptr;
+  return roleMapEntry && roleMapEntry->IsOfType(eLandmark)
+       ? roleMapEntry->roleAtom
+       : nullptr;
 }
 
 role

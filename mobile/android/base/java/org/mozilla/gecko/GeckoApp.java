@@ -7,6 +7,7 @@ package org.mozilla.gecko;
 
 import org.mozilla.gecko.AppConstants.Versions;
 import org.mozilla.gecko.GeckoProfileDirectories.NoMozillaDirectoryException;
+import org.mozilla.gecko.GeckoScreenOrientation.ScreenOrientation;
 import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.health.HealthRecorder;
@@ -36,11 +37,11 @@ import org.mozilla.gecko.util.FileUtils;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.HardwareUtils;
 import org.mozilla.gecko.util.PrefUtils;
+import org.mozilla.gecko.util.StrictModeContext;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.util.ViewUtil;
 import org.mozilla.gecko.widget.ActionModePresenter;
 import org.mozilla.gecko.widget.AnchoredPopup;
-import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
 import org.mozilla.geckoview.GeckoView;
@@ -54,6 +55,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Configuration;
 import android.graphics.BitmapFactory;
@@ -115,6 +117,7 @@ public abstract class GeckoApp extends GeckoActivity
                                           BundleEventListener,
                                           GeckoMenu.Callback,
                                           GeckoMenu.MenuPresenter,
+                                          GeckoScreenOrientation.OrientationChangeListener,
                                           GeckoSession.ContentDelegate,
                                           ScreenOrientationDelegate,
                                           Tabs.OnTabsChangedListener,
@@ -991,6 +994,7 @@ public abstract class GeckoApp extends GeckoActivity
         } catch (ClassNotFoundException e) { }
 
         GeckoAppShell.setScreenOrientationDelegate(this);
+        GeckoScreenOrientation.getInstance().addListener(this);
 
         // Tell Stumbler to register a local broadcast listener to listen for preference intents.
         // We do this via intents since we can't easily access Stumbler directly,
@@ -1073,8 +1077,6 @@ public abstract class GeckoApp extends GeckoActivity
         }
 
         super.onCreate(savedInstanceState);
-
-        GeckoScreenOrientation.getInstance().update(getResources().getConfiguration().orientation);
 
         setContentView(getLayout());
 
@@ -1941,11 +1943,6 @@ public abstract class GeckoApp extends GeckoActivity
 
         GeckoAppShell.setScreenOrientationDelegate(this);
 
-        int newOrientation = getResources().getConfiguration().orientation;
-        if (GeckoScreenOrientation.getInstance().update(newOrientation)) {
-            refreshChrome();
-        }
-
         // We use two times: a pseudo-unique wall-clock time to identify the
         // current session across power cycles, and the elapsed realtime to
         // track the duration of the session.
@@ -2048,6 +2045,7 @@ public abstract class GeckoApp extends GeckoActivity
         super.onPause();
     }
 
+    @SuppressWarnings("try")
     @Override
     public void onRestart() {
         if (mIsAbortingAppLaunch) {
@@ -2056,13 +2054,10 @@ public abstract class GeckoApp extends GeckoActivity
         }
 
         // Faster on main thread with an async apply().
-        final StrictMode.ThreadPolicy savedPolicy = StrictMode.allowThreadDiskReads();
-        try {
+        try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
             SharedPreferences.Editor editor = GeckoApp.this.getSharedPreferences().edit();
             editor.putBoolean(GeckoApp.PREFS_WAS_STOPPED, false);
             editor.apply();
-        } finally {
-            StrictMode.setThreadPolicy(savedPolicy);
         }
 
         super.onRestart();
@@ -2149,6 +2144,8 @@ public abstract class GeckoApp extends GeckoActivity
         Tabs.unregisterOnTabsChangedListener(this);
         Tabs.getInstance().detachFromContext();
 
+        GeckoScreenOrientation.getInstance().removeListener(this);
+
         if (mShutdownOnDestroy) {
             GeckoApplication.shutdown(!mRestartOnShutdown ? null : new Intent(
                     Intent.ACTION_MAIN, /* uri */ null, getApplicationContext(), getClass()));
@@ -2191,19 +2188,6 @@ public abstract class GeckoApp extends GeckoActivity
         final Locale changed = localeManager.onSystemConfigurationChanged(this, getResources(), newConfig, mLastLocale);
         if (changed != null) {
             onLocaleChanged(Locales.getLanguageTag(changed));
-        }
-
-        // onConfigurationChanged is not called for 180 degree orientation changes,
-        // we will miss such rotations and the screen orientation will not be
-        // updated.
-        if (GeckoScreenOrientation.getInstance().update(newConfig.orientation)) {
-            if (mFormAssistPopup != null)
-                mFormAssistPopup.hide();
-            refreshChrome();
-        }
-
-        if (mPromptService != null) {
-            mPromptService.changePromptOrientation(newConfig.orientation);
         }
 
         super.onConfigurationChanged(newConfig);
@@ -2271,8 +2255,9 @@ public abstract class GeckoApp extends GeckoActivity
                 // the res/fonts directory: we no longer need to copy our
                 // bundled fonts out of the APK in order to use them.
                 // See https://bugzilla.mozilla.org/show_bug.cgi?id=878674.
-                File dir = new File("res/fonts");
-                if (dir.exists() && dir.isDirectory()) {
+                final File dataDir = new File(context.getApplicationInfo().dataDir);
+                final File dir = new File(dataDir, "res/fonts");
+                if (dir.exists() && dir.isDirectory() && dir.listFiles() != null) {
                     for (File file : dir.listFiles()) {
                         if (file.isFile() && file.getName().endsWith(".ttf")) {
                             file.delete();
@@ -2542,5 +2527,13 @@ public abstract class GeckoApp extends GeckoActivity
         }
         setRequestedOrientation(requestedActivityInfoOrientation);
         return true;
+    }
+
+    @Override
+    public void onScreenOrientationChanged(ScreenOrientation newOrientation) {
+        if (mFormAssistPopup != null) {
+            mFormAssistPopup.hide();
+        }
+        refreshChrome();
     }
 }

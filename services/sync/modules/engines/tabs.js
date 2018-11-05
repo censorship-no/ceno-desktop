@@ -62,8 +62,9 @@ TabEngine.prototype = {
   async getChangedIDs() {
     // No need for a proper timestamp (no conflict resolution needed).
     let changedIDs = {};
-    if (this._tracker.modified)
+    if (this._tracker.modified) {
       changedIDs[this.service.clientsEngine.localID] = 0;
+    }
     return changedIDs;
   },
 
@@ -134,9 +135,7 @@ TabStore.prototype = {
 
     let allTabs = [];
 
-    let winEnum = this.getWindowEnumerator();
-    while (winEnum.hasMoreElements()) {
-      let win = winEnum.getNext();
+    for (let win of this.getWindowEnumerator()) {
       if (this.shouldSkipWindow(win)) {
         continue;
       }
@@ -234,9 +233,8 @@ TabStore.prototype = {
     // first syncs.
     let ids = {};
     let allWindowsArePrivate = false;
-    let wins = Services.wm.getEnumerator("navigator:browser");
-    while (wins.hasMoreElements()) {
-      if (PrivateBrowsingUtils.isWindowPrivate(wins.getNext())) {
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      if (PrivateBrowsingUtils.isWindowPrivate(win)) {
         // Ensure that at least there is a private window.
         allWindowsArePrivate = true;
       } else {
@@ -262,7 +260,7 @@ TabStore.prototype = {
   async create(record) {
     this._log.debug("Adding remote tabs from " + record.clientName);
     this._remoteClients[record.id] = Object.assign({}, record.cleartext, {
-      lastModified: record.modified
+      lastModified: record.modified,
     });
   },
 
@@ -319,17 +317,15 @@ TabTracker.prototype = {
 
   onStart() {
     Svc.Obs.add("domwindowopened", this.asyncObserver);
-    let wins = Services.wm.getEnumerator("navigator:browser");
-    while (wins.hasMoreElements()) {
-      this._registerListenersForWindow(wins.getNext());
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      this._registerListenersForWindow(win);
     }
   },
 
   onStop() {
     Svc.Obs.remove("domwindowopened", this.asyncObserver);
-    let wins = Services.wm.getEnumerator("navigator:browser");
-    while (wins.hasMoreElements()) {
-      this._unregisterListenersForWindow(wins.getNext());
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      this._unregisterListenersForWindow(win);
     }
   },
 

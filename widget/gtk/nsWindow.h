@@ -8,19 +8,8 @@
 #ifndef __nsWindow_h__
 #define __nsWindow_h__
 
-#include "mozcontainer.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
-#include "nsIDragService.h"
-#include "nsITimer.h"
-#include "nsGkAtoms.h"
-#include "nsRefPtrHashtable.h"
-
-#include "nsBaseWidget.h"
-#include "CompositorWidget.h"
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
-
 #ifdef MOZ_X11
 #include <gdk/gdkx.h>
 #include "X11UndefineNone.h"
@@ -28,7 +17,16 @@
 #ifdef MOZ_WAYLAND
 #include <gdk/gdkwayland.h>
 #endif
-
+#include "mozcontainer.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
+#include "nsIDragService.h"
+#include "nsITimer.h"
+#include "nsGkAtoms.h"
+#include "nsRefPtrHashtable.h"
+#include "nsIFrame.h"
+#include "nsBaseWidget.h"
+#include "CompositorWidget.h"
 #include "mozilla/widget/WindowSurface.h"
 #include "mozilla/widget/WindowSurfaceProvider.h"
 
@@ -124,6 +122,7 @@ public:
     virtual float      GetDPI() override;
     virtual double     GetDefaultScaleInternal() override;
     mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScale() override;
+    mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScaleByScreen() override;
     virtual void       SetParent(nsIWidget* aNewParent) override;
     virtual void       SetModal(bool aModal) override;
     virtual bool       IsVisible() const override;
@@ -288,6 +287,7 @@ public:
     // descendant windows
     GtkWidget*         GetMozContainerWidget();
     GdkWindow*         GetGdkWindow() { return mGdkWindow; }
+    GtkWidget*         GetGtkWidget() { return mShell; }
     bool               IsDestroyed() { return mIsDestroyed; }
 
     void               DispatchDragEvent(mozilla::EventMessage aMsg,
@@ -414,6 +414,9 @@ public:
 
     virtual bool WidgetTypeSupportsAcceleration() override;
 
+    nsresult SetSystemFont(const nsCString& aFontName) override;
+    nsresult GetSystemFont(nsCString& aFontName) override;
+
     typedef enum { CSD_SUPPORT_SYSTEM,    // CSD including shadows
                    CSD_SUPPORT_CLIENT,    // CSD without shadows
                    CSD_SUPPORT_NONE,      // WM does not support CSD at all
@@ -424,6 +427,9 @@ public:
      * the XDG_CURRENT_DESKTOP environment variable.
      */
     static CSDSupportLevel GetSystemCSDSupportLevel();
+
+    static bool TopLevelWindowUseARGBVisual();
+    static bool GetTopLevelWindowActiveState(nsIFrame *aFrame);
 
 protected:
     virtual ~nsWindow();

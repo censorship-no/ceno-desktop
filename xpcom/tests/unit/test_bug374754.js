@@ -32,7 +32,7 @@ var observer = {
       result += "add ";
     else if (topic == removedTopic)
       result += "remove ";
-  }
+  },
 };
 
 function run_test() {
@@ -41,10 +41,9 @@ function run_test() {
   Services.obs.addObserver(observer, addedTopic);
   Services.obs.addObserver(observer, removedTopic);
 
-  var categoryManager = Cc["@mozilla.org/categorymanager;1"].getService(Ci.nsICategoryManager);
-  categoryManager.addCategoryEntry(testCategory, testEntry, testValue, false, true);
-  categoryManager.addCategoryEntry(testCategory, testEntry, testValue, false, true);
-  categoryManager.deleteCategoryEntry(testCategory, testEntry, false);
+  Services.catMan.addCategoryEntry(testCategory, testEntry, testValue, false, true);
+  Services.catMan.addCategoryEntry(testCategory, testEntry, testValue, false, true);
+  Services.catMan.deleteCategoryEntry(testCategory, testEntry, false);
 
   timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
   timer.init(observer, 0, timer.TYPE_ONE_SHOT);

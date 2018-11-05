@@ -370,7 +370,7 @@ public:
   friend class AttrArray;
 
 #ifdef MOZILLA_INTERNAL_API
-  explicit nsINode(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit nsINode(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 #endif
 
   virtual ~nsINode();
@@ -643,6 +643,15 @@ public:
   }
 
   /**
+   * Returns true if we're connected, and thus GetComposedDoc() would return a
+   * non-null value.
+   */
+  bool IsInComposedDoc() const
+  {
+    return GetBoolFlag(IsConnected);
+  }
+
+  /**
    * This method returns the owner document if the node is connected to it
    * (as defined in the DOM spec), otherwise it returns null.
    * In other words, returns non-null even in the case the node is in
@@ -651,16 +660,7 @@ public:
    */
   nsIDocument* GetComposedDoc() const
   {
-    return IsInShadowTree() ?
-      GetComposedDocInternal() : GetUncomposedDoc();
-  }
-
-  /**
-   * Returns true if GetComposedDoc() would return a non-null value.
-   */
-  bool IsInComposedDoc() const
-  {
-    return IsInUncomposedDoc() || (IsInShadowTree() && GetComposedDocInternal());
+    return IsInComposedDoc() ? OwnerDoc() : nullptr;
   }
 
   /**
@@ -1099,11 +1099,8 @@ public:
    *
    * @param aNodeInfo the nodeinfo to use for the clone
    * @param aResult the clone
-   * @param aPreallocateChildren If true, the array of children will be
-   *                             preallocated in preparation for a deep copy.
    */
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const = 0;
+  virtual nsresult Clone(mozilla::dom::NodeInfo*, nsINode** aResult) const = 0;
 
   // This class can be extended by subclasses that wish to store more
   // information in the slots.
@@ -1243,6 +1240,8 @@ public:
     }
     return DoGetContainingSVGUseShadowHost();
   }
+
+  bool IsInUAWidget() const;
 
   // True for native anonymous content and for XBL content if the binding
   // has chromeOnlyContent="true".
@@ -1419,8 +1418,6 @@ private:
 
   mozilla::dom::SVGUseElement* DoGetContainingSVGUseShadowHost() const;
 
-  nsIDocument* GetComposedDocInternal() const;
-
   nsIContent* GetNextNodeImpl(const nsINode* aRoot,
                               const bool aSkipChildren) const
   {
@@ -1502,6 +1499,9 @@ private:
     // Set if our parent chain (including this node itself) terminates
     // in a document
     IsInDocument,
+    // Set if we're part of the composed doc.
+    // https://dom.spec.whatwg.org/#connected
+    IsConnected,
     // Set if mParent is an nsIContent
     ParentIsContent,
     // Set if this node is an Element
@@ -1556,8 +1556,6 @@ private:
     NodeAncestorHasDirAuto,
     // Set if the node is handling a click.
     NodeHandlingClick,
-    // Set if the node has had :hover selectors matched against it
-    NodeHasRelevantHoverRules,
     // Set if the element has a parser insertion mode other than "in body",
     // per the HTML5 "Parse state" section.
     ElementHasWeirdParserInsertionMode,
@@ -1681,8 +1679,6 @@ public:
   // Implemented in nsIContentInlines.h.
   inline bool NodeOrAncestorHasDirAuto() const;
 
-  bool HasRelevantHoverRules() const { return GetBoolFlag(NodeHasRelevantHoverRules); }
-  void SetHasRelevantHoverRules() { SetBoolFlag(NodeHasRelevantHoverRules); }
   void SetParserHasNotified() { SetBoolFlag(ParserHasNotified); };
   bool HasParserNotified() { return GetBoolFlag(ParserHasNotified); }
 
@@ -1701,8 +1697,9 @@ public:
 protected:
   void SetParentIsContent(bool aValue) { SetBoolFlag(ParentIsContent, aValue); }
   void SetIsInDocument() { SetBoolFlag(IsInDocument); }
-  void SetNodeIsContent() { SetBoolFlag(NodeIsContent); }
   void ClearInDocument() { ClearBoolFlag(IsInDocument); }
+  void SetIsConnected(bool aConnected) { SetBoolFlag(IsConnected, aConnected); }
+  void SetNodeIsContent() { SetBoolFlag(NodeIsContent); }
   void SetIsElement() { SetBoolFlag(NodeIsElement); }
   void SetHasID() { SetBoolFlag(ElementHasID); }
   void ClearHasID() { ClearBoolFlag(ElementHasID); }
@@ -1772,7 +1769,11 @@ public:
   {
     return HasChildren();
   }
-  uint16_t CompareDocumentPosition(nsINode& aOther) const;
+
+  // See nsContentUtils::PositionIsBefore for aThisIndex and aOtherIndex usage.
+  uint16_t CompareDocumentPosition(nsINode& aOther,
+                                   int32_t* aThisIndex = nullptr,
+                                   int32_t* aOtherIndex = nullptr) const;
   void GetNodeValue(nsAString& aNodeValue)
   {
     GetNodeValueInternal(aNodeValue);
@@ -1839,8 +1840,8 @@ public:
   }
 
   // ChildNode methods
-  mozilla::dom::Element* GetPreviousElementSibling() const;
-  mozilla::dom::Element* GetNextElementSibling() const;
+  inline mozilla::dom::Element* GetPreviousElementSibling() const;
+  inline mozilla::dom::Element* GetNextElementSibling() const;
 
   MOZ_CAN_RUN_SCRIPT void Before(const Sequence<OwningNodeOrString>& aNodes,
                                  ErrorResult& aRv);
@@ -1969,8 +1970,7 @@ protected:
   virtual void CheckNotNativeAnonymous() const;
 #endif
 
-  void EnsurePreInsertionValidity1(nsINode& aNewChild, nsINode* aRefChild,
-                                   mozilla::ErrorResult& aError);
+  void EnsurePreInsertionValidity1(mozilla::ErrorResult& aError);
   void EnsurePreInsertionValidity2(bool aReplace, nsINode& aNewChild,
                                    nsINode* aRefChild,
                                    mozilla::ErrorResult& aError);
@@ -1998,17 +1998,20 @@ protected:
                                                 mozilla::ErrorResult&);
 
 public:
-  /* Event stuff that documents and elements share.  This needs to be
-     NS_IMETHOD because some subclasses implement DOM methods with
-     this exact name and signature and then the calling convention
-     needs to match.
+  /* Event stuff that documents and elements share.
 
      Note that we include DOCUMENT_ONLY_EVENT events here so that we
      can forward all the document stuff to this implementation.
   */
-#define EVENT(name_, id_, type_, struct_)                             \
-  mozilla::dom::EventHandlerNonNull* GetOn##name_();                  \
-  void SetOn##name_(mozilla::dom::EventHandlerNonNull* listener);
+#define EVENT(name_, id_, type_, struct_)                               \
+  mozilla::dom::EventHandlerNonNull* GetOn##name_()                     \
+  {                                                                     \
+    return GetEventHandler(nsGkAtoms::on##name_);                       \
+  }                                                                     \
+  void SetOn##name_(mozilla::dom::EventHandlerNonNull* handler)         \
+  {                                                                     \
+    SetEventHandler(nsGkAtoms::on##name_, handler);                     \
+  }
 #define TOUCH_EVENT EVENT
 #define DOCUMENT_ONLY_EVENT EVENT
 #include "mozilla/EventNameList.h"

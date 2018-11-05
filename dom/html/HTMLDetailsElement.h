@@ -24,8 +24,8 @@ class HTMLDetailsElement final : public nsGenericHTMLElement
 public:
   using NodeInfo = mozilla::dom::NodeInfo;
 
-  explicit HTMLDetailsElement(already_AddRefed<NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElement(aNodeInfo)
+  explicit HTMLDetailsElement(already_AddRefed<NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo))
   {
   }
 
@@ -33,8 +33,7 @@ public:
 
   nsIContent* GetFirstSummary() const;
 
-  nsresult Clone(NodeInfo* aNodeInfo, nsINode** aResult,
-                 bool aPreallocateChildren) const override;
+  nsresult Clone(NodeInfo* aNodeInfo, nsINode** aResult) const override;
 
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
                                       int32_t aModType) const override;

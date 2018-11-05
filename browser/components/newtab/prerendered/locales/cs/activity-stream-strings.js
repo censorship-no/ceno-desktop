@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Obrázek se nepodařilo načíst. Zkuste jinou URL adresu.",
   "pocket_read_more": "Populární témata:",
   "pocket_read_even_more": "Zobrazit více článků",
+  "pocket_more_reccommendations": "Další doporučení",
+  "pocket_how_it_works": "Jak to funguje",
+  "pocket_cta_button": "Získejte Pocket",
+  "pocket_cta_text": "Ukládejte si články do služby Pocket a užívejte si skvělé čtení.",
   "highlights_empty_state": "Začněte prohlížet a my vám zde ukážeme některé skvělé články, videa a další stránky, které jste nedávno viděli nebo uložili do záložek.",
   "topstories_empty_state": "Už jste všechno přečetli. Další články ze služby {provider} tu najdete zase později. Ale pokud se nemůžete dočkat, vyberte své oblíbené téma a podívejte se na další velké články z celého webu.",
   "manual_migration_explanation2": "Vyzkoušejte Firefox se záložkami, historií a hesly z jiného vašeho prohlížeče.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Nastavení sekce",
   "section_menu_action_manage_webext": "Správa rozšíření",
   "section_menu_action_add_topsite": "Přidat mezi top stránky",
+  "section_menu_action_add_search_engine": "Přidat vyhledávací modul",
   "section_menu_action_move_up": "Posunout nahoru",
   "section_menu_action_move_down": "Posunout dolů",
   "section_menu_action_privacy_notice": "Zásady ochrany osobních údajů",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Podmínkami používání služby",
   "firstrun_privacy_notice": "Zásadami ochrany soukromí",
   "firstrun_continue_to_login": "Pokračovat",
-  "firstrun_skip_login": "Přeskočit tento krok"
+  "firstrun_skip_login": "Přeskočit tento krok",
+  "context_menu_title": "Otevře nabídku",
+  "pocket_learn_more": "Zjistit více"
 };

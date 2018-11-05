@@ -28,7 +28,7 @@ public:
   FontType GetType() const override { return FontType::FONTCONFIG; }
 
 #ifdef USE_SKIA
-  SkTypeface* GetSkTypeface() override;
+  SkTypeface* CreateSkTypeface() override;
 #endif
 
   bool CanSerialize() override { return true; }
@@ -57,6 +57,8 @@ private:
     };
 
     InstanceData(cairo_scaled_font_t* aScaledFont, FcPattern* aPattern);
+    InstanceData(const wr::FontInstanceOptions* aOptions,
+                 const wr::FontInstancePlatformOptions* aPlatformOptions);
 
     void SetupPattern(FcPattern* aPattern) const;
     void SetupFontOptions(cairo_font_options_t* aFontOptions) const;
@@ -66,14 +68,6 @@ private:
     uint8_t mSubpixelOrder;
     uint8_t mLcdFilter;
   };
-
-  static already_AddRefed<ScaledFont>
-    CreateFromInstanceData(const InstanceData& aInstanceData,
-                           UnscaledFontFontconfig* aUnscaledFont,
-                           Float aSize,
-                           const FontVariation* aVariations,
-                           uint32_t aNumVariations,
-                           NativeFontResourceFontconfig* aNativeFontResource = nullptr);
 
   FcPattern* mPattern;
 };

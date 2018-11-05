@@ -32,7 +32,7 @@ protected:
   friend nsresult (::NS_NewSVGPathElement(nsIContent **aResult,
                                           already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
   virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
-  explicit SVGPathElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGPathElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 public:
   NS_DECL_ADDSIZEOFEXCLUDINGTHIS
@@ -57,14 +57,13 @@ public:
   virtual already_AddRefed<Path> GetOrBuildPathForMeasuring() override;
 
   // nsIContent interface
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual SVGAnimatedPathSegList* GetAnimPathSegList() override {
     return &mD;
   }
 
-  virtual nsAtom* GetPathDataAttrName() const override {
+  virtual nsStaticAtom* GetPathDataAttrName() const override {
     return nsGkAtoms::d;
   }
 

@@ -131,7 +131,7 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   typedef layers::WebRenderCanvasData WebRenderCanvasData;
 
 public:
-  explicit HTMLCanvasElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLCanvasElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLCanvasElement, canvas)
 
@@ -231,6 +231,12 @@ public:
   void SetWriteOnly();
 
   /**
+   * Force the canvas to be write-only, except for readers from
+   * a specific extension's content script expanded principal.
+   */
+  void SetWriteOnly(nsIPrincipal* aExpandedReader);
+
+  /**
    * Notify that some canvas content has changed and the window may
    * need to be updated. aDamageRect is in canvas coordinates.
    */
@@ -296,10 +302,8 @@ public:
                                 nsAttrValue& aResult) override;
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute, int32_t aModType) const override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
-  nsresult CopyInnerTo(mozilla::dom::Element* aDest,
-                       bool aPreallocateChildren);
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult CopyInnerTo(HTMLCanvasElement* aDest);
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 
@@ -397,8 +401,15 @@ public:
   // We set this when script paints an image from a different origin.
   // We also transitively set it when script paints a canvas which
   // is itself write-only.
-  bool                     mWriteOnly;
+  bool mWriteOnly;
 
+  // When this canvas is (only) tainted by an image from an extension
+  // content script, allow reads from the same extension afterwards.
+  RefPtr<nsIPrincipal> mExpandedReader;
+
+  // Determines if the caller should be able to read the content.
+  bool CallerCanRead(JSContext* aCx);
+  
   bool IsPrintCallbackDone();
 
   void HandlePrintCallback(nsPresContext::nsPresContextType aType);

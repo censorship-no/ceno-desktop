@@ -35,20 +35,6 @@ a11y:
     record_in_processes:
       - 'main'
 
-# The following section contains the aushelper system add-on scalars.
-aushelper:
-  websense_reg_version:
-    bug_numbers:
-      - 1305847
-    description: The Websense version from the Windows registry.
-    expires: "60"
-    kind: string
-    notification_emails:
-      - application-update-telemetry-alerts@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-
 # The following section contains the browser engagement scalars.
 browser.engagement:
   max_concurrent_tab_count:
@@ -266,70 +252,16 @@ browser.engagement.navigation:
     record_in_processes:
       - 'main'
 
-# The following section contains (RSS/Atom) feed usage
-browser.feeds:
-  preview_loaded:
+  webextension:
     bug_numbers:
-      - 1350349
+      - 1492233
     description: >
-      The number of times a feed preview page is loaded.
-    expires: "65"
+      The count URI loads triggered in a subsession from a webextension.
+    expires: never
     kind: uint
+    keyed: true
     notification_emails:
-      - gijs@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-      - 'content'
-
-  feed_subscribed:
-    bug_numbers:
-      - 1350349
-    description: >
-      The number of times a user subscribes to a feed.
-    expires: "65"
-    kind: uint
-    notification_emails:
-      - gijs@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-
-  livebookmark_opened:
-    bug_numbers:
-      - 1350349
-    description: >
-      The number of times a user opens a live bookmark dropdown.
-    expires: "65"
-    kind: uint
-    notification_emails:
-      - gijs@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-
-  livebookmark_item_opened:
-    bug_numbers:
-      - 1350349
-    description: >
-      The number of times a user opens an item that is part of a live bookmark.
-    expires: "65"
-    kind: uint
-    notification_emails:
-      - gijs@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-
-  livebookmark_count:
-    bug_numbers:
-      - 1350349
-    description: >
-      The number of live bookmark folders the user has (ie not individual items).
-    expires: "65"
-    kind: uint
-    notification_emails:
-      - gijs@mozilla.com
+      - mkaply@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - 'main'
@@ -435,11 +367,26 @@ services.sync:
     description: >
       Records transitions between login states of "success", "unverified"
       and "rejected.
-    expires: "65"
+    expires: "68"
     kind: boolean
     keyed: true
     notification_emails:
       - sync-staff@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+identity.fxaccounts:
+  missed_commands_fetched:
+    bug_numbers:
+      - 1496638
+    description: >
+      The number of missed FxA commands we have recovered.
+    expires: "68"
+    kind: uint
+    keyed: false
+    notification_emails:
+      - fxa-staff@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - main
@@ -490,6 +437,22 @@ security:
     notification_emails:
       - seceng-telemetry@mozilla.com
       - dkeeler@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+
+contentblocking:
+  exceptions:
+    bug_numbers:
+      - 1484251
+    description: >
+      How many tracking protection/content blocking exceptions a user has at startup.
+    expires: "70"
+    kind: uint
+    notification_emails:
+      - jhofmann@mozilla.com
+      - pdol@mozilla.com
+      - seceng-telemetry@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - main
@@ -637,6 +600,79 @@ preferences:
     record_in_processes:
       - 'main'
 
+# The following section contains WebRTC JS API scalars
+# For more information on WebRTC, see https://www.w3.org/TR/webrtc/
+# For more info on ICE, see https://tools.ietf.org/html/rfc5245
+webrtc.peerconnection:
+  connected:
+    bug_numbers:
+      - 1455724
+    description: >
+      The number of RTCPeerConnection objects that established connections.
+      This is incremented the first time a RTCPeerConnection object's
+      iceConnectionState becomes "connected" or "complete".
+      For more information on WebRTC, see https://www.w3.org/TR/webrtc/
+    expires: "65"
+    kind: uint
+    notification_emails:
+      - ngrunbaum@mozilla.com
+    release_channel_collection: opt-in
+    record_in_processes:
+      - 'main'
+      - 'content'
+
+  legacy_callback_stats_used:
+    bug_numbers:
+      - 1455724
+    description: >
+      The number of RTCPeerConnections in which the current statistics
+      API is called. Recorded the first time getStats is called using the
+      deprecated callback based API on a RTCPeerConnection that has an
+      iceConnectionState of "complete" or "connected".
+    expires: "65"
+    kind: uint
+    notification_emails:
+      - ngrunbaum@mozilla.com
+    release_channel_collection: opt-in
+    record_in_processes:
+      - 'main'
+      - 'content'
+
+  promise_stats_used:
+    bug_numbers:
+      - 1455724
+    description: >
+      The number of RTCPeerConnection objects in which the current statistics
+      API is called. This is recorded the first time getStats is called using
+      the promise based API on a RTCPeerConnection that has an
+      iceConnectionState of "complete" or "connected".
+    expires: "65"
+    kind: uint
+    notification_emails:
+      - ngrunbaum@mozilla.com
+    release_channel_collection: opt-in
+    record_in_processes:
+      - 'main'
+      - 'content'
+
+  promise_and_callback_stats_used:
+    bug_numbers:
+      - 1455724
+    description: >
+      The number of RTCPeerConnection objects in which both the legacy callback
+      statistics API and the modern promise statistics API are used. This is
+      recorded once for each RTCPeerConnection after the callback and promise
+      getStats API has been called on a RTCPeerConnection that has an
+      iceConnectionState of "complete" or "connected".
+    expires: "65"
+    kind: uint
+    notification_emails:
+      - ngrunbaum@mozilla.com
+    release_channel_collection: opt-in
+    record_in_processes:
+      - 'main'
+      - 'content'
+
 # The following section contains WebRTC nICEr scalars
 # For more info on ICE, see https://tools.ietf.org/html/rfc5245
 # For more info on STUN, see https://tools.ietf.org/html/rfc5389
@@ -782,6 +818,7 @@ media:
   page_count:
     bug_numbers:
       - 1476456
+      - 1499803
     description: >
       The number of times a top level document is loaded.
     expires: "68"
@@ -790,7 +827,7 @@ media:
       - cpearce@mozilla.com
       - alwu@mozilla.com
       - nohlmeier@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
     record_in_processes:
       - main
       - content
@@ -798,6 +835,7 @@ media:
   page_had_media_count:
     bug_numbers:
       - 1476456
+      - 1499803
     description: >
       The number of times a document hierarchy contained at least one audible HTMLMediaElement that had play() called upon it.
     expires: "68"
@@ -806,7 +844,7 @@ media:
       - cpearce@mozilla.com
       - alwu@mozilla.com
       - nohlmeier@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
     record_in_processes:
       - main
       - content
@@ -814,6 +852,7 @@ media:
   page_had_play_revoked_count:
     bug_numbers:
       - 1476456
+      - 1499803
     description: >
       The number of times a document hierarchy contained at least one muted playing HTMLMediaElement that was paused due to becoming unmuted while not being allowed to autoplay.
     expires: "68"
@@ -822,7 +861,7 @@ media:
       - cpearce@mozilla.com
       - alwu@mozilla.com
       - nohlmeier@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
     record_in_processes:
       - main
       - content
@@ -830,6 +869,7 @@ media:
   autoplay_would_not_be_allowed_count:
     bug_numbers:
       - 1476456
+      - 1499803
     description: >
       The number of HTMLMediaElement autoplays on audible HTMLMediaElements which would not be allowed to play if block autoplay was enabled; we'd either prompt for permission to play or block outright depending on user preferences.
     expires: "68"
@@ -838,23 +878,24 @@ media:
       - cpearce@mozilla.com
       - alwu@mozilla.com
       - nohlmeier@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
     record_in_processes:
       - main
       - content
 
-  blocked_autoplay_no_audio_track_count:
+  allowed_autoplay_no_audio_track_count:
     bug_numbers:
       - 1480484
+      - 1499803
     description: >
-      The number of HTMLMediaElement autoplays on HTMLMediaElements without an audio track which would not be allowed to play if block autoplay was enabled; we'd either prompt for permission to play or block outright depending on user preferences.
+      The number of HTMLMediaElement autoplays on HTMLMediaElements without an audio track which would be allowed to play.
     expires: "68"
     kind: uint
     notification_emails:
       - cpearce@mozilla.com
       - alwu@mozilla.com
       - nohlmeier@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
     record_in_processes:
       - main
       - content
@@ -862,6 +903,7 @@ media:
   autoplay_would_be_allowed_count:
     bug_numbers:
       - 1476456
+      - 1499803
     description: >
       The number of HTMLMediaElement autoplays on audible HTMLMediaElements that would have been allowed (not blocked) by the autoplay policy if block autoplay was enabled.
     expires: "68"
@@ -870,28 +912,47 @@ media:
       - cpearce@mozilla.com
       - alwu@mozilla.com
       - nohlmeier@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+      - content
+
+  blocked_no_metadata:
+    bug_numbers:
+      - 1483703
+      - 1499803
+    description: >
+      The number of HTMLMediaElements which we blocked because they hadn't loaded metadata yet.
+    expires: "68"
+    kind: uint
+    notification_emails:
+      - cpearce@mozilla.com
+      - alwu@mozilla.com
+      - nohlmeier@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+      - content
+
+  blocked_no_metadata_endup_no_audio_track:
+    bug_numbers:
+      - 1483703
+      - 1499803
+    description: >
+      The number of HTMLMediaElements which were blocked because they hadn't loaded metadata yet, but ended up having no audio track.
+    expires: "68"
+    kind: uint
+    notification_emails:
+      - cpearce@mozilla.com
+      - alwu@mozilla.com
+      - nohlmeier@mozilla.com
+    release_channel_collection: opt-out
     record_in_processes:
       - main
       - content
 
 # The following section contains content process base counters.
 dom.contentprocess:
-  troubled_due_to_memory:
-    bug_numbers:
-      - 1305091
-    description: >
-      The number of content processes that were marked as troubled because
-      it was running low on virtual memory.
-    expires: "58"
-    kind: uint
-    notification_emails:
-      - benjamin@smedbergs.us
-      - mconley@mozilla.com
-    release_channel_collection: opt-in
-    record_in_processes:
-      - 'main'
-
   buildID_mismatch:
     bug_numbers:
       - 1366808
@@ -902,6 +963,22 @@ dom.contentprocess:
     kind: uint
     notification_emails:
       - spohl@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
+
+# The following section contains parent process base counters.
+dom.parentprocess:
+  private_window_used:
+    bug_numbers:
+      - 1491047
+    description: >
+      Whether a private browsing window has been used in the session.
+    expires: never
+    kind: boolean
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - ehsan+telemetry@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - 'main'
@@ -1193,12 +1270,13 @@ devtools.tool:
   registered:
     bug_numbers:
       - 1447302
+      - 1503568
     description: >
       Recorded on enable tool checkbox check/uncheck in Developer Tools options
       panel. Boolean stating if the tool was enabled or disabled by the user.
       Keyed by tool id. Current default tools with their id's are defined in
       https://dxr.mozilla.org/mozilla-central/source/devtools/client/definitions.js
-    expires: "65"
+    expires: "70"
     kind: boolean
     keyed: true
     notification_emails:
@@ -1212,10 +1290,11 @@ devtools.accessibility:
   node_inspected_count:
     bug_numbers:
       - 1447302
+      - 1503568
     description: >
       Number of times a DOM node was inspected from within the Accessibility
       tool.
-    expires: "65"
+    expires: "70"
     kind: uint
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
@@ -1227,9 +1306,10 @@ devtools.accessibility:
   opened_count:
     bug_numbers:
       - 1447302
+      - 1503568
     description: >
       Number of times the DevTools Accessibility tool has been opened.
-    expires: "65"
+    expires: "70"
     kind: uint
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
@@ -1241,10 +1321,11 @@ devtools.accessibility:
   picker_used_count:
     bug_numbers:
       - 1447302
+      - 1503568
     description: >
       Number of times the picker tool has been used in DevTools Accessibility
       panel.
-    expires: "65"
+    expires: "70"
     kind: uint
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
@@ -1256,11 +1337,12 @@ devtools.accessibility:
   select_accessible_for_node:
     bug_numbers:
       - 1447302
+      - 1503568
     description: >
       Number of times an accessible object was inspected from outside the
       Accessibility tool (navigation to Accessibility panel). Keyed by the
       source of user action (inspector context menu, browser context menu, etc).
-    expires: "65"
+    expires: "70"
     kind: uint
     keyed: true
     notification_emails:
@@ -1273,10 +1355,11 @@ devtools.accessibility:
   service_enabled_count:
     bug_numbers:
       - 1447302
+      - 1503568
     description: >
       Number of times platform accessibility has been enabled in DevTools
       Accessibility panel.
-    expires: "65"
+    expires: "70"
     kind: uint
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
@@ -1316,6 +1399,67 @@ devtools.toolbox:
     release_channel_collection: opt-out
     record_in_processes:
       - 'main'
+
+devtools.webreplay:
+  new_recording:
+    bug_numbers:
+     - 1495910
+    description: >
+      Number of times a blank recording tab was created.
+    expires: never
+    kind: uint
+    notification_emails:
+     - bhackett@mozilla.com
+    record_in_processes:
+     - 'main'
+
+  reload_recording:
+    bug_numbers:
+     - 1495910
+    description: >
+      Number of times a non-recording tab was reloaded to create a recording tab.
+    expires: never
+    kind: uint
+    notification_emails:
+     - bhackett@mozilla.com
+    record_in_processes:
+     - 'main'
+
+  stop_recording:
+    bug_numbers:
+     - 1495910
+    description: >
+      Number of times a recording tab was reloaded to create a non-recording tab.
+    expires: never
+    kind: uint
+    notification_emails:
+     - bhackett@mozilla.com
+    record_in_processes:
+     - 'main'
+
+  save_recording:
+    bug_numbers:
+     - 1495910
+    description: >
+      Number of times a recording was saved.
+    expires: never
+    kind: uint
+    notification_emails:
+     - bhackett@mozilla.com
+    record_in_processes:
+     - 'main'
+
+  load_recording:
+    bug_numbers:
+     - 1495910
+    description: >
+      Number of times a recording was loaded.
+    expires: never
+    kind: uint
+    notification_emails:
+     - bhackett@mozilla.com
+    record_in_processes:
+     - 'main'
 
 navigator.storage:
   estimate_count:
@@ -1435,7 +1579,7 @@ telemetry:
     description: >
       How many times the GeckoView Telemetry persistence timer was hit during
       the current subsession.
-    expires: "65"
+    expires: "70"
     kind: uint
     notification_emails:
       - telemetry-client-dev@mozilla.com
@@ -1450,7 +1594,7 @@ telemetry:
     description: >
       The number of times the pending operations list reached the
       high-water mark, leading to operations being applied immediately.
-    expires: "65"
+    expires: "70"
     kind: uint
     keyed: false
     notification_emails:
@@ -1474,17 +1618,16 @@ telemetry:
     record_in_processes:
       - 'main'
 
-  os_shutting_down:
+  keyed_scalars_exceed_limit:
     bug_numbers:
-      - 1480826
+      - 1451813
     description: >
-      Records true if there is a signal that Firefox was quitting because
-      the OS was shutting down. Only available on Windows.
-    expires: "64"
-    kind: boolean
+      The number of times keyed scalars exceeded the number of keys limit, keyed by scalar name.
+    expires: "never"
+    kind: uint
+    keyed: true
     notification_emails:
-      - telemetry-client-dev@mozilla.com
-      - agashlin@mozilla.com
+      - chutten@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - 'main'
@@ -1584,53 +1727,6 @@ gfx.omtp:
       - gfx-telemetry-alerts@mozilla.com
       - rhunt@mozilla.com
     record_in_processes:
-      - 'content'
-
-images.webp:
-  probe_observed:
-    bug_numbers:
-      - 1472145
-    description: >
-      Whether we received a probe detecting our WebP image support.
-    kind: boolean
-    expires: "65"
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - aosmond@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-      - 'content'
-
-  content_observed:
-    bug_numbers:
-      - 1472145
-    description: >
-      Whether we received a request to decode a WebP image, excluding probes.
-    kind: boolean
-    expires: "65"
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - aosmond@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-      - 'content'
-
-  content_frequency:
-    bug_numbers:
-      - 1472145
-    description: >
-      How many image requests are WebP images, excluding probes.
-    kind: uint
-    keyed: true
-    expires: "65"
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - aosmond@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
       - 'content'
 
 # The following section contains the form autofill related scalars.
@@ -1852,9 +1948,10 @@ sw:
   synthesized_res_count:
     bug_numbers:
       - 1416629
+      - 1433916
     description: >
       The count of number of synthesize response made by service workers.
-    expires: "61"
+    expires: "68"
     kind: uint
     notification_emails:
       - sw-telemetry@mozilla.com
@@ -1883,9 +1980,10 @@ sw:
   alternative_body_used_count:
     bug_numbers:
       - 1423623
+      - 1433916
     description: >
       The count of number of synthesize response using alternative body.
-    expires: "61"
+    expires: "68"
     kind: uint
     notification_emails:
       - sw-telemetry@mozilla.com
@@ -1902,7 +2000,7 @@ browser.errors:
       - 1444554
     description: >
       The count of all browser chrome JS errors that were collected locally.
-    expires: "64"
+    expires: "67"
     kind: uint
     notification_emails:
       - nightly-js-errors@mozilla.com
@@ -1916,7 +2014,7 @@ browser.errors:
     description: >
       The count of browser chrome JS errors that were collected locally and had
       a usable stack trace.
-    expires: "64"
+    expires: "67"
     kind: uint
     notification_emails:
       - nightly-js-errors@mozilla.com
@@ -1930,7 +2028,7 @@ browser.errors:
     description: >
       The count of all browser chrome JS errors that were reported to the
       remote collection service.
-    expires: "64"
+    expires: "67"
     kind: uint
     notification_emails:
       - nightly-js-errors@mozilla.com
@@ -1944,7 +2042,7 @@ browser.errors:
     description: >
       The count of all browser chrome JS errors that we attempted to report to
       the remote collection service, but failed to.
-    expires: "64"
+    expires: "67"
     kind: uint
     notification_emails:
       - nightly-js-errors@mozilla.com
@@ -1957,7 +2055,7 @@ browser.errors:
       - 1444554
     description: >
       The sample rate at which collected errors were reported.
-    expires: "64"
+    expires: "67"
     kind: string
     notification_emails:
       - nightly-js-errors@mozilla.com
@@ -1975,7 +2073,7 @@ browser.errors:
       chrome:// protocols; non-matching filenames are reported as "FILTERED".
       Long filenames are truncated to the first 70 characters.
     keyed: true
-    expires: "64"
+    expires: "67"
     kind: uint
     notification_emails:
       - nightly-js-errors@mozilla.com
@@ -2050,6 +2148,23 @@ memoryreporter:
     release_channel_collection: opt-out
     record_in_processes:
       - 'content'
+
+resistfingerprinting:
+  content_window_size:
+    bug_numbers:
+      - 1489493
+    description: >
+      The size (in pixels) of the content windows for innerWidth and innerHeight.
+    expires: "66"
+    kind: uint
+    keyed: true
+    notification_emails:
+      - tihuang@mozilla.com
+      - tom@mozilla.com
+      - ettseng@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - 'main'
 
 # The following section is for probes testing the Telemetry system. They will not be
 # submitted in pings and are only used for testing.

@@ -212,6 +212,13 @@ def verify_android_device(build_obj, install=False, xre=False, debugger=False,
             emulator.wait_for_start()
             device_verified = True
 
+    if device_verified and "DEVICE_SERIAL" not in os.environ:
+        devices = adbhost.devices(timeout=10)
+        for d in devices:
+            if d['state'] == 'device':
+                os.environ["DEVICE_SERIAL"] = d['device_serial']
+                break
+
     if device_verified and install:
         # Determine if Firefox is installed on the device; if not,
         # prompt to install. This feature allows a test command to
@@ -228,20 +235,27 @@ def verify_android_device(build_obj, install=False, xre=False, debugger=False,
         if not app:
             app = build_obj.substs["ANDROID_PACKAGE_NAME"]
         device = _get_device(build_obj.substs, device_serial)
-        if not device.is_app_installed(app):
-            if 'fennec' not in app and 'firefox' not in app:
-                raw_input(
-                    "It looks like %s is not installed on this device,\n"
-                    "but I don't know how to install it.\n"
-                    "Install it now, then hit Enter " % app)
-            else:
-                response = raw_input(
-                    "It looks like %s is not installed on this device.\n"
-                    "Install Firefox? (Y/n) " % app).strip()
-                if response.lower().startswith('y') or response == '':
-                    _log_info("Installing Firefox. This may take a while...")
-                    build_obj._run_make(directory=".", target='install',
-                                        ensure_exit_code=False)
+        response = ''
+        while not device.is_app_installed(app):
+            try:
+                if 'fennec' not in app and 'firefox' not in app:
+                    response = raw_input(
+                        "It looks like %s is not installed on this device,\n"
+                        "but I don't know how to install it.\n"
+                        "Install it now, then hit Enter or quit to exit " % app)
+                else:
+                    response = response = raw_input(
+                        "It looks like %s is not installed on this device.\n"
+                        "Install Firefox? (Y/n) or quit to exit " % app).strip()
+                    if response.lower().startswith('y') or response == '':
+                        _log_info("Installing Firefox. This may take a while...")
+                        build_obj._run_make(directory=".", target='install',
+                                            ensure_exit_code=False)
+            except EOFError:
+                response = 'quit'
+            if response == 'quit':
+                device_verified = False
+                break
 
     if device_verified and xre:
         # Check whether MOZ_HOST_BIN has been set to a valid xre; if not,
@@ -374,6 +388,7 @@ def grant_runtime_permissions(build_obj, app, device_serial=None):
             device.shell_output('pm grant %s android.permission.ACCESS_COARSE_LOCATION' % app)
             device.shell_output('pm grant %s android.permission.ACCESS_FINE_LOCATION' % app)
             device.shell_output('pm grant %s android.permission.CAMERA' % app)
+            device.shell_output('pm grant %s android.permission.RECORD_AUDIO' % app)
     except Exception:
         _log_warning("Unable to grant runtime permissions to %s" % app)
 
@@ -499,7 +514,7 @@ class AndroidEmulator(object):
         env['ANDROID_AVD_HOME'] = os.path.join(EMULATOR_HOME_DIR, "avd")
         command = [self.emulator_path, "-avd", self.avd_info.name]
         if self.gpu:
-            command += ['-gpu', 'swiftshader']
+            command += ['-gpu', 'swiftshader_indirect']
         if self.avd_info.extra_args:
             # -enable-kvm option is not valid on OSX
             if _get_host_platform() == 'macosx64' and '-enable-kvm' in self.avd_info.extra_args:

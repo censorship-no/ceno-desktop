@@ -143,7 +143,7 @@ InlineSpellChecker.prototype = {
         break;
       this.mSpellSuggestions.push(suggestion);
 
-      var item = menu.ownerDocument.createElement("menuitem");
+      var item = menu.ownerDocument.createXULElement("menuitem");
       this.mSuggestionItems.push(item);
       item.setAttribute("label", suggestion);
       item.setAttribute("value", suggestion);
@@ -213,7 +213,7 @@ InlineSpellChecker.prototype = {
 
     for (var i = 0; i < sortedList.length; i++) {
       this.mDictionaryNames.push(sortedList[i].id);
-      var item = menu.ownerDocument.createElement("menuitem");
+      var item = menu.ownerDocument.createXULElement("menuitem");
       item.setAttribute("id", "spell-check-dictionary-" + sortedList[i].id);
       item.setAttribute("label", sortedList[i].label);
       item.setAttribute("type", "radio");
@@ -318,7 +318,7 @@ InlineSpellChecker.prototype = {
       this.mRemote.ignoreWord();
     else
       this.mInlineSpellChecker.ignoreWord(this.mMisspelling);
-  }
+  },
 };
 
 var SpellCheckHelper = {
@@ -507,5 +507,5 @@ RemoteSpellChecker.prototype = {
 
     this._spellInfo.target.sendAsyncMessage("InlineSpellChecker:recheck", {});
   },
-  uninit() { this._spellInfo.target.sendAsyncMessage("InlineSpellChecker:uninit", {}); }
+  uninit() { this._spellInfo.target.sendAsyncMessage("InlineSpellChecker:uninit", {}); },
 };

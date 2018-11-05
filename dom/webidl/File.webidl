@@ -19,8 +19,7 @@ interface File : Blob {
   readonly attribute long long lastModified;
 };
 
-dictionary FilePropertyBag {
-  DOMString type = "";
+dictionary FilePropertyBag : BlobPropertyBag {
   long long lastModified;
 };
 
@@ -31,7 +30,7 @@ dictionary ChromeFilePropertyBag : FilePropertyBag {
 
 // Mozilla extensions
 partial interface File {
-  [BinaryName="relativePath", Func="mozilla::dom::DOMPrefs::WebkitBlinkDirectoryPickerEnabled"]
+  [BinaryName="relativePath", Func="mozilla::dom::DOMPrefs::dom_webkitBlink_dirPicker_enabled"]
   readonly attribute USVString webkitRelativePath;
 
   [GetterThrows, ChromeOnly, NeedsCallerType]

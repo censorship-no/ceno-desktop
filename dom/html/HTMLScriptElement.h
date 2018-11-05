@@ -20,7 +20,7 @@ class HTMLScriptElement final : public nsGenericHTMLElement,
 public:
   using Element::GetText;
 
-  HTMLScriptElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+  HTMLScriptElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                     FromParser aFromParser);
 
   // nsISupports
@@ -47,8 +47,7 @@ public:
                               nsIPrincipal* aMaybeScriptedPrincipal,
                               nsAttrValue& aResult) override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // Element
   virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,

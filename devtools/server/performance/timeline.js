@@ -75,7 +75,6 @@ Timeline.prototype = {
    */
   get docShells() {
     let originalDocShell;
-    const docShells = [];
 
     if (this.targetActor.isRootActor) {
       originalDocShell = this.targetActor.docShell;
@@ -84,7 +83,7 @@ Timeline.prototype = {
     }
 
     if (!originalDocShell) {
-      return docShells;
+      return [];
     }
 
     const docShellsEnum = originalDocShell.getDocShellEnumerator(
@@ -92,12 +91,7 @@ Timeline.prototype = {
       Ci.nsIDocShell.ENUMERATE_FORWARDS
     );
 
-    while (docShellsEnum.hasMoreElements()) {
-      const docShell = docShellsEnum.getNext();
-      docShells.push(docShell.QueryInterface(Ci.nsIDocShell));
-    }
-
-    return docShells;
+    return Array.from(docShellsEnum);
   },
 
   /**
@@ -330,7 +324,7 @@ Timeline.prototype = {
    * SpiderMonkey could not incrementally collect garbage.
    */
   _onGarbageCollection: function({
-    collections, gcCycleNumber, reason, nonincrementalReason
+    collections, gcCycleNumber, reason, nonincrementalReason,
   }) {
     const docShells = this.docShells;
     if (!this._isRecording || !docShells.length) {
@@ -340,7 +334,7 @@ Timeline.prototype = {
     const endTime = docShells[0].now();
 
     this.emit("markers", collections.map(({
-      startTimestamp: start, endTimestamp: end
+      startTimestamp: start, endTimestamp: end,
     }) => {
       return {
         name: "GarbageCollection",

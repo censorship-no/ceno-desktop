@@ -3,6 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+if (!("SpecialPowers" in window)) {
+  dump("Robocop robocop_testharness.js found SpecialPowers unavailable: reloading...\n");
+  setTimeout(() => {
+    window.location.reload();
+  }, 1000);
+}
+
 function sendMessageToJava(message) {
   SpecialPowers.Services.androidBridge.dispatch(message.type, message);
 }
@@ -49,7 +56,9 @@ function testOneFile(uri) {
   let principal = SpecialPowers.Cc["@mozilla.org/systemprincipal;1"]
                                .createInstance(SpecialPowers.Ci.nsIPrincipal);
 
-  let testScope = SpecialPowers.Cu.Sandbox(principal);
+  let testScope =
+    SpecialPowers.Cu.Sandbox(principal, { sandboxName: uri,
+                                          wantGlobalProperties: ["ChromeUtils"] });
 
   // Populate test environment with test harness prerequisites.
   testScope.Components = SpecialPowers.Components;

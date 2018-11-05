@@ -48,17 +48,6 @@
     {0xa1, 0xa8, 0x0, 0x50, 0x4, 0x1c, 0xaf, 0x44}   \
 }
 
-// service implementing nsIProxyAutoConfig.
-#define NS_PROXYAUTOCONFIG_CONTRACTID \
-    "@mozilla.org/network/proxy-auto-config;1"
-#define NS_PROXYAUTOCONFIG_CID                       \
-{ /* 63ac8c66-1dd2-11b2-b070-84d00d3eaece */         \
-    0x63ac8c66,                                      \
-    0x1dd2,                                          \
-    0x11b2,                                          \
-    {0xb0, 0x70, 0x84, 0xd0, 0x0d, 0x3e, 0xae, 0xce} \
-}
-
 // component implementing nsILoadGroup.
 #define NS_LOADGROUP_CONTRACTID \
     "@mozilla.org/network/load-group;1"
@@ -179,17 +168,6 @@
     0x546a,                                          \
     0x4bff,                                          \
     {0x92, 0x01, 0xdc, 0x9b, 0x2c, 0x03, 0x2e, 0xba} \
-}
-
-// component implementing nsIRequestObserverProxy.
-#define NS_REQUESTOBSERVERPROXY_CONTRACTID \
-    "@mozilla.org/network/request-observer-proxy;1"
-#define NS_REQUESTOBSERVERPROXY_CID                  \
-{ /* 51fa28c7-74c0-4b85-9c46-d03faa7b696b */         \
-    0x51fa28c7,                                      \
-    0x74c0,                                          \
-    0x4b85,                                          \
-    {0x9c, 0x46, 0xd0, 0x3f, 0xaa, 0x7b, 0x69, 0x6b} \
 }
 
 // component implementing nsISimpleStreamListener.
@@ -314,17 +292,6 @@
     0xa781,                                          \
     0x4031,                                          \
     {0xbb, 0xae, 0xcc, 0x0d, 0xe5, 0x39, 0xf6, 0x1a} \
-}
-
-// component implementing nsISyncStreamListener.
-#define NS_SYNCSTREAMLISTENER_CONTRACTID \
-    "@mozilla.org/network/sync-stream-listener;1"
-#define NS_SYNCSTREAMLISTENER_CID \
-{ /* 439400d3-6f23-43db-8b06-8aafe1869bd8 */         \
-    0x439400d3,                                      \
-    0x6f23,                                          \
-    0x43db,                                          \
-    {0x8b, 0x06, 0x8a, 0xaf, 0xe1, 0x86, 0x9b, 0xd8} \
 }
 
 // component implementing nsIIncrementalDownload.
@@ -456,34 +423,12 @@
     {0x94, 0xdb, 0xd4, 0xf8, 0x59, 0x05, 0x82, 0x15} \
 }
 
-// component implementing nsIFileStream
-#define NS_LOCALFILESTREAM_CONTRACTID \
-    "@mozilla.org/network/file-stream;1"
-#define NS_LOCALFILESTREAM_CID                       \
-{ /* f8a69bd7-176c-4a60-9a05-b6d92f8f229a */         \
-    0xf8a69bd7,                                      \
-    0x176c,                                          \
-    0x4a60,                                          \
-    {0x9a, 0x05, 0xb6, 0xd9, 0x2f, 0x8f, 0x22, 0x9a} \
-}
-
 /**
  * Contract ID for a service implementing nsIURIClassifier that identifies
  * phishing and malware sites.
  */
 #define NS_URICLASSIFIERSERVICE_CONTRACTID \
     "@mozilla.org/uriclassifierservice"
-
-// Redirect channel registrar used for redirect to various protocols
-#define NS_REDIRECTCHANNELREGISTRAR_CONTRACTID \
-    "@mozilla.org/redirectchannelregistrar;1"
-#define NS_REDIRECTCHANNELREGISTRAR_CID \
-{ /* {b69043a6-8929-4d60-8d17-a27e44a8393e} */ \
-    0xb69043a6, \
-    0x8929, \
-    0x4d60, \
-    { 0x8d, 0x17, 0xa2, 0x7e, 0x44, 0xa8, 0x39, 0x3e } \
-}
 
 // service implementing nsINetworkPredictor
 #define NS_NETWORKPREDICTOR_CONTRACTID \
@@ -507,15 +452,14 @@
   { 0x92, 0x05, 0xc3, 0x09, 0xce, 0xb2, 0xd6, 0x41 } \
 }
 
-// service implementing nsIRequestContextService
-#define NS_REQUESTCONTEXTSERVICE_CONTRACTID \
-    "@mozilla.org/network/request-context-service;1"
-#define NS_REQUESTCONTEXTSERVICE_CID \
-{ /* d5499fa7-7ba8-49ff-9e30-1858b99ace69 */ \
-    0xd5499fa7, \
-    0x7ba8, \
-    0x49ff, \
-    {0x93, 0x30, 0x18, 0x58, 0xb9, 0x9a, 0xce, 0x69} \
+#define NS_NETWORKCONNECTIVITYSERVICE_CONTRACTID \
+    "@mozilla.org/network/network-connectivity-service;1"
+#define NS_NETWORKCONNECTIVITYSERVICE_CID \
+{ /* 2693457e-3ba5-4455-991f-5350946adb12 */ \
+    0x2693457e, \
+    0x3ba5, \
+    0x4455, \
+  { 0x99, 0x1f, 0x53, 0x50, 0x94, 0x6a, 0xdb, 0x12 } \
 }
 
 /******************************************************************************
@@ -542,27 +486,6 @@
     0x39d8,                                          \
     0x4a23,                                          \
     {0xa5, 0x0c, 0x2c, 0xbb, 0x08, 0x5a, 0xb7, 0xa5} \
-}
-
-#define NS_APPLICATIONCACHENAMESPACE_CONTRACTID \
-    "@mozilla.org/network/application-cache-namespace;1"
-#define NS_APPLICATIONCACHENAMESPACE_CID             \
-{ /* b00ed78a-04e2-4f74-8e1c-d1af79dfd12f */         \
-    0xb00ed78a,                                      \
-    0x04e2,                                          \
-    0x4f74,                                          \
-   {0x8e, 0x1c, 0xd1, 0xaf, 0x79, 0xdf, 0xd1, 0x2f}  \
-}
-
-#define NS_APPLICATIONCACHE_CONTRACTID \
-    "@mozilla.org/network/application-cache;1"
-
-#define NS_APPLICATIONCACHE_CID             \
-{ /* 463440c5-baad-4f3c-9e50-0b107abe7183 */ \
-    0x463440c5, \
-    0xbaad, \
-    0x4f3c, \
-   {0x9e, 0x50, 0xb, 0x10, 0x7a, 0xbe, 0x71, 0x83 } \
 }
 
 /******************************************************************************
@@ -619,28 +542,6 @@
     {0x9f, 0xd4, 0xe0, 0x65, 0xe8, 0x55, 0x68, 0xf4} \
 }
 
-#define NS_HTTPCHANNELAUTHPROVIDER_CONTRACTID \
-    "@mozilla.org/network/http-channel-auth-provider;1"
-#define NS_HTTPCHANNELAUTHPROVIDER_CID \
-{ /* 02f5a8d8-4ef3-48b1-b527-8a643056abbd */         \
-    0x02f5a8d8,                                      \
-    0x4ef3,                                          \
-    0x48b1,                                          \
-    {0xb5, 0x27, 0x8a, 0x64, 0x30, 0x56, 0xab, 0xbd} \
-}
-
-// component implementing nsIHttpPushListener.
-#define NS_HTTPPUSHLISTENER_CONTRACTID \
-    "@mozilla.org/network/push-listener;1"
-#define NS_HTTPPUSHLISTENER_CID                      \
-{                                                    \
-    0x73cf4430,                                      \
-    0x5877,                                          \
-    0x4c6b,                                          \
-    {0xb8, 0x78, 0x3e, 0xde, 0x5b, 0xc8, 0xef, 0xf1} \
-}
-
-
 #define NS_HTTPACTIVITYDISTRIBUTOR_CONTRACTID \
     "@mozilla.org/network/http-activity-distributor;1"
 #define NS_HTTPACTIVITYDISTRIBUTOR_CID \
@@ -659,18 +560,6 @@
     0xcd90,                                             \
     0x4dd3,                                             \
     {0x97, 0xa7, 0x06, 0xaf, 0x5e, 0x6d, 0x84, 0xc4}    \
-}
-
-// Background channel registrar used for pairing HttpChannelParent
-// and its background channel
-#define NS_BACKGROUNDCHANNELREGISTRAR_CONTRACTID \
-    "@mozilla.org/network/background-channel-registrar;1"
-#define NS_BACKGROUNDCHANNELREGISTRAR_CID \
-{ /* 6907788a-17cc-4c2a-a7c5-59ad2d9cc079 */          \
-    0x6907788a,                                       \
-    0x17cc,                                           \
-    0x4c2a,                                           \
-    { 0xa7, 0xc5, 0x59, 0xad, 0x2d, 0x9c, 0xc0, 0x79} \
 }
 
 /******************************************************************************
@@ -863,16 +752,6 @@
  * netwerk/socket classes
  */
 
-#define NS_SOCKETPROVIDERSERVICE_CONTRACTID \
-    "@mozilla.org/network/socket-provider-service;1"
-#define NS_SOCKETPROVIDERSERVICE_CID                   \
-{ /* ed394ba0-5472-11d3-bbc8-0000861d1237 */           \
-    0xed394ba0,                                        \
-    0x5472,                                            \
-    0x11d3,                                            \
-    { 0xbb, 0xc8, 0x00, 0x00, 0x86, 0x1d, 0x12, 0x37 } \
-}
-
 #define NS_SOCKSSOCKETPROVIDER_CID                     \
 { /* 8dbe7246-1dd2-11b2-9b8f-b9a849e4403a */           \
     0x8dbe7246,                                        \
@@ -897,16 +776,6 @@
     { 0x89, 0xc3, 0x8d, 0x83, 0xb1, 0x7d, 0x3f, 0xb4 } \
 }
 
-#define NS_SSLSOCKETPROVIDER_CONTRACTID \
-    NS_NETWORK_SOCKET_CONTRACTID_PREFIX "ssl"
-
-/* This code produces a normal socket which can be used to initiate the
- * STARTTLS protocol by calling its nsISSLSocketControl->StartTLS()
- */
-#define NS_STARTTLSSOCKETPROVIDER_CONTRACTID \
-    NS_NETWORK_SOCKET_CONTRACTID_PREFIX "starttls"
-
-
 #define NS_DASHBOARD_CONTRACTID \
     "@mozilla.org/network/dashboard;1"
 #define NS_DASHBOARD_CID                               \
@@ -916,18 +785,6 @@
     0x45a6,                                            \
     { 0x85, 0x44, 0x5a, 0x8d, 0x1a, 0xb7, 0x95, 0x37 } \
 }
-
-#ifdef XP_WIN
-#define NS_NAMEDPIPESERVICE_CONTRACTID \
-    "@mozilla.org/network/named-pipe-service;1"
-#define NS_NAMEDPIPESERVICE_CID                        \
-{                                                      \
-    0xae298cf9,                                        \
-    0x91f4,                                            \
-    0x4337,                                            \
-  { 0x95, 0x69, 0x61, 0x88, 0xb9, 0xd0, 0x21, 0x6e }   \
-}
-#endif
 
 /******************************************************************************
  * netwerk/cookie classes
@@ -983,14 +840,6 @@
     0x11d3,                                          \
     {0xa1, 0x6c, 0x00, 0x50, 0x04, 0x1c, 0xaf, 0x44} \
 }
-
-/**
- * General-purpose content sniffer component. Use with CreateInstance.
- *
- * Implements nsIContentSniffer
- */
-#define NS_GENERIC_CONTENT_SNIFFER \
-    "@mozilla.org/network/content-sniffer;1"
 
 /**
  * Detector that can act as either an nsIStreamConverter or an

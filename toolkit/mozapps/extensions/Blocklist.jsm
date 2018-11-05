@@ -273,7 +273,7 @@ function matchesOSABI(blocklistElement) {
  * @returns {string} The current requested locale.
  */
 function getLocale() {
-  return Services.locale.getRequestedLocale();
+  return Services.locale.requestedLocale;
 }
 
 /* Get the distribution pref values, from defaults only */
@@ -1356,7 +1356,7 @@ var Blocklist = {
 
     var args = {
       restart: false,
-      list: addonList
+      list: addonList,
     };
     // This lets the dialog get the raw js object
     args.wrappedJSObject = args;
@@ -1567,7 +1567,7 @@ BlocklistItemData.prototype = {
     let maxVersion = versionRangeElement.getAttribute("maxVersion");
 
     return { minVersion, maxVersion };
-  }
+  },
 };
 
 Blocklist._init();

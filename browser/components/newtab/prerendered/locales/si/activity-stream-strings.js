@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Image failed to load. Try a different URL.",
   "pocket_read_more": "ජනප්‍රිය මාතෘකා:",
   "pocket_read_even_more": "තවත් බොහෝ දැ",
+  "pocket_more_reccommendations": "More Recommendations",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "Get Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "Start browsing, and we’ll show some of the great articles, videos, and other pages you’ve recently visited or bookmarked here.",
   "topstories_empty_state": "You’ve caught up. Check back later for more top stories from {provider}. Can’t wait? Select a popular topic to find more great stories from around the web.",
   "manual_migration_explanation2": "Firefox වෙනත් ගවේශයකය පිටය සලකුණු, අතීතය සහ මුරපද සමග උත්සාහ කර බලන්න.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Manage Section",
   "section_menu_action_manage_webext": "Manage Extension",
   "section_menu_action_add_topsite": "Add Top Site",
+  "section_menu_action_add_search_engine": "Add Search Engine",
   "section_menu_action_move_up": "ඉහළට ගෙනයන්න",
   "section_menu_action_move_down": "පහළට ගෙනයන්න",
   "section_menu_action_privacy_notice": "පෞද්ගලිකත්ව සටහන",
@@ -101,5 +106,6 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Terms of Service",
   "firstrun_privacy_notice": "Privacy Notice",
   "firstrun_continue_to_login": "Continue",
-  "firstrun_skip_login": "Skip this step"
+  "firstrun_skip_login": "Skip this step",
+  "context_menu_title": "Open menu"
 };

@@ -23,7 +23,7 @@ public:
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLAudioElement, audio)
 
-  explicit HTMLAudioElement(already_AddRefed<NodeInfo>& aNodeInfo);
+  explicit HTMLAudioElement(already_AddRefed<NodeInfo>&& aNodeInfo);
 
   // Element
   virtual bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override;
@@ -31,8 +31,7 @@ public:
   // nsIDOMHTMLMediaElement
   using HTMLMediaElement::GetPaused;
 
-  virtual nsresult Clone(NodeInfo *aNodeInfo, nsINode **aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(NodeInfo*, nsINode** aResult) const override;
   virtual nsresult SetAcceptHeader(nsIHttpChannel* aChannel) override;
 
   // WebIDL

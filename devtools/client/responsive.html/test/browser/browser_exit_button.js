@@ -20,7 +20,7 @@ add_task(async function() {
 
   const waitTabIsDetached = Promise.all([
     once(tab, "TabClose"),
-    once(tab.linkedBrowser, "SwapDocShells")
+    once(tab.linkedBrowser, "SwapDocShells"),
   ]);
 
   // Detach the tab with RDM open.
@@ -57,7 +57,7 @@ async function waitBootstrap(ui) {
 async function testExitButton({ui, manager}) {
   await waitBootstrap(ui);
 
-  const exitButton = ui.toolWindow.document.getElementById("global-exit-button");
+  const exitButton = ui.toolWindow.document.getElementById("exit-button");
 
   ok(manager.isActiveForTab(ui.tab),
     "Responsive Design Mode active for the tab");

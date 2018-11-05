@@ -66,13 +66,14 @@
     macro(Dec,          "'--'")   /* decrement */ \
     macro(Dot,          "'.'")    /* member operator */ \
     macro(TripleDot,    "'...'")  /* rest arguments and spread operator */ \
-    macro(Lb,           "'['") \
-    macro(Rb,           "']'") \
-    macro(Lc,           "'{'") \
-    macro(Rc,           "'}'") \
-    macro(Lp,           "'('") \
-    macro(Rp,           "')'") \
+    macro(LeftBracket,  "'['") \
+    macro(RightBracket, "']'") \
+    macro(LeftCurly,    "'{'") \
+    macro(RightCurly,   "'}'") \
+    macro(LeftParen,    "'('") \
+    macro(RightParen,   "')'") \
     macro(Name,         "identifier") \
+    macro(PrivateName,  "private identifier") \
     macro(Number,       "numeric literal") \
     macro(String,       "string literal") \
     \
@@ -156,7 +157,7 @@
      */ \
     /* \
      * Binary operators tokens, Or thru Pow. These must be in the same \
-     * order as F(OR) and friends in FOR_EACH_PARSE_NODE_KIND in ParseNode.h. \
+     * order as F(Or) and friends in FOR_EACH_PARSE_NODE_KIND in ParseNode.h. \
      */ \
     macro(Pipeline,     "'|>'") \
     range(BinOpFirst,   Pipeline) \
@@ -322,6 +323,7 @@ inline MOZ_MUST_USE bool
 TokenKindIsPossibleIdentifier(TokenKind tt)
 {
     return tt == TokenKind::Name ||
+           tt == TokenKind::PrivateName ||
            TokenKindIsContextualKeyword(tt) ||
            TokenKindIsStrictReservedWord(tt);
 }

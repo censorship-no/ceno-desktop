@@ -47,7 +47,7 @@ function validatedWebRemoteType(aPreferredRemoteType, aTargetUri, aCurrentUri) {
   // If the domain is whitelisted to allow it to use file:// URIs, then we have
   // to run it in a file content process, in case it uses file:// sub-resources.
   const sm = Services.scriptSecurityManager;
-  if (sm.inFileURIWhitelist(aTargetUri)) {
+  if (sm.inFileURIAllowlist(aTargetUri)) {
     return FILE_REMOTE_TYPE;
   }
 
@@ -66,7 +66,9 @@ function validatedWebRemoteType(aPreferredRemoteType, aTargetUri, aCurrentUri) {
     if (aCurrentUri) {
       try {
         // checkSameOriginURI throws when not same origin.
-        sm.checkSameOriginURI(aCurrentUri, aTargetUri, false);
+        // todo: if you intend to update CheckSameOriginURI to log the error to the
+        // console you also need to update the 'aFromPrivateWindow' argument.
+        sm.checkSameOriginURI(aCurrentUri, aTargetUri, false, false);
         return FILE_REMOTE_TYPE;
       } catch (e) {
         return WEB_REMOTE_TYPE;
@@ -88,10 +90,14 @@ var E10SUtils = {
   PRIVILEGED_REMOTE_TYPE,
   LARGE_ALLOCATION_REMOTE_TYPE,
 
-  canLoadURIInProcess(aURL, aProcess) {
-    let remoteType = aProcess == Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT
-                     ? DEFAULT_REMOTE_TYPE : NOT_REMOTE;
-    return remoteType == this.getRemoteTypeForURI(aURL, true, remoteType);
+  canLoadURIInRemoteType(aURL, aRemoteType = DEFAULT_REMOTE_TYPE) {
+    // We need a strict equality here because the value of `NOT_REMOTE` is
+    // `null`, and there is a possibility that `undefined` is passed as the
+    // second argument, which might result a load in the parent process.
+    let preferredRemoteType = aRemoteType === NOT_REMOTE
+      ? NOT_REMOTE
+      : DEFAULT_REMOTE_TYPE;
+    return aRemoteType == this.getRemoteTypeForURI(aURL, true, preferredRemoteType);
   },
 
   getRemoteTypeForURI(aURL, aMultiProcess,
@@ -277,7 +283,7 @@ var E10SUtils = {
     let sessionHistory = webNav.sessionHistory;
     let requestedIndex = sessionHistory.legacySHistory.requestedIndex;
     if (requestedIndex >= 0) {
-      if (sessionHistory.legacySHistory.getEntryAtIndex(requestedIndex, false).loadedInThisProcess) {
+      if (sessionHistory.legacySHistory.getEntryAtIndex(requestedIndex).loadedInThisProcess) {
         return true;
       }
 

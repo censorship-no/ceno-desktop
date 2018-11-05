@@ -43,14 +43,31 @@ nsRect
 nsFieldSetFrame::VisualBorderRectRelativeToSelf() const
 {
   WritingMode wm = GetWritingMode();
-  Side legendSide = wm.PhysicalSide(eLogicalSideBStart);
-  nscoord legendBorder = StyleBorder()->GetComputedBorderWidth(legendSide);
   LogicalRect r(wm, LogicalPoint(wm, 0, 0), GetLogicalSize(wm));
   nsSize containerSize = r.Size(wm).GetPhysicalSize(wm);
-  if (legendBorder < mLegendRect.BSize(wm)) {
-    nscoord off = (mLegendRect.BSize(wm) - legendBorder) / 2;
-    r.BStart(wm) += off;
-    r.BSize(wm) -= off;
+  if (nsIFrame* legend = GetLegend()) {
+    nscoord legendSize = legend->GetLogicalSize(wm).BSize(wm);
+    auto legendMargin = legend->GetLogicalUsedMargin(wm);
+    nscoord legendStartMargin = legendMargin.BStart(wm);
+    nscoord legendEndMargin = legendMargin.BEnd(wm);
+    nscoord border = GetUsedBorder().Side(wm.PhysicalSide(eLogicalSideBStart));
+    // Calculate the offset from the border area block-axis start edge needed to
+    // center-align our border with the legend's border-box (in the block-axis).
+    nscoord off = (legendStartMargin + legendSize / 2) - border / 2;
+    // We don't want to display our border above our border area.
+    if (off > nscoord(0)) {
+      nscoord marginBoxSize = legendStartMargin + legendSize + legendEndMargin;
+      if (marginBoxSize > border) {
+        // We don't want to display our border below the legend's margin-box,
+        // so we align it to the block-axis end if that happens.
+        nscoord overflow = off + border - marginBoxSize;
+        if (overflow > nscoord(0)) {
+          off -= overflow;
+        }
+        r.BStart(wm) += off;
+        r.BSize(wm) -= off;
+      }
+    }
   }
   return r.GetPhysicalRect(wm, containerSize);
 }
@@ -60,7 +77,7 @@ nsFieldSetFrame::GetInner() const
 {
   nsIFrame* last = mFrames.LastChild();
   if (last &&
-      last->Style()->GetPseudo() == nsCSSAnonBoxes::fieldsetContent) {
+      last->Style()->GetPseudo() == nsCSSAnonBoxes::fieldsetContent()) {
     return last;
   }
   MOZ_ASSERT(mFrames.LastChild() == mFrames.FirstChild());
@@ -79,7 +96,8 @@ nsFieldSetFrame::GetLegend() const
   return mFrames.FirstChild();
 }
 
-class nsDisplayFieldSetBorder : public nsDisplayItem {
+class nsDisplayFieldSetBorder final : public nsDisplayItem
+{
 public:
   nsDisplayFieldSetBorder(nsDisplayListBuilder* aBuilder,
                           nsFieldSetFrame* aFrame)
@@ -176,14 +194,21 @@ nsDisplayFieldSetBorder::CreateWebRenderCommands(mozilla::wr::DisplayListBuilder
     rect = nsRect(offset, frame->GetRect().Size());
   }
 
-  return nsCSSRendering::CreateWebRenderCommandsForBorder(this,
-                                                          mFrame,
-                                                          rect,
-                                                          aBuilder,
-                                                          aResources,
-                                                          aSc,
-                                                          aManager,
-                                                          aDisplayListBuilder);
+  ImgDrawResult drawResult =
+    nsCSSRendering::CreateWebRenderCommandsForBorder(this,
+                                                     mFrame,
+                                                     rect,
+                                                     aBuilder,
+                                                     aResources,
+                                                     aSc,
+                                                     aManager,
+                                                     aDisplayListBuilder);
+  if (drawResult == ImgDrawResult::NOT_SUPPORTED) {
+    return false;
+  }
+
+  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, drawResult);
+  return true;
 };
 
 void
@@ -273,6 +298,13 @@ nsFieldSetFrame::PaintBorder(
     // border looks.
     nsRect legendRect = legend->GetNormalRect() + aPt;
 
+    // Make sure we clip all of the border in case the legend is smaller.
+    nscoord borderTopWidth = GetUsedBorder().top;
+    if (legendRect.height < borderTopWidth) {
+      legendRect.height = borderTopWidth;
+      legendRect.y = aPt.y;
+    }
+
     DrawTarget* drawTarget = aRenderingContext.GetDrawTarget();
     // We set up a clip path which has our rect clockwise and the legend rect
     // counterclockwise, with FILL_WINDING as the fill rule.  That will allow us
@@ -342,7 +374,7 @@ nscoord
 nsFieldSetFrame::GetMinISize(gfxContext* aRenderingContext)
 {
   nscoord result = 0;
-  DISPLAY_MIN_WIDTH(this, result);
+  DISPLAY_MIN_INLINE_SIZE(this, result);
 
   result = GetIntrinsicISize(aRenderingContext, nsLayoutUtils::MIN_ISIZE);
   return result;
@@ -352,7 +384,7 @@ nscoord
 nsFieldSetFrame::GetPrefISize(gfxContext* aRenderingContext)
 {
   nscoord result = 0;
-  DISPLAY_PREF_WIDTH(this, result);
+  DISPLAY_PREF_INLINE_SIZE(this, result);
 
   result = GetIntrinsicISize(aRenderingContext, nsLayoutUtils::PREF_ISIZE);
   return result;
@@ -400,7 +432,7 @@ nsFieldSetFrame::Reflow(nsPresContext*           aPresContext,
   WritingMode innerWM = inner ? inner->GetWritingMode() : wm;
   WritingMode legendWM = legend ? legend->GetWritingMode() : wm;
   LogicalSize innerAvailSize = aReflowInput.ComputedSizeWithPadding(innerWM);
-  LogicalSize legendAvailSize = aReflowInput.ComputedSizeWithPadding(legendWM);
+  LogicalSize legendAvailSize = aReflowInput.ComputedSize(legendWM);
   innerAvailSize.BSize(innerWM) = legendAvailSize.BSize(legendWM) =
     NS_UNCONSTRAINEDSIZE;
 
@@ -430,7 +462,7 @@ nsFieldSetFrame::Reflow(nsPresContext*           aPresContext,
     printf("  returned (%d, %d)\n",
            legendDesiredSize.Width(), legendDesiredSize.Height());
 #endif
-    // figure out the legend's rectangle
+    // Calculate the legend's margin-box rectangle.
     legendMargin = legend->GetLogicalUsedMargin(wm);
     mLegendRect =
       LogicalRect(wm, 0, 0,
@@ -438,12 +470,23 @@ nsFieldSetFrame::Reflow(nsPresContext*           aPresContext,
                   legendDesiredSize.BSize(wm) + legendMargin.BStartEnd(wm));
     nscoord oldSpace = mLegendSpace;
     mLegendSpace = 0;
-    if (mLegendRect.BSize(wm) > border.BStart(wm)) {
-      // center the border on the legend
-      mLegendSpace = mLegendRect.BSize(wm) - border.BStart(wm);
+    nscoord borderBStart = border.BStart(wm);
+    if (mLegendRect.BSize(wm) > borderBStart) {
+      // mLegendSpace is the space to subtract from our content-box size below.
+      mLegendSpace = mLegendRect.BSize(wm) - borderBStart;
     } else {
-      mLegendRect.BStart(wm) =
-        (border.BStart(wm) - mLegendRect.BSize(wm)) / 2;
+      // Calculate the border-box position that would center the legend's
+      // border-box within the fieldset border:
+      nscoord off = (borderBStart - legendDesiredSize.BSize(wm)) / 2;
+      off -= legendMargin.BStart(wm); // convert to a margin-box position
+      if (off > nscoord(0)) {
+        // Align the legend to the end if center-aligning it would overflow.
+        nscoord overflow = off + mLegendRect.BSize(wm) - borderBStart;
+        if (overflow > nscoord(0)) {
+          off -= overflow;
+        }
+        mLegendRect.BStart(wm) += off;
+      }
     }
 
     // if the legend space changes then we need to reflow the
@@ -688,8 +731,8 @@ bool
 nsFieldSetFrame::GetVerticalAlignBaseline(WritingMode aWM,
                                           nscoord* aBaseline) const
 {
-  if (StyleDisplay()->IsContainSize()) {
-    // If we are size-contained, our child 'inner' should not
+  if (StyleDisplay()->IsContainLayout()) {
+    // If we are layout-contained, our child 'inner' should not
     // affect how we calculate our baseline.
     return false;
   }
@@ -708,8 +751,8 @@ nsFieldSetFrame::GetNaturalBaselineBOffset(WritingMode          aWM,
                                            BaselineSharingGroup aBaselineGroup,
                                            nscoord*             aBaseline) const
 {
-  if (StyleDisplay()->IsContainSize()) {
-    // If we are size-contained, our child 'inner' should not
+  if (StyleDisplay()->IsContainLayout()) {
+    // If we are layout-contained, our child 'inner' should not
     // affect how we calculate our baseline.
     return false;
   }

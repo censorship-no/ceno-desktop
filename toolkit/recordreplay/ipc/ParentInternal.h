@@ -41,6 +41,10 @@ ChildProcessInfo* ActiveRecordingChild();
 // synchronous IPDL reply from the recording child.
 bool MainThreadIsWaitingForIPDLReply();
 
+// If necessary, resume execution in the child before the main thread begins
+// to block while waiting on an IPDL reply from the child.
+void ResumeBeforeWaitingForIPDLReply();
+
 // Initialize state which handles incoming IPDL messages from the UI and
 // recording child processes.
 void InitializeForwarding();
@@ -67,6 +71,15 @@ void SendRequest(const js::CharBuffer& aBuffer, js::CharBuffer* aResponse);
 // Set or clear a breakpoint in the child process.
 void SetBreakpoint(size_t aId, const js::BreakpointPosition& aPosition);
 
+// If possible, make sure the active child is replaying, and that requests
+// which might trigger an unhandled divergence can be processed (recording
+// children cannot process such requests).
+void MaybeSwitchToReplayingChild();
+
+// If the active child is replaying, get its fractional (range [0,1]) position
+// in the recording. If the active child is recording, return Nothing.
+Maybe<double> GetRecordingPosition();
+
 ///////////////////////////////////////////////////////////////////////////////
 // Graphics
 ///////////////////////////////////////////////////////////////////////////////
@@ -77,8 +90,17 @@ void InitializeGraphicsMemory();
 void SendGraphicsMemoryToChild();
 
 // Update the graphics painted in the UI process, per painting data received
-// from a child process, or null for the last paint performed.
+// from a child process, or null if a repaint was triggered and failed due to
+// an unhandled recording divergence.
 void UpdateGraphicsInUIProcess(const PaintMessage* aMsg);
+
+// Update the overlay shown over the tab's graphics.
+void UpdateGraphicsOverlay();
+
+// If necessary, update graphics after the active child sends a paint message
+// or reaches a checkpoint.
+void MaybeUpdateGraphicsAtPaint(const PaintMessage& aMsg);
+void MaybeUpdateGraphicsAtCheckpoint(size_t aCheckpointId);
 
 // ID for the mach message sent from a child process to the middleman to
 // request a port for the graphics shmem.
@@ -90,6 +112,13 @@ static const int32_t GraphicsMemoryMessageId = 43;
 
 // Fixed size of the graphics shared memory buffer.
 static const size_t GraphicsMemorySize = 4096 * 4096 * 4;
+
+// Return whether the environment variable activating repaint stress mode is
+// set. This makes various changes in both the middleman and child processes to
+// trigger a child to diverge from the recording and repaint on every vsync,
+// making sure that repainting can handle all the system interactions that
+// occur while painting the current tab.
+bool InRepaintStressMode();
 
 ///////////////////////////////////////////////////////////////////////////////
 // Child Processes
@@ -232,9 +261,6 @@ class ChildProcessInfo
   // to the process.
   size_t mNumRecoveredMessages;
 
-  // The number of times we have restarted this process.
-  size_t mNumRestarts;
-
   // Current role of this process.
   UniquePtr<ChildRole> mRole;
 
@@ -267,8 +293,7 @@ class ChildProcessInfo
   void Recover(bool aPaused, Message* aPausedMessage, size_t aLastCheckpoint,
                Message** aMessages, size_t aNumMessages);
 
-  bool CanRestart();
-  void AttemptRestart(const char* aWhy);
+  void OnCrash(const char* aWhy);
   void LaunchSubprocess(const Maybe<RecordingProcessData>& aRecordingProcessData);
 
 public:

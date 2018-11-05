@@ -14,7 +14,7 @@ ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   ContextualIdentityService: "resource://gre/modules/ContextualIdentityService.jsm",
-  ShellService: "resource:///modules/ShellService.jsm"
+  ShellService: "resource:///modules/ShellService.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(this, "aboutNewTabService",
@@ -58,16 +58,8 @@ function getTopWin(skipPopups) {
 
   return BrowserWindowTracker.getTopWindow({
     private: PrivateBrowsingUtils.isWindowPrivate(window),
-    allowPopups: !skipPopups
+    allowPopups: !skipPopups,
   });
-}
-
-function getBoolPref(prefname, def) {
-  try {
-    return Services.prefs.getBoolPref(prefname);
-  } catch (er) {
-    return def;
-  }
 }
 
 function doGetProtocolFlags(aURI) {
@@ -163,7 +155,7 @@ function whereToOpenLink(e, ignoreButton, ignoreAlt) {
 
   // ignoreButton allows "middle-click paste" to use function without always opening in a new window.
   var middle = !ignoreButton && e.button == 1;
-  var middleUsesTabs = getBoolPref("browser.tabs.opentabfor.middleclick", true);
+  var middleUsesTabs = Services.prefs.getBoolPref("browser.tabs.opentabfor.middleclick", true);
 
   // Don't do anything special with right-mouse clicks.  They're probably clicks on context menu items.
 
@@ -171,7 +163,7 @@ function whereToOpenLink(e, ignoreButton, ignoreAlt) {
   if (metaKey || (middle && middleUsesTabs))
     return shift ? "tabshifted" : "tab";
 
-  if (alt && getBoolPref("browser.altClickSave", false))
+  if (alt && Services.prefs.getBoolPref("browser.altClickSave", false))
     return "save";
 
   if (shift || (middle && !middleUsesTabs))
@@ -211,6 +203,9 @@ function openWebLinkIn(url, where, params) {
 
   if (!params.triggeringPrincipal) {
     params.triggeringPrincipal = Services.scriptSecurityManager.createNullPrincipal({});
+  }
+  if (Services.scriptSecurityManager.isSystemPrincipal(params.triggeringPrincipal)) {
+    throw new Error("System principal should never be passed into openWebLinkIn()");
   }
 
   openUILinkIn(url, where, params);
@@ -256,7 +251,8 @@ function openUILinkIn(url, where, aAllowThirdPartyFixup, aPostData, aReferrerURI
 
   if (arguments.length == 3 && typeof arguments[2] == "object") {
     params = aAllowThirdPartyFixup;
-  } else {
+  }
+  if (!params || !params.triggeringPrincipal) {
     throw new Error("Required argument triggeringPrincipal missing within openUILinkIn");
   }
 
@@ -278,10 +274,10 @@ function openLinkIn(url, where, params) {
   var aReferrerPolicy       = ("referrerPolicy" in params ?
       params.referrerPolicy : Ci.nsIHttpChannel.REFERRER_POLICY_UNSET);
   var aRelatedToCurrent     = params.relatedToCurrent;
+  var aAllowInheritPrincipal = !!params.allowInheritPrincipal;
   var aAllowMixedContent    = params.allowMixedContent;
   var aForceAllowDataURI    = params.forceAllowDataURI;
   var aInBackground         = params.inBackground;
-  var aDisallowInheritPrincipal = params.disallowInheritPrincipal;
   var aInitiatingDoc        = params.initiatingDoc;
   var aIsPrivate            = params.private;
   var aSkipTabAnimation     = params.skipTabAnimation;
@@ -295,6 +291,10 @@ function openLinkIn(url, where, params) {
   var aForceAboutBlankViewerInCurrent =
       params.forceAboutBlankViewerInCurrent;
   var aResolveOnNewTabCreated = params.resolveOnNewTabCreated;
+
+  if (!aTriggeringPrincipal) {
+    throw new Error("Must load with a triggering Principal");
+  }
 
   if (where == "save") {
     // TODO(1073187): propagate referrerPolicy.
@@ -464,7 +464,7 @@ function openLinkIn(url, where, params) {
     loadInBackground = aInBackground;
     if (loadInBackground == null) {
       loadInBackground =
-        aFromChrome ? false : getBoolPref("browser.tabs.loadInBackground");
+        aFromChrome ? false : Services.prefs.getBoolPref("browser.tabs.loadInBackground");
     }
   }
 
@@ -478,12 +478,10 @@ function openLinkIn(url, where, params) {
       flags |= Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP;
       flags |= Ci.nsIWebNavigation.LOAD_FLAGS_FIXUP_SCHEME_TYPOS;
     }
-
     // LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL isn't supported for javascript URIs,
     // i.e. it causes them not to load at all. Callers should strip
-    // "javascript:" from pasted strings to protect users from malicious URIs
-    // (see stripUnsafeProtocolOnPaste).
-    if (aDisallowInheritPrincipal && !(uriObj && uriObj.schemeIs("javascript"))) {
+    // "javascript:" from pasted strings to prevent blank tabs
+    if (!aAllowInheritPrincipal) {
       flags |= Ci.nsIWebNavigation.LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
     }
 
@@ -512,7 +510,7 @@ function openLinkIn(url, where, params) {
       referrerURI: aNoReferrer ? null : aReferrerURI,
       referrerPolicy: aReferrerPolicy,
       postData: aPostData,
-      userContextId: aUserContextId
+      userContextId: aUserContextId,
     });
 
     // Don't focus the content area if focus is in the address bar and we're
@@ -541,6 +539,7 @@ function openLinkIn(url, where, params) {
       userContextId: aUserContextId,
       originPrincipal: aPrincipal,
       triggeringPrincipal: aTriggeringPrincipal,
+      allowInheritPrincipal: aAllowInheritPrincipal,
       focusUrlBar,
     });
     targetBrowser = tabUsedForLoad.linkedBrowser;
@@ -603,7 +602,7 @@ function createUserContextMenu(event, {
                                         isContextMenu = false,
                                         excludeUserContextId = 0,
                                         showDefaultTab = false,
-                                        useAccessKeys = true
+                                        useAccessKeys = true,
                                       } = {}) {
   while (event.target.hasChildNodes()) {
     event.target.firstChild.remove();
@@ -614,7 +613,7 @@ function createUserContextMenu(event, {
 
   // If we are excluding a userContextId, we want to add a 'no-container' item.
   if (excludeUserContextId || showDefaultTab) {
-    let menuitem = document.createElement("menuitem");
+    let menuitem = document.createXULElement("menuitem");
     menuitem.setAttribute("data-usercontextid", "0");
     menuitem.setAttribute("label", bundle.GetStringFromName("userContextNone.label"));
     menuitem.setAttribute("accesskey", bundle.GetStringFromName("userContextNone.accesskey"));
@@ -625,7 +624,7 @@ function createUserContextMenu(event, {
 
     docfrag.appendChild(menuitem);
 
-    let menuseparator = document.createElement("menuseparator");
+    let menuseparator = document.createXULElement("menuseparator");
     docfrag.appendChild(menuseparator);
   }
 
@@ -634,7 +633,7 @@ function createUserContextMenu(event, {
       return;
     }
 
-    let menuitem = document.createElement("menuitem");
+    let menuitem = document.createXULElement("menuitem");
     menuitem.setAttribute("data-usercontextid", identity.userContextId);
     menuitem.setAttribute("label", ContextualIdentityService.getUserContextLabel(identity.userContextId));
 
@@ -655,9 +654,9 @@ function createUserContextMenu(event, {
   });
 
   if (!isContextMenu) {
-    docfrag.appendChild(document.createElement("menuseparator"));
+    docfrag.appendChild(document.createXULElement("menuseparator"));
 
-    let menuitem = document.createElement("menuitem");
+    let menuitem = document.createXULElement("menuitem");
     menuitem.setAttribute("label",
                           bundle.GetStringFromName("userContext.aboutPage.label"));
     if (useAccessKeys) {
@@ -770,7 +769,7 @@ function getShellService() {
 
 function isBidiEnabled() {
   // first check the pref.
-  if (getBoolPref("bidi.browser.ui", false))
+  if (Services.prefs.getBoolPref("bidi.browser.ui", false))
     return true;
 
   // now see if the app locale is an RTL one.
@@ -783,10 +782,8 @@ function isBidiEnabled() {
 }
 
 function openAboutDialog() {
-  var enumerator = Services.wm.getEnumerator("Browser:About");
-  while (enumerator.hasMoreElements()) {
+  for (let win of Services.wm.getEnumerator("Browser:About")) {
     // Only open one about window (Bug 599573)
-    let win = enumerator.getNext();
     if (win.closed) {
       continue;
     }
@@ -972,7 +969,7 @@ function openHelpLink(aHelpTopic, aCalledFromModal, aWhere) {
 function openPrefsHelp() {
   // non-instant apply prefwindows are usually modal, so we can't open in the topmost window,
   // since its probably behind the window.
-  var instantApply = getBoolPref("browser.preferences.instantApply");
+  var instantApply = Services.prefs.getBoolPref("browser.preferences.instantApply");
 
   var helpTopic = document.documentElement.getAttribute("helpTopic");
   openHelpLink(helpTopic, !instantApply);

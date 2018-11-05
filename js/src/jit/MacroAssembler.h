@@ -350,6 +350,7 @@ class MacroAssembler : public MacroAssemblerSpecific
     void Push(RegisterOrSP reg);
 #endif
 
+    // clang-format off
     //{{{ check_macroassembler_decl_style
   public:
     // ===============================================================
@@ -597,6 +598,7 @@ class MacroAssembler : public MacroAssemblerSpecific
     inline uint32_t callJit(Register callee);
     inline uint32_t callJit(JitCode* code);
     inline uint32_t callJit(TrampolinePtr code);
+    inline uint32_t callJit(ImmPtr callee);
 
     // The frame descriptor is the second field of all Jit frames, pushed before
     // calling the Jit function.  It is a composite value defined in JitFrames.h
@@ -1191,6 +1193,7 @@ class MacroAssembler : public MacroAssemblerSpecific
     void branchTestObjCompartment(Condition cond, Register obj, const JS::Compartment* compartment,
                                   Register scratch, Label* label);
     void branchIfObjGroupHasNoAddendum(Register obj, Register scratch, Label* label);
+    void branchIfPretenuredGroup(Register group, Label* label);
     void branchIfPretenuredGroup(const ObjectGroup* group, Register scratch, Label* label);
 
     void branchIfNonNativeObj(Register obj, Register scratch, Label* label);
@@ -1495,14 +1498,13 @@ class MacroAssembler : public MacroAssemblerSpecific
     void wasmReserveStackChecked(uint32_t amount, wasm::BytecodeOffset trapOffset);
 
     // Emit a bounds check against the wasm heap limit, jumping to 'label' if
-    // 'cond' holds. Required when WASM_HUGE_MEMORY is not defined. If
-    // JitOptions.spectreMaskIndex is true, in speculative executions 'index' is
-    // saturated in-place to 'boundsCheckLimit'.
+    // 'cond' holds. If JitOptions.spectreMaskIndex is true, in speculative
+    // executions 'index' is saturated in-place to 'boundsCheckLimit'.
     void wasmBoundsCheck(Condition cond, Register index, Register boundsCheckLimit, Label* label)
-        DEFINED_ON(arm, arm64, mips32, mips64, x86);
+        DEFINED_ON(arm, arm64, mips32, mips64, x86_shared);
 
     void wasmBoundsCheck(Condition cond, Register index, Address boundsCheckLimit, Label* label)
-        DEFINED_ON(arm, arm64, mips32, mips64, x86);
+        DEFINED_ON(arm, arm64, mips32, mips64, x86_shared);
 
     // Each wasm load/store instruction appends its own wasm::Trap::OutOfBounds.
     void wasmLoad(const wasm::MemoryAccessDesc& access, Operand srcAddr, AnyRegister out) DEFINED_ON(x86, x64);
@@ -1670,7 +1672,6 @@ class MacroAssembler : public MacroAssemblerSpecific
                          Register expected, Register replacement, Register output)
         DEFINED_ON(arm, arm64, x86_shared);
 
-
     void compareExchange(Scalar::Type type, const Synchronization& sync, const Address& mem,
                          Register expected, Register replacement, Register valueTemp,
                          Register offsetTemp, Register maskTemp, Register output)
@@ -1741,33 +1742,102 @@ class MacroAssembler : public MacroAssemblerSpecific
                        Register offsetTemp, Register maskTemp, Register output)
         DEFINED_ON(mips_shared);
 
+    // ========================================================================
+    // Wasm atomic operations.
+    //
+    // Constraints, when omitted, are exactly as for the primitive operations above.
+
+    void wasmCompareExchange(const wasm::MemoryAccessDesc& access, const Address& mem,
+                             Register expected, Register replacement, Register output)
+        DEFINED_ON(arm, arm64, x86_shared);
+
+    void wasmCompareExchange(const wasm::MemoryAccessDesc& access, const BaseIndex& mem,
+                             Register expected, Register replacement, Register output)
+        DEFINED_ON(arm, arm64, x86_shared);
+
+    void wasmCompareExchange(const wasm::MemoryAccessDesc& access, const Address& mem,
+                             Register expected, Register replacement, Register valueTemp,
+                             Register offsetTemp, Register maskTemp, Register output)
+        DEFINED_ON(mips_shared);
+
+    void wasmCompareExchange(const wasm::MemoryAccessDesc& access, const BaseIndex& mem,
+                             Register expected, Register replacement, Register valueTemp,
+                             Register offsetTemp, Register maskTemp, Register output)
+        DEFINED_ON(mips_shared);
+
+    void wasmAtomicExchange(const wasm::MemoryAccessDesc& access, const Address& mem,
+                            Register value, Register output)
+        DEFINED_ON(arm, arm64, x86_shared);
+
+    void wasmAtomicExchange(const wasm::MemoryAccessDesc& access, const BaseIndex& mem,
+                            Register value, Register output)
+        DEFINED_ON(arm, arm64, x86_shared);
+
+    void wasmAtomicExchange(const wasm::MemoryAccessDesc& access, const Address& mem,
+                            Register value, Register valueTemp, Register offsetTemp,
+                            Register maskTemp, Register output)
+        DEFINED_ON(mips_shared);
+
+    void wasmAtomicExchange(const wasm::MemoryAccessDesc& access, const BaseIndex& mem,
+                            Register value, Register valueTemp, Register offsetTemp,
+                            Register maskTemp, Register output)
+        DEFINED_ON(mips_shared);
+
+    void wasmAtomicFetchOp(const wasm::MemoryAccessDesc& access, AtomicOp op, Register value,
+                           const Address& mem, Register temp, Register output)
+        DEFINED_ON(arm, arm64, x86_shared);
+
+    void wasmAtomicFetchOp(const wasm::MemoryAccessDesc& access, AtomicOp op, Imm32 value,
+                           const Address& mem, Register temp, Register output)
+        DEFINED_ON(x86_shared);
+
+    void wasmAtomicFetchOp(const wasm::MemoryAccessDesc& access, AtomicOp op, Register value,
+                           const BaseIndex& mem, Register temp, Register output)
+        DEFINED_ON(arm, arm64, x86_shared);
+
+    void wasmAtomicFetchOp(const wasm::MemoryAccessDesc& access, AtomicOp op, Imm32 value,
+                           const BaseIndex& mem, Register temp, Register output)
+        DEFINED_ON(x86_shared);
+
+    void wasmAtomicFetchOp(const wasm::MemoryAccessDesc& access, AtomicOp op,
+                           Register value, const Address& mem, Register valueTemp,
+                           Register offsetTemp, Register maskTemp, Register output)
+        DEFINED_ON(mips_shared);
+
+    void wasmAtomicFetchOp(const wasm::MemoryAccessDesc& access, AtomicOp op,
+                           Register value, const BaseIndex& mem, Register valueTemp,
+                           Register offsetTemp, Register maskTemp, Register output)
+        DEFINED_ON(mips_shared);
+
     // Read-modify-write with memory.  Return no value.
+    //
     // MIPS: `valueTemp`, `offsetTemp` and `maskTemp` must be defined for 8-bit
     // and 16-bit wide operations.
 
-    void atomicEffectOp(Scalar::Type type, const Synchronization& sync, AtomicOp op, Register value,
-                        const Address& mem, Register temp)
+    void wasmAtomicEffectOp(const wasm::MemoryAccessDesc& access, AtomicOp op, Register value,
+                            const Address& mem, Register temp)
         DEFINED_ON(arm, arm64, x86_shared);
 
-    void atomicEffectOp(Scalar::Type type, const Synchronization& sync, AtomicOp op, Imm32 value,
-                        const Address& mem, Register temp)
+    void wasmAtomicEffectOp(const wasm::MemoryAccessDesc& access, AtomicOp op, Imm32 value,
+                            const Address& mem, Register temp)
         DEFINED_ON(x86_shared);
 
-    void atomicEffectOp(Scalar::Type type, const Synchronization& sync, AtomicOp op, Register value,
-                        const BaseIndex& mem, Register temp)
+    void wasmAtomicEffectOp(const wasm::MemoryAccessDesc& access, AtomicOp op, Register value,
+                            const BaseIndex& mem, Register temp)
         DEFINED_ON(arm, arm64, x86_shared);
 
-    void atomicEffectOp(Scalar::Type type, const Synchronization& sync, AtomicOp op, Imm32 value,
-                        const BaseIndex& mem, Register temp)
+    void wasmAtomicEffectOp(const wasm::MemoryAccessDesc& access, AtomicOp op, Imm32 value,
+                            const BaseIndex& mem, Register temp)
         DEFINED_ON(x86_shared);
 
-
-    void atomicEffectOp(Scalar::Type type, const Synchronization& sync, AtomicOp op, Register value,
-                    const Address& mem, Register valueTemp, Register offsetTemp, Register maskTemp)
+    void wasmAtomicEffectOp(const wasm::MemoryAccessDesc& access, AtomicOp op, Register value,
+                            const Address& mem, Register valueTemp, Register offsetTemp,
+                            Register maskTemp)
         DEFINED_ON(mips_shared);
 
-    void atomicEffectOp(Scalar::Type type, const Synchronization& sync, AtomicOp op, Register value,
-                    const BaseIndex& mem, Register valueTemp, Register offsetTemp, Register maskTemp)
+    void wasmAtomicEffectOp(const wasm::MemoryAccessDesc& access, AtomicOp op, Register value,
+                            const BaseIndex& mem, Register valueTemp, Register offsetTemp,
+                            Register maskTemp)
         DEFINED_ON(mips_shared);
 
     // 64-bit wide operations.
@@ -1779,12 +1849,12 @@ class MacroAssembler : public MacroAssemblerSpecific
     // ARM: `temp` should be invalid; `output` must be (even,odd) pair.
     // MIPS32: `temp` should be invalid.
 
-    void atomicLoad64(const Synchronization& sync, const Address& mem, Register64 temp,
-                      Register64 output)
+    void wasmAtomicLoad64(const wasm::MemoryAccessDesc& access, const Address& mem,
+                          Register64 temp, Register64 output)
         DEFINED_ON(arm, mips32, x86);
 
-    void atomicLoad64(const Synchronization& sync, const BaseIndex& mem, Register64 temp,
-                      Register64 output)
+    void wasmAtomicLoad64(const wasm::MemoryAccessDesc& access, const BaseIndex& mem,
+                          Register64 temp, Register64 output)
         DEFINED_ON(arm, mips32, x86);
 
     // x86: `expected` must be the same as `output`, and must be edx:eax
@@ -1793,21 +1863,25 @@ class MacroAssembler : public MacroAssemblerSpecific
     // ARM: Registers must be distinct; `replacement` and `output` must be (even,odd) pairs.
     // MIPS: Registers must be distinct.
 
-    void compareExchange64(const Synchronization& sync, const Address& mem, Register64 expected,
-                           Register64 replacement, Register64 output) PER_ARCH;
+    void wasmCompareExchange64(const wasm::MemoryAccessDesc& access, const Address& mem,
+                               Register64 expected, Register64 replacement, Register64 output)
+        PER_ARCH;
 
-    void compareExchange64(const Synchronization& sync, const BaseIndex& mem, Register64 expected,
-                           Register64 replacement, Register64 output) PER_ARCH;
+    void wasmCompareExchange64(const wasm::MemoryAccessDesc& access, const BaseIndex& mem,
+                               Register64 expected, Register64 replacement, Register64 output)
+        PER_ARCH;
 
     // x86: `value` must be ecx:ebx; `output` must be edx:eax.
     // ARM: Registers must be distinct; `value` and `output` must be (even,odd) pairs.
     // MIPS: Registers must be distinct.
 
-    void atomicExchange64(const Synchronization& sync, const Address& mem, Register64 value,
-                          Register64 output) PER_ARCH;
+    void wasmAtomicExchange64(const wasm::MemoryAccessDesc& access, const Address& mem,
+                              Register64 value, Register64 output)
+        PER_ARCH;
 
-    void atomicExchange64(const Synchronization& sync, const BaseIndex& mem, Register64 value,
-                          Register64 output) PER_ARCH;
+    void wasmAtomicExchange64(const wasm::MemoryAccessDesc& access, const BaseIndex& mem,
+                              Register64 value, Register64 output)
+        PER_ARCH;
 
     // x86: `output` must be edx:eax, `temp` must be ecx:ebx.
     // x64: For And, Or, and Xor `output` must be rax.
@@ -1815,24 +1889,28 @@ class MacroAssembler : public MacroAssemblerSpecific
     // MIPS: Registers must be distinct.
     // MIPS32: `temp` should be invalid.
 
-    void atomicFetchOp64(const Synchronization& sync, AtomicOp op, Register64 value,
-                         const Address& mem, Register64 temp, Register64 output)
+    void wasmAtomicFetchOp64(const wasm::MemoryAccessDesc& access, AtomicOp op, Register64 value,
+                             const Address& mem, Register64 temp, Register64 output)
         DEFINED_ON(arm, arm64, mips32, mips64, x64);
 
-    void atomicFetchOp64(const Synchronization& sync, AtomicOp op, Register64 value,
-                         const BaseIndex& mem, Register64 temp, Register64 output)
+    void wasmAtomicFetchOp64(const wasm::MemoryAccessDesc& access, AtomicOp op, Register64 value,
+                             const BaseIndex& mem, Register64 temp, Register64 output)
         DEFINED_ON(arm, arm64, mips32, mips64, x64);
 
-    void atomicFetchOp64(const Synchronization& sync, AtomicOp op, const Address& value,
-                         const Address& mem, Register64 temp, Register64 output)
+    void wasmAtomicFetchOp64(const wasm::MemoryAccessDesc& access, AtomicOp op,
+                             const Address& value, const Address& mem, Register64 temp,
+                             Register64 output)
         DEFINED_ON(x86);
 
-    void atomicFetchOp64(const Synchronization& sync, AtomicOp op, const Address& value,
-                         const BaseIndex& mem, Register64 temp, Register64 output)
+    void wasmAtomicFetchOp64(const wasm::MemoryAccessDesc& access, AtomicOp op,
+                             const Address& value, const BaseIndex& mem, Register64 temp,
+                             Register64 output)
         DEFINED_ON(x86);
 
-    void atomicEffectOp64(const Synchronization& sync, AtomicOp op, Register64 value,
-                          const BaseIndex& mem)
+    // Here `value` can be any register.
+
+    void wasmAtomicEffectOp64(const wasm::MemoryAccessDesc& access, AtomicOp op,
+                              Register64 value, const BaseIndex& mem)
         DEFINED_ON(x64);
 
     // ========================================================================
@@ -1851,7 +1929,7 @@ class MacroAssembler : public MacroAssemblerSpecific
     // (`temp1` must always be valid.)
     //
     // For additional register constraints, see the primitive 32-bit operations
-    // above.
+    // and/or wasm operations above.
 
     void compareExchangeJS(Scalar::Type arrayType, const Synchronization& sync, const Address& mem,
                            Register expected, Register replacement, Register temp,
@@ -1979,6 +2057,7 @@ class MacroAssembler : public MacroAssemblerSpecific
     void speculationBarrier() PER_SHARED_ARCH;
 
     //}}} check_macroassembler_decl_style
+    // clang-format on
   public:
 
     // Emits a test of a value against all types in a TypeSet. A scratch
@@ -2045,9 +2124,44 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     void loadDependentStringBase(Register str, Register dest);
     void storeDependentStringBase(Register base, Register str);
-    void leaNewDependentStringBase(Register str, Register dest);
 
     void loadStringIndexValue(Register str, Register dest, Label* fail);
+
+    /**
+     * Store the character in |src| to |dest|.
+     */
+    template <typename T>
+    void storeChar(const T& src, Address dest, CharEncoding encoding) {
+        if (encoding == CharEncoding::Latin1) {
+            store8(src, dest);
+        } else {
+            store16(src, dest);
+        }
+    }
+
+    /**
+     * Load the character at |src| into |dest|.
+     */
+    template <typename T>
+    void loadChar(const T& src, Register dest, CharEncoding encoding) {
+        if (encoding == CharEncoding::Latin1) {
+            load8ZeroExtend(src, dest);
+        } else {
+            load16ZeroExtend(src, dest);
+        }
+    }
+
+    /**
+     * Load the character at |chars[index + offset]| into |dest|. The optional
+     * offset argument is not scaled to the character encoding.
+     */
+    void loadChar(Register chars, Register index, Register dest, CharEncoding encoding,
+                  int32_t offset = 0);
+
+    /**
+     * Add |index| to |chars| so that |chars| now points at |chars[index]|.
+     */
+    void addToCharPtr(Register chars, Register index, CharEncoding encoding);
 
     void loadJSContext(Register dest);
 
@@ -2069,10 +2183,11 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     template<typename T>
     void loadTypedOrValue(const T& src, TypedOrValueRegister dest) {
-        if (dest.hasValue())
+        if (dest.hasValue()) {
             loadValue(src, dest.valueReg());
-        else
+        } else {
             loadUnboxedValue(src, dest.type(), dest.typedReg());
+        }
     }
 
     template<typename T>
@@ -2080,11 +2195,13 @@ class MacroAssembler : public MacroAssemblerSpecific
                                  Label* hole) {
         if (dest.hasValue()) {
             loadValue(src, dest.valueReg());
-            if (holeCheck)
+            if (holeCheck) {
                 branchTestMagic(Assembler::Equal, dest.valueReg(), hole);
+            }
         } else {
-            if (holeCheck)
+            if (holeCheck) {
                 branchTestMagic(Assembler::Equal, src, hole);
+            }
             loadUnboxedValue(src, dest.type(), dest.typedReg());
         }
     }
@@ -2110,23 +2227,26 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     template <typename T>
     void storeConstantOrRegister(const ConstantOrRegister& src, const T& dest) {
-        if (src.constant())
+        if (src.constant()) {
             storeValue(src.value(), dest);
-        else
+        } else {
             storeTypedOrValue(src.reg(), dest);
+        }
     }
 
     void storeCallPointerResult(Register reg) {
-        if (reg != ReturnReg)
+        if (reg != ReturnReg) {
             mov(ReturnReg, reg);
+        }
     }
 
     inline void storeCallBoolResult(Register reg);
     inline void storeCallInt32Result(Register reg);
 
     void storeCallFloatResult(FloatRegister reg) {
-        if (reg != ReturnDoubleReg)
+        if (reg != ReturnDoubleReg) {
             moveDouble(ReturnDoubleReg, reg);
+        }
     }
 
     inline void storeCallResultValue(AnyRegister dest, JSValueType type);
@@ -2153,8 +2273,9 @@ class MacroAssembler : public MacroAssemblerSpecific
             mov(JSReturnReg_Data, dest.payloadReg());
         }
 #elif defined(JS_PUNBOX64)
-        if (dest.valueReg() != JSReturnReg)
+        if (dest.valueReg() != JSReturnReg) {
             mov(JSReturnReg, dest.valueReg());
+        }
 #else
 #error "Bad architecture"
 #endif
@@ -2168,10 +2289,11 @@ class MacroAssembler : public MacroAssemblerSpecific
 
         branchTestNeedsIncrementalBarrier(Assembler::Zero, &done);
 
-        if (type == MIRType::Value)
+        if (type == MIRType::Value) {
             branchTestGCThing(Assembler::NotEqual, address, &done);
-        else if (type == MIRType::Object || type == MIRType::String)
+        } else if (type == MIRType::Object || type == MIRType::String) {
             branchPtr(Assembler::Equal, address, ImmWord(0), &done);
+        }
 
         Push(PreBarrierReg);
         computeEffectiveAddress(address, PreBarrierReg);
@@ -2238,16 +2360,18 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     using MacroAssemblerSpecific::extractTag;
     MOZ_MUST_USE Register extractTag(const TypedOrValueRegister& reg, Register scratch) {
-        if (reg.hasValue())
+        if (reg.hasValue()) {
             return extractTag(reg.valueReg(), scratch);
+        }
         mov(ImmWord(MIRTypeToTag(reg.type())), scratch);
         return scratch;
     }
 
     using MacroAssemblerSpecific::extractObject;
     MOZ_MUST_USE Register extractObject(const TypedOrValueRegister& reg, Register scratch) {
-        if (reg.hasValue())
+        if (reg.hasValue()) {
             return extractObject(reg.valueReg(), scratch);
+        }
         MOZ_ASSERT(reg.type() == MIRType::Object);
         return reg.typedReg().gpr();
     }
@@ -2697,6 +2821,7 @@ class IonHeapMacroAssembler : public MacroAssembler
     }
 };
 
+// clang-format off
 //{{{ check_macroassembler_style
 inline uint32_t
 MacroAssembler::framePushed() const
@@ -2725,6 +2850,7 @@ MacroAssembler::implicitPop(uint32_t bytes)
     adjustFrame(-int32_t(bytes));
 }
 //}}} check_macroassembler_style
+// clang-format on
 
 static inline Assembler::DoubleCondition
 JSOpToDoubleCondition(JSOp op)

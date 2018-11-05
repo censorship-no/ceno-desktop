@@ -240,11 +240,6 @@ var BrowserPageActions = {
       "pageAction-panel-button"
     );
     buttonNode.setAttribute("actionid", action.id);
-    if (action.nodeAttributes) {
-      for (let name in action.nodeAttributes) {
-        buttonNode.setAttribute(name, action.nodeAttributes[name]);
-      }
-    }
     buttonNode.addEventListener("command", event => {
       this.doCommandForAction(action, event, buttonNode);
     });
@@ -458,17 +453,6 @@ var BrowserPageActions = {
       urlbarNode: node,
     });
     action.onPlacedInUrlbar(node);
-
-    // urlbar buttons should always have tooltips, so if the node doesn't have
-    // one, then as a last resort use the label of the corresponding panel
-    // button.  Why not set tooltiptext to action.title when the node is
-    // created?  Because the consumer may set a title dynamically.
-    if (!node.hasAttribute("tooltiptext")) {
-      let panelNode = this.panelButtonNodeForActionID(action.id);
-      if (panelNode) {
-        node.setAttribute("tooltiptext", panelNode.getAttribute("label"));
-      }
-    }
   },
 
   _makeUrlbarButtonNode(action) {
@@ -476,11 +460,6 @@ var BrowserPageActions = {
     buttonNode.classList.add("urlbar-icon", "urlbar-page-action");
     buttonNode.setAttribute("actionid", action.id);
     buttonNode.setAttribute("role", "button");
-    if (action.nodeAttributes) {
-      for (let name in action.nodeAttributes) {
-        buttonNode.setAttribute(name, action.nodeAttributes[name]);
-      }
-    }
     buttonNode.addEventListener("click", event => {
       this.doCommandForAction(action, event, buttonNode);
     });
@@ -596,7 +575,14 @@ var BrowserPageActions = {
       panelNode.setAttribute("label", title);
     }
     if (urlbarNode) {
-      urlbarNode.setAttribute("aria-label", title);
+      // Some actions (e.g. Save Page to Pocket) have a wrapper node with the
+      // actual controls inside that wrapper. The wrapper is semantically
+      // meaningless, so it doesn't get reflected in the accessibility tree.
+      // In these cases, we don't want to set aria-label because that will
+      // force the element to be exposed to accessibility.
+      if (urlbarNode.nodeName != "hbox") {
+        urlbarNode.setAttribute("aria-label", title);
+      }
       // tooltiptext falls back to the title, so update it too if necessary.
       let tooltip = action.getTooltip(window);
       if (!tooltip && title) {
@@ -836,7 +822,7 @@ var BrowserPageActions = {
     }
 
     let state;
-    if (this._contextAction._isBuiltIn) {
+    if (this._contextAction._isMozillaAction) {
       state =
         this._contextAction.pinnedToUrlbar ?
         "builtInPinned" :
@@ -977,7 +963,7 @@ BrowserPageActions.bookmark = {
 
 // copy URL
 BrowserPageActions.copyURL = {
-  onPlacedInPanel(buttonNode) {
+  onBeforePlacedInWindow(browserWindow) {
     let action = PageActions.actionForID("copyURL");
     BrowserPageActions.takeActionTitleFromPanel(action);
   },
@@ -994,7 +980,7 @@ BrowserPageActions.copyURL = {
 
 // email link
 BrowserPageActions.emailLink = {
-  onPlacedInPanel(buttonNode) {
+  onBeforePlacedInWindow(browserWindow) {
     let action = PageActions.actionForID("emailLink");
     BrowserPageActions.takeActionTitleFromPanel(action);
   },
@@ -1007,9 +993,22 @@ BrowserPageActions.emailLink = {
 
 // send to device
 BrowserPageActions.sendToDevice = {
-  onPlacedInPanel(buttonNode) {
+  onBeforePlacedInWindow(browserWindow) {
+    this._updateTitle();
+    gBrowser.addEventListener("TabMultiSelect", event => {
+      this._updateTitle();
+    });
+  },
+
+  // The action's title in this window depends on the number of tabs that are
+  // selected.
+  _updateTitle() {
     let action = PageActions.actionForID("sendToDevice");
-    BrowserPageActions.takeActionTitleFromPanel(action);
+    let string =
+      gBrowserBundle.GetStringFromName("pageAction.sendTabsToDevice.label");
+    let tabCount = gBrowser.selectedTabs.length;
+    let title = PluralForm.get(tabCount, string).replace("#1", tabCount);
+    action.setTitle(title, window);
   },
 
   onSubviewPlaced(panelViewNode) {
@@ -1023,7 +1022,7 @@ BrowserPageActions.sendToDevice = {
     notReady.setAttribute("label", "sendToDevice-notReadyTitle");
     notReady.setAttribute("disabled", "true");
     bodyNode.appendChild(notReady);
-    for (let node of bodyNode.childNodes) {
+    for (let node of bodyNode.children) {
       BrowserPageActions.takeNodeAttributeFromPanel(node, "title");
       BrowserPageActions.takeNodeAttributeFromPanel(node, "shortcut");
     }
@@ -1037,16 +1036,16 @@ BrowserPageActions.sendToDevice = {
   },
 
   onShowingSubview(panelViewNode) {
+    let bodyNode = panelViewNode.querySelector(".panel-subview-body");
+    let panelNode = panelViewNode.closest("panel");
     let browser = gBrowser.selectedBrowser;
     let url = browser.currentURI.spec;
     let title = browser.contentTitle;
-
-    let bodyNode = panelViewNode.querySelector(".panel-subview-body");
-    let panelNode = panelViewNode.closest("panel");
+    let multiselected = gBrowser.selectedTab.multiselected;
 
     // This is on top because it also clears the device list between state
     // changes.
-    gSync.populateSendTabToDevicesMenu(bodyNode, url, title, (clientId, name, clientType, lastModified) => {
+    gSync.populateSendTabToDevicesMenu(bodyNode, url, title, multiselected, (clientId, name, clientType, lastModified) => {
       if (!name) {
         return document.createXULElement("toolbarseparator");
       }
@@ -1176,7 +1175,7 @@ BrowserPageActions.addSearchEngine = {
   },
 
   _installEngine(uri, image) {
-    Services.search.addEngine(uri, null, image, false, {
+    Services.search.addEngine(uri, image, false, {
       onSuccess: engine => {
         showBrowserPageActionFeedback(this.action);
       },
@@ -1204,11 +1203,17 @@ BrowserPageActions.addSearchEngine = {
 
 // share URL
 BrowserPageActions.shareURL = {
+  onCommand(event, buttonNode) {
+    let browser = gBrowser.selectedBrowser;
+    let currentURI = gURLBar.makeURIReadable(browser.currentURI).displaySpec;
+    this._windowsUIUtils.shareUrl(currentURI, browser.contentTitle);
+  },
+
   onShowingInPanel(buttonNode) {
     this._cached = false;
   },
 
-  onPlacedInPanel(buttonNode) {
+  onBeforePlacedInWindow(browserWindow) {
     let action = PageActions.actionForID("shareURL");
     BrowserPageActions.takeActionTitleFromPanel(action);
   },
@@ -1218,7 +1223,7 @@ BrowserPageActions.shareURL = {
 
     // We cache the providers + the UI if the user selects the share
     // panel multiple times while the panel is open.
-    if (this._cached && bodyNode.childNodes.length > 0) {
+    if (this._cached && bodyNode.children.length > 0) {
       return;
     }
 
@@ -1250,7 +1255,7 @@ BrowserPageActions.shareURL = {
       fragment.appendChild(item);
     });
 
-    let item = document.createElement("toolbarbutton");
+    let item = document.createXULElement("toolbarbutton");
     item.setAttribute("label", BrowserPageActions.panelNode.getAttribute("shareMore-label"));
     item.classList.add("subviewbutton", "subviewbutton-iconic", "share-more-button");
     item.addEventListener("command", onCommand);
@@ -1261,11 +1266,11 @@ BrowserPageActions.shareURL = {
     }
     bodyNode.appendChild(fragment);
     this._cached = true;
-  }
+  },
 };
 
 // Attach sharingService here so tests can override the implementation
-XPCOMUtils.defineLazyServiceGetter(BrowserPageActions.shareURL,
-                                   "_sharingService",
-                                   "@mozilla.org/widget/macsharingservice;1",
-                                   "nsIMacSharingService");
+XPCOMUtils.defineLazyServiceGetters(BrowserPageActions.shareURL, {
+  _sharingService: ["@mozilla.org/widget/macsharingservice;1", "nsIMacSharingService"],
+  _windowsUIUtils: ["@mozilla.org/windows-ui-utils;1", "nsIWindowsUIUtils"],
+});

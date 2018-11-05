@@ -3,12 +3,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TransceiverImpl.h"
-#include "mtransport/runnable_utils.h"
 #include "mozilla/UniquePtr.h"
-#include <sstream>
 #include <string>
 #include <vector>
-#include <queue>
 #include "AudioConduit.h"
 #include "VideoConduit.h"
 #include "MediaStreamGraph.h"
@@ -22,7 +19,7 @@
 #include "MediaSegment.h"
 #include "RemoteTrackSource.h"
 #include "MediaConduitInterface.h"
-#include "PeerConnectionMedia.h"
+#include "MediaTransportHandler.h"
 #include "mozilla/dom/RTCRtpReceiverBinding.h"
 #include "mozilla/dom/RTCRtpSenderBinding.h"
 #include "mozilla/dom/RTCRtpTransceiverBinding.h"
@@ -36,6 +33,7 @@ using LocalDirection = MediaSessionConduitLocalDirection;
 
 TransceiverImpl::TransceiverImpl(
     const std::string& aPCHandle,
+    MediaTransportHandler* aTransportHandler,
     JsepTransceiver* aJsepTransceiver,
     nsIEventTarget* aMainThread,
     nsIEventTarget* aStsThread,
@@ -43,6 +41,7 @@ TransceiverImpl::TransceiverImpl(
     dom::MediaStreamTrack* aSendTrack,
     WebRtcCallWrapper* aCallWrapper) :
   mPCHandle(aPCHandle),
+  mTransportHandler(aTransportHandler),
   mJsepTransceiver(aJsepTransceiver),
   mHaveStartedReceiving(false),
   mHaveSetupTransport(false),
@@ -66,6 +65,7 @@ TransceiverImpl::TransceiverImpl(
 
   mTransmitPipeline = new MediaPipelineTransmit(
       mPCHandle,
+      mTransportHandler,
       mMainThread.get(),
       mStsThread.get(),
       IsVideo(),
@@ -93,6 +93,7 @@ TransceiverImpl::InitAudio()
 
   mReceivePipeline = new MediaPipelineReceiveAudio(
       mPCHandle,
+      mTransportHandler,
       mMainThread.get(),
       mStsThread.get(),
       static_cast<AudioSessionConduit*>(mConduit.get()),
@@ -102,7 +103,7 @@ TransceiverImpl::InitAudio()
 void
 TransceiverImpl::InitVideo()
 {
-  mConduit = VideoSessionConduit::Create(mCallWrapper);
+  mConduit = VideoSessionConduit::Create(mCallWrapper, mStsThread);
 
   if (!mConduit) {
     MOZ_MTLOG(ML_ERROR, mPCHandle << "[" << mMid << "]: " << __FUNCTION__ <<
@@ -114,6 +115,7 @@ TransceiverImpl::InitVideo()
 
   mReceivePipeline = new MediaPipelineReceiveVideo(
       mPCHandle,
+      mTransportHandler,
       mMainThread.get(),
       mStsThread.get(),
       static_cast<VideoSessionConduit*>(mConduit.get()),
@@ -140,13 +142,12 @@ TransceiverImpl::Shutdown_m()
   mTransmitPipeline->Shutdown_m();
   mReceivePipeline = nullptr;
   mTransmitPipeline = nullptr;
+  mTransportHandler = nullptr;
   mSendTrack = nullptr;
   if (mConduit) {
     mConduit->DeleteStreams();
   }
   mConduit = nullptr;
-  RUN_ON_THREAD(mStsThread, WrapRelease(mRtpFlow.forget()), NS_DISPATCH_NORMAL);
-  RUN_ON_THREAD(mStsThread, WrapRelease(mRtcpFlow.forget()), NS_DISPATCH_NORMAL);
 }
 
 nsresult
@@ -163,7 +164,7 @@ TransceiverImpl::UpdateSendTrack(dom::MediaStreamTrack* aSendTrack)
 }
 
 nsresult
-TransceiverImpl::UpdateTransport(PeerConnectionMedia& aTransportManager)
+TransceiverImpl::UpdateTransport()
 {
   if (!mJsepTransceiver->HasLevel()) {
     return NS_OK;
@@ -177,11 +178,6 @@ TransceiverImpl::UpdateTransport(PeerConnectionMedia& aTransportManager)
 
   ASSERT_ON_THREAD(mMainThread);
   nsAutoPtr<MediaPipelineFilter> filter;
-
-  mRtpFlow = aTransportManager.GetTransportFlow(
-      mJsepTransceiver->GetTransportLevel(), false);
-  mRtcpFlow = aTransportManager.GetTransportFlow(
-      mJsepTransceiver->GetTransportLevel(), true);
 
   if (mJsepTransceiver->HasBundleLevel() &&
       mJsepTransceiver->mRecvTrack.GetNegotiatedDetails()) {
@@ -203,8 +199,10 @@ TransceiverImpl::UpdateTransport(PeerConnectionMedia& aTransportManager)
     }
   }
 
-  mReceivePipeline->UpdateTransport_m(mRtpFlow, mRtcpFlow, filter);
-  mTransmitPipeline->UpdateTransport_m(mRtpFlow, mRtcpFlow, nsAutoPtr<MediaPipelineFilter>());
+  mReceivePipeline->UpdateTransport_m(
+      mJsepTransceiver->mTransport.mTransportId, filter);
+  mTransmitPipeline->UpdateTransport_m(
+      mJsepTransceiver->mTransport.mTransportId, filter);
   return NS_OK;
 }
 
@@ -481,9 +479,13 @@ TransceiverImpl::SyncWithJS(dom::RTCRtpTransceiver& aJsTransceiver,
     }
   }
 
-  // TODO: Update conduits?
-
-  mJsepTransceiver->mSendTrack.SetJsConstraints(constraints);
+  if (mJsepTransceiver->mSendTrack.SetJsConstraints(constraints)) {
+    if (mTransmitPipeline->Transmitting()) {
+      WebrtcGmpPCHandleSetter setter(mPCHandle);
+      DebugOnly<nsresult> rv = UpdateConduit();
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+    }
+  }
 
   // Update webrtc track id in JS; the ids in SDP are not surfaced to content,
   // because they don't follow the rules that track/stream ids must. Our JS
@@ -879,7 +881,9 @@ TransceiverImpl::UpdateVideoConduit()
   if (mJsepTransceiver->HasBundleLevel() &&
       (!mJsepTransceiver->mRecvTrack.GetNegotiatedDetails() ||
        !mJsepTransceiver->mRecvTrack.GetNegotiatedDetails()->GetExt(webrtc::RtpExtension::kMIdUri))) {
-    conduit->DisableSsrcChanges();
+    mStsThread->Dispatch(NewRunnableMethod(
+      "VideoSessionConduit::DisableSsrcChanges",
+      conduit, &VideoSessionConduit::DisableSsrcChanges));
   }
 
   if (mJsepTransceiver->mRecvTrack.GetNegotiatedDetails() &&
@@ -930,6 +934,12 @@ TransceiverImpl::UpdateVideoConduit()
                           " Failed to convert JsepCodecDescriptions to "
                           "VideoCodecConfigs (send).");
       return rv;
+    }
+
+    if (configs.values.empty()) {
+      MOZ_MTLOG(ML_INFO, mPCHandle << "[" << mMid << "]: " << __FUNCTION__ <<
+                          " No codecs were negotiated (send).");
+      return NS_OK;
     }
 
     auto error = conduit->ConfigureSendMediaCodec(configs.values[0]);

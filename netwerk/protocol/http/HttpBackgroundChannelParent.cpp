@@ -14,7 +14,7 @@
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Unused.h"
-#include "nsIBackgroundChannelRegistrar.h"
+#include "mozilla/net/BackgroundChannelRegistrar.h"
 #include "nsNetCID.h"
 #include "nsQueryObject.h"
 #include "nsThreadUtils.h"
@@ -54,7 +54,7 @@ public:
     MOZ_ASSERT(NS_IsMainThread());
 
     nsCOMPtr<nsIBackgroundChannelRegistrar> registrar =
-      do_GetService(NS_BACKGROUNDCHANNELREGISTRAR_CONTRACTID);
+      BackgroundChannelRegistrar::GetOrCreate();
     MOZ_ASSERT(registrar);
 
     registrar->LinkBackgroundChannel(mChannelId, mActor);
@@ -380,9 +380,39 @@ HttpBackgroundChannelParent::OnNotifyTrackingProtectionDisabled()
 }
 
 bool
-HttpBackgroundChannelParent::OnNotifyTrackingResource()
+HttpBackgroundChannelParent::OnNotifyTrackingCookieBlocked(uint32_t aRejectedReason)
 {
-  LOG(("HttpBackgroundChannelParent::OnNotifyTrackingResource [this=%p]\n", this));
+  LOG(("HttpBackgroundChannelParent::OnNotifyTrackingCookieBlocked [this=%p]\n", this));
+  AssertIsInMainProcess();
+
+  if (NS_WARN_IF(!mIPCOpened)) {
+    return false;
+  }
+
+  if (!IsOnBackgroundThread()) {
+    MutexAutoLock lock(mBgThreadMutex);
+    RefPtr<HttpBackgroundChannelParent> self = this;
+    nsresult rv = mBackgroundThread->Dispatch(
+      NS_NewRunnableFunction(
+        "net::HttpBackgroundChannelParent::OnNotifyTrackingCookieBlocked",
+        [self, aRejectedReason]() {
+          self->OnNotifyTrackingCookieBlocked(aRejectedReason);
+        }),
+      NS_DISPATCH_NORMAL);
+
+    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+
+    return NS_SUCCEEDED(rv);
+  }
+
+  return SendNotifyTrackingCookieBlocked(aRejectedReason);
+}
+
+bool
+HttpBackgroundChannelParent::OnNotifyTrackingResource(bool aIsThirdParty)
+{
+  LOG(("HttpBackgroundChannelParent::OnNotifyTrackingResource thirdparty=%d "
+       "[this=%p]\n", static_cast<int>(aIsThirdParty), this));
   AssertIsInMainProcess();
 
   if (NS_WARN_IF(!mIPCOpened)) {
@@ -392,10 +422,11 @@ HttpBackgroundChannelParent::OnNotifyTrackingResource()
   if (!IsOnBackgroundThread()) {
     MutexAutoLock lock(mBgThreadMutex);
     nsresult rv = mBackgroundThread->Dispatch(
-      NewRunnableMethod(
+      NewRunnableMethod<bool>(
         "net::HttpBackgroundChannelParent::OnNotifyTrackingResource",
         this,
-        &HttpBackgroundChannelParent::OnNotifyTrackingResource),
+        &HttpBackgroundChannelParent::OnNotifyTrackingResource,
+        aIsThirdParty),
       NS_DISPATCH_NORMAL);
 
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
@@ -403,7 +434,7 @@ HttpBackgroundChannelParent::OnNotifyTrackingResource()
     return NS_SUCCEEDED(rv);
   }
 
-  return SendNotifyTrackingResource();
+  return SendNotifyTrackingResource(aIsThirdParty);
 }
 
 bool

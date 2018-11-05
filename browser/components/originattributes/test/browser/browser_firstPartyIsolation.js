@@ -1,4 +1,5 @@
 const BASE_URL = "http://mochi.test:8888/browser/browser/components/originattributes/test/browser/";
+const EXAMPLE_BASE_URL = BASE_URL.replace("mochi.test:8888", "example.com");
 const BASE_DOMAIN = "mochi.test";
 
 add_task(async function setup() {
@@ -6,6 +7,7 @@ add_task(async function setup() {
   registerCleanupFunction(function() {
     Services.prefs.clearUserPref("privacy.firstparty.isolate");
     Services.cookies.removeAll();
+    Services.cache2.clear();
   });
 });
 
@@ -47,11 +49,9 @@ add_task(async function cookie_test() {
   let tab = BrowserTestUtils.addTab(gBrowser, BASE_URL + "test_firstParty_cookie.html");
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser, true);
 
-  let iter = Services.cookies.enumerator;
   let count = 0;
-  while (iter.hasMoreElements()) {
+  for (let cookie of Services.cookies.enumerator) {
     count++;
-    let cookie = iter.getNext().QueryInterface(Ci.nsICookie2);
     Assert.equal(cookie.value, "foo", "Cookie value should be foo");
     Assert.equal(cookie.originAttributes.firstPartyDomain, BASE_DOMAIN, "Cookie's origin attributes should be " + BASE_DOMAIN);
   }
@@ -184,8 +184,7 @@ add_task(async function window_open_redirect_test() {
   });
 
   let tab = BrowserTestUtils.addTab(gBrowser, BASE_URL + "window_redirect.html");
-  let win = await BrowserTestUtils.waitForNewWindow();
-  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+  let win = await BrowserTestUtils.waitForNewWindow({url: BASE_URL + "dummy.html"});
 
   await ContentTask.spawn(win.gBrowser.selectedBrowser, { firstPartyDomain: "mochi.test" }, async function(attrs) {
     Assert.equal(docShell.getOriginAttributes().firstPartyDomain, attrs.firstPartyDomain,
@@ -211,8 +210,9 @@ add_task(async function window_open_iframe_test() {
   });
 
   let tab = BrowserTestUtils.addTab(gBrowser, BASE_URL + "window2.html");
-  let win = await BrowserTestUtils.waitForNewWindow();
-  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser, true);
+  let url = EXAMPLE_BASE_URL + "test_firstParty.html";
+  info("Waiting for window with url " + url);
+  let win = await BrowserTestUtils.waitForNewWindow({url});
 
   await ContentTask.spawn(win.gBrowser.selectedBrowser, { firstPartyDomain: "mochi.test" }, async function(attrs) {
     Assert.equal(docShell.getOriginAttributes().firstPartyDomain, attrs.firstPartyDomain,
@@ -262,8 +262,9 @@ add_task(async function window_open_form_test() {
   });
 
   let tab = BrowserTestUtils.addTab(gBrowser, BASE_URL + "window3.html");
-  let win = await BrowserTestUtils.waitForNewWindow();
-  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser, true);
+  let url = EXAMPLE_BASE_URL + "test_form.html";
+  info("Waiting for window with url " + url);
+  let win = await BrowserTestUtils.waitForNewWindow({url});
 
   await ContentTask.spawn(win.gBrowser.selectedBrowser, { firstPartyDomain: "mochi.test" }, async function(attrs) {
     Assert.equal(docShell.getOriginAttributes().firstPartyDomain, attrs.firstPartyDomain,

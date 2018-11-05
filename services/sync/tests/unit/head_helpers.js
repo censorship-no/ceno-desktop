@@ -107,16 +107,7 @@ function loadWebExtensionTestFunctions() {
  * @param  install addonInstall instance to install
  */
 async function installAddonFromInstall(install) {
-  await new Promise(res => {
-    let listener = {
-      onInstallEnded() {
-        AddonManager.removeAddonListener(listener);
-        res();
-      }
-    };
-    AddonManager.addInstallListener(listener);
-    install.install();
-  });
+  await install.install();
 
   Assert.notEqual(null, install.addon);
   Assert.notEqual(null, install.addon.syncGUID);
@@ -161,7 +152,7 @@ async function uninstallAddon(addon, reconciler = null) {
           AddonManager.removeAddonListener(listener);
           res(uninstalled);
         }
-      }
+      },
     };
     AddonManager.addAddonListener(listener);
   });
@@ -197,7 +188,7 @@ function mockGetWindowEnumerator(url, numWindows, numTabs, indexes, moreURLs) {
   function url2entry(urlToConvert) {
     return {
       url: ((typeof urlToConvert == "function") ? urlToConvert() : urlToConvert),
-      title: "title"
+      title: "title",
     };
   }
 
@@ -217,9 +208,9 @@ function mockGetWindowEnumerator(url, numWindows, numTabs, indexes, moreURLs) {
         index: indexes ? indexes() : 1,
         entries: (moreURLs ? [url].concat(moreURLs()) : [url]).map(url2entry),
         attributes: {
-          image: "image"
+          image: "image",
         },
-        lastAccessed: 1499
+        lastAccessed: 1499,
       }, {}));
     }
   }
@@ -241,14 +232,7 @@ function mockGetWindowEnumerator(url, numWindows, numTabs, indexes, moreURLs) {
     },
   });
 
-  return {
-    hasMoreElements() {
-      return elements.length;
-    },
-    getNext() {
-      return elements.shift();
-    },
-  };
+  return elements.values();
 }
 
 // Helper function to get the sync telemetry and add the typically used test
@@ -493,11 +477,13 @@ async function registerRotaryEngine() {
 }
 
 // Set the validation prefs to attempt validation every time to avoid non-determinism.
-function enableValidationPrefs() {
-  Svc.Prefs.set("engine.bookmarks.validation.interval", 0);
-  Svc.Prefs.set("engine.bookmarks.validation.percentageChance", 100);
-  Svc.Prefs.set("engine.bookmarks.validation.maxRecords", -1);
-  Svc.Prefs.set("engine.bookmarks.validation.enabled", true);
+function enableValidationPrefs(engines = ["bookmarks"]) {
+  for (let engine of engines) {
+    Svc.Prefs.set(`engine.${engine}.validation.interval`, 0);
+    Svc.Prefs.set(`engine.${engine}.validation.percentageChance`, 100);
+    Svc.Prefs.set(`engine.${engine}.validation.maxRecords`, -1);
+    Svc.Prefs.set(`engine.${engine}.validation.enabled`, true);
+  }
 }
 
 async function serverForEnginesWithKeys(users, engines, callback) {

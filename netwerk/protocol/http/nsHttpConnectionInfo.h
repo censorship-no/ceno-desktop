@@ -120,6 +120,15 @@ public:
     void          SetTlsFlags(uint32_t aTlsFlags);
     uint32_t      GetTlsFlags() const { return mTlsFlags; }
 
+    // TrrUsed means that this connection is used to send TRR requests over
+    void          SetTrrUsed(bool aUsed) { mTrrUsed = aUsed; }
+    bool          GetTrrUsed() const { return mTrrUsed; }
+
+    // SetTrrDisabled means don't use TRR to resolve host names for this
+    // connection
+    void          SetTrrDisabled(bool aNoTrr);
+    bool          GetTrrDisabled() const { return mTrrDisabled; }
+
     const nsCString &GetNPNToken() { return mNPNToken; }
     const nsCString &GetUsername() { return mUsername; }
 
@@ -145,6 +154,12 @@ public:
 
     // Returns true when origin/proxy is an RFC1918 literal.
     bool HostIsLocalIPLiteral() const;
+
+    bool GetLessThanTls13() const { return mLessThanTls13; }
+    void SetLessThanTls13(bool aLessThanTls13)
+    {
+      mLessThanTls13 = aLessThanTls13;
+    }
 
 private:
     void Init(const nsACString &host,
@@ -172,6 +187,12 @@ private:
     OriginAttributes       mOriginAttributes;
 
     uint32_t               mTlsFlags;
+    uint16_t               mTrrUsed : 1;
+    uint16_t               mTrrDisabled : 1;
+
+    bool mLessThanTls13; // This will be set to true if we negotiate less than
+                         // tls1.3. If the tls version is till not know or it
+                         // is 1.3 or greater the value will be false.
 
 // for RefPtr
     NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsHttpConnectionInfo, override)

@@ -6,5 +6,12 @@
 
 DevToolsModules(
     'Flexbox.js',
-    'FlexboxItem.js',
+    'FlexContainer.js',
+    'FlexContainerProperties.js',
+    'FlexItem.js',
+    'FlexItemList.js',
+    'FlexItemSelector.js',
+    'FlexItemSizingOutline.js',
+    'FlexItemSizingProperties.js',
+    'Header.js',
 )

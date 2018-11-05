@@ -44,14 +44,19 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Downloads: "resource://gre/modules/Downloads.jsm",
   DownloadUIHelper: "resource://gre/modules/DownloadUIHelper.jsm",
   DownloadUtils: "resource://gre/modules/DownloadUtils.jsm",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+});
+
+XPCOMUtils.defineLazyServiceGetters(this, {
+  gClipboardHelper: ["@mozilla.org/widget/clipboardhelper;1", "nsIClipboardHelper"],
 });
 
 XPCOMUtils.defineLazyGetter(this, "DownloadsLogger", () => {
   let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm", {});
   let consoleOptions = {
     maxLogLevelPref: "browser.download.loglevel",
-    prefix: "Downloads"
+    prefix: "Downloads",
   };
   return new ConsoleAPI(consoleOptions);
 });
@@ -66,7 +71,7 @@ const kDownloadsStringsRequiringFormatting = {
 };
 
 const kDownloadsStringsRequiringPluralForm = {
-  otherDownloads3: true
+  otherDownloads3: true,
 };
 
 const kMaxHistoryResultsForLimitedView = 42;
@@ -142,9 +147,7 @@ var DownloadsCommon = {
   get strings() {
     let strings = {};
     let sb = Services.strings.createBundle(kDownloadsStringBundleUrl);
-    let enumerator = sb.getSimpleEnumeration();
-    while (enumerator.hasMoreElements()) {
-      let string = enumerator.getNext().QueryInterface(Ci.nsIPropertyElement);
+    for (let string of sb.getSimpleEnumeration()) {
       let stringName = string.key;
       if (stringName in kDownloadsStringsRequiringFormatting) {
         strings[stringName] = function() {
@@ -282,6 +285,30 @@ var DownloadsCommon = {
   },
 
   /**
+   * Removes a Download object from both session and history downloads.
+   */
+  async deleteDownload(download) {
+    // Remove the associated history element first, if any, so that the views
+    // that combine history and session downloads won't resurrect the history
+    // download into the view just before it is deleted permanently.
+    try {
+      await PlacesUtils.history.remove(download.source.url);
+    } catch (ex) {
+      Cu.reportError(ex);
+    }
+    let list = await Downloads.getList(Downloads.ALL);
+    await list.remove(download);
+    await download.finalize(true);
+  },
+
+  /**
+   * Copies the source URI of the given Download object to the clipboard.
+   */
+  copyDownloadLink(download) {
+    gClipboardHelper.copyString(download.source.url);
+  },
+
+  /**
    * Given an iterable collection of Download objects, generates and returns
    * statistics about that collection.
    *
@@ -314,7 +341,7 @@ var DownloadsCommon = {
       // download.
       slowestSpeed: Infinity,
       rawTimeLeft: -1,
-      percentComplete: -1
+      percentComplete: -1,
     };
 
     for (let download of downloads) {
@@ -658,7 +685,7 @@ function DownloadsDataCtor({ isPrivate, isHistory, maxHistoryResults } = {}) {
       // list of public and private downloads.
       return DownloadHistory.getList({
         type: isPrivate ? Downloads.ALL : Downloads.PUBLIC,
-        maxHistoryResults
+        maxHistoryResults,
       });
     });
     return;
@@ -838,7 +865,7 @@ DownloadsDataCtor.prototype = {
     }
     this.panelHasShownBefore = true;
     browserWin.DownloadsPanel.showPanel();
-  }
+  },
 };
 
 XPCOMUtils.defineLazyGetter(this, "HistoryDownloadsData", function() {
@@ -1230,7 +1257,7 @@ DownloadsIndicatorDataCtor.prototype = {
     } else {
       this._percentComplete = -1;
     }
-  }
+  },
 };
 
 XPCOMUtils.defineLazyGetter(this, "PrivateDownloadsIndicatorData", function() {

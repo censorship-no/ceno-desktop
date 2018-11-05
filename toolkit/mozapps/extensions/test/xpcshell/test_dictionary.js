@@ -42,7 +42,7 @@ const ADDONS = {
       "name": "Test Dictionary",
     },
     "dictionaries/ab-CD.dic": "1\ntest1\n",
-    "chrome.manifest": "content dict ./\n"
+    "chrome.manifest": "content dict ./\n",
   },
   test_dictionary_3: {
     "install.rdf": {
@@ -50,14 +50,14 @@ const ADDONS = {
       "version": "2.0",
       "type": "64",
       "name": "Test Dictionary",
-    }
+    },
   },
   test_dictionary_4: {
     "install.rdf": {
       "id": "ef@dictionaries.addons.mozilla.org",
       "version": "2.0",
       "name": "Test Dictionary ef",
-    }
+    },
   },
   test_dictionary_5: {
     "install.rdf": {
@@ -65,7 +65,7 @@ const ADDONS = {
       "version": "2.0",
       "type": "64",
       "name": "Test Dictionary gh",
-    }
+    },
   },
 };
 
@@ -151,17 +151,20 @@ var HunspellEngine = {
       Cu.reportError(e);
     }
     return false;
-  }
+  },
 };
 
 add_task(async function setup() {
   await promiseStartupManager();
+
+  // Starts collecting the Addon Manager Telemetry events.
+  AddonTestUtils.hookAMTelemetryEvents();
 });
 
 // Tests that installing doesn't require a restart
 add_task(async function test_1() {
   prepare_test({ }, [
-    "onNewInstall"
+    "onNewInstall",
   ]);
 
   HunspellEngine.activate();
@@ -182,8 +185,8 @@ add_task(async function test_1() {
     prepare_test({
       [ID_DICT]: [
         ["onInstalling", false],
-        "onInstalled"
-      ]
+        "onInstalled",
+      ],
     }, [
       "onInstallStarted",
       "onInstallEnded",
@@ -219,6 +222,19 @@ add_task(async function test_1() {
   } catch (e) {
     // Expected the chrome url to not be registered
   }
+
+  // Test the collected telemetry events.
+  let amEvents = AddonTestUtils.getAMTelemetryEvents().filter(evt => {
+    return evt.method === "install" && evt.object === "dictionary";
+  }).map(evt => {
+    // collect only the remaining event properties (just the extra vars) to run assertions on them.
+    return evt.extra;
+  });
+
+  Assert.deepEqual(amEvents, [
+    {step: "started", addon_id: addon.id},
+    {step: "completed", addon_id: addon.id},
+  ], "Got the expected telemetry events");
 });
 
 // Tests that disabling doesn't require a restart
@@ -227,8 +243,8 @@ add_task(async function test_2() {
   prepare_test({
     [ID_DICT]: [
       ["onDisabling", false],
-      "onDisabled"
-    ]
+      "onDisabled",
+    ],
   });
 
   equal(addon.operationsRequiringRestart &
@@ -250,6 +266,15 @@ add_task(async function test_2() {
   ok(!addon.appDisabled);
   ok(addon.userDisabled);
   ok(!addon.isActive);
+
+  // Test the collected telemetry events.
+  let amEvents = AddonTestUtils.getAMTelemetryEvents().filter(evt => {
+    return evt.object === "dictionary";
+  });
+
+  Assert.deepEqual(amEvents, [
+    {method: "disable", object: "dictionary", value: addon.id, extra: null},
+  ], "Got the expected telemetry events");
 });
 
 // Test that restarting doesn't accidentally re-enable
@@ -275,8 +300,8 @@ add_task(async function test_4() {
   prepare_test({
     [ID_DICT]: [
       ["onEnabling", false],
-      "onEnabled"
-    ]
+      "onEnabled",
+    ],
   });
 
   equal(addon.operationsRequiringRestart &
@@ -328,8 +353,8 @@ add_task(async function test_7() {
   prepare_test({
     [ID_DICT]: [
       ["onUninstalling", false],
-      "onUninstalled"
-    ]
+      "onUninstalled",
+    ],
   });
 
   equal(addon.operationsRequiringRestart &
@@ -455,7 +480,7 @@ add_task(async function test_17() {
 // Tests that installing from a URL doesn't require a restart
 add_task(async function test_23() {
   prepare_test({ }, [
-    "onNewInstall"
+    "onNewInstall",
   ]);
 
   let url = "http://example.com/addons/test_dictionary.xpi";
@@ -467,7 +492,7 @@ add_task(async function test_23() {
   await new Promise(resolve => {
     prepare_test({ }, [
       "onDownloadStarted",
-      "onDownloadEnded"
+      "onDownloadEnded",
     ], function() {
       equal(install.type, "dictionary");
       equal(install.version, "1.0");
@@ -480,8 +505,8 @@ add_task(async function test_23() {
       prepare_test({
         [ID_DICT]: [
           ["onInstalling", false],
-          "onInstalled"
-        ]
+          "onInstalled",
+        ],
       }, [
         "onInstallStarted",
         "onInstallEnded",
@@ -522,7 +547,7 @@ add_task(async function test_29() {
     targetApplications: [{
       id: "xpcshell@tests.mozilla.org",
       minVersion: "1",
-      maxVersion: "1"
+      maxVersion: "1",
     }],
     name: "Test Dictionary gh",
   }, profileDir);
@@ -533,14 +558,14 @@ add_task(async function test_29() {
     prepare_test({
       "gh@dictionaries.addons.mozilla.org": [
         ["onInstalling", false /* = no restart */],
-        ["onInstalled", false]
-      ]
+        ["onInstalled", false],
+      ],
     }, [
       "onNewInstall",
       "onDownloadStarted",
       "onDownloadEnded",
       "onInstallStarted",
-      "onInstallEnded"
+      "onInstallEnded",
     ], resolve);
 
     AddonManagerPrivate.backgroundUpdateCheck();
@@ -556,7 +581,7 @@ add_task(async function test_29() {
       "gh@dictionaries.addons.mozilla.org": [
         ["onUninstalling", false],
         ["onUninstalled", false],
-      ]
+      ],
     }, [
     ], resolve);
 

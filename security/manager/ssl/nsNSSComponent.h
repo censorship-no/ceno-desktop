@@ -63,10 +63,6 @@ public:
 
   static nsresult GetNewPrompter(nsIPrompt** result);
 
-  // The following two methods are thread-safe.
-  static bool AreAnyWeakCiphersEnabled();
-  static void UseWeakCiphersOnSocket(PRFileDesc* fd);
-
   static void FillTLSVersionRange(SSLVersionRange& rangeOut,
                                   uint32_t minFromPrefs,
                                   uint32_t maxFromPrefs,
@@ -85,10 +81,13 @@ private:
   nsresult RegisterObservers();
 
   void MaybeImportEnterpriseRoots();
+  void ImportEnterpriseRoots();
   void UnloadEnterpriseRoots();
 
-  void MaybeEnableFamilySafetyCompatibility();
+  void MaybeEnableFamilySafetyCompatibility(uint32_t familySafetyMode);
   void UnloadFamilySafetyRoot();
+
+  nsresult TrustLoaded3rdPartyRoots();
 
 #ifdef XP_WIN
   nsresult MaybeImportFamilySafetyRoot(PCCERT_CONTEXT certificate,
@@ -118,21 +117,13 @@ private:
 
   // The following members are accessed only on the main thread:
   static int mInstanceCount;
-  // If initialization (i.e. InitializeNSS) succeeds, we have called
-  // SSL_ConfigServerSessionIDCache. To clean this up, we must call
-  // SSL_ClearSessionCache and SSL_ShutdownServerSessionIDCache exactly once
-  // each (and if we haven't called SSL_ConfigServerSessionIDCache - for example
-  // if initialization failed - then we mustn't call the cleanup functions
-  // ever). There are multiple events that can cause us to enter our cleanup
-  // function (ShutdownNSS) and so we keep track of if we need to call these
-  // non-idempotent functions in the following boolean.
-  // Similarly, if InitializeNSS succeeds, then we have dispatched an event to
-  // load the loadable roots module on a background thread. We must wait for it
-  // to complete before attempting to unload the module again in ShutdownNSS. If
-  // we never dispatched the event, then we can't wait for it to complete
-  // (because it will never complete) so we again use this boolean to keep track
-  // of if we should wait.
-  bool mNonIdempotentCleanupMustHappen;
+  // If InitializeNSS succeeds, then we have dispatched an event to load the
+  // loadable roots module on a background thread. We must wait for it to
+  // complete before attempting to unload the module again in ShutdownNSS. If we
+  // never dispatched the event, then we can't wait for it to complete (because
+  // it will never complete) so we use this boolean to keep track of if we
+  // should wait.
+  bool mLoadLoadableRootsTaskDispatched;
 };
 
 inline nsresult

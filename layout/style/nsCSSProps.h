@@ -307,16 +307,12 @@ public:
     if (nsCSSProps::IsEnabled(*it_, (mozilla::CSSEnabledState) es_))
 
   // Keyword/Enum value tables
-  static const KTableEntry kTransformStyleKTable[];
-  static const KTableEntry kImageLayerRepeatKTable[];
   // Not const because we modify its entries when the pref
   // "layout.css.background-clip.text" changes:
   static const KTableEntry kBorderImageRepeatKTable[];
   static const KTableEntry kBorderStyleKTable[];
-  static const KTableEntry kClipPathGeometryBoxKTable[];
   static const KTableEntry kShapeRadiusKTable[];
   static const KTableEntry kFilterFunctionKTable[];
-  static const KTableEntry kShapeOutsideShapeBoxKTable[];
   static const KTableEntry kBoxShadowTypeKTable[];
   static const KTableEntry kCursorKTable[];
   // Not const because we modify its entries when various
@@ -339,7 +335,6 @@ public:
   static const KTableEntry kAutoCompletionAlignJustifyContent[];
   // ------------------------------------------------------------------
   static const KTableEntry kFontSmoothingKTable[];
-  static const KTableEntry kFontVariantAlternatesFuncsKTable[];
   static const KTableEntry kGridAutoFlowKTable[];
   static const KTableEntry kGridTrackBreadthKTable[];
   static const KTableEntry kLineHeightKTable[];
@@ -348,18 +343,14 @@ public:
   static const KTableEntry kOverflowKTable[];
   static const KTableEntry kOverflowSubKTable[];
   static const KTableEntry kOverflowClipBoxKTable[];
-  static const KTableEntry kRadialGradientSizeKTable[];
   static const KTableEntry kOverscrollBehaviorKTable[];
   static const KTableEntry kScrollSnapTypeKTable[];
-  // Not const because we modify its entries when the pref
-  // "layout.css.text-align-unsafe-value.enabled" changes:
-  static KTableEntry kTextAlignKTable[];
+  static const KTableEntry kTextAlignKTable[];
   static const KTableEntry kTextDecorationLineKTable[];
   static const KTableEntry kTextDecorationStyleKTable[];
   static const KTableEntry kTextEmphasisStyleShapeKTable[];
   static const KTableEntry kTextOverflowKTable[];
   static const KTableEntry kTouchActionKTable[];
-  static const KTableEntry kTransitionTimingFunctionKTable[];
   static const KTableEntry kVerticalAlignKTable[];
   static const KTableEntry kWidthKTable[]; // also min-width, max-width
   static const KTableEntry kFlexBasisKTable[];

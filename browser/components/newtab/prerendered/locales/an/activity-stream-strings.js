@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Ha fallau la carga d'a imachen. Preba con una URL diferent.",
   "pocket_read_more": "Temas populars:",
   "pocket_read_even_more": "Amostrar mas articlos",
+  "pocket_more_reccommendations": "More Recommendations",
+  "pocket_how_it_works": "How it works",
+  "pocket_cta_button": "Get Pocket",
+  "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "Empecipia a navegar, y t'iremos amostrando aquí grans articlos, videos y atras pachinas que has vesitau u marcau en zagueras.",
   "topstories_empty_state": "Ya ye tot per agora. Torna mas ta debant pa veyer mas articlos populars de {provider}. No i puetz aguardar? Tría un tema popular pa descubrir los articlos mas interesants de tot lo web.",
   "manual_migration_explanation2": "Preba lo Firefox con as adrezas d'interés, l'historial y las claus de belatro navegador.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Chestionar la sección",
   "section_menu_action_manage_webext": "Chestionar la extensión",
   "section_menu_action_add_topsite": "Anyadir un puesto popular",
+  "section_menu_action_add_search_engine": "Anyadir motor de busqueda",
   "section_menu_action_move_up": "Puyar",
   "section_menu_action_move_down": "Baixar",
   "section_menu_action_privacy_notice": "Nota sobre privacidat",
@@ -101,5 +106,6 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Condicions d'uso",
   "firstrun_privacy_notice": "Nota sobre privacidat",
   "firstrun_continue_to_login": "Continar",
-  "firstrun_skip_login": "Blinca-te este paso"
+  "firstrun_skip_login": "Blinca-te este paso",
+  "context_menu_title": "Open menu"
 };

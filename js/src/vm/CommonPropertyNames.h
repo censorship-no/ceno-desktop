@@ -17,8 +17,6 @@
     macro(anonymous, anonymous, "anonymous") \
     macro(Any, Any, "Any") \
     macro(apply, apply, "apply") \
-    macro(AcquireReadableStreamBYOBReader, AcquireReadableStreamBYOBReader, "AcquireReadableStreamBYOBReader") \
-    macro(AcquireReadableStreamDefaultReader, AcquireReadableStreamDefaultReader, "AcquireReadableStreamDefaultReader") \
     macro(arguments, arguments, "arguments") \
     macro(ArrayBufferSpecies, ArrayBufferSpecies, "ArrayBufferSpecies") \
     macro(ArrayIterator, ArrayIterator, "Array Iterator") \
@@ -160,6 +158,7 @@
     macro(get, get, "get") \
     macro(GetInternalError, GetInternalError, "GetInternalError") \
     macro(getInternals, getInternals, "getInternals") \
+    macro(GetModuleNamespace, GetModuleNamespace, "GetModuleNamespace") \
     macro(getOwnPropertyDescriptor, getOwnPropertyDescriptor, "getOwnPropertyDescriptor") \
     macro(getOwnPropertyNames, getOwnPropertyNames, "getOwnPropertyNames") \
     macro(getPrefix, getPrefix, "get ") \
@@ -204,6 +203,7 @@
     macro(integer, integer, "integer") \
     macro(interface, interface, "interface") \
     macro(InterpretGeneratorResume, InterpretGeneratorResume, "InterpretGeneratorResume") \
+    macro(InvalidDate, InvalidDate, "Invalid Date") \
     macro(isEntryPoint, isEntryPoint, "isEntryPoint") \
     macro(isExtensible, isExtensible, "isExtensible") \
     macro(isFinite, isFinite, "isFinite") \
@@ -302,50 +302,6 @@
     macro(prototype, prototype, "prototype") \
     macro(proxy, proxy, "proxy") \
     macro(raw, raw, "raw") \
-    macro(ReadableByteStreamControllerGetDesiredSize, \
-          ReadableByteStreamControllerGetDesiredSize, \
-          "ReadableByteStreamControllerGetDesiredSize") \
-    macro(ReadableByteStreamController_close, \
-          ReadableByteStreamController_close, \
-          "ReadableByteStreamController_close") \
-    macro(ReadableByteStreamController_enqueue, \
-          ReadableByteStreamController_enqueue, \
-          "ReadableByteStreamController_enqueue") \
-    macro(ReadableByteStreamController_error, \
-          ReadableByteStreamController_error, \
-          "ReadableByteStreamController_error") \
-    macro(ReadableStreamBYOBReader_cancel, \
-          ReadableStreamBYOBReader_cancel, \
-          "ReadableStreamBYOBReader_cancel") \
-    macro(ReadableStreamBYOBReader_read, \
-          ReadableStreamBYOBReader_read, \
-          "ReadableStreamBYOBReader_read") \
-    macro(ReadableStreamBYOBReader_releaseLock, \
-          ReadableStreamBYOBReader_releaseLock, \
-          "ReadableStreamBYOBReader_releaseLock") \
-    macro(ReadableStream_cancel, ReadableStream_cancel, "ReadableStream_cancel") \
-    macro(ReadableStreamDefaultControllerGetDesiredSize, \
-          ReadableStreamDefaultControllerGetDesiredSize, \
-          "ReadableStreamDefaultControllerGetDesiredSize") \
-    macro(ReadableStreamDefaultController_close, \
-          ReadableStreamDefaultController_close, \
-          "ReadableStreamDefaultController_close") \
-    macro(ReadableStreamDefaultController_enqueue, \
-          ReadableStreamDefaultController_enqueue, \
-          "ReadableStreamDefaultController_enqueue") \
-    macro(ReadableStreamDefaultController_error, \
-          ReadableStreamDefaultController_error, \
-          "ReadableStreamDefaultController_error") \
-    macro(ReadableStreamDefaultReader_cancel, \
-          ReadableStreamDefaultReader_cancel, \
-          "ReadableStreamDefaultReader_cancel") \
-    macro(ReadableStreamDefaultReader_read, \
-          ReadableStreamDefaultReader_read, \
-          "ReadableStreamDefaultReader_read") \
-    macro(ReadableStreamDefaultReader_releaseLock, \
-          ReadableStreamDefaultReader_releaseLock, \
-          "ReadableStreamDefaultReader_releaseLock") \
-    macro(ReadableStreamTee, ReadableStreamTee, "ReadableStreamTee") \
     macro(reason, reason, "reason") \
     macro(RegExpBuiltinExec, RegExpBuiltinExec, "RegExpBuiltinExec") \
     macro(RegExpFlagsGetter, RegExpFlagsGetter, "RegExpFlagsGetter") \

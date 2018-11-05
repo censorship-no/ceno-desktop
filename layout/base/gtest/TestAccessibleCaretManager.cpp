@@ -11,7 +11,8 @@
 
 #include "AccessibleCaret.h"
 #include "AccessibleCaretManager.h"
-#include "mozilla/AutoRestore.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs.h"
 
 using ::testing::DefaultValue;
 using ::testing::Eq;
@@ -42,12 +43,6 @@ public:
       mAppearance = aAppearance;
     }
 
-    void SetSelectionBarEnabled(bool aEnabled) override
-    {
-      // A simplified version without touching CaretElement().
-      mSelectionBarEnabled = aEnabled;
-    }
-
     MOCK_METHOD2(SetPosition,
                  PositionChangedResult(nsIFrame* aFrame, int32_t aOffset));
 
@@ -59,8 +54,6 @@ public:
     using CaretMode = AccessibleCaretManager::CaretMode;
     using AccessibleCaretManager::UpdateCarets;
     using AccessibleCaretManager::HideCarets;
-    using AccessibleCaretManager::sCaretShownWhenLongTappingOnEmptyContent;
-    using AccessibleCaretManager::sCaretsAlwaysTilt;
 
     MockAccessibleCaretManager()
       : AccessibleCaretManager(nullptr)
@@ -145,7 +138,7 @@ public:
 }; // class AccessibleCaretManagerTester
 
 TEST_F(AccessibleCaretManagerTester, TestUpdatesInSelectionMode)
-MOZ_CAN_RUN_SCRIPT
+MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION
 {
   EXPECT_CALL(mManager, GetCaretMode())
     .WillRepeatedly(Return(CaretMode::Selection));
@@ -167,7 +160,7 @@ MOZ_CAN_RUN_SCRIPT
 }
 
 TEST_F(AccessibleCaretManagerTester, TestSingleTapOnNonEmptyInput)
-MOZ_CAN_RUN_SCRIPT
+MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION
 {
   EXPECT_CALL(mManager, GetCaretMode())
     .WillRepeatedly(Return(CaretMode::Cursor));
@@ -238,7 +231,7 @@ MOZ_CAN_RUN_SCRIPT
 }
 
 TEST_F(AccessibleCaretManagerTester, TestSingleTapOnEmptyInput)
-MOZ_CAN_RUN_SCRIPT
+MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION
 {
   EXPECT_CALL(mManager, GetCaretMode())
     .WillRepeatedly(Return(CaretMode::Cursor));
@@ -308,7 +301,8 @@ MOZ_CAN_RUN_SCRIPT
   EXPECT_EQ(FirstCaretAppearance(), Appearance::NormalNotShown);
 }
 
-TEST_F(AccessibleCaretManagerTester, TestTypingAtEndOfInput) MOZ_CAN_RUN_SCRIPT
+TEST_F(AccessibleCaretManagerTester, TestTypingAtEndOfInput)
+MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION
 {
   EXPECT_CALL(mManager, GetCaretMode())
     .WillRepeatedly(Return(CaretMode::Cursor));
@@ -351,7 +345,7 @@ TEST_F(AccessibleCaretManagerTester, TestTypingAtEndOfInput) MOZ_CAN_RUN_SCRIPT
 }
 
 TEST_F(AccessibleCaretManagerTester, TestScrollInSelectionMode)
-MOZ_CAN_RUN_SCRIPT
+MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION
 {
   EXPECT_CALL(mManager, GetCaretMode())
     .WillRepeatedly(Return(CaretMode::Selection));
@@ -437,12 +431,11 @@ MOZ_CAN_RUN_SCRIPT
 
 TEST_F(AccessibleCaretManagerTester,
        TestScrollInSelectionModeWithAlwaysTiltPref)
-MOZ_CAN_RUN_SCRIPT
+MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION
 {
   // Simulate Firefox Android preference.
-  AutoRestore<bool> saveCaretsAlwaysTilt(
-    MockAccessibleCaretManager::sCaretsAlwaysTilt);
-  MockAccessibleCaretManager::sCaretsAlwaysTilt = true;
+  bool oldPref = StaticPrefs::layout_accessiblecaret_always_tilt();
+  Preferences::SetBool("layout.accessiblecaret.always_tilt", true);
 
   EXPECT_CALL(mManager, GetCaretMode())
     .WillRepeatedly(Return(CaretMode::Selection));
@@ -540,10 +533,12 @@ MOZ_CAN_RUN_SCRIPT
   EXPECT_EQ(FirstCaretAppearance(), Appearance::Left);
   EXPECT_EQ(SecondCaretAppearance(), Appearance::Right);
   check.Call("scrollend2");
+
+  Preferences::SetBool("layout.accessiblecaret.always_tilt", oldPref);
 }
 
 TEST_F(AccessibleCaretManagerTester, TestScrollInCursorModeWhenLogicallyVisible)
-MOZ_CAN_RUN_SCRIPT
+MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION
 {
   EXPECT_CALL(mManager, GetCaretMode())
     .WillRepeatedly(Return(CaretMode::Cursor));
@@ -604,7 +599,7 @@ MOZ_CAN_RUN_SCRIPT
 }
 
 TEST_F(AccessibleCaretManagerTester, TestScrollInCursorModeWhenHidden)
-MOZ_CAN_RUN_SCRIPT
+MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION
 {
   EXPECT_CALL(mManager, GetCaretMode())
     .WillRepeatedly(Return(CaretMode::Cursor));
@@ -659,7 +654,7 @@ MOZ_CAN_RUN_SCRIPT
 }
 
 TEST_F(AccessibleCaretManagerTester, TestScrollInCursorModeOnEmptyContent)
-MOZ_CAN_RUN_SCRIPT
+MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION
 {
   EXPECT_CALL(mManager, GetCaretMode())
     .WillRepeatedly(Return(CaretMode::Cursor));
@@ -731,12 +726,11 @@ MOZ_CAN_RUN_SCRIPT
 
 TEST_F(AccessibleCaretManagerTester,
        TestScrollInCursorModeWithCaretShownWhenLongTappingOnEmptyContentPref)
-MOZ_CAN_RUN_SCRIPT
+MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION
 {
   // Simulate Firefox Android preference.
-  AutoRestore<bool> savesCaretShownWhenLongTappingOnEmptyContent(
-    MockAccessibleCaretManager::sCaretShownWhenLongTappingOnEmptyContent);
-  MockAccessibleCaretManager::sCaretShownWhenLongTappingOnEmptyContent = true;
+  bool oldPref = StaticPrefs::layout_accessiblecaret_caret_shown_when_long_tapping_on_empty_content();
+  Preferences::SetBool("layout.accessiblecaret.caret_shown_when_long_tapping_on_empty_content", true);
 
   EXPECT_CALL(mManager, GetCaretMode())
     .WillRepeatedly(Return(CaretMode::Cursor));
@@ -822,6 +816,8 @@ MOZ_CAN_RUN_SCRIPT
   mManager.OnScrollEnd();
   EXPECT_EQ(FirstCaretAppearance(), Appearance::Normal);
   check.Call("longtap scrollend3");
+
+  Preferences::SetBool("layout.accessiblecaret.caret_shown_when_long_tapping_on_empty_content", oldPref);
 }
 
 } // namespace mozilla

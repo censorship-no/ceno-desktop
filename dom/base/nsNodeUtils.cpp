@@ -429,7 +429,7 @@ nsNodeUtils::CloneAndAdopt(nsINode *aNode, bool aClone, bool aDeep,
 
   nsCOMPtr<nsINode> clone;
   if (aClone) {
-    nsresult rv = aNode->Clone(nodeInfo, getter_AddRefs(clone), aDeep);
+    nsresult rv = aNode->Clone(nodeInfo, getter_AddRefs(clone));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       aError.Throw(rv);
       return nullptr;
@@ -610,13 +610,8 @@ nsNodeUtils::CloneAndAdopt(nsINode *aNode, bool aClone, bool aDeep,
       if (clone->OwnerDoc()->IsStaticDocument()) {
         ShadowRoot* originalShadowRoot = aNode->AsElement()->GetShadowRoot();
         if (originalShadowRoot) {
-          ShadowRootInit init;
-          init.mMode = originalShadowRoot->Mode();
           RefPtr<ShadowRoot> newShadowRoot =
-            clone->AsElement()->AttachShadow(init, aError);
-          if (NS_WARN_IF(aError.Failed())) {
-            return nullptr;
-          }
+            clone->AsElement()->AttachShadowWithoutNameChecks(originalShadowRoot->Mode());
 
           newShadowRoot->CloneInternalDataFrom(originalShadowRoot);
           for (nsIContent* origChild = originalShadowRoot->GetFirstChild();

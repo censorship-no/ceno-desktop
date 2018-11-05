@@ -81,6 +81,7 @@ var snapshotFormatters = {
 
     if (Services.policies) {
       let policiesText = "";
+      let aboutPolicies = "about:policies";
       switch (data.policiesStatus) {
         case Services.policies.INACTIVE:
           policiesText = strings.GetStringFromName("policies.inactive");
@@ -88,24 +89,17 @@ var snapshotFormatters = {
 
         case Services.policies.ACTIVE:
           policiesText = strings.GetStringFromName("policies.active");
+          aboutPolicies += "#active";
           break;
 
         default:
           policiesText = strings.GetStringFromName("policies.error");
+          aboutPolicies += "#errors";
           break;
       }
 
-      if (data.policiesStatus == Services.policies.ACTIVE) {
-        let activePolicies = $.new("a", policiesText);
-        activePolicies.addEventListener("click", function(event) {
-          let activePoliciesJson = {};
-          activePoliciesJson.policies = Services.policies.getActivePolicies();
-          let activePoliciesJsonBlob = new Blob([JSON.stringify(activePoliciesJson)],
-                                                {type: "application/json"});
-          let jsonURL = URL.createObjectURL(activePoliciesJsonBlob);
-          window.open(jsonURL);
-          URL.revokeObjectURL(jsonURL);
-        });
+      if (data.policiesStatus != Services.policies.INACTIVE) {
+        let activePolicies = $.new("a", policiesText, null, {href: aboutPolicies});
         $("policies-status").appendChild(activePolicies);
       } else {
         $("policies-status").textContent = policiesText;
@@ -176,9 +170,9 @@ var snapshotFormatters = {
       }
       return $.new("tr", [
         $.new("td", [
-          $.new("a", crash.id, null, {href: reportURL + crash.id})
+          $.new("a", crash.id, null, {href: reportURL + crash.id}),
         ]),
-        $.new("td", formattedDate)
+        $.new("td", formattedDate),
       ]);
     }));
   },
@@ -518,7 +512,7 @@ var snapshotFormatters = {
     showGpu("gpu-2", "2");
 
     // Remove adapter keys.
-    for (let [prop, /* key */] of adapterKeys) {
+    for (let [prop /* key */] of adapterKeys) {
       delete data[prop];
       delete data[prop + "2"];
     }
@@ -745,7 +739,7 @@ var snapshotFormatters = {
         $.new("th", ""),
         $.new("th", strings.GetStringFromName("minLibVersions")),
         $.new("th", strings.GetStringFromName("loadedLibVersions")),
-      ])
+      ]),
     ];
     sortedArrayFromObject(data).forEach(
       function([name, val]) {
@@ -832,7 +826,7 @@ var snapshotFormatters = {
       JSON.stringify(data.osPrefs.systemLocales);
     $("intl-osprefs-regionalprefs").textContent =
       JSON.stringify(data.osPrefs.regionalPrefsLocales);
-  }
+  },
 };
 
 var $ = document.getElementById.bind(document);

@@ -74,23 +74,24 @@ function test() {
 
   SpecialPowers.pushPrefEnv({"set": [
       ["dom.ipc.processCount", 1],
+      ["security.allow_eval_with_system_principal", true],
     ]}, () => {
     var gProvider = new MockProvider();
     gProvider.createAddons([{
       id: "test1@tests.mozilla.org",
       name: "Test add-on 1",
-      description: "foo"
+      description: "foo",
     },
     {
       id: "test2@tests.mozilla.org",
       name: "Test add-on 2",
-      description: "bar"
+      description: "bar",
     },
     {
       id: "test3@tests.mozilla.org",
       name: "Test add-on 3",
       type: "theme",
-      description: "bar"
+      description: "bar",
     }]);
   });
 
@@ -390,7 +391,7 @@ add_test(async function() {
   info("Part 1");
   is_in_list(aManager, "addons://list/plugin", false, false);
 
-  gBrowser.loadURI("http://example.com/");
+  BrowserTestUtils.loadURI(gBrowser, "http://example.com/");
   wait_for_page_show(gBrowser.selectedBrowser).then(() => {
     info("Part 2");
 

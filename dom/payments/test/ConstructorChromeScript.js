@@ -45,14 +45,14 @@ function checkSimplestRequest(payRequest) {
     emitTestFail("total item's value should be '1.00'.");
   }
 
-  if (details.displayItems) {
-    emitTestFail("details.displayItems should be undefined.");
+  if (details.displayItems.length !== 0) {
+    emitTestFail("details.displayItems should be an empty array.");
   }
-  if (details.modifiers) {
-    emitTestFail("details.displayItems should be undefined.");
+  if (details.modifiers.length !== 0) {
+    emitTestFail("details.modifiers should be an empty array.");
   }
-  if (details.shippingOptions) {
-    emitTestFail("details.shippingOptions should be undefined.");
+  if (details.shippingOptions.length !== 0) {
+    emitTestFail("details.shippingOptions should be an empty array.");
   }
 
   // checking the default generated PaymentOptions parameter
@@ -141,8 +141,8 @@ function checkComplexRequest(payRequest) {
   if (!details.displayItems) {
     emitTestFail("details.displayItems should not be undefined.");
   }
-  if (displayItems.length != 3) {
-    emitTestFail("displayItems' length should be 3.")
+  if (displayItems.length != 2) {
+    emitTestFail("displayItems' length should be 2.")
   }
   let item = displayItems.queryElementAt(0, Ci.nsIPaymentItem);
   if (item.label != "First item") {
@@ -154,9 +154,6 @@ function checkComplexRequest(payRequest) {
   if (item.amount.value != "60.00") {
     emitTestFail("1st display item's value should be '60.00'.");
   }
-  if (item.type != "") {
-    emitTestFail("1st display item's type should be ''.");
-  }
   item = displayItems.queryElementAt(1, Ci.nsIPaymentItem);
   if (item.label != "Second item") {
     emitTestFail("2nd display item's label should be 'Second item'.");
@@ -166,22 +163,6 @@ function checkComplexRequest(payRequest) {
   }
   if (item.amount.value != "40.00") {
     emitTestFail("2nd display item's value should be '40.00'.");
-  }
-  if (item.type != "") {
-    emitTestFail("2nd display item's type should be ''.");
-  }
-  item = displayItems.queryElementAt(2, Ci.nsIPaymentItem);
-  if (item.label != "Tax") {
-    emitTestFail("3rd display item's label should be 'Tax'.");
-  }
-  if (item.amount.currency != "USD") {
-    emitTestFail("3rd display item's currency should be 'USD'.");
-  }
-  if (item.amount.value != "5.00") {
-    emitTestFail("3rd display item's value should be '5.00'.");
-  }
-  if (item.type != "tax") {
-    emitTestFail("3rd display item's type should be 'tax'.");
   }
 
   const modifiers = details.modifiers;
@@ -319,14 +300,14 @@ function checkNonBasicCardRequest(payRequest) {
     emitTestFail("total item's value should be '1.00'.");
   }
 
-  if (details.displayItems) {
-    emitTestFail("details.displayItems should be undefined.");
+  if (details.displayItems.length !== 0) {
+    emitTestFail("details.displayItems should be an zero length array.");
   }
-  if (details.modifiers) {
-    emitTestFail("details.displayItems should be undefined.");
+  if (details.displayItems.length !== 0) {
+    emitTestFail("details.modifiers should be an zero length array.");
   }
-  if (details.shippingOptions) {
-    emitTestFail("details.shippingOptions should be undefined.");
+  if (details.displayItems.length !== 0) {
+    emitTestFail("details.shippingOptions should be an zero length array.");
   }
 
   // checking the default generated PaymentOptions parameter
@@ -353,8 +334,7 @@ function checkSimplestRequestHandler() {
   if (!paymentEnum.hasMoreElements()) {
     emitTestFail("PaymentRequestService should have at least one payment request.");
   }
-  while (paymentEnum.hasMoreElements()) {
-    let payRequest = paymentEnum.getNext().QueryInterface(Ci.nsIPaymentRequest);
+  for (let payRequest of paymentEnum) {
     if (!payRequest) {
       emitTestFail("Fail to get existing payment request.");
       break;
@@ -370,8 +350,7 @@ function checkComplexRequestHandler() {
   if (!paymentEnum.hasMoreElements()) {
     emitTestFail("PaymentRequestService should have at least one payment request.");
   }
-  while (paymentEnum.hasMoreElements()) {
-    let payRequest = paymentEnum.getNext().QueryInterface(Ci.nsIPaymentRequest);
+  for (let payRequest of paymentEnum) {
     if (!payRequest) {
       emitTestFail("Fail to get existing payment request.");
       break;
@@ -387,8 +366,7 @@ function checkNonBasicCardRequestHandler() {
   if (!paymentEnum.hasMoreElements()) {
     emitTestFail("PaymentRequestService should have at least one payment request.");
   }
-  while (paymentEnum.hasMoreElements()) {
-    let payRequest = paymentEnum.getNext().QueryInterface(Ci.nsIPaymentRequest);
+  for (let payRequest of paymentEnum) {
     if (!payRequest) {
       emitTestFail("Fail to get existing payment request.");
       break;
@@ -404,8 +382,7 @@ function checkMultipleRequestsHandler () {
   if (!paymentEnum.hasMoreElements()) {
     emitTestFail("PaymentRequestService should have at least one payment request.");
   }
-  while (paymentEnum.hasMoreElements()) {
-    let payRequest = paymentEnum.getNext().QueryInterface(Ci.nsIPaymentRequest);
+  for (let payRequest of paymentEnum) {
     if (!payRequest) {
       emitTestFail("Fail to get existing payment request.");
       break;
@@ -425,8 +402,7 @@ function checkCrossOriginTopLevelPrincipalHandler() {
   if (!paymentEnum.hasMoreElements()) {
     emitTestFail("PaymentRequestService should have at least one payment request.");
   }
-  while (paymentEnum.hasMoreElements()) {
-    let payRequest = paymentEnum.getNext().QueryInterface(Ci.nsIPaymentRequest);
+  for (let payRequest of paymentEnum) {
     if (!payRequest) {
       emitTestFail("Fail to get existing payment request.");
       break;
@@ -447,6 +423,5 @@ addMessageListener("check-nonbasiccard-request", checkNonBasicCardRequestHandler
 addMessageListener("check-cross-origin-top-level-principal", checkCrossOriginTopLevelPrincipalHandler);
 
 addMessageListener("teardown", function() {
-  paymentSrv.cleanup();
   sendAsyncMessage("teardown-complete");
 });

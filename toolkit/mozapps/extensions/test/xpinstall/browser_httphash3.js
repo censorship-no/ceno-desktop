@@ -17,11 +17,11 @@ function test() {
     "Unsigned XPI": {
       URL: url,
       Hash: "sha1:ee95834ad862245a9ef99ccecc2a857cadc16404",
-      toString() { return this.URL; }
-    }
+      toString() { return this.URL; },
+    },
   }));
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "installtrigger.html?" + triggers);
 }
 
 function install_ended(install, addon) {

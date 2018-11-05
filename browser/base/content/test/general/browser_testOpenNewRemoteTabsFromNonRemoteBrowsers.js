@@ -25,7 +25,7 @@ function frame_script() {
  * Promise that resolves when the browser is no longer remote.
  */
 function prepareNonRemoteBrowser(aWindow, browser) {
-  browser.loadURI(NON_REMOTE_PAGE);
+  BrowserTestUtils.loadURI(browser, NON_REMOTE_PAGE);
   return BrowserTestUtils.browserLoaded(browser);
 }
 
@@ -81,7 +81,7 @@ add_task(async function test_new_tab() {
  */
 add_task(async function test_new_window() {
   let normalWindow = await BrowserTestUtils.openNewBrowserWindow({
-    remote: true
+    remote: true,
   }, true);
   let privateWindow = await BrowserTestUtils.openNewBrowserWindow({
     remote: true,

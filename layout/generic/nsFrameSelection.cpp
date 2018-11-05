@@ -51,7 +51,6 @@ static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
 #include "nsPresContext.h"
 #include "nsIPresShell.h"
 #include "nsCaret.h"
-#include "AccessibleCaretEventHub.h"
 
 #include "mozilla/MouseEvents.h"
 #include "mozilla/TextEvents.h"
@@ -61,8 +60,6 @@ static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
 #include "nsIDocument.h"
 
 #include "nsISelectionController.h" //for the enums
-#include "nsAutoCopyListener.h"
-#include "SelectionChangeListener.h"
 #include "nsCopySupport.h"
 #include "nsIClipboard.h"
 #include "nsIFrameInlines.h"
@@ -70,6 +67,7 @@ static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
 #include "nsIBidiKeyboard.h"
 
 #include "nsError.h"
+#include "mozilla/AutoCopyListener.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/ShadowRoot.h"
@@ -301,22 +299,23 @@ nsFrameSelection::nsFrameSelection()
     mDomSelections[i]->SetType(kPresentSelectionTypes[i]);
   }
 
-  nsAutoCopyListener *autoCopy = nullptr;
-  // On macOS, cache the current selection to send to osx service menu.
 #ifdef XP_MACOSX
-  autoCopy = nsAutoCopyListener::GetInstance(nsIClipboard::kSelectionCache);
-#endif
-
-  // Check to see if the autocopy pref is enabled
-  //   and add the autocopy listener if it is
-  if (Preferences::GetBool("clipboard.autocopy")) {
-    autoCopy = nsAutoCopyListener::GetInstance(nsIClipboard::kSelectionClipboard);
+  // On macOS, cache the current selection to send to service menu of macOS.
+  bool enableAutoCopy = true;
+  AutoCopyListener::Init(nsIClipboard::kSelectionCache);
+#else // #ifdef XP_MACOSX
+  // Check to see if the auto-copy pref is enabled and make the normal
+  // Selection notifies auto-copy listener of its changes.
+  bool enableAutoCopy = AutoCopyListener::IsPrefEnabled();
+  if (enableAutoCopy) {
+    AutoCopyListener::Init(nsIClipboard::kSelectionClipboard);
   }
+#endif // #ifdef XP_MACOSX #else
 
-  if (autoCopy) {
+  if (enableAutoCopy) {
     int8_t index = GetIndexFromSelectionType(SelectionType::eNormal);
     if (mDomSelections[index]) {
-      autoCopy->Listen(mDomSelections[index]);
+      mDomSelections[index]->NotifyAutoCopy();
     }
   }
 }
@@ -653,13 +652,8 @@ nsFrameSelection::Init(nsIPresShell *aShell, nsIContent *aLimiter,
 
   mAccessibleCaretEnabled = aAccessibleCaretEnabled;
   if (mAccessibleCaretEnabled) {
-    RefPtr<AccessibleCaretEventHub> eventHub = mShell->GetAccessibleCaretEventHub();
-    if (eventHub) {
-      int8_t index = GetIndexFromSelectionType(SelectionType::eNormal);
-      if (mDomSelections[index]) {
-        mDomSelections[index]->AddSelectionListener(eventHub);
-      }
-    }
+    int8_t index = GetIndexFromSelectionType(SelectionType::eNormal);
+    mDomSelections[index]->MaybeNotifyAccessibleCaretEventHub(aShell);
   }
 
   bool plaintextControl = (aLimiter != nullptr);
@@ -672,10 +666,7 @@ nsFrameSelection::Init(nsIPresShell *aShell, nsIContent *aLimiter,
       (doc && nsContentUtils::IsSystemPrincipal(doc->NodePrincipal()))) {
     int8_t index = GetIndexFromSelectionType(SelectionType::eNormal);
     if (mDomSelections[index]) {
-      // The Selection instance will hold a strong reference to its selectionchangelistener
-      // so we don't have to worry about that!
-      RefPtr<SelectionChangeListener> listener = new SelectionChangeListener;
-      mDomSelections[index]->AddSelectionListener(listener);
+      mDomSelections[index]->EnableSelectionChangeEvent();
     }
   }
 }
@@ -1721,22 +1712,83 @@ nsFrameSelection::GetFrameForNodeOffset(nsIContent*        aNode,
   return returnFrame;
 }
 
+nsIFrame*
+nsFrameSelection::GetFrameToPageSelect() const
+{
+  if (NS_WARN_IF(!mShell)) {
+    return nullptr;
+  }
+
+  nsIFrame* rootFrameToSelect;
+  if (mLimiter) {
+    rootFrameToSelect = mLimiter->GetPrimaryFrame();
+    if (NS_WARN_IF(!rootFrameToSelect)) {
+      return nullptr;
+    }
+  } else if (mAncestorLimiter) {
+    rootFrameToSelect = mAncestorLimiter->GetPrimaryFrame();
+    if (NS_WARN_IF(!rootFrameToSelect)) {
+      return nullptr;
+    }
+  } else {
+    rootFrameToSelect = mShell->GetRootScrollFrame();
+    if (NS_WARN_IF(!rootFrameToSelect)) {
+      return nullptr;
+    }
+  }
+
+  nsCOMPtr<nsIContent> contentToSelect = mShell->GetContentForScrolling();
+  if (contentToSelect) {
+    // If there is selected content, look for nearest and vertical scrollable
+    // parent under the root frame.
+    for (nsIFrame* frame = contentToSelect->GetPrimaryFrame();
+         frame && frame != rootFrameToSelect;
+         frame = frame->GetParent()) {
+      nsIScrollableFrame* scrollableFrame = do_QueryFrame(frame);
+      if (!scrollableFrame) {
+        continue;
+      }
+      ScrollStyles scrollStyles = scrollableFrame->GetScrollStyles();
+      if (scrollStyles.mVertical == NS_STYLE_OVERFLOW_HIDDEN) {
+        continue;
+      }
+      uint32_t directions = scrollableFrame->GetPerceivedScrollingDirections();
+      if (directions & nsIScrollableFrame::VERTICAL) {
+        // If there is sub scrollable frame, let's use its page size to select.
+        return frame;
+      }
+    }
+  }
+  // Otherwise, i.e., there is no scrollable frame or only the root frame is
+  // scrollable, let's return the root frame because Shift + PageUp/PageDown
+  // should expand the selection in the root content even if it's not
+  // scrollable.
+  return rootFrameToSelect;
+}
+
 void
 nsFrameSelection::CommonPageMove(bool aForward,
                                  bool aExtend,
-                                 nsIScrollableFrame* aScrollableFrame)
+                                 nsIFrame* aFrame)
 {
+  MOZ_ASSERT(aFrame);
+
   // expected behavior for PageMove is to scroll AND move the caret
   // and remain relative position of the caret in view. see Bug 4302.
 
-  //get the frame from the scrollable view
-
-  nsIFrame* scrolledFrame = aScrollableFrame->GetScrolledFrame();
-  if (!scrolledFrame)
+  // Get the scrollable frame.  If aFrame is not scrollable, this is nullptr.
+  nsIScrollableFrame* scrollableFrame = aFrame->GetScrollTargetFrame();
+  // Get the scrolled frame.  If aFrame is not scrollable, this is aFrame
+  // itself.
+  nsIFrame* scrolledFrame =
+    scrollableFrame ? scrollableFrame->GetScrolledFrame() : aFrame;
+  if (!scrolledFrame) {
     return;
+  }
 
   // find out where the caret is.
-  // we should know mDesiredPos value of nsFrameSelection, but I havent seen that behavior in other windows applications yet.
+  // we should know mDesiredPos value of nsFrameSelection, but I havent seen
+  // that behavior in other windows applications yet.
   Selection* domSel = GetSelection(SelectionType::eNormal);
   if (!domSel) {
     return;
@@ -1744,33 +1796,46 @@ nsFrameSelection::CommonPageMove(bool aForward,
 
   nsRect caretPos;
   nsIFrame* caretFrame = nsCaret::GetGeometry(domSel, &caretPos);
-  if (!caretFrame)
+  if (!caretFrame) {
     return;
+  }
 
-  //need to adjust caret jump by percentage scroll
-  nsSize scrollDelta = aScrollableFrame->GetPageScrollAmount();
-
-  if (aForward)
-    caretPos.y += scrollDelta.height;
-  else
-    caretPos.y -= scrollDelta.height;
+  if (scrollableFrame) {
+    // If aFrame is scrollable, adjust pseudo-click position with page scroll
+    // amount.
+    if (aForward) {
+      caretPos.y += scrollableFrame->GetPageScrollAmount().height;
+    } else {
+      caretPos.y -= scrollableFrame->GetPageScrollAmount().height;
+    }
+  } else {
+    // Otherwise, adjust pseudo-click position with the frame size.
+    if (aForward) {
+      caretPos.y += scrolledFrame->GetSize().height;
+    } else {
+      caretPos.y -= scrolledFrame->GetSize().height;
+    }
+  }
 
   caretPos += caretFrame->GetOffsetTo(scrolledFrame);
 
   // get a content at desired location
   nsPoint desiredPoint;
   desiredPoint.x = caretPos.x;
-  desiredPoint.y = caretPos.y + caretPos.height/2;
+  desiredPoint.y = caretPos.y + caretPos.height / 2;
   nsIFrame::ContentOffsets offsets =
       scrolledFrame->GetContentOffsetsFromPoint(desiredPoint);
 
-  if (!offsets.content)
+  if (!offsets.content) {
     return;
+  }
 
-  // scroll one page
-  aScrollableFrame->ScrollBy(nsIntPoint(0, aForward ? 1 : -1),
-                             nsIScrollableFrame::PAGES,
-                             nsIScrollableFrame::SMOOTH);
+  // Scroll one page if necessary.
+  if (scrollableFrame) {
+    scrollableFrame->ScrollBy(nsIntPoint(0, aForward ? 1 : -1),
+                               nsIScrollableFrame::PAGES,
+                               nsIScrollableFrame::SMOOTH);
+  }
 
   // place the caret
   HandleClick(offsets.content, offsets.offset,
@@ -2613,8 +2678,7 @@ nsFrameSelection::SelectRowOrColumn(nsIContent *aCellContent, TableSelection aTa
       if (NS_FAILED(result)) return result;
       mStartSelectedCell = firstCell;
     }
-    nsCOMPtr<nsIContent> lastCellContent = do_QueryInterface(lastCell);
-    result = SelectBlockOfCells(mStartSelectedCell, lastCellContent);
+    result = SelectBlockOfCells(mStartSelectedCell, lastCell);
 
     // This gets set to the cell at end of row/col,
     //   but we need it to be the cell under cursor
@@ -2868,11 +2932,8 @@ void
 nsFrameSelection::DisconnectFromPresShell()
 {
   if (mAccessibleCaretEnabled) {
-    RefPtr<AccessibleCaretEventHub> eventHub = mShell->GetAccessibleCaretEventHub();
-    if (eventHub) {
-      int8_t index = GetIndexFromSelectionType(SelectionType::eNormal);
-      mDomSelections[index]->RemoveSelectionListener(eventHub);
-    }
+    int8_t index = GetIndexFromSelectionType(SelectionType::eNormal);
+    mDomSelections[index]->StopNotifyingAccessibleCaretEventHub();
   }
 
   StopAutoScrollTimer();
@@ -2899,7 +2960,7 @@ nsFrameSelection::DisconnectFromPresShell()
  * if the current selection being repainted is not an empty selection.
  *
  * If the current selection is empty. The current selection cache
- * would be cleared by nsAutoCopyListener::NotifySelectionChanged.
+ * would be cleared by AutoCopyListener::OnSelectionChange().
  */
 nsresult
 nsFrameSelection::UpdateSelectionCacheOnRepaintSelection(Selection* aSel)
@@ -2918,11 +2979,9 @@ nsFrameSelection::UpdateSelectionCacheOnRepaintSelection(Selection* aSel)
   return NS_OK;
 }
 
-// nsAutoCopyListener
+// mozilla::AutoCopyListener
 
-nsAutoCopyListener* nsAutoCopyListener::sInstance = nullptr;
-
-NS_IMPL_ISUPPORTS(nsAutoCopyListener, nsISelectionListener)
+int16_t AutoCopyListener::sClipboardID = -1;
 
 /*
  * What we do now:
@@ -2956,40 +3015,51 @@ NS_IMPL_ISUPPORTS(nsAutoCopyListener, nsISelectionListener)
  * widget cocoa nsClipboard whenever selection changes.
  */
 
-NS_IMETHODIMP
-nsAutoCopyListener::NotifySelectionChanged(nsIDocument *aDoc,
-                                           Selection *aSel, int16_t aReason)
+// static
+void
+AutoCopyListener::OnSelectionChange(nsIDocument* aDocument,
+                                    Selection& aSelection,
+                                    int16_t aReason)
 {
-  if (mCachedClipboard == nsIClipboard::kSelectionCache) {
+  MOZ_ASSERT(IsValidClipboardID(sClipboardID));
+
+  if (sClipboardID == nsIClipboard::kSelectionCache) {
     nsFocusManager* fm = nsFocusManager::GetFocusManager();
     // If no active window, do nothing because a current selection changed
     // cannot occur unless it is in the active window.
     if (!fm->GetActiveWindow()) {
-      return NS_OK;
+      return;
     }
   }
 
-  if (!(aReason & nsISelectionListener::MOUSEUP_REASON   ||
-        aReason & nsISelectionListener::SELECTALL_REASON ||
-        aReason & nsISelectionListener::KEYPRESS_REASON))
-    return NS_OK; //dont care if we are still dragging
+  static const int16_t kResasonsToHandle =
+    nsISelectionListener::MOUSEUP_REASON |
+    nsISelectionListener::SELECTALL_REASON |
+    nsISelectionListener::KEYPRESS_REASON;
+  if (!(aReason & kResasonsToHandle)) {
+    return; // Don't care if we are still dragging.
+  }
 
-  if (!aDoc || !aSel || aSel->IsCollapsed()) {
+  if (!aDocument || aSelection.IsCollapsed()) {
 #ifdef DEBUG_CLIPBOARD
     fprintf(stderr, "CLIPBOARD: no selection/collapsed selection\n");
 #endif
+    if (sClipboardID != nsIClipboard::kSelectionCache) {
+      // XXX Should we clear X clipboard?
+      return;
+    }
+
     // If on macOS, clear the current selection transferable cached
     // on the parent process (nsClipboard) when the selection is empty.
-    if (mCachedClipboard == nsIClipboard::kSelectionCache) {
-      return nsCopySupport::ClearSelectionCache();
-    }
-    /* clear X clipboard? */
-    return NS_OK;
+    DebugOnly<nsresult> rv = nsCopySupport::ClearSelectionCache();
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+      "nsCopySupport::ClearSelectionCache() failed");
+    return;
   }
 
-  NS_ENSURE_TRUE(aDoc, NS_ERROR_FAILURE);
-
-  // call the copy code
-  return nsCopySupport::HTMLCopy(aSel, aDoc,
-                                 mCachedClipboard, false);
+  // Call the copy code.
+  DebugOnly<nsresult> rv =
+    nsCopySupport::HTMLCopy(&aSelection, aDocument, sClipboardID, false);
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+    "nsCopySupport::HTMLCopy() failed");
 }

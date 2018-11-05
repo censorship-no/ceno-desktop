@@ -59,8 +59,9 @@ class DenseBitmap
     }
 
     void bitwiseOrRangeInto(size_t wordStart, size_t numWords, uintptr_t* target) const {
-        for (size_t i = 0; i < numWords; i++)
+        for (size_t i = 0; i < numWords; i++) {
             target[i] |= data[wordStart + i];
+        }
     }
 };
 
@@ -88,7 +89,7 @@ class SparseBitmap
         return std::min<size_t>((size_t)WordsInBlock, std::max<long>(count, 0));
     }
 
-    BitBlock& createBlock(Data::AddPtr p, size_t blockId);
+    BitBlock& createBlock(Data::AddPtr p, size_t blockId, AutoEnterOOMUnsafeRegion& oomUnsafe);
 
     MOZ_ALWAYS_INLINE BitBlock* getBlock(size_t blockId) const {
         Data::Ptr p = data.lookup(blockId);
@@ -96,14 +97,17 @@ class SparseBitmap
     }
 
     MOZ_ALWAYS_INLINE BitBlock& getOrCreateBlock(size_t blockId) {
+        // The lookupForAdd() needs protection against injected OOMs, as does
+        // the add() within createBlock().
+        AutoEnterOOMUnsafeRegion oomUnsafe;
         Data::AddPtr p = data.lookupForAdd(blockId);
-        if (p)
+        if (p) {
             return *p->value();
-        return createBlock(p, blockId);
+        }
+        return createBlock(p, blockId, oomUnsafe);
     }
 
   public:
-    bool init() { return data.init(); }
     ~SparseBitmap();
 
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);

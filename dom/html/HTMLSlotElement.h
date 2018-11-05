@@ -18,13 +18,12 @@ struct AssignedNodesOptions;
 class HTMLSlotElement final : public nsGenericHTMLElement
 {
 public:
-  explicit HTMLSlotElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLSlotElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLSlotElement, slot)
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLSlotElement, nsGenericHTMLElement)
-  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult,
-                         bool aPreallocateChildren) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // nsIContent
   virtual nsresult BindToTree(nsIDocument* aDocument,

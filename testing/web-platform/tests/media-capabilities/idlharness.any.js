@@ -36,12 +36,11 @@ promise_test(async () => {
         idl_array.add_objects({ Navigator: ['navigator'] });
       }
       idl_array.add_objects({
-        MediaCapabilities: ['navigatior.mediaCapabilities'],
+        MediaCapabilities: ['navigator.mediaCapabilities'],
         MediaCapabilitiesInfo: ['decodingInfo', 'encodingInfo'],
         Screen: ['screen'],
         ScreenLuminance: ['screen.luminance'],
       });
-    },
-    'Test IDL implementation of Media Capabilities'
+    }
   );
 });

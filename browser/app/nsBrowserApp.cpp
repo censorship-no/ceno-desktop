@@ -43,6 +43,10 @@
 #include "FuzzerDefs.h"
 #endif
 
+#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
+#include "mozilla/Sandbox.h"
+#endif
+
 #ifdef MOZ_LINUX_32_SSE2_STARTUP_ERROR
 #include <cpuid.h>
 #include "mozilla/Unused.h"
@@ -263,6 +267,16 @@ int main(int argc, char* argv[], char* envp[])
 {
   mozilla::TimeStamp start = mozilla::TimeStamp::Now();
 
+#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
+  if (argc > 1 && IsArg(argv[1], "contentproc")) {
+    std::string err;
+    if (!mozilla::EarlyStartMacSandboxIfEnabled(argc, argv, err)) {
+      Output("Sandbox error: %s\n", err.c_str());
+      MOZ_CRASH("Sandbox initialization failed");
+    }
+  }
+#endif
+
 #ifdef MOZ_BROWSER_CAN_BE_CONTENTPROC
   // We are launching as a content process, delegate to the appropriate
   // main
@@ -285,6 +299,10 @@ int main(int argc, char* argv[], char* envp[])
     }
 
     int result = content_process_main(gBootstrap.get(), argc, argv);
+
+#if defined(DEBUG) && defined(HAS_DLL_BLOCKLIST)
+    DllBlocklist_Shutdown();
+#endif
 
     // InitXPCOMGlue calls NS_LogInit, so we need to balance it here.
     gBootstrap->NS_LogTerm();
@@ -311,6 +329,10 @@ int main(int argc, char* argv[], char* envp[])
   int result = do_main(argc, argv, envp);
 
   gBootstrap->NS_LogTerm();
+
+#if defined(DEBUG) && defined(HAS_DLL_BLOCKLIST)
+  DllBlocklist_Shutdown();
+#endif
 
 #ifdef XP_MACOSX
   // Allow writes again. While we would like to catch writes from static

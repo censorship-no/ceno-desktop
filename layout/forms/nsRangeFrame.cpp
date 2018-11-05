@@ -11,7 +11,6 @@
 
 #include "gfxContext.h"
 #include "nsContentCreatorFunctions.h"
-#include "nsContentUtils.h"
 #include "nsCSSPseudoElements.h"
 #include "nsCSSRendering.h"
 #include "nsCheckboxRadioFrame.h"
@@ -164,7 +163,7 @@ nsRangeFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
   }
 }
 
-class nsDisplayRangeFocusRing : public nsDisplayItem
+class nsDisplayRangeFocusRing final : public nsDisplayItem
 {
 public:
   nsDisplayRangeFocusRing(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
@@ -494,7 +493,10 @@ nsRangeFrame::GetValueAsFractionOfRange()
              "type=range should have a default maximum/minimum");
 
   if (maximum <= minimum) {
-    MOZ_ASSERT(value == minimum, "Unsanitized value");
+    // Avoid rounding triggering the assert by checking against an epsilon.
+    MOZ_ASSERT((value - minimum).abs().toDouble() <
+                 std::numeric_limits<float>::epsilon(),
+               "Unsanitized value");
     return 0.0;
   }
 

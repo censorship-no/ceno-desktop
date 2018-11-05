@@ -26,11 +26,11 @@ addressLine.appendElement(address);
 shippingAddress.init("USA",              // country
                      addressLine,        // address line
                      "CA",               // region
+                     "CA",               // region code
                      "San Bruno",        // city
                      "Test locality",    // dependent locality
                      "94066",            // postal code
                      "123456",           // sorting code
-                     "en",               // language code
                      "Testing Org",      // organization
                      "Bill A. Pacheco",  // recipient
                      "+1-434-441-3879"); // phone
@@ -150,6 +150,7 @@ const DummyUIService = {
   abortPayment: abortRequest,
   completePayment: completeRequest,
   updatePayment: updateRequest,
+  closePayment: function(requestId) {},
   QueryInterface: ChromeUtils.generateQI([Ci.nsIPaymentUIService]),
 };
 
@@ -258,7 +259,6 @@ addMessageListener("set-complete-status-unknown", function() {
 });
 
 addMessageListener("teardown", function() {
-  paymentSrv.cleanup();
   paymentSrv.setTestingUIService(null);
   sendAsyncMessage('teardown-complete');
 });

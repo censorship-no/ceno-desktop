@@ -31,19 +31,15 @@ TraceParent(JSTracer* trc, void* data)
     static_cast<JavaScriptParent*>(data)->trace(trc);
 }
 
+JavaScriptParent::JavaScriptParent()
+  : savedNextCPOWNumber_(1)
+{
+    JS_AddExtraGCRootsTracer(danger::GetJSContext(), TraceParent, this);
+}
+
 JavaScriptParent::~JavaScriptParent()
 {
     JS_RemoveExtraGCRootsTracer(danger::GetJSContext(), TraceParent, this);
-}
-
-bool
-JavaScriptParent::init()
-{
-    if (!WrapperOwner::init())
-        return false;
-
-    JS_AddExtraGCRootsTracer(danger::GetJSContext(), TraceParent, this);
-    return true;
 }
 
 static bool
@@ -79,8 +75,9 @@ JavaScriptParent::allowMessage(JSContext* cx)
     MessageChannel* channel = GetIPCChannel();
     bool isSafe = channel->IsInTransaction();
 
-    if (isSafe)
+    if (isSafe) {
         return true;
+    }
 
     nsIGlobalObject* global = dom::GetIncumbentGlobal();
     JS::Rooted<JSObject*> jsGlobal(cx, global ? global->GetGlobalJSObject() : nullptr);
@@ -138,25 +135,22 @@ JavaScriptParent::scopeForTargetObjects()
 void
 JavaScriptParent::afterProcessTask()
 {
-    if (savedNextCPOWNumber_ == nextCPOWNumber_)
+    if (savedNextCPOWNumber_ == nextCPOWNumber_) {
         return;
+    }
 
     savedNextCPOWNumber_ = nextCPOWNumber_;
 
     MOZ_ASSERT(nextCPOWNumber_ > 0);
-    if (active())
+    if (active()) {
         Unused << SendDropTemporaryStrongReferences(nextCPOWNumber_ - 1);
+    }
 }
 
 PJavaScriptParent*
 mozilla::jsipc::NewJavaScriptParent()
 {
-    JavaScriptParent* parent = new JavaScriptParent();
-    if (!parent->init()) {
-        delete parent;
-        return nullptr;
-    }
-    return parent;
+    return new JavaScriptParent();
 }
 
 void
@@ -169,7 +163,8 @@ void
 mozilla::jsipc::AfterProcessTask()
 {
     for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-        if (PJavaScriptParent* p = LoneManagedOrNullAsserts(cp->ManagedPJavaScriptParent()))
+        if (PJavaScriptParent* p = LoneManagedOrNullAsserts(cp->ManagedPJavaScriptParent())) {
             static_cast<JavaScriptParent*>(p)->afterProcessTask();
+        }
     }
 }

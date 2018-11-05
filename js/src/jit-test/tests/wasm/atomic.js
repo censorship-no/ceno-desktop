@@ -1,5 +1,4 @@
-if (!wasmThreadsSupported())
-    quit(0);
+// |jit-test| skip-if: !wasmThreadsSupported()
 
 const oob = /index out of bounds/;
 const unaligned = /unaligned memory access/;
@@ -433,6 +432,8 @@ var BoundsAndAlignment =
 		// Aligned but out-of-bounds
 		let addrs = [[65536, 0, oob], [65536*2, 0, oob], [65532, 4, oob],
 			     [65533, 3, oob], [65534, 2, oob], [65535, 1, oob]];
+                if (type == "i64")
+                    addrs.push([65536-8, 8, oob]);
 
 		// In-bounds but unaligned
 		for ( let i=1 ; i < size ; i++ )

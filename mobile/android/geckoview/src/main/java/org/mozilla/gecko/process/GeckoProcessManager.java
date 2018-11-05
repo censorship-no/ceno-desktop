@@ -23,8 +23,6 @@ import android.os.SystemClock;
 import android.support.v4.util.SimpleArrayMap;
 import android.util.Log;
 
-import java.io.IOException;
-
 public final class GeckoProcessManager extends IProcessManager.Stub {
     private static final String LOGTAG = "GeckoProcessManager";
     private static final GeckoProcessManager INSTANCE = new GeckoProcessManager();
@@ -175,7 +173,10 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
 
     public void crashChild() {
         try {
-            mConnections.get("tab").bind().crash();
+            IChildProcess childProcess = mConnections.get("tab").bind();
+            if (childProcess != null) {
+                childProcess.crash();
+            }
         } catch (RemoteException e) {
         }
     }
@@ -189,8 +190,7 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
     }
 
     private int filterFlagsForChild(int flags) {
-        return flags & (GeckoThread.FLAG_ENABLE_JAVA_CRASHREPORTER |
-                GeckoThread.FLAG_ENABLE_NATIVE_CRASHREPORTER);
+        return flags & GeckoThread.FLAG_ENABLE_NATIVE_CRASHREPORTER;
     }
 
     private int start(final String type, final String[] args,
@@ -204,8 +204,10 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
         }
 
         final Bundle extras = GeckoThread.getActiveExtras();
-        final ParcelFileDescriptor prefsPfd = ParcelFileDescriptor.adoptFd(prefsFd);
-        final ParcelFileDescriptor prefMapPfd = ParcelFileDescriptor.adoptFd(prefMapFd);
+        final ParcelFileDescriptor prefsPfd =
+                (prefsFd >= 0) ? ParcelFileDescriptor.adoptFd(prefsFd) : null;
+        final ParcelFileDescriptor prefMapPfd =
+                (prefMapFd >= 0) ? ParcelFileDescriptor.adoptFd(prefMapFd) : null;
         final ParcelFileDescriptor ipcPfd = ParcelFileDescriptor.adoptFd(ipcFd);
         final ParcelFileDescriptor crashPfd =
                 (crashFd >= 0) ? ParcelFileDescriptor.adoptFd(crashFd) : null;
@@ -215,9 +217,11 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
         final int flags = filterFlagsForChild(GeckoThread.getActiveFlags());
 
         boolean started = false;
+        final String crashHandler = GeckoAppShell.getCrashHandlerService() != null ?
+                GeckoAppShell.getCrashHandlerService().getName() : null;
         try {
-            started = child.start(this, args, extras, flags, prefsPfd, prefMapPfd,
-                                  ipcPfd, crashPfd, crashAnnotationPfd);
+            started = child.start(this, args, extras, flags, crashHandler,
+                    prefsPfd, prefMapPfd, ipcPfd, crashPfd, crashAnnotationPfd);
         } catch (final RemoteException e) {
         }
 
@@ -228,8 +232,12 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
             crashPfd.detachFd();
         }
         ipcPfd.detachFd();
-        prefMapPfd.detachFd();
-        prefsPfd.detachFd();
+        if (prefMapPfd != null) {
+            prefMapPfd.detachFd();
+        }
+        if (prefsPfd != null) {
+            prefsPfd.detachFd();
+        }
 
         if (!started) {
             if (retry) {

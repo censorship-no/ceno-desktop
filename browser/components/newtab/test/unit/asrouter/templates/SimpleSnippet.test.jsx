@@ -5,19 +5,39 @@ import {SimpleSnippet} from "content-src/asrouter/templates/SimpleSnippet/Simple
 
 const DEFAULT_CONTENT = {text: "foo"};
 
-/**
- * mountAndCheckProps - Mounts a SimpleSnippet with DEFAULT_CONTENT extended with any props
- *                      passed in the content param and validates props against the schema.
- * @param {obj} content Object containing custom message content (e.g. {text, icon, title})
- * @returns enzyme wrapper for SimpleSnippet
- */
-function mountAndCheckProps(content = {}) {
-  const props = {content: Object.assign({}, DEFAULT_CONTENT, content)};
-  assert.jsonSchema(props.content, schema);
-  return mount(<SimpleSnippet {...props} />);
-}
-
 describe("SimpleSnippet", () => {
+  let sandbox;
+  let onBlockStub;
+  let sendUserActionTelemetryStub;
+
+  /**
+   * mountAndCheckProps - Mounts a SimpleSnippet with DEFAULT_CONTENT extended with any props
+   *                      passed in the content param and validates props against the schema.
+   * @param {obj} content Object containing custom message content (e.g. {text, icon, title})
+   * @returns enzyme wrapper for SimpleSnippet
+   */
+  function mountAndCheckProps(content = {}, provider = "test-provider") {
+    const props = {
+      content: Object.assign({}, DEFAULT_CONTENT, content),
+      provider,
+      onBlock: onBlockStub,
+      sendUserActionTelemetry: sendUserActionTelemetryStub,
+      onAction: sandbox.stub(),
+    };
+    assert.jsonSchema(props.content, schema);
+    return mount(<SimpleSnippet {...props} />);
+  }
+
+  beforeEach(() => {
+    sandbox = sinon.sandbox.create();
+    onBlockStub = sandbox.stub();
+    sendUserActionTelemetryStub = sandbox.stub();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
   it("should render .text", () => {
     const wrapper = mountAndCheckProps({text: "bar"});
     assert.equal(wrapper.find(".body").text(), "bar");
@@ -34,21 +54,56 @@ describe("SimpleSnippet", () => {
     const wrapper = mountAndCheckProps({icon: "data:image/gif;base64,R0lGODl"});
     assert.equal(wrapper.find(".icon").prop("src"), "data:image/gif;base64,R0lGODl");
   });
-  it("should render .button_url and .button_label", () => {
-    const wrapper = mountAndCheckProps({button_label: "Click here", button_url: "http://foo.com"});
-    const button = wrapper.find("a");
+  it("should render .button_label and default className", () => {
+    const wrapper = mountAndCheckProps({
+      button_label: "Click here",
+      button_action: "OPEN_APPLICATIONS_MENU",
+      button_action_args: "appMenu",
+    });
+
+    const button = wrapper.find("button.ASRouterButton");
+    button.simulate("click");
+
     assert.equal(button.text(), "Click here");
-    assert.equal(button.prop("href"), "http://foo.com");
+    assert.equal(button.prop("className"), "ASRouterButton");
+    assert.calledOnce(wrapper.props().onAction);
+    assert.calledWithExactly(wrapper.props().onAction, {type: "OPEN_APPLICATIONS_MENU", data: {args: "appMenu"}});
   });
-  it("should render .button_url and .button_label", () => {
-    const wrapper = mountAndCheckProps({button_label: "Click here", button_url: "http://foo.com"});
-    const button = wrapper.find("a");
-    assert.equal(button.text(), "Click here");
-    assert.equal(button.prop("href"), "http://foo.com");
+  it("should send an OPEN_URL action when button_url is defined and button is clicked", () => {
+    const wrapper = mountAndCheckProps({
+      button_label: "Button",
+      button_url: "https://mozilla.org",
+    });
+
+    const button = wrapper.find("button.ASRouterButton");
+    button.simulate("click");
+
+    assert.calledOnce(wrapper.props().onAction);
+    assert.calledWithExactly(wrapper.props().onAction, {type: "OPEN_URL", data: {args: "https://mozilla.org"}});
   });
-  it("should render button with an ASRouterAnchor class if .button_type is anchor", () => {
-    const wrapper = mountAndCheckProps({button_label: "Click here", button_url: "http://foo.com", button_type: "anchor"});
-    const button = wrapper.find("a");
-    assert.equal(button.prop("className"), "ASRouterAnchor");
+  it("should call props.onBlock and sendUserActionTelemetry when CTA button is clicked", () => {
+    const wrapper = mountAndCheckProps({text: "bar"});
+
+    wrapper.instance().onButtonClick();
+
+    assert.calledOnce(onBlockStub);
+    assert.calledOnce(sendUserActionTelemetryStub);
+  });
+
+  it("should not call props.onBlock if do_not_autoblock is true", () => {
+    const wrapper = mountAndCheckProps({text: "bar", do_not_autoblock: true});
+
+    wrapper.instance().onButtonClick();
+
+    assert.notCalled(onBlockStub);
+  });
+
+  it("should not call sendUserActionTelemetry for preview message when CTA button is clicked", () => {
+    const wrapper = mountAndCheckProps({text: "bar"}, "preview");
+
+    wrapper.instance().onButtonClick();
+
+    assert.calledOnce(onBlockStub);
+    assert.notCalled(sendUserActionTelemetryStub);
   });
 });

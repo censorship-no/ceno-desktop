@@ -31,6 +31,17 @@ binutils-2.28.1:
       sig-url: "{url}.sig"
       key-path: build/unix/build-gcc/EAF1C276A747E9ED86210CBAC3126D3B4AE55E93.key
 
+binutils-2.31.1:
+  description: binutils 2.31.1 source code
+  fetch:
+    type: static-url
+    url: ftp://ftp.gnu.org/gnu/binutils/binutils-2.31.1.tar.xz
+    sha256: 5d20086ecf5752cc7d9134246e9588fa201740d540f7eb84d795b1f7a93bca86
+    size: 20467996
+    gpg-signature:
+      sig-url: "{url}.sig"
+      key-path: build/unix/build-binutils/3A24BC1E8FB409FA9F14371813FCEF89DD9E3C4F.key
+
 cloog-0.18.1:
   description: cloog source code
   fetch:
@@ -161,27 +172,3 @@ mpfr-3.1.5:
     gpg-signature:
       sig-url: "{url}.asc"
       key-path: build/unix/build-gcc/07F3DBBECC1A39605078094D980C197698C3739D.key
-
-grcov-linux-x86_64:
-  description: grcov binary release
-  fetch:
-    type: static-url
-    url: https://github.com/mozilla/grcov/releases/download/v0.2.3/grcov-linux-x86_64.tar.bz2
-    sha256: 5ed6ee891e0a1cbf1d84e27c615ec1f844c89f517f29cbec97379ded7c0894cd
-    size: 1858593
-
-grcov-osx-x86_64:
-  description: grcov binary release
-  fetch:
-    type: static-url
-    url: https://github.com/mozilla/grcov/releases/download/v0.2.3/grcov-osx-x86_64.tar.bz2
-    sha256: 3db4ef6c0dfaf35d39c9cacf19c60c482dae9413b5fe3bf343fa26667451c893
-    size: 919638
-
-grcov-win-x86_64:
-  description: grcov binary release
-  fetch:
-    type: static-url
-    url: https://github.com/mozilla/grcov/releases/download/v0.2.3/grcov-win-x86_64.tar.bz2
-    sha256: baede397959ec6f5e0c9630c8e9e1e59ebe723ec95acea9bb204511a886e0f2f
-    size: 1009309

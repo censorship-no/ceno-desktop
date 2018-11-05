@@ -100,7 +100,7 @@ var tabPreviewPanelHelper = {
       gBrowser.selectedTab = host.tabToSelect;
       host.tabToSelect = null;
     }
-  }
+  },
 };
 
 /**
@@ -265,8 +265,8 @@ var ctrlTab = {
 
     aPreview._tab = aTab;
 
-    if (aPreview._canvas.firstChild) {
-      aPreview._canvas.firstChild.remove();
+    if (aPreview._canvas.firstElementChild) {
+      aPreview._canvas.firstElementChild.remove();
     }
 
     if (aTab) {
@@ -600,5 +600,5 @@ var ctrlTab = {
       key_showAllTabs.removeAttribute("disabled");
     else
       key_showAllTabs.setAttribute("disabled", "true");
-  }
+  },
 };

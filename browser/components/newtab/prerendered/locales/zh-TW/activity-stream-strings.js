@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "圖片載入失敗，請改用不同網址。",
   "pocket_read_more": "熱門主題:",
   "pocket_read_even_more": "檢視更多文章",
+  "pocket_more_reccommendations": "更多推薦項目",
+  "pocket_how_it_works": "原理是什麼",
+  "pocket_cta_button": "取得 Pocket",
+  "pocket_cta_text": "將您喜愛的故事儲存到 Pocket，閱讀一篇篇好文章。",
   "highlights_empty_state": "開始上網，我們就會把您在網路上發現的好文章、影片、剛加入書籤的頁面顯示於此。",
   "topstories_empty_state": "所有文章都讀完啦！晚點再來，{provider} 將提供更多推薦故事。等不及了？選擇熱門主題，看看 Web 上各式精采資訊。",
   "manual_migration_explanation2": "試試將其他瀏覽器的書籤、瀏覽記錄與密碼匯入 Firefox。",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "管理段落",
   "section_menu_action_manage_webext": "管理擴充套件",
   "section_menu_action_add_topsite": "新增熱門網站",
+  "section_menu_action_add_search_engine": "新增搜尋引擎",
   "section_menu_action_move_up": "上移",
   "section_menu_action_move_down": "下移",
   "section_menu_action_privacy_notice": "隱私權公告",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "服務條款",
   "firstrun_privacy_notice": "隱私權公告",
   "firstrun_continue_to_login": "繼續",
-  "firstrun_skip_login": "跳過這步"
+  "firstrun_skip_login": "跳過這步",
+  "context_menu_title": "開啟選單",
+  "pocket_learn_more": "了解更多"
 };

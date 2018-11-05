@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+const DEFAULT_PROCESS_COUNT = Services.prefs.getDefaultBranch(null).getIntPref("dom.ipc.processCount");
+
 /**
  * A test that checks whether any preference getter from the given list
  * of stats was called more often than the max parameter.
@@ -50,6 +52,13 @@ function checkPrefGetters(stats, max, whitelist = {}) {
     }
   }
 
+  // This pref will be accessed by mozJSComponentLoader when loading modules,
+  // which fails TV runs since they run the test multiple times without restarting.
+  // We just ignore this pref, since it's for testing only anyway.
+  if (whitelist["browser.startup.record"]) {
+    delete whitelist["browser.startup.record"];
+  }
+
   let remainingWhitelist = Object.keys(whitelist);
   is(remainingWhitelist.length, 0, `Should have checked all whitelist items. Remaining: ${remainingWhitelist}`);
 }
@@ -81,20 +90,20 @@ add_task(async function startup() {
       min: 135,
       max: 170,
     },
-    "browser.search.log": {
-      min: 100,
-      max: 150,
-    },
     "layout.css.dpi": {
       min: 45,
-      max: 75,
+      max: 81,
     },
     "network.loadinfo.skip_type_assertion": {
-      max: 650,
+      // This is accessed in debug only.
     },
     "extensions.getAddons.cache.enabled": {
-      min: 7,
+      min: 4,
       max: 55,
+    },
+    "chrome.override_package.global": {
+      min: 0,
+      max: 50,
     },
   };
 
@@ -108,7 +117,10 @@ add_task(async function startup() {
 
 // This opens 10 tabs and checks pref getters.
 add_task(async function open_10_tabs() {
-  let max = 15;
+  // This is somewhat arbitrary. When we had a default of 4 content processes
+  // the value was 15. We need to scale it as we increase the number of
+  // content processes so we approximate with 4 * process_count.
+  const max = 4 * DEFAULT_PROCESS_COUNT;
 
   let whitelist = {
     "layout.css.dpi": {
@@ -134,10 +146,6 @@ add_task(async function open_10_tabs() {
       min: 10,
       max: 18,
     },
-    "dom.ipc.processCount": {
-      min: 10,
-      max: 15,
-    },
     "browser.startup.record": {
       max: 20,
     },
@@ -145,7 +153,7 @@ add_task(async function open_10_tabs() {
       max: 25,
     },
     "network.loadinfo.skip_type_assertion": {
-      max: 70,
+      // This is accessed in debug only.
     },
     "toolkit.cosmeticAnimations.enabled": {
       min: 5,
@@ -177,7 +185,7 @@ add_task(async function navigate_around() {
       max: 110,
     },
     "network.loadinfo.skip_type_assertion": {
-      max: 130,
+      // This is accessed in debug only.
     },
     "security.insecure_connection_icon.pbmode.enabled": {
       min: 20,

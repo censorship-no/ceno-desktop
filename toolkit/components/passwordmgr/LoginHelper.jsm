@@ -336,9 +336,7 @@ var LoginHelper = {
         }
       }
 
-      let propEnum = aNewLoginData.enumerator;
-      while (propEnum.hasMoreElements()) {
-        let prop = propEnum.getNext().QueryInterface(Ci.nsIProperty);
+      for (let prop of aNewLoginData.enumerator) {
         switch (prop.name) {
           // nsILoginInfo
           case "hostname":
@@ -769,7 +767,7 @@ var LoginHelper = {
       dataObject.data = data;
     }
     Services.obs.notifyObservers(dataObject, "passwordmgr-storage-changed", changeType);
-  }
+  },
 };
 
 XPCOMUtils.defineLazyPreferenceGetter(LoginHelper, "showInsecureFieldWarning",

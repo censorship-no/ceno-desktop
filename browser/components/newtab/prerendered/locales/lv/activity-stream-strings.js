@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "NEizdevās ielādēt attēlu. Izmēģiniet citu adresi.",
   "pocket_read_more": "Populārās tēmas:",
   "pocket_read_even_more": "Parādīt vairāk lapas",
+  "pocket_more_reccommendations": "Vairāk ieteikumu",
+  "pocket_how_it_works": "Kā tas strādā",
+  "pocket_cta_button": "Izmēģiniet Pocket",
+  "pocket_cta_text": "Saglabājiet interesantus stāstus Pocket un barojiet savu prātu ar interesantu lasāmvielu.",
   "highlights_empty_state": "Sāciet pārlūkošanu un mēs šeit parādīsim lieliskus rakstus, video un citas apmeklētās lapas.",
   "topstories_empty_state": "Viss ir apskatīts! Atnāciet atpakaļ nedaudz vēlāk, lai redzētu populāros stāstus no {provider}. Nevarat sagaidīt? Izvēlieties kādu no tēmām jau tagad.",
   "manual_migration_explanation2": "Izmēģiniet Firefox ar grāmatzīmēm, vēsturi un parolēm no cita pārlūka.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Pārvaldīt sadaļu",
   "section_menu_action_manage_webext": "Pārvaldīt paplašinājumu",
   "section_menu_action_add_topsite": "Pievienot populāru lapu",
+  "section_menu_action_add_search_engine": "Pievienot meklētāju",
   "section_menu_action_move_up": "Pārvietot augšup",
   "section_menu_action_move_down": "Pārvietot lejup",
   "section_menu_action_privacy_notice": "Privātuma politika",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "Lietošanas noteikumiem",
   "firstrun_privacy_notice": "Privātuma politikai",
   "firstrun_continue_to_login": "Turpināt",
-  "firstrun_skip_login": "Izlaist šo soli"
+  "firstrun_skip_login": "Izlaist šo soli",
+  "context_menu_title": "Open menu",
+  "pocket_learn_more": "Uzzināt vairāk"
 };

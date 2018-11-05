@@ -173,9 +173,6 @@ public:
                                  nsIContent** aTargetContent = nullptr,
                                  nsIContent* aOverrideClickTarget = nullptr)
                                  override;
-  nsIFrame* GetEventTargetFrame() override;
-  already_AddRefed<nsIContent>
-    GetEventTargetContent(WidgetEvent* aEvent) override;
 
   void NotifyCounterStylesAreDirty() override;
 
@@ -191,7 +188,7 @@ public:
 
   already_AddRefed<SourceSurface>
   RenderNode(nsINode* aNode,
-             nsIntRegion* aRegion,
+             const Maybe<CSSIntRegion>& aRegion,
              const LayoutDeviceIntPoint aPoint,
              LayoutDeviceIntRect* aScreenRect,
              uint32_t aFlags) override;
@@ -274,6 +271,7 @@ public:
   NS_IMETHOD WordExtendForDelete(bool aForward) override;
   NS_IMETHOD LineMove(bool aForward, bool aExtend) override;
   NS_IMETHOD IntraLineMove(bool aForward, bool aExtend) override;
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD PageMove(bool aForward, bool aExtend) override;
   NS_IMETHOD ScrollPage(bool aForward) override;
   NS_IMETHOD ScrollLine(bool aForward) override;
@@ -345,6 +343,12 @@ public:
   bool GetIsViewportOverridden() override {
     return (mMobileViewportManager != nullptr);
   }
+
+  RefPtr<MobileViewportManager> GetMobileViewportManager() const override {
+    return mMobileViewportManager;
+  }
+
+  void UpdateViewportOverridden(bool aAfterInitialization) override;
 
   bool IsLayoutFlushObserver() override
   {
@@ -543,7 +547,7 @@ private:
   already_AddRefed<SourceSurface>
   PaintRangePaintInfo(const nsTArray<UniquePtr<RangePaintInfo>>& aItems,
                       dom::Selection* aSelection,
-                      nsIntRegion* aRegion,
+                      const Maybe<CSSIntRegion>& aRegion,
                       nsRect aArea,
                       const LayoutDeviceIntPoint aPoint,
                       LayoutDeviceIntRect* aScreenRect,
@@ -656,12 +660,9 @@ private:
 
   bool InZombieDocument(nsIContent *aContent);
   already_AddRefed<nsIPresShell> GetParentPresShellForEventHandling();
-  nsIContent* GetCurrentEventContent();
-  nsIFrame* GetCurrentEventFrame();
   MOZ_CAN_RUN_SCRIPT nsresult
   RetargetEventToParent(WidgetGUIEvent* aEvent, nsEventStatus* aEventStatus);
-  void PushCurrentEventInfo(nsIFrame* aFrame, nsIContent* aContent);
-  void PopCurrentEventInfo();
+
   /**
    * @param aIsHandlingNativeEvent      true when the caller (perhaps) handles
    *                                    an event which is caused by native
@@ -786,10 +787,6 @@ private:
 
   nsTArray<nsAutoPtr<DelayedEvent> > mDelayedEvents;
 private:
-  nsIFrame* mCurrentEventFrame;
-  nsCOMPtr<nsIContent> mCurrentEventContent;
-  nsTArray<nsIFrame*> mCurrentEventFrameStack;
-  nsCOMArray<nsIContent> mCurrentEventContentStack;
   nsRevocableEventPtr<nsSynthMouseMoveEvent> mSynthMouseMoveEvent;
   nsCOMPtr<nsIContent> mLastAnchorScrolledTo;
   RefPtr<nsCaret> mCaret;

@@ -70,13 +70,12 @@ public class LayerSession {
         private void onCompositorDetached() {
             // Clear out any pending calls on the UI thread.
             LayerSession.this.onCompositorDetached();
-            disposeNative();
         }
 
-        @WrapForJNI(calledFrom = "ui", dispatchTo = "gecko")
+        @WrapForJNI(dispatchTo = "gecko")
         @Override protected native void disposeNative();
 
-        @WrapForJNI(calledFrom = "any", dispatchTo = "gecko")
+        @WrapForJNI(calledFrom = "ui", dispatchTo = "gecko")
         public native void attachNPZC(PanZoomController npzc);
 
         @WrapForJNI(calledFrom = "ui", dispatchTo = "gecko")
@@ -141,18 +140,15 @@ public class LayerSession {
             LayerSession.this.updateOverscrollOffset(x, y);
         }
 
-        @WrapForJNI(calledFrom = "ui")
-        private void onSelectionCaretDrag(final boolean dragging) {
-            // Active SelectionCaretDrag requires DynamicToolbarAnimator to be pinned to
-            // avoid unwanted scroll interactions.
-            LayerSession.this.onSelectionCaretDrag(dragging);
+        @Override
+        protected void finalize() throws Throwable {
+            disposeNative();
         }
     }
 
     protected final Compositor mCompositor = new Compositor();
 
     // All fields are accessed on UI thread only.
-    private final GeckoDisplay mDisplay = new GeckoDisplay(this);
     private PanZoomController mNPZC;
     private OverscrollEdgeEffect mOverscroll;
     private DynamicToolbarAnimator mToolbar;
@@ -172,13 +168,6 @@ public class LayerSession {
     private float mViewportLeft;
     private float mViewportTop;
     private float mViewportZoom = 1.0f;
-
-    /* package */ GeckoDisplay getDisplay() {
-        if (DEBUG) {
-            ThreadUtils.assertOnUiThread();
-        }
-        return mDisplay;
-    }
 
     /**
      * Get the PanZoomController instance for this session.
@@ -490,13 +479,13 @@ public class LayerSession {
         mOverscroll.setDistance(y, OverscrollEdgeEffect.AXIS_Y);
     }
 
-    /* package */ void onSelectionCaretDrag(final boolean dragging) {
+    protected void setShouldPinOnScreen(final boolean pinned) {
         if (DEBUG) {
             ThreadUtils.assertOnUiThread();
         }
 
         if (mToolbar != null) {
-            mToolbar.setPinned(dragging, DynamicToolbarAnimator.PinReason.CARET_DRAG);
+            mToolbar.setPinned(pinned, DynamicToolbarAnimator.PinReason.CARET_DRAG);
         }
     }
 
@@ -535,7 +524,7 @@ public class LayerSession {
         }
     }
 
-    /* package */ void onSurfaceChanged(final Surface surface, final int width,
+    public void onSurfaceChanged(final Surface surface, final int width,
                                         final int height) {
         ThreadUtils.assertOnUiThread();
 
@@ -556,7 +545,7 @@ public class LayerSession {
         onWindowBoundsChanged();
     }
 
-    /* package */ void onSurfaceDestroyed() {
+    public void onSurfaceDestroyed() {
         ThreadUtils.assertOnUiThread();
 
         if (mCompositorReady) {
@@ -569,7 +558,7 @@ public class LayerSession {
         mSurface = null;
     }
 
-    /* package */ void onScreenOriginChanged(final int left, final int top) {
+    public void onScreenOriginChanged(final int left, final int top) {
         ThreadUtils.assertOnUiThread();
 
         if (mLeft == left && mTop == top) {
@@ -579,35 +568,5 @@ public class LayerSession {
         mLeft = left;
         mTop = top;
         onWindowBoundsChanged();
-    }
-
-    /**
-     * Acquire the GeckoDisplay instance for providing the session with a drawing Surface.
-     * Be sure to call {@link GeckoDisplay#surfaceChanged(Surface, int, int)} on the
-     * acquired display if there is already a valid Surface.
-     *
-     * @return GeckoDisplay instance.
-     * @see #releaseDisplay(GeckoDisplay)
-     */
-    public @NonNull GeckoDisplay acquireDisplay() {
-        ThreadUtils.assertOnUiThread();
-
-        return mDisplay;
-    }
-
-    /**
-     * Release an acquired GeckoDisplay instance. Be sure to call {@link
-     * GeckoDisplay#surfaceDestroyed()} before releasing the display if it still has a
-     * valid Surface.
-     *
-     * @param display Acquired GeckoDisplay instance.
-     * @see #acquireDisplay()
-     */
-    public void releaseDisplay(final @NonNull GeckoDisplay display) {
-        ThreadUtils.assertOnUiThread();
-
-        if (display != mDisplay) {
-            throw new IllegalArgumentException("Display not attached");
-        }
     }
 }

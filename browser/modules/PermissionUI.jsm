@@ -1,3 +1,4 @@
+
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -279,6 +280,19 @@ var PermissionPromptPrototype = {
                                         this.browser);
 
       if (state == SitePermissions.BLOCK) {
+        // If the request is blocked by a global setting then we record
+        // a flag that lasts for the duration of the current page load
+        // to notify the user that the permission has been blocked.
+        // Currently only applies to autoplay-media
+        if (state == SitePermissions.getDefault(this.permissionKey) &&
+            SitePermissions.showGloballyBlocked(this.permissionKey)) {
+          SitePermissions.set(this.principal.URI,
+                              this.permissionKey,
+                              state,
+                              SitePermissions.SCOPE_GLOBAL,
+                              this.browser);
+        }
+
         this.cancel();
         return;
       }
@@ -324,8 +338,10 @@ var PermissionPromptPrototype = {
                                   this.permissionKey,
                                   promptAction.action,
                                   scope);
-            } else if (promptAction.action == SitePermissions.BLOCK) {
-              // Temporarily store BLOCK permissions only.
+            } else if (promptAction.action == SitePermissions.BLOCK ||
+                       SitePermissions.permitTemporaryAllow(this.permissionKey)) {
+              // Temporarily store BLOCK permissions only unless permission object
+              // sets permitTemporaryAllow: true
               // SitePermissions does not consider subframes when storing temporary
               // permissions on a tab, thus storing ALLOW could be exploited.
               SitePermissions.set(this.principal.URI,
@@ -458,7 +474,7 @@ GeolocationPermissionPrompt.prototype = {
     } else {
       // Don't offer "always remember" action in PB mode
       options.checkbox = {
-        show: !PrivateBrowsingUtils.isWindowPrivate(this.browser.ownerGlobal)
+        show: !PrivateBrowsingUtils.isWindowPrivate(this.browser.ownerGlobal),
       };
     }
 
@@ -626,18 +642,9 @@ PersistentStoragePermissionPrompt.prototype = {
   },
 
   get popupOptions() {
-    let checkbox = {
-      // In PB mode, we don't want the "always remember" checkbox
-      show: !PrivateBrowsingUtils.isWindowPrivate(this.browser.ownerGlobal)
-    };
-    if (checkbox.show) {
-      checkbox.checked = true;
-      checkbox.label = gBrowserBundle.GetStringFromName("persistentStorage.remember");
-    }
     let learnMoreURL =
       Services.urlFormatter.formatURLPref("app.support.baseURL") + "storage-permissions";
     return {
-      checkbox,
       learnMoreURL,
       displayURI: false,
       name: this.principalName,
@@ -663,16 +670,24 @@ PersistentStoragePermissionPrompt.prototype = {
         label: gBrowserBundle.GetStringFromName("persistentStorage.allow"),
         accessKey:
           gBrowserBundle.GetStringFromName("persistentStorage.allow.accesskey"),
-        action: Ci.nsIPermissionManager.ALLOW_ACTION
+        action: Ci.nsIPermissionManager.ALLOW_ACTION,
+        scope: SitePermissions.SCOPE_PERSISTENT,
       },
       {
-        label: gBrowserBundle.GetStringFromName("persistentStorage.dontAllow"),
+        label: gBrowserBundle.GetStringFromName("persistentStorage.notNow.label"),
         accessKey:
-          gBrowserBundle.GetStringFromName("persistentStorage.dontAllow.accesskey"),
-        action: Ci.nsIPermissionManager.DENY_ACTION
-      }
+          gBrowserBundle.GetStringFromName("persistentStorage.notNow.accesskey"),
+        action: Ci.nsIPermissionManager.DENY_ACTION,
+      },
+      {
+        label: gBrowserBundle.GetStringFromName("persistentStorage.neverAllow.label"),
+        accessKey:
+          gBrowserBundle.GetStringFromName("persistentStorage.neverAllow.accesskey"),
+        action: SitePermissions.BLOCK,
+        scope: SitePermissions.SCOPE_PERSISTENT,
+      },
     ];
-  }
+  },
 };
 
 PermissionUI.PersistentStoragePermissionPrompt = PersistentStoragePermissionPrompt;
@@ -715,7 +730,7 @@ MIDIPermissionPrompt.prototype = {
     } else {
       // Don't offer "always remember" action in PB mode
       options.checkbox = {
-        show: !PrivateBrowsingUtils.isWindowPrivate(this.browser.ownerGlobal)
+        show: !PrivateBrowsingUtils.isWindowPrivate(this.browser.ownerGlobal),
       };
     }
 
@@ -756,12 +771,12 @@ MIDIPermissionPrompt.prototype = {
     return [{
         label: gBrowserBundle.GetStringFromName("midi.Allow.label"),
         accessKey: gBrowserBundle.GetStringFromName("midi.Allow.accesskey"),
-        action: Ci.nsIPermissionManager.ALLOW_ACTION
+        action: Ci.nsIPermissionManager.ALLOW_ACTION,
       },
       {
         label: gBrowserBundle.GetStringFromName("midi.DontAllow.label"),
         accessKey: gBrowserBundle.GetStringFromName("midi.DontAllow.accesskey"),
-        action: Ci.nsIPermissionManager.DENY_ACTION
+        action: Ci.nsIPermissionManager.DENY_ACTION,
     }];
   },
 
@@ -783,16 +798,18 @@ AutoplayPermissionPrompt.prototype = {
   },
 
   get popupOptions() {
-    let checkbox = {
-      show: !PrivateBrowsingUtils.isWindowPrivate(this.browser.ownerGlobal) &&
-        !this.principal.URI.schemeIs("file")
-    };
+    let learnMoreURL =
+      Services.urlFormatter.formatURLPref("app.support.baseURL") + "block-autoplay";
+    let checkbox = {show: !this.principal.URI.schemeIs("file")};
     if (checkbox.show) {
       checkbox.checked = true;
-      checkbox.label = gBrowserBundle.GetStringFromName("autoplay.remember");
+      checkbox.label = PrivateBrowsingUtils.isWindowPrivate(this.browser.ownerGlobal) ?
+        gBrowserBundle.GetStringFromName("autoplay.remember-private") :
+        gBrowserBundle.GetStringFromName("autoplay.remember");
     }
     return {
       checkbox,
+      learnMoreURL,
       displayURI: false,
       name: this.principal.URI.hostPort,
     };

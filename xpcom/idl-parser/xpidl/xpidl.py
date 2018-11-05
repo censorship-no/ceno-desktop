@@ -422,6 +422,9 @@ class Typedef(object):
         return "%s %s" % (self.name, '*' if 'out' in calltype else '')
 
     def rustType(self, calltype):
+        if self.name == 'nsresult':
+            return '::nserror::nsresult'
+
         return "%s%s" % (calltype != 'in' and '*mut ' or '',
                          self.name)
 
@@ -483,7 +486,6 @@ class Native(object):
     # A `None` here means that the written type should be used as-is.
     specialtypes = {
         'nsid': None,
-        'domstring': ('const nsAString&', 'nsAString&', 'nsString'),
         'utf8string': ('const nsACString&', 'nsACString&', 'nsCString'),
         'cstring': ('const nsACString&', 'nsACString&', 'nsCString'),
         'astring': ('const nsAString&', 'nsAString&', 'nsString'),
@@ -601,7 +603,7 @@ class Native(object):
             if 'element' in calltype:
                 return '::nsstring::nsCString'
             return prefix + '::nsstring::nsACString'
-        if self.specialtype in ['astring', 'domstring']:
+        if self.specialtype == 'astring':
             if 'element' in calltype:
                 return '::nsstring::nsString'
             return prefix + '::nsstring::nsAString'
@@ -912,12 +914,11 @@ class Attribute(object):
     kind = 'attribute'
     noscript = False
     readonly = False
+    symbol = False
     implicit_jscontext = False
     nostdcall = False
     must_use = False
     binaryname = None
-    null = None
-    undefined = None
     infallible = False
 
     def __init__(self, type, name, attlist, readonly, location, doccomments):
@@ -937,54 +938,27 @@ class Attribute(object):
                 self.binaryname = value
                 continue
 
-            if name == 'Null':
-                if value is None:
-                    raise IDLError("'Null' attribute requires a value", aloc)
-                if readonly:
-                    raise IDLError("'Null' attribute only makes sense for setters",
-                                   aloc)
-                if value not in ('Empty', 'Null', 'Stringify'):
-                    raise IDLError("'Null' attribute value must be 'Empty', 'Null' or 'Stringify'",
-                                   aloc)
-                self.null = value
-            elif name == 'Undefined':
-                if value is None:
-                    raise IDLError("'Undefined' attribute requires a value", aloc)
-                if readonly:
-                    raise IDLError("'Undefined' attribute only makes sense for setters",
-                                   aloc)
-                if value not in ('Empty', 'Null'):
-                    raise IDLError("'Undefined' attribute value must be 'Empty' or 'Null'",
-                                   aloc)
-                self.undefined = value
-            else:
-                if value is not None:
-                    raise IDLError("Unexpected attribute value", aloc)
+            if value is not None:
+                raise IDLError("Unexpected attribute value", aloc)
 
-                if name == 'noscript':
-                    self.noscript = True
-                elif name == 'implicit_jscontext':
-                    self.implicit_jscontext = True
-                elif name == 'nostdcall':
-                    self.nostdcall = True
-                elif name == 'must_use':
-                    self.must_use = True
-                elif name == 'infallible':
-                    self.infallible = True
-                else:
-                    raise IDLError("Unexpected attribute '%s'" % name, aloc)
+            if name == 'noscript':
+                self.noscript = True
+            elif name == 'symbol':
+                self.symbol = True
+            elif name == 'implicit_jscontext':
+                self.implicit_jscontext = True
+            elif name == 'nostdcall':
+                self.nostdcall = True
+            elif name == 'must_use':
+                self.must_use = True
+            elif name == 'infallible':
+                self.infallible = True
+            else:
+                raise IDLError("Unexpected attribute '%s'" % name, aloc)
 
     def resolve(self, iface):
         self.iface = iface
         self.realtype = iface.idl.getName(self.type, self.location)
-        if (self.null is not None and
-                getBuiltinOrNativeTypeName(self.realtype) != '[domstring]'):
-            raise IDLError("'Null' attribute can only be used on DOMString",
-                           self.location)
-        if (self.undefined is not None and
-                getBuiltinOrNativeTypeName(self.realtype) != '[domstring]'):
-            raise IDLError("'Undefined' attribute can only be used on DOMString",
-                           self.location)
         if self.infallible and self.realtype.kind not in ['builtin',
                                                           'interface',
                                                           'forward',
@@ -1019,6 +993,7 @@ class Method(object):
     kind = 'method'
     noscript = False
     notxpcom = False
+    symbol = False
     binaryname = None
     implicit_jscontext = False
     nostdcall = False
@@ -1050,6 +1025,8 @@ class Method(object):
                 self.noscript = True
             elif name == 'notxpcom':
                 self.notxpcom = True
+            elif name == 'symbol':
+                self.symbol = True
             elif name == 'implicit_jscontext':
                 self.implicit_jscontext = True
             elif name == 'optional_argc':
@@ -1130,8 +1107,6 @@ class Param(object):
     retval = False
     shared = False
     optional = False
-    null = None
-    undefined = None
     default_value = None
 
     def __init__(self, paramtype, type, name, attlist, location, realtype=None):
@@ -1152,21 +1127,6 @@ class Param(object):
                 if value is None:
                     raise IDLError("'iid_is' must specify a parameter", aloc)
                 self.iid_is = value
-            elif name == 'Null':
-                if value is None:
-                    raise IDLError("'Null' must specify a parameter", aloc)
-                if value not in ('Empty', 'Null', 'Stringify'):
-                    raise IDLError("'Null' parameter value must be 'Empty', 'Null', "
-                                   "or 'Stringify'",
-                                   aloc)
-                self.null = value
-            elif name == 'Undefined':
-                if value is None:
-                    raise IDLError("'Undefined' must specify a parameter", aloc)
-                if value not in ('Empty', 'Null'):
-                    raise IDLError("'Undefined' parameter value must be 'Empty' or 'Null'",
-                                   aloc)
-                self.undefined = value
             elif name == 'default':
                 if value is None:
                     raise IDLError("'default' must specify a default value", aloc)
@@ -1193,14 +1153,6 @@ class Param(object):
         self.realtype = method.iface.idl.getName(self.type, self.location)
         if self.array:
             self.realtype = LegacyArray(self.realtype)
-        if (self.null is not None and
-                getBuiltinOrNativeTypeName(self.realtype) != '[domstring]'):
-            raise IDLError("'Null' attribute can only be used on DOMString",
-                           self.location)
-        if (self.undefined is not None and
-                getBuiltinOrNativeTypeName(self.realtype) != '[domstring]'):
-            raise IDLError("'Undefined' attribute can only be used on DOMString",
-                           self.location)
 
     def nativeType(self):
         kwargs = {}

@@ -76,7 +76,6 @@ class CodeGenerator final : public CodeGeneratorSpecific
                                    wasm::FuncOffsets* offsets);
 
     MOZ_MUST_USE bool link(JSContext* cx, CompilerConstraintList* constraints);
-    MOZ_MUST_USE bool linkSharedStubs(JSContext* cx);
 
     void emitOOLTestObject(Register objreg, Label* ifTruthy, Label* ifFalsy, Register scratch);
     void emitIntToString(Register input, Register output, Label* ool);
@@ -113,7 +112,6 @@ class CodeGenerator final : public CodeGeneratorSpecific
     void visitOutOfLineNewObject(OutOfLineNewObject* ool);
 
   private:
-    void emitSharedStub(ICStub::Kind kind, LInstruction* lir);
 
     void emitPostWriteBarrier(const LAllocation* obj);
     void emitPostWriteBarrier(Register objreg);
@@ -221,6 +219,9 @@ class CodeGenerator final : public CodeGeneratorSpecific
 
     void emitWasmCallBase(MWasmCall* mir, bool needsBoundsCheck);
 
+    template<size_t NumDefs>
+    void emitIonToWasmCallBase(LIonToWasmCallBase<NumDefs>* lir);
+
     IonScriptCounts* maybeCreateScriptCounts();
 
     // This function behaves like testValueTruthy with the exception that it can
@@ -289,18 +290,6 @@ class CodeGenerator final : public CodeGeneratorSpecific
     void maybeEmitGlobalBarrierCheck(const LAllocation* maybeGlobal, OutOfLineCode* ool);
 
     Vector<CodeOffset, 0, JitAllocPolicy> ionScriptLabels_;
-
-    struct SharedStub {
-        ICStub::Kind kind;
-        IonICEntry entry;
-        CodeOffset label;
-
-        SharedStub(ICStub::Kind kind, IonICEntry entry, CodeOffset label)
-          : kind(kind), entry(entry), label(label)
-        {}
-    };
-
-    Vector<SharedStub, 0, SystemAllocPolicy> sharedStubs_;
 
     void branchIfInvalidated(Register temp, Label* invalidated);
 

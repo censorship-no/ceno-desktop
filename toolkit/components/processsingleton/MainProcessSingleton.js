@@ -53,41 +53,27 @@ MainProcessSingleton.prototype = {
       if (status != Cr.NS_OK)
         return;
 
-      Services.search.addEngine(engineURL.spec, null, iconURL ? iconURL.spec : null, true);
+      Services.search.addEngine(engineURL.spec, iconURL ? iconURL.spec : null, true);
     });
   },
 
   observe(subject, topic, data) {
     switch (topic) {
     case "app-startup": {
+      ChromeUtils.import("resource://gre/modules/CustomElementsListener.jsm", null);
       Services.obs.addObserver(this, "xpcom-shutdown");
-      Services.obs.addObserver(this, "document-element-inserted");
 
       // Load this script early so that console.* is initialized
       // before other frame scripts.
-      Services.mm.loadFrameScript("chrome://global/content/browser-content.js", true);
-      Services.ppmm.loadProcessScript("chrome://global/content/process-content.js", true);
+      Services.mm.loadFrameScript("chrome://global/content/browser-content.js", true, true);
+      Services.ppmm.loadProcessScript("chrome://global/content/process-content.js", true, true);
       Services.mm.addMessageListener("Search:AddEngine", this.addSearchEngine);
       Services.ppmm.loadProcessScript("resource:///modules/ContentObservers.js", true);
       break;
     }
 
-    case "document-element-inserted":
-      // Set up Custom Elements for XUL windows before anything else happens
-      // in the document. Anything loaded here should be considered part of
-      // core XUL functionality. Any window-specific elements can be registered
-      // via <script> tags at the top of individual documents.
-      const doc = subject;
-      if (doc.nodePrincipal.isSystemPrincipal &&
-          doc.contentType == "application/vnd.mozilla.xul+xml") {
-        Services.scriptloader.loadSubScript(
-          "chrome://global/content/customElements.js", doc.ownerGlobal);
-      }
-      break;
-
     case "xpcom-shutdown":
       Services.mm.removeMessageListener("Search:AddEngine", this.addSearchEngine);
-      Services.obs.removeObserver(this, "document-element-inserted");
       break;
     }
   },

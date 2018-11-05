@@ -31,6 +31,10 @@ use super::EncoderResult;
 use ascii::*;
 use utf_8::*;
 
+macro_rules! non_fuzz_debug_assert {
+    ($($arg:tt)*) => (if !cfg!(fuzzing) { debug_assert!($($arg)*); })
+}
+
 cfg_if!{
     if #[cfg(feature = "simd-accel")] {
         use ::std::intrinsics::unlikely;
@@ -665,11 +669,14 @@ pub fn is_utf16_latin1(buffer: &[u16]) -> bool {
 /// that trigger right-to-left processing.
 ///
 /// The check is done on a Unicode block basis without regard to assigned
-/// vs. unassigned code points in the block. Additionally, the four
-/// RIGHT-TO-LEFT FOO controls in General Punctuation are checked for.
-/// Control characters that are technically bidi controls but do not cause
-/// right-to-left behavior without the presence of right-to-left characters
-/// or right-to-left controls are not checked for.
+/// vs. unassigned code points in the block. Hebrew presentation forms in
+/// the Alphabetic Presentation Forms block are treated as if they formed
+/// a block on their own (i.e. it treated as right-to-left). Additionally,
+/// the four RIGHT-TO-LEFT FOO controls in General Punctuation are checked
+/// for. Control characters that are technically bidi controls but do not
+/// cause right-to-left behavior without the presence of right-to-left
+/// characters or right-to-left controls are not checked for. As a special
+/// case, U+FEFF is excluded from Arabic Presentation Forms-B.
 ///
 /// Returns `true` if the input is invalid UTF-8 or the input contains an
 /// RTL character. Returns `false` if the input is valid UTF-8 and contains
@@ -695,15 +702,15 @@ pub fn is_utf8_bidi(buffer: &[u8]) -> bool {
     // U+202E: E2 80 AE
     // U+2067: E2 81 A7
     //
-    // U+FB4F: EF AD 8F
-    // U+FB50: EF AD 90
+    // U+FB1C: EF AC 9C
+    // U+FB1D: EF AC 9D
     // U+FDFF: EF B7 BF
     // U+FE00: EF B8 80
     //
     // U+FE6F: EF B9 AF
     // U+FE70: EF B9 B0
+    // U+FEFE: EF BB BE
     // U+FEFF: EF BB BF
-    // U+FF00: EF BC 80
     //
     // U+107FF: F0 90 9F BF
     // U+10800: F0 90 A0 80
@@ -793,9 +800,9 @@ pub fn is_utf8_bidi(buffer: &[u8]) -> bool {
                             {
                                 return true;
                             }
-                            if in_inclusive_range8(second, 0xAD, 0xB7) {
-                                if second == 0xAD {
-                                    if third > 0x8F {
+                            if in_inclusive_range8(second, 0xAC, 0xB7) {
+                                if second == 0xAC {
+                                    if third > 0x9C {
                                         return true;
                                     }
                                 } else {
@@ -804,6 +811,10 @@ pub fn is_utf8_bidi(buffer: &[u8]) -> bool {
                             } else if in_inclusive_range8(second, 0xB9, 0xBB) {
                                 if second == 0xB9 {
                                     if third > 0xAF {
+                                        return true;
+                                    }
+                                } else if second == 0xBB {
+                                    if third != 0xBF {
                                         return true;
                                     }
                                 } else {
@@ -1009,9 +1020,9 @@ pub fn is_utf8_bidi(buffer: &[u8]) -> bool {
                     {
                         return true;
                     }
-                    if in_inclusive_range8(second, 0xAD, 0xB7) {
-                        if second == 0xAD {
-                            if third > 0x8F {
+                    if in_inclusive_range8(second, 0xAC, 0xB7) {
+                        if second == 0xAC {
+                            if third > 0x9C {
                                 return true;
                             }
                         } else {
@@ -1020,6 +1031,10 @@ pub fn is_utf8_bidi(buffer: &[u8]) -> bool {
                     } else if in_inclusive_range8(second, 0xB9, 0xBB) {
                         if second == 0xB9 {
                             if third > 0xAF {
+                                return true;
+                            }
+                        } else if second == 0xBB {
+                            if third != 0xBF {
                                 return true;
                             }
                         } else {
@@ -1079,11 +1094,14 @@ pub fn is_utf8_bidi(buffer: &[u8]) -> bool {
 /// right-to-left processing.
 ///
 /// The check is done on a Unicode block basis without regard to assigned
-/// vs. unassigned code points in the block. Additionally, the four
-/// RIGHT-TO-LEFT FOO controls in General Punctuation are checked for.
-/// Control characters that are technically bidi controls but do not cause
-/// right-to-left behavior without the presence of right-to-left characters
-/// or right-to-left controls are not checked for.
+/// vs. unassigned code points in the block. Hebrew presentation forms in
+/// the Alphabetic Presentation Forms block are treated as if they formed
+/// a block on their own (i.e. it treated as right-to-left). Additionally,
+/// the four RIGHT-TO-LEFT FOO controls in General Punctuation are checked
+/// for. Control characters that are technically bidi controls but do not
+/// cause right-to-left behavior without the presence of right-to-left
+/// characters or right-to-left controls are not checked for. As a special
+/// case, U+FEFF is excluded from Arabic Presentation Forms-B.
 #[inline]
 pub fn is_str_bidi(buffer: &str) -> bool {
     // U+058F: D6 8F
@@ -1096,15 +1114,15 @@ pub fn is_str_bidi(buffer: &str) -> bool {
     // U+202E: E2 80 AE
     // U+2067: E2 81 A7
     //
-    // U+FB4F: EF AD 8F
-    // U+FB50: EF AD 90
+    // U+FB1C: EF AC 9C
+    // U+FB1D: EF AC 9D
     // U+FDFF: EF B7 BF
     // U+FE00: EF B8 80
     //
     // U+FE6F: EF B9 AF
     // U+FE70: EF B9 B0
+    // U+FEFE: EF BB BE
     // U+FEFF: EF BB BF
-    // U+FF00: EF BC 80
     //
     // U+107FF: F0 90 9F BF
     // U+10800: F0 90 A0 80
@@ -1174,10 +1192,10 @@ pub fn is_str_bidi(buffer: &str) -> bool {
                             }
                         } else {
                             debug_assert_eq!(byte, 0xEF);
-                            if in_inclusive_range8(second, 0xAD, 0xB7) {
-                                if second == 0xAD {
+                            if in_inclusive_range8(second, 0xAC, 0xB7) {
+                                if second == 0xAC {
                                     let third = bytes[read + 2];
-                                    if third > 0x8F {
+                                    if third > 0x9C {
                                         return true;
                                     }
                                 } else {
@@ -1187,6 +1205,11 @@ pub fn is_str_bidi(buffer: &str) -> bool {
                                 if second == 0xB9 {
                                     let third = bytes[read + 2];
                                     if third > 0xAF {
+                                        return true;
+                                    }
+                                } else if second == 0xBB {
+                                    let third = bytes[read + 2];
+                                    if third != 0xBF {
                                         return true;
                                     }
                                 } else {
@@ -1226,15 +1249,18 @@ pub fn is_str_bidi(buffer: &str) -> bool {
 /// right-to-left processing.
 ///
 /// The check is done on a Unicode block basis without regard to assigned
-/// vs. unassigned code points in the block. Additionally, the four
-/// RIGHT-TO-LEFT FOO controls in General Punctuation are checked for.
-/// Control characters that are technically bidi controls but do not cause
-/// right-to-left behavior without the presence of right-to-left characters
-/// or right-to-left controls are not checked for.
+/// vs. unassigned code points in the block. Hebrew presentation forms in
+/// the Alphabetic Presentation Forms block are treated as if they formed
+/// a block on their own (i.e. it treated as right-to-left). Additionally,
+/// the four RIGHT-TO-LEFT FOO controls in General Punctuation are checked
+/// for. Control characters that are technically bidi controls but do not
+/// cause right-to-left behavior without the presence of right-to-left
+/// characters or right-to-left controls are not checked for. As a special
+/// case, U+FEFF is excluded from Arabic Presentation Forms-B.
 ///
 /// Returns `true` if the input contains an RTL character or an unpaired
 /// high surrogate that could be the high half of an RTL character.
-/// Returns `false` if teh input contains neither RTL characters nor
+/// Returns `false` if the input contains neither RTL characters nor
 /// unpaired high surrogates that could be higher halves of RTL characters.
 #[inline]
 pub fn is_utf16_bidi(buffer: &[u16]) -> bool {
@@ -1244,11 +1270,14 @@ pub fn is_utf16_bidi(buffer: &[u16]) -> bool {
 /// Checks whether a code point triggers right-to-left processing.
 ///
 /// The check is done on a Unicode block basis without regard to assigned
-/// vs. unassigned code points in the block. Additionally, the four
-/// RIGHT-TO-LEFT FOO controls in General Punctuation are checked for.
-/// Control characters that are technically bidi controls but do not cause
-/// right-to-left behavior without the presence of right-to-left characters
-/// or right-to-left controls are not checked for.
+/// vs. unassigned code points in the block. Hebrew presentation forms in
+/// the Alphabetic Presentation Forms block are treated as if they formed
+/// a block on their own (i.e. it treated as right-to-left). Additionally,
+/// the four RIGHT-TO-LEFT FOO controls in General Punctuation are checked
+/// for. Control characters that are technically bidi controls but do not
+/// cause right-to-left behavior without the presence of right-to-left
+/// characters or right-to-left controls are not checked for. As a special
+/// case, U+FEFF is excluded from Arabic Presentation Forms-B.
 #[inline(always)]
 pub fn is_char_bidi(c: char) -> bool {
     // Controls:
@@ -1262,8 +1291,9 @@ pub fn is_char_bidi(c: char) -> bool {
     // BMP RTL:
     // https://www.unicode.org/roadmaps/bmp/
     // U+0590...U+08FF
-    // U+FB50...U+FDFF Arabic Presentation Forms A
-    // U+FE70...U+FEFF Arabic Presentation Forms B
+    // U+FB1D...U+FDFF Hebrew presentation forms and
+    //                 Arabic Presentation Forms A
+    // U+FE70...U+FEFE Arabic Presentation Forms B (excl. BOM)
     //
     // Supplementary RTL:
     // https://www.unicode.org/roadmaps/smp/
@@ -1274,8 +1304,8 @@ pub fn is_char_bidi(c: char) -> bool {
         // Below Hebrew
         return false;
     }
-    if in_range32(code_point, 0x0900, 0xFB50) {
-        // Above Arabic Extended-A and below Arabic Presentation Forms
+    if in_range32(code_point, 0x0900, 0xFB1D) {
+        // Above Arabic Extended-A and below Hebrew presentation forms
         if in_inclusive_range32(code_point, 0x200F, 0x2067) {
             // In the range that contains the RTL controls
             return code_point == 0x200F
@@ -1293,8 +1323,8 @@ pub fn is_char_bidi(c: char) -> bool {
         // Between astral RTL blocks
         return false;
     }
-    if in_range32(code_point, 0xFF00, 0x10800) {
-        // Above Arabic Presentations Forms B and below first
+    if in_range32(code_point, 0xFEFF, 0x10800) {
+        // Above Arabic Presentations Forms B (excl. BOM) and below first
         // astral RTL
         return false;
     }
@@ -1308,11 +1338,14 @@ pub fn is_char_bidi(c: char) -> bool {
 /// Checks whether a UTF-16 code unit triggers right-to-left processing.
 ///
 /// The check is done on a Unicode block basis without regard to assigned
-/// vs. unassigned code points in the block. Additionally, the four
-/// RIGHT-TO-LEFT FOO controls in General Punctuation are checked for.
-/// Control characters that are technically bidi controls but do not cause
-/// right-to-left behavior without the presence of right-to-left characters
-/// or right-to-left controls are not checked for.
+/// vs. unassigned code points in the block. Hebrew presentation forms in
+/// the Alphabetic Presentation Forms block are treated as if they formed
+/// a block on their own (i.e. it treated as right-to-left). Additionally,
+/// the four RIGHT-TO-LEFT FOO controls in General Punctuation are checked
+/// for. Control characters that are technically bidi controls but do not
+/// cause right-to-left behavior without the presence of right-to-left
+/// characters or right-to-left controls are not checked for. As a special
+/// case, U+FEFF is excluded from Arabic Presentation Forms-B.
 ///
 /// Since supplementary-plane right-to-left blocks are identifiable from the
 /// high surrogate without examining the low surrogate, this function returns
@@ -1334,8 +1367,8 @@ pub fn is_utf16_code_unit_bidi(u: u16) -> bool {
         }
         return false;
     }
-    if in_range16(u, 0xD83C, 0xFB50) {
-        // Between astral RTL high surrogates and Arabic Presentation Forms
+    if in_range16(u, 0xD83C, 0xFB1D) {
+        // Between astral RTL high surrogates and Hebrew presentation forms
         // (Emoji is here)
         return false;
     }
@@ -1343,8 +1376,8 @@ pub fn is_utf16_code_unit_bidi(u: u16) -> bool {
         // Between RTL high surragates
         return false;
     }
-    if u > 0xFEFF {
-        // Above Arabic Presentation Forms
+    if u > 0xFEFE {
+        // Above Arabic Presentation Forms (excl. BOM)
         return false;
     }
     if in_range16(u, 0xFE00, 0xFE70) {
@@ -1548,6 +1581,33 @@ pub fn convert_str_to_utf16(src: &str, dst: &mut [u16]) -> usize {
 }
 
 /// Converts potentially-invalid UTF-16 to valid UTF-8 with errors replaced
+/// with the REPLACEMENT CHARACTER with potentially insufficient output
+/// space.
+///
+/// Returns the number of code units read and the number of bytes written.
+///
+/// Not all code units are read if there isn't enough output space.
+///
+/// Note  that this method isn't designed for general streamability but for
+/// not allocating memory for the worst case up front. Specifically,
+/// if the input starts with or ends with an unpaired surrogate, those are
+/// replaced with the REPLACEMENT CHARACTER.
+///
+/// # Safety
+///
+/// Note that this function may write garbage beyond the number of bytes
+/// indicated by the return value, so using a `&mut str` interpreted as
+/// `&mut [u8]` as the destination is not safe. If you want to convert into
+/// a `&mut str`, use `convert_utf16_to_str()` instead of this function.
+#[inline]
+pub fn convert_utf16_to_utf8_partial(src: &[u16], dst: &mut [u8]) -> (usize, usize) {
+    let mut encoder = Utf8Encoder;
+    let (result, read, written) = encoder.encode_from_utf16_raw(src, dst, true);
+    debug_assert!(result == EncoderResult::OutputFull || read == src.len());
+    (read, written)
+}
+
+/// Converts potentially-invalid UTF-16 to valid UTF-8 with errors replaced
 /// with the REPLACEMENT CHARACTER.
 ///
 /// The length of the destination buffer must be at least the length of the
@@ -1568,10 +1628,40 @@ pub fn convert_str_to_utf16(src: &str, dst: &mut [u16]) -> usize {
 #[inline]
 pub fn convert_utf16_to_utf8(src: &[u16], dst: &mut [u8]) -> usize {
     assert!(dst.len() >= src.len() * 3 + 1);
-    let mut encoder = Utf8Encoder;
-    let (result, _, written) = encoder.encode_from_utf16_raw(src, dst, true);
-    debug_assert!(result == EncoderResult::InputEmpty);
+    let (read, written) = convert_utf16_to_utf8_partial(src, dst);
+    debug_assert_eq!(read, src.len());
     written
+}
+
+/// Converts potentially-invalid UTF-16 to valid UTF-8 with errors replaced
+/// with the REPLACEMENT CHARACTER such that the validity of the output is
+/// signaled using the Rust type system with potentially insufficient output
+/// space.
+///
+/// Returns the number of code units read and the number of bytes written.
+///
+/// Not all code units are read if there isn't enough output space.
+///
+/// Note  that this method isn't designed for general streamability but for
+/// not allocating memory for the worst case up front. Specifically,
+/// if the input starts with or ends with an unpaired surrogate, those are
+/// replaced with the REPLACEMENT CHARACTER.
+#[inline]
+pub fn convert_utf16_to_str_partial(src: &[u16], dst: &mut str) -> (usize, usize) {
+    let bytes: &mut [u8] = unsafe { ::std::mem::transmute(dst) };
+    let (read, written) = convert_utf16_to_utf8_partial(src, bytes);
+    let len = bytes.len();
+    let mut trail = written;
+    let max = ::std::cmp::min(len, trail + MAX_STRIDE_SIZE);
+    while trail < max {
+        bytes[trail] = 0;
+        trail += 1;
+    }
+    while trail < len && ((bytes[trail] & 0xC0) == 0x80) {
+        bytes[trail] = 0;
+        trail += 1;
+    }
+    (read, written)
 }
 
 /// Converts potentially-invalid UTF-16 to valid UTF-8 with errors replaced
@@ -1588,19 +1678,9 @@ pub fn convert_utf16_to_utf8(src: &[u16], dst: &mut [u8]) -> usize {
 /// Panics if the destination buffer is shorter than stated above.
 #[inline]
 pub fn convert_utf16_to_str(src: &[u16], dst: &mut str) -> usize {
-    let bytes: &mut [u8] = unsafe { ::std::mem::transmute(dst) };
-    let written = convert_utf16_to_utf8(src, bytes);
-    let len = bytes.len();
-    let mut trail = written;
-    let max = ::std::cmp::min(len, trail + MAX_STRIDE_SIZE);
-    while trail < max {
-        bytes[trail] = 0;
-        trail += 1;
-    }
-    while trail < len && ((bytes[trail] & 0xC0) == 0x80) {
-        bytes[trail] = 0;
-        trail += 1;
-    }
+    assert!(dst.len() >= src.len() * 3 + 1);
+    let (read, written) = convert_utf16_to_str_partial(src, dst);
+    debug_assert_eq!(read, src.len());
     written
 }
 
@@ -1630,6 +1710,59 @@ pub fn convert_latin1_to_utf16(src: &[u8], dst: &mut [u16]) {
 }
 
 /// Converts bytes whose unsigned value is interpreted as Unicode code point
+/// (i.e. U+0000 to U+00FF, inclusive) to UTF-8 with potentially insufficient
+/// output space.
+///
+/// Returns the number of bytes read and the number of bytes written.
+///
+/// If the output isn't large enough, not all input is consumed.
+///
+/// # Safety
+///
+/// Note that this function may write garbage beyond the number of bytes
+/// indicated by the return value, so using a `&mut str` interpreted as
+/// `&mut [u8]` as the destination is not safe. If you want to convert into
+/// a `&mut str`, use `convert_utf16_to_str()` instead of this function.
+#[inline]
+pub fn convert_latin1_to_utf8_partial(src: &[u8], dst: &mut [u8]) -> (usize, usize) {
+    let src_len = src.len();
+    let src_ptr = src.as_ptr();
+    let dst_ptr = dst.as_mut_ptr();
+    let dst_len = dst.len();
+    let mut total_read = 0usize;
+    let mut total_written = 0usize;
+    loop {
+        // src can't advance more than dst
+        let src_left = src_len - total_read;
+        let dst_left = dst_len - total_written;
+        let min_left = ::std::cmp::min(src_left, dst_left);
+        if let Some((non_ascii, consumed)) = unsafe {
+            ascii_to_ascii(
+                src_ptr.offset(total_read as isize),
+                dst_ptr.offset(total_written as isize),
+                min_left,
+            )
+        } {
+            total_read += consumed;
+            total_written += consumed;
+            if total_written.checked_add(2).unwrap() > dst_len {
+                return (total_read, total_written);
+            }
+
+            total_read += 1; // consume `non_ascii`
+
+            let code_point = non_ascii as u32;
+            dst[total_written] = ((code_point >> 6) | 0xC0u32) as u8;
+            total_written += 1;
+            dst[total_written] = ((code_point as u32 & 0x3Fu32) | 0x80u32) as u8;
+            total_written += 1;
+            continue;
+        }
+        return (total_read + min_left, total_written + min_left);
+    }
+}
+
+/// Converts bytes whose unsigned value is interpreted as Unicode code point
 /// (i.e. U+0000 to U+00FF, inclusive) to UTF-8.
 ///
 /// The length of the destination buffer must be at least the length of the
@@ -1653,33 +1786,35 @@ pub fn convert_latin1_to_utf8(src: &[u8], dst: &mut [u8]) -> usize {
         dst.len() >= src.len() * 2,
         "Destination must not be shorter than the source times two."
     );
-    let src_len = src.len();
-    let src_ptr = src.as_ptr();
-    let dst_ptr = dst.as_mut_ptr();
-    let mut total_read = 0usize;
-    let mut total_written = 0usize;
-    loop {
-        // src can't advance more than dst
-        let src_left = src_len - total_read;
-        if let Some((non_ascii, consumed)) = unsafe {
-            ascii_to_ascii(
-                src_ptr.offset(total_read as isize),
-                dst_ptr.offset(total_written as isize),
-                src_left,
-            )
-        } {
-            total_read += consumed + 1;
-            total_written += consumed;
+    let (read, written) = convert_latin1_to_utf8_partial(src, dst);
+    debug_assert_eq!(read, src.len());
+    written
+}
 
-            let code_point = non_ascii as u32;
-            dst[total_written] = ((code_point >> 6) | 0xC0u32) as u8;
-            total_written += 1;
-            dst[total_written] = ((code_point as u32 & 0x3Fu32) | 0x80u32) as u8;
-            total_written += 1;
-            continue;
-        }
-        return total_written + src_left;
+/// Converts bytes whose unsigned value is interpreted as Unicode code point
+/// (i.e. U+0000 to U+00FF, inclusive) to UTF-8 such that the validity of the
+/// output is signaled using the Rust type system with potentially insufficient
+/// output space.
+///
+/// Returns the number of bytes read and the number of bytes written.
+///
+/// If the output isn't large enough, not all input is consumed.
+#[inline]
+pub fn convert_latin1_to_str_partial(src: &[u8], dst: &mut str) -> (usize, usize) {
+    let bytes: &mut [u8] = unsafe { ::std::mem::transmute(dst) };
+    let (read, written) = convert_latin1_to_utf8_partial(src, bytes);
+    let len = bytes.len();
+    let mut trail = written;
+    let max = ::std::cmp::min(len, trail + MAX_STRIDE_SIZE);
+    while trail < max {
+        bytes[trail] = 0;
+        trail += 1;
     }
+    while trail < len && ((bytes[trail] & 0xC0) == 0x80) {
+        bytes[trail] = 0;
+        trail += 1;
+    }
+    (read, written)
 }
 
 /// Converts bytes whose unsigned value is interpreted as Unicode code point
@@ -1696,19 +1831,12 @@ pub fn convert_latin1_to_utf8(src: &[u8], dst: &mut [u8]) -> usize {
 /// Panics if the destination buffer is shorter than stated above.
 #[inline]
 pub fn convert_latin1_to_str(src: &[u8], dst: &mut str) -> usize {
-    let bytes: &mut [u8] = unsafe { ::std::mem::transmute(dst) };
-    let written = convert_latin1_to_utf8(src, bytes);
-    let len = bytes.len();
-    let mut trail = written;
-    let max = ::std::cmp::min(len, trail + MAX_STRIDE_SIZE);
-    while trail < max {
-        bytes[trail] = 0;
-        trail += 1;
-    }
-    while trail < len && ((bytes[trail] & 0xC0) == 0x80) {
-        bytes[trail] = 0;
-        trail += 1;
-    }
+    assert!(
+        dst.len() >= src.len() * 2,
+        "Destination must not be shorter than the source times two."
+    );
+    let (read, written) = convert_latin1_to_str_partial(src, dst);
+    debug_assert_eq!(read, src.len());
     written
 }
 
@@ -1718,6 +1846,7 @@ pub fn convert_latin1_to_str(src: &[u8], dst: &mut str) -> usize {
 /// each output byte.
 ///
 /// If the input does not fulfill the condition stated above, this function
+/// panics if debug assertions are enabled (and fuzzing isn't) and otherwise
 /// does something that is memory-safe without any promises about any
 /// properties of the output. In particular, callers shouldn't assume the
 /// output to be the same across crate versions or CPU architectures and
@@ -1731,12 +1860,16 @@ pub fn convert_latin1_to_str(src: &[u8], dst: &mut str) -> usize {
 /// # Panics
 ///
 /// Panics if the destination buffer is shorter than stated above.
+///
+/// If debug assertions are enabled (and not fuzzing) and the input is
+/// not in the range U+0000 to U+00FF, inclusive.
 #[inline]
 pub fn convert_utf8_to_latin1_lossy(src: &[u8], dst: &mut [u8]) -> usize {
     assert!(
         dst.len() >= src.len(),
         "Destination must not be shorter than the source."
     );
+    non_fuzz_debug_assert!(is_utf8_latin1(src));
     let src_len = src.len();
     let src_ptr = src.as_ptr();
     let dst_ptr = dst.as_mut_ptr();
@@ -1776,11 +1909,12 @@ pub fn convert_utf8_to_latin1_lossy(src: &[u8], dst: &mut [u8]) -> usize {
 /// represents the value of each code point as the unsigned byte value of
 /// each output byte.
 ///
-/// If the input does not fulfill the condition stated above, this function
-/// does something that is memory-safe without any promises about any
-/// properties of the output. In particular, callers shouldn't assume the
-/// output to be the same across crate versions or CPU architectures and
-/// should not assume that non-Basic Latin input can't map to ASCII output.
+/// If the input does not fulfill the condition stated above, does something
+/// that is memory-safe without any promises about any properties of the
+/// output and will probably assert in debug builds in future versions.
+/// In particular, callers shouldn't assume the output to be the same across
+/// crate versions or CPU architectures and should not assume that non-ASCII
+/// input can't map to ASCII output.
 ///
 /// The length of the destination buffer must be at least the length of the
 /// source buffer.
@@ -1790,12 +1924,16 @@ pub fn convert_utf8_to_latin1_lossy(src: &[u8], dst: &mut [u8]) -> usize {
 /// # Panics
 ///
 /// Panics if the destination buffer is shorter than stated above.
+///
+/// (Probably in future versions if debug assertions are enabled (and not
+/// fuzzing) and the input is not in the range U+0000 to U+00FF, inclusive.)
 #[inline]
 pub fn convert_utf16_to_latin1_lossy(src: &[u16], dst: &mut [u8]) {
     assert!(
         dst.len() >= src.len(),
         "Destination must not be shorter than the source."
     );
+    // non_fuzz_debug_assert!(is_utf16_latin1(src));
     unsafe {
         pack_latin1(src.as_ptr(), dst.as_mut_ptr(), src.len());
     }
@@ -2101,6 +2239,18 @@ mod tests {
     }
 
     #[test]
+    fn test_convert_utf16_to_utf8_partial() {
+        let reference = "abcdefghijklmnopqrstu\u{1F4A9}v\u{2603}w\u{00B6}xyzz";
+        let src: Vec<u16> = reference.encode_utf16().collect();
+        let mut dst: Vec<u8> = Vec::with_capacity(src.len() * 3 + 1);
+        dst.resize(src.len() * 3 + 1, 0);
+        let (read, written) = convert_utf16_to_utf8_partial(&src[..], &mut dst[..24]);
+        let len = written + convert_utf16_to_utf8(&src[read..], &mut dst[written..]);
+        dst.truncate(len);
+        assert_eq!(dst, reference.as_bytes());
+    }
+
+    #[test]
     fn test_convert_utf16_to_utf8() {
         let reference = "abcdefghijklmnopqrstu\u{1F4A9}v\u{2603}w\u{00B6}xyzz";
         let src: Vec<u16> = reference.encode_utf16().collect();
@@ -2125,6 +2275,14 @@ mod tests {
         dst.resize(src.len(), 0);
         convert_latin1_to_utf16(&src[..], &mut dst[..]);
         assert_eq!(dst, reference);
+    }
+
+    #[test]
+    fn test_convert_latin1_to_utf8_partial() {
+        let mut dst = [0u8, 2];
+        let (read, written) = convert_latin1_to_utf8_partial(b"a\xFF", &mut dst[..]);
+        assert_eq!(read, 1);
+        assert_eq!(written, 1);
     }
 
     #[test]
@@ -2164,6 +2322,13 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn test_convert_utf8_to_latin1_lossy_panics() {
+        let mut dst = [0u8; 16];
+        let _ = convert_utf8_to_latin1_lossy("\u{100}".as_bytes(), &mut dst[..]);
+    }
+
+    #[test]
     fn test_convert_utf16_to_latin1_lossy() {
         let mut src: Vec<u16> = Vec::with_capacity(256);
         src.resize(256, 0);
@@ -2177,6 +2342,13 @@ mod tests {
         dst.resize(src.len(), 0);
         convert_utf16_to_latin1_lossy(&src[..], &mut dst[..]);
         assert_eq!(dst, reference);
+    }
+
+    #[test]
+    // #[should_panic]
+    fn test_convert_utf16_to_latin1_lossy_panics() {
+        let mut dst = [0u8; 16];
+        let _ = convert_utf16_to_latin1_lossy(&[0x0100u16], &mut dst[..]);
     }
 
     #[test]
@@ -2227,13 +2399,14 @@ mod tests {
         assert!(!is_char_bidi('\u{1F4A9}'));
         assert!(!is_char_bidi('\u{FE00}'));
         assert!(!is_char_bidi('\u{202C}'));
+        assert!(!is_char_bidi('\u{FEFF}'));
         assert!(is_char_bidi('\u{0590}'));
         assert!(is_char_bidi('\u{08FF}'));
         assert!(is_char_bidi('\u{061C}'));
         assert!(is_char_bidi('\u{FB50}'));
         assert!(is_char_bidi('\u{FDFF}'));
         assert!(is_char_bidi('\u{FE70}'));
-        assert!(is_char_bidi('\u{FEFF}'));
+        assert!(is_char_bidi('\u{FEFE}'));
         assert!(is_char_bidi('\u{200F}'));
         assert!(is_char_bidi('\u{202B}'));
         assert!(is_char_bidi('\u{202E}'));
@@ -2252,13 +2425,15 @@ mod tests {
         assert!(!is_utf16_code_unit_bidi(0xD801));
         assert!(!is_utf16_code_unit_bidi(0xFE00));
         assert!(!is_utf16_code_unit_bidi(0x202C));
+        assert!(!is_utf16_code_unit_bidi(0xFEFF));
         assert!(is_utf16_code_unit_bidi(0x0590));
         assert!(is_utf16_code_unit_bidi(0x08FF));
         assert!(is_utf16_code_unit_bidi(0x061C));
+        assert!(is_utf16_code_unit_bidi(0xFB1D));
         assert!(is_utf16_code_unit_bidi(0xFB50));
         assert!(is_utf16_code_unit_bidi(0xFDFF));
         assert!(is_utf16_code_unit_bidi(0xFE70));
-        assert!(is_utf16_code_unit_bidi(0xFEFF));
+        assert!(is_utf16_code_unit_bidi(0xFEFE));
         assert!(is_utf16_code_unit_bidi(0x200F));
         assert!(is_utf16_code_unit_bidi(0x202B));
         assert!(is_utf16_code_unit_bidi(0x202E));
@@ -2277,13 +2452,14 @@ mod tests {
         assert!(!is_str_bidi("abcdefghijklmnop\u{1F4A9}abcdefghijklmnop"));
         assert!(!is_str_bidi("abcdefghijklmnop\u{FE00}abcdefghijklmnop"));
         assert!(!is_str_bidi("abcdefghijklmnop\u{202C}abcdefghijklmnop"));
+        assert!(!is_str_bidi("abcdefghijklmnop\u{FEFF}abcdefghijklmnop"));
         assert!(is_str_bidi("abcdefghijklmnop\u{0590}abcdefghijklmnop"));
         assert!(is_str_bidi("abcdefghijklmnop\u{08FF}abcdefghijklmnop"));
         assert!(is_str_bidi("abcdefghijklmnop\u{061C}abcdefghijklmnop"));
         assert!(is_str_bidi("abcdefghijklmnop\u{FB50}abcdefghijklmnop"));
         assert!(is_str_bidi("abcdefghijklmnop\u{FDFF}abcdefghijklmnop"));
         assert!(is_str_bidi("abcdefghijklmnop\u{FE70}abcdefghijklmnop"));
-        assert!(is_str_bidi("abcdefghijklmnop\u{FEFF}abcdefghijklmnop"));
+        assert!(is_str_bidi("abcdefghijklmnop\u{FEFE}abcdefghijklmnop"));
         assert!(is_str_bidi("abcdefghijklmnop\u{200F}abcdefghijklmnop"));
         assert!(is_str_bidi("abcdefghijklmnop\u{202B}abcdefghijklmnop"));
         assert!(is_str_bidi("abcdefghijklmnop\u{202E}abcdefghijklmnop"));
@@ -2314,6 +2490,9 @@ mod tests {
         assert!(!is_utf8_bidi(
             "abcdefghijklmnop\u{202C}abcdefghijklmnop".as_bytes()
         ));
+        assert!(!is_utf8_bidi(
+            "abcdefghijklmnop\u{FEFF}abcdefghijklmnop".as_bytes()
+        ));
         assert!(is_utf8_bidi(
             "abcdefghijklmnop\u{0590}abcdefghijklmnop".as_bytes()
         ));
@@ -2333,7 +2512,7 @@ mod tests {
             "abcdefghijklmnop\u{FE70}abcdefghijklmnop".as_bytes()
         ));
         assert!(is_utf8_bidi(
-            "abcdefghijklmnop\u{FEFF}abcdefghijklmnop".as_bytes()
+            "abcdefghijklmnop\u{FEFE}abcdefghijklmnop".as_bytes()
         ));
         assert!(is_utf8_bidi(
             "abcdefghijklmnop\u{200F}abcdefghijklmnop".as_bytes()
@@ -2387,6 +2566,10 @@ mod tests {
             0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x202C, 0x62, 0x63, 0x64, 0x65, 0x66,
             0x67, 0x68, 0x69,
         ]));
+        assert!(!is_utf16_bidi(&[
+            0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0xFEFF, 0x62, 0x63, 0x64, 0x65, 0x66,
+            0x67, 0x68, 0x69,
+        ]));
         assert!(is_utf16_bidi(&[
             0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x0590, 0x62, 0x63, 0x64, 0x65, 0x66,
             0x67, 0x68, 0x69,
@@ -2397,6 +2580,10 @@ mod tests {
         ]));
         assert!(is_utf16_bidi(&[
             0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x061C, 0x62, 0x63, 0x64, 0x65, 0x66,
+            0x67, 0x68, 0x69,
+        ]));
+        assert!(is_utf16_bidi(&[
+            0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0xFB1D, 0x62, 0x63, 0x64, 0x65, 0x66,
             0x67, 0x68, 0x69,
         ]));
         assert!(is_utf16_bidi(&[
@@ -2412,7 +2599,7 @@ mod tests {
             0x67, 0x68, 0x69,
         ]));
         assert!(is_utf16_bidi(&[
-            0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0xFEFF, 0x62, 0x63, 0x64, 0x65, 0x66,
+            0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0xFEFE, 0x62, 0x63, 0x64, 0x65, 0x66,
             0x67, 0x68, 0x69,
         ]));
         assert!(is_utf16_bidi(&[
@@ -2480,6 +2667,10 @@ mod tests {
             check_str_for_latin1_and_bidi("abcdefghijklmnop\u{202C}abcdefghijklmnop"),
             Latin1Bidi::Bidi
         );
+        assert_ne!(
+            check_str_for_latin1_and_bidi("abcdefghijklmnop\u{FEFF}abcdefghijklmnop"),
+            Latin1Bidi::Bidi
+        );
         assert_eq!(
             check_str_for_latin1_and_bidi("abcdefghijklmnop\u{0590}abcdefghijklmnop"),
             Latin1Bidi::Bidi
@@ -2505,7 +2696,7 @@ mod tests {
             Latin1Bidi::Bidi
         );
         assert_eq!(
-            check_str_for_latin1_and_bidi("abcdefghijklmnop\u{FEFF}abcdefghijklmnop"),
+            check_str_for_latin1_and_bidi("abcdefghijklmnop\u{FEFE}abcdefghijklmnop"),
             Latin1Bidi::Bidi
         );
         assert_eq!(
@@ -2568,6 +2759,10 @@ mod tests {
             check_utf8_for_latin1_and_bidi("abcdefghijklmnop\u{202C}abcdefghijklmnop".as_bytes()),
             Latin1Bidi::Bidi
         );
+        assert_ne!(
+            check_utf8_for_latin1_and_bidi("abcdefghijklmnop\u{FEFF}abcdefghijklmnop".as_bytes()),
+            Latin1Bidi::Bidi
+        );
         assert_eq!(
             check_utf8_for_latin1_and_bidi("abcdefghijklmnop\u{0590}abcdefghijklmnop".as_bytes()),
             Latin1Bidi::Bidi
@@ -2593,7 +2788,7 @@ mod tests {
             Latin1Bidi::Bidi
         );
         assert_eq!(
-            check_utf8_for_latin1_and_bidi("abcdefghijklmnop\u{FEFF}abcdefghijklmnop".as_bytes()),
+            check_utf8_for_latin1_and_bidi("abcdefghijklmnop\u{FEFE}abcdefghijklmnop".as_bytes()),
             Latin1Bidi::Bidi
         );
         assert_eq!(
@@ -2674,6 +2869,13 @@ mod tests {
             ]),
             Latin1Bidi::Bidi
         );
+        assert_ne!(
+            check_utf16_for_latin1_and_bidi(&[
+                0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0xFEFF, 0x62, 0x63, 0x64, 0x65,
+                0x66, 0x67, 0x68, 0x69,
+            ]),
+            Latin1Bidi::Bidi
+        );
         assert_eq!(
             check_utf16_for_latin1_and_bidi(&[
                 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x0590, 0x62, 0x63, 0x64, 0x65,
@@ -2691,6 +2893,13 @@ mod tests {
         assert_eq!(
             check_utf16_for_latin1_and_bidi(&[
                 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x061C, 0x62, 0x63, 0x64, 0x65,
+                0x66, 0x67, 0x68, 0x69,
+            ]),
+            Latin1Bidi::Bidi
+        );
+        assert_eq!(
+            check_utf16_for_latin1_and_bidi(&[
+                0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0xFB1D, 0x62, 0x63, 0x64, 0x65,
                 0x66, 0x67, 0x68, 0x69,
             ]),
             Latin1Bidi::Bidi
@@ -2718,7 +2927,7 @@ mod tests {
         );
         assert_eq!(
             check_utf16_for_latin1_and_bidi(&[
-                0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0xFEFF, 0x62, 0x63, 0x64, 0x65,
+                0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0xFEFE, 0x62, 0x63, 0x64, 0x65,
                 0x66, 0x67, 0x68, 0x69,
             ]),
             Latin1Bidi::Bidi
@@ -2793,8 +3002,8 @@ mod tests {
     pub fn reference_is_char_bidi(c: char) -> bool {
         match c {
             '\u{0590}'...'\u{08FF}'
-            | '\u{FB50}'...'\u{FDFF}'
-            | '\u{FE70}'...'\u{FEFF}'
+            | '\u{FB1D}'...'\u{FDFF}'
+            | '\u{FE70}'...'\u{FEFE}'
             | '\u{10800}'...'\u{10FFF}'
             | '\u{1E800}'...'\u{1EFFF}'
             | '\u{200F}'
@@ -2809,8 +3018,8 @@ mod tests {
     pub fn reference_is_utf16_code_unit_bidi(u: u16) -> bool {
         match u {
             0x0590...0x08FF
-            | 0xFB50...0xFDFF
-            | 0xFE70...0xFEFF
+            | 0xFB1D...0xFDFF
+            | 0xFE70...0xFEFE
             | 0xD802
             | 0xD803
             | 0xD83A
@@ -2903,6 +3112,19 @@ mod tests {
                 }
             }
             assert_eq!(is_utf8_bidi(&buf[..]), expect);
+        }
+    }
+
+    #[test]
+    fn test_is_utf16_bidi_thoroughly() {
+        let mut buf = [0; 32];
+        for i in 0..0x10000u32 {
+            let u = i as u16;
+            buf[15] = u;
+            assert_eq!(
+                is_utf16_bidi(&buf[..]),
+                reference_is_utf16_code_unit_bidi(u)
+            );
         }
     }
 

@@ -41,7 +41,7 @@ function add_bookmark(url) {
   return PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
     url,
-    title: `bookmark/${url}`
+    title: `bookmark/${url}`,
   });
 }
 
@@ -120,7 +120,7 @@ gTests.push({
           default:
             Assert.ok(false, "unknown event: " + aEvent.type);
         }
-      }
+      },
     };
     tagsField.popup.addEventListener("popupshown", popupListener, true);
     tagsField.popup.addEventListener("popuphidden", popupListener, true);
@@ -142,14 +142,14 @@ gTests.push({
   async cleanup() {
     // Check tags have not changed.
     var tags = PlacesUtils.tagging.getTagsForURI(Services.io.newURI(TEST_URL));
-    Assert.ok(tags[0], "testTag", "Tag on node has not changed");
+    Assert.equal(tags[0], "testTag", "Tag on node has not changed");
 
     // Cleanup.
     PlacesUtils.tagging.untagURI(Services.io.newURI(TEST_URL), ["testTag"]);
     await PlacesUtils.bookmarks.remove(this._bookmark);
     let bm = await PlacesUtils.bookmarks.fetch(this._bookmark.guid);
     Assert.ok(!bm, "should have been removed");
-  }
+  },
 });
 
 // ------------------------------------------------------------------------------
@@ -224,7 +224,7 @@ gTests.push({
           default:
             Assert.ok(false, "unknown event: " + aEvent.type);
         }
-      }
+      },
     };
     tagsField.popup.addEventListener("popupshown", popupListener, true);
     tagsField.popup.addEventListener("popuphidden", popupListener, true);
@@ -252,7 +252,7 @@ gTests.push({
     await PlacesUtils.bookmarks.remove(this._bookmark);
     let bm = await PlacesUtils.bookmarks.fetch(this._bookmark.guid);
     Assert.ok(!bm, "should have been removed");
-  }
+  },
 });
 
 // ------------------------------------------------------------------------------
@@ -269,7 +269,7 @@ gTests.push({
     // Add a visit.
     await PlacesTestUtils.addVisits(TEST_URL);
 
-    this._addObserver = PlacesTestUtils.waitForNotification("onItemAdded");
+    this._addObserver = PlacesTestUtils.waitForNotification("bookmark-added", null, "places");
   },
 
   selectNode(tree) {
@@ -337,7 +337,7 @@ gTests.push({
     await PlacesTestUtils.promiseAsyncUpdates();
 
     await PlacesUtils.history.clear();
-  }
+  },
 });
 
 // ------------------------------------------------------------------------------

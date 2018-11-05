@@ -60,8 +60,9 @@ public:
   explicit Animation(nsIGlobalObject* aGlobal)
     : DOMEventTargetHelper(aGlobal)
     , mPlaybackRate(1.0)
-    , mPendingState(PendingState::NotPending)
     , mAnimationIndex(sNextAnimationIndex++)
+    , mCachedChildIndex(-1)
+    , mPendingState(PendingState::NotPending)
     , mFinishedAtLastComposeStyle(false)
     , mIsRelevant(false)
     , mFinishedIsResolved(false)
@@ -405,6 +406,8 @@ public:
    */
   virtual void MaybeQueueCancelEvent(const StickyTimeDuration& aActiveTime) {};
 
+  int32_t& CachedChildIndexRef() { return mCachedChildIndex; }
+
 protected:
   void SilentlySetCurrentTime(const TimeDuration& aNewCurrentTime);
   void CancelNoUpdate();
@@ -568,15 +571,6 @@ protected:
   // See http://drafts.csswg.org/web-animations/#current-finished-promise
   RefPtr<Promise> mFinished;
 
-  // Indicates if the animation is in the pending state (and what state it is
-  // waiting to enter when it finished pending). We use this rather than
-  // checking if this animation is tracked by a PendingAnimationTracker because
-  // the animation will continue to be pending even after it has been removed
-  // from the PendingAnimationTracker while it is waiting for the next tick
-  // (see TriggerOnNextTick for details).
-  enum class PendingState { NotPending, PlayPending, PausePending };
-  PendingState mPendingState;
-
   static uint64_t sNextAnimationIndex;
 
   // The relative position of this animation within the global animation list.
@@ -588,12 +582,29 @@ protected:
   // possible for two different objects to have the same index.
   uint64_t mAnimationIndex;
 
+  // While ordering Animation objects for event dispatch, the index of the
+  // target node in its parent may be cached in mCachedChildIndex.
+  int32_t mCachedChildIndex;
+
+  // Indicates if the animation is in the pending state (and what state it is
+  // waiting to enter when it finished pending). We use this rather than
+  // checking if this animation is tracked by a PendingAnimationTracker because
+  // the animation will continue to be pending even after it has been removed
+  // from the PendingAnimationTracker while it is waiting for the next tick
+  // (see TriggerOnNextTick for details).
+  enum class PendingState : uint8_t
+  {
+    NotPending,
+    PlayPending,
+    PausePending
+  };
+  PendingState mPendingState;
+
   bool mFinishedAtLastComposeStyle;
   // Indicates that the animation should be exposed in an element's
   // getAnimations() list.
   bool mIsRelevant;
 
-  RefPtr<MicroTaskRunnable> mFinishNotificationTask;
   // True if mFinished is resolved or would be resolved if mFinished has
   // yet to be created. This is not set when mFinished is rejected since
   // in that case mFinished is immediately reset to represent a new current
@@ -604,6 +615,8 @@ protected:
   // geometric animations and hence we should run any transform animations on
   // the main thread.
   bool mSyncWithGeometricAnimations;
+
+  RefPtr<MicroTaskRunnable> mFinishNotificationTask;
 
   nsString mId;
 };

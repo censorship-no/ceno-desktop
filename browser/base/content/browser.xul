@@ -11,6 +11,12 @@
      both "content" and "skin" packages, which bug 1385444 will unify later. -->
 <?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
 
+<!-- While these stylesheets are defined in Toolkit, they are only used in the
+     main browser window, so we can load them here. Bug 1474241 is on file to
+     consider moving these widgets to the "browser" folder. -->
+<?xml-stylesheet href="chrome://global/content/tabprompts.css" type="text/css"?>
+<?xml-stylesheet href="chrome://global/skin/tabprompts.css" type="text/css"?>
+
 <?xml-stylesheet href="chrome://browser/content/browser.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/content/tabbrowser.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/content/downloads/downloads.css" type="text/css"?>
@@ -21,7 +27,7 @@
 <?xml-stylesheet href="chrome://browser/skin/customizableui/panelUI.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/downloads/downloads.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/searchbar.css" type="text/css"?>
-<?xml-stylesheet href="chrome://browser/skin/places/places.css" type="text/css"?>
+<?xml-stylesheet href="chrome://browser/skin/places/tree-icons.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/places/editBookmark.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/compacttheme.css" type="text/css" alternate="yes" title="Light/Dark"?>
 
@@ -37,7 +43,6 @@
         xmlns:html="http://www.w3.org/1999/xhtml"
         xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-        onload="gBrowserInit.onLoad()" onunload="gBrowserInit.onUnload()" onclose="return WindowIsClosing();"
         title="&mainWindow.title;"
         title_normal="&mainWindow.title;"
 #ifdef XP_MACOSX
@@ -65,19 +70,49 @@
         fullscreenbutton="true"
         sizemode="normal"
         retargetdocumentfocus="urlbar"
-        persist="screenX screenY width height sizemode">
+        persist="screenX screenY width height sizemode"
+#ifdef BROWSER_XHTML
+        hidden="true"
+#endif
+        >
 
 # All JS files which are needed by browser.xul and other top level windows to
 # support MacOS specific features *must* go into the global-scripts.inc file so
 # that they can be shared with macWindow.inc.xul.
 #include global-scripts.inc
 
-<script type="application/javascript">
+<script type="application/javascript"
+#ifdef BROWSER_XHTML
+xmlns="http://www.w3.org/1999/xhtml"
+#endif
+>
   Services.scriptloader.loadSubScript("chrome://global/content/contentAreaUtils.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser.js", this);
+
+  window.onload = gBrowserInit.onLoad.bind(gBrowserInit);
+  window.onunload = gBrowserInit.onUnload.bind(gBrowserInit);
+  window.onclose = WindowIsClosing;
+
+#ifdef BROWSER_XHTML
+  window.addEventListener("readystatechange", () => {
+    // We initially hide the window to prevent layouts during parse. This lets us
+    // avoid accidental XBL construction and better match browser.xul (see Bug 1497975).
+    gBrowserInit.onBeforeInitialXULLayout();
+    document.documentElement.removeAttribute("hidden");
+  }, { once: true, capture: true });
+#else
+  window.addEventListener("MozBeforeInitialXULLayout",
+    gBrowserInit.onBeforeInitialXULLayout.bind(gBrowserInit), { once: true });
+#endif
+  // The listener of DOMContentLoaded must be set on window, rather than
+  // document, because the window can go away before the event is fired.
+  // In that case, we don't want to initialize anything, otherwise we
+  // may be leaking things because they will never be destroyed after.
+  window.addEventListener("DOMContentLoaded",
+    gBrowserInit.onDOMContentLoaded.bind(gBrowserInit), { once: true });
 </script>
 
-# All sets except for popupsets (commands, keys, stringbundles and broadcasters)
+# All sets except for popupsets (commands, keys, and stringbundles)
 # *must* go into the browser-sets.inc file so that they can be shared with other
 # top level windows in macWindow.inc.xul.
 #include browser-sets.inc
@@ -88,13 +123,12 @@
                onpopuphidden="if (event.target == this) TabContextMenu.contextTab = null;">
       <menuitem id="context_reloadTab" label="&reloadTab.label;" accesskey="&reloadTab.accesskey;"
                 oncommand="gBrowser.reloadTab(TabContextMenu.contextTab);"/>
-      <menuitem id="context_reloadSelectedTabs" label="&reloadSelectedTabs.label;" hidden="true"
-                accesskey="&reloadSelectedTabs.accesskey;"
+      <menuitem id="context_reloadSelectedTabs" label="&reloadTabs.label;" hidden="true"
+                accesskey="&reloadTabs.accesskey;"
                 oncommand="gBrowser.reloadMultiSelectedTabs();"/>
       <menuitem id="context_toggleMuteTab" oncommand="TabContextMenu.contextTab.toggleMuteAudio();"/>
       <menuitem id="context_toggleMuteSelectedTabs" hidden="true"
                 oncommand="gBrowser.toggleMuteAudioOnMultiSelectedTabs(TabContextMenu.contextTab);"/>
-      <menuseparator/>
       <menuitem id="context_pinTab" label="&pinTab.label;"
                 accesskey="&pinTab.accesskey;"
                 oncommand="gBrowser.pinTab(TabContextMenu.contextTab);"/>
@@ -110,6 +144,18 @@
       <menuitem id="context_duplicateTab" label="&duplicateTab.label;"
                 accesskey="&duplicateTab.accesskey;"
                 oncommand="duplicateTabIn(TabContextMenu.contextTab, 'tab');"/>
+      <menuseparator/>
+      <menuitem id="context_selectAllTabs" label="&selectAllTabs.label;" accesskey="&selectAllTabs.accesskey;"
+                oncommand="gBrowser.selectAllTabs();"/>
+      <menuitem id="context_bookmarkSelectedTabs"
+                hidden="true"
+                label="&bookmarkSelectedTabs.label;"
+                accesskey="&bookmarkSelectedTabs.accesskey;"
+                oncommand="PlacesCommandHook.bookmarkPages(PlacesCommandHook.uniqueSelectedPages);"/>
+      <menuitem id="context_bookmarkTab"
+                label="&bookmarkTab.label;"
+                accesskey="&bookmarkTab.accesskey;"
+                oncommand="PlacesCommandHook.bookmarkPages(PlacesCommandHook.getUniquePages([TabContextMenu.contextTab]));"/>
       <menu id="context_reopenInContainer"
             label="&reopenInContainer.label;"
             accesskey="&reopenInContainer.accesskey;"
@@ -117,43 +163,52 @@
         <menupopup oncommand="TabContextMenu.reopenInContainer(event);"
                    onpopupshowing="TabContextMenu.createReopenInContainerMenu(event);"/>
       </menu>
-      <menuitem id="context_openTabInWindow" label="&moveToNewWindow.label;"
-                accesskey="&moveToNewWindow.accesskey;"
-                tbattr="tabbrowser-multiple"
-                oncommand="gBrowser.replaceTabsWithWindow(TabContextMenu.contextTab);"/>
-      <menuseparator id="context_sendTabToDevice_separator" class="sync-ui-item"/>
-      <menu id="context_sendTabToDevice" label="&sendTabToDevice.label;"
-            class="sync-ui-item"
-            accesskey="&sendTabToDevice.accesskey;">
+      <menu id="context_moveTabOptions"
+            multiselectcontextlabel="&moveSelectedTabOptions.label;"
+            multiselectcontextaccesskey="&moveSelectedTabOptions.accesskey;"
+            nonmultiselectcontextlabel="&moveTabOptions.label;"
+            nonmultiselectcontextaccesskey="&moveTabOptions.accesskey;">
+        <menupopup id="moveTabOptionsMenu">
+          <menuitem id="context_moveToStart"
+                    label="&moveToStart.label;"
+                    accesskey="&moveToStart.accesskey;"
+                    tbattr="tabbrowser-multiple"
+                    oncommand="gBrowser.moveTabsToStart(TabContextMenu.contextTab);"/>
+          <menuitem id="context_moveToEnd"
+                    label="&moveToEnd.label;"
+                    accesskey="&moveToEnd.accesskey;"
+                    tbattr="tabbrowser-multiple"
+                    oncommand="gBrowser.moveTabsToEnd(TabContextMenu.contextTab);"/>
+          <menuitem id="context_openTabInWindow" label="&moveToNewWindow.label;"
+                    accesskey="&moveToNewWindow.accesskey;"
+                    tbattr="tabbrowser-multiple"
+                    oncommand="gBrowser.replaceTabsWithWindow(TabContextMenu.contextTab);"/>
+        </menupopup>
+      </menu>
+      <menu id="context_sendTabToDevice"
+            class="sync-ui-item">
         <menupopup id="context_sendTabToDevicePopupMenu"
-                   onpopupshowing="gSync.populateSendTabToDevicesMenu(event.target, TabContextMenu.contextTab.linkedBrowser.currentURI.spec, TabContextMenu.contextTab.linkedBrowser.contentTitle);"/>
+                   onpopupshowing="gSync.populateSendTabToDevicesMenu(event.target, TabContextMenu.contextTab.linkedBrowser.currentURI.spec, TabContextMenu.contextTab.linkedBrowser.contentTitle, TabContextMenu.contextTab.multiselected);"/>
       </menu>
       <menuseparator/>
-      <menuitem id="context_reloadAllTabs" label="&reloadAllTabs.label;" accesskey="&reloadAllTabs.accesskey;"
-                tbattr="tabbrowser-multiple-visible"
-                oncommand="gBrowser.reloadAllTabs();"/>
-       <menuitem id="context_bookmarkSelectedTabs"
-                hidden="true"
-                label="&bookmarkSelectedTabs.label;"
-                accesskey="&bookmarkSelectedTabs.accesskey;"
-                oncommand="PlacesCommandHook.bookmarkPages(PlacesCommandHook.uniqueSelectedPages);"/>
-      <menuitem id="context_bookmarkAllTabs"
-                label="&bookmarkAllTabs.label;"
-                accesskey="&bookmarkAllTabs.accesskey;"
-                command="Browser:BookmarkAllTabs"/>
-      <menuitem id="context_closeTabsToTheEnd" label="&closeTabsToTheEnd.label;" accesskey="&closeTabsToTheEnd.accesskey;"
-                oncommand="gBrowser.removeTabsToTheEndFrom(TabContextMenu.contextTab, {animate: true});"/>
-      <menuitem id="context_closeOtherTabs" label="&closeOtherTabs.label;" accesskey="&closeOtherTabs.accesskey;"
-                oncommand="gBrowser.removeAllTabsBut(TabContextMenu.contextTab);"/>
-      <menuseparator/>
+      <menu id="context_closeTabOptions"
+            label="&closeTabOptions.label;"
+            accesskey="&closeTabOptions.accesskey;">
+        <menupopup id="closeOtherTabsMenu">
+          <menuitem id="context_closeTabsToTheEnd" label="&closeTabsToTheEnd.label;" accesskey="&closeTabsToTheEnd.accesskey;"
+                    oncommand="gBrowser.removeTabsToTheEndFrom(TabContextMenu.contextTab, {animate: true});"/>
+          <menuitem id="context_closeOtherTabs" label="&closeOtherTabs.label;" accesskey="&closeOtherTabs.accesskey;"
+                    oncommand="gBrowser.removeAllTabsBut(TabContextMenu.contextTab);"/>
+        </menupopup>
+      </menu>
       <menuitem id="context_undoCloseTab"
                 label="&undoCloseTab.label;"
                 accesskey="&undoCloseTab.accesskey;"
                 observes="History:UndoCloseTab"/>
       <menuitem id="context_closeTab" label="&closeTab.label;" accesskey="&closeTab.accesskey;"
                 oncommand="gBrowser.removeTab(TabContextMenu.contextTab, { animate: true });"/>
-      <menuitem id="context_closeSelectedTabs" label="&closeSelectedTabs.label;"
-                hidden="true" accesskey="&closeSelectedTabs.accesskey;"
+      <menuitem id="context_closeSelectedTabs" label="&closeTabs.label;"
+                hidden="true" accesskey="&closeTabs.accesskey;"
                 oncommand="gBrowser.removeMultiSelectedTabs();"/>
     </menupopup>
 
@@ -193,6 +248,25 @@
            flip="none"
            level="parent"
            overflowpadding="15" />
+
+    <!-- for url bar autocomplete -->
+    <panel id="urlbar-results"
+           role="group"
+           noautofocus="true"
+           hidden="true"
+           flip="none"
+           level="parent">
+      <html:div class="urlbarView-body-outer">
+        <html:div class="urlbarView-body-inner">
+          <!-- TODO: add search suggestions notification -->
+          <html:div class="urlbarView-results"/>
+        </html:div>
+      </html:div>
+      <search-one-offs class="search-one-offs"
+                       compact="true"
+                       includecurrentengine="true"
+                       disabletab="true"/>
+    </panel>
 
    <!-- for date/time picker. consumeoutsideclicks is set to never, so that
         clicks on the anchored input box are never consumed. -->
@@ -317,27 +391,22 @@
            orient="vertical"
            position="bottomcenter topleft">
       <toolbarbutton id="sidebar-switcher-bookmarks"
+                     type="checkbox"
+                     label="&bookmarksButton.label;"
                      class="subviewbutton subviewbutton-iconic"
                      key="viewBookmarksSidebarKb"
-                     observes="viewBookmarksSidebar"
-                     oncommand="SidebarUI.show('viewBookmarksSidebar');">
-        <observes element="viewBookmarksSidebar" attribute="checked"/>
-      </toolbarbutton>
+                     oncommand="SidebarUI.show('viewBookmarksSidebar');"/>
       <toolbarbutton id="sidebar-switcher-history"
+                     type="checkbox"
                      label="&historyButton.label;"
                      class="subviewbutton subviewbutton-iconic"
                      key="key_gotoHistory"
-                     observes="viewHistorySidebar"
-                     oncommand="SidebarUI.show('viewHistorySidebar');">
-        <observes element="viewHistorySidebar" attribute="checked"/>
-      </toolbarbutton>
+                     oncommand="SidebarUI.show('viewHistorySidebar');"/>
       <toolbarbutton id="sidebar-switcher-tabs"
+                     type="checkbox"
                      label="&syncedTabs.sidebar.label;"
                      class="subviewbutton subviewbutton-iconic sync-ui-item"
-                     observes="viewTabsSidebar"
-                     oncommand="SidebarUI.show('viewTabsSidebar');">
-        <observes element="viewTabsSidebar" attribute="checked"/>
-      </toolbarbutton>
+                     oncommand="SidebarUI.show('viewTabsSidebar');"/>
       <toolbarseparator/>
       <!-- Extension toolbarbuttons go here. -->
       <toolbarseparator id="sidebar-extensions-separator"/>
@@ -351,19 +420,24 @@
     </panel>
 
     <menupopup id="toolbar-context-menu"
-               onpopupshowing="onViewToolbarsPopupShowing(event, document.getElementById('viewToolbarsMenuSeparator')); UpdateDownloadsAutoHide(this); UpdateManageExtension(this)">
-      <menuitem oncommand="openAboutAddonsForContextAction(this.parentElement)"
+               onpopupshowing="onViewToolbarsPopupShowing(event, document.getElementById('viewToolbarsMenuSeparator')); ToolbarContextMenu.updateDownloadsAutoHide(this); ToolbarContextMenu.updateExtension(this)">
+      <menuitem oncommand="ToolbarContextMenu.openAboutAddonsForContextAction(this.parentElement)"
                 accesskey="&customizeMenu.manageExtension.accesskey;"
                 label="&customizeMenu.manageExtension.label;"
                 contexttype="toolbaritem"
                 class="customize-context-manageExtension"/>
+      <menuitem oncommand="ToolbarContextMenu.removeExtensionForContextAction(this.parentElement)"
+                accesskey="&customizeMenu.removeExtension.accesskey;"
+                label="&customizeMenu.removeExtension.label;"
+                contexttype="toolbaritem"
+                class="customize-context-removeExtension"/>
       <menuseparator/>
       <menuitem oncommand="gCustomizeMode.addToPanel(document.popupNode)"
                 accesskey="&customizeMenu.pinToOverflowMenu.accesskey;"
                 label="&customizeMenu.pinToOverflowMenu.label;"
                 contexttype="toolbaritem"
                 class="customize-context-moveToPanel"/>
-      <menuitem oncommand="onDownloadsAutoHideChange(event)"
+      <menuitem oncommand="ToolbarContextMenu.onDownloadsAutoHideChange(event)"
                 type="checkbox"
                 accesskey="&customizeMenu.autoHideDownloadsButton.accesskey;"
                 label="&customizeMenu.autoHideDownloadsButton.label;"
@@ -374,18 +448,36 @@
                 label="&customizeMenu.removeFromToolbar.label;"
                 contexttype="toolbaritem"
                 class="customize-context-removeFromToolbar"/>
-      <menuitem id="toolbar-context-reloadAllTabs"
+      <menuitem id="toolbar-context-reloadSelectedTab"
                 class="toolbaritem-tabsmenu"
                 contexttype="tabbar"
-                oncommand="gBrowser.reloadAllTabs();"
-                label="&toolbarContextMenu.reloadAllTabs.label;"
-                accesskey="&toolbarContextMenu.reloadAllTabs.accesskey;"/>
-      <menuitem id="toolbar-context-bookmarkAllTabs"
+                oncommand="gBrowser.reloadMultiSelectedTabs();"
+                label="&toolbarContextMenu.reloadSelectedTab.label;"
+                accesskey="&toolbarContextMenu.reloadSelectedTab.accesskey;"/>
+      <menuitem id="toolbar-context-reloadSelectedTabs"
                 class="toolbaritem-tabsmenu"
                 contexttype="tabbar"
-                command="Browser:BookmarkAllTabs"
-                label="&toolbarContextMenu.bookmarkAllTabs.label;"
-                accesskey="&toolbarContextMenu.bookmarkAllTabs.accesskey;"/>
+                oncommand="gBrowser.reloadMultiSelectedTabs();"
+                label="&toolbarContextMenu.reloadSelectedTabs.label;"
+                accesskey="&toolbarContextMenu.reloadSelectedTabs.accesskey;"/>
+      <menuitem id="toolbar-context-bookmarkSelectedTab"
+                class="toolbaritem-tabsmenu"
+                contexttype="tabbar"
+                oncommand="PlacesCommandHook.bookmarkPages(PlacesCommandHook.uniqueSelectedPages);"
+                label="&toolbarContextMenu.bookmarkSelectedTab.label;"
+                accesskey="&toolbarContextMenu.bookmarkSelectedTab.accesskey;"/>
+      <menuitem id="toolbar-context-bookmarkSelectedTabs"
+                class="toolbaritem-tabsmenu"
+                contexttype="tabbar"
+                oncommand="PlacesCommandHook.bookmarkPages(PlacesCommandHook.uniqueSelectedPages);"
+                label="&toolbarContextMenu.bookmarkSelectedTabs.label;"
+                accesskey="&toolbarContextMenu.bookmarkSelectedTabs.accesskey;"/>
+      <menuitem id="toolbar-context-selectAllTabs"
+                class="toolbaritem-tabsmenu"
+                contexttype="tabbar"
+                oncommand="gBrowser.selectAllTabs();"
+                label="&toolbarContextMenu.selectAllTabs.label;"
+                accesskey="&toolbarContextMenu.selectAllTabs.accesskey;"/>
       <menuitem id="toolbar-context-undoCloseTab"
                 class="toolbaritem-tabsmenu"
                 contexttype="tabbar"
@@ -473,7 +565,6 @@
            noautofocus="true"
            copyURL-title="&pageAction.copyLink.label;"
            emailLink-title="&emailPageCmd.label;"
-           sendToDevice-title="&pageAction.sendTabToDevice.label;"
            sendToDevice-notReadyTitle="&sendToDevice.syncNotReady.label;"
            shareURL-title="&pageAction.shareUrl.label;"
            shareMore-label="&pageAction.shareMore.label;">
@@ -511,10 +602,10 @@
                 label="&pageAction.removeFromUrlbar.label;"
                 oncommand="BrowserPageActions.togglePinningForContextAction();"/>
       <menuitem class="pageActionContextMenuItem extensionUnpinned"
-                label="&pageAction.allowInUrlbar.label;"
+                label="&pageAction.addToUrlbar.label;"
                 oncommand="BrowserPageActions.togglePinningForContextAction();"/>
       <menuitem class="pageActionContextMenuItem extensionPinned"
-                label="&pageAction.disallowInUrlbar.label;"
+                label="&pageAction.removeFromUrlbar.label;"
                 oncommand="BrowserPageActions.togglePinningForContextAction();"/>
       <menuseparator class="pageActionContextMenuItem extensionPinned extensionUnpinned"/>
       <menuitem class="pageActionContextMenuItem extensionPinned extensionUnpinned"
@@ -527,20 +618,20 @@
     <tooltip id="tabbrowser-tab-tooltip" onpopupshowing="gBrowser.createTooltip(event);"/>
 
     <tooltip id="back-button-tooltip">
-      <label class="tooltip-label" value="&backButton.tooltip;"/>
+      <description class="tooltip-label" value="&backButton.tooltip;"/>
 #ifdef XP_MACOSX
-      <label class="tooltip-label" value="&backForwardButtonMenuMac.tooltip;"/>
+      <description class="tooltip-label" value="&backForwardButtonMenuMac.tooltip;"/>
 #else
-      <label class="tooltip-label" value="&backForwardButtonMenu.tooltip;"/>
+      <description class="tooltip-label" value="&backForwardButtonMenu.tooltip;"/>
 #endif
     </tooltip>
 
     <tooltip id="forward-button-tooltip">
-      <label class="tooltip-label" value="&forwardButton.tooltip;"/>
+      <description class="tooltip-label" value="&forwardButton.tooltip;"/>
 #ifdef XP_MACOSX
-      <label class="tooltip-label" value="&backForwardButtonMenuMac.tooltip;"/>
+      <description class="tooltip-label" value="&backForwardButtonMenuMac.tooltip;"/>
 #else
-      <label class="tooltip-label" value="&backForwardButtonMenu.tooltip;"/>
+      <description class="tooltip-label" value="&backForwardButtonMenu.tooltip;"/>
 #endif
     </tooltip>
 
@@ -619,6 +710,16 @@
                 accesskey="&syncSyncNowItem.accesskey;"
                 id="syncedTabsRefreshFilter"/>
     </menupopup>
+
+    <hbox id="statuspanel" inactive="true" layer="true">
+      <hbox id="statuspanel-inner">
+        <label id="statuspanel-label"
+               role="status"
+               aria-live="off"
+               flex="1"
+               crop="end"/>
+      </hbox>
+    </hbox>
   </popupset>
   <box id="appMenu-viewCache" hidden="true"/>
 
@@ -647,7 +748,7 @@
   <toolbox id="navigator-toolbox">
     <!-- Menu -->
     <toolbar type="menubar" id="toolbar-menubar"
-             class="chromeclass-menubar titlebar-color"
+             class="browser-toolbar chromeclass-menubar titlebar-color"
              customizable="true"
              mode="icons"
 #ifdef MENUBAR_CAN_AUTOHIDE
@@ -669,7 +770,7 @@
     </toolbar>
 
     <toolbar id="TabsToolbar"
-             class="titlebar-color"
+             class="browser-toolbar titlebar-color"
              fullscreentoolbar="true"
              customizable="true"
              mode="icons"
@@ -728,6 +829,7 @@
     </toolbar>
 
     <toolbar id="nav-bar"
+             class="browser-toolbar"
              aria-label="&navbarCmd.label;"
              fullscreentoolbar="true" mode="icons" customizable="true"
              customizationtarget="nav-bar-customization-target"
@@ -783,7 +885,7 @@
                        ondrop="homeButtonObserver.onDrop(event)"
                        ondragexit="homeButtonObserver.onDragExit(event)"
                        key="goHome"
-                       onclick="BrowserGoHome(event);"
+                       onclick="BrowserHome(event);"
                        cui-areatype="toolbar"
                        tooltiptext="&homeButton.defaultPage.tooltip;"/>
         <toolbarspring cui-areatype="toolbar" class="chromeclass-toolbar-additional"/>
@@ -907,6 +1009,14 @@
                 <label id="extension" class="urlbar-display urlbar-display-extension" value="&urlbar.extension.label;"/>
               </box>
               <hbox id="page-action-buttons" context="pageActionContextMenu">
+                <hbox id="contextual-feature-recommendation" role="button" hidden="true">
+                  <hbox id="cfr-label-container">
+                    <label id="cfr-label"/>
+                  </hbox>
+                  <image id="cfr-button"
+                         class="urlbar-icon urlbar-page-action"
+                         role="presentation"/>
+                </hbox>
                 <hbox id="userContext-icons" hidden="true">
                   <label id="userContext-label"/>
                   <image id="userContext-indicator"/>
@@ -933,12 +1043,10 @@
                       onclick="BrowserPageActions.doCommandForAction(PageActions.actionForID('bookmark'), event, this);">
                   <image id="star-button"
                          class="urlbar-icon"
-                         role="button"
-                         observes="bookmarkThisPageBroadcaster"/>
+                         role="button"/>
                   <hbox id="star-button-animatable-box">
                     <image id="star-button-animatable-image"
-                           role="presentation"
-                           observes="bookmarkThisPageBroadcaster"/>
+                           role="presentation"/>
                   </hbox>
                 </hbox>
               </hbox>
@@ -1028,7 +1136,7 @@
 
     <toolbar id="PersonalToolbar"
              mode="icons"
-             class="chromeclass-directories"
+             class="browser-toolbar chromeclass-directories"
              context="toolbar-context-menu"
              toolbarname="&personalbarCmd.label;" accesskey="&personalbarCmd.accesskey;"
              collapsed="true"
@@ -1119,13 +1227,12 @@
                      ondragleave="PlacesMenuDNDHandler.onDragLeave(event);"
                      ondrop="PlacesMenuDNDHandler.onDrop(event);"
                      oncommand="BookmarkingUI.onCommand(event);">
-        <observes element="bookmarkThisPageBroadcaster" attribute="starred"/>
-        <observes element="bookmarkThisPageBroadcaster" attribute="buttontooltiptext"/>
         <menupopup id="BMB_bookmarksPopup"
                    class="cui-widget-panel cui-widget-panelview cui-widget-panelWithFooter PanelUI-subView"
                    placespopup="true"
                    context="placesContext"
                    openInTabs="children"
+                   side="top"
                    onmouseup="BookmarksEventHandler.onMouseUp(event);"
                    oncommand="BookmarksEventHandler.onCommand(event);"
                    onclick="BookmarksEventHandler.onClick(event, this.parentNode._placesView);"
@@ -1220,7 +1327,7 @@
         <sidebarheader id="sidebar-header" align="center">
           <toolbarbutton id="sidebar-switcher-target" flex="1" class="tabbable">
             <image id="sidebar-icon" consumeanchor="sidebar-switcher-target"/>
-            <label id="sidebar-title" persist="value" crop="end" flex="1" control="sidebar"/>
+            <label id="sidebar-title" crop="end" flex="1" control="sidebar"/>
             <image id="sidebar-switcher-arrow"/>
           </toolbarbutton>
           <image id="sidebar-throbber"/>
@@ -1239,39 +1346,9 @@
       <vbox id="appcontent" flex="1">
         <notificationbox id="high-priority-global-notificationbox" notificationside="top"/>
         <tabbox id="tabbrowser-tabbox"
-                flex="1" eventnode="document" tabcontainer="tabbrowser-tabs">
+                flex="1" tabcontainer="tabbrowser-tabs">
           <tabpanels id="tabbrowser-tabpanels"
-                     flex="1" class="plain" selectedIndex="0">
-            <notificationbox flex="1" notificationside="top">
-              <!-- Set large flex to allow the devtools toolbox to set a flex attribute.
-                   We don't want the toolbox to actually take up free space, but we do want it to collapse when the window shrinks, and with flex=0 it can't.
-                   When the toolbox is on the bottom it's a sibling of browserSidebarContainer,
-                   and when it's on the side it's a sibling of browserContainer.  -->
-              <hbox flex="10000" class="browserSidebarContainer">
-                <vbox flex="10000" class="browserContainer">
-                  <stack flex="1" class="browserStack">
-                    <browser id="tabbrowser-initialBrowser" type="content"
-                             message="true" messagemanagergroup="browsers"
-                             primary="true" blank="true"
-                             tooltip="aHTMLTooltip"
-                             contextmenu="contentAreaContextMenu"
-                             autocompletepopup="PopupAutoComplete"
-                             selectmenulist="ContentSelectDropdown"
-                             datetimepicker="DateTimePickerPanel"/>
-                  </stack>
-                  <hbox id="statuspanel" inactive="true" layer="true">
-                    <hbox id="statuspanel-inner">
-                      <label id="statuspanel-label"
-                             role="status"
-                             aria-live="off"
-                             flex="1"
-                             crop="end"/>
-                    </hbox>
-                  </hbox>
-                </vbox>
-              </hbox>
-            </notificationbox>
-          </tabpanels>
+                     flex="1" class="plain" selectedIndex="0"/>
         </tabbox>
       </vbox>
       <vbox id="browser-border-end" hidden="true" layer="true"/>

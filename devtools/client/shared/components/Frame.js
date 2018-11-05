@@ -62,16 +62,14 @@ class Frame extends Component {
   componentWillMount() {
     if (this.props.sourceMapService) {
       const { source, line, column } = this.props.frame;
-      this.props.sourceMapService.subscribe(source, line, column,
-                                            this._locationChanged);
+      this.unsubscribeSourceMapService = this.props.sourceMapService.subscribe(
+        source, line, column, this._locationChanged);
     }
   }
 
   componentWillUnmount() {
-    if (this.props.sourceMapService) {
-      const { source, line, column } = this.props.frame;
-      this.props.sourceMapService.unsubscribe(source, line, column,
-                                              this._locationChanged);
+    if (typeof this.unsubscribeSourceMapService === "function") {
+      this.unsubscribeSourceMapService();
     }
   }
 
@@ -115,7 +113,7 @@ class Frame extends Component {
       showAnonymousFunctionName,
       showHost,
       showEmptyPathAsHost,
-      showFullSourceUrl
+      showFullSourceUrl,
     } = this.props;
 
     if (this.state && this.state.isSourceMapped && this.state.frame) {
@@ -210,7 +208,7 @@ class Frame extends Component {
 
       sourceElements.push(dom.span({
         key: "line",
-        className: "frame-link-line"
+        className: "frame-link-line",
       }, lineInfo));
     }
 

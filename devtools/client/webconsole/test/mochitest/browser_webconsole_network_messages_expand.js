@@ -4,21 +4,14 @@
 "use strict";
 
 const TEST_FILE = "test-network-request.html";
-const TEST_PATH = "http://example.com/browser/devtools/client/webconsole/" +
+const TEST_PATH = "https://example.com/browser/devtools/client/webconsole/" +
                   "test/mochitest/";
 const TEST_URI = TEST_PATH + TEST_FILE;
 
-const NET_PREF = "devtools.webconsole.filter.net";
-const XHR_PREF = "devtools.webconsole.filter.netxhr";
-
 requestLongerTimeout(2);
 
-Services.prefs.setBoolPref(NET_PREF, false);
-Services.prefs.setBoolPref(XHR_PREF, true);
-registerCleanupFunction(() => {
-  Services.prefs.clearUserPref(NET_PREF);
-  Services.prefs.clearUserPref(XHR_PREF);
-});
+pushPref("devtools.webconsole.filter.net", false);
+pushPref("devtools.webconsole.filter.netxhr", true);
 
 const tabs = [{
   id: "headers",
@@ -44,6 +37,10 @@ const tabs = [{
   id: "stack-trace",
   testEmpty: testEmptyStackTrace,
   testContent: testStackTrace,
+}, {
+  id: "security",
+  testEmpty: testEmptySecurity,
+  testContent: testSecurity,
 }];
 
 /**
@@ -51,8 +48,9 @@ const tabs = [{
  */
 add_task(async function task() {
   const hud = await openNewTabAndConsole(TEST_URI);
+
   const currentTab = gBrowser.selectedTab;
-  const target = TargetFactory.forTab(currentTab);
+  const target = await TargetFactory.forTab(currentTab);
 
   // Execute XHR and expand it after all network
   // update events are received. Consequently,
@@ -75,29 +73,27 @@ async function openRequestAfterUpdates(target, hud) {
   const toolbox = gDevTools.getToolbox(target);
 
   const xhrUrl = TEST_PATH + "sjs_slow-response-test-server.sjs";
-  const message = waitForMessage(hud, xhrUrl);
+  const onMessage = waitForMessage(hud, xhrUrl);
+  const onRequestUpdates = waitForRequestUpdates(hud);
+  const onPayloadReady = waitForPayloadReady(hud);
 
   // Fire an XHR POST request.
   ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
     content.wrappedJSObject.testXhrPostSlowResponse();
   });
 
-  const { node: messageNode } = await message;
+  const { node: messageNode } = await onMessage;
+  ok(messageNode, "Network message found.");
 
-  info("Network message found.");
-
-  await waitForRequestUpdates(toolbox);
-
-  const payload = waitForPayloadReady(toolbox);
+  await onRequestUpdates;
 
   // Expand network log
-  const urlNode = messageNode.querySelector(".url");
-  urlNode.click();
+  await expandXhrMessage(messageNode);
 
   const toggleButtonNode = messageNode.querySelector(".sidebar-toggle");
   ok(!toggleButtonNode, "Sidebar toggle button shouldn't be shown");
 
-  await payload;
+  await onPayloadReady;
   await testNetworkMessage(toolbox, messageNode);
 }
 
@@ -107,39 +103,40 @@ async function openRequestBeforeUpdates(target, hud, tab) {
   hud.ui.clearOutput(true);
 
   const xhrUrl = TEST_PATH + "sjs_slow-response-test-server.sjs";
-  const message = waitForMessage(hud, xhrUrl);
+  const onMessage = waitForMessage(hud, xhrUrl);
+  const onRequestUpdates = waitForRequestUpdates(hud);
+  const onPayloadReady = waitForPayloadReady(hud);
 
   // Fire an XHR POST request.
   ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
     content.wrappedJSObject.testXhrPostSlowResponse();
   });
-
-  const { node: messageNode } = await message;
-
-  info("Network message found.");
-
-  const updates = waitForRequestUpdates(toolbox);
-  const payload = waitForPayloadReady(toolbox);
+  const { node: messageNode } = await onMessage;
+  ok(messageNode, "Network message found.");
 
   // Set the default panel.
   const state = hud.ui.consoleOutput.getStore().getState();
   state.ui.networkMessageActiveTabId = tab.id;
 
   // Expand network log
-  const urlNode = messageNode.querySelector(".url");
-  urlNode.click();
+  await expandXhrMessage(messageNode);
 
-  // Make sure the current tab is the expected one.
-  const currentTab = messageNode.querySelector(`#${tab.id}-tab`);
-  is(currentTab.getAttribute("aria-selected"), "true",
-    "The correct tab is selected");
+  // Except the security tab. It isn't available till the
+  // "securityInfo" packet type is received, so doesn't
+  // fit this part of the test.
+  if (tab.id != "security") {
+    // Make sure the current tab is the expected one.
+    const currentTab = messageNode.querySelector(`#${tab.id}-tab`);
+    is(currentTab.getAttribute("aria-selected"), "true",
+      "The correct tab is selected");
 
-  // The tab should be empty now.
-  tab.testEmpty(messageNode);
+    // The tab should be empty now.
+    tab.testEmpty(messageNode);
+  }
 
   // Wait till all updates and payload are received.
-  await updates;
-  await payload;
+  await onRequestUpdates;
+  await onPayloadReady;
 
   // Test content of the default tab.
   await tab.testContent(messageNode);
@@ -158,6 +155,7 @@ async function testNetworkMessage(toolbox, messageNode) {
   await testResponse(messageNode);
   await testTimings(messageNode);
   await testStackTrace(messageNode);
+  await testSecurity(messageNode);
   await waitForLazyRequests(toolbox);
 }
 
@@ -181,9 +179,7 @@ async function testHeaders(messageNode) {
 
   // Select Headers tab and check the content.
   headersTab.click();
-  await waitUntil(() => {
-    return !!messageNode.querySelector("#headers-panel .headers-overview");
-  });
+  await waitFor(() => messageNode.querySelector("#headers-panel .headers-overview"));
 }
 
 // Cookies
@@ -199,9 +195,7 @@ async function testCookies(messageNode) {
 
   // Select tab and check the content.
   cookiesTab.click();
-  await waitUntil(() => {
-    return !!messageNode.querySelector("#cookies-panel .treeValueCell");
-  });
+  await waitFor(() => messageNode.querySelector("#cookies-panel .treeValueCell"));
 }
 
 // Params
@@ -261,10 +255,8 @@ async function testTimings(messageNode) {
 
   // Select Timings tab and check the content.
   timingsTab.click();
-  await waitUntil(() => {
-    return !!messageNode.querySelector(
-      "#timings-panel .timings-container .timings-label");
-  });
+  await waitFor(() =>
+    messageNode.querySelector("#timings-panel .timings-container .timings-label"));
   const timingsContent = messageNode.querySelector(
     "#timings-panel .timings-container .timings-label");
   ok(timingsContent, "Timings content is available");
@@ -284,21 +276,29 @@ async function testStackTrace(messageNode) {
 
   // Select Timings tab and check the content.
   stackTraceTab.click();
-  await waitUntil(() => {
-    return !!messageNode.querySelector("#stack-trace-panel .frame-link");
-  });
+  await waitFor(() => messageNode.querySelector("#stack-trace-panel .frame-link"));
+}
+
+// Security
+
+function testEmptySecurity(messageNode) {
+  const panel = messageNode.querySelector("#security-panel .tab-panel");
+  is(panel.textContent, "", "Security tab is empty");
+}
+
+async function testSecurity(messageNode) {
+  const securityTab = messageNode.querySelector("#security-tab");
+  ok(securityTab, "Security tab is available");
+
+  // Select Timings tab and check the content.
+  securityTab.click();
+  await waitFor(() => messageNode.querySelector("#security-panel .treeTable .treeRow"));
 }
 
 // Waiting helpers
 
-async function waitForPayloadReady(toolbox) {
-  const {ui} = toolbox.getCurrentPanel().hud;
-  return new Promise(resolve => {
-    ui.jsterm.hud.on("network-request-payload-ready", () => {
-      info("network-request-payload-ready received");
-      resolve();
-    });
-  });
+async function waitForPayloadReady(hud) {
+  return hud.ui.once("network-request-payload-ready");
 }
 
 async function waitForSourceEditor(panel) {
@@ -307,18 +307,18 @@ async function waitForSourceEditor(panel) {
   });
 }
 
-async function waitForRequestUpdates(toolbox) {
-  const {ui} = toolbox.getCurrentPanel().hud;
-  return new Promise(resolve => {
-    ui.jsterm.hud.on("network-message-updated", () => {
-      info("network-message-updated received");
-      resolve();
-    });
-  });
+async function waitForRequestUpdates(hud) {
+  return hud.ui.once("network-message-updated");
+}
+
+function expandXhrMessage(node) {
+  info("Click on XHR message and wait for the network detail panel to be displayed");
+  node.querySelector(".url").click();
+  return waitFor(() => node.querySelector(".network-info"));
 }
 
 /**
- * Wait until all lazily fetch requests in netmonitor get finsished.
+ * Wait until all lazily fetch requests in netmonitor get finished.
  * Otherwise test will be shutdown too early and cause failure.
  */
 async function waitForLazyRequests(toolbox) {

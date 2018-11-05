@@ -33,7 +33,7 @@
       if (!acc)
         return;
 
-      var [state, /* extraState */] = getStates(aAccOrElmOrID);
+      var [state /* extraState */] = getStates(aAccOrElmOrID);
       if (state & STATE_UNAVAILABLE) {
         var role = getRole(acc);
         if (role != ROLE_GROUPING) {
@@ -107,6 +107,8 @@
 
       // aria-multiselectable
       testStates("aria_multiselectable_listbox",
+                 STATE_MULTISELECTABLE | STATE_EXTSELECTABLE);
+      testStates("aria_multiselectable_tablist",
                  STATE_MULTISELECTABLE | STATE_EXTSELECTABLE);
 
       // aria-pressed
@@ -417,6 +419,7 @@
   <div id="aria_modal_false" aria-modal="false">non modal stuff</div>div>
   <div id="aria_multiline_textbox" role="textbox" aria-multiline="true"></div>
   <div id="aria_multiselectable_listbox" role="listbox" aria-multiselectable="true"></div>
+  <div id="aria_multiselectable_tablist" role="tablist" aria-multiselectable="true"></div>
   <div id="aria_pressed_button" role="button" aria-pressed="true">Button</div>
   <button id="aria_pressed_native_button" aria-pressed="true">Button</button>
 

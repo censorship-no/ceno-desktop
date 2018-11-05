@@ -91,7 +91,6 @@
 #endif
 
 #include "nsIException.h"
-#include "nsIPlatformInfo.h"
 #include "nsThread.h"
 #include "nsThreadUtils.h"
 #include "xpcpublic.h"
@@ -486,29 +485,6 @@ void JSObjectsTenuredCb(JSContext* aContext, void* aData)
   static_cast<CycleCollectedJSRuntime*>(aData)->JSObjectsTenured();
 }
 
-bool
-mozilla::GetBuildId(JS::BuildIdCharVector* aBuildID)
-{
-  nsCOMPtr<nsIPlatformInfo> info = do_GetService("@mozilla.org/xre/app-info;1");
-  if (!info) {
-    return false;
-  }
-
-  nsCString buildID;
-  nsresult rv = info->GetPlatformBuildID(buildID);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  if (!aBuildID->resize(buildID.Length())) {
-    return false;
-  }
-
-  for (size_t i = 0; i < buildID.Length(); i++) {
-    (*aBuildID)[i] = buildID[i];
-  }
-
-  return true;
-}
-
 static void
 MozCrashWarningReporter(JSContext*, JSErrorReport*)
 {
@@ -555,7 +531,6 @@ CycleCollectedJSRuntime::CycleCollectedJSRuntime(JSContext* aCx)
   JS_SetObjectsTenuredCallback(aCx, JSObjectsTenuredCb, this);
   JS::SetOutOfMemoryCallback(aCx, OutOfMemoryCallback, this);
   JS_SetExternalStringSizeofCallback(aCx, SizeofExternalStringCallback);
-  JS::SetBuildIdOp(aCx, GetBuildId);
   JS::SetWarningReporter(aCx, MozCrashWarningReporter);
 
   js::AutoEnterOOMUnsafeRegion::setAnnotateOOMAllocationSizeCallback(
@@ -1455,6 +1430,13 @@ CycleCollectedJSRuntime::FinalizeDeferredThings(CycleCollectedJSContext::Deferre
     }
   }
 
+  // When recording or replaying, execute triggers that were activated recently
+  // by mozilla::DeferredFinalize. This will populate the deferred finalizer
+  // table with a consistent set of entries between the recording and replay.
+  if (recordreplay::IsRecordingOrReplaying()) {
+    recordreplay::ExecuteTriggers();
+  }
+
   if (mDeferredFinalizerTable.Count() == 0) {
     return;
   }
@@ -1473,19 +1455,35 @@ CycleCollectedJSRuntime::FinalizeDeferredThings(CycleCollectedJSContext::Deferre
   }
 }
 
+const char*
+CycleCollectedJSRuntime::OOMStateToString(const OOMState aOomState) const
+{
+  switch (aOomState) {
+    case OOMState::OK:
+      return "OK";
+    case OOMState::Reporting:
+      return "Reporting";
+    case OOMState::Reported:
+      return "Reported";
+    case OOMState::Recovered:
+      return "Recovered";
+    default:
+      MOZ_ASSERT_UNREACHABLE("OOMState holds an invalid value");
+      return "Unknown";
+  }
+}
+
 void
 CycleCollectedJSRuntime::AnnotateAndSetOutOfMemory(OOMState* aStatePtr,
                                                    OOMState aNewState)
 {
   *aStatePtr = aNewState;
-  CrashReporter::AnnotateCrashReport(aStatePtr == &mOutOfMemoryState
-                                     ? NS_LITERAL_CSTRING("JSOutOfMemory")
-                                     : NS_LITERAL_CSTRING("JSLargeAllocationFailure"),
-                                     aNewState == OOMState::Reporting
-                                     ? NS_LITERAL_CSTRING("Reporting")
-                                     : aNewState == OOMState::Reported
-                                     ? NS_LITERAL_CSTRING("Reported")
-                                     : NS_LITERAL_CSTRING("Recovered"));
+  CrashReporter::Annotation annotation = (aStatePtr == &mOutOfMemoryState)
+    ? CrashReporter::Annotation::JSOutOfMemory
+    : CrashReporter::Annotation::JSLargeAllocationFailure;
+
+  CrashReporter::AnnotateCrashReport(
+    annotation, nsDependentCString(OOMStateToString(aNewState)));
 }
 
 void
@@ -1601,7 +1599,7 @@ CycleCollectedJSRuntime::ErrorInterceptor::Shutdown(JSRuntime* rt)
 }
 
 /* virtual */ void
-CycleCollectedJSRuntime::ErrorInterceptor::interceptError(JSContext* cx, const JS::Value& exn)
+CycleCollectedJSRuntime::ErrorInterceptor::interceptError(JSContext* cx, JS::HandleValue exn)
 {
   if (mThrownError) {
     // We already have an error, we don't need anything more.
@@ -1633,7 +1631,6 @@ CycleCollectedJSRuntime::ErrorInterceptor::interceptError(JSContext* cx, const J
   // While copying the details of an exception could be expensive, in most runs,
   // this will be done at most once during the execution of the process, so the
   // total cost should be reasonable.
-  JS::RootedValue value(cx, exn);
 
   ErrorDetails details;
   details.mType = *type;
@@ -1642,10 +1639,10 @@ CycleCollectedJSRuntime::ErrorInterceptor::interceptError(JSContext* cx, const J
   // work, we want to avoid that complex use case.
   // Fortunately, we have already checked above that `exn` is an exception object,
   // so nothing such should happen.
-  nsContentUtils::ExtractErrorValues(cx, value, details.mFilename, &details.mLine, &details.mColumn, details.mMessage);
+  nsContentUtils::ExtractErrorValues(cx, exn, details.mFilename, &details.mLine, &details.mColumn, details.mMessage);
 
-  JS::UniqueChars buf = JS::FormatStackDump(cx, nullptr, /* showArgs = */ false, /* showLocals = */ false, /* showThisProps = */ false);
-  CopyUTF8toUTF16(buf.get(), details.mStack);
+  JS::UniqueChars buf = JS::FormatStackDump(cx, /* showArgs = */ false, /* showLocals = */ false, /* showThisProps = */ false);
+  CopyUTF8toUTF16(mozilla::MakeStringSpan(buf.get()), details.mStack);
 
   mThrownError.emplace(std::move(details));
 }

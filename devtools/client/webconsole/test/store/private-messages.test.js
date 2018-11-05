@@ -156,8 +156,8 @@ describe("private messages", () => {
     const publicMessageId = getFirstMessage(state).id;
     const privateMessageId = getLastMessage(state).id;
 
-    dispatch(actions.networkUpdateRequest(publicMessageId));
-    dispatch(actions.networkUpdateRequest(privateMessageId));
+    dispatch(actions.networkUpdateRequest(publicMessageId, {}));
+    dispatch(actions.networkUpdateRequest(privateMessageId, {}));
 
     let networkUpdates = getAllNetworkMessagesUpdateById(getState());
     expect(Object.keys(networkUpdates)).toEqual([publicMessageId, privateMessageId]);
@@ -175,9 +175,9 @@ describe("private messages", () => {
         proxy: {
           releaseActor: (actor) => {
             releasedActors.push(actor);
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     // Add a log message.

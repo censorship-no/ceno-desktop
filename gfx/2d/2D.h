@@ -34,6 +34,8 @@
 
 #include "mozilla/DebugOnly.h"
 
+#include "nsRegionFwd.h"
+
 #if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GTK)
   #ifndef MOZ_ENABLE_FREETYPE
   #define MOZ_ENABLE_FREETYPE
@@ -418,7 +420,7 @@ public:
   void AddUserData(UserDataKey *key, void *userData, void (*destroy)(void*)) {
     mUserData.Add(key, userData, destroy);
   }
-  void *GetUserData(UserDataKey *key) {
+  void *GetUserData(UserDataKey *key) const {
     return mUserData.Get(key);
   }
   void RemoveUserData(UserDataKey *key) {
@@ -585,7 +587,8 @@ public:
   virtual void AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
                                       size_t& aHeapSizeOut,
                                       size_t& aNonHeapSizeOut,
-                                      size_t& aExtHandlesOut) const
+                                      size_t& aExtHandlesOut,
+                                      uint64_t& aExtIdOut) const
   {
   }
 
@@ -822,6 +825,16 @@ public:
     return nullptr;
   }
 
+  virtual already_AddRefed<ScaledFont>
+    CreateScaledFontFromWRFont(Float aGlyphSize,
+                               const wr::FontInstanceOptions* aOptions,
+                               const wr::FontInstancePlatformOptions* aPlatformOptions,
+                               const FontVariation* aVariations,
+                               uint32_t aNumVariations)
+  {
+    return CreateScaledFont(aGlyphSize, nullptr, 0, aVariations, aNumVariations);
+  }
+
 protected:
   UnscaledFont() {}
 
@@ -1023,6 +1036,12 @@ public:
                            const Rect &aSource,
                            const DrawSurfaceOptions &aSurfOptions = DrawSurfaceOptions(),
                            const DrawOptions &aOptions = DrawOptions()) = 0;
+
+  virtual void DrawDependentSurface(uint64_t aId,
+                                    const Rect &aDest,
+                                    const DrawSurfaceOptions &aSurfOptions = DrawSurfaceOptions(),
+                                    const DrawOptions &aOptions = DrawOptions())
+  { MOZ_CRASH("GFX: DrawDependentSurface"); }
 
   /**
    * Draw the output of a FilterNode to the DrawTarget.
@@ -1297,6 +1316,17 @@ public:
   virtual void Blur(const AlphaBoxBlur& aBlur);
 
   /**
+   * Performs an in-place edge padding operation.
+   * aRegion is specified in device space.
+   */
+  virtual void PadEdges(const IntRegion& aRegion);
+
+  /**
+   * Performs an in-place buffer unrotation operation.
+   */
+  virtual bool Unrotate(IntPoint aRotation);
+
+  /**
    * Create a SourceSurface optimized for use with this DrawTarget from
    * existing bitmap data in memory.
    *
@@ -1535,6 +1565,7 @@ class DrawTargetCapture : public DrawTarget
 public:
   virtual bool IsCaptureDT() const override { return true; }
 
+  virtual bool IsEmpty() const = 0;
   virtual void Dump() = 0;
 };
 
@@ -1619,6 +1650,18 @@ public:
 
   static already_AddRefed<DrawTarget>
     CreateDrawTarget(BackendType aBackend, const IntSize &aSize, SurfaceFormat aFormat);
+
+  /**
+   * Create a DrawTarget that captures the drawing commands to eventually be replayed
+   * onto the DrawTarget provided. An optional byte size can be provided as a limit
+   * for the CaptureCommandList. When the limit is reached, the CaptureCommandList
+   * will be replayed to the target and then cleared.
+   *
+   * @param aSize Size of the area this DT will capture.
+   * @param aFlushBytes The byte limit at which to flush the CaptureCommandList
+   */
+  static already_AddRefed<DrawTargetCapture>
+    CreateCaptureDrawTargetForTarget(gfx::DrawTarget* aTarget, size_t aFlushBytes = 0);
 
   /**
    * Create a DrawTarget that captures the drawing commands and can be replayed
@@ -1754,6 +1797,9 @@ public:
   static already_AddRefed<DrawTarget>
     CreateDualDrawTarget(DrawTarget *targetA, DrawTarget *targetB);
 
+  static already_AddRefed<SourceSurface>
+    CreateDualSourceSurface(SourceSurface *sourceA, SourceSurface *sourceB);
+
   /*
    * This creates a new tiled DrawTarget. When a tiled drawtarget is used the
    * drawing is distributed over number of tiles which may each hold an
@@ -1820,7 +1866,7 @@ public:
                                   Float aGamma,
                                   Float aContrast);
 
-  static void UpdateSystemTextQuality();
+  static void SetSystemTextQuality(uint8_t aQuality);
 
 private:
   static StaticRefPtr<ID2D1Device> mD2D1Device;

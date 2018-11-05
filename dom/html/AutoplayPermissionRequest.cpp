@@ -56,7 +56,6 @@ AutoplayPermissionRequest::GetTypes(nsIArray** aTypes)
   nsTArray<nsString> emptyOptions;
   return dom::nsContentPermissionUtils::CreatePermissionArray(
     NS_LITERAL_CSTRING("autoplay-media"),
-    NS_LITERAL_CSTRING("unused"),
     emptyOptions,
     aTypes);
 }
@@ -95,7 +94,7 @@ NS_IMETHODIMP
 AutoplayPermissionRequest::Cancel()
 {
   if (mManager) {
-    mManager->DenyPlayRequest();
+    mManager->DenyPlayRequestIfExists();
     // Clear reference to manager, so we can't double report a result.
     // This could happen in particular if we call Cancel() in the destructor.
     mManager = nullptr;
@@ -107,7 +106,7 @@ NS_IMETHODIMP
 AutoplayPermissionRequest::Allow(JS::HandleValue aChoices)
 {
   if (mManager) {
-    mManager->ApprovePlayRequest();
+    mManager->ApprovePlayRequestIfExists();
     // Clear reference to manager, so we can't double report a result.
     // This could happen in particular if we call Cancel() in the destructor.
     mManager = nullptr;

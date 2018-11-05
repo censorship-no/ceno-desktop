@@ -92,7 +92,7 @@ var UpdateListener = {
       callback() {
         Services.telemetry.getHistogramById("UPDATE_NOTIFICATION_DISMISSED").add(type);
       },
-      dismiss: true
+      dismiss: true,
     };
 
     AppMenuNotifications.showNotification("update-" + type,
@@ -146,6 +146,7 @@ var UpdateListener = {
         break;
       case "check-attempts-exceeded":
       case "unknown":
+      case "bad-perms":
         // Background update has failed, let's show the UI responsible for
         // prompting the user to update manually.
         this.clearCallbacks();
@@ -222,5 +223,5 @@ var UpdateListener = {
         this.handleUpdateError(update, status);
         break;
     }
-  }
+  },
 };

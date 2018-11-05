@@ -38,11 +38,11 @@ config = {
         'start-emulator',
         'download-and-extract',
         'create-virtualenv',
-        'verify-emulator',
+        'verify-device',
         'install',
         'run-tests',
     ],
-    "tooltool_cache": "/builds/worker/tooltool_cache",
+    "tooltool_cache": os.environ.get("TOOLTOOL_CACHE"),
     "tooltool_servers": ['http://relengapi/tooltool/'],
     "hostutils_manifest_path": "testing/config/tooltool-manifests/linux64/hostutils.manifest",
     "avds_dir": "/builds/worker/workspace/build/.android",
@@ -52,6 +52,10 @@ config = {
     "minidump_stackwalk_path": "/usr/local/bin/linux64-minidump_stackwalk",
     "marionette_address": "localhost:2828",
     "marionette_test_manifest": "unit-tests.ini",
+    # To take device screenshots at timed intervals (each time in seconds, relative
+    # to the start of the run-tests step) specify screenshot_times. For example, to
+    # take 4 screenshots at one minute intervals you could specify:
+    # "screenshot_times": [60, 120, 180, 240],
 
     "suite_definitions": {
         "mochitest": {
@@ -321,15 +325,6 @@ config = {
                 "--startup-timeout=300",
                 "--device=%(device_serial)s",
                 "%(marionette_extra)s",
-            ],
-        },
-        "geckoview": {
-            "run_filename": "rungeckoview.py",
-            "testsdir": "mochitest",
-            "options": [
-                "--utility-path=%(utility_path)s",
-                "--symbols-path=%(symbols_path)s",
-                "--deviceSerial=%(device_serial)s",
             ],
         },
         "geckoview-junit": {

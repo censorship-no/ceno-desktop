@@ -36,6 +36,12 @@ function MarkupContainer() { }
 let markupContainerID = 0;
 
 MarkupContainer.prototype = {
+  // Get the UndoStack from the MarkupView.
+  get undo() {
+    // undo is a lazy getter in the MarkupView.
+    return this.markup.undo;
+  },
+
   /*
    * Initialize the MarkupContainer.  Should be called while one
    * of the other contain classes is instantiated.
@@ -52,7 +58,6 @@ MarkupContainer.prototype = {
     this.markup = markupView;
     this.node = node;
     this.type = type;
-    this.undo = this.markup.undo;
     this.win = this.markup._frame.contentWindow;
     this.id = "treeitem-" + markupContainerID++;
     this.htmlElt = this.win.document.documentElement;
@@ -749,18 +754,29 @@ MarkupContainer.prototype = {
   },
 
   _onToggle: function(event) {
+    event.stopPropagation();
+
     // Prevent the html tree from expanding when an event bubble or display node is
     // clicked.
     if (event.target.dataset.event || event.target.dataset.display) {
-      event.stopPropagation();
       return;
     }
 
+    this.expandContainer(event.altKey);
+  },
+
+  /**
+   * Expands the markup container if it has children.
+   *
+   * @param  {Boolean} applyToDescendants
+   *         Whether all descendants should also be expanded/collapsed
+   */
+  expandContainer: function(applyToDescendants) {
     this.markup.navigate(this);
+
     if (this.hasChildren) {
-      this.markup.setNodeExpanded(this.node, !this.expanded, event.altKey);
+      this.markup.setNodeExpanded(this.node, !this.expanded, applyToDescendants);
     }
-    event.stopPropagation();
   },
 
   /**
@@ -797,7 +813,7 @@ MarkupContainer.prototype = {
     }
 
     this.editor.destroy();
-  }
+  },
 };
 
 module.exports = MarkupContainer;

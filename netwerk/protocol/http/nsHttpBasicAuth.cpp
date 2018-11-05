@@ -10,9 +10,27 @@
 #include "plstr.h"
 #include "nsString.h"
 #include "mozilla/Base64.h"
+#include "mozilla/ClearOnShutdown.h"
 
 namespace mozilla {
 namespace net {
+
+StaticRefPtr<nsHttpBasicAuth> nsHttpBasicAuth::gSingleton;
+
+already_AddRefed<nsIHttpAuthenticator>
+nsHttpBasicAuth::GetOrCreate()
+{
+    nsCOMPtr<nsIHttpAuthenticator> authenticator;
+    if (gSingleton) {
+      authenticator = gSingleton;
+    } else {
+      gSingleton = new nsHttpBasicAuth();
+      ClearOnShutdown(&gSingleton);
+      authenticator = gSingleton;
+    }
+
+    return authenticator.forget();
+}
 
 //-----------------------------------------------------------------------------
 // nsHttpBasicAuth::nsISupports
@@ -77,11 +95,9 @@ nsHttpBasicAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChannel,
 
     // we work with UTF-8 around here
     nsAutoCString userpass;
-    CopyUTF16toUTF8(user, userpass);
+    CopyUTF16toUTF8(mozilla::MakeStringSpan(user), userpass);
     userpass.Append(':'); // always send a ':' (see bug 129565)
-    if (password) {
-        AppendUTF16toUTF8(password, userpass);
-    }
+    AppendUTF16toUTF8(mozilla::MakeStringSpan(password), userpass);
 
     nsAutoCString authString;
     nsresult rv = Base64Encode(userpass, authString);

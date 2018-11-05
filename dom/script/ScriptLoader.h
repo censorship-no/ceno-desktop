@@ -20,12 +20,13 @@
 #include "nsIIncrementalStreamLoader.h"
 #include "nsURIHashKey.h"
 #include "mozilla/CORSMode.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/ScriptLoadRequest.h"
 #include "mozilla/dom/SRIMetadata.h"
 #include "mozilla/dom/SRICheck.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/net/ReferrerPolicy.h"
+#include "mozilla/StaticPrefs.h"
 #include "mozilla/Vector.h"
 
 class nsIURI;
@@ -405,7 +406,7 @@ private:
   static bool BinASTEncodingEnabled()
   {
 #ifdef JS_BUILD_BINAST
-    return DOMPrefs::BinASTEncodingEnabled();
+    return StaticPrefs::dom_script_loader_binast_encoding_enabled();
 #else
     return false;
 #endif
@@ -506,8 +507,8 @@ private:
 
   void MaybeMoveToLoadedList(ScriptLoadRequest* aRequest);
 
-  JS::SourceBufferHolder GetScriptSource(JSContext* aCx,
-                                         ScriptLoadRequest* aRequest);
+  mozilla::Maybe<JS::SourceBufferHolder> GetScriptSource(JSContext* aCx,
+                                                         ScriptLoadRequest* aRequest);
 
   void SetModuleFetchStarted(ModuleLoadRequest *aRequest);
   void SetModuleFetchFinishedAndResumeWaitingRequests(ModuleLoadRequest* aRequest,
@@ -520,8 +521,9 @@ private:
   ModuleScript* GetFetchedModule(nsIURI* aURL) const;
 
   friend JSObject*
-  HostResolveImportedModule(JSContext* aCx, JS::Handle<JSObject*> aModule,
-                          JS::Handle<JSString*> aSpecifier);
+  HostResolveImportedModule(JSContext* aCx,
+                            JS::Handle<JS::Value> aReferencingPrivate,
+                            JS::Handle<JSString*> aSpecifier);
 
   // Returns wether we should save the bytecode of this script after the
   // execution of the script.
@@ -538,6 +540,9 @@ private:
 
   RefPtr<mozilla::GenericPromise>
   StartFetchingModuleAndDependencies(ModuleLoadRequest* aParent, nsIURI* aURI);
+
+  nsresult AssociateSourceElementsForModuleTree(JSContext* aCx,
+                                                ModuleLoadRequest* aRequest);
 
   nsIDocument* mDocument;                   // [WEAK]
   nsCOMArray<nsIScriptLoaderObserver> mObservers;

@@ -57,9 +57,11 @@ public:
   nsresult InitForDecoder(const nsIntSize& aImageSize,
                           const nsIntRect& aRect,
                           SurfaceFormat aFormat,
-                          uint8_t aPaletteDepth = 0,
-                          bool aNonPremult = false,
-                          const Maybe<AnimationParams>& aAnimParams = Nothing());
+                          uint8_t aPaletteDepth,
+                          bool aNonPremult,
+                          const Maybe<AnimationParams>& aAnimParams,
+                          bool aIsFullFrame,
+                          bool aShouldRecycle);
 
   nsresult InitForAnimator(const nsIntSize& aSize,
                            SurfaceFormat aFormat)
@@ -68,10 +70,23 @@ public:
     AnimationParams animParams { frameRect, FrameTimeout::Forever(),
                                  /* aFrameNum */ 1, BlendMethod::OVER,
                                  DisposalMethod::NOT_SPECIFIED };
-    return InitForDecoder(aSize, frameRect,
-                          aFormat, 0, false, Some(animParams));
+    // We set aIsFullFrame to false because we don't want the compositing frame
+    // to be allocated into shared memory for WebRender. mIsFullFrame is only
+    // otherwise used for frames produced by Decoder, so it isn't relevant.
+    return InitForDecoder(aSize, frameRect, aFormat, /* aPaletteDepth */ 0,
+                          /* aNonPremult */ false, Some(animParams),
+                          /* aIsFullFrame */ false, /* aShouldRecycle */ false);
   }
 
+  /**
+   * Reinitialize this imgFrame with the new parameters, but otherwise retain
+   * the underlying buffer.
+   *
+   * This is appropriate for use with animated images, where the decoder was
+   * given an IDecoderFrameRecycler object which may yield a recycled imgFrame
+   * that was discarded to save memory.
+   */
+  nsresult InitForDecoderRecycle(const AnimationParams& aAnimParams);
 
   /**
    * Initialize this imgFrame with a new surface and draw the provided
@@ -188,17 +203,37 @@ public:
   uint32_t* GetPaletteData() const;
   uint8_t GetPaletteDepth() const { return mPaletteDepth; }
 
+  const IntRect& GetDirtyRect() const { return mDirtyRect; }
+  void SetDirtyRect(const IntRect& aDirtyRect) { mDirtyRect = aDirtyRect; }
+
+  bool IsFullFrame() const { return mIsFullFrame; }
+
   bool GetCompositingFailed() const;
   void SetCompositingFailed(bool val);
+
+  bool ShouldRecycle() const { return mShouldRecycle; }
 
   void SetOptimizable();
 
   void FinalizeSurface();
   already_AddRefed<SourceSurface> GetSourceSurface();
 
-  void AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf, size_t& aHeapSizeOut,
-                              size_t& aNonHeapSizeOut,
-                              size_t& aExtHandlesOut) const;
+  struct AddSizeOfCbData {
+    AddSizeOfCbData()
+      : heap(0), nonHeap(0), handles(0), index(0), externalId(0)
+    { }
+
+    size_t heap;
+    size_t nonHeap;
+    size_t handles;
+    size_t index;
+    uint64_t externalId;
+  };
+
+  typedef std::function<void(AddSizeOfCbData& aMetadata)> AddSizeOfCb;
+
+  void AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
+                              const AddSizeOfCb& aCallback) const;
 
 private: // methods
 
@@ -224,7 +259,14 @@ private: // methods
   uint32_t GetImageBytesPerRow() const;
   uint32_t GetImageDataLength() const;
   void FinalizeSurfaceInternal();
-  already_AddRefed<SourceSurface> GetSourceSurfaceInternal();
+
+  /**
+   * @param aTemporary  If true, it will assume the caller does not require a
+   *                    wrapping RecycleSourceSurface to protect the underlying
+   *                    surface from recycling. The reference to the surface
+   *                    must be freed before releasing the main thread context.
+   */
+  already_AddRefed<SourceSurface> GetSourceSurfaceInternal(bool aTemporary);
 
   uint32_t PaletteDataLength() const
   {
@@ -242,6 +284,17 @@ private: // methods
     SurfaceWithFormat(gfxDrawable* aDrawable, SurfaceFormat aFormat)
       : mDrawable(aDrawable), mFormat(aFormat)
     { }
+    SurfaceWithFormat(SurfaceWithFormat&& aOther)
+      : mDrawable(std::move(aOther.mDrawable)), mFormat(aOther.mFormat)
+    { }
+    SurfaceWithFormat& operator=(SurfaceWithFormat&& aOther)
+    {
+      mDrawable = std::move(aOther.mDrawable);
+      mFormat = aOther.mFormat;
+      return *this;
+    }
+    SurfaceWithFormat& operator=(const SurfaceWithFormat& aOther) = delete;
+    SurfaceWithFormat(const SurfaceWithFormat& aOther) = delete;
     bool IsValid() { return !!mDrawable; }
   };
 
@@ -253,6 +306,7 @@ private: // methods
 private: // data
   friend class DrawableFrameRef;
   friend class RawAccessFrameRef;
+  friend class RecyclingSourceSurface;
   friend class UnlockImageDataRunnable;
 
   //////////////////////////////////////////////////////////////////////////////
@@ -284,20 +338,46 @@ private: // data
   nsIntRect mDecoded;
 
   //! Number of RawAccessFrameRefs currently alive for this imgFrame.
-  int32_t mLockCount;
+  int16_t mLockCount;
+
+  //! Number of RecyclingSourceSurface's currently alive for this imgFrame.
+  int16_t mRecycleLockCount;
 
   bool mAborted;
   bool mFinished;
   bool mOptimizable;
+  bool mShouldRecycle;
 
 
   //////////////////////////////////////////////////////////////////////////////
   // Effectively const data, only mutated in the Init methods.
   //////////////////////////////////////////////////////////////////////////////
 
+  //! The size of the buffer we are decoding to.
   IntSize      mImageSize;
+
+  //! XXX(aosmond): This means something different depending on the context. We
+  //!               should correct this.
+  //!
+  //! There are several different contexts for mFrameRect:
+  //! - If for non-animated image, it will be originate at (0, 0) and matches
+  //!   the dimensions of mImageSize.
+  //! - If for an APNG, it also matches the above.
+  //! - If for a GIF which is producing full frames, it matches the above.
+  //! - If for a GIF which is producing partial frames, it matches mBlendRect.
   IntRect      mFrameRect;
+
+  //! The contents for the frame, as represented in the encoded image. This may
+  //! differ from mImageSize because it may be a partial frame. For the first
+  //! frame, this means we need to shift the data in place, and for animated
+  //! frames, it likely need to combine with a previous frame to get the full
+  //! contents.
   IntRect      mBlendRect;
+
+  //! This is the region that has changed between this frame and the previous
+  //! frame of an animation. For the first frame, this will be the same as
+  //! mFrameRect.
+  IntRect      mDirtyRect;
 
   //! The timeout for this frame.
   FrameTimeout mTimeout;
@@ -315,6 +395,9 @@ private: // data
 
   bool mNonPremult;
 
+  //! True if the frame has all of the data stored in it, false if it needs to
+  //! be combined with another frame (e.g. the previous frame) to be complete.
+  bool mIsFullFrame;
 
   //////////////////////////////////////////////////////////////////////////////
   // Main-thread-only mutable data.

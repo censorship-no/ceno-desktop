@@ -327,10 +327,6 @@ GetSlotWithMechanism(uint32_t aMechanism, nsIInterfaceRequestor* m_ctx,
 
         // Allocate the slot name buffer //
         tokenNameList = static_cast<char16_t**>(moz_xmalloc(sizeof(char16_t *) * numSlots));
-        if (!tokenNameList) {
-            rv = NS_ERROR_OUT_OF_MEMORY;
-            goto loser;
-        }
 
         i = 0;
         slotElement = PK11_GetFirstSafe(slotList);
@@ -548,7 +544,7 @@ nsKeygenFormProcessor::GetPublicKey(const nsAString& aValue,
         KeygenRunnable->SetParams( slot, attrFlags, nullptr, 0,
                                    keyGenMechanism, params, m_ctx );
 
-        runnable = do_QueryInterface(KeygenRunnable);
+        runnable = KeygenRunnable;
         if (runnable) {
             rv = dialogs->DisplayGeneratingKeypairInfo(m_ctx, runnable);
             // We call join on the thread so we can be sure that no

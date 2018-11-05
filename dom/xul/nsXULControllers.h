@@ -14,12 +14,11 @@
 
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
-#include "nsWeakPtr.h"
 #include "nsIControllers.h"
 #include "nsCycleCollectionParticipant.h"
 
 /* non-XPCOM class for holding controllers and their IDs */
-class nsXULControllerData
+class nsXULControllerData final
 {
 public:
                             nsXULControllerData(uint32_t inControllerID, nsIController* inController)
@@ -42,21 +41,16 @@ public:
     nsCOMPtr<nsIController> mController;
 };
 
-
-nsresult NS_NewXULControllers(nsISupports* aOuter, REFNSIID aIID, void** aResult);
-
-class nsXULControllers : public nsIControllers
+class nsXULControllers final : public nsIControllers
 {
 public:
-    friend nsresult
-    NS_NewXULControllers(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+    nsXULControllers();
 
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
     NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsXULControllers, nsIControllers)
     NS_DECL_NSICONTROLLERS
 
 protected:
-    nsXULControllers();
     virtual ~nsXULControllers(void);
 
     void        DeleteControllers();

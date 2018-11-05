@@ -99,7 +99,7 @@ const PanelUI = {
     // we need to know whether anything is in the permanent panel area.
     this.overflowFixedList.hidden = false;
     // Also unhide the separator. We use CSS to hide/show it based on the panel's content.
-    this.overflowFixedList.previousSibling.hidden = false;
+    this.overflowFixedList.previousElementSibling.hidden = false;
     CustomizableUI.registerMenuPanel(this.overflowFixedList, CustomizableUI.AREA_FIXED_OVERFLOW_PANEL);
     this.updateOverflowStatus();
 
@@ -376,7 +376,7 @@ const PanelUI = {
     } else if (!aAnchor.open) {
       aAnchor.open = true;
 
-      let tempPanel = document.createElement("panel");
+      let tempPanel = document.createXULElement("panel");
       tempPanel.setAttribute("type", "arrow");
       tempPanel.setAttribute("id", "customizationui-widget-panel");
       tempPanel.setAttribute("class", "cui-widget-panel");
@@ -394,7 +394,7 @@ const PanelUI = {
       tempPanel.classList.toggle("cui-widget-panelWithFooter",
                                  viewNode.querySelector(".panel-subview-footer"));
 
-      let multiView = document.createElement("panelmultiview");
+      let multiView = document.createXULElement("panelmultiview");
       multiView.setAttribute("id", "customizationui-widget-multiview");
       multiView.setAttribute("viewCacheId", "appMenu-viewCache");
       multiView.setAttribute("mainViewId", viewNode.id);
@@ -491,7 +491,7 @@ const PanelUI = {
       // richer list.
       numItems: 6,
       withFavicons: true,
-      excludePocket: true
+      excludePocket: true,
     }).catch(ex => {
       // Just hide the section if we can't retrieve the items from the database.
       Cu.reportError(ex);
@@ -508,11 +508,11 @@ const PanelUI = {
     }
 
     let container = this.libraryRecentHighlights;
-    container.hidden = container.previousSibling.hidden =
-      container.previousSibling.previousSibling.hidden = false;
+    container.hidden = container.previousElementSibling.hidden =
+      container.previousElementSibling.previousElementSibling.hidden = false;
     let fragment = document.createDocumentFragment();
     for (let highlight of highlights) {
-      let button = document.createElement("toolbarbutton");
+      let button = document.createXULElement("toolbarbutton");
       button.classList.add("subviewbutton", "highlight", "subviewbutton-iconic", "bookmark-item");
       let title = highlight.title || highlight.url;
       button.setAttribute("label", title);
@@ -547,8 +547,8 @@ const PanelUI = {
     while (container.firstChild) {
       container.firstChild.remove();
     }
-    container.hidden = container.previousSibling.hidden =
-      container.previousSibling.previousSibling.hidden = true;
+    container.hidden = container.previousElementSibling.hidden =
+      container.previousElementSibling.previousElementSibling.hidden = true;
   },
 
   /**
@@ -566,7 +566,7 @@ const PanelUI = {
       CustomizableUI.hidePanelForNode(button);
     }
     window.openUILink(button._highlight.url, event, {
-      triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({})
+      triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
     });
   },
 
@@ -623,7 +623,6 @@ const PanelUI = {
     let helpMenu = document.getElementById("menu_HelpPopup");
     let items = this.getElementsByTagName("vbox")[0];
     let attrs = ["oncommand", "onclick", "label", "key", "disabled"];
-    let NSXUL = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
     // Remove all buttons from the view
     while (items.firstChild) {
@@ -636,7 +635,7 @@ const PanelUI = {
     for (let node of menuItems) {
       if (node.hidden)
         continue;
-      let button = document.createElementNS(NSXUL, "toolbarbutton");
+      let button = document.createXULElement("toolbarbutton");
       // Copy specific attributes from a menuitem of the Help menu
       for (let attrName of attrs) {
         if (!node.hasAttribute(attrName))
@@ -701,7 +700,12 @@ const PanelUI = {
     if (this.panel.state == "showing" || this.panel.state == "open") {
       // If the menu is already showing, then we need to dismiss all notifications
       // since we don't want their doorhangers competing for attention
-      doorhangers.forEach(n => { n.dismissed = true; });
+      doorhangers.forEach(n => {
+        n.dismissed = true;
+        if (n.options.onDismissed) {
+          n.options.onDismissed();
+        }
+      });
       this._hidePopup();
       this._clearBadge();
       if (!notifications[0].options.badgeOnly) {
@@ -754,6 +758,15 @@ const PanelUI = {
     this._clearBannerItem();
   },
 
+  _formatDescriptionMessage(n) {
+    let text = {};
+    let array = n.options.message.split("<>");
+    text.start = array[0] || "";
+    text.name = n.options.name || "";
+    text.end = array[1] || "";
+    return text;
+  },
+
   _refreshNotificationPanel(notification) {
     this._clearNotificationPanel();
 
@@ -764,6 +777,16 @@ const PanelUI = {
     popupnotification.setAttribute("buttoncommand", "PanelUI._onNotificationButtonEvent(event, 'buttoncommand');");
     popupnotification.setAttribute("secondarybuttoncommand",
       "PanelUI._onNotificationButtonEvent(event, 'secondarybuttoncommand');");
+
+    if (notification.options.message) {
+      let desc = this._formatDescriptionMessage(notification);
+      popupnotification.setAttribute("label", desc.start);
+      popupnotification.setAttribute("name", desc.name);
+      popupnotification.setAttribute("endlabel", desc.end);
+    }
+    if (notification.options.popupIconURL) {
+      popupnotification.setAttribute("icon", notification.options.popupIconURL);
+    }
 
     popupnotification.notification = notification;
     popupnotification.hidden = false;
@@ -866,7 +889,7 @@ XPCOMUtils.defineConstant(this, "PanelUI", PanelUI);
  * @return  the selected locale
  */
 function getLocale() {
-  return Services.locale.getAppLocaleAsLangTag();
+  return Services.locale.appLocaleAsLangTag;
 }
 
 function getNotificationFromElement(aElement) {

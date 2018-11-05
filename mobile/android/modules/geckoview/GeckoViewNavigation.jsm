@@ -10,6 +10,8 @@ ChromeUtils.import("resource://gre/modules/GeckoViewModule.jsm");
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
+  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
+  Utils: "resource://gre/modules/sessionstore/Utils.jsm",
   LoadURIDelegate: "resource://gre/modules/LoadURIDelegate.jsm",
   Services: "resource://gre/modules/Services.jsm",
 });
@@ -36,8 +38,10 @@ class GeckoViewNavigation extends GeckoViewModule {
       "GeckoView:GoForward",
       "GeckoView:LoadUri",
       "GeckoView:Reload",
-      "GeckoView:Stop"
+      "GeckoView:Stop",
     ]);
+
+    this.messageManager.addMessageListener("Browser:LoadURI", this);
   }
 
   // Bundle event handler.
@@ -73,6 +77,12 @@ class GeckoViewNavigation extends GeckoViewModule {
           navFlags |= Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_POPUPS;
         }
 
+        if (this.settings.useMultiprocess) {
+          const remoteType =
+            E10SUtils.getRemoteTypeForURI(uri, true);
+          this.moduleManager.updateRemoteType(remoteType);
+        }
+
         this.browser.loadURI(uri, {
           flags: navFlags,
           referrerURI: referrer,
@@ -90,6 +100,23 @@ class GeckoViewNavigation extends GeckoViewModule {
   // Message manager event handler.
   receiveMessage(aMsg) {
     debug `receiveMessage: ${aMsg.name}`;
+
+    switch (aMsg.name) {
+      case "Browser:LoadURI":
+        // This is triggered by E10SUtils.redirectLoad(), and means
+        // we may need to change the remoteness of our browser and
+        // load the URI.
+        const { uri, flags, referrer, triggeringPrincipal } = aMsg.data.loadOptions;
+        const remoteType =
+          E10SUtils.getRemoteTypeForURI(uri, this.settings.useMultiprocess);
+
+        this.moduleManager.updateRemoteType(remoteType);
+        this.browser.loadURI(aMsg.data.loadOptions.uri, {
+          flags, referrerURI: referrer,
+          triggeringPrincipal: Utils.deserializePrincipal(triggeringPrincipal),
+        });
+        break;
+    }
   }
 
   waitAndSetupWindow(aSessionId, { opener, nextTabParentId }) {
@@ -111,7 +138,7 @@ class GeckoViewNavigation extends GeckoViewModule {
             Services.obs.removeObserver(handler, "geckoview-window-created");
             resolve(aSubject);
           }
-        }
+        },
       };
 
       // This event is emitted from createBrowser() in geckoview.js
@@ -129,14 +156,14 @@ class GeckoViewNavigation extends GeckoViewModule {
 
     const message = {
       type: "GeckoView:OnNewSession",
-      uri: aUri ? aUri.displaySpec : ""
+      uri: aUri ? aUri.displaySpec : "",
     };
 
     let browser = undefined;
     this.eventDispatcher.sendRequestForResult(message).then(sessionId => {
       return this.waitAndSetupWindow(sessionId, {
         opener: (aFlags & Ci.nsIBrowserDOMWindow.OPEN_NO_OPENER) ? null : aOpener,
-        nextTabParentId: aNextTabParentId
+        nextTabParentId: aNextTabParentId,
       });
     }).then(window => {
       browser = (window && window.browser) || null;
@@ -150,24 +177,13 @@ class GeckoViewNavigation extends GeckoViewModule {
     return browser || null;
   }
 
-  isURIHandled(aUri, aWhere, aFlags) {
-    debug `isURIHandled: uri=${aUri} where=${aWhere} flags=${aFlags}`;
-
-    let handled = undefined;
-    LoadURIDelegate.load(this.window, this.eventDispatcher, aUri, aWhere, aFlags).then((response) => {
-      handled = response;
-    });
-
-    Services.tm.spinEventLoopUntil(() => this.window.closed || handled !== undefined);
-    return handled;
-  }
-
   // nsIBrowserDOMWindow.
   createContentWindow(aUri, aOpener, aWhere, aFlags, aTriggeringPrincipal) {
     debug `createContentWindow: uri=${aUri && aUri.spec}
                                 where=${aWhere} flags=${aFlags}`;
 
-    if (this.isURIHandled(aUri, aWhere, aFlags)) {
+    if (LoadURIDelegate.load(this.window, this.eventDispatcher,
+                             aUri, aWhere, aFlags, aTriggeringPrincipal)) {
       // The app has handled the load, abort open-window handling.
       Components.returnCode = Cr.NS_ERROR_ABORT;
       return null;
@@ -190,7 +206,9 @@ class GeckoViewNavigation extends GeckoViewModule {
                                        nextTabParentId=${aNextTabParentId}
                                        name=${aName}`;
 
-    if (this.isURIHandled(aUri, aWhere, aFlags)) {
+    if (LoadURIDelegate.load(this.window, this.eventDispatcher,
+                             aUri, aWhere, aFlags,
+                             aParams.triggeringPrincipal)) {
       // The app has handled the load, abort open-window handling.
       Components.returnCode = Cr.NS_ERROR_ABORT;
       return null;
@@ -210,7 +228,8 @@ class GeckoViewNavigation extends GeckoViewModule {
     debug `handleOpenUri: uri=${aUri && aUri.spec}
                           where=${aWhere} flags=${aFlags}`;
 
-    if (this.isURIHandled(aUri, aWhere, aFlags)) {
+    if (LoadURIDelegate.load(this.window, this.eventDispatcher,
+                             aUri, aWhere, aFlags, aTriggeringPrincipal)) {
       return null;
     }
 
@@ -240,7 +259,8 @@ class GeckoViewNavigation extends GeckoViewModule {
 
   // nsIBrowserDOMWindow.
   openURIInFrame(aUri, aParams, aWhere, aFlags, aNextTabParentId, aName) {
-    const browser = this.handleOpenUri(aUri, null, aWhere, aFlags, null,
+    const browser = this.handleOpenUri(aUri, null, aWhere, aFlags,
+                                       aParams.triggeringPrincipal,
                                        aNextTabParentId);
     return browser;
   }

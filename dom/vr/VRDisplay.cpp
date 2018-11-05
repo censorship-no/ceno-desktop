@@ -542,12 +542,17 @@ VRDisplay::IsHandlingVRNavigationEvent()
     (TimeStamp::Now() - mHandlingVRNavigationEventStart) <= timeout;
 }
 
+void
+VRDisplay::OnPresentationGenerationChanged() {
+  ExitPresentInternal();
+}
+
 already_AddRefed<Promise>
 VRDisplay::RequestPresent(const nsTArray<VRLayer>& aLayers,
                           CallerType aCallerType,
                           ErrorResult& aRv)
 {
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(GetParentObject());
+  nsCOMPtr<nsIGlobalObject> global = GetParentObject();
   if (!global) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -621,7 +626,7 @@ VRDisplay::Observe(nsISupports* aSubject, const char* aTopic,
 already_AddRefed<Promise>
 VRDisplay::ExitPresent(ErrorResult& aRv)
 {
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(GetParentObject());
+  nsCOMPtr<nsIGlobalObject> global = GetParentObject();
   if (!global) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;

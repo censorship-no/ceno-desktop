@@ -146,6 +146,7 @@ WMFVideoMFTManager::WMFVideoMFTManager(
   layers::KnowsCompositor* aKnowsCompositor,
   layers::ImageContainer* aImageContainer,
   float aFramerate,
+  const CreateDecoderParams::OptionSet& aOptions,
   bool aDXVAEnabled)
   : mVideoInfo(aConfig)
   , mImageSize(aConfig.mImage)
@@ -154,8 +155,11 @@ WMFVideoMFTManager::WMFVideoMFTManager(
   , mYUVColorSpace(YUVColorSpace::BT601)
   , mImageContainer(aImageContainer)
   , mKnowsCompositor(aKnowsCompositor)
-  , mDXVAEnabled(aDXVAEnabled)
+  , mDXVAEnabled(aDXVAEnabled &&
+                 !aOptions.contains(
+                   CreateDecoderParams::Option::HardwareDecoderNotAllowed))
   , mFramerate(aFramerate)
+  , mLowLatency(aOptions.contains(CreateDecoderParams::Option::LowLatency))
   // mVideoStride, mVideoWidth, mVideoHeight, mUseHwAccel are initialized in
   // Init().
 {
@@ -616,7 +620,7 @@ WMFVideoMFTManager::InitInternal()
     attr->GetUINT32(MF_SA_D3D_AWARE, &aware);
     attr->SetUINT32(CODECAPI_AVDecNumWorkerThreads,
       WMFDecoderModule::GetNumDecoderThreads());
-    if (gfxPrefs::PDMWMFLowLatencyEnabled()) {
+    if (mLowLatency || gfxPrefs::PDMWMFLowLatencyEnabled()) {
       hr = attr->SetUINT32(CODECAPI_AVLowLatencyMode, TRUE);
       if (SUCCEEDED(hr)) {
         LOG("Enabling Low Latency Mode");
@@ -637,7 +641,6 @@ WMFVideoMFTManager::InitInternal()
       if (SUCCEEDED(hr)) {
         mUseHwAccel = true;
       } else {
-        DeleteOnMainThread(mDXVA2Manager);
         mDXVAFailureReason = nsPrintfCString(
           "MFT_MESSAGE_SET_D3D_MANAGER failed with code %X", hr);
       }
@@ -649,6 +652,12 @@ WMFVideoMFTManager::InitInternal()
   }
 
   if (!mUseHwAccel) {
+    if (mDXVA2Manager) {
+      // Either mDXVAEnabled was set to false prior the second call to
+      // InitInternal() due to CanUseDXVA() returning false, or
+      // MFT_MESSAGE_SET_D3D_MANAGER failed
+      DeleteOnMainThread(mDXVA2Manager);
+    }
     if (mStreamType == VP9 || mStreamType == VP8) {
       return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                          RESULT_DETAIL("Use VP8/9 MFT only if HW acceleration "
@@ -680,9 +689,9 @@ WMFVideoMFTManager::InitInternal()
   LOG("Video Decoder initialized, Using DXVA: %s",
       (mUseHwAccel ? "Yes" : "No"));
 
-  if (mDXVA2Manager) {
-    hr = mDXVA2Manager->ConfigureForSize(mVideoInfo.ImageRect().width,
-                                         mVideoInfo.ImageRect().height);
+  if (mUseHwAccel) {
+    hr = mDXVA2Manager->ConfigureForSize(
+      outputType, mVideoInfo.ImageRect().width, mVideoInfo.ImageRect().height);
     NS_ENSURE_TRUE(SUCCEEDED(hr),
                    MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                                RESULT_DETAIL("Fail to configure image size for "
@@ -767,6 +776,16 @@ WMFVideoMFTManager::Input(MediaRawData* aSample)
   if (!mDecoder) {
     // This can happen during shutdown.
     return E_FAIL;
+  }
+
+  if (mStreamType == VP9 && aSample->mKeyframe) {
+    // Check the VP9 profile. the VP9 MFT can only handle correctly profile 0
+    // and 2 (yuv420 8/10/12 bits)
+    int profile =
+      VPXDecoder::GetVP9Profile(MakeSpan(aSample->Data(), aSample->Size()));
+    if (profile != 0 && profile != 2) {
+      return E_FAIL;
+    }
   }
 
   RefPtr<IMFSample> inputSample;
@@ -885,8 +904,18 @@ WMFVideoMFTManager::CreateBasicVideoFrame(IMFSample* aSample,
     stride = mVideoStride;
   }
 
-  // YV12, planar format: [YYYY....][VVVV....][UUUU....]
+  const GUID& subType = mDecoder->GetOutputMediaSubType();
+  MOZ_DIAGNOSTIC_ASSERT(subType == MFVideoFormat_YV12 ||
+                        subType == MFVideoFormat_P010 ||
+                        subType == MFVideoFormat_P016);
+  const gfx::ColorDepth colorDepth = subType == MFVideoFormat_YV12
+                                       ? gfx::ColorDepth::COLOR_8
+                                       : gfx::ColorDepth::COLOR_16;
+
+  // YV12, planar format (3 planes): [YYYY....][VVVV....][UUUU....]
   // i.e., Y, then V, then U.
+  // P010, P016 planar format (2 planes) [YYYY....][UVUV...]
+  // See https://docs.microsoft.com/en-us/windows/desktop/medfound/10-bit-and-16-bit-yuv-video-formats
   VideoData::YCbCrBuffer b;
 
   uint32_t videoWidth = mImageSize.width;
@@ -908,24 +937,43 @@ WMFVideoMFTManager::CreateBasicVideoFrame(IMFSample* aSample,
   uint32_t halfHeight = (videoHeight + 1) / 2;
   uint32_t halfWidth = (videoWidth + 1) / 2;
 
-  // U plane (Cb)
-  b.mPlanes[1].mData = data + y_size + v_size;
-  b.mPlanes[1].mStride = halfStride;
-  b.mPlanes[1].mHeight = halfHeight;
-  b.mPlanes[1].mWidth = halfWidth;
-  b.mPlanes[1].mOffset = 0;
-  b.mPlanes[1].mSkip = 0;
+  if (subType == MFVideoFormat_YV12) {
+    // U plane (Cb)
+    b.mPlanes[1].mData = data + y_size + v_size;
+    b.mPlanes[1].mStride = halfStride;
+    b.mPlanes[1].mHeight = halfHeight;
+    b.mPlanes[1].mWidth = halfWidth;
+    b.mPlanes[1].mOffset = 0;
+    b.mPlanes[1].mSkip = 0;
 
-  // V plane (Cr)
-  b.mPlanes[2].mData = data + y_size;
-  b.mPlanes[2].mStride = halfStride;
-  b.mPlanes[2].mHeight = halfHeight;
-  b.mPlanes[2].mWidth = halfWidth;
-  b.mPlanes[2].mOffset = 0;
-  b.mPlanes[2].mSkip = 0;
+    // V plane (Cr)
+    b.mPlanes[2].mData = data + y_size;
+    b.mPlanes[2].mStride = halfStride;
+    b.mPlanes[2].mHeight = halfHeight;
+    b.mPlanes[2].mWidth = halfWidth;
+    b.mPlanes[2].mOffset = 0;
+    b.mPlanes[2].mSkip = 0;
+  } else {
+    // U plane (Cb)
+    b.mPlanes[1].mData = data + y_size;
+    b.mPlanes[1].mStride = stride;
+    b.mPlanes[1].mHeight = halfHeight;
+    b.mPlanes[1].mWidth = halfWidth;
+    b.mPlanes[1].mOffset = 0;
+    b.mPlanes[1].mSkip = 1;
+
+    // V plane (Cr)
+    b.mPlanes[2].mData = data + y_size + sizeof(short);
+    b.mPlanes[2].mStride = stride;
+    b.mPlanes[2].mHeight = halfHeight;
+    b.mPlanes[2].mWidth = halfWidth;
+    b.mPlanes[2].mOffset = 0;
+    b.mPlanes[2].mSkip = 1;
+  }
 
   // YuvColorSpace
   b.mYUVColorSpace = mYUVColorSpace;
+  b.mColorDepth = colorDepth;
 
   TimeUnit pts = GetSampleTime(aSample);
   NS_ENSURE_TRUE(pts.IsValid(), E_FAIL);
@@ -934,7 +982,8 @@ WMFVideoMFTManager::CreateBasicVideoFrame(IMFSample* aSample,
   gfx::IntRect pictureRegion =
     mVideoInfo.ScaledImageRect(videoWidth, videoHeight);
 
-  if (!mKnowsCompositor || !mKnowsCompositor->SupportsD3D11() || !mIMFUsable) {
+  if (colorDepth != gfx::ColorDepth::COLOR_8 || !mKnowsCompositor ||
+      !mKnowsCompositor->SupportsD3D11() || !mIMFUsable) {
     RefPtr<VideoData> v =
       VideoData::CreateAndCopyData(mVideoInfo,
                                    mImageContainer,
@@ -1045,21 +1094,37 @@ WMFVideoMFTManager::Output(int64_t aStreamOffset,
 
     if (hr == MF_E_TRANSFORM_STREAM_CHANGE) {
       MOZ_ASSERT(!sample);
-      // Video stream output type change, probably geometric aperture change.
+      // Video stream output type change, probably geometric aperture change or
+      // pixel type.
       // We must reconfigure the decoder output type.
-      hr = mDecoder->SetDecoderOutputType(false /* check all attribute */,
-                                          nullptr,
-                                          nullptr);
+
+      // Attempt to find an appropriate OutputType, trying in order:
+      // if HW accelerated: NV12, P010, P016
+      // if SW: YV12, P010, P016
+      if (FAILED((hr = (mDecoder->FindDecoderOutputTypeWithSubtype(
+                    mUseHwAccel ? MFVideoFormat_NV12 : MFVideoFormat_YV12)))) &&
+          FAILED((hr = mDecoder->FindDecoderOutputTypeWithSubtype(
+                    MFVideoFormat_P010))) &&
+          FAILED((hr = mDecoder->FindDecoderOutputTypeWithSubtype(
+                    MFVideoFormat_P016)))) {
+        LOG("No suitable output format found");
+        return hr;
+      }
+
+      RefPtr<IMFMediaType> outputType;
+      hr = mDecoder->GetOutputMediaType(outputType);
       NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
-      if (!mUseHwAccel) {
-        // The stride may have changed, recheck for it.
-        RefPtr<IMFMediaType> outputType;
-        hr = mDecoder->GetOutputMediaType(outputType);
+      if (mUseHwAccel) {
+        hr = mDXVA2Manager->ConfigureForSize(outputType,
+                                             mVideoInfo.ImageRect().width,
+                                             mVideoInfo.ImageRect().height);
         NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
+      } else {
+        // The stride may have changed, recheck for it.
         mYUVColorSpace = GetYUVColorSpace(outputType);
-        hr = GetDefaultStride(outputType, mVideoInfo.ImageRect().width,
-                              &mVideoStride);
+        hr = GetDefaultStride(
+          outputType, mVideoInfo.ImageRect().width, &mVideoStride);
         NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
         UINT32 width = 0, height = 0;

@@ -97,6 +97,7 @@ private:
            nsIPrincipal* aTriggeringPrincipal,
            nsIPrincipal* aPrincipalToInherit,
            nsIPrincipal* aSandboxedLoadingPrincipal,
+           nsIPrincipal* aTopLevelPrincipal,
            nsIPrincipal* aTopLevelStorageAreaPrincipal,
            nsIURI* aResultPrincipalURI,
            const Maybe<mozilla::dom::ClientInfo>& aClientInfo,
@@ -134,7 +135,9 @@ private:
            bool aForcePreflight,
            bool aIsPreflight,
            bool aLoadTriggeredFromExternal,
-           bool aServiceWorkerTaintingSynthesized);
+           bool aServiceWorkerTaintingSynthesized,
+           bool aDocumentHasUserInteracted,
+           bool aDocumentHasLoaded);
   LoadInfo(const LoadInfo& rhs);
 
   NS_IMETHOD GetRedirects(JSContext* aCx, JS::MutableHandle<JS::Value> aRedirects,
@@ -161,8 +164,10 @@ private:
   nsCOMPtr<nsIPrincipal>           mTriggeringPrincipal;
   nsCOMPtr<nsIPrincipal>           mPrincipalToInherit;
   nsCOMPtr<nsIPrincipal>           mSandboxedLoadingPrincipal;
+  nsCOMPtr<nsIPrincipal>           mTopLevelPrincipal;
   nsCOMPtr<nsIPrincipal>           mTopLevelStorageAreaPrincipal;
   nsCOMPtr<nsIURI>                 mResultPrincipalURI;
+  nsCOMPtr<nsICSPEventListener>    mCSPEventListener;
 
   Maybe<mozilla::dom::ClientInfo>               mClientInfo;
   UniquePtr<mozilla::dom::ClientSource>         mReservedClientSource;
@@ -202,10 +207,18 @@ private:
   nsTArray<nsCOMPtr<nsIPrincipal>> mAncestorPrincipals;
   nsTArray<uint64_t>               mAncestorOuterWindowIDs;
   nsTArray<nsCString>              mCorsUnsafeHeaders;
+
+  mozilla::Telemetry::LABELS_DOCUMENT_ANALYTICS_TRACKER_FASTBLOCKED mTrackerBlockedReason;
+
   bool                             mForcePreflight;
   bool                             mIsPreflight;
   bool                             mLoadTriggeredFromExternal;
   bool                             mServiceWorkerTaintingSynthesized;
+
+  bool                             mIsTracker;
+  bool                             mIsTrackerBlocked;
+  bool                             mDocumentHasUserInteracted;
+  bool                             mDocumentHasLoaded;
 };
 
 } // namespace net

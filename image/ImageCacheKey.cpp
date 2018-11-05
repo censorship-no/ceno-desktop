@@ -8,13 +8,13 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Move.h"
 #include "nsContentUtils.h"
+#include "nsICookieService.h"
 #include "nsLayoutUtils.h"
 #include "nsString.h"
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
-#include "mozilla/StaticPrefs.h"
 #include "nsIDocument.h"
 #include "nsPrintfCString.h"
 
@@ -130,7 +130,10 @@ ImageCacheKey::SchemeIs(const char* aScheme)
 /* static */ void*
 ImageCacheKey::GetSpecialCaseDocumentToken(nsIDocument* aDocument, nsIURI* aURI)
 {
-  if (!aDocument) {
+  // Cookie-averse documents can never have storage granted to them.  Since they
+  // may not have inner windows, they would require special handling below, so
+  // just bail out early here.
+  if (!aDocument || aDocument->IsCookieAverse()) {
     return nullptr;
   }
 
@@ -141,20 +144,11 @@ ImageCacheKey::GetSpecialCaseDocumentToken(nsIDocument* aDocument, nsIURI* aURI)
     return aDocument;
   }
 
-  // We want to have a unique image cache if the anti-tracking feature is
-  // enabled for 3rd party resources.
-  if (!StaticPrefs::privacy_restrict3rdpartystorage_enabled() ||
-      !nsContentUtils::IsThirdPartyWindowOrChannel(aDocument->GetInnerWindow(),
-                                                   nullptr, aURI)) {
-    return nullptr;
-  }
-
-  // If the window is 3rd party resource, let's see if the first party storage
+  // If the window is 3rd party resource, let's see if first-party storage
   // access is granted for this image.
   if (nsContentUtils::IsTrackingResourceWindow(aDocument->GetInnerWindow())) {
-    return nsContentUtils::StorageDisabledByAntiTracking(aDocument->GetInnerWindow(),
-                                                         nullptr, aURI)
-             ? aDocument : nullptr;
+    return nsContentUtils::StorageDisabledByAntiTracking(aDocument, aURI) ?
+             aDocument : nullptr;
   }
 
   // Another scenario is if this image is a 3rd party resource loaded by a

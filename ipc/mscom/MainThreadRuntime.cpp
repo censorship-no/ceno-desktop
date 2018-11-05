@@ -13,6 +13,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/WindowsVersion.h"
 #if defined(ACCESSIBILITY)
 #include "nsExceptionHandler.h"
 #endif // defined(ACCESSIBILITY)
@@ -23,18 +24,6 @@
 #include <aclapi.h>
 #include <objbase.h>
 #include <objidl.h>
-
-namespace {
-
-struct LocalFreeDeleter
-{
-  void operator()(void* aPtr)
-  {
-    ::LocalFree(aPtr);
-  }
-};
-
-} // anonymous namespace
 
 // This API from oleaut32.dll is not declared in Windows SDK headers
 extern "C" void __cdecl SetOaNoCache(void);
@@ -196,7 +185,17 @@ MainThreadRuntime::InitializeSecurity()
     return HRESULT_FROM_WIN32(::GetLastError());
   }
 
-  // Grant access to SYSTEM, Administrators, and the user.
+  BYTE appContainersSid[SECURITY_MAX_SID_SIZE];
+  DWORD appContainersSidSize = sizeof(appContainersSid);
+  if (XRE_IsParentProcess() && IsWin8OrLater()) {
+    if (!::CreateWellKnownSid(WinBuiltinAnyPackageSid, nullptr,
+                              appContainersSid, &appContainersSidSize)) {
+      return HRESULT_FROM_WIN32(::GetLastError());
+    }
+  }
+
+  // Grant access to SYSTEM, Administrators, the user, and when running as the
+  // browser process on Windows 8+, all app containers.
   EXPLICIT_ACCESS entries[] = {
     {COM_RIGHTS_EXECUTE, GRANT_ACCESS, NO_INHERITANCE,
       {nullptr, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_SID, TRUSTEE_IS_USER,
@@ -206,12 +205,21 @@ MainThreadRuntime::InitializeSecurity()
        reinterpret_cast<LPWSTR>(adminSid)}},
     {COM_RIGHTS_EXECUTE, GRANT_ACCESS, NO_INHERITANCE,
       {nullptr, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_SID, TRUSTEE_IS_USER,
-       reinterpret_cast<LPWSTR>(tokenUser.User.Sid)}}
+       reinterpret_cast<LPWSTR>(tokenUser.User.Sid)}},
+    // appContainersSid must be the last entry in this array!
+    {COM_RIGHTS_EXECUTE, GRANT_ACCESS, NO_INHERITANCE,
+      {nullptr, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_SID, TRUSTEE_IS_WELL_KNOWN_GROUP,
+       reinterpret_cast<LPWSTR>(appContainersSid)}}
   };
 
+  ULONG numEntries = ArrayLength(entries);
+  if (!XRE_IsParentProcess() || !IsWin8OrLater()) {
+    // Exclude appContainersSid on Windows 7 and non-parent processes.
+    --numEntries;
+  }
+
   PACL rawDacl = nullptr;
-  win32Error = ::SetEntriesInAcl(ArrayLength(entries), entries, nullptr,
-                                 &rawDacl);
+  win32Error = ::SetEntriesInAcl(numEntries, entries, nullptr, &rawDacl);
   if (win32Error != ERROR_SUCCESS) {
     return HRESULT_FROM_WIN32(win32Error);
   }

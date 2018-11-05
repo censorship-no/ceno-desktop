@@ -27,7 +27,7 @@ add_task(async function test_setup() {
 add_task({
     // The test needs to write a file, and that fails in tests on Android.
     // We don't really need the Android coverage, so skip on Android.
-    skip_if: () => AppConstants.platform == "android"
+    skip_if: () => AppConstants.platform == "android",
   }, async function test_invalidJSON() {
   const INVALID_JSON = "{ invalid,JSON { {1}";
   const FILE_PATH = getDefinitionsPath();
@@ -47,7 +47,7 @@ add_task({
 add_task({
     // The test needs to write a file, and that fails in tests on Android.
     // We don't really need the Android coverage, so skip on Android.
-    skip_if: () => AppConstants.platform == "android"
+    skip_if: () => AppConstants.platform == "android",
   }, async function test_dynamicBuiltin() {
   const DYNAMIC_SCALAR_SPEC =  {
     "telemetry.test": {
@@ -55,15 +55,15 @@ add_task({
         "kind": "nsITelemetry::SCALAR_TYPE_COUNT",
         "expired": false,
         "record_on_release": false,
-        "keyed": false
+        "keyed": false,
       },
       "builtin_dynamic_other": {
         "kind": "nsITelemetry::SCALAR_TYPE_BOOLEAN",
         "expired": false,
         "record_on_release": false,
-        "keyed": false
-      }
-    }
+        "keyed": false,
+      },
+    },
   };
 
   Telemetry.clearScalars();
@@ -84,8 +84,7 @@ add_task({
   Telemetry.scalarSet(TEST_SCALAR2, true);
 
   // Check the values we tried to store.
-  const scalars =
-    Telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false).parent;
+  const scalars = Telemetry.getSnapshotForScalars("main", false).parent;
 
   // Check that they are serialized to the correct format.
   Assert.equal(typeof(scalars[TEST_SCALAR1]), "number",
@@ -113,8 +112,8 @@ add_task(async function test_keyedDynamicBuiltin() {
       "kind": Ci.nsITelemetry.SCALAR_TYPE_COUNT,
       "expired": false,
       "record_on_release": false,
-      "keyed": true
-    }
+      "keyed": true,
+    },
   });
 
   // Store to that scalar.
@@ -122,8 +121,7 @@ add_task(async function test_keyedDynamicBuiltin() {
   Telemetry.keyedScalarSet(TEST_SCALAR1, "test-key", 3785);
 
   // Check the values we tried to store.
-  const scalars =
-    Telemetry.snapshotKeyedScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false).parent;
+  const scalars = Telemetry.getSnapshotForKeyedScalars("main", false).parent;
 
   // Check that they are serialized to the correct format.
   Assert.equal(typeof(scalars[TEST_SCALAR1]), "object",

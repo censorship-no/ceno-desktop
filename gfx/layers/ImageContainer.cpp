@@ -19,6 +19,7 @@
 #include "mozilla/layers/ImageClient.h"  // for ImageClient
 #include "mozilla/layers/LayersMessages.h"
 #include "mozilla/layers/SharedPlanarYCbCrImage.h"
+#include "mozilla/layers/SharedSurfacesChild.h" // for SharedSurfacesAnimation
 #include "mozilla/layers/SharedRGBImage.h"
 #include "mozilla/layers/TextureClientRecycleAllocator.h"
 #include "mozilla/gfx/gfxVars.h"
@@ -122,6 +123,15 @@ ImageContainerListener::NotifyComposite(const ImageCompositeNotification& aNotif
 }
 
 void
+ImageContainerListener::NotifyDropped(uint32_t aDropped)
+{
+  MutexAutoLock lock(mLock);
+  if (mImageContainer) {
+    mImageContainer->NotifyDropped(aDropped);
+  }
+}
+
+void
 ImageContainerListener::ClearImageContainer()
 {
   MutexAutoLock lock(mLock);
@@ -179,6 +189,15 @@ ImageContainer::EnsureImageClient()
       mAsyncContainerHandle = CompositableHandle();
     }
   }
+}
+
+SharedSurfacesAnimation*
+ImageContainer::EnsureSharedSurfacesAnimation()
+{
+  if (!mSharedAnimation) {
+    mSharedAnimation = new SharedSurfacesAnimation();
+  }
+  return mSharedAnimation;
 }
 
 ImageContainer::ImageContainer(Mode flag)
@@ -258,29 +277,7 @@ ImageContainer::SetCurrentImageInternal(const nsTArray<NonOwningImage>& aImages)
                  mCurrentImages[0].mFrameID <= aImages[0].mFrameID,
                  "frame IDs shouldn't go backwards");
     if (aImages[0].mProducerID != mCurrentProducerID) {
-      mFrameIDsNotYetComposited.Clear();
       mCurrentProducerID = aImages[0].mProducerID;
-    } else if (!aImages[0].mTimeStamp.IsNull()) {
-      // Check for expired frames
-      for (auto& img : mCurrentImages) {
-        if (img.mProducerID != aImages[0].mProducerID ||
-            img.mTimeStamp.IsNull() ||
-            img.mTimeStamp >= aImages[0].mTimeStamp) {
-          break;
-        }
-        if (!img.mComposited && !img.mTimeStamp.IsNull() &&
-            img.mFrameID != aImages[0].mFrameID) {
-          mFrameIDsNotYetComposited.AppendElement(img.mFrameID);
-        }
-      }
-
-      // Remove really old frames, assuming they'll never be composited.
-      const uint32_t maxFrames = 100;
-      if (mFrameIDsNotYetComposited.Length() > maxFrames) {
-        uint32_t dropFrames = mFrameIDsNotYetComposited.Length() - maxFrames;
-        mDroppedImageCount += dropFrames;
-        mFrameIDsNotYetComposited.RemoveElementsAt(0, dropFrames);
-      }
     }
   }
 
@@ -303,7 +300,7 @@ ImageContainer::SetCurrentImageInternal(const nsTArray<NonOwningImage>& aImages)
     img->mTimeStamp = aImages[i].mTimeStamp;
     img->mFrameID = aImages[i].mFrameID;
     img->mProducerID = aImages[i].mProducerID;
-    for (auto& oldImg : mCurrentImages) {
+    for (const auto& oldImg : mCurrentImages) {
       if (oldImg.mFrameID == img->mFrameID &&
           oldImg.mProducerID == img->mProducerID) {
         img->mComposited = oldImg.mComposited;
@@ -439,17 +436,6 @@ ImageContainer::NotifyComposite(const ImageCompositeNotification& aNotification)
   ++mPaintCount;
 
   if (aNotification.producerID() == mCurrentProducerID) {
-    uint32_t i;
-    for (i = 0; i < mFrameIDsNotYetComposited.Length(); ++i) {
-      if (mFrameIDsNotYetComposited[i] <= aNotification.frameID()) {
-        if (mFrameIDsNotYetComposited[i] < aNotification.frameID()) {
-          ++mDroppedImageCount;
-        }
-      } else {
-        break;
-      }
-    }
-    mFrameIDsNotYetComposited.RemoveElementsAt(0, i);
     for (auto& img : mCurrentImages) {
       if (img.mFrameID == aNotification.frameID()) {
         img.mComposited = true;
@@ -458,9 +444,15 @@ ImageContainer::NotifyComposite(const ImageCompositeNotification& aNotification)
   }
 
   if (!aNotification.imageTimeStamp().IsNull()) {
-    mPaintDelay = aNotification.firstCompositeTimeStamp() -
-        aNotification.imageTimeStamp();
+    mPaintDelay =
+      aNotification.firstCompositeTimeStamp() - aNotification.imageTimeStamp();
   }
+}
+
+void
+ImageContainer::NotifyDropped(uint32_t aDropped)
+{
+  mDroppedImageCount += aDropped;
 }
 
 #ifdef XP_WIN

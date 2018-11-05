@@ -4,12 +4,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Image.h"
+#include "gfxPrefs.h"
 #include "Layers.h"               // for LayerManager
 #include "nsRefreshDriver.h"
 #include "nsContentUtils.h"
 #include "mozilla/SizeOfState.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Tuple.h"        // for Tie
+#include "mozilla/layers/SharedSurfacesChild.h"
 
 namespace mozilla {
 namespace image {
@@ -71,7 +73,7 @@ ImageResource::GetSpecTruncatedTo1k(nsCString& aSpec) const
 void
 ImageResource::SetCurrentImage(ImageContainer* aContainer,
                                SourceSurface* aSurface,
-                               bool aInTransaction)
+                               const Maybe<IntRect>& aDirtyRect)
 {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aContainer);
@@ -97,18 +99,34 @@ ImageResource::SetCurrentImage(ImageContainer* aContainer,
                                                          mLastFrameID++,
                                                          mImageProducerID));
 
-  if (aInTransaction) {
+  if (aDirtyRect) {
     aContainer->SetCurrentImagesInTransaction(imageList);
   } else {
     aContainer->SetCurrentImages(imageList);
   }
+
+  // If we are generating full frames, and we are animated, then we should
+  // request that the image container be treated as such, to avoid display
+  // list rebuilding to update frames for WebRender.
+  if (gfxPrefs::ImageAnimatedGenerateFullFrames() &&
+      mProgressTracker->GetProgress() & FLAG_IS_ANIMATED) {
+    if (aDirtyRect) {
+      layers::SharedSurfacesChild::UpdateAnimation(aContainer, aSurface,
+                                                   aDirtyRect.ref());
+    } else {
+      IntRect dirtyRect(IntPoint(0, 0), aSurface->GetSize());
+      layers::SharedSurfacesChild::UpdateAnimation(aContainer, aSurface,
+                                                   dirtyRect);
+    }
+  }
 }
 
-already_AddRefed<ImageContainer>
+ImgDrawResult
 ImageResource::GetImageContainerImpl(LayerManager* aManager,
                                      const IntSize& aSize,
                                      const Maybe<SVGImageContext>& aSVGContext,
-                                     uint32_t aFlags)
+                                     uint32_t aFlags,
+                                     ImageContainer** aOutContainer)
 {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aManager);
@@ -119,10 +137,14 @@ ImageResource::GetImageContainerImpl(LayerManager* aManager,
                == FLAG_NONE,
              "Unsupported flag passed to GetImageContainer");
 
-  IntSize size = GetImageContainerSize(aManager, aSize, aFlags);
-  if (size.IsEmpty()) {
-    return nullptr;
+  ImgDrawResult drawResult;
+  IntSize size;
+  Tie(drawResult, size) = GetImageContainerSize(aManager, aSize, aFlags);
+  if (drawResult != ImgDrawResult::SUCCESS) {
+    return drawResult;
   }
+
+  MOZ_ASSERT(!size.IsEmpty());
 
   if (mAnimationConsumers == 0) {
     SendOnUnlockedDraw(aFlags);
@@ -155,7 +177,9 @@ ImageResource::GetImageContainerImpl(LayerManager* aManager,
       case ImgDrawResult::SUCCESS:
       case ImgDrawResult::BAD_IMAGE:
       case ImgDrawResult::BAD_ARGS:
-        return container.forget();
+      case ImgDrawResult::NOT_SUPPORTED:
+        container.forget(aOutContainer);
+        return entry->mLastDrawResult;
       case ImgDrawResult::NOT_READY:
       case ImgDrawResult::INCOMPLETE:
       case ImgDrawResult::TEMPORARY_ERROR:
@@ -165,7 +189,8 @@ ImageResource::GetImageContainerImpl(LayerManager* aManager,
         // Unused by GetFrameInternal
       default:
         MOZ_ASSERT_UNREACHABLE("Unhandled ImgDrawResult type!");
-        return container.forget();
+        container.forget(aOutContainer);
+        return entry->mLastDrawResult;
     }
   }
 
@@ -173,7 +198,6 @@ ImageResource::GetImageContainerImpl(LayerManager* aManager,
   NotifyDrawingObservers();
 #endif
 
-  ImgDrawResult drawResult;
   IntSize bestSize;
   RefPtr<SourceSurface> surface;
   Tie(drawResult, bestSize, surface) =
@@ -212,7 +236,9 @@ ImageResource::GetImageContainerImpl(LayerManager* aManager,
             case ImgDrawResult::SUCCESS:
             case ImgDrawResult::BAD_IMAGE:
             case ImgDrawResult::BAD_ARGS:
-              return container.forget();
+            case ImgDrawResult::NOT_SUPPORTED:
+              container.forget(aOutContainer);
+              return entry->mLastDrawResult;
             case ImgDrawResult::NOT_READY:
             case ImgDrawResult::INCOMPLETE:
             case ImgDrawResult::TEMPORARY_ERROR:
@@ -223,7 +249,8 @@ ImageResource::GetImageContainerImpl(LayerManager* aManager,
               // Unused by GetFrameInternal
             default:
               MOZ_ASSERT_UNREACHABLE("Unhandled DrawResult type!");
-              return container.forget();
+              container.forget(aOutContainer);
+              return entry->mLastDrawResult;
           }
         }
         break;
@@ -243,13 +270,14 @@ ImageResource::GetImageContainerImpl(LayerManager* aManager,
     }
   }
 
-  SetCurrentImage(container, surface, true);
+  SetCurrentImage(container, surface, Nothing());
   entry->mLastDrawResult = drawResult;
-  return container.forget();
+  container.forget(aOutContainer);
+  return drawResult;
 }
 
 void
-ImageResource::UpdateImageContainer()
+ImageResource::UpdateImageContainer(const Maybe<IntRect>& aDirtyRect)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -267,7 +295,12 @@ ImageResource::UpdateImageContainer()
       // managed to convert the weak reference into a strong reference, that
       // means that an imagelib user still is holding onto the container. thus
       // we cannot consolidate and must keep updating the duplicate container.
-      SetCurrentImage(container, surface, false);
+      if (aDirtyRect) {
+        SetCurrentImage(container, surface, aDirtyRect);
+      } else {
+        IntRect dirtyRect(IntPoint(0, 0), bestSize);
+        SetCurrentImage(container, surface, Some(dirtyRect));
+      }
     } else {
       // Stop tracking if our weak pointer to the image container was freed.
       mImageContainers.RemoveElementAt(i);

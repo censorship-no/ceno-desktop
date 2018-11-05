@@ -11,7 +11,7 @@ const TELEMETRY_RESULT_ENUM = {
   KEPT_CURRENT: 1,
   CHANGED_ENGINE: 2,
   CLOSED_PAGE: 3,
-  OPENED_SETTINGS: 4
+  OPENED_SETTINGS: 4,
 };
 
 window.onload = function() {
@@ -41,7 +41,7 @@ function doSearch() {
     }
   }
 
-  let engine = Services.search.currentEngine;
+  let engine = Services.search.defaultEngine;
   let submission = engine.getSubmission(queryString, null, purpose);
 
   window.removeEventListener("unload", recordPageClosed);
@@ -70,9 +70,10 @@ function record(result) {
 }
 
 function keepCurrentEngine() {
-  // Calling the currentEngine setter will force a correct loadPathHash to be
+  // Calling the defaultEngine setter will force a correct loadPathHash to be
   // written for this engine, so that we don't prompt the user again.
-  Services.search.currentEngine = Services.search.currentEngine;
+  // eslint-disable-next-line no-self-assign
+  Services.search.defaultEngine = Services.search.defaultEngine;
   record(TELEMETRY_RESULT_ENUM.KEPT_CURRENT);
   savePref("declined");
   doSearch();
@@ -82,7 +83,7 @@ function changeSearchEngine() {
   let engine = Services.search.originalDefaultEngine;
   if (engine.hidden)
     engine.hidden = false;
-  Services.search.currentEngine = engine;
+  Services.search.defaultEngine = engine;
 
   record(TELEMETRY_RESULT_ENUM.RESTORED_DEFAULT);
   savePref("accepted");

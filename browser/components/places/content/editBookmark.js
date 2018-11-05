@@ -173,7 +173,7 @@ var gEditItemOverlay = {
    *        2. any of the following optional properties:
    *          - hiddenRows (Strings array): list of rows to be hidden regardless
    *            of the item edited. Possible values: "title", "location",
-   *            "keyword", "feedLocation", "siteLocation", folderPicker"
+   *            "keyword", "folderPicker".
    */
   initPanel(aInfo) {
     if (typeof(aInfo) != "object" || aInfo === null)
@@ -349,7 +349,7 @@ var gEditItemOverlay = {
     // First make sure the folders-separator is visible
     this._element("foldersSeparator").hidden = false;
 
-    var folderMenuItem = document.createElement("menuitem");
+    var folderMenuItem = document.createXULElement("menuitem");
     folderMenuItem.folderGuid = aFolderGuid;
     folderMenuItem.setAttribute("label", aTitle);
     folderMenuItem.className = "menuitem-iconic folder-icon";
@@ -360,8 +360,8 @@ var gEditItemOverlay = {
   async _initFolderMenuList(aSelectedFolderGuid) {
     // clean up first
     var menupopup = this._folderMenuList.menupopup;
-    while (menupopup.childNodes.length > 6)
-      menupopup.removeChild(menupopup.lastChild);
+    while (menupopup.children.length > 6)
+      menupopup.removeChild(menupopup.lastElementChild);
 
     // Build the static list
     if (!this._staticFoldersListBuilt) {
@@ -408,14 +408,27 @@ var gEditItemOverlay = {
     let title = (await PlacesUtils.bookmarks.fetch(aSelectedFolderGuid)).title;
     var defaultItem = this._getFolderMenuItem(aSelectedFolderGuid, title);
     this._folderMenuList.selectedItem = defaultItem;
+    // Ensure the selectedGuid attribute is set correctly (the above line wouldn't
+    // necessary trigger a select event, so handle it manually, then add the
+    // listener).
+    this._onFolderListSelected();
 
-    // Set a selectedIndex attribute to show special icons
-    this._folderMenuList.setAttribute("selectedIndex",
-                                      this._folderMenuList.selectedIndex);
+    this._folderMenuList.addEventListener("select", this);
+    this._folderMenuListListenerAdded = true;
 
     // Hide the folders-separator if no folder is annotated as recently-used
-    this._element("foldersSeparator").hidden = (menupopup.childNodes.length <= 6);
+    this._element("foldersSeparator").hidden = (menupopup.children.length <= 6);
     this._folderMenuList.disabled = this.readOnly;
+  },
+
+  _onFolderListSelected() {
+    // Set a selectedGuid attribute to show special icons
+    let folderGuid = this.selectedFolderGuid;
+    if (folderGuid) {
+      this._folderMenuList.setAttribute("selectedGuid", folderGuid);
+    } else {
+      this._folderMenuList.removeAttribute("selectedGuid");
+    }
   },
 
   QueryInterface:
@@ -440,7 +453,13 @@ var gEditItemOverlay = {
 
     if (this._observersAdded) {
       PlacesUtils.bookmarks.removeObserver(this);
+      window.removeEventListener("unload", this);
       this._observersAdded = false;
+    }
+
+    if (this._folderMenuListListenerAdded) {
+      this._folderMenuList.removeEventListener("select", this);
+      this._folderMenuListListenerAdded = false;
     }
 
     this._setPaneInfo(null);
@@ -622,15 +641,15 @@ var gEditItemOverlay = {
   toggleFolderTreeVisibility() {
     var expander = this._element("foldersExpander");
     var folderTreeRow = this._element("folderTreeRow");
+    expander.classList.toggle("expander-up", folderTreeRow.collapsed);
+    expander.classList.toggle("expander-down", !folderTreeRow.collapsed);
     if (!folderTreeRow.collapsed) {
-      expander.className = "expander-down";
       expander.setAttribute("tooltiptext",
                             expander.getAttribute("tooltiptextdown"));
       folderTreeRow.collapsed = true;
       this._element("chooseFolderSeparator").hidden =
         this._element("chooseFolderMenuItem").hidden = false;
     } else {
-      expander.className = "expander-up";
       expander.setAttribute("tooltiptext",
                             expander.getAttribute("tooltiptextup"));
       folderTreeRow.collapsed = false;
@@ -664,13 +683,13 @@ var gEditItemOverlay = {
   _getFolderMenuItem(aFolderGuid, aTitle) {
     let menupopup = this._folderMenuList.menupopup;
     let menuItem = Array.prototype.find.call(
-      menupopup.childNodes, item => item.folderGuid === aFolderGuid);
+      menupopup.children, item => item.folderGuid === aFolderGuid);
     if (menuItem !== undefined)
       return menuItem;
 
     // 3 special folders + separator + folder-items-count limit
-    if (menupopup.childNodes.length == 4 + MAX_FOLDER_ITEM_IN_MENU_LIST)
-      menupopup.removeChild(menupopup.lastChild);
+    if (menupopup.children.length == 4 + MAX_FOLDER_ITEM_IN_MENU_LIST)
+      menupopup.removeChild(menupopup.lastElementChild);
 
     return this._appendFolderItemToMenupopup(menupopup, aFolderGuid, aTitle);
   },
@@ -681,9 +700,6 @@ var gEditItemOverlay = {
     if (!this._paneInfo) {
       return;
     }
-    // Set a selectedIndex attribute to show special icons
-    this._folderMenuList.setAttribute("selectedIndex",
-                                      this._folderMenuList.selectedIndex);
 
     if (aEvent.target.id == "editBMPanel_chooseFolderMenuItem") {
       // reset the selection back to where it was and expand the tree
@@ -703,7 +719,7 @@ var gEditItemOverlay = {
         this._paneInfo.itemGuid != containerGuid) {
       await PlacesTransactions.Move({
         guid: this._paneInfo.itemGuid,
-        newParentGuid: containerGuid
+        newParentGuid: containerGuid,
       }).transact();
 
       // Auto-show the bookmarks toolbar when adding / moving an item there.
@@ -752,7 +768,7 @@ var gEditItemOverlay = {
                                          : null;
 
     while (tagsSelector.hasChildNodes()) {
-      tagsSelector.removeChild(tagsSelector.lastChild);
+      tagsSelector.removeChild(tagsSelector.lastElementChild);
     }
 
     let tagsInField = this._getTagsArrayFromTagsInputField();
@@ -760,9 +776,9 @@ var gEditItemOverlay = {
     let fragment = document.createDocumentFragment();
     for (let i = 0; i < allTags.length; i++) {
       let tag = allTags[i].name;
-      let elt = document.createElement("richlistitem");
-      elt.appendChild(document.createElement("image"));
-      let label = document.createElement("label");
+      let elt = document.createXULElement("richlistitem");
+      elt.appendChild(document.createXULElement("image"));
+      let label = document.createXULElement("label");
       label.setAttribute("value", tag);
       elt.appendChild(label);
       if (tagsInField.includes(tag))
@@ -786,8 +802,9 @@ var gEditItemOverlay = {
     var tagsSelector = this._element("tagsSelector");
     var tagsSelectorRow = this._element("tagsSelectorRow");
     var expander = this._element("tagsSelectorExpander");
+    expander.classList.toggle("expander-up", tagsSelectorRow.collapsed);
+    expander.classList.toggle("expander-down", !tagsSelectorRow.collapsed);
     if (tagsSelectorRow.collapsed) {
-      expander.className = "expander-up";
       expander.setAttribute("tooltiptext",
                             expander.getAttribute("tooltiptextup"));
       tagsSelectorRow.collapsed = false;
@@ -797,7 +814,6 @@ var gEditItemOverlay = {
       tagsSelector.addEventListener("mousedown", this);
       tagsSelector.addEventListener("keypress", this);
     } else {
-      expander.className = "expander-down";
       expander.setAttribute("tooltiptext",
                             expander.getAttribute("tooltiptextdown"));
       tagsSelectorRow.collapsed = true;
@@ -827,7 +843,7 @@ var gEditItemOverlay = {
     if (!ip) {
       ip = new PlacesInsertionPoint({
         parentId: PlacesUtils.bookmarksMenuFolderId,
-        parentGuid: PlacesUtils.bookmarks.menuGuid
+        parentGuid: PlacesUtils.bookmarks.menuGuid,
       });
     }
 
@@ -836,7 +852,7 @@ var gEditItemOverlay = {
     let guid = await PlacesTransactions.NewFolder({
       parentGuid: ip.guid,
       title,
-      index: await ip.getIndex()
+      index: await ip.getIndex(),
     }).transact().catch(Cu.reportError);
 
     this._folderTree.focus();
@@ -869,6 +885,9 @@ var gEditItemOverlay = {
       break;
     case "unload":
       this.uninitPanel(false);
+      break;
+    case "select":
+      this._onFolderListSelected();
       break;
     }
   },
@@ -950,7 +969,7 @@ var gEditItemOverlay = {
       // menulist has been changed, we need to update the label of its
       // representing element.
       let menupopup = this._folderMenuList.menupopup;
-      for (let menuitem of menupopup.childNodes) {
+      for (let menuitem of menupopup.children) {
         if ("folderGuid" in menuitem && menuitem.folderGuid == aGuid) {
           menuitem.label = aNewTitle;
           break;
@@ -1027,7 +1046,6 @@ var gEditItemOverlay = {
     });
   },
 
-  onItemAdded() {},
   onItemRemoved() { },
   onBeginUpdateBatch() { },
   onEndUpdateBatch() { },

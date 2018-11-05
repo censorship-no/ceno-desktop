@@ -29,7 +29,6 @@ const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { dumpn, dumpv } = DevToolsUtils;
 const flags = require("devtools/shared/flags");
 const StreamUtils = require("devtools/shared/transport/stream-utils");
-const defer = require("devtools/shared/defer");
 
 DevToolsUtils.defineLazyGetter(this, "unicodeConverter", () => {
   // eslint-disable-next-line no-shadow
@@ -84,7 +83,7 @@ Packet.prototype = {
 
   destroy: function() {
     this._transport = null;
-  }
+  },
 
 };
 
@@ -148,7 +147,7 @@ Object.defineProperty(JSONPacket.prototype, "object", {
     const data = JSON.stringify(object);
     this._data = unicodeConverter.ConvertFromUnicode(data);
     this.length = this._data.length;
-  }
+  },
 });
 
 JSONPacket.prototype.read = function(stream, scriptableStream) {
@@ -204,7 +203,7 @@ JSONPacket.prototype.write = function(stream) {
 Object.defineProperty(JSONPacket.prototype, "done", {
   get: function() {
     return this._done;
-  }
+  },
 });
 
 JSONPacket.prototype.toString = function() {
@@ -231,7 +230,11 @@ exports.JSONPacket = JSONPacket;
 function BulkPacket(transport) {
   Packet.call(this, transport);
   this._done = false;
-  this._readyForWriting = defer();
+  let _resolve;
+  this._readyForWriting = new Promise((resolve) => {
+    _resolve = resolve;
+  });
+  this._readyForWriting.resolve = _resolve;
 }
 
 /**
@@ -256,7 +259,7 @@ BulkPacket.fromHeader = function(header, transport) {
   packet.header = {
     actor: match[1],
     type: match[2],
-    length: +match[3]
+    length: +match[3],
   };
   return packet;
 };
@@ -271,24 +274,23 @@ BulkPacket.prototype.read = function(stream) {
   // Temporarily pause monitoring of the input stream
   this._transport.pauseIncoming();
 
-  const deferred = defer();
-
-  this._transport._onBulkReadReady({
-    actor: this.actor,
-    type: this.type,
-    length: this.length,
-    copyTo: (output) => {
-      dumpv("CT length: " + this.length);
-      const copying = StreamUtils.copyStream(stream, output, this.length);
-      deferred.resolve(copying);
-      return copying;
-    },
-    stream: stream,
-    done: deferred
-  });
-
-  // Await the result of reading from the stream
-  deferred.promise.then(() => {
+  new Promise((resolve) => {
+    this._transport._onBulkReadReady({
+      actor: this.actor,
+      type: this.type,
+      length: this.length,
+      copyTo: (output) => {
+        dumpv("CT length: " + this.length);
+        const copying = StreamUtils.copyStream(stream, output, this.length);
+        resolve(copying);
+        return copying;
+      },
+      stream: stream,
+      done: resolve,
+    });
+    // Await the result of reading from the stream
+  })
+  .then(() => {
     dumpv("onReadDone called, ending bulk mode");
     this._done = true;
     this._transport.resumeIncoming();
@@ -324,21 +326,20 @@ BulkPacket.prototype.write = function(stream) {
   // Temporarily pause the monitoring of the output stream
   this._transport.pauseOutgoing();
 
-  const deferred = defer();
-
-  this._readyForWriting.resolve({
-    copyFrom: (input) => {
-      dumpv("CF length: " + this.length);
-      const copying = StreamUtils.copyStream(input, stream, this.length);
-      deferred.resolve(copying);
-      return copying;
-    },
-    stream: stream,
-    done: deferred
-  });
-
-  // Await the result of writing to the stream
-  deferred.promise.then(() => {
+  new Promise((resolve) => {
+    this._readyForWriting.resolve({
+      copyFrom: (input) => {
+        dumpv("CF length: " + this.length);
+        const copying = StreamUtils.copyStream(input, stream, this.length);
+        resolve(copying);
+        return copying;
+      },
+      stream: stream,
+      done: resolve,
+    });
+    // Await the result of writing to the stream
+  })
+  .then(() => {
     dumpv("onWriteDone called, ending bulk mode");
     this._done = true;
     this._transport.resumeOutgoing();
@@ -352,8 +353,8 @@ BulkPacket.prototype.write = function(stream) {
 
 Object.defineProperty(BulkPacket.prototype, "streamReadyForWriting", {
   get: function() {
-    return this._readyForWriting.promise;
-  }
+    return this._readyForWriting;
+  },
 });
 
 Object.defineProperty(BulkPacket.prototype, "header", {
@@ -361,7 +362,7 @@ Object.defineProperty(BulkPacket.prototype, "header", {
     return {
       actor: this.actor,
       type: this.type,
-      length: this.length
+      length: this.length,
     };
   },
 
@@ -415,7 +416,7 @@ RawPacket.prototype.write = function(stream) {
 Object.defineProperty(RawPacket.prototype, "done", {
   get: function() {
     return this._done;
-  }
+  },
 });
 
 exports.RawPacket = RawPacket;

@@ -36,6 +36,7 @@ pub use self::align::{AlignContent, AlignItems, JustifyContent, JustifyItems, Se
 pub use self::align::{AlignSelf, JustifySelf};
 pub use self::angle::Angle;
 pub use self::background::{BackgroundRepeat, BackgroundSize};
+pub use self::basic_shape::FillRule;
 pub use self::border::{BorderImageRepeat, BorderImageSideWidth, BorderImageSlice, BorderImageWidth};
 pub use self::border::{BorderCornerRadius, BorderRadius, BorderSpacing};
 pub use self::font::{FontSize, FontSizeAdjust, FontStretch, FontSynthesis, FontVariantAlternates, FontWeight};
@@ -44,11 +45,12 @@ pub use self::font::{FontFeatureSettings, FontVariantLigatures, FontVariantNumer
 pub use self::font::{MozScriptLevel, MozScriptMinSize, MozScriptSizeMultiplier, XLang, XTextZoom};
 pub use self::box_::{AnimationIterationCount, AnimationName, Contain, Display, TransitionProperty};
 pub use self::box_::{Appearance, Clear, Float};
-pub use self::box_::{OverflowClipBox, OverscrollBehavior, Perspective};
+pub use self::box_::{OverflowClipBox, OverscrollBehavior, Perspective, Resize};
 pub use self::box_::{ScrollSnapType, TouchAction, VerticalAlign, WillChange};
 pub use self::color::{Color, ColorPropertyValue, RGBAColor};
 pub use self::column::ColumnCount;
 pub use self::counters::{Content, ContentItem, CounterIncrement, CounterReset};
+pub use self::easing::TimingFunction;
 pub use self::effects::{BoxShadow, Filter, SimpleShadow};
 pub use self::flex::FlexBasis;
 pub use self::image::{Gradient, GradientItem, Image, ImageLayer, LineDirection, MozImageRect};
@@ -65,6 +67,7 @@ pub use self::length::{NonNegativeLengthOrPercentage, NonNegativeLengthOrPercent
 pub use self::list::Quotes;
 #[cfg(feature = "gecko")]
 pub use self::list::ListStyleType;
+pub use self::motion::OffsetPath;
 pub use self::outline::OutlineStyle;
 pub use self::percentage::{Percentage, NonNegativePercentage};
 pub use self::position::{GridAutoFlow, GridTemplateAreas, Position, ZIndex};
@@ -75,7 +78,7 @@ pub use self::table::XSpan;
 pub use self::text::{InitialLetter, LetterSpacing, LineHeight, MozTabSize};
 pub use self::text::{TextAlign, TextEmphasisPosition, TextEmphasisStyle, TextOverflow, WordSpacing};
 pub use self::time::Time;
-pub use self::transform::{Rotate, Scale, TimingFunction, Transform, TransformOperation};
+pub use self::transform::{Rotate, Scale, Transform, TransformOperation};
 pub use self::transform::{TransformOrigin, TransformStyle, Translate};
 pub use self::ui::{ColorOrAuto, Cursor, MozForceBrokenImageIcon};
 #[cfg(feature = "gecko")]
@@ -92,6 +95,7 @@ pub mod box_;
 pub mod color;
 pub mod column;
 pub mod counters;
+pub mod easing;
 pub mod effects;
 pub mod flex;
 pub mod font;
@@ -100,6 +104,7 @@ pub mod gecko;
 pub mod image;
 pub mod length;
 pub mod list;
+pub mod motion;
 pub mod outline;
 pub mod percentage;
 pub mod position;

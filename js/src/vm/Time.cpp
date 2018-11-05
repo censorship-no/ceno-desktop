@@ -43,9 +43,25 @@ extern int gettimeofday(struct timeval* tv);
 
 using mozilla::DebugOnly;
 
-#if defined(XP_UNIX)
+// Forward declare the function
+static int64_t PRMJ_NowImpl();
+
 int64_t
 PRMJ_Now()
+{
+    if (mozilla::TimeStamp::GetFuzzyfoxEnabled()) {
+        return mozilla::TimeStamp::NowFuzzyTime();
+    }
+
+    int64_t now = PRMJ_NowImpl();
+    // We check the FuzzyFox clock in case it was recently disabled, to prevent time
+    // from going backwards.
+    return mozilla::TimeStamp::NowFuzzyTime() > now ? mozilla::TimeStamp::NowFuzzyTime() : now;
+}
+
+#if defined(XP_UNIX)
+static int64_t
+PRMJ_NowImpl()
 {
     struct timeval tv;
 
@@ -150,14 +166,17 @@ PRMJ_NowShutdown()
 #define MUTEX_SETSPINCOUNT(m, c) SetCriticalSectionSpinCount((m),(c))
 
 // Please see bug 363258 for why the win32 timing code is so complex.
-int64_t
-PRMJ_Now()
+static int64_t
+PRMJ_NowImpl()
 {
     if (pGetSystemTimePreciseAsFileTime) {
         // Windows 8 has a new API function that does all the work.
         FILETIME ft;
         pGetSystemTimePreciseAsFileTime(&ft);
-        return int64_t(FileTimeToUnixMicroseconds(ft));
+        int64_t now = int64_t(FileTimeToUnixMicroseconds(ft));
+        // We check the FuzzyFox clock in case it was recently disabled, to prevent time
+        // from going backwards.
+        return mozilla::TimeStamp::NowFuzzyTime() > now ? mozilla::TimeStamp::NowFuzzyTime() : now;
     }
 
     bool calibrated = false;
@@ -261,7 +280,7 @@ PRMJ_InvalidParameterHandler(const wchar_t* expression,
 
 /* Format a time value into a buffer. Same semantics as strftime() */
 size_t
-PRMJ_FormatTime(char* buf, int buflen, const char* fmt, const PRMJTime* prtm,
+PRMJ_FormatTime(char* buf, size_t buflen, const char* fmt, const PRMJTime* prtm,
                 int timeZoneYear, int offsetInSeconds)
 {
     size_t result = 0;
@@ -387,7 +406,7 @@ PRMJ_FormatTime(char* buf, int buflen, const char* fmt, const PRMJTime* prtm,
         /* Replace the fake year in the result with the real year. */
         for (p = buf; (p = strstr(p, fake_year)); p += real_year_len) {
             size_t new_result = result + real_year_len - fake_year_len;
-            if ((int)new_result >= buflen) {
+            if (new_result >= buflen) {
                 return 0;
             }
             memmove(p + real_year_len, p + fake_year_len, strlen(p + fake_year_len));

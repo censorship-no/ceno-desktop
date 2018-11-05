@@ -26,10 +26,11 @@ namespace mozilla {
 void
 WebGLContext::SetEnabled(const char* const funcName, const GLenum cap, const bool enabled)
 {
+    const FuncScope funcScope(*this, funcName);
     if (IsContextLost())
         return;
 
-    if (!ValidateCapabilityEnum(cap, funcName))
+    if (!ValidateCapabilityEnum(cap))
         return;
 
     const auto& slot = GetStateTrackingSlot(cap);
@@ -54,16 +55,14 @@ WebGLContext::GetStencilBits(GLint* const out_stencilBits) const
 {
     *out_stencilBits = 0;
     if (mBoundDrawFramebuffer) {
-        if (mBoundDrawFramebuffer->StencilAttachment().IsDefined() &&
-            mBoundDrawFramebuffer->DepthStencilAttachment().IsDefined())
-        {
+        if (!mBoundDrawFramebuffer->IsCheckFramebufferStatusComplete()) {
             // Error, we don't know which stencil buffer's bits to use
             ErrorInvalidFramebufferOperation("getParameter: framebuffer has two stencil buffers bound");
             return false;
         }
 
-        if (mBoundDrawFramebuffer->StencilAttachment().IsDefined() ||
-            mBoundDrawFramebuffer->DepthStencilAttachment().IsDefined())
+        if (mBoundDrawFramebuffer->StencilAttachment().HasAttachment() ||
+            mBoundDrawFramebuffer->DepthStencilAttachment().HasAttachment())
         {
             *out_stencilBits = 8;
         }
@@ -77,7 +76,7 @@ WebGLContext::GetStencilBits(GLint* const out_stencilBits) const
 JS::Value
 WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
 {
-    const char funcName[] = "getParameter";
+    const FuncScope funcScope(*this, "getParameter");
 
     if (IsContextLost())
         return JS::NullValue();
@@ -247,7 +246,7 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
         case LOCAL_GL_IMPLEMENTATION_COLOR_READ_TYPE: {
             const webgl::FormatUsageInfo* usage;
             uint32_t width, height;
-            if (!BindCurFBForColorRead(funcName, &usage, &width, &height))
+            if (!BindCurFBForColorRead(&usage, &width, &height))
                 return JS::NullValue();
 
             const auto implPI = ValidImplementationColorReadPI(usage);
@@ -282,12 +281,12 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
             const auto& fb = mBoundDrawFramebuffer;
             auto samples = [&]() -> Maybe<uint32_t> {
                 if (!fb) {
-                    if (!EnsureDefaultFB(funcName))
+                    if (!EnsureDefaultFB())
                         return Nothing();
                     return Some(mDefaultFB->mSamples);
                 }
 
-                if (!fb->IsCheckFramebufferStatusComplete(funcName))
+                if (!fb->IsCheckFramebufferStatusComplete())
                     return Some(0);
 
                 DoBindFB(fb, LOCAL_GL_FRAMEBUFFER);
@@ -317,23 +316,32 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
         case LOCAL_GL_DEPTH_BITS:
         case LOCAL_GL_STENCIL_BITS: {
             const auto format = [&]() -> const webgl::FormatInfo* {
-                if (mBoundDrawFramebuffer) {
-                    const auto& fb = *mBoundDrawFramebuffer;
+                const auto& fb = mBoundDrawFramebuffer;
+                if (fb) {
+                    if (!fb->IsCheckFramebufferStatusComplete())
+                        return nullptr;
+
                     const auto& attachment = [&]() -> const auto& {
                         switch (pname) {
                         case LOCAL_GL_DEPTH_BITS:
-                            return fb.AnyDepthAttachment();
+                            if (fb->DepthStencilAttachment().HasAttachment())
+                                return fb->DepthStencilAttachment();
+                            return fb->DepthAttachment();
 
                         case LOCAL_GL_STENCIL_BITS:
-                            return fb.AnyStencilAttachment();
+                            if (fb->DepthStencilAttachment().HasAttachment())
+                                return fb->DepthStencilAttachment();
+                            return fb->StencilAttachment();
 
                         default:
-                            return fb.ColorAttachment0();
+                            return fb->ColorAttachment0();
                         }
                     }();
-                    if (!attachment.HasImage())
+
+                    const auto imageInfo = attachment.GetImageInfo();
+                    if (!imageInfo)
                         return nullptr;
-                    return attachment.Format()->format;
+                    return imageInfo->mFormat->format;
                 }
 
                 auto effFormat = webgl::EffectiveFormat::RGB8;
@@ -590,46 +598,18 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
             break;
     }
 
-    ErrorInvalidEnumInfo("getParameter: parameter", pname);
+    ErrorInvalidEnumInfo("pname", pname);
     return JS::NullValue();
-}
-
-void
-WebGLContext::GetParameterIndexed(JSContext* cx, GLenum pname, GLuint index,
-                                  JS::MutableHandle<JS::Value> retval)
-{
-    if (IsContextLost()) {
-        retval.setNull();
-        return;
-    }
-
-    switch (pname) {
-        case LOCAL_GL_TRANSFORM_FEEDBACK_BUFFER_BINDING:
-        {
-            if (index >= mGLMaxTransformFeedbackSeparateAttribs) {
-                ErrorInvalidValue("getParameterIndexed: index should be less than MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS");
-                retval.setNull();
-                return;
-            }
-            retval.setNull(); // See bug 903594
-            return;
-        }
-
-        default:
-            break;
-    }
-
-    ErrorInvalidEnumInfo("getParameterIndexed: parameter", pname);
-    retval.setNull();
 }
 
 bool
 WebGLContext::IsEnabled(GLenum cap)
 {
+    const FuncScope funcScope(*this, "isEnabled");
     if (IsContextLost())
         return false;
 
-    if (!ValidateCapabilityEnum(cap, "isEnabled"))
+    if (!ValidateCapabilityEnum(cap))
         return false;
 
     const auto& slot = GetStateTrackingSlot(cap);
@@ -640,7 +620,7 @@ WebGLContext::IsEnabled(GLenum cap)
 }
 
 bool
-WebGLContext::ValidateCapabilityEnum(GLenum cap, const char* info)
+WebGLContext::ValidateCapabilityEnum(GLenum cap)
 {
     switch (cap) {
         case LOCAL_GL_BLEND:
@@ -656,7 +636,7 @@ WebGLContext::ValidateCapabilityEnum(GLenum cap, const char* info)
         case LOCAL_GL_RASTERIZER_DISCARD:
             return IsWebGL2();
         default:
-            ErrorInvalidEnumInfo(info, cap);
+            ErrorInvalidEnumInfo("cap", cap);
             return false;
     }
 }

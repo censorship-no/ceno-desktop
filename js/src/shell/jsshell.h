@@ -71,8 +71,9 @@ class AutoCloseFile
     }
     bool release() {
         bool success = true;
-        if (f_ && f_ != stdin && f_ != stdout && f_ != stderr)
+        if (f_ && f_ != stdin && f_ != stdout && f_ != stderr) {
             success = !fclose(f_);
+        }
         f_ = nullptr;
         return success;
     }
@@ -120,8 +121,9 @@ class NonshrinkingGCObjectVector : public GCVector<JSObject*, 0, SystemAllocPoli
   public:
     void sweep() {
         for (uint32_t i = 0; i < this->length(); i++) {
-            if (JS::GCPolicy<JSObject*>::needsSweep(&(*this)[i]))
+            if (JS::GCPolicy<JSObject*>::needsSweep(&(*this)[i])) {
                 (*this)[i] = nullptr;
+            }
         }
     }
 };
@@ -175,6 +177,7 @@ struct ShellContext
     UniquePtr<ProfilingStack> geckoProfilingStack;
 
     JS::UniqueChars moduleLoadPath;
+
     UniquePtr<MarkBitObservers> markObservers;
 
     // Off-thread parse state.

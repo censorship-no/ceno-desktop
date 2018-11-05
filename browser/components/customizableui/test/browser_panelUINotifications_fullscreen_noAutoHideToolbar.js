@@ -1,5 +1,11 @@
 "use strict";
 
+// This test tends to trigger a race in the fullscreen time telemetry,
+// where the fullscreen enter and fullscreen exit events (which use the
+// same histogram ID) overlap. That causes TelemetryStopwatch to log an
+// error.
+SimpleTest.ignoreAllUncaughtExceptions(true);
+
 ChromeUtils.import("resource://gre/modules/AppMenuNotifications.jsm");
 
 function waitForDocshellActivated() {
@@ -23,7 +29,7 @@ function waitForFullscreen() {
     // and then set to activate back again. For those platforms, we should wait
     // until the docshell has been activated again before starting next test,
     // otherwise, the fullscreen request might be denied.
-    (Services.appinfo.OS === "Darwin") ? waitForDocshellActivated() : Promise.resolve()
+    (Services.appinfo.OS === "Darwin") ? waitForDocshellActivated() : Promise.resolve(),
   ]);
 }
 
@@ -38,7 +44,7 @@ add_task(async function testFullscreen() {
   is(PanelUI.notificationPanel.state, "closed", "update-manual doorhanger is closed.");
   let mainActionCalled = false;
   let mainAction = {
-    callback: () => { mainActionCalled = true; }
+    callback: () => { mainActionCalled = true; },
   };
   AppMenuNotifications.showNotification("update-manual", mainAction);
   await BrowserTestUtils.waitForEvent(PanelUI.notificationPanel, "popupshown");

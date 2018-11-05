@@ -78,14 +78,6 @@ public:
   // Signature for the start function of a thread.
   typedef void (*Callback)(void*);
 
-  // Number of recent assertions remembered.
-  static const size_t NumRecentAsserts = 128;
-
-  struct RecentAssertInfo {
-    char* mText;
-    size_t mPosition;
-  };
-
 private:
   // Monitor used to protect various thread information (see Thread.h) and to
   // wait on or signal progress for a thread.
@@ -102,9 +94,13 @@ private:
   // used by the associated thread.
   size_t mDisallowEvents;
 
-  // Whether to capture stack information for events while recording. This is
-  // only used by the associated thread.
-  size_t mCaptureEventStacks;
+  // Whether execution has diverged from the recording and the thread's
+  // recorded events cannot be accessed.
+  bool mDivergedFromRecording;
+
+  // Whether this thread should diverge from the recording at the next
+  // opportunity. This can be set from any thread.
+  Atomic<bool, SequentiallyConsistent, Behavior::DontPreserve> mShouldDivergeFromRecording;
 
   // Start routine and argument which the thread is currently executing. This
   // is cleared after the routine finishes and another start routine may be
@@ -118,17 +114,8 @@ private:
   // ID for this thread used by the system.
   NativeThreadId mNativeId;
 
-  // Streams with events and assertions for the thread. These are only used by
-  // the associated thread.
+  // Stream with events for the thread. This is only used on the thread itself.
   Stream* mEvents;
-  Stream* mAsserts;
-
-  // Recent assertions that have been encountered, for debugging.
-  RecentAssertInfo mRecentAsserts[NumRecentAsserts];
-
-  // Buffer for general use. This is only used by the associated thread.
-  char* mBuffer;
-  size_t mBufferCapacity;
 
   // Stack boundary of the thread, protected by the thread monitor.
   uint8_t* mStackBase;
@@ -140,6 +127,9 @@ private:
   // File descriptor to notify to wake the thread up, fixed at creation.
   FileHandle mNotifyfd;
 
+  // Whether the thread should attempt to idle.
+  Atomic<bool, SequentiallyConsistent, Behavior::DontPreserve> mShouldIdle;
+
   // Whether the thread is waiting on idlefd.
   Atomic<bool, SequentiallyConsistent, Behavior::DontPreserve> mIdle;
 
@@ -147,7 +137,11 @@ private:
   // and whether the callback has been invoked yet while the main thread is
   // waiting for threads to become idle. Protected by the thread monitor.
   std::function<void()> mUnrecordedWaitCallback;
+  bool mUnrecordedWaitOnlyWhenDiverged;
   bool mUnrecordedWaitNotified;
+
+  // Identifier of any atomic which this thread currently holds.
+  Maybe<size_t> mAtomicLockId;
 
 public:
 ///////////////////////////////////////////////////////////////////////////////
@@ -158,20 +152,19 @@ public:
   size_t Id() { return mId; }
   NativeThreadId NativeId() { return mNativeId; }
   Stream& Events() { return *mEvents; }
-  Stream& Asserts() { return *mAsserts; }
   uint8_t* StackBase() { return mStackBase; }
   size_t StackSize() { return mStackSize; }
 
-  inline bool IsMainThread() { return mId == MainThreadId; }
-  inline bool IsRecordedThread() { return mId <= MaxRecordedThreadId; }
-  inline bool IsNonMainRecordedThread() { return IsRecordedThread() && !IsMainThread(); }
+  inline bool IsMainThread() const { return mId == MainThreadId; }
+  inline bool IsRecordedThread() const { return mId <= MaxRecordedThreadId; }
+  inline bool IsNonMainRecordedThread() const { return IsRecordedThread() && !IsMainThread(); }
 
   // Access the flag for whether this thread is passing events through.
   void SetPassThrough(bool aPassThrough) {
     MOZ_RELEASE_ASSERT(mPassThroughEvents == !aPassThrough);
     mPassThroughEvents = aPassThrough;
   }
-  bool PassThroughEvents() {
+  bool PassThroughEvents() const {
     return mPassThroughEvents;
   }
 
@@ -183,32 +176,44 @@ public:
     MOZ_RELEASE_ASSERT(mDisallowEvents);
     mDisallowEvents--;
   }
-  bool AreEventsDisallowed() {
+  bool AreEventsDisallowed() const {
     return mDisallowEvents != 0;
   }
 
-  // Access the counter for whether event stacks are captured while recording.
-  void BeginCaptureEventStacks() {
-    mCaptureEventStacks++;
+  // Access the flag for whether this thread's execution has diverged from the
+  // recording. Once set, this is only unset by rewinding to a point where the
+  // flag is clear.
+  void DivergeFromRecording() {
+    mDivergedFromRecording = true;
   }
-  void EndCaptureEventStacks() {
-    MOZ_RELEASE_ASSERT(mCaptureEventStacks);
-    mCaptureEventStacks--;
-  }
-  bool ShouldCaptureEventStacks() {
-    return mCaptureEventStacks != 0;
+  bool HasDivergedFromRecording() const {
+    return mDivergedFromRecording;
   }
 
-  // Access the array of recent assertions in the thread.
-  RecentAssertInfo& RecentAssert(size_t i) {
-    MOZ_ASSERT(i < NumRecentAsserts);
-    return mRecentAsserts[i];
+  // Mark this thread as needing to diverge from the recording soon, and wake
+  // it up in case it can make progress now. The mShouldDivergeFromRecording
+  // flag is separate from mDivergedFromRecording so that the thread can only
+  // begin diverging from the recording at calls to MaybeDivergeFromRecording.
+  void SetShouldDivergeFromRecording() {
+    MOZ_RELEASE_ASSERT(CurrentIsMainThread());
+    mShouldDivergeFromRecording = true;
+    Notify(mId);
+  }
+  bool WillDivergeFromRecordingSoon() {
+    MOZ_RELEASE_ASSERT(CurrentIsMainThread());
+    return mShouldDivergeFromRecording;
+  }
+  bool MaybeDivergeFromRecording() {
+    if (mShouldDivergeFromRecording) {
+      mDivergedFromRecording = true;
+    }
+    return mDivergedFromRecording;
   }
 
-  // Access a thread local buffer of a guaranteed size. The buffer must be
-  // restored before it can be taken again.
-  char* TakeBuffer(size_t aSize);
-  void RestoreBuffer(char* aBuf);
+  // Return whether this thread may read or write to its recorded event stream.
+  bool CanAccessRecording() const {
+    return !PassThroughEvents() && !AreEventsDisallowed() && !HasDivergedFromRecording();
+  }
 
   // The actual start routine at the root of all recorded threads, and of all
   // threads when replaying.
@@ -252,6 +257,9 @@ public:
   // Wait until this thread finishes executing its start routine.
   void Join();
 
+  // Give access to the atomic lock which the thread owns.
+  Maybe<size_t>& AtomicLockId() { return mAtomicLockId; }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Thread Coordination
 ///////////////////////////////////////////////////////////////////////////////
@@ -279,7 +287,8 @@ public:
   static void WaitForeverNoIdle();
 
   // See RecordReplay.h.
-  void NotifyUnrecordedWait(const std::function<void()>& aCallback);
+  void NotifyUnrecordedWait(const std::function<void()>& aCallback,
+                            bool aOnlyWhenDiverged);
   static void MaybeWaitForCheckpointSave();
 
   // Wait for all other threads to enter the idle state necessary for saving
@@ -289,6 +298,13 @@ public:
   // After WaitForIdleThreads(), the main thread will call this to allow
   // other threads to resume execution.
   static void ResumeIdleThreads();
+
+  // Allow a single thread to resume execution.
+  static void ResumeSingleIdleThread(size_t aId);
+
+  // Return whether this thread is in the idle state entered after
+  // WaitForIdleThreads.
+  bool IsIdle() { return mIdle; }
 };
 
 // This uses a stack pointer instead of TLS to make sure events are passed
@@ -313,6 +329,60 @@ public:
     if (!mPassedThrough) {
       mThread->SetPassThrough(false);
     }
+  }
+};
+
+// Mark a region of code where a thread's event stream can be accessed.
+// This class has several properties:
+//
+// - When recording, all writes to the thread's event stream occur atomically
+//   within the class: the end of the stream cannot be hit at an intermediate
+//   point.
+//
+// - When replaying, this checks for the end of the stream, and blocks the
+//   thread if necessary.
+//
+// - When replaying, this is a point where the thread can begin diverging from
+//   the recording. Checks for divergence should occur after the constructor
+//   finishes.
+class MOZ_RAII RecordingEventSection
+{
+  Thread* mThread;
+
+public:
+  explicit RecordingEventSection(Thread* aThread)
+    : mThread(aThread)
+  {
+    if (!aThread || !aThread->CanAccessRecording()) {
+      return;
+    }
+    if (IsRecording()) {
+      MOZ_RELEASE_ASSERT(!aThread->Events().mInRecordingEventSection);
+      aThread->Events().mFile->mStreamLock.ReadLock();
+      aThread->Events().mInRecordingEventSection = true;
+    } else {
+      while (!aThread->MaybeDivergeFromRecording() && aThread->Events().AtEnd()) {
+        HitEndOfRecording();
+      }
+    }
+  }
+
+  ~RecordingEventSection() {
+    if (!mThread || !mThread->CanAccessRecording()) {
+      return;
+    }
+    if (IsRecording()) {
+      mThread->Events().mFile->mStreamLock.ReadUnlock();
+      mThread->Events().mInRecordingEventSection = false;
+    }
+  }
+
+  bool CanAccessEvents() {
+    if (!mThread || mThread->PassThroughEvents() || mThread->HasDivergedFromRecording()) {
+      return false;
+    }
+    MOZ_RELEASE_ASSERT(mThread->CanAccessRecording());
+    return true;
   }
 };
 

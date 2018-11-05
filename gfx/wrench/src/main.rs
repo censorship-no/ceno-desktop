@@ -86,8 +86,6 @@ use yaml_frame_reader::YamlFrameReader;
 
 lazy_static! {
     static ref PLATFORM_DEFAULT_FACE_NAME: String = String::from("Arial");
-    static ref WHITE_COLOR: ColorF = ColorF::new(1.0, 1.0, 1.0, 1.0);
-    static ref BLACK_COLOR: ColorF = ColorF::new(0.0, 0.0, 0.0, 1.0);
 }
 
 pub static mut CURRENT_FRAME_NUMBER: u32 = 0;
@@ -484,6 +482,12 @@ fn main() {
         notifier,
     );
 
+    if let Some(window_title) = wrench.take_title() {
+        if !cfg!(windows) {
+            window.set_title(&window_title);
+        }
+    }
+
     if let Some(subargs) = args.subcommand_matches("show") {
         render(&mut wrench, &mut window, size, &mut events_loop, subargs);
     } else if let Some(subargs) = args.subcommand_matches("png") {
@@ -562,12 +566,6 @@ fn render<'a>(
     thing.do_frame(wrench);
 
     let mut body = |wrench: &mut Wrench, global_event: winit::Event| {
-        if let Some(window_title) = wrench.take_title() {
-            if !cfg!(windows) { //TODO: calling `set_title` from inside the `run_forever` loop is illegal...
-                window.set_title(&window_title);
-            }
-        }
-
         let mut do_frame = false;
         let mut do_render = false;
 
@@ -619,6 +617,22 @@ fn render<'a>(
                             DebugFlags::GPU_TIME_QUERIES | DebugFlags::GPU_SAMPLE_QUERIES
                         );
                         do_render = true;
+                    }
+                    VirtualKeyCode::V => {
+                        wrench.renderer.toggle_debug_flags(DebugFlags::SHOW_OVERDRAW);
+                        do_render = true;
+                    }
+                    VirtualKeyCode::G => {
+                        // go through the API so that we reach the render backend
+                        wrench.api.send_debug_cmd(DebugCommand::EnableGpuCacheDebug(
+                            !wrench.renderer.get_debug_flags().contains(webrender::DebugFlags::GPU_CACHE_DBG)
+                        ));
+                        // force scene rebuild to see the full set of used GPU cache entries
+                        let mut txn = Transaction::new();
+                        txn.set_root_pipeline(wrench.root_pipeline_id);
+                        wrench.api.send_transaction(wrench.document_id, txn);
+
+                        do_frame = true;
                     }
                     VirtualKeyCode::R => {
                         wrench.set_page_zoom(ZoomFactor::new(1.0));

@@ -230,7 +230,6 @@ nsUrlClassifierPrefixSet::GetPrefixes(uint32_t* aCount,
 
   uint64_t itemCount = prefixes.Length();
   uint32_t* prefixArray = static_cast<uint32_t*>(moz_xmalloc(itemCount * sizeof(uint32_t)));
-  NS_ENSURE_TRUE(prefixArray, NS_ERROR_OUT_OF_MEMORY);
 
   memcpy(prefixArray, prefixes.Elements(), sizeof(uint32_t) * itemCount);
 
@@ -520,7 +519,8 @@ nsUrlClassifierPrefixSet::LoadPrefixes(nsCOMPtr<nsIInputStream>& in)
   }
 
   MOZ_ASSERT(mIndexPrefixes.Length() == mIndexDeltas.Length());
-  LOG(("[%s] Loading PrefixSet successful", mName.get()));
+  LOG(("[%s] Loading PrefixSet successful (%u total prefixes)", mName.get(),
+       mTotalPrefixes));
 
   return NS_OK;
 }

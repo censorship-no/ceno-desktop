@@ -12,9 +12,12 @@ const { configureStore } = require("./create-store");
 const { EVENTS } = require("./constants");
 const Actions = require("./actions/index");
 
+// Telemetry
+const Telemetry = require("devtools/client/shared/telemetry");
+
 const {
   getDisplayedRequestById,
-  getSortedRequests
+  getSortedRequests,
 } = require("./selectors/index");
 
 /**
@@ -30,8 +33,11 @@ function NetMonitorAPI() {
   // Connector to the backend.
   this.connector = new Connector();
 
+  // Telemetry
+  this.telemetry = new Telemetry();
+
   // Configure store/state object.
-  this.store = configureStore(this.connector);
+  this.store = configureStore(this.connector, this.telemetry);
 
   // List of listeners for `devtools.network.onRequestFinished` WebExt API
   this._requestFinishedListeners = new Set();
@@ -89,7 +95,7 @@ NetMonitorAPI.prototype = {
   async connectBackend(connector, connection, actions, getState) {
     // The connection might happen during Toolbox initialization
     // so make sure the target is ready.
-    await connection.tabConnection.tabTarget.makeRemote();
+    await connection.tabConnection.tabTarget.attach();
     return connector.connectFirefox(connection, actions, getState);
   },
 

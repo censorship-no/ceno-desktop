@@ -32,7 +32,6 @@
 #include "nsFrameManager.h"
 #include "nsRect.h"
 #include "nsRegionFwd.h"
-#include "nsWeakReference.h"
 #include <stdio.h> // for FILE definition
 #include "nsChangeHint.h"
 #include "nsRefPtrHashtable.h"
@@ -42,6 +41,7 @@
 #include "nsMargin.h"
 #include "nsFrameState.h"
 #include "nsStubDocumentObserver.h"
+#include "nsCOMArray.h"
 #include "Units.h"
 
 class gfxContext;
@@ -66,6 +66,7 @@ class nsIReflowCallback;
 class nsCSSFrameConstructor;
 template<class E> class nsCOMArray;
 class AutoWeakFrame;
+class MobileViewportManager;
 class WeakFrame;
 class nsIScrollableFrame;
 class nsDisplayList;
@@ -366,9 +367,22 @@ public:
                        ResizeReflowOptions::eBSizeExact) = 0;
 
   /**
-   * Returns true if ResizeReflowOverride has been called.
+   * Returns true if the platform/pref or docshell require a meta viewport.
    */
   virtual bool GetIsViewportOverridden() = 0;
+
+  /**
+   * Note that the assumptions that determine the need for a meta viewport
+   * may have changed.
+   */
+  virtual void UpdateViewportOverridden(bool aAfterInitialization) = 0;
+
+  /**
+   * Get the MobileViewportManager used to manage the document's mobile
+   * viewport. Will return null in situations where we don't have a mobile
+   * viewport, and for documents that are not the root content document.
+   */
+  virtual RefPtr<MobileViewportManager> GetMobileViewportManager() const = 0;
 
   /**
    * Return true if the presshell expects layout flush.
@@ -484,7 +498,7 @@ public:
   /**
    * Calls FrameNeedsReflow on all fixed position children of the root frame.
    */
-  virtual void MarkFixedFramesForReflow(IntrinsicDirty aIntrinsicDirty);
+  void MarkFixedFramesForReflow(IntrinsicDirty aIntrinsicDirty);
 
   /**
    * Tell the presshell that the given frame's reflow was interrupted.  This
@@ -948,13 +962,12 @@ public:
   /**
     * Gets the current target event frame from the PresShell
     */
-  virtual nsIFrame* GetEventTargetFrame() = 0;
+  nsIFrame* GetCurrentEventFrame();
 
   /**
     * Gets the current target event frame from the PresShell
     */
-  virtual already_AddRefed<nsIContent> GetEventTargetContent(
-                                                     mozilla::WidgetEvent* aEvent) = 0;
+  already_AddRefed<nsIContent> GetEventTargetContent(mozilla::WidgetEvent* aEvent);
 
   /**
    * Get and set the history state for the current document
@@ -1040,7 +1053,7 @@ public:
    */
   static void SetVerifyReflowEnable(bool aEnabled);
 
-  virtual nsIFrame* GetAbsoluteContainingBlock(nsIFrame* aFrame);
+  nsIFrame* GetAbsoluteContainingBlock(nsIFrame* aFrame);
 
 #ifdef MOZ_REFLOW_PERF
   virtual void DumpReflows() = 0;
@@ -1162,7 +1175,7 @@ public:
    */
   virtual already_AddRefed<mozilla::gfx::SourceSurface>
   RenderNode(nsINode* aNode,
-             nsIntRegion* aRegion,
+             const mozilla::Maybe<mozilla::CSSIntRegion>& aRegion,
              const mozilla::LayoutDeviceIntPoint aPoint,
              mozilla::LayoutDeviceIntRect* aScreenRect,
              uint32_t aFlags) = 0;
@@ -1620,6 +1633,8 @@ public:
 
   virtual void FireResizeEvent() = 0;
 
+  void NativeAnonymousContentRemoved(nsIContent* aAnonContent);
+
 protected:
   /**
    * Refresh observer management.
@@ -1647,14 +1662,18 @@ protected:
 #endif
   }
 
+  void PushCurrentEventInfo(nsIFrame* aFrame, nsIContent* aContent);
+  void PopCurrentEventInfo();
+  nsIContent* GetCurrentEventContent();
+
 public:
   bool AddRefreshObserver(nsARefreshObserver* aObserver,
                           mozilla::FlushType aFlushType);
   bool RemoveRefreshObserver(nsARefreshObserver* aObserver,
                              mozilla::FlushType aFlushType);
 
-  virtual bool AddPostRefreshObserver(nsAPostRefreshObserver* aObserver);
-  virtual bool RemovePostRefreshObserver(nsAPostRefreshObserver* aObserver);
+  bool AddPostRefreshObserver(nsAPostRefreshObserver* aObserver);
+  bool RemovePostRefreshObserver(nsAPostRefreshObserver* aObserver);
 
   // If a frame in the subtree rooted at aFrame is capturing the mouse then
   // clears that capture.
@@ -1676,6 +1695,8 @@ public:
   nsPoint GetVisualViewportOffset() const {
     return mVisualViewportOffset;
   }
+
+  nsPoint GetVisualViewportOffsetRelativeToLayoutViewport() const;
 
   virtual void WindowSizeMoveDone() = 0;
   virtual void SysColorChanged() = 0;
@@ -1859,6 +1880,11 @@ protected:
   // Whether we're currently under a FlushPendingNotifications.
   // This is used to handle flush reentry correctly.
   bool mInFlush;
+
+  nsIFrame* mCurrentEventFrame;
+  nsCOMPtr<nsIContent> mCurrentEventContent;
+  nsTArray<nsIFrame*> mCurrentEventFrameStack;
+  nsCOMArray<nsIContent> mCurrentEventContentStack;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIPresShell, NS_IPRESSHELL_IID)

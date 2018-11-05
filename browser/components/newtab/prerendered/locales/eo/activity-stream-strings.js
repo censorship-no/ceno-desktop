@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Ne eblis ŝargi la bildon. Klopodu alian retadreson.",
   "pocket_read_more": "Ĉefaj temoj:",
   "pocket_read_even_more": "Montri pli da artikoloj",
+  "pocket_more_reccommendations": "Pli da rekomendoj",
+  "pocket_how_it_works": "Kiel funkcias tio",
+  "pocket_cta_button": "Instali Pocket",
+  "pocket_cta_text": "Konservu viajn ŝatatajn artikolojn en Pocket, kaj stimulu vian menson per ravaj legaĵoj.",
   "highlights_empty_state": "Komencu retumi kaj ĉi tie ni montros al vi kelkajn el la plej bonaj artikoloj, filmetoj kaj aliaj paĝoj, kiujn vi antaŭ nelonge vizits aŭ por kiuj vi aldonis legosignon.",
   "topstories_empty_state": "Vi legis ĉion. Kontrolu denove poste ĉu estas pli da novaĵon de {provider}. Ĉu vi ne povas atendi? Elektu popularan temon por trovi pli da interesaj artikoloj en la tuta teksaĵo.",
   "manual_migration_explanation2": "Provu Firefox kun la legosignoj, historio kaj pasvortoj de alia retumilo.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Administri sekcion",
   "section_menu_action_manage_webext": "Administri etendaĵon",
   "section_menu_action_add_topsite": "Aldoni oftan retejon",
+  "section_menu_action_add_search_engine": "Aldoni serĉilon",
   "section_menu_action_move_up": "Movi supren",
   "section_menu_action_move_down": "Movi malsupren",
   "section_menu_action_privacy_notice": "Rimarko pri privateco",
@@ -101,5 +106,7 @@ window.gActivityStreamStrings = {
   "firstrun_terms_of_service": "kondiĉojn de uzo",
   "firstrun_privacy_notice": "rimarkon pri privateco",
   "firstrun_continue_to_login": "Daŭrigi",
-  "firstrun_skip_login": "Pretersalti tiun ĉi paŝon"
+  "firstrun_skip_login": "Pretersalti tiun ĉi paŝon",
+  "context_menu_title": "Malfermi menuon",
+  "pocket_learn_more": "Pli da informo"
 };

@@ -72,7 +72,7 @@ var openInspectorSidebarTab = async function(id) {
   return {
     toolbox,
     inspector,
-    testActor
+    testActor,
   };
 };
 
@@ -90,9 +90,6 @@ function openRuleView() {
     // Replace the view to use a custom debounce function that can be triggered manually
     // through an additional ".flush()" property.
     view.debounce = manualDebounce();
-
-    // Adds the highlighters overlay in the rule view.
-    view.addHighlightersToView();
 
     return {
       toolbox: data.toolbox,
@@ -113,14 +110,30 @@ function openRuleView() {
 function openComputedView() {
   return openInspectorSidebarTab("computedview").then(data => {
     const view = data.inspector.getPanel("computedview").computedView;
-    // Adds the highlighters overlay in the computed view.
-    view.addHighlightersToView();
 
     return {
       toolbox: data.toolbox,
       inspector: data.inspector,
       testActor: data.testActor,
       view,
+    };
+  });
+}
+
+/**
+ * Open the toolbox, with the inspector tool visible, and the changes view
+ * sidebar tab selected.
+ *
+ * @return a promise that resolves when the inspector is ready and the changes
+ * view is visible and ready
+ */
+function openChangesView() {
+  return openInspectorSidebarTab("changesview").then(data => {
+    return {
+      toolbox: data.toolbox,
+      inspector: data.inspector,
+      testActor: data.testActor,
+      view: data.inspector.changesView,
     };
   });
 }
@@ -151,8 +164,9 @@ function openLayoutView() {
       inspector: data.inspector,
       boxmodel: data.inspector.getPanel("boxmodel"),
       gridInspector: data.inspector.layoutview.gridInspector,
+      flexboxInspector: data.inspector.layoutview.flexboxInspector,
       layoutView: data.inspector.layoutview,
-      testActor: data.testActor
+      testActor: data.testActor,
     };
   });
 }
@@ -165,9 +179,7 @@ function openLayoutView() {
  * @return {CssRuleView} the rule view
  */
 function selectRuleView(inspector) {
-  const view = inspector.getPanel("ruleview").view;
-  view.addHighlightersToView();
-  return view;
+  return inspector.getPanel("ruleview").view;
 }
 
 /**
@@ -179,9 +191,19 @@ function selectRuleView(inspector) {
  */
 function selectComputedView(inspector) {
   inspector.sidebar.select("computedview");
-  const view = inspector.getPanel("computedview").computedView;
-  view.addHighlightersToView();
-  return view;
+  return inspector.getPanel("computedview").computedView;
+}
+
+/**
+ * Select the changes view sidebar tab on an already opened inspector panel.
+ *
+ * @param {InspectorPanel} inspector
+ *        The opened inspector panel
+ * @return {ChangesView} the changes view
+ */
+function selectChangesView(inspector) {
+  inspector.sidebar.select("changesview");
+  return inspector.changesView;
 }
 
 /**

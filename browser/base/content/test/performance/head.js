@@ -54,7 +54,7 @@ async function recordReflows(testPromise, win = window) {
     },
 
     QueryInterface: ChromeUtils.generateQI([Ci.nsIReflowObserver,
-                                            Ci.nsISupportsWeakReference])
+                                            Ci.nsISupportsWeakReference]),
   };
 
   let docShell = win.docShell;
@@ -130,6 +130,13 @@ function reportUnexpectedReflows(reflows, expectedReflows = []) {
             actualStacks: new Map()};
   });
   let unexpectedReflows = new Map();
+
+  if (knownReflows.some(r => r.path.includes("*"))) {
+    Assert.ok(false,
+              "Do not include async frames in the stack, as " +
+              "that feature is not available on all trees.");
+  }
+
   for (let stack of reflows) {
     let path =
       stack.split("\n").slice(1) // the first frame which is our test code.
@@ -142,9 +149,10 @@ function reportUnexpectedReflows(reflows, expectedReflows = []) {
       continue;
     }
 
-    // synthesizeKey from EventUtils.js causes us to reflow. That's the test
+    // Functions from EventUtils.js calculate coordinates and
+    // dimensions, causing us to reflow. That's the test
     // harness and we don't care about that, so we'll filter that out.
-    if (path.startsWith("synthesizeKey@chrome://mochikit/content/tests/SimpleTest/EventUtils.js")) {
+    if (/^(synthesize|send|createDragEventObject).*?@chrome:\/\/mochikit.*?EventUtils\.js/.test(path)) {
       continue;
     }
 
@@ -303,7 +311,10 @@ async function createTabs(howMany) {
     uris.push("about:blank");
   }
 
-  gBrowser.loadTabs(uris, { inBackground: true });
+  gBrowser.loadTabs(uris, {
+    inBackground: true,
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  });
 
   await BrowserTestUtils.waitForCondition(() => {
     return Array.from(gBrowser.tabs).every(tab => tab._fullyOpen);

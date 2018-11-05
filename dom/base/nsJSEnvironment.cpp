@@ -120,6 +120,11 @@ const size_t gStackSize = 8192;
 
 #define NS_CC_SKIPPABLE_DELAY       250 // ms
 
+// In case the cycle collector isn't run at all, we don't want
+// forget skippables to run too often. So limit the forget skippable cycle to
+// start at earliest 2000 ms after the end of the previous cycle.
+#define NS_TIME_BETWEEN_FORGET_SKIPPABLE_CYCLES 2000 // ms
+
 // ForgetSkippable is usually fast, so we can use small budgets.
 // This isn't a real budget but a hint to IdleTaskRunner whether there
 // is enough time to call ForgetSkippable.
@@ -161,21 +166,14 @@ static StaticRefPtr<IdleTaskRunner> sInterSliceGCRunner;
 
 static TimeStamp sLastCCEndTime;
 
+static TimeStamp sLastForgetSkippableCycleEndTime;
+
 static bool sCCLockedOut;
 static PRTime sCCLockedOutTime;
 
 static JS::GCSliceCallback sPrevGCSliceCallback;
 
 static bool sHasRunGC;
-
-// The number of currently pending document loads. This count isn't
-// guaranteed to always reflect reality and can't easily as we don't
-// have an easy place to know when a load ends or is interrupted in
-// all cases. This counter also gets reset if we end up GC'ing while
-// we're waiting for a slow page to load. IOW, this count may be 0
-// even when there are pending loads.
-static uint32_t sPendingLoadCount;
-static bool sLoadingInProgress;
 
 static uint32_t sCCollectedWaitingForGC;
 static uint32_t sCCollectedZonesWaitingForGC;
@@ -1202,15 +1200,6 @@ nsJSContext::GarbageCollectNow(JS::gcreason::Reason aReason,
 
   KillGCTimer();
 
-  // Reset sPendingLoadCount in case the timer that fired was a
-  // timer we scheduled due to a normal GC timer firing while
-  // documents were loading. If this happens we're waiting for a
-  // document that is taking a long time to load, and we effectively
-  // ignore the fact that the currently loading documents are still
-  // loading and move on as if they weren't.
-  sPendingLoadCount = 0;
-  sLoadingInProgress = false;
-
   // We use danger::GetJSContext() since AutoJSAPI will assert if the current
   // thread's context is null (such as during shutdown).
   JSContext* cx = danger::GetJSContext();
@@ -1268,6 +1257,34 @@ FireForgetSkippable(uint32_t aSuspected, bool aRemoveChildless,
                                                  : "IdleForgetSkippable");
   PRTime startTime = PR_Now();
   TimeStamp startTimeStamp = TimeStamp::Now();
+
+  static uint32_t sForgetSkippableCounter = 0;
+  static TimeStamp sForgetSkippableFrequencyStartTime;
+  static TimeStamp sLastForgetSkippableEndTime;
+  static const TimeDuration minute = TimeDuration::FromSeconds(60.0f);
+
+  if (sForgetSkippableFrequencyStartTime.IsNull()) {
+    sForgetSkippableFrequencyStartTime = startTimeStamp;
+  } else if (startTimeStamp - sForgetSkippableFrequencyStartTime > minute) {
+    TimeStamp startPlusMinute = sForgetSkippableFrequencyStartTime + minute;
+
+    // If we had forget skippables only at the beginning of the interval, we
+    // still want to use the whole time, minute or more, for frequency
+    // calculation. sLastForgetSkippableEndTime is needed if forget skippable
+    // takes enough time to push the interval to be over a minute.
+    TimeStamp endPoint = startPlusMinute > sLastForgetSkippableEndTime ?
+      startPlusMinute : sLastForgetSkippableEndTime;
+
+    // Duration in minutes.
+    double duration =
+      (endPoint - sForgetSkippableFrequencyStartTime).ToSeconds() / 60;
+    uint32_t frequencyPerMinute = uint32_t(sForgetSkippableCounter / duration);
+    Telemetry::Accumulate(Telemetry::FORGET_SKIPPABLE_FREQUENCY, frequencyPerMinute);
+    sForgetSkippableCounter = 0;
+    sForgetSkippableFrequencyStartTime = startTimeStamp;
+  }
+  ++sForgetSkippableCounter;
+
   FinishAnyIncrementalGC();
   bool earlyForgetSkippable =
     sCleanupsSinceLastGC < NS_MAJOR_FORGET_SKIPPABLE_CALLS;
@@ -1292,6 +1309,8 @@ FireForgetSkippable(uint32_t aSuspected, bool aRemoveChildless,
   ++sForgetSkippableBeforeCC;
 
   TimeStamp now = TimeStamp::Now();
+  sLastForgetSkippableEndTime = now;
+
   TimeDuration duration = now - startTimeStamp;
   if (duration.ToSeconds()) {
     TimeDuration idleDuration;
@@ -1984,6 +2003,10 @@ CCRunnerFired(TimeStamp aDeadline)
     // next time, so kill the timer.
     sPreviousSuspectedCount = 0;
     nsJSContext::KillCCRunner();
+
+    if (!didDoWork) {
+      sLastForgetSkippableCycleEndTime = TimeStamp::Now();
+    }
   }
 
   return didDoWork;
@@ -1994,31 +2017,6 @@ uint32_t
 nsJSContext::CleanupsSinceLastGC()
 {
   return sCleanupsSinceLastGC;
-}
-
-// static
-void
-nsJSContext::LoadStart()
-{
-  sLoadingInProgress = true;
-  ++sPendingLoadCount;
-}
-
-// static
-void
-nsJSContext::LoadEnd()
-{
-  if (!sLoadingInProgress)
-    return;
-
-  // sPendingLoadCount is not a well managed load counter (and doesn't
-  // need to be), so make sure we don't make it wrap backwards here.
-  if (sPendingLoadCount > 0) {
-    --sPendingLoadCount;
-    return;
-  }
-
-  sLoadingInProgress = false;
 }
 
 // Check all of the various collector timers/runners and see if they are waiting to fire.
@@ -2196,6 +2194,17 @@ nsJSContext::MaybePokeCC()
   uint32_t sinceLastCCEnd = TimeUntilNow(sLastCCEndTime);
   if (sinceLastCCEnd && sinceLastCCEnd < NS_CC_DELAY) {
     return;
+  }
+
+  // If GC hasn't run recently and forget skippable only cycle was run,
+  // don't start a new cycle too soon.
+  if (sCleanupsSinceLastGC > NS_MAJOR_FORGET_SKIPPABLE_CALLS) {
+    uint32_t sinceLastForgetSkippableCycle =
+      TimeUntilNow(sLastForgetSkippableCycleEndTime);
+    if (sinceLastForgetSkippableCycle &&
+        sinceLastForgetSkippableCycle < NS_TIME_BETWEEN_FORGET_SKIPPABLE_CYCLES) {
+      return;
+    }
   }
 
   if (ShouldTriggerCC(nsCycleCollector_suspectedCount())) {
@@ -2460,9 +2469,8 @@ mozilla::dom::StartupJSEnvironment()
   sCCLockedOut = false;
   sCCLockedOutTime = 0;
   sLastCCEndTime = TimeStamp();
+  sLastForgetSkippableCycleEndTime = TimeStamp();
   sHasRunGC = false;
-  sPendingLoadCount = 0;
-  sLoadingInProgress = false;
   sCCollectedWaitingForGC = 0;
   sCCollectedZonesWaitingForGC = 0;
   sLikelyShortLivingObjectsNeedingGC = 0;
@@ -2938,7 +2946,13 @@ NS_IMETHODIMP nsJSArgArray::IndexOf(uint32_t startIndex, nsISupports *element, u
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-NS_IMETHODIMP nsJSArgArray::Enumerate(nsISimpleEnumerator **_retval)
+NS_IMETHODIMP nsJSArgArray::ScriptedEnumerate(nsIJSIID* aElemIID, uint8_t aArgc,
+                                              nsISimpleEnumerator** aResult)
+{
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP nsJSArgArray::EnumerateImpl(const nsID& aEntryIID, nsISimpleEnumerator **_retval)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }

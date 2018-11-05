@@ -7,46 +7,10 @@
 
 const GOOD_PAGE = "https://example.com/";
 const GOOD_PAGE_2 = "https://example.org/";
-const DUMMY_PAGE = getRootDirectory(gTestPath).replace("chrome://mochitests/content", GOOD_PAGE) + "dummy_page.html";
 const BAD_CERT = "https://expired.example.com/";
 const UNKNOWN_ISSUER = "https://self-signed.example.com ";
 const BAD_STS_CERT = "https://badchain.include-subdomains.pinning.example.com:443";
 const {TabStateFlusher} = ChromeUtils.import("resource:///modules/sessionstore/TabStateFlusher.jsm", {});
-
-function injectErrorPageFrame(tab, src) {
-  return ContentTask.spawn(tab.linkedBrowser, {frameSrc: src}, async function({frameSrc}) {
-    let loaded = ContentTaskUtils.waitForEvent(content.wrappedJSObject, "DOMFrameContentLoaded");
-    let iframe = content.document.createElement("iframe");
-    iframe.src = frameSrc;
-    content.document.body.appendChild(iframe);
-    await loaded;
-    // We will have race conditions when accessing the frame content after setting a src,
-    // so we can't wait for AboutNetErrorLoad. Let's wait for the certerror class to
-    // appear instead (which should happen at the same time as AboutNetErrorLoad).
-    await ContentTaskUtils.waitForCondition(() =>
-      iframe.contentDocument.body.classList.contains("certerror"));
-  });
-}
-
-async function openErrorPage(src, useFrame) {
-  let tab;
-  if (useFrame) {
-    info("Loading cert error page in an iframe");
-    tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, DUMMY_PAGE);
-    await injectErrorPageFrame(tab, src);
-  } else {
-    let certErrorLoaded;
-    tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, () => {
-      gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, src);
-      let browser = gBrowser.selectedBrowser;
-      certErrorLoaded = BrowserTestUtils.waitForErrorPage(browser);
-    }, false);
-    info("Loading and waiting for the cert error");
-    await certErrorLoaded;
-  }
-
-  return tab;
-}
 
 add_task(async function checkReturnToAboutHome() {
   info("Loading a bad cert page directly and making sure 'return to previous page' goes to about:home");
@@ -71,10 +35,13 @@ add_task(async function checkReturnToAboutHome() {
       if (!frame) {
         is(returnButton.getAttribute("autofocus"), "true", "returnButton has autofocus");
       }
+      // Note that going back to about:newtab might cause a process flip, if
+      // the browser is configured to run about:newtab in its own special
+      // content process.
       returnButton.click();
-
-      await ContentTaskUtils.waitForEvent(this, "pageshow", true);
     });
+
+    await BrowserTestUtils.waitForLocationChange(gBrowser, "about:home");
 
     is(browser.webNavigation.canGoBack, true, "webNavigation.canGoBack");
     is(browser.webNavigation.canGoForward, false, "!webNavigation.canGoForward");
@@ -82,6 +49,34 @@ add_task(async function checkReturnToAboutHome() {
 
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
   }
+});
+
+add_task(async function checkExceptionDialogButton() {
+  Services.prefs.setBoolPref("browser.security.newcerterrorpage.enabled", true);
+  info("Loading a bad cert page and making sure the exceptionDialogButton directly adds an exception");
+  let tab = await openErrorPage(BAD_CERT);
+  let browser = tab.linkedBrowser;
+  let loaded = BrowserTestUtils.browserLoaded(browser, false, BAD_CERT);
+  info("Clicking the exceptionDialogButton in advanced panel");
+  await ContentTask.spawn(browser, null, async function() {
+    let doc = content.document;
+    let exceptionButton = doc.getElementById("exceptionDialogButton");
+    exceptionButton.click();
+  });
+
+  info("Loading the url after adding exception");
+  await loaded;
+
+  await ContentTask.spawn(browser, null, async function() {
+    let doc = content.document;
+    ok(!doc.documentURI.startsWith("about:certerror"), "Exception has been added");
+  });
+
+  let certOverrideService = Cc["@mozilla.org/security/certoverride;1"]
+                              .getService(Ci.nsICertOverrideService);
+  certOverrideService.clearValidityOverride("expired.example.com", -1);
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  Services.prefs.clearUserPref("browser.security.newcerterrorpage.enabled");
 });
 
 add_task(async function checkReturnToPreviousPage() {
@@ -139,13 +134,11 @@ add_task(async function checkBadStsCert() {
     let tab = await openErrorPage(BAD_STS_CERT, useFrame);
     let browser = tab.linkedBrowser;
 
-    let exceptionButtonHidden = await ContentTask.spawn(browser, {frame: useFrame}, async function({frame}) {
+    await ContentTask.spawn(browser, {frame: useFrame}, async function({frame}) {
       let doc = frame ? content.document.querySelector("iframe").contentDocument : content.document;
       let exceptionButton = doc.getElementById("exceptionDialogButton");
-      return exceptionButton.hidden;
+      ok(ContentTaskUtils.is_hidden(exceptionButton), "Exception button is hidden.");
     });
-
-    ok(exceptionButtonHidden, "Exception button is hidden");
 
     let message = await ContentTask.spawn(browser, {frame: useFrame}, async function({frame}) {
       let doc = frame ? content.document.querySelector("iframe").contentDocument : content.document;
@@ -153,6 +146,15 @@ add_task(async function checkBadStsCert() {
       advancedButton.click();
       return doc.getElementById("badCertTechnicalInfo").textContent;
     });
+    if (Services.prefs.getBoolPref("browser.security.newcerterrorpage.enabled", false)) {
+      ok(message.includes("SSL_ERROR_BAD_CERT_DOMAIN"), "Didn't find SSL_ERROR_BAD_CERT_DOMAIN.");
+      ok(message.includes("The certificate is only valid for"), "Didn't find error message.");
+      ok(message.includes("a certificate that is not valid for"), "Didn't find error message.");
+      ok(message.includes("badchain.include-subdomains.pinning.example.com"), "Didn't find domain in error message.");
+
+      BrowserTestUtils.removeTab(gBrowser.selectedTab);
+      return;
+    }
     ok(message.includes("SSL_ERROR_BAD_CERT_DOMAIN"), "Didn't find SSL_ERROR_BAD_CERT_DOMAIN.");
     ok(message.includes("The certificate is only valid for"), "Didn't find error message.");
     ok(message.includes("uses an invalid security certificate"), "Didn't find error message.");
@@ -202,13 +204,13 @@ add_task(async function checkWrongSystemTimeWarning() {
         text: div.textContent,
         systemDate: systemDateDiv.textContent,
         actualDate: actualDateDiv.textContent,
-        learnMoreLink: learnMoreLink.href
+        learnMoreLink: learnMoreLink.href,
       };
     });
   }
 
   let formatter = new Services.intl.DateTimeFormat(undefined, {
-    dateStyle: "short"
+    dateStyle: "short",
   });
 
   // pretend we have a positively skewed (ahead) system time
@@ -319,7 +321,7 @@ add_task(async function checkAdvancedDetails() {
       return {
         divDisplay: content.getComputedStyle(div).display,
         text: text.textContent,
-        securityInfoAsString: serializedSecurityInfo
+        securityInfoAsString: serializedSecurityInfo,
       };
     });
     isnot(message.divDisplay, "none", "Debug information is visible");
@@ -337,7 +339,7 @@ add_task(async function checkAdvancedDetails() {
   }
 });
 
-add_task(async function checkhideAddExceptionButton() {
+add_task(async function checkhideAddExceptionButtonViaPref() {
   info("Loading a bad cert page and verifying the pref security.certerror.hideAddException");
   Services.prefs.setBoolPref("security.certerror.hideAddException", true);
 
@@ -349,13 +351,27 @@ add_task(async function checkhideAddExceptionButton() {
       let doc = frame ? content.document.querySelector("iframe").contentDocument : content.document;
 
       let exceptionButton = doc.querySelector(".exceptionDialogButtonContainer");
-      ok(exceptionButton.hidden, "Exception button is hidden.");
+      ok(ContentTaskUtils.is_hidden(exceptionButton), "Exception button is hidden.");
     });
 
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
   }
 
   Services.prefs.clearUserPref("security.certerror.hideAddException");
+});
+
+add_task(async function checkhideAddExceptionButtonInFrames() {
+  info("Loading a bad cert page in a frame and verifying it's hidden.");
+  let tab = await openErrorPage(BAD_CERT, true);
+  let browser = tab.linkedBrowser;
+
+  await ContentTask.spawn(browser, null, async function() {
+    let doc = content.document.querySelector("iframe").contentDocument;
+    let exceptionButton = doc.getElementById("exceptionDialogButton");
+    ok(ContentTaskUtils.is_hidden(exceptionButton), "Exception button is hidden.");
+  });
+
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
 add_task(async function checkAdvancedDetailsForHSTS() {
@@ -375,7 +391,7 @@ add_task(async function checkAdvancedDetailsForHSTS() {
         ecTextContent: ec.textContent,
         ecTagName: ec.tagName,
         cdlTextContent: cdl.textContent,
-        cdlTagName: cdl.tagName
+        cdlTagName: cdl.tagName,
       };
     });
 
@@ -406,7 +422,7 @@ add_task(async function checkAdvancedDetailsForHSTS() {
       return {
         divDisplay: content.getComputedStyle(div).display,
         text: text.textContent,
-        securityInfoAsString: serializedSecurityInfo
+        securityInfoAsString: serializedSecurityInfo,
       };
     });
     isnot(message.divDisplay, "none", "Debug information is visible");
@@ -441,16 +457,68 @@ add_task(async function checkUnknownIssuerLearnMoreLink() {
   }
 });
 
+add_task(async function checkCautionClass() {
+  Services.prefs.setBoolPref("browser.security.newcerterrorpage.enabled", true);
+  info("Checking that are potentially more dangerous get a 'caution' class");
+  for (let useFrame of [false, true]) {
+    let tab = await openErrorPage(UNKNOWN_ISSUER, useFrame);
+    let browser = tab.linkedBrowser;
+
+    await ContentTask.spawn(browser, {frame: useFrame}, async function({frame}) {
+      let doc = frame ? content.document.querySelector("iframe").contentDocument : content.document;
+      is(doc.body.classList.contains("caution"), !frame, `Cert error body has ${frame ? "no" : ""} caution class`);
+    });
+
+    BrowserTestUtils.removeTab(gBrowser.selectedTab);
+
+    tab = await openErrorPage(BAD_STS_CERT, useFrame);
+    browser = tab.linkedBrowser;
+
+    await ContentTask.spawn(browser, {frame: useFrame}, async function({frame}) {
+      let doc = frame ? content.document.querySelector("iframe").contentDocument : content.document;
+      ok(!doc.body.classList.contains("caution"), "Cert error body has no caution class");
+    });
+
+    BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  }
+  Services.prefs.clearUserPref("browser.security.newcerterrorpage.enabled");
+});
+
+add_task(async function checkViewCertificate() {
+  Services.prefs.setBoolPref("browser.security.newcerterrorpage.enabled", true);
+  info("Loading a cert error and checking that the certificate can be shown.");
+  for (let useFrame of [false, true]) {
+    let tab = await openErrorPage(UNKNOWN_ISSUER, useFrame);
+    let browser = tab.linkedBrowser;
+
+    let dialogOpened = BrowserTestUtils.domWindowOpened();
+
+    await ContentTask.spawn(browser, {frame: useFrame}, async function({frame}) {
+      let doc = frame ? content.document.querySelector("iframe").contentDocument : content.document;
+      let viewCertificate = doc.getElementById("viewCertificate");
+      viewCertificate.click();
+    });
+
+    let win = await dialogOpened;
+    await BrowserTestUtils.waitForEvent(win, "load");
+    is(win.document.documentURI, "chrome://pippki/content/certViewer.xul",
+      "Opened the cert viewer dialog");
+    is(win.document.getElementById("commonname").value, "self-signed.example.com",
+      "Shows the correct certificate in the dialog");
+    win.close();
+
+    BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  }
+  Services.prefs.clearUserPref("browser.security.newcerterrorpage.enabled");
+});
+
 function getCertChain(securityInfoAsString) {
   let certChain = "";
   const serhelper = Cc["@mozilla.org/network/serialization-helper;1"]
                        .getService(Ci.nsISerializationHelper);
   let securityInfo = serhelper.deserializeObject(securityInfoAsString);
   securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
-  let certs = securityInfo.failedCertChain.getEnumerator();
-  while (certs.hasMoreElements()) {
-    let cert = certs.getNext();
-    cert.QueryInterface(Ci.nsIX509Cert);
+  for (let cert of securityInfo.failedCertChain.getEnumerator()) {
     certChain += getPEMString(cert);
   }
   return certChain;

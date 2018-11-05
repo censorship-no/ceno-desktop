@@ -440,7 +440,8 @@ nsIContent::GetURLDataForStyleAttr(nsIPrincipal* aSubjectPrincipal) const
     // TODO: Cache this?
     return MakeAndAddRef<URLExtraData>(OwnerDoc()->GetDocBaseURI(),
                                        OwnerDoc()->GetDocumentURI(),
-                                       aSubjectPrincipal);
+                                       aSubjectPrincipal,
+                                       OwnerDoc()->GetReferrerPolicy());
   }
   // This also ignores the case that SVG inside XBL binding.
   // But it is probably fine.
@@ -674,6 +675,14 @@ nsIContent::nsExtendedContentSlots::nsExtendedContentSlots()
 
 nsIContent::nsExtendedContentSlots::~nsExtendedContentSlots() = default;
 
+size_t
+nsIContent::nsExtendedContentSlots::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
+{
+  // For now, nothing to measure here.  We don't actually own any of our
+  // members.
+  return 0;
+}
+
 FragmentOrElement::nsDOMSlots::nsDOMSlots()
   : nsIContent::nsContentSlots(),
     mDataset(nullptr)
@@ -725,12 +734,22 @@ size_t
 FragmentOrElement::nsDOMSlots::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
 {
   size_t n = aMallocSizeOf(this);
-  if (OwnsExtendedSlots()) {
-    n += aMallocSizeOf(GetExtendedContentSlots());
+
+  nsExtendedContentSlots* extendedSlots = GetExtendedContentSlots();
+  if (extendedSlots) {
+    if (OwnsExtendedSlots()) {
+      n += aMallocSizeOf(extendedSlots);
+    }
+
+    n += extendedSlots->SizeOfExcludingThis(aMallocSizeOf);
   }
 
   if (mAttributeMap) {
     n += mAttributeMap->SizeOfIncludingThis(aMallocSizeOf);
+  }
+
+  if (mChildrenList) {
+    n += mChildrenList->SizeOfIncludingThis(aMallocSizeOf);
   }
 
   // Measurement of the following members may be added later if DMD finds it is
@@ -738,9 +757,6 @@ FragmentOrElement::nsDOMSlots::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) c
   // - Superclass members (nsINode::nsSlots)
   // - mStyle
   // - mDataSet
-  // - mSMILOverrideStyle
-  // - mSMILOverrideStyleDeclaration
-  // - mChildrenList
   // - mClassList
 
   // The following member are not measured:
@@ -800,13 +816,49 @@ FragmentOrElement::nsExtendedDOMSlots::TraverseExtendedSlots(nsCycleCollectionTr
   }
 }
 
-FragmentOrElement::FragmentOrElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : nsIContent(aNodeInfo)
+size_t
+FragmentOrElement::nsExtendedDOMSlots::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
 {
+  size_t n = nsIContent::nsExtendedContentSlots::SizeOfExcludingThis(aMallocSizeOf);
+
+  // We own mSMILOverrideStyle but there seems to be no memory reporting on CSS
+  // declarations?  At least report the memory the declaration takes up
+  // directly.
+  if (mSMILOverrideStyle) {
+    n += aMallocSizeOf(mSMILOverrideStyle);
+  }
+
+  // We don't really own mSMILOverrideStyleDeclaration.  mSMILOverrideStyle owns
+  // it.
+
+  // We don't seem to have memory reporting for nsXULControllers.  At least
+  // report the memory it's using directly.
+  if (mControllers) {
+    n += aMallocSizeOf(mControllers);
+  }
+
+  if (mLabelsList) {
+    n += mLabelsList->SizeOfIncludingThis(aMallocSizeOf);
+  }
+
+  // mShadowRoot should be handled during normal DOM tree memory reporting, just
+  // like kids, siblings, etc.
+
+  // We don't seem to have memory reporting for nsXBLBinding.  At least
+  // report the memory it's using directly.
+  if (mXBLBinding) {
+    n += aMallocSizeOf(mXBLBinding);
+  }
+
+  if (mCustomElementData) {
+    n += mCustomElementData->SizeOfIncludingThis(aMallocSizeOf);
+  }
+
+  return n;
 }
 
 FragmentOrElement::FragmentOrElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
-  : nsIContent(aNodeInfo)
+  : nsIContent(std::move(aNodeInfo))
 {
 }
 
@@ -1431,9 +1483,10 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
     }
 
     if (tmp->IsHTMLElement() || tmp->IsSVGElement()) {
-      nsStaticAtom*** props = Element::HTMLSVGPropertiesToTraverseAndUnlink();
+      nsStaticAtom* const* props =
+        Element::HTMLSVGPropertiesToTraverseAndUnlink();
       for (uint32_t i = 0; props[i]; ++i) {
-        tmp->DeleteProperty(*props[i]);
+        tmp->DeleteProperty(props[i]);
       }
       if (tmp->MayHaveAnimations()) {
         nsAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
@@ -1464,18 +1517,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
     unbind the child nodes.
   } */
 
-  // Clear flag here because unlinking slots will clear the
-  // containing shadow root pointer.
-  tmp->UnsetFlags(NODE_IS_IN_SHADOW_TREE);
-
   if (ShadowRoot* shadowRoot = tmp->GetShadowRoot()) {
-    for (nsIContent* child = shadowRoot->GetFirstChild();
-         child;
-         child = child->GetNextSibling()) {
-      child->UnbindFromTree(true, false);
-    }
-
-    shadowRoot->SetIsComposedDocParticipant(false);
+    shadowRoot->Unbind();
     tmp->ExtendedDOMSlots()->mShadowRoot = nullptr;
   }
 
@@ -1997,10 +2040,11 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
       }
     }
     if (tmp->IsHTMLElement() || tmp->IsSVGElement()) {
-      nsStaticAtom*** props = Element::HTMLSVGPropertiesToTraverseAndUnlink();
+      nsStaticAtom* const* props =
+        Element::HTMLSVGPropertiesToTraverseAndUnlink();
       for (uint32_t i = 0; props[i]; ++i) {
         nsISupports* property =
-          static_cast<nsISupports*>(tmp->GetProperty(*props[i]));
+          static_cast<nsISupports*>(tmp->GetProperty(props[i]));
         cb.NoteXPCOMChild(property);
       }
       if (tmp->MayHaveAnimations()) {
@@ -2040,11 +2084,9 @@ NS_INTERFACE_MAP_END_INHERITING(nsIContent)
 //----------------------------------------------------------------------
 
 nsresult
-FragmentOrElement::CopyInnerTo(FragmentOrElement* aDst,
-                               bool aPreallocateChildren)
+FragmentOrElement::CopyInnerTo(FragmentOrElement* aDst)
 {
-  nsresult rv = aDst->mAttrs.EnsureCapacityToClone(mAttrs,
-                                                   aPreallocateChildren);
+  nsresult rv = aDst->mAttrs.EnsureCapacityToClone(mAttrs);
   NS_ENSURE_SUCCESS(rv, rv);
 
   uint32_t i, count = mAttrs.AttrCount();

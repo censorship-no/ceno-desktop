@@ -10,7 +10,8 @@ const { openDebuggerAndLog, reloadDebuggerAndLog } = require("./debugger-helpers
 const EXPECTED = {
   sources: 14,
   file: "ga.js",
-  text: "Math;function ga(a,b){return a.name=b}"
+  sourceURL: COMPLICATED_URL,
+  text: "Math;function ga(a,b){return a.name=b}",
 };
 
 module.exports = async function() {

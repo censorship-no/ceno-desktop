@@ -17,36 +17,40 @@ const SAVE_ADDRESS_DEFAULT_PREF = "dom.payments.defaults.saveAddress";
 const paymentSrv = Cc["@mozilla.org/dom/payments/payment-request-service;1"]
                      .getService(Ci.nsIPaymentRequestService);
 const paymentUISrv = Cc["@mozilla.org/dom/payments/payment-ui-service;1"]
-                     .getService().wrappedJSObject;
+                     .getService(Ci.nsIPaymentUIService).wrappedJSObject;
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm", {});
 const {formAutofillStorage} = ChromeUtils.import(
   "resource://formautofill/FormAutofillStorage.jsm", {});
+const {OSKeyStoreTestUtils} = ChromeUtils.import(
+  "resource://testing-common/OSKeyStoreTestUtils.jsm", {});
 const {PaymentTestUtils: PTU} = ChromeUtils.import(
   "resource://testing-common/PaymentTestUtils.jsm", {});
+ChromeUtils.import("resource:///modules/BrowserWindowTracker.jsm");
+ChromeUtils.import("resource://gre/modules/CreditCard.jsm");
 
 function getPaymentRequests() {
-  let requestsEnum = paymentSrv.enumerate();
-  let requests = [];
-  while (requestsEnum.hasMoreElements()) {
-    requests.push(requestsEnum.getNext().QueryInterface(Ci.nsIPaymentRequest));
-  }
-  return requests;
+  return Array.from(paymentSrv.enumerate());
 }
 
 /**
  * Return the container (e.g. dialog or overlay) that the payment request contents are shown in.
- * This abstracts away the details of the widget used so that this can more earily transition from a
- * dialog to another kind of overlay.
- * Consumers shouldn't rely on a dialog window being returned.
+ * This abstracts away the details of the widget used so that this can more easily transition to
+ * another kind of dialog/overlay.
+ * @param {string} requestId
  * @returns {Promise}
  */
-async function getPaymentWidget() {
-  let win;
-  await BrowserTestUtils.waitForCondition(() => {
-    win = Services.wm.getMostRecentWindow(null);
-    return win.name.startsWith(paymentUISrv.REQUEST_ID_PREFIX);
-  }, "payment dialog should be the most recent");
-
-  return win;
+async function getPaymentWidget(requestId) {
+  return BrowserTestUtils.waitForCondition(() => {
+    let {dialogContainer} = paymentUISrv.findDialog(requestId);
+    if (!dialogContainer) {
+      return false;
+    }
+    let browserIFrame = dialogContainer.querySelector("iframe");
+    if (!browserIFrame) {
+      return false;
+    }
+    return browserIFrame.contentWindow;
+  }, "payment dialog should be opened");
 }
 
 async function getPaymentFrame(widget) {
@@ -146,7 +150,7 @@ function spawnTaskInNewDialog(requestId, contentTaskFn, args = null) {
 async function addAddressRecord(address) {
   let onChanged = TestUtils.topicObserved("formautofill-storage-changed",
                                           (subject, data) => data == "add");
-  let guid = formAutofillStorage.addresses.add(address);
+  let guid = await formAutofillStorage.addresses.add(address);
   await onChanged;
   return guid;
 }
@@ -154,7 +158,7 @@ async function addAddressRecord(address) {
 async function addCardRecord(card) {
   let onChanged = TestUtils.topicObserved("formautofill-storage-changed",
                                           (subject, data) => data == "add");
-  let guid = formAutofillStorage.creditCards.add(card);
+  let guid = await formAutofillStorage.creditCards.add(card);
   await onChanged;
   return guid;
 }
@@ -199,7 +203,7 @@ function checkPaymentAddressMatchesStorageAddress(paymentAddress, storageAddress
   is(paymentAddress.addressLine[0], addressLines[0], "Address line 1 should match");
   is(paymentAddress.addressLine[1], addressLines[1], "Address line 2 should match");
   is(paymentAddress.country, storageAddress.country, "Country should match");
-  is(paymentAddress.region, storageAddress["address-level1"], "Region should match");
+  is(paymentAddress.region, storageAddress["address-level1"] || "", "Region should match");
   is(paymentAddress.city, storageAddress["address-level2"], "City should match");
   is(paymentAddress.postalCode, storageAddress["postal-code"], "Zip code should match");
   is(paymentAddress.organization, storageAddress.organization, "Org should match");
@@ -240,19 +244,18 @@ function checkPaymentMethodDetailsMatchesCard(methodDetails, card, msg) {
  */
 async function setupPaymentDialog(browser, {methodData, details, options, merchantTaskFn}) {
   let dialogReadyPromise = waitForWidgetReady();
-  await ContentTask.spawn(browser,
-                          {
-                            methodData,
-                            details,
-                            options,
-                          },
-                          merchantTaskFn);
+  let {requestId} = await ContentTask.spawn(browser,
+                                            {
+                                              methodData,
+                                              details,
+                                              options,
+                                            },
+                                            merchantTaskFn);
+  ok(requestId, "requestId should be defined");
 
   // get a reference to the UI dialog and the requestId
-  let [win] = await Promise.all([getPaymentWidget(), dialogReadyPromise]);
+  let [win] = await Promise.all([getPaymentWidget(requestId), dialogReadyPromise]);
   ok(win, "Got payment widget");
-  let requestId = paymentUISrv.requestIdForWindow(win);
-  ok(requestId, "requestId should be defined");
   is(win.closed, false, "dialog should not be closed");
 
   let frame = await getPaymentFrame(win);
@@ -266,6 +269,26 @@ async function setupPaymentDialog(browser, {methodData, details, options, mercha
       element.getBoundingClientRect().height;
     content.isHidden = (element) => elementHeight(element) == 0;
     content.isVisible = (element) => elementHeight(element) > 0;
+    content.fillField = async function fillField(field, value) {
+      // Keep in-sync with the copy in payments_common.js but with EventUtils methods called on a
+      // EventUtils object.
+      field.focus();
+      if (field.localName == "select") {
+        if (field.value == value) {
+          // Do nothing
+          return;
+        }
+        field.value = value;
+        field.dispatchEvent(new content.window.Event("input", {bubbles: true}));
+        field.dispatchEvent(new content.window.Event("change", {bubbles: true}));
+        return;
+      }
+      while (field.value) {
+        EventUtils.sendKey("BACK_SPACE", content.window);
+      }
+      EventUtils.sendString(value, content.window);
+    }
+;
   });
   await injectEventUtilsInContentTask(frame);
   info("helper functions injected into frame");
@@ -305,6 +328,12 @@ async function spawnInDialogForMerchantTask(merchantTaskFn, dialogTaskFn, taskAr
   });
 }
 
+async function loginAndCompletePayment(frame) {
+  let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(true);
+  await spawnPaymentDialogTask(frame, PTU.DialogContentTasks.completePayment);
+  await osKeyStoreLoginShown;
+}
+
 async function setupFormAutofillStorage() {
   await formAutofillStorage.initialize();
 }
@@ -324,20 +353,36 @@ add_task(async function setup_head() {
       // Ignore unknown CSP error.
       return;
     }
-    if (msg.message.match(/docShell is null.*BrowserUtils.jsm/)) {
+    if (msg.message && msg.message.match(/docShell is null.*BrowserUtils.jsm/)) {
       // Bug 1478142 - Console spam from the Find Toolbar.
+      return;
+    }
+    if (msg.message && msg.message.match(/PrioEncoder is not defined/)) {
+      // Bug 1492638 - Console spam from TelemetrySession.
+      return;
+    }
+    if (msg.message && msg.message.match(/devicePixelRatio.*FaviconLoader.jsm/)) {
+      return;
+    }
+    if (msg.errorMessage == "AbortError: The operation was aborted. " &&
+        msg.sourceName == "" && msg.lineNumber == 0) {
       return;
     }
     ok(false, msg.message || msg.errorMessage);
   });
+  OSKeyStoreTestUtils.setup();
   await setupFormAutofillStorage();
-  registerCleanupFunction(function cleanup() {
+  registerCleanupFunction(async function cleanup() {
     paymentSrv.cleanup();
     cleanupFormAutofillStorage();
+    await OSKeyStoreTestUtils.cleanup();
     Services.prefs.clearUserPref(RESPONSE_TIMEOUT_PREF);
     Services.prefs.clearUserPref(SAVE_CREDITCARD_DEFAULT_PREF);
     Services.prefs.clearUserPref(SAVE_ADDRESS_DEFAULT_PREF);
     SpecialPowers.postConsoleSentinel();
+    // CreditCard.jsm is imported into the global scope. It needs to be deleted
+    // else it outlives the test and is reported as a leak.
+    delete window.CreditCard;
   });
 });
 
@@ -352,7 +397,7 @@ async function selectPaymentDialogShippingAddressByCountry(frame, country) {
 }
 
 async function navigateToAddAddressPage(frame, aOptions = {
-  addLinkSelector: "address-picker a.add-link",
+  addLinkSelector: "address-picker[selected-state-key=\"selectedShippingAddress\"] a.add-link",
   initialPageId: "payment-summary",
 }) {
   await spawnPaymentDialogTask(frame, async (options) => {
@@ -360,7 +405,7 @@ async function navigateToAddAddressPage(frame, aOptions = {
       PaymentTestUtils,
     } = ChromeUtils.import("resource://testing-common/PaymentTestUtils.jsm", {});
 
-    info("navigateToAddAddressPage: check were on the expected page first");
+    info("navigateToAddAddressPage: check we're on the expected page first");
     await PaymentTestUtils.DialogContentUtils.waitForState(content, (state) => {
       info("current page state: " + state.page.id + " waiting for: " + options.initialPageId);
       return state.page.id == options.initialPageId;
@@ -378,24 +423,81 @@ async function navigateToAddAddressPage(frame, aOptions = {
   }, aOptions);
 }
 
+async function fillInBillingAddressForm(frame, aAddress) {
+  // For now billing and shipping address forms have the same fields but that may
+  // change so use separarate helpers.
+  return fillInShippingAddressForm(frame, aAddress, {
+    expectedSelectedStateKey: ["basic-card-page", "billingAddressGUID"],
+  });
+}
+
+async function fillInShippingAddressForm(frame, aAddress, aOptions) {
+  let address = Object.assign({}, aAddress);
+  // Email isn't used on address forms, only payer/contact ones.
+  delete address.email;
+  return fillInAddressForm(frame, address, {
+    expectedSelectedStateKey: ["selectedShippingAddress"],
+    ...aOptions,
+  });
+}
+
+async function fillInPayerAddressForm(frame, aAddress) {
+  let address = Object.assign({}, aAddress);
+  let payerFields = ["given-name", "additional-name", "family-name", "tel", "email"];
+  for (let fieldName of Object.keys(address)) {
+    if (payerFields.includes(fieldName)) {
+      continue;
+    }
+    delete address[fieldName];
+  }
+  return fillInAddressForm(frame, address, {
+    expectedSelectedStateKey: ["selectedPayerAddress"],
+  });
+}
+
+/**
+ * @param {HTMLElement} frame
+ * @param {object} aAddress
+ * @param {object} [aOptions = {}]
+ * @param {boolean} [aOptions.setPersistCheckedValue = undefined] How to set the persist checkbox.
+ * @param {string[]} [expectedSelectedStateKey = undefined] The expected selectedStateKey for
+                                                            address-page.
+ */
 async function fillInAddressForm(frame, aAddress, aOptions = {}) {
   await spawnPaymentDialogTask(frame, async (args) => {
     let {address, options = {}} = args;
 
+    if (options.expectedSelectedStateKey) {
+      let store = Cu.waiveXrays(content.document.querySelector("address-form")).requestStore;
+      Assert.deepEqual(store.getState()["address-page"].selectedStateKey,
+                       options.expectedSelectedStateKey,
+                       "Check address page selectedStateKey");
+    }
+
+    if (typeof(address.country) != "undefined") {
+      // Set the country first so that the appropriate fields are visible.
+      let countryField = content.document.getElementById("country");
+      ok(!countryField.disabled, "Country Field shouldn't be disabled");
+      await content.fillField(countryField, address.country);
+      is(countryField.value, address.country, "country value is correct after fillField");
+    }
+
     // fill the form
-    info("manuallyAddAddress: fill the form with address: " + JSON.stringify(address));
+    info("fillInAddressForm: fill the form with address: " + JSON.stringify(address));
     for (let [key, val] of Object.entries(address)) {
       let field = content.document.getElementById(key);
       if (!field) {
         ok(false, `${key} field not found`);
       }
-      field.value = val;
+      ok(!field.disabled, `Field #${key} shouldn't be disabled`);
+      await content.fillField(field, val);
+      is(field.value, val, `${key} value is correct after fillField`);
     }
     let persistCheckbox = Cu.waiveXrays(
-        content.document.querySelector(options.checkboxSelector));
+        content.document.querySelector("#address-page .persist-checkbox"));
     // only touch the checked state if explicitly told to in the options
     if (options.hasOwnProperty("setPersistCheckedValue")) {
-      info("fillInCardForm: Manually setting the persist checkbox checkedness to: " +
+      info("fillInAddressForm: Manually setting the persist checkbox checkedness to: " +
             options.setPersistCheckedValue);
       Cu.waiveXrays(persistCheckbox).checked = options.setPersistCheckedValue;
     }
@@ -421,6 +523,25 @@ async function verifyPersistCheckbox(frame, aOptions = {}) {
   }, {options: aOptions});
 }
 
+async function verifyCardNetwork(frame, aOptions = {}) {
+  aOptions.supportedNetworks = CreditCard.SUPPORTED_NETWORKS;
+
+  await spawnPaymentDialogTask(frame, async (args) => {
+    let {options = {}} = args;
+    // ensure the network picker is visible, has the right contents and expected value
+    let networkSelect = Cu.waiveXrays(
+        content.document.querySelector(options.networkSelector));
+    ok(content.isVisible(networkSelect),
+       "The network selector should always be visible");
+    is(networkSelect.childElementCount, options.supportedNetworks.length + 1,
+       "Should have one more than the number of supported networks");
+    is(networkSelect.children[0].value, "",
+       "The first option should be the blank/empty option");
+    is(networkSelect.value, options.expectedNetwork,
+       `The network picker should have the expected value`);
+  }, {options: aOptions});
+}
+
 async function submitAddressForm(frame, aAddress, aOptions = {}) {
   await spawnPaymentDialogTask(frame, async (args) => {
     let {options = {}} = args;
@@ -435,7 +556,7 @@ async function submitAddressForm(frame, aAddress, aOptions = {}) {
 
     let currState = await PaymentTestUtils.DialogContentUtils.waitForState(content, (state) => {
       return state.page.id == "payment-summary";
-    }, "Switched back to payment-summary");
+    }, "submitAddressForm: Switched back to payment-summary");
 
     let savedCount = Object.keys(currState.savedAddresses).length;
     let tempCount = Object.keys(currState.tempAddresses).length;
@@ -455,7 +576,7 @@ async function submitAddressForm(frame, aAddress, aOptions = {}) {
   }, {address: aAddress, options: aOptions});
 }
 
-async function manuallyAddAddress(frame, aAddress, aOptions = {}) {
+async function manuallyAddShippingAddress(frame, aAddress, aOptions = {}) {
   let options = Object.assign({
     expectPersist: true,
     isEditing: false,
@@ -463,9 +584,10 @@ async function manuallyAddAddress(frame, aAddress, aOptions = {}) {
     checkboxSelector: "#address-page .persist-checkbox",
   });
   await navigateToAddAddressPage(frame);
-  info("manuallyAddAddress, fill in address form with options: " + JSON.stringify(options));
-  await fillInAddressForm(frame, aAddress, options);
-  info("manuallyAddAddress, verifyPersistCheckbox with options: " + JSON.stringify(options));
+  info("manuallyAddShippingAddress, fill in address form with options: " + JSON.stringify(options));
+  await fillInShippingAddressForm(frame, aAddress, options);
+  info("manuallyAddShippingAddress, verifyPersistCheckbox with options: " +
+       JSON.stringify(options));
   await verifyPersistCheckbox(frame, options);
   await submitAddressForm(frame, aAddress, options);
 }
@@ -506,12 +628,22 @@ async function fillInCardForm(frame, aCard, aOptions = {}) {
         ok(false, `${key} field not found`);
       }
       ok(!field.disabled, `Field #${key} shouldn't be disabled`);
+      // Reset the value first so that we properly handle typing the value
+      // already selected which may select another option with the same prefix.
       field.value = "";
+      ok(!field.value, "Field value should be reset before typing");
+      field.blur();
       field.focus();
+      // Using waitForEvent here causes the test to hang, but
+      // waitForCondition and checking activeElement does the trick. The root cause
+      // of this should be investigated further.
+      await ContentTaskUtils.waitForCondition(() => field == content.document.activeElement,
+                                              `Waiting for field #${key} to get focus`);
       // cc-exp-* fields are numbers so convert to strings and pad left with 0
       let fillValue = val.toString().padStart(2, "0");
-      EventUtils.synthesizeKey(fillValue, {}, content.window);
-      ok(field.value, fillValue, `${key} value is correct after synthesizeKey`);
+      EventUtils.synthesizeKey(fillValue, {}, Cu.waiveXrays(content.window));
+      // cc-exp-* field values are not padded, so compare with unpadded string.
+      is(field.value, val.toString(), `${key} value is correct after sendString`);
     }
 
     info([...content.document.getElementById("cc-exp-year").options].map(op => op.label).join(","));
@@ -541,7 +673,7 @@ async function fillInCardForm(frame, aCard, aOptions = {}) {
  */
 /* eslint-enable valid-jsdoc */
 async function injectEventUtilsInContentTask(browser) {
-  await ContentTask.spawn(browser, {}, async function() {
+  await spawnPaymentDialogTask(browser, async function injectEventUtils() {
     if ("EventUtils" in this) {
       return;
     }

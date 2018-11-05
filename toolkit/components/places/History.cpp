@@ -28,6 +28,7 @@
 #include "nsNetUtil.h"
 #include "nsIFileURL.h"
 #include "nsIXPConnect.h"
+#include "nsIXULRuntime.h"
 #include "mozilla/Unused.h"
 #include "nsContentUtils.h" // for nsAutoScriptBlocker
 #include "nsJSUtils.h"
@@ -35,10 +36,10 @@
 #include "nsPrintfCString.h"
 #include "nsTHashtable.h"
 #include "jsapi.h"
+#include "mozilla/dom/ContentProcessMessageManager.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/PlacesObservers.h"
 #include "mozilla/dom/PlacesVisit.h"
-#include "mozilla/dom/ProcessGlobal.h"
 #include "mozilla/dom/ScriptSettings.h"
 
 // Initial size for the cache holding visited status observers.
@@ -227,13 +228,13 @@ already_AddRefed<nsIURI>
 GetJSValueAsURI(JSContext* aCtx,
                 const JS::Value& aValue) {
   if (!aValue.isPrimitive()) {
-    nsCOMPtr<nsIXPConnect> xpc = mozilla::services::GetXPConnect();
+    nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
 
     nsCOMPtr<nsIXPConnectWrappedNative> wrappedObj;
     nsresult rv = xpc->GetWrappedNativeOfJSObject(aCtx, aValue.toObjectOrNull(),
                                                   getter_AddRefs(wrappedObj));
     NS_ENSURE_SUCCESS(rv, nullptr);
-    nsCOMPtr<nsIURI> uri = do_QueryWrappedNative(wrappedObj);
+    nsCOMPtr<nsIURI> uri = do_QueryInterface(wrappedObj->Native());
     return uri.forget();
   }
   return nullptr;
@@ -490,11 +491,13 @@ public:
       History* history = History::GetService();
       NS_ENSURE_STATE(history);
       history->NotifyVisited(mURI);
-      AutoTArray<URIParams, 1> uris;
-      URIParams uri;
-      SerializeURI(mURI, uri);
-      uris.AppendElement(std::move(uri));
-      history->NotifyVisitedParent(uris);
+      if (BrowserTabsRemoteAutostart()) {
+        AutoTArray<URIParams, 1> uris;
+        URIParams uri;
+        SerializeURI(mURI, uri);
+        uris.AppendElement(std::move(uri));
+        history->NotifyVisitedParent(uris);
+      }
     }
 
     nsCOMPtr<nsIObserverService> observerService =
@@ -657,9 +660,11 @@ public:
         nsresult rv = NotifyVisit(navHistory, obsService, now, uris[i], mPlaces[i]);
         NS_ENSURE_SUCCESS(rv, rv);
 
-        URIParams serializedUri;
-        SerializeURI(uris[i], serializedUri);
-        serializableUris.AppendElement(std::move(serializedUri));
+        if (BrowserTabsRemoteAutostart()) {
+          URIParams serializedUri;
+          SerializeURI(uris[i], serializedUri);
+          serializableUris.AppendElement(std::move(serializedUri));
+        }
       }
       mHistory->NotifyVisitedParent(serializableUris);
     } else {
@@ -667,10 +672,12 @@ public:
       nsresult rv = NotifyVisit(navHistory, obsService, now, uris[0], mPlace);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      URIParams serializedUri;
-      SerializeURI(uris[0], serializedUri);
-      serializableUris.AppendElement(std::move(serializedUri));
-      mHistory->NotifyVisitedParent(serializableUris);
+      if (BrowserTabsRemoteAutostart()) {
+        URIParams serializedUri;
+        SerializeURI(uris[0], serializedUri);
+        serializableUris.AppendElement(std::move(serializedUri));
+        mHistory->NotifyVisitedParent(serializableUris);
+      }
     }
 
     return NS_OK;
@@ -2309,11 +2316,7 @@ History::RegisterVisitedCallback(nsIURI* aURI,
                "Already tracking this Link object!");
 
   // Start tracking our Link.
-  if (!observers.AppendElement(aLink)) {
-    // Curses - unregister and return failure.
-    (void)UnregisterVisitedCallback(aURI, aLink);
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  observers.AppendElement(aLink);
 
   // If this link has already been visited, we cannot synchronously mark
   // ourselves as visited, so instead we fire a runnable into our docgroup,
@@ -2514,7 +2517,7 @@ History::UpdatePlaces(JS::Handle<JS::Value> aPlaceInfos,
       // a mistake.
       if (data.visitTime < (PR_Now() / 1000)) {
 #ifdef DEBUG
-        nsCOMPtr<nsIXPConnect> xpc = do_GetService(nsIXPConnect::GetCID());
+        nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
         Unused << xpc->DebugDumpJSStack(false, false, false);
         MOZ_CRASH("invalid time format passed to updatePlaces");
 #endif

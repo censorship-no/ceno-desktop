@@ -17,10 +17,8 @@ ChromeUtils.import("resource://gre/modules/Services.jsm", this);
 ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 
-ChromeUtils.import("resource://gre/modules/TelemetryStopwatch.jsm", this);
-
 ChromeUtils.defineModuleGetter(this, "TelemetryHealthPing",
-  "resource://gre/modules/TelemetryHealthPing.jsm");
+  "resource://gre/modules/HealthPing.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(Services, "cookies", "@mozilla.org/cookieService;1", "nsICookieService");
 
@@ -78,7 +76,7 @@ var checkPingsSaved = async function(pingIds) {
 };
 
 function histogramValueCount(h) {
-  return h.counts.reduce((a, b) => a + b);
+  return Object.values(h.values).reduce((a, b) => a + b, 0);
 }
 
 add_task(async function test_setup() {
@@ -135,7 +133,7 @@ add_task(async function test_sendPendingPings() {
   Assert.equal(TelemetrySend.pendingPingCount, TYPE_A_COUNT + TYPE_B_COUNT,
                "Should have correct pending ping count");
 
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 0, 0],
+  Assert.deepEqual(histSuccess.snapshot().values, {},
                "Should not have recorded any sending in histograms yet.");
   Assert.equal(histSendTimeSuccess.snapshot().sum, 0,
                "Should not have recorded any sending in histograms yet.");
@@ -166,7 +164,7 @@ add_task(async function test_sendPendingPings() {
   Assert.equal(countByType.get(TEST_TYPE_A), 10 - TYPE_B_COUNT,
                "Should have received the correct amount of type A pings");
 
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 10, 0],
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 10, 2: 0},
                "Should have recorded sending success in histograms.");
   Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 10,
                "Should have recorded successful send times in histograms.");
@@ -272,7 +270,7 @@ add_task(async function test_backoffTimeout() {
   Assert.equal(pingSendTimeout, MAX_BACKOFF_TIMEOUT, "Tick timeout should be capped");
   ++sendAttempts;
 
-  Assert.deepEqual(histSuccess.snapshot().counts, [sendAttempts, 0, 0],
+  Assert.deepEqual(histSuccess.snapshot().values, {0: sendAttempts, 1: 0},
                "Should have recorded sending failure in histograms.");
   Assert.equal(histSendTimeSuccess.snapshot().sum, 0,
                "Should not have recorded any sending success in histograms yet.");
@@ -309,7 +307,7 @@ add_task(async function test_backoffTimeout() {
   await TelemetrySend.testWaitOnOutgoingPings();
   Assert.equal(TelemetrySend.pendingPingCount, 0, "Should have no pending pings left");
 
-  Assert.deepEqual(histSuccess.snapshot().counts, [sendAttempts, 3, 0],
+  Assert.deepEqual(histSuccess.snapshot().values, {0: sendAttempts, 1: 3, 2: 0},
                "Should have recorded sending failure in histograms.");
   Assert.greaterOrEqual(histSendTimeSuccess.snapshot().sum, 0,
                         "Should have recorded sending success in histograms.");
@@ -341,7 +339,7 @@ add_task(async function test_discardBigPings() {
 
   Assert.equal(histSizeExceeded.snapshot().sum, 0, "Telemetry must report no oversized ping submitted.");
   Assert.equal(histDiscardedSize.snapshot().sum, 0, "Telemetry must report no oversized pings.");
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 1, 0], "Should have recorded sending success.");
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 1, 2: 0}, "Should have recorded sending success.");
   Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 1, "Should have recorded send success time.");
   Assert.greaterOrEqual(histSendTimeSuccess.snapshot().sum, 0, "Should have recorded send success time.");
   Assert.equal(histogramValueCount(histSendTimeFail.snapshot()), 0, "Should not have recorded send failure time.");
@@ -362,9 +360,9 @@ add_task(async function test_discardBigPings() {
   Assert.deepEqual(ping.payload.os, TelemetryHealthPing.OsInfo, "Should have correct os info.");
 
   Assert.equal(histSizeExceeded.snapshot().sum, 1, "Telemetry must report 1 oversized ping submitted.");
-  Assert.equal(histDiscardedSize.snapshot().counts[2], 1, "Telemetry must report a 2MB, oversized, ping submitted.");
+  Assert.equal(histDiscardedSize.snapshot().values[2], 1, "Telemetry must report a 2MB, oversized, ping submitted.");
 
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 2, 0], "Should have recorded sending success.");
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 2, 2: 0}, "Should have recorded sending success.");
   Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 2, "Should have recorded send success time.");
   Assert.greaterOrEqual(histSendTimeSuccess.snapshot().sum, 0, "Should have recorded send success time.");
   Assert.equal(histogramValueCount(histSendTimeFail.snapshot()), 0, "Should not have recorded send failure time.");
@@ -384,7 +382,7 @@ add_task(async function test_largeButWithinLimit() {
   await TelemetrySend.testWaitOnOutgoingPings();
   await PingServer.promiseNextRequest();
 
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 1, 0], "Should have sent large ping.");
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 1, 2: 0}, "Should have sent large ping.");
 });
 
 add_task(async function test_evictedOnServerErrors() {
@@ -414,7 +412,7 @@ add_task(async function test_evictedOnServerErrors() {
 
   Assert.equal(histEvicted.snapshot().sum, 1,
                "Telemetry must report a ping evicted due to server errors");
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 1, 0]);
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 1, 2: 0});
   Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 1);
   Assert.greaterOrEqual(histSendTimeSuccess.snapshot().sum, 0);
   Assert.equal(histogramValueCount(histSendTimeFail.snapshot()), 0);
@@ -434,7 +432,7 @@ add_task(async function test_evictedOnServerErrors() {
   // We should not have updated the error histogram.
   await TelemetrySend.testWaitOnOutgoingPings();
   Assert.equal(histEvicted.snapshot().sum, 1, "Telemetry must report only one ping evicted due to server errors");
-  Assert.deepEqual(histSuccess.snapshot().counts, [0, 2, 0]);
+  Assert.deepEqual(histSuccess.snapshot().values, {0: 0, 1: 2, 2: 0});
   Assert.equal(histogramValueCount(histSendTimeSuccess.snapshot()), 2);
   Assert.equal(histogramValueCount(histSendTimeFail.snapshot()), 0);
 });
@@ -459,7 +457,7 @@ add_task(async function test_tooLateToSend() {
   Assert.equal(pendingPings.length, 1, "Should have a pending ping in storage");
   Assert.equal(pendingPings[0].id, id, "Should have pended our test's ping");
 
-  Assert.equal(Telemetry.getHistogramById("TELEMETRY_SEND_FAILURE_TYPE").snapshot().counts[7], 1,
+  Assert.equal(Telemetry.getHistogramById("TELEMETRY_SEND_FAILURE_TYPE").snapshot().values[7], 1,
     "Should have registered the failed attempt to send");
 
   await TelemetryStorage.reset();
@@ -639,9 +637,14 @@ add_task(async function test_pref_observer() {
             reject(Error("Crash report annotation without expected value."));
           }
 
-          if (!expectedValue && value != "") {
+          if (keys.size == 0) {
             MockRegistrar.unregister(gMockCrs);
-            reject(Error(`Crash report annotation ("${key}") with unexpected value: "${value}".`));
+            resolve();
+          }
+        },
+        removeCrashReportAnnotation(key) {
+          if (!keys.delete(key)) {
+            MockRegistrar.unregister(gMockCrs);
           }
 
           if (keys.size == 0) {

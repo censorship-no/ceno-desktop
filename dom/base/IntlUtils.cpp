@@ -42,7 +42,8 @@ IntlUtils::GetDisplayNames(const Sequence<nsString>& aLocales,
                            DisplayNameResult& aResult, ErrorResult& aError)
 {
   MOZ_ASSERT(nsContentUtils::IsCallerChrome() ||
-             nsContentUtils::IsCallerContentXBL());
+             nsContentUtils::IsCallerContentXBL() ||
+             nsContentUtils::IsCallerUAWidget());
 
   nsCOMPtr<mozIMozIntl> mozIntl = do_GetService("@mozilla.org/mozintl;1");
   if (!mozIntl) {
@@ -82,13 +83,12 @@ IntlUtils::GetDisplayNames(const Sequence<nsString>& aLocales,
     return;
   }
 
-  if (!retVal.isObject()) {
+  if (!retVal.isObject() || !JS_WrapValue(cx, &retVal)) {
     aError.Throw(NS_ERROR_FAILURE);
     return;
   }
 
   // Return the result as DisplayNameResult.
-  JSAutoRealmAllowCCW ar(cx, &retVal.toObject());
   if (!aResult.Init(cx, retVal)) {
     aError.Throw(NS_ERROR_FAILURE);
   }
@@ -99,7 +99,8 @@ IntlUtils::GetLocaleInfo(const Sequence<nsString>& aLocales,
                          LocaleInfo& aResult, ErrorResult& aError)
 {
   MOZ_ASSERT(nsContentUtils::IsCallerChrome() ||
-             nsContentUtils::IsCallerContentXBL());
+             nsContentUtils::IsCallerContentXBL() ||
+             nsContentUtils::IsCallerUAWidget());
 
   nsCOMPtr<mozIMozIntl> mozIntl = do_GetService("@mozilla.org/mozintl;1");
   if (!mozIntl) {
@@ -129,13 +130,12 @@ IntlUtils::GetLocaleInfo(const Sequence<nsString>& aLocales,
     return;
   }
 
-  if (!retVal.isObject()) {
+  if (!retVal.isObject() || !JS_WrapValue(cx, &retVal)) {
     aError.Throw(NS_ERROR_FAILURE);
     return;
   }
 
   // Return the result as LocaleInfo.
-  JSAutoRealmAllowCCW ar(cx, &retVal.toObject());
   if (!aResult.Init(cx, retVal)) {
     aError.Throw(NS_ERROR_FAILURE);
   }

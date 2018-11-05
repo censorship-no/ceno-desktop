@@ -13,18 +13,18 @@ const PLACES = [
   {
     guid: PlacesUtils.bookmarks.menuGuid,
     prefix: "In Menu",
-    total: 5
+    total: 5,
   },
   {
     guid: PlacesUtils.bookmarks.toolbarGuid,
     prefix: "In Toolbar",
-    total: 7
+    total: 7,
   },
   {
     guid: PlacesUtils.bookmarks.unfiledGuid,
     prefix: "In Other",
-    total: 8
-  }
+    total: 8,
+  },
 ];
 
 var importExportPicker, saveDir, actualBookmarks;
@@ -36,12 +36,12 @@ async function generateTestBookmarks() {
     for (let i = 1; i <= place.total; i++) {
       currentPlaceChildren.push({
         url: `${BASE_URL}${i}`,
-        title: `${place.prefix} Bookmark: ${i}`
+        title: `${place.prefix} Bookmark: ${i}`,
       });
     }
     await PlacesUtils.bookmarks.insertTree({
       guid: place.guid,
-      children: currentPlaceChildren
+      children: currentPlaceChildren,
     });
     actualBookmarks = actualBookmarks.concat(currentPlaceChildren);
   }
@@ -125,10 +125,10 @@ add_task(async function test_import_json() {
   await BrowserTestUtils.promiseAlertDialogOpen("accept");
 
   let restored = 0;
-  let promiseBookmarksRestored = PlacesTestUtils.waitForNotification("onItemAdded", () => {
-    restored++;
-    return restored === actualBookmarks.length;
-  });
+  let promiseBookmarksRestored =
+    PlacesTestUtils.waitForNotification("bookmark-added",
+                                        events => events.some(() => ++restored == actualBookmarks.length),
+                                        "places");
 
   await promiseBookmarksRestored;
   await validateImportedBookmarks(PLACES);

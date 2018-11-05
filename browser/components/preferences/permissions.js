@@ -7,8 +7,8 @@ ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 const permissionExceptionsL10n = {
   "trackingprotection": {
-    window: "permissions-exceptions-tracking-protection-window",
-    description: "permissions-exceptions-tracking-protection-desc",
+    window: "permissions-exceptions-content-blocking-window",
+    description: "permissions-exceptions-content-blocking-desc",
   },
   "cookie": {
     window: "permissions-exceptions-cookie-window",
@@ -27,7 +27,7 @@ const permissionExceptionsL10n = {
     description: "permissions-exceptions-addons-desc",
   },
   "autoplay-media": {
-    window: "permissions-exceptions-autoplay-media-window",
+    window: "permissions-exceptions-autoplay-media-window2",
     description: "permissions-exceptions-autoplay-media-desc2",
   },
 };
@@ -206,7 +206,7 @@ var gPermissionManager = {
     } catch (ex) {
       document.l10n.formatValues([
         {id: "permissions-invalid-uri-title"},
-        {id: "permissions-invalid-uri-label"}
+        {id: "permissions-invalid-uri-label"},
       ]).then(([title, message]) => {
         Services.prompt.alert(window, title, message);
       });
@@ -260,21 +260,19 @@ var gPermissionManager = {
 
   _loadPermissions() {
     // load permissions into a table.
-    let enumerator = Services.perms.enumerator;
-    while (enumerator.hasMoreElements()) {
-      let nextPermission = enumerator.getNext().QueryInterface(Ci.nsIPermission);
+    for (let nextPermission of Services.perms.enumerator) {
       this._addPermissionToList(nextPermission);
     }
   },
 
   _createPermissionListItem(permission) {
-    let richlistitem = document.createElement("richlistitem");
+    let richlistitem = document.createXULElement("richlistitem");
     richlistitem.setAttribute("origin", permission.origin);
-    let row = document.createElement("hbox");
+    let row = document.createXULElement("hbox");
     row.setAttribute("flex", "1");
 
-    let hbox = document.createElement("hbox");
-    let website = document.createElement("label");
+    let hbox = document.createXULElement("hbox");
+    let website = document.createXULElement("label");
     website.setAttribute("value", permission.origin);
     hbox.setAttribute("width", "0");
     hbox.setAttribute("class", "website-name");
@@ -283,8 +281,8 @@ var gPermissionManager = {
     row.appendChild(hbox);
 
     if (!this._hideStatusColumn) {
-      hbox = document.createElement("hbox");
-      let capability = document.createElement("label");
+      hbox = document.createXULElement("hbox");
+      let capability = document.createXULElement("label");
       capability.setAttribute("class", "website-capability-value");
       capability.setAttribute("value", permission.capability);
       hbox.setAttribute("width", "0");
@@ -426,7 +424,7 @@ var gPermissionManager = {
     }
 
     let comp = new Services.intl.Collator(undefined, {
-      usage: "sort"
+      usage: "sort",
     });
 
     let items = Array.from(frag.querySelectorAll("richlistitem"));

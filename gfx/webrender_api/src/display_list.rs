@@ -13,18 +13,18 @@ use std::io::{Read, Write};
 use std::marker::PhantomData;
 use std::{io, mem, ptr, slice};
 use time::precise_time_ns;
-use {AlphaType, BorderDetails, BorderDisplayItem, BorderRadius, BorderWidths, BoxShadowClipMode};
+use {AlphaType, BorderDetails, BorderDisplayItem, BorderRadius, BoxShadowClipMode};
 use {BoxShadowDisplayItem, ClipAndScrollInfo, ClipChainId, ClipChainItem, ClipDisplayItem, ClipId};
 use {ColorF, ComplexClipRegion, DisplayItem, ExtendMode, ExternalScrollId, FilterOp};
-use {FontInstanceKey, GlyphInstance, GlyphOptions, GlyphRasterSpace, Gradient};
+use {FontInstanceKey, GlyphInstance, GlyphOptions, RasterSpace, Gradient, GradientBuilder};
 use {GradientDisplayItem, GradientStop, IframeDisplayItem, ImageDisplayItem, ImageKey, ImageMask};
-use {ImageRendering, LayoutPoint, LayoutPrimitiveInfo, LayoutRect, LayoutSize, LayoutTransform};
-use {LayoutVector2D, LineDisplayItem, LineOrientation, LineStyle, MixBlendMode, PipelineId};
-use {PropertyBinding, PushReferenceFrameDisplayListItem, PushStackingContextDisplayItem};
-use {RadialGradient, RadialGradientDisplayItem, RectangleDisplayItem, ReferenceFrame};
-use {ScrollFrameDisplayItem, ScrollSensitivity, Shadow, SpecificDisplayItem, StackingContext};
-use {StickyFrameDisplayItem, StickyOffsetBounds, TextDisplayItem, TransformStyle, YuvColorSpace};
-use {YuvData, YuvImageDisplayItem};
+use {ImageRendering, LayoutPoint, LayoutPrimitiveInfo, LayoutRect, LayoutSideOffsets, LayoutSize};
+use {LayoutTransform, LayoutVector2D, LineDisplayItem, LineOrientation, LineStyle, MixBlendMode};
+use {PipelineId, PropertyBinding, PushReferenceFrameDisplayListItem};
+use {PushStackingContextDisplayItem, RadialGradient, RadialGradientDisplayItem};
+use {RectangleDisplayItem, ReferenceFrame, ScrollFrameDisplayItem, ScrollSensitivity, Shadow};
+use {SpecificDisplayItem, StackingContext, StickyFrameDisplayItem, StickyOffsetBounds};
+use {TextDisplayItem, TransformStyle, YuvColorSpace, YuvData, YuvImageDisplayItem, ColorDepth};
 
 // We don't want to push a long text-run. If a text-run is too long, split it into several parts.
 // This needs to be set to (renderer::MAX_VERTEX_TEXTURE_WIDTH - VECS_PER_TEXT_RUN) * 2
@@ -88,6 +88,8 @@ pub struct BuiltDisplayListDescriptor {
     total_clip_nodes: usize,
     /// The amount of spatial nodes created while building this display list.
     total_spatial_nodes: usize,
+    /// An estimate of the number of primitives that will be created by this display list.
+    prim_count_estimate: usize,
 }
 
 pub struct BuiltDisplayListIter<'a> {
@@ -143,6 +145,10 @@ impl BuiltDisplayList {
 
     pub fn descriptor(&self) -> &BuiltDisplayListDescriptor {
         &self.descriptor
+    }
+
+    pub fn prim_count_estimate(&self) -> usize {
+        self.descriptor.prim_count_estimate
     }
 
     pub fn times(&self) -> (u64, u64, u64) {
@@ -603,6 +609,7 @@ impl<'de> Deserialize<'de> for BuiltDisplayList {
                 send_start_time: 0,
                 total_clip_nodes,
                 total_spatial_nodes,
+                prim_count_estimate: 0,
             },
         })
     }
@@ -647,7 +654,7 @@ impl Write for UnsafeVecWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         unsafe {
             ptr::copy_nonoverlapping(buf.as_ptr(), self.0, buf.len());
-            self.0 = self.0.offset(buf.len() as isize);
+            self.0 = self.0.add(buf.len());
         }
         Ok(buf.len())
     }
@@ -656,7 +663,7 @@ impl Write for UnsafeVecWriter {
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
         unsafe {
             ptr::copy_nonoverlapping(buf.as_ptr(), self.0, buf.len());
-            self.0 = self.0.offset(buf.len() as isize);
+            self.0 = self.0.add(buf.len());
         }
         Ok(())
     }
@@ -697,7 +704,7 @@ fn serialize_fast<T: Serialize>(vec: &mut Vec<u8>, e: &T) {
     vec.reserve(size.0);
 
     let old_len = vec.len();
-    let ptr = unsafe { vec.as_mut_ptr().offset(old_len as isize) };
+    let ptr = unsafe { vec.as_mut_ptr().add(old_len) };
     let mut w = UnsafeVecWriter(ptr);
     bincode::serialize_into(&mut w, e).unwrap();
 
@@ -714,7 +721,7 @@ fn serialize_fast<T: Serialize>(vec: &mut Vec<u8>, e: &T) {
 /// * The ExactSizeIterator impl is stable and correct across a Clone
 /// * The Serialize impl has a stable size across two invocations
 ///
-/// If the first is incorrect, webrender will be very slow. If the other two are
+/// If the first is incorrect, WebRender will be very slow. If the other two are
 /// incorrect, the result will be Undefined Behaviour! The ExactSizeIterator
 /// bound would ideally be replaced with a TrustedLen bound to protect us a bit
 /// better, but that trait isn't stable (and won't be for a good while, if ever).
@@ -737,7 +744,7 @@ where I: ExactSizeIterator + Clone,
     vec.reserve(size.0);
 
     let old_len = vec.len();
-    let ptr = unsafe { vec.as_mut_ptr().offset(old_len as isize) };
+    let ptr = unsafe { vec.as_mut_ptr().add(old_len) };
     let mut w = UnsafeVecWriter(ptr);
     let mut count2 = 0;
 
@@ -770,7 +777,7 @@ impl<'a, 'b> UnsafeReader<'a, 'b> {
     #[inline(always)]
     fn new(buf: &'b mut &'a [u8]) -> UnsafeReader<'a, 'b> {
         unsafe {
-            let end = buf.as_ptr().offset(buf.len() as isize);
+            let end = buf.as_ptr().add(buf.len());
             let start = buf.as_ptr();
             UnsafeReader { start, end, slice: buf }
         }
@@ -790,9 +797,9 @@ impl<'a, 'b> UnsafeReader<'a, 'b> {
     fn read_internal(&mut self, buf: &mut [u8]) {
         // this is safe because we panic if start + buf.len() > end
         unsafe {
-            assert!(self.start.offset(buf.len() as isize) <= self.end, "UnsafeReader: read past end of target");
+            assert!(self.start.add(buf.len()) <= self.end, "UnsafeReader: read past end of target");
             ptr::copy_nonoverlapping(self.start, buf.as_mut_ptr(), buf.len());
-            self.start = self.start.offset(buf.len() as isize);
+            self.start = self.start.add(buf.len());
         }
     }
 }
@@ -839,6 +846,7 @@ pub struct DisplayListBuilder {
     clip_stack: Vec<ClipAndScrollInfo>,
     next_clip_index: usize,
     next_spatial_index: usize,
+    prim_count_estimate: usize,
     next_clip_chain_id: u64,
     builder_start_time: u64,
 
@@ -868,6 +876,7 @@ impl DisplayListBuilder {
             ],
             next_clip_index: FIRST_CLIP_NODE_INDEX,
             next_spatial_index: FIRST_SPATIAL_NODE_INDEX,
+            prim_count_estimate: 0,
             next_clip_chain_id: 0,
             builder_start_time: start_time,
             content_size,
@@ -947,7 +956,13 @@ impl DisplayListBuilder {
         index
     }
 
-    fn push_item(&mut self, item: SpecificDisplayItem, info: &LayoutPrimitiveInfo) {
+    /// Add an item to the display list.
+    ///
+    /// NOTE: It is usually preferable to use the specialized methods to push
+    /// display items. Pushing unexpected or invalid items here may
+    /// result in WebRender panicking or behaving in unexpected ways.
+    pub fn push_item(&mut self, item: SpecificDisplayItem, info: &LayoutPrimitiveInfo) {
+        self.prim_count_estimate += 1;
         serialize_fast(
             &mut self.data,
             &DisplayItem {
@@ -964,6 +979,7 @@ impl DisplayListBuilder {
         info: &LayoutPrimitiveInfo,
         scrollinfo: ClipAndScrollInfo
     ) {
+        self.prim_count_estimate += 1;
         serialize_fast(
             &mut self.data,
             &DisplayItem {
@@ -1018,7 +1034,11 @@ impl DisplayListBuilder {
         debug_assert_eq!(len, count);
     }
 
-    fn push_iter<I>(&mut self, iter: I)
+    /// Push items from an iterator to the display list.
+    ///
+    /// NOTE: Pushing unexpected or invalid items to the display list
+    /// may result in panic and confusion.
+    pub fn push_iter<I>(&mut self, iter: I)
     where
         I: IntoIterator,
         I::IntoIter: ExactSizeIterator + Clone,
@@ -1062,6 +1082,7 @@ impl DisplayListBuilder {
         image_rendering: ImageRendering,
         alpha_type: AlphaType,
         key: ImageKey,
+        color: ColorF,
     ) {
         let item = SpecificDisplayItem::Image(ImageDisplayItem {
             image_key: key,
@@ -1069,6 +1090,7 @@ impl DisplayListBuilder {
             tile_spacing,
             image_rendering,
             alpha_type,
+            color,
         });
 
         self.push_item(item, info);
@@ -1079,11 +1101,13 @@ impl DisplayListBuilder {
         &mut self,
         info: &LayoutPrimitiveInfo,
         yuv_data: YuvData,
+        color_depth: ColorDepth,
         color_space: YuvColorSpace,
         image_rendering: ImageRendering,
     ) {
         let item = SpecificDisplayItem::YuvImage(YuvImageDisplayItem {
             yuv_data,
+            color_depth,
             color_space,
             image_rendering,
         });
@@ -1110,135 +1134,40 @@ impl DisplayListBuilder {
         }
     }
 
-    // Gradients can be defined with stops outside the range of [0, 1]
-    // when this happens the gradient needs to be normalized by adjusting
-    // the gradient stops and gradient line into an equivalent gradient
-    // with stops in the range [0, 1]. this is done by moving the beginning
-    // of the gradient line to where stop[0] and the end of the gradient line
-    // to stop[n-1]. this function adjusts the stops in place, and returns
-    // the amount to adjust the gradient line start and stop
-    fn normalize_stops(stops: &mut Vec<GradientStop>, extend_mode: ExtendMode) -> (f32, f32) {
-        assert!(stops.len() >= 2);
-
-        let first = *stops.first().unwrap();
-        let last = *stops.last().unwrap();
-
-        assert!(first.offset <= last.offset);
-
-        let stops_delta = last.offset - first.offset;
-
-        if stops_delta > 0.000001 {
-            for stop in stops {
-                stop.offset = (stop.offset - first.offset) / stops_delta;
-            }
-
-            (first.offset, last.offset)
-        } else {
-            // We have a degenerate gradient and can't accurately transform the stops
-            // what happens here depends on the repeat behavior, but in any case
-            // we reconstruct the gradient stops to something simpler and equivalent
-            stops.clear();
-
-            match extend_mode {
-                ExtendMode::Clamp => {
-                    // This gradient is two colors split at the offset of the stops,
-                    // so create a gradient with two colors split at 0.5 and adjust
-                    // the gradient line so 0.5 is at the offset of the stops
-                    stops.push(GradientStop { color: first.color, offset: 0.0, });
-                    stops.push(GradientStop { color: first.color, offset: 0.5, });
-                    stops.push(GradientStop { color: last.color, offset: 0.5, });
-                    stops.push(GradientStop { color: last.color, offset: 1.0, });
-
-                    let offset = last.offset;
-
-                    (offset - 0.5, offset + 0.5)
-                }
-                ExtendMode::Repeat => {
-                    // A repeating gradient with stops that are all in the same
-                    // position should just display the last color. I believe the
-                    // spec says that it should be the average color of the gradient,
-                    // but this matches what Gecko and Blink does
-                    stops.push(GradientStop { color: last.color, offset: 0.0, });
-                    stops.push(GradientStop { color: last.color, offset: 1.0, });
-
-                    (0.0, 1.0)
-                }
-            }
-        }
-    }
-
-    // NOTE: gradients must be pushed in the order they're created
-    // because create_gradient stores the stops in anticipation
+    /// NOTE: gradients must be pushed in the order they're created
+    /// because create_gradient stores the stops in anticipation.
     pub fn create_gradient(
         &mut self,
         start_point: LayoutPoint,
         end_point: LayoutPoint,
-        mut stops: Vec<GradientStop>,
+        stops: Vec<GradientStop>,
         extend_mode: ExtendMode,
     ) -> Gradient {
-        let (start_offset, end_offset) =
-            DisplayListBuilder::normalize_stops(&mut stops, extend_mode);
-
-        let start_to_end = end_point - start_point;
-
-        self.push_stops(&stops);
-
-        Gradient {
-            start_point: start_point + start_to_end * start_offset,
-            end_point: start_point + start_to_end * end_offset,
-            extend_mode,
-        }
+        let mut builder = GradientBuilder::with_stops(stops);
+        let gradient = builder.gradient(start_point, end_point, extend_mode);
+        self.push_stops(builder.stops());
+        gradient
     }
 
-    // NOTE: gradients must be pushed in the order they're created
-    // because create_gradient stores the stops in anticipation
+    /// NOTE: gradients must be pushed in the order they're created
+    /// because create_gradient stores the stops in anticipation.
     pub fn create_radial_gradient(
         &mut self,
         center: LayoutPoint,
         radius: LayoutSize,
-        mut stops: Vec<GradientStop>,
+        stops: Vec<GradientStop>,
         extend_mode: ExtendMode,
     ) -> RadialGradient {
-        if radius.width <= 0.0 || radius.height <= 0.0 {
-            // The shader cannot handle a non positive radius. So
-            // reuse the stops vector and construct an equivalent
-            // gradient.
-            let last_color = stops.last().unwrap().color;
-
-            let stops = [
-                GradientStop { offset: 0.0, color: last_color, },
-                GradientStop { offset: 1.0, color: last_color, },
-            ];
-
-            self.push_stops(&stops);
-
-            return RadialGradient {
-                center,
-                radius: LayoutSize::new(1.0, 1.0),
-                start_offset: 0.0,
-                end_offset: 1.0,
-                extend_mode,
-            };
-        }
-
-        let (start_offset, end_offset) =
-            DisplayListBuilder::normalize_stops(&mut stops, extend_mode);
-
-        self.push_stops(&stops);
-
-        RadialGradient {
-            center,
-            radius,
-            start_offset,
-            end_offset,
-            extend_mode,
-        }
+        let mut builder = GradientBuilder::with_stops(stops);
+        let gradient = builder.radial_gradient(center, radius, extend_mode);
+        self.push_stops(builder.stops());
+        gradient
     }
 
     pub fn push_border(
         &mut self,
         info: &LayoutPrimitiveInfo,
-        widths: BorderWidths,
+        widths: LayoutSideOffsets,
         details: BorderDetails,
     ) {
         let item = SpecificDisplayItem::Border(BorderDisplayItem { details, widths });
@@ -1347,20 +1276,20 @@ impl DisplayListBuilder {
         clip_node_id: Option<ClipId>,
         transform_style: TransformStyle,
         mix_blend_mode: MixBlendMode,
-        filters: Vec<FilterOp>,
-        glyph_raster_space: GlyphRasterSpace,
+        filters: &[FilterOp],
+        raster_space: RasterSpace,
     ) {
         let item = SpecificDisplayItem::PushStackingContext(PushStackingContextDisplayItem {
             stacking_context: StackingContext {
                 transform_style,
                 mix_blend_mode,
                 clip_node_id,
-                glyph_raster_space,
+                raster_space,
             },
         });
 
         self.push_item(item, info);
-        self.push_iter(&filters);
+        self.push_iter(filters);
     }
 
     pub fn pop_stacking_context(&mut self) {
@@ -1585,6 +1514,7 @@ impl DisplayListBuilder {
                     send_start_time: 0,
                     total_clip_nodes: self.next_clip_index,
                     total_spatial_nodes: self.next_spatial_index,
+                    prim_count_estimate: self.prim_count_estimate,
                 },
                 data: self.data,
             },

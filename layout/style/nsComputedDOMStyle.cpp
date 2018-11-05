@@ -23,8 +23,6 @@
 #include "nsIContent.h"
 #include "nsStyleConsts.h"
 
-#include "nsDOMCSSRect.h"
-#include "nsDOMCSSRGBColor.h"
 #include "nsDOMCSSValueList.h"
 #include "nsFlexContainerFrame.h"
 #include "nsGridContainerFrame.h"
@@ -84,7 +82,7 @@ NS_NewComputedDOMStyle(dom::Element* aElement,
 static nsDOMCSSValueList*
 GetROCSSValueList(bool aCommaDelimited)
 {
-  return new nsDOMCSSValueList(aCommaDelimited, true);
+  return new nsDOMCSSValueList(aCommaDelimited);
 }
 
 template<typename T>
@@ -141,11 +139,11 @@ DocumentNeedsRestyle(
 
   // If the pseudo-element is animating, make sure to flush.
   if (aElement->MayHaveAnimations() && aPseudo) {
-    if (aPseudo == nsCSSPseudoElements::before) {
+    if (aPseudo == nsCSSPseudoElements::before()) {
       if (EffectSet::GetEffectSet(aElement, CSSPseudoElementType::before)) {
         return true;
       }
-    } else if (aPseudo == nsCSSPseudoElements::after) {
+    } else if (aPseudo == nsCSSPseudoElements::after()) {
       if (EffectSet::GetEffectSet(aElement, CSSPseudoElementType::after)) {
         return true;
       }
@@ -578,21 +576,24 @@ nsComputedDOMStyle::DoGetComputedStyleNoFlush(Element* aElement,
   if (inDocWithShell &&
       aStyleType == eAll &&
       !aElement->IsHTMLElement(nsGkAtoms::area)) {
-    nsIFrame* frame = nullptr;
-    if (aPseudo == nsCSSPseudoElements::before) {
-      frame = nsLayoutUtils::GetBeforeFrame(aElement);
-    } else if (aPseudo == nsCSSPseudoElements::after) {
-      frame = nsLayoutUtils::GetAfterFrame(aElement);
+    Element* element = nullptr;
+    if (aPseudo == nsCSSPseudoElements::before()) {
+      element = nsLayoutUtils::GetBeforePseudo(aElement);
+    } else if (aPseudo == nsCSSPseudoElements::after()) {
+      element = nsLayoutUtils::GetAfterPseudo(aElement);
     } else if (!aPseudo) {
-      frame = nsLayoutUtils::GetStyleFrame(aElement);
+      element = aElement;
     }
-    if (frame) {
-      ComputedStyle* result = frame->Style();
-      // Don't use the style if it was influenced by pseudo-elements, since then
-      // it's not the primary style for this element / pseudo.
-      if (!MustReresolveStyle(result)) {
-        RefPtr<ComputedStyle> ret = result;
-        return ret.forget();
+
+    if (element) {
+      if (nsIFrame* styleFrame = nsLayoutUtils::GetStyleFrame(element)) {
+        ComputedStyle* result = styleFrame->Style();
+        // Don't use the style if it was influenced by pseudo-elements,
+        // since then it's not the primary style for this element / pseudo.
+        if (!MustReresolveStyle(result)) {
+          RefPtr<ComputedStyle> ret = result;
+          return ret.forget();
+        }
       }
     }
   }
@@ -661,7 +662,7 @@ AddImageURL(nsIURI& aURI, nsTArray<nsString>& aURLs)
 
 
 static void
-AddImageURL(const css::URLValueData& aURL, nsTArray<nsString>& aURLs)
+AddImageURL(const css::URLValue& aURL, nsTArray<nsString>& aURLs)
 {
   if (aURL.IsLocalRef()) {
     return;
@@ -694,10 +695,10 @@ AddImageURL(const StyleShapeSource& aShapeSource, nsTArray<nsString>& aURLs)
 {
   switch (aShapeSource.GetType()) {
     case StyleShapeSourceType::URL:
-      AddImageURL(*aShapeSource.GetURL(), aURLs);
+      AddImageURL(aShapeSource.URL(), aURLs);
       break;
     case StyleShapeSourceType::Image:
-      AddImageURL(*aShapeSource.GetShapeImage(), aURLs);
+      AddImageURL(aShapeSource.ShapeImage(), aURLs);
       break;
     default:
       break;
@@ -727,7 +728,7 @@ CollectImageURLsForProperty(nsCSSPropertyID aProp,
 
   switch (aProp) {
     case eCSSProperty_cursor:
-      for (auto& image : aStyle.StyleUserInterface()->mCursorImages) {
+      for (auto& image : aStyle.StyleUI()->mCursorImages) {
         AddImageURL(*image.mImage, aURLs);
       }
       break;
@@ -947,9 +948,9 @@ nsComputedDOMStyle::UpdateCurrentStyleSources(bool aNeedsLayoutFlush)
 
     if (!mPseudo) {
       mOuterFrame = mElement->GetPrimaryFrame();
-    } else if (mPseudo == nsCSSPseudoElements::before ||
-               mPseudo == nsCSSPseudoElements::after) {
-      nsAtom* property = mPseudo == nsCSSPseudoElements::before
+    } else if (mPseudo == nsCSSPseudoElements::before() ||
+               mPseudo == nsCSSPseudoElements::after()) {
+      nsAtom* property = mPseudo == nsCSSPseudoElements::before()
                             ? nsGkAtoms::beforePseudoProperty
                             : nsGkAtoms::afterPseudoProperty;
 
@@ -1121,21 +1122,25 @@ void
 nsComputedDOMStyle::SetToRGBAColor(nsROCSSPrimitiveValue* aValue,
                                    nscolor aColor)
 {
-  nsROCSSPrimitiveValue *red   = new nsROCSSPrimitiveValue;
-  nsROCSSPrimitiveValue *green = new nsROCSSPrimitiveValue;
-  nsROCSSPrimitiveValue *blue  = new nsROCSSPrimitiveValue;
-  nsROCSSPrimitiveValue *alpha  = new nsROCSSPrimitiveValue;
-
-  uint8_t a = NS_GET_A(aColor);
-  nsDOMCSSRGBColor *rgbColor =
-    new nsDOMCSSRGBColor(red, green, blue, alpha, a < 255);
-
-  red->SetNumber(NS_GET_R(aColor));
-  green->SetNumber(NS_GET_G(aColor));
-  blue->SetNumber(NS_GET_B(aColor));
-  alpha->SetNumber(nsStyleUtil::ColorComponentToFloat(a));
-
-  aValue->SetColor(rgbColor);
+  nsAutoString string;
+  const bool hasAlpha = NS_GET_A(aColor) != 255;
+  if (hasAlpha) {
+    string.AppendLiteral("rgba(");
+  } else {
+    string.AppendLiteral("rgb(");
+  }
+  string.AppendInt(NS_GET_R(aColor));
+  string.AppendLiteral(", ");
+  string.AppendInt(NS_GET_G(aColor));
+  string.AppendLiteral(", ");
+  string.AppendInt(NS_GET_B(aColor));
+  if (hasAlpha) {
+    string.AppendLiteral(", ");
+    float alpha = nsStyleUtil::ColorComponentToFloat(NS_GET_A(aColor));
+    nsStyleUtil::AppendCSSNumber(alpha, string);
+  }
+  string.AppendLiteral(")");
+  aValue->SetString(string);
 }
 
 void
@@ -1143,32 +1148,6 @@ nsComputedDOMStyle::SetValueFromComplexColor(nsROCSSPrimitiveValue* aValue,
                                              const StyleComplexColor& aColor)
 {
   SetToRGBAColor(aValue, aColor.CalcColor(mComputedStyle));
-}
-
-void
-nsComputedDOMStyle::SetValueForWidgetColor(nsROCSSPrimitiveValue* aValue,
-                                           const StyleComplexColor& aColor,
-                                           StyleAppearance aWidgetType)
-{
-  if (!aColor.IsAuto()) {
-    SetToRGBAColor(aValue, aColor.CalcColor(mComputedStyle));
-    return;
-  }
-  nsPresContext* presContext = mPresShell->GetPresContext();
-  MOZ_ASSERT(presContext);
-  if (nsContentUtils::ShouldResistFingerprinting(presContext->GetDocShell())) {
-    // Return transparent when resisting fingerprinting.
-    SetToRGBAColor(aValue, NS_RGBA(0, 0, 0, 0));
-    return;
-  }
-  if (nsITheme* theme = presContext->GetTheme()) {
-    nscolor color = theme->GetWidgetAutoColor(mComputedStyle, aWidgetType);
-    SetToRGBAColor(aValue, color);
-  } else {
-    // If we don't have theme, we don't know what value it should be,
-    // just give it a transparent fallback.
-    SetToRGBAColor(aValue, NS_RGBA(0, 0, 0, 0));
-  }
 }
 
 already_AddRefed<CSSValue>
@@ -1285,16 +1264,6 @@ nsComputedDOMStyle::DoGetPerspective()
 {
   RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
   SetValueToCoord(val, StyleDisplay()->mChildPerspective, false);
-  return val.forget();
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetTransformStyle()
-{
-  RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-  val->SetIdent(
-      nsCSSProps::ValueToKeywordEnum(StyleDisplay()->mTransformStyle,
-                                     nsCSSProps::kTransformStyleKTable));
   return val.forget();
 }
 
@@ -1649,312 +1618,6 @@ SetValueToCalc(const nsStyleCoord::CalcValue* aCalc,
   aValue->SetString(result); // not really SetString
 }
 
-static void
-AppendCSSGradientLength(const nsStyleCoord&    aValue,
-                        nsROCSSPrimitiveValue* aPrimitive,
-                        nsAString&             aString)
-{
-  nsAutoString tokenString;
-  if (aValue.IsCalcUnit())
-    SetValueToCalc(aValue.GetCalcValue(), aPrimitive);
-  else if (aValue.GetUnit() == eStyleUnit_Coord)
-    aPrimitive->SetAppUnits(aValue.GetCoordValue());
-  else
-    aPrimitive->SetPercent(aValue.GetPercentValue());
-  aPrimitive->GetCssText(tokenString);
-  aString.Append(tokenString);
-}
-
-static void
-AppendCSSGradientToBoxPosition(const nsStyleGradient* aGradient,
-                               nsAString&             aString,
-                               bool&                  aNeedSep)
-{
-  // This function only supports box position keywords. Make sure we're not
-  // calling it with inputs that would have coordinates that aren't
-  // representable with box-position keywords.
-  MOZ_ASSERT(aGradient->mShape == NS_STYLE_GRADIENT_SHAPE_LINEAR &&
-             !(aGradient->mLegacySyntax && aGradient->mMozLegacySyntax),
-             "Only call me for linear-gradient and -webkit-linear-gradient");
-
-  float xValue = aGradient->mBgPosX.GetPercentValue();
-  float yValue = aGradient->mBgPosY.GetPercentValue();
-
-  if (xValue == 0.5f &&
-      yValue == (aGradient->mLegacySyntax ? 0.0f : 1.0f)) {
-    // omit "to bottom" in modern syntax, "top" in legacy syntax
-    return;
-  }
-  NS_ASSERTION(yValue != 0.5f || xValue != 0.5f, "invalid box position");
-
-  if (!aGradient->mLegacySyntax) {
-    // Modern syntax explicitly includes the word "to". Old syntax does not
-    // (and is implicitly "from" the given position instead).
-    aString.AppendLiteral("to ");
-  }
-
-  if (xValue == 0.0f) {
-    aString.AppendLiteral("left");
-  } else if (xValue == 1.0f) {
-    aString.AppendLiteral("right");
-  } else if (xValue != 0.5f) { // do not write "center" keyword
-    MOZ_ASSERT_UNREACHABLE("invalid box position");
-  }
-
-  if (xValue != 0.5f && yValue != 0.5f) {
-    // We're appending both an x-keyword and a y-keyword.
-    // Add a space between them here.
-    aString.AppendLiteral(" ");
-  }
-
-  if (yValue == 0.0f) {
-    aString.AppendLiteral("top");
-  } else if (yValue == 1.0f) {
-    aString.AppendLiteral("bottom");
-  } else if (yValue != 0.5f) { // do not write "center" keyword
-    MOZ_ASSERT_UNREACHABLE("invalid box position");
-  }
-
-
-  aNeedSep = true;
-}
-
-void
-nsComputedDOMStyle::GetCSSGradientString(const nsStyleGradient* aGradient,
-                                         nsAString& aString)
-{
-  if (!aGradient->mLegacySyntax) {
-    aString.Truncate();
-  } else {
-    if (aGradient->mMozLegacySyntax) {
-      aString.AssignLiteral("-moz-");
-    } else {
-      aString.AssignLiteral("-webkit-");
-    }
-  }
-  if (aGradient->mRepeating) {
-    aString.AppendLiteral("repeating-");
-  }
-  bool isRadial = aGradient->mShape != NS_STYLE_GRADIENT_SHAPE_LINEAR;
-  if (isRadial) {
-    aString.AppendLiteral("radial-gradient(");
-  } else {
-    aString.AppendLiteral("linear-gradient(");
-  }
-
-  bool needSep = false;
-  nsAutoString tokenString;
-  RefPtr<nsROCSSPrimitiveValue> tmpVal = new nsROCSSPrimitiveValue;
-
-  if (isRadial && !aGradient->mLegacySyntax) {
-    if (aGradient->mSize != NS_STYLE_GRADIENT_SIZE_EXPLICIT_SIZE) {
-      if (aGradient->mShape == NS_STYLE_GRADIENT_SHAPE_CIRCULAR) {
-        aString.AppendLiteral("circle");
-        needSep = true;
-      }
-      if (aGradient->mSize != NS_STYLE_GRADIENT_SIZE_FARTHEST_CORNER) {
-        if (needSep) {
-          aString.Append(' ');
-        }
-        AppendASCIItoUTF16(nsCSSProps::
-                           ValueToKeyword(aGradient->mSize,
-                                          nsCSSProps::kRadialGradientSizeKTable),
-                           aString);
-        needSep = true;
-      }
-    } else {
-      AppendCSSGradientLength(aGradient->mRadiusX, tmpVal, aString);
-      if (aGradient->mShape != NS_STYLE_GRADIENT_SHAPE_CIRCULAR) {
-        aString.Append(' ');
-        AppendCSSGradientLength(aGradient->mRadiusY, tmpVal, aString);
-      }
-      needSep = true;
-    }
-  }
-  if (aGradient->mBgPosX.GetUnit() != eStyleUnit_None) {
-    MOZ_ASSERT(aGradient->mBgPosY.GetUnit() != eStyleUnit_None);
-    if (!isRadial &&
-        !(aGradient->mLegacySyntax && aGradient->mMozLegacySyntax)) {
-      // linear-gradient() or -webkit-linear-gradient()
-      AppendCSSGradientToBoxPosition(aGradient, aString, needSep);
-    } else if (aGradient->mBgPosX.GetUnit() != eStyleUnit_Percent ||
-               aGradient->mBgPosX.GetPercentValue() != 0.5f ||
-               aGradient->mBgPosY.GetUnit() != eStyleUnit_Percent ||
-               aGradient->mBgPosY.GetPercentValue() != (isRadial ? 0.5f : 0.0f)) {
-      // [-vendor-]radial-gradient or -moz-linear-gradient, with
-      // non-default box position, which we output here.
-      if (isRadial && !aGradient->mLegacySyntax) {
-        if (needSep) {
-          aString.Append(' ');
-        }
-        aString.AppendLiteral("at ");
-        needSep = false;
-      }
-      AppendCSSGradientLength(aGradient->mBgPosX, tmpVal, aString);
-      if (aGradient->mBgPosY.GetUnit() != eStyleUnit_None) {
-        aString.Append(' ');
-        AppendCSSGradientLength(aGradient->mBgPosY, tmpVal, aString);
-      }
-      needSep = true;
-    }
-  }
-  if (aGradient->mAngle.GetUnit() != eStyleUnit_None) {
-    MOZ_ASSERT(!isRadial || aGradient->mLegacySyntax);
-    if (needSep) {
-      aString.Append(' ');
-    }
-    nsStyleUtil::AppendAngleValue(aGradient->mAngle, aString);
-    needSep = true;
-  }
-
-  if (isRadial && aGradient->mLegacySyntax &&
-      (aGradient->mShape == NS_STYLE_GRADIENT_SHAPE_CIRCULAR ||
-       aGradient->mSize != NS_STYLE_GRADIENT_SIZE_FARTHEST_CORNER)) {
-    MOZ_ASSERT(aGradient->mSize != NS_STYLE_GRADIENT_SIZE_EXPLICIT_SIZE);
-    if (needSep) {
-      aString.AppendLiteral(", ");
-      needSep = false;
-    }
-    if (aGradient->mShape == NS_STYLE_GRADIENT_SHAPE_CIRCULAR) {
-      aString.AppendLiteral("circle");
-      needSep = true;
-    }
-    if (aGradient->mSize != NS_STYLE_GRADIENT_SIZE_FARTHEST_CORNER) {
-      if (needSep) {
-        aString.Append(' ');
-      }
-      AppendASCIItoUTF16(nsCSSProps::
-                         ValueToKeyword(aGradient->mSize,
-                                        nsCSSProps::kRadialGradientSizeKTable),
-                         aString);
-    }
-    needSep = true;
-  }
-
-
-  // color stops
-  for (uint32_t i = 0; i < aGradient->mStops.Length(); ++i) {
-    if (needSep) {
-      aString.AppendLiteral(", ");
-    }
-
-    const auto& stop = aGradient->mStops[i];
-    if (!stop.mIsInterpolationHint) {
-      SetValueFromComplexColor(tmpVal, stop.mColor);
-      tmpVal->GetCssText(tokenString);
-      aString.Append(tokenString);
-    }
-
-    if (stop.mLocation.GetUnit() != eStyleUnit_None) {
-      if (!stop.mIsInterpolationHint) {
-        aString.Append(' ');
-      }
-      AppendCSSGradientLength(stop.mLocation, tmpVal, aString);
-    }
-    needSep = true;
-  }
-
-  aString.Append(')');
-}
-
-// -moz-image-rect(<uri>, <top>, <right>, <bottom>, <left>)
-void
-nsComputedDOMStyle::GetImageRectString(nsIURI* aURI,
-                                       const nsStyleSides& aCropRect,
-                                       nsString& aString)
-{
-  RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(true);
-
-  // <uri>
-  RefPtr<nsROCSSPrimitiveValue> valURI = new nsROCSSPrimitiveValue;
-  valURI->SetURI(aURI);
-  valueList->AppendCSSValue(valURI.forget());
-
-  // <top>, <right>, <bottom>, <left>
-  NS_FOR_CSS_SIDES(side) {
-    RefPtr<nsROCSSPrimitiveValue> valSide = new nsROCSSPrimitiveValue;
-    SetValueToCoord(valSide, aCropRect.Get(side), false);
-    valueList->AppendCSSValue(valSide.forget());
-  }
-
-  nsAutoString argumentString;
-  valueList->GetCssText(argumentString);
-
-  aString = NS_LITERAL_STRING("-moz-image-rect(") +
-            argumentString +
-            NS_LITERAL_STRING(")");
-}
-
-void
-nsComputedDOMStyle::SetValueToStyleImage(const nsStyleImage& aStyleImage,
-                                         nsROCSSPrimitiveValue* aValue)
-{
-  switch (aStyleImage.GetType()) {
-    case eStyleImageType_Image:
-    {
-      nsCOMPtr<nsIURI> uri = aStyleImage.GetImageURI();
-      if (!uri) {
-        aValue->SetIdent(eCSSKeyword_none);
-        break;
-      }
-
-      const UniquePtr<nsStyleSides>& cropRect = aStyleImage.GetCropRect();
-      if (cropRect) {
-        nsAutoString imageRectString;
-        GetImageRectString(uri, *cropRect, imageRectString);
-        aValue->SetString(imageRectString);
-      } else {
-        aValue->SetURI(uri);
-      }
-      break;
-    }
-    case eStyleImageType_Gradient:
-    {
-      nsAutoString gradientString;
-      GetCSSGradientString(aStyleImage.GetGradientData(),
-                           gradientString);
-      aValue->SetString(gradientString);
-      break;
-    }
-    case eStyleImageType_Element:
-    {
-      nsAutoString elementId;
-      nsStyleUtil::AppendEscapedCSSIdent(
-        nsDependentAtomString(aStyleImage.GetElementId()),
-                              elementId);
-      nsAutoString elementString = NS_LITERAL_STRING("-moz-element(#") +
-                                   elementId +
-                                   NS_LITERAL_STRING(")");
-      aValue->SetString(elementString);
-      break;
-    }
-    case eStyleImageType_Null:
-      aValue->SetIdent(eCSSKeyword_none);
-      break;
-    case eStyleImageType_URL:
-      SetValueToURLValue(aStyleImage.GetURLValue(), aValue);
-      break;
-    default:
-      MOZ_ASSERT_UNREACHABLE("unexpected image type");
-      break;
-  }
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetImageLayerImage(const nsStyleImageLayers& aLayers)
-{
-  RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(true);
-
-  for (uint32_t i = 0, i_end = aLayers.mImageCount; i < i_end; ++i) {
-    RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-
-    SetValueToStyleImage(aLayers.mLayers[i].mImage, val);
-    valueList->AppendCSSValue(val.forget());
-  }
-
-  return valueList.forget();
-}
-
 already_AddRefed<CSSValue>
 nsComputedDOMStyle::DoGetImageLayerPosition(const nsStyleImageLayers& aLayers)
 {
@@ -1973,166 +1636,6 @@ nsComputedDOMStyle::DoGetImageLayerPosition(const nsStyleImageLayers& aLayers)
   }
 
   return valueList.forget();
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetImageLayerPositionX(const nsStyleImageLayers& aLayers)
-{
-  RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(true);
-  for (uint32_t i = 0, i_end = aLayers.mPositionXCount; i < i_end; ++i) {
-    RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-    SetValueToPositionCoord(aLayers.mLayers[i].mPosition.mXPosition, val);
-    valueList->AppendCSSValue(val.forget());
-  }
-
-  return valueList.forget();
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetImageLayerPositionY(const nsStyleImageLayers& aLayers)
-{
-  RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(true);
-  for (uint32_t i = 0, i_end = aLayers.mPositionYCount; i < i_end; ++i) {
-    RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-    SetValueToPositionCoord(aLayers.mLayers[i].mPosition.mYPosition, val);
-    valueList->AppendCSSValue(val.forget());
-  }
-
-  return valueList.forget();
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetImageLayerRepeat(const nsStyleImageLayers& aLayers)
-{
-  RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(true);
-
-  for (uint32_t i = 0, i_end = aLayers.mRepeatCount; i < i_end; ++i) {
-    RefPtr<nsDOMCSSValueList> itemList = GetROCSSValueList(false);
-    RefPtr<nsROCSSPrimitiveValue> valX = new nsROCSSPrimitiveValue;
-
-    const StyleImageLayerRepeat xRepeat = aLayers.mLayers[i].mRepeat.mXRepeat;
-    const StyleImageLayerRepeat yRepeat = aLayers.mLayers[i].mRepeat.mYRepeat;
-
-    bool hasContraction = true;
-    unsigned contraction;
-    if (xRepeat == yRepeat) {
-      contraction = uint8_t(xRepeat);
-    } else if (xRepeat == StyleImageLayerRepeat::Repeat &&
-               yRepeat == StyleImageLayerRepeat::NoRepeat) {
-      contraction = uint8_t(StyleImageLayerRepeat::RepeatX);
-    } else if (xRepeat == StyleImageLayerRepeat::NoRepeat &&
-               yRepeat == StyleImageLayerRepeat::Repeat) {
-      contraction = uint8_t(StyleImageLayerRepeat::RepeatY);
-    } else {
-      hasContraction = false;
-    }
-
-    RefPtr<nsROCSSPrimitiveValue> valY;
-    if (hasContraction) {
-      valX->SetIdent(nsCSSProps::ValueToKeywordEnum(contraction,
-                                         nsCSSProps::kImageLayerRepeatKTable));
-    } else {
-      valY = new nsROCSSPrimitiveValue;
-
-      valX->SetIdent(nsCSSProps::ValueToKeywordEnum(xRepeat,
-                                          nsCSSProps::kImageLayerRepeatKTable));
-      valY->SetIdent(nsCSSProps::ValueToKeywordEnum(yRepeat,
-                                          nsCSSProps::kImageLayerRepeatKTable));
-    }
-    itemList->AppendCSSValue(valX.forget());
-    if (valY) {
-      itemList->AppendCSSValue(valY.forget());
-    }
-    valueList->AppendCSSValue(itemList.forget());
-  }
-
-  return valueList.forget();
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetImageLayerSize(const nsStyleImageLayers& aLayers)
-{
-  RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(true);
-
-  for (uint32_t i = 0, i_end = aLayers.mSizeCount; i < i_end; ++i) {
-    const nsStyleImageLayers::Size &size = aLayers.mLayers[i].mSize;
-
-    switch (size.mWidthType) {
-      case nsStyleImageLayers::Size::eContain:
-      case nsStyleImageLayers::Size::eCover: {
-        MOZ_ASSERT(size.mWidthType == size.mHeightType,
-                   "unsynced types");
-        nsCSSKeyword keyword = size.mWidthType == nsStyleImageLayers::Size::eContain
-                             ? eCSSKeyword_contain
-                             : eCSSKeyword_cover;
-        RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-        val->SetIdent(keyword);
-        valueList->AppendCSSValue(val.forget());
-        break;
-      }
-      default: {
-        RefPtr<nsDOMCSSValueList> itemList = GetROCSSValueList(false);
-
-        RefPtr<nsROCSSPrimitiveValue> valX = new nsROCSSPrimitiveValue;
-        RefPtr<nsROCSSPrimitiveValue> valY = new nsROCSSPrimitiveValue;
-
-        if (size.mWidthType == nsStyleImageLayers::Size::eAuto) {
-          valX->SetIdent(eCSSKeyword_auto);
-        } else {
-          MOZ_ASSERT(size.mWidthType ==
-                       nsStyleImageLayers::Size::eLengthPercentage,
-                     "bad mWidthType");
-          if (!size.mWidth.mHasPercent &&
-              // negative values must have come from calc()
-              size.mWidth.mLength >= 0) {
-            MOZ_ASSERT(size.mWidth.mPercent == 0.0f,
-                       "Shouldn't have mPercent");
-            valX->SetAppUnits(size.mWidth.mLength);
-          } else if (size.mWidth.mLength == 0 &&
-                     // negative values must have come from calc()
-                     size.mWidth.mPercent >= 0.0f) {
-            valX->SetPercent(size.mWidth.mPercent);
-          } else {
-            SetValueToCalc(&size.mWidth, valX);
-          }
-        }
-
-        if (size.mHeightType == nsStyleImageLayers::Size::eAuto) {
-          valY->SetIdent(eCSSKeyword_auto);
-        } else {
-          MOZ_ASSERT(size.mHeightType ==
-                       nsStyleImageLayers::Size::eLengthPercentage,
-                     "bad mHeightType");
-          if (!size.mHeight.mHasPercent &&
-              // negative values must have come from calc()
-              size.mHeight.mLength >= 0) {
-            MOZ_ASSERT(size.mHeight.mPercent == 0.0f,
-                       "Shouldn't have mPercent");
-            valY->SetAppUnits(size.mHeight.mLength);
-          } else if (size.mHeight.mLength == 0 &&
-                     // negative values must have come from calc()
-                     size.mHeight.mPercent >= 0.0f) {
-            valY->SetPercent(size.mHeight.mPercent);
-          } else {
-            SetValueToCalc(&size.mHeight, valY);
-          }
-        }
-        itemList->AppendCSSValue(valX.forget());
-        itemList->AppendCSSValue(valY.forget());
-        valueList->AppendCSSValue(itemList.forget());
-        break;
-      }
-    }
-  }
-
-  return valueList.forget();
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetBackgroundImage()
-{
-  const nsStyleImageLayers& layers = StyleBackground()->mImage;
-  return DoGetImageLayerImage(layers);
 }
 
 void
@@ -2167,7 +1670,7 @@ nsComputedDOMStyle::SetValueToPosition(
 
 
 void
-nsComputedDOMStyle::SetValueToURLValue(const css::URLValueData* aURL,
+nsComputedDOMStyle::SetValueToURLValue(const css::URLValue* aURL,
                                        nsROCSSPrimitiveValue* aValue)
 {
   if (!aURL) {
@@ -2175,7 +1678,7 @@ nsComputedDOMStyle::SetValueToURLValue(const css::URLValueData* aURL,
     return;
   }
 
-  // If we have a usable nsIURI in the URLValueData, and the url() wasn't
+  // If we have a usable nsIURI in the URLValue, and the url() wasn't
   // a fragment-only URL, serialize the nsIURI.
   if (!aURL->IsLocalRef()) {
     if (nsIURI* uri = aURL->GetURI()) {
@@ -2200,34 +1703,6 @@ nsComputedDOMStyle::DoGetBackgroundPosition()
 {
   const nsStyleImageLayers& layers = StyleBackground()->mImage;
   return DoGetImageLayerPosition(layers);
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetBackgroundPositionX()
-{
-  const nsStyleImageLayers& layers = StyleBackground()->mImage;
-  return DoGetImageLayerPositionX(layers);
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetBackgroundPositionY()
-{
-  const nsStyleImageLayers& layers = StyleBackground()->mImage;
-  return DoGetImageLayerPositionY(layers);
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetBackgroundRepeat()
-{
-  const nsStyleImageLayers& layers = StyleBackground()->mImage;
-  return DoGetImageLayerRepeat(layers);
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetBackgroundSize()
-{
-  const nsStyleImageLayers& layers = StyleBackground()->mImage;
-  return DoGetImageLayerSize(layers);
 }
 
 already_AddRefed<CSSValue>
@@ -2982,21 +2457,28 @@ nsComputedDOMStyle::DoGetScrollSnapCoordinate()
 }
 
 already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetScrollbarFaceColor()
+nsComputedDOMStyle::DoGetScrollbarColor()
 {
-  RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-  SetValueForWidgetColor(val, StyleUserInterface()->mScrollbarFaceColor,
-                         StyleAppearance::ScrollbarthumbVertical);
-  return val.forget();
-}
+  const nsStyleUI* ui = StyleUI();
+  MOZ_ASSERT(ui->mScrollbarFaceColor.IsAuto() ==
+             ui->mScrollbarTrackColor.IsAuto(),
+             "Whether the two colors are auto should be identical");
 
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetScrollbarTrackColor()
-{
-  RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-  SetValueForWidgetColor(val, StyleUserInterface()->mScrollbarTrackColor,
-                         StyleAppearance::ScrollbarVertical);
-  return val.forget();
+  if (ui->mScrollbarFaceColor.IsAuto()) {
+    RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
+    val->SetIdent(eCSSKeyword_auto);
+    return val.forget();
+  }
+
+  RefPtr<nsDOMCSSValueList> list = GetROCSSValueList(false);
+  auto put = [this, &list](const StyleComplexColor& color) {
+    RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
+    SetValueFromComplexColor(val, color);
+    list->AppendCSSValue(val.forget());
+  };
+  put(ui->mScrollbarFaceColor);
+  put(ui->mScrollbarTrackColor);
+  return list.forget();
 }
 
 already_AddRefed<CSSValue>
@@ -3166,33 +2648,6 @@ nsComputedDOMStyle::DoGetZIndex()
 }
 
 already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetImageRegion()
-{
-  RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-
-  const nsStyleList* list = StyleList();
-
-  if (list->mImageRegion.width <= 0 || list->mImageRegion.height <= 0) {
-    val->SetIdent(eCSSKeyword_auto);
-  } else {
-    // create the cssvalues for the sides, stick them in the rect object
-    nsROCSSPrimitiveValue *topVal    = new nsROCSSPrimitiveValue;
-    nsROCSSPrimitiveValue *rightVal  = new nsROCSSPrimitiveValue;
-    nsROCSSPrimitiveValue *bottomVal = new nsROCSSPrimitiveValue;
-    nsROCSSPrimitiveValue *leftVal   = new nsROCSSPrimitiveValue;
-    nsDOMCSSRect * domRect = new nsDOMCSSRect(topVal, rightVal,
-                                              bottomVal, leftVal);
-    topVal->SetAppUnits(list->mImageRegion.y);
-    rightVal->SetAppUnits(list->mImageRegion.width + list->mImageRegion.x);
-    bottomVal->SetAppUnits(list->mImageRegion.height + list->mImageRegion.y);
-    leftVal->SetAppUnits(list->mImageRegion.x);
-    val->SetRect(domRect);
-  }
-
-  return val.forget();
-}
-
-already_AddRefed<CSSValue>
 nsComputedDOMStyle::DoGetInitialLetter()
 {
   const nsStyleTextReset* textReset = StyleTextReset();
@@ -3234,33 +2689,6 @@ nsComputedDOMStyle::DoGetVerticalAlign()
   SetValueToCoord(val, StyleDisplay()->mVerticalAlign, false,
                   nullptr, nsCSSProps::kVerticalAlignKTable);
   return val.forget();
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::CreateTextAlignValue(uint8_t aAlign, bool aAlignTrue,
-                                         const KTableEntry aTable[])
-{
-  RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-  val->SetIdent(nsCSSProps::ValueToKeywordEnum(aAlign, aTable));
-  if (!aAlignTrue) {
-    return val.forget();
-  }
-
-  RefPtr<nsROCSSPrimitiveValue> first = new nsROCSSPrimitiveValue;
-  first->SetIdent(eCSSKeyword_unsafe);
-
-  RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(false);
-  valueList->AppendCSSValue(first.forget());
-  valueList->AppendCSSValue(val.forget());
-  return valueList.forget();
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetTextAlign()
-{
-  const nsStyleText* style = StyleText();
-  return CreateTextAlignValue(style->mTextAlign, style->mTextAlignTrue,
-                              nsCSSProps::kTextAlignKTable);
 }
 
 already_AddRefed<CSSValue>
@@ -3477,7 +2905,7 @@ already_AddRefed<CSSValue>
 nsComputedDOMStyle::DoGetCaretColor()
 {
   RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-  SetValueFromComplexColor(val, StyleUserInterface()->mCaretColor);
+  SetValueFromComplexColor(val, StyleUI()->mCaretColor);
   return val.forget();
 }
 
@@ -3486,7 +2914,7 @@ nsComputedDOMStyle::DoGetCursor()
 {
   RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(true);
 
-  const nsStyleUserInterface *ui = StyleUserInterface();
+  const nsStyleUI *ui = StyleUI();
 
   for (const nsCursorImage& item : ui->mCursorImages) {
     RefPtr<nsDOMCSSValueList> itemList = GetROCSSValueList(false);
@@ -3525,18 +2953,6 @@ nsComputedDOMStyle::DoGetBoxFlex()
 }
 
 /* Border image properties */
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetBorderImageSource()
-{
-  const nsStyleBorder* border = StyleBorder();
-
-  RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-  const nsStyleImage& image = border->mBorderImageSource;
-  SetValueToStyleImage(image, val);
-
-  return val.forget();
-}
 
 void
 nsComputedDOMStyle::AppendFourSideCoordValues(nsDOMCSSValueList* aList,
@@ -3779,52 +3195,6 @@ nsComputedDOMStyle::DoGetContain()
                                        NS_STYLE_CONTAIN_SIZE, NS_STYLE_CONTAIN_PAINT,
                                        valueStr);
     val->SetString(valueStr);
-  }
-
-  return val.forget();
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetClip()
-{
-  RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-
-  const nsStyleEffects* effects = StyleEffects();
-
-  if (effects->mClipFlags == NS_STYLE_CLIP_AUTO) {
-    val->SetIdent(eCSSKeyword_auto);
-  } else {
-    // create the cssvalues for the sides, stick them in the rect object
-    nsROCSSPrimitiveValue *topVal    = new nsROCSSPrimitiveValue;
-    nsROCSSPrimitiveValue *rightVal  = new nsROCSSPrimitiveValue;
-    nsROCSSPrimitiveValue *bottomVal = new nsROCSSPrimitiveValue;
-    nsROCSSPrimitiveValue *leftVal   = new nsROCSSPrimitiveValue;
-    nsDOMCSSRect * domRect = new nsDOMCSSRect(topVal, rightVal,
-                                              bottomVal, leftVal);
-    if (effects->mClipFlags & NS_STYLE_CLIP_TOP_AUTO) {
-      topVal->SetIdent(eCSSKeyword_auto);
-    } else {
-      topVal->SetAppUnits(effects->mClip.y);
-    }
-
-    if (effects->mClipFlags & NS_STYLE_CLIP_RIGHT_AUTO) {
-      rightVal->SetIdent(eCSSKeyword_auto);
-    } else {
-      rightVal->SetAppUnits(effects->mClip.width + effects->mClip.x);
-    }
-
-    if (effects->mClipFlags & NS_STYLE_CLIP_BOTTOM_AUTO) {
-      bottomVal->SetIdent(eCSSKeyword_auto);
-    } else {
-      bottomVal->SetAppUnits(effects->mClip.height + effects->mClip.y);
-    }
-
-    if (effects->mClipFlags & NS_STYLE_CLIP_LEFT_AUTO) {
-      leftVal->SetIdent(eCSSKeyword_auto);
-    } else {
-      leftVal->SetAppUnits(effects->mClip.x);
-    }
-    val->SetRect(domRect);
   }
 
   return val.forget();
@@ -4162,6 +3532,10 @@ nsComputedDOMStyle::GetAbsoluteOffset(mozilla::Side aSide)
     if (scrollFrame) {
       scrollbarSizes = scrollFrame->GetActualScrollbarSizes();
     }
+  } else if (container->IsGridContainerFrame() &&
+             (mOuterFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW))) {
+    containerRect = nsGridContainerFrame::GridItemCB(mOuterFrame);
+    rect.MoveBy(-containerRect.x, -containerRect.y);
   }
 
   nscoord offset = 0;
@@ -4467,18 +3841,6 @@ nsComputedDOMStyle::SetValueToCoord(nsROCSSPrimitiveValue* aValue,
 
     case eStyleUnit_Degree:
       aValue->SetDegree(aCoord.GetAngleValue());
-      break;
-
-    case eStyleUnit_Grad:
-      aValue->SetGrad(aCoord.GetAngleValue());
-      break;
-
-    case eStyleUnit_Radian:
-      aValue->SetRadian(aCoord.GetAngleValue());
-      break;
-
-    case eStyleUnit_Turn:
-      aValue->SetTurn(aCoord.GetAngleValue());
       break;
 
     case eStyleUnit_FlexFraction: {
@@ -5019,53 +4381,6 @@ nsComputedDOMStyle::CreatePrimitiveValueForShapeSource(
   return valueList.forget();
 }
 
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::GetShapeSource(
-  const StyleShapeSource& aShapeSource,
-  const KTableEntry aBoxKeywordTable[])
-{
-  switch (aShapeSource.GetType()) {
-    case StyleShapeSourceType::Shape:
-      return CreatePrimitiveValueForShapeSource(aShapeSource.GetBasicShape(),
-                                                aShapeSource.GetReferenceBox(),
-                                                aBoxKeywordTable);
-    case StyleShapeSourceType::Box:
-      return CreatePrimitiveValueForShapeSource(nullptr,
-                                                aShapeSource.GetReferenceBox(),
-                                                aBoxKeywordTable);
-    case StyleShapeSourceType::URL: {
-      RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-      SetValueToURLValue(aShapeSource.GetURL(), val);
-      return val.forget();
-    }
-    case StyleShapeSourceType::None: {
-      RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-      val->SetIdent(eCSSKeyword_none);
-      return val.forget();
-    }
-    case StyleShapeSourceType::Image: {
-      RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-      SetValueToStyleImage(*aShapeSource.GetShapeImage(), val);
-      return val.forget();
-    }
-  }
-  return nullptr;
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetClipPath()
-{
-  return GetShapeSource(StyleSVGReset()->mClipPath,
-                        nsCSSProps::kClipPathGeometryBoxKTable);
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetShapeOutside()
-{
-  return GetShapeSource(StyleDisplay()->mShapeOutside,
-                        nsCSSProps::kShapeOutsideShapeBoxKTable);
-}
-
 void
 nsComputedDOMStyle::SetCssTextToCoord(nsAString& aCssText,
                                       const nsStyleCoord& aCoord,
@@ -5168,45 +4483,10 @@ nsComputedDOMStyle::DoGetMask()
 }
 
 already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetMaskImage()
-{
-  const nsStyleImageLayers& layers = StyleSVGReset()->mMask;
-  return DoGetImageLayerImage(layers);
-}
-
-already_AddRefed<CSSValue>
 nsComputedDOMStyle::DoGetMaskPosition()
 {
   const nsStyleImageLayers& layers = StyleSVGReset()->mMask;
   return DoGetImageLayerPosition(layers);
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetMaskPositionX()
-{
-  const nsStyleImageLayers& layers = StyleSVGReset()->mMask;
-  return DoGetImageLayerPositionX(layers);
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetMaskPositionY()
-{
-  const nsStyleImageLayers& layers = StyleSVGReset()->mMask;
-  return DoGetImageLayerPositionY(layers);
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetMaskRepeat()
-{
-  const nsStyleImageLayers& layers = StyleSVGReset()->mMask;
-  return DoGetImageLayerRepeat(layers);
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetMaskSize()
-{
-  const nsStyleImageLayers& layers = StyleSVGReset()->mMask;
-  return DoGetImageLayerSize(layers);
 }
 
 already_AddRefed<CSSValue>
@@ -5296,58 +4576,6 @@ nsComputedDOMStyle::DoGetTransitionProperty()
   return valueList.forget();
 }
 
-void
-nsComputedDOMStyle::AppendTimingFunction(nsDOMCSSValueList *aValueList,
-                                         const nsTimingFunction& aTimingFunction)
-{
-  RefPtr<nsROCSSPrimitiveValue> timingFunction = new nsROCSSPrimitiveValue;
-
-  nsAutoString tmp;
-  switch (aTimingFunction.mType) {
-    case nsTimingFunction::Type::CubicBezier:
-      nsStyleUtil::AppendCubicBezierTimingFunction(aTimingFunction.mFunc.mX1,
-                                                   aTimingFunction.mFunc.mY1,
-                                                   aTimingFunction.mFunc.mX2,
-                                                   aTimingFunction.mFunc.mY2,
-                                                   tmp);
-      break;
-    case nsTimingFunction::Type::StepStart:
-    case nsTimingFunction::Type::StepEnd:
-      nsStyleUtil::AppendStepsTimingFunction(aTimingFunction.mType,
-                                             aTimingFunction.mStepsOrFrames,
-                                             tmp);
-      break;
-    case nsTimingFunction::Type::Frames:
-      nsStyleUtil::AppendFramesTimingFunction(aTimingFunction.mStepsOrFrames,
-                                              tmp);
-      break;
-    default:
-      nsStyleUtil::AppendCubicBezierKeywordTimingFunction(aTimingFunction.mType,
-                                                          tmp);
-      break;
-  }
-  timingFunction->SetString(tmp);
-  aValueList->AppendCSSValue(timingFunction.forget());
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetTransitionTimingFunction()
-{
-  const nsStyleDisplay* display = StyleDisplay();
-
-  RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(true);
-
-  MOZ_ASSERT(display->mTransitionTimingFunctionCount > 0,
-             "first item must be explicit");
-  uint32_t i = 0;
-  do {
-    AppendTimingFunction(valueList,
-                         display->mTransitions[i].GetTimingFunction());
-  } while (++i < display->mTransitionTimingFunctionCount);
-
-  return valueList.forget();
-}
-
 already_AddRefed<CSSValue>
 nsComputedDOMStyle::DoGetAnimationName()
 {
@@ -5414,24 +4642,6 @@ nsComputedDOMStyle::DoGetAnimationDuration()
     duration->SetTime((float)animation->GetDuration() / (float)PR_MSEC_PER_SEC);
     valueList->AppendCSSValue(duration.forget());
   } while (++i < display->mAnimationDurationCount);
-
-  return valueList.forget();
-}
-
-already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetAnimationTimingFunction()
-{
-  const nsStyleDisplay* display = StyleDisplay();
-
-  RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(true);
-
-  MOZ_ASSERT(display->mAnimationTimingFunctionCount > 0,
-             "first item must be explicit");
-  uint32_t i = 0;
-  do {
-    AppendTimingFunction(valueList,
-                         display->mAnimations[i].GetTimingFunction());
-  } while (++i < display->mAnimationTimingFunctionCount);
 
   return valueList.forget();
 }

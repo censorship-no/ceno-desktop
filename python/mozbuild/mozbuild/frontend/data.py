@@ -414,8 +414,8 @@ class Linkable(ContextDerived):
         # errors from duplicate symbols.
         if isinstance(obj, RustLibrary) and any(isinstance(l, RustLibrary)
                                                 for l in self.linked_libraries):
-            raise LinkageMultipleRustLibrariesError("Cannot link multiple Rust libraries into %s",
-                                                    self)
+            raise LinkageMultipleRustLibrariesError("Cannot link multiple Rust libraries into %s"
+                                                    % self)
         self.linked_libraries.append(obj)
         if obj.cxx_link and not isinstance(obj, SharedLibrary):
             self.cxx_link = True
@@ -425,7 +425,9 @@ class Linkable(ContextDerived):
         # The '$' check is here as a special temporary rule, allowing the
         # inherited use of make variables, most notably in TK_LIBS.
         if not lib.startswith('$') and not lib.startswith('-'):
-            if self.config.substs.get('GNU_CC'):
+            type_var = 'HOST_CC_TYPE' if self.KIND == 'host' else 'CC_TYPE'
+            compiler_type = self.config.substs.get(type_var)
+            if compiler_type in ('gcc', 'clang'):
                 lib = '-l%s' % lib
             else:
                 lib = '%s%s%s' % (
@@ -673,6 +675,7 @@ class RustLibrary(StaticLibrary):
         'deps_path',
         'features',
         'target_dir',
+        'output_category',
     )
     TARGET_SUBST_VAR = 'RUST_TARGET'
     FEATURES_VAR = 'RUST_LIBRARY_FEATURES'
@@ -694,6 +697,7 @@ class RustLibrary(StaticLibrary):
         self.dependencies = dependencies
         self.features = features
         self.target_dir = target_dir
+        self.output_category = context.get('RUST_LIBRARY_OUTPUT_CATEGORY')
         # Skip setting properties below which depend on cargo
         # when we don't have a compile environment. The required
         # config keys won't be available, but the instance variables
@@ -713,6 +717,7 @@ class SharedLibrary(Library):
         'soname',
         'variant',
         'symbols_file',
+        'output_category',
     )
 
     DICT_ATTRS = {
@@ -733,6 +738,7 @@ class SharedLibrary(Library):
         Library.__init__(self, context, basename, real_name)
         self.variant = variant
         self.lib_name = real_name or basename
+        self.output_category = context.get('SHARED_LIBRARY_OUTPUT_CATEGORY')
         assert self.lib_name
 
         if variant == self.FRAMEWORK:
@@ -1164,9 +1170,9 @@ class GeneratedFile(ContextDerived):
             '.inc',
             '.py',
             '.rs',
-            'new', # 'new' is an output from make-stl-wrappers.py
+            'node.stub', # To avoid VPATH issues with installing node files: https://bugzilla.mozilla.org/show_bug.cgi?id=1461714#c55
         )
-        self.required_for_compile = any(f.endswith(suffixes) for f in self.outputs)
+        self.required_for_compile = [f for f in self.outputs if f.endswith(suffixes) or 'stl_wrappers/' in f]
 
 
 class ChromeManifestEntry(ContextDerived):

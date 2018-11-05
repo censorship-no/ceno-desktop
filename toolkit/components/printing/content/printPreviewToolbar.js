@@ -16,7 +16,7 @@ customElements.define("printpreview-toolbar", class PrintPreviewToolbar extends 
   connectedCallback() {
     window.addEventListener("unload", this.disconnectedCallback, { once: true });
     this.appendChild(MozXULElement.parseXULToFragment(`
-      <button id="print-preview-print" label="&print.label;" accesskey="&print.accesskey;" oncommand="this.parentNode.print();" icon="print"/>
+      <button id="print-preview-print" label="&print.label;" accesskey="&print.accesskey;" oncommand="this.parentNode.print();"/>
       <button id="print-preview-pageSetup" label="&pageSetup.label;" accesskey="&pageSetup.accesskey;" oncommand="this.parentNode.doPageSetup();"/>
       <vbox align="center" pack="center">
         <label value="&page.label;" accesskey="&page.accesskey;" control="print-preview-pageNumber"/>
@@ -63,13 +63,11 @@ customElements.define("printpreview-toolbar", class PrintPreviewToolbar extends 
       <toolbarseparator class="toolbarseparator-primary"/>
       <checkbox id="print-preview-simplify" label="&simplifyPage.label;" checked="false" disabled="true" accesskey="&simplifyPage.accesskey;" tooltiptext-disabled="&simplifyPage.disabled.tooltip;" tooltiptext-enabled="&simplifyPage.enabled.tooltip;" oncommand="this.parentNode.simplify();"/>
       <toolbarseparator class="toolbarseparator-primary"/>
-      <button label="&close.label;" accesskey="&close.accesskey;" oncommand="PrintUtils.exitPrintPreview();" icon="close"/>
+      <button label="&close.label;" accesskey="&close.accesskey;" oncommand="PrintUtils.exitPrintPreview();"/>
       <data id="print-preview-prompt-title" value="&customPrompt.title;"/>
-    `, `
-    <!DOCTYPE bindings [
-      <!ENTITY % printPreviewDTD SYSTEM "chrome://global/locale/printPreview.dtd" >
-      %printPreviewDTD;
-    ]>`));
+    `, [
+      "chrome://global/locale/printPreview.dtd",
+    ]));
 
     this.mPrintButton = document.getElementById("print-preview-print");
 
@@ -87,7 +85,7 @@ customElements.define("printpreview-toolbar", class PrintPreviewToolbar extends 
 
     this.mTotalPages = document.getElementById("print-preview-totalPages");
 
-    this.mScaleCombobox = document.getElementById("print-preview-scale-label");
+    this.mScaleCombobox = document.getElementById("print-preview-scale");
 
     this.mPortaitButton = document.getElementById("print-preview-portrait-button");
 
@@ -97,7 +95,7 @@ customElements.define("printpreview-toolbar", class PrintPreviewToolbar extends 
 
     this.mSimplifyPageNotAllowed = this.mSimplifyPageCheckbox.disabled;
 
-    this.mSimplifyPageToolbarSeparator = this.mSimplifyPageCheckbox.nextSibling;
+    this.mSimplifyPageToolbarSeparator = this.mSimplifyPageCheckbox.nextElementSibling;
 
     this.mPrintPreviewObs = "";
 

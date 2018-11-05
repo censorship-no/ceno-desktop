@@ -301,8 +301,8 @@ fn request_render_task_from_pathfinder(glyph_key: &GlyphKey,
     let subpixel_offset = TypedPoint2D::new(glyph_subpixel_offset as f32, 0.0);
     let embolden_amount = compute_embolden_amount(size.to_f32_px());
 
-    let location = RenderTaskLocation::Dynamic(None, Some(*glyph_size));
-    let glyph_render_task = RenderTask::new_glyph(location,
+    let location = RenderTaskLocation::Dynamic(None, *glyph_size);
+    let glyph_render_task = RenderTask::new_glyph(location.clone(),
                                                   mesh,
                                                   &glyph_origin,
                                                   &subpixel_offset,
@@ -314,7 +314,7 @@ fn request_render_task_from_pathfinder(glyph_key: &GlyphKey,
         FontRenderMode::Mono | FontRenderMode::Alpha => &mut render_passes.alpha_glyph_pass,
         FontRenderMode::Subpixel => &mut render_passes.color_glyph_pass,
     };
-    render_pass.add_render_task(root_task_id, *glyph_size, RenderTargetKind::Color);
+    render_pass.add_render_task(root_task_id, *glyph_size, RenderTargetKind::Color, &location);
 
     Ok(root_task_id)
 }

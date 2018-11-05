@@ -759,7 +759,6 @@ def findTestMediaDevices(log):
     info['video'] = name
 
     pactl = spawn.find_executable("pactl")
-    pacmd = spawn.find_executable("pacmd")
 
     # Use pactl to see if the PulseAudio module-null-sink module is loaded.
     def null_sink_loaded():
@@ -775,9 +774,6 @@ def findTestMediaDevices(log):
     if not null_sink_loaded():
         log.error('Couldn\'t load module-null-sink')
         return None
-
-    # Whether it was loaded or not make it the default output
-    subprocess.check_call([pacmd, 'set-default-sink', 'null'])
 
     # Hardcode the name since it's always the same.
     info['audio'] = 'Monitor of Null Output'
@@ -877,6 +873,7 @@ class MochitestDesktop(object):
         self.mozLogs = None
         self.start_script_kwargs = {}
         self.urlOpts = []
+        self.extraPrefs = {}
 
         if logger_options.get('log'):
             self.log = logger_options['log']
@@ -912,7 +909,7 @@ class MochitestDesktop(object):
         kwargs['log'] = self.log
         return test_environment(**kwargs)
 
-    def extraPrefs(self, prefs):
+    def parseExtraPrefs(self, prefs):
         """Interpolate extra preferences from option strings"""
 
         try:
@@ -1909,7 +1906,7 @@ toolbar#nav-bar {
             "idle.lastDailyNotification": int(time.time()),
             # Enable tracing output for detailed failures in case of
             # failing connection attempts, and hangs (bug 1397201)
-            "marionette.log.level": "TRACE",
+            "marionette.log.level": "Trace",
         }
 
         if options.flavor == 'browser' and options.timeout:
@@ -1930,6 +1927,8 @@ toolbar#nav-bar {
         if options.useTestMediaDevices:
             prefs['media.audio_loopback_dev'] = self.mediaDevices['audio']
             prefs['media.video_loopback_dev'] = self.mediaDevices['video']
+            prefs['media.cubeb.output_device'] = "Null Output"
+            prefs['media.volume_scale'] = "1.0"
 
         # Disable web replay rewinding by default if recordings are being saved.
         if options.recordingPath:
@@ -1938,7 +1937,7 @@ toolbar#nav-bar {
         self.profile.set_preferences(prefs)
 
         # Extra prefs from --setpref
-        self.profile.set_preferences(self.extraPrefs(options.extraPrefs))
+        self.profile.set_preferences(self.extraPrefs)
         return manifest
 
     def getGMPPluginPath(self, options):
@@ -2561,16 +2560,20 @@ toolbar#nav-bar {
 
     def runTests(self, options):
         """ Prepare, configure, run tests and cleanup """
+        self.extraPrefs = self.parseExtraPrefs(options.extraPrefs)
 
         # a11y and chrome tests don't run with e10s enabled in CI. Need to set
         # this here since |mach mochitest| sets the flavor after argument parsing.
         if options.flavor in ('a11y', 'chrome'):
             options.e10s = False
-        mozinfo.update({"e10s": options.e10s})  # for test manifest parsing.
-        mozinfo.update({"headless": options.headless})  # for test manifest parsing.
 
-        if options.jscov_dir_prefix is not None:
-            mozinfo.update({'coverage': True})
+        # for test manifest parsing.
+        mozinfo.update({
+            "e10s": options.e10s,
+            "headless": options.headless,
+            "serviceworker_e10s": self.extraPrefs.get(
+                'dom.serviceWorkers.parent_intercept', False),
+        })
 
         self.setTestRoot(options)
 
@@ -2596,17 +2599,18 @@ toolbar#nav-bar {
         # code for --run-by-manifest
         manifests = set(t['manifest'] for t in tests)
         result = 0
-        origPrefs = options.extraPrefs[:]
+
+        origPrefs = self.extraPrefs.copy()
         for m in sorted(manifests):
             self.log.info("Running manifest: {}".format(m))
 
             prefs = list(self.prefs_by_manifest[m])[0]
-            options.extraPrefs = origPrefs[:]
+            self.extraPrefs = origPrefs.copy()
             if prefs:
                 prefs = prefs.strip().split()
                 self.log.info("The following extra prefs will be set:\n  {}".format(
                     '\n  '.join(prefs)))
-                options.extraPrefs.extend(prefs)
+                self.extraPrefs.update(self.parseExtraPrefs(prefs))
 
             # If we are using --run-by-manifest, we should not use the profile path (if) provided
             # by the user, since we need to create a new directory for each run. We would face
@@ -2643,9 +2647,12 @@ toolbar#nav-bar {
             print("4 INFO Mode:    %s" % e10s_mode)
             print("5 INFO SimpleTest FINISHED")
 
-        if not result and not self.countpass:
-            # either tests failed or no tests run
-            result = 1
+        if not result:
+            if self.countfail or \
+               not (self.countpass or self.counttodo):
+                # at least one test failed, or
+                # no tests passed, and no tests failed (possibly a crash)
+                result = 1
 
         return result
 
@@ -2790,6 +2797,8 @@ toolbar#nav-bar {
                     testURL += "?" + "&".join(self.urlOpts)
 
                 self.log.info("runtests.py | Running with e10s: {}".format(options.e10s))
+                self.log.info("runtests.py | Running with serviceworker_e10s: {}".format(
+                    mozinfo.info.get('serviceworker_e10s', False)))
                 self.log.info("runtests.py | Running tests: start.\n")
                 ret, _ = self.runApp(
                     testURL,
@@ -2834,12 +2843,13 @@ toolbar#nav-bar {
                 ignoreMissingLeaks.append(processType)
                 leakThresholds[processType] = sys.maxsize
 
+        utilityPath = options.utilityPath or options.xrePath
         mozleak.process_leak_log(
             self.leak_report_file,
             leak_thresholds=leakThresholds,
             ignore_missing_leaks=ignoreMissingLeaks,
             log=self.log,
-            stack_fixer=get_stack_fixer_function(options.utilityPath,
+            stack_fixer=get_stack_fixer_function(utilityPath,
                                                  options.symbolsPath),
         )
 

@@ -42,7 +42,6 @@ interface nsITranslationNodeList;
 interface nsIJSRAIIHelper;
 interface nsIContentPermissionRequest;
 interface nsIObserver;
-interface nsIDOMStorage;
 
 webidl Animation;
 webidl DOMRect;
@@ -51,6 +50,7 @@ webidl EventTarget;
 webidl Event;
 webidl Node;
 webidl NodeList;
+webidl Storage;
 
 [scriptable, uuid(4d6732ca-9da7-4176-b8a1-8dde15cd0bf9)]
 interface nsIDOMWindowUtils : nsISupports {
@@ -115,7 +115,7 @@ interface nsIDOMWindowUtils : nsISupports {
 
   /**
    * Information retrieved from the <meta name="viewport"> tag.
-   * See nsContentUtils::GetViewportInfo for more information.
+   * See nsIDocument::GetViewportInfo for more information.
    */
   void getViewportInfo(in uint32_t aDisplayWidth, in uint32_t aDisplayHeight,
                        out double aDefaultZoom, out boolean aAllowZoom,
@@ -687,8 +687,6 @@ interface nsIDOMWindowUtils : nsISupports {
    * non-debug builds. Available to all callers in debug builds.
    *
    * @param aListener listener that receives information about the CC graph
-   *                  (see @mozilla.org/cycle-collector-logger;1 for a logger
-   *                   component)
    */
   void garbageCollect([optional] in nsICycleCollectorListener aListener);
 
@@ -699,8 +697,6 @@ interface nsIDOMWindowUtils : nsISupports {
    * non-debug builds. Available to all callers in debug builds.
    *
    * @param aListener listener that receives information about the CC graph
-   *                  (see @mozilla.org/cycle-collector-logger;1 for a logger
-   *                   component)
    */
   void cycleCollect([optional] in nsICycleCollectorListener aListener);
 
@@ -847,6 +843,13 @@ interface nsIDOMWindowUtils : nsISupports {
    * Returns the given element's bounds without flushing pending layout changes.
    */
   DOMRect getBoundsWithoutFlushing(in Element aElement);
+
+  /**
+   * Returns the offset of the window's visual viewport relative to the
+   * layout viewport. 
+   */
+  void getVisualViewportOffsetRelativeToLayoutViewport(out float aOffsetX, 
+                                                       out float aOffsetY);
 
   const long FLUSH_NONE = -1;
   const long FLUSH_STYLE = 0;
@@ -1874,12 +1877,6 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute int32_t gpuProcessPid;
 
   /**
-   * Returns true if the given timeout ID is in the list of tracking
-   * timeouts.
-   */
-  boolean isTimeoutTracking(in unsigned long timeoutId);
-
-  /**
    * Adds an EventStates bit to the element.
    *
    * The state string must be one of the following:
@@ -1905,7 +1902,7 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param aStorage
    *    The storage object to get usage data for.
    */
-  int64_t getStorageUsage(in nsIDOMStorage aStorage);
+  int64_t getStorageUsage(in Storage aStorage);
 
   /**
    * Returns the directionality of a string using the first-strong character
@@ -1930,6 +1927,32 @@ interface nsIDOMWindowUtils : nsISupports {
    * save them to a folder relative to the current working directory.
    */
   void wrCapture();
+
+  /**
+   * Returns whether the document we're associated to has recorded a given CSS
+   * property via the use counter mechanism.
+   *
+   * Throws if there's no document or the property is invalid.
+   */
+  bool isCssPropertyRecordedInUseCounter(in ACString aProperty);
+
+  /**
+   * NOTE: Currently works only on GTK+.
+   */
+  attribute ACString systemFont;
+
+
+  /**
+   * Simulate the system setting corresponding to 'prefers-reduced-motion'
+   * media queries feature is changed to 'on' or 'off'.
+   *
+   * Currently this function is available only on MacOSX.
+   */
+  void setPrefersReducedMotionOverrideForTest(in boolean aValue);
+  /**
+   * Reset the internal state to be used for above setPrefersReducedMotion.
+   */
+  void resetPrefersReducedMotionOverrideForTest();
 
   // These consts are only for testing purposes.
   const long DEFAULT_MOUSE_POINTER_ID = 0;

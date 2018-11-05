@@ -11,7 +11,7 @@
  */
 
 [Constructor(DOMString type, optional EventInit eventInitDict),
- Exposed=(Window,Worker,System), ProbablyShortLivingWrapper]
+ Exposed=(Window,Worker), ProbablyShortLivingWrapper]
 interface Event {
   [Pure]
   readonly attribute DOMString type;
@@ -36,6 +36,8 @@ interface Event {
   readonly attribute boolean bubbles;
   [Pure]
   readonly attribute boolean cancelable;
+  [NeedsCallerType]
+  attribute boolean returnValue;
   [NeedsCallerType]
   void preventDefault();
   [Pure, NeedsCallerType]

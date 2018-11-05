@@ -13,11 +13,11 @@
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/gfx/CompositorHitTestInfo.h"
+#include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/SyncObject.h"
 #include "mozilla/Range.h"
 #include "mozilla/webrender/webrender_ffi.h"
 #include "mozilla/webrender/WebRenderTypes.h"
-#include "FrameMetrics.h"
 #include "GLTypes.h"
 #include "Units.h"
 
@@ -50,12 +50,26 @@ struct Line {
   wr::LineStyle style;
 };
 
+/// A handler that can be bundled into a transaction and notified at specific
+/// points in the rendering pipeline, such as after scene building or after
+/// frame building.
+///
+/// If for any reason the handler is dropped before reaching the requested
+/// point, it is notified with the value Checkpoint::TransactionDropped.
+/// So it is safe to assume that the handler will be notified "at some point".
+class NotificationHandler {
+public:
+  virtual void Notify(wr::Checkpoint aCheckpoint) = 0;
+  virtual ~NotificationHandler() = default;
+};
 
 class TransactionBuilder {
 public:
   explicit TransactionBuilder(bool aUseSceneBuilderThread = true);
 
   ~TransactionBuilder();
+
+  void SetLowPriority(bool aIsLowPriority);
 
   void UpdateEpoch(PipelineId aPipelineId, Epoch aEpoch);
 
@@ -75,6 +89,8 @@ public:
 
   void GenerateFrame();
 
+  void InvalidateRenderedFrame();
+
   void UpdateDynamicProperties(const nsTArray<wr::WrOpacityProperty>& aOpacityArray,
                                const nsTArray<wr::WrTransformProperty>& aTransformArray);
 
@@ -82,7 +98,7 @@ public:
                            const LayoutDeviceIntRect& aDocRect);
 
   void UpdateScrollPosition(const wr::WrPipelineId& aPipelineId,
-                            const layers::FrameMetrics::ViewID& aScrollId,
+                            const layers::ScrollableLayerGuid::ViewID& aScrollId,
                             const wr::LayoutPoint& aScrollPosition);
 
   bool IsEmpty() const;
@@ -127,7 +143,7 @@ public:
                                         const wr::DeviceUintRect& aDirtyRect,
                                         uint8_t aChannelIndex = 0);
 
-  void SetImageVisibleArea(ImageKey aKey, const wr::NormalizedRect& aArea);
+  void SetImageVisibleArea(ImageKey aKey, const wr::DeviceUintRect& aArea);
 
   void DeleteImage(wr::ImageKey aKey);
 
@@ -146,6 +162,8 @@ public:
 
   void DeleteFontInstance(wr::FontInstanceKey aKey);
 
+  void Notify(wr::Checkpoint aWhen, UniquePtr<NotificationHandler> aHandler);
+
   void Clear();
 
   bool UseSceneBuilderThread() const { return mUseSceneBuilderThread; }
@@ -162,8 +180,9 @@ public:
 
   void AppendTransformProperties(const nsTArray<wr::WrTransformProperty>& aTransformArray);
   void UpdateScrollPosition(const wr::WrPipelineId& aPipelineId,
-                            const layers::FrameMetrics::ViewID& aScrollId,
+                            const layers::ScrollableLayerGuid::ViewID& aScrollId,
                             const wr::LayoutPoint& aScrollPosition);
+  void UpdatePinchZoom(float aZoom);
 private:
   Transaction* mTxn;
 };
@@ -187,7 +206,7 @@ public:
 
   bool HitTest(const wr::WorldPoint& aPoint,
                wr::WrPipelineId& aOutPipelineId,
-               layers::FrameMetrics::ViewID& aOutScrollId,
+               layers::ScrollableLayerGuid::ViewID& aOutScrollId,
                gfx::CompositorHitTestInfo& aOutHitInfo);
 
   void SendTransaction(TransactionBuilder& aTxn);
@@ -196,13 +215,18 @@ public:
 
   void RunOnRenderThread(UniquePtr<RendererEvent> aEvent);
 
-  void Readback(const TimeStamp& aStartTime, gfx::IntSize aSize, uint8_t *aBuffer, uint32_t aBufferSize);
+  void Readback(const TimeStamp& aStartTime, gfx::IntSize aSize, const Range<uint8_t>& aBuffer);
+
+  void ClearAllCaches();
 
   void Pause();
   bool Resume();
 
   void WakeSceneBuilder();
   void FlushSceneBuilder();
+
+  void NotifyMemoryPressure();
+  void AccumulateMemoryReport(wr::MemoryReport*);
 
   wr::WrIdNamespace GetNamespace();
   uint32_t GetMaxTextureSize() const { return mMaxTextureSize; }
@@ -303,7 +327,7 @@ public:
           const wr::MixBlendMode& aMixBlendMode,
           const nsTArray<wr::WrFilterOp>& aFilters,
           bool aIsBackfaceVisible,
-          const wr::GlyphRasterSpace& aRasterSpace);
+          const wr::RasterSpace& aRasterSpace);
   void PopStackingContext(bool aIsReferenceFrame);
 
   wr::WrClipChainId DefineClipChain(const Maybe<wr::WrClipChainId>& aParent,
@@ -325,15 +349,16 @@ public:
                                  const StickyOffsetBounds& aHorizontalBounds,
                                  const wr::LayoutVector2D& aAppliedOffset);
 
-  Maybe<wr::WrClipId> GetScrollIdForDefinedScrollLayer(layers::FrameMetrics::ViewID aViewId) const;
-  wr::WrClipId DefineScrollLayer(const layers::FrameMetrics::ViewID& aViewId,
+  Maybe<wr::WrClipId> GetScrollIdForDefinedScrollLayer(layers::ScrollableLayerGuid::ViewID aViewId) const;
+  wr::WrClipId DefineScrollLayer(const layers::ScrollableLayerGuid::ViewID& aViewId,
                                  const Maybe<wr::WrClipId>& aParentId,
                                  const wr::LayoutRect& aContentRect, // TODO: We should work with strongly typed rects
                                  const wr::LayoutRect& aClipRect);
 
-  void PushClipAndScrollInfo(const wr::WrClipId& aScrollId,
-                             const wr::WrClipChainId* aClipChainId);
-  void PopClipAndScrollInfo();
+  void PushClipAndScrollInfo(const wr::WrClipId* aScrollId,
+                             const wr::WrClipChainId* aClipChainId,
+                             const Maybe<wr::LayoutRect>& aClipChainLeaf);
+  void PopClipAndScrollInfo(const wr::WrClipId* aScrollId);
 
   void PushRect(const wr::LayoutRect& aBounds,
                 const wr::LayoutRect& aClip,
@@ -367,7 +392,8 @@ public:
                  bool aIsBackfaceVisible,
                  wr::ImageRendering aFilter,
                  wr::ImageKey aImage,
-                 bool aPremultipliedAlpha = true);
+                 bool aPremultipliedAlpha = true,
+                 const wr::ColorF& aColor = wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f});
 
   void PushImage(const wr::LayoutRect& aBounds,
                  const wr::LayoutRect& aClip,
@@ -376,7 +402,8 @@ public:
                  const wr::LayoutSize& aTileSpacing,
                  wr::ImageRendering aFilter,
                  wr::ImageKey aImage,
-                 bool aPremultipliedAlpha = true);
+                 bool aPremultipliedAlpha = true,
+                 const wr::ColorF& aColor = wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f});
 
   void PushYCbCrPlanarImage(const wr::LayoutRect& aBounds,
                             const wr::LayoutRect& aClip,
@@ -384,6 +411,7 @@ public:
                             wr::ImageKey aImageChannel0,
                             wr::ImageKey aImageChannel1,
                             wr::ImageKey aImageChannel2,
+                            wr::WrColorDepth aColorDepth,
                             wr::WrYuvColorSpace aColorSpace,
                             wr::ImageRendering aFilter);
 
@@ -392,6 +420,7 @@ public:
                      bool aIsBackfaceVisible,
                      wr::ImageKey aImageChannel0,
                      wr::ImageKey aImageChannel1,
+                     wr::WrColorDepth aColorDepth,
                      wr::WrYuvColorSpace aColorSpace,
                      wr::ImageRendering aFilter);
 
@@ -399,6 +428,7 @@ public:
                                  const wr::LayoutRect& aClip,
                                  bool aIsBackfaceVisible,
                                  wr::ImageKey aImageChannel0,
+                                 wr::WrColorDepth aColorDepth,
                                  wr::WrYuvColorSpace aColorSpace,
                                  wr::ImageRendering aFilter);
 
@@ -412,14 +442,15 @@ public:
   void PushBorder(const wr::LayoutRect& aBounds,
                   const wr::LayoutRect& aClip,
                   bool aIsBackfaceVisible,
-                  const wr::BorderWidths& aWidths,
+                  const wr::LayoutSideOffsets& aWidths,
                   const Range<const wr::BorderSide>& aSides,
-                  const wr::BorderRadius& aRadius);
+                  const wr::BorderRadius& aRadius,
+                  wr::AntialiasBorder = wr::AntialiasBorder::Yes);
 
   void PushBorderImage(const wr::LayoutRect& aBounds,
                        const wr::LayoutRect& aClip,
                        bool aIsBackfaceVisible,
-                       const wr::BorderWidths& aWidths,
+                       const wr::LayoutSideOffsets& aWidths,
                        wr::ImageKey aImage,
                        const uint32_t aWidth,
                        const uint32_t aHeight,
@@ -431,7 +462,7 @@ public:
   void PushBorderGradient(const wr::LayoutRect& aBounds,
                           const wr::LayoutRect& aClip,
                           bool aIsBackfaceVisible,
-                          const wr::BorderWidths& aWidths,
+                          const wr::LayoutSideOffsets& aWidths,
                           const uint32_t aWidth,
                           const uint32_t aHeight,
                           const wr::SideOffsets2D<uint32_t>& aSlice,
@@ -444,7 +475,7 @@ public:
   void PushBorderRadialGradient(const wr::LayoutRect& aBounds,
                                 const wr::LayoutRect& aClip,
                                 bool aIsBackfaceVisible,
-                                const wr::BorderWidths& aWidths,
+                                const wr::LayoutSideOffsets& aWidths,
                                 const wr::LayoutPoint& aCenter,
                                 const wr::LayoutSize& aRadius,
                                 const nsTArray<wr::GradientStop>& aStops,
@@ -486,11 +517,11 @@ public:
   // Checks to see if the innermost enclosing fixed pos item has the same
   // ASR. If so, it returns the scroll target for that fixed-pos item.
   // Otherwise, it returns Nothing().
-  Maybe<layers::FrameMetrics::ViewID> GetContainingFixedPosScrollTarget(const ActiveScrolledRoot* aAsr);
+  Maybe<layers::ScrollableLayerGuid::ViewID> GetContainingFixedPosScrollTarget(const ActiveScrolledRoot* aAsr);
 
   // Set the hit-test info to be used for all display items until the next call
   // to SetHitTestInfo or ClearHitTestInfo.
-  void SetHitTestInfo(const layers::FrameMetrics::ViewID& aScrollId,
+  void SetHitTestInfo(const layers::ScrollableLayerGuid::ViewID& aScrollId,
                       gfx::CompositorHitTestInfo aHitInfo);
   // Clears the hit-test info so that subsequent display items will not have it.
   void ClearHitTestInfo();
@@ -505,24 +536,37 @@ public:
   public:
     FixedPosScrollTargetTracker(DisplayListBuilder& aBuilder,
                                 const ActiveScrolledRoot* aAsr,
-                                layers::FrameMetrics::ViewID aScrollId);
+                                layers::ScrollableLayerGuid::ViewID aScrollId);
     ~FixedPosScrollTargetTracker();
-    Maybe<layers::FrameMetrics::ViewID> GetScrollTargetForASR(const ActiveScrolledRoot* aAsr);
+    Maybe<layers::ScrollableLayerGuid::ViewID> GetScrollTargetForASR(const ActiveScrolledRoot* aAsr);
 
   private:
     FixedPosScrollTargetTracker* mParentTracker;
     DisplayListBuilder& mBuilder;
     const ActiveScrolledRoot* mAsr;
-    layers::FrameMetrics::ViewID mScrollId;
+    layers::ScrollableLayerGuid::ViewID mScrollId;
   };
 
 protected:
+  wr::LayoutRect MergeClipLeaf(const wr::LayoutRect& aClip)
+  {
+    if (mClipChainLeaf) {
+      return wr::IntersectLayoutRect(*mClipChainLeaf, aClip);
+    }
+    return aClip;
+  }
+
   wr::WrState* mWrState;
 
   // Track each scroll id that we encountered. We use this structure to
   // ensure that we don't define a particular scroll layer multiple times,
   // as that results in undefined behaviour in WR.
-  std::unordered_map<layers::FrameMetrics::ViewID, wr::WrClipId> mScrollIds;
+  std::unordered_map<layers::ScrollableLayerGuid::ViewID, wr::WrClipId> mScrollIds;
+
+  // Contains the current leaf of the clip chain to be merged with the
+  // display item's clip rect when pushing an item. May be set to Nothing() if
+  // there is no clip rect to merge with.
+  Maybe<wr::LayoutRect> mClipChainLeaf;
 
   FixedPosScrollTargetTracker* mActiveFixedPosTracker;
 

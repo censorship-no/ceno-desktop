@@ -41,14 +41,15 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "nsICrashReporter.h"
 #include "nsThreadSyncDispatch.h"
 #include "nsServiceManagerUtils.h"
 #include "GeckoProfiler.h"
+#ifdef MOZ_GECKO_PROFILER
+#include "ProfilerMarkerPayload.h"
+#endif
 #include "InputEventStatistics.h"
 #include "ThreadEventTarget.h"
-
-#include "mozilla/dom/ContentChild.h"
+#include "ThreadDelay.h"
 
 #ifdef XP_LINUX
 #ifdef __GLIBC__
@@ -116,6 +117,9 @@ static LazyLogModule sThreadLog("nsThread");
 NS_DECL_CI_INTERFACE_GETTER(nsThread)
 
 Array<char, nsThread::kRunnableNameBufSize> nsThread::sMainThreadRunnableName;
+
+uint32_t nsThread::sActiveThreads;
+uint32_t nsThread::sMaxActiveThreads;
 
 //-----------------------------------------------------------------------------
 // Because we do not have our own nsIFactory, we have to implement nsIClassInfo
@@ -418,6 +422,37 @@ nsThread::Enumerate()
   return {};
 }
 
+/* static */ uint32_t
+nsThread::MaxActiveThreads()
+{
+  OffTheBooksMutexAutoLock mal(ThreadListMutex());
+  return sMaxActiveThreads;
+}
+
+void
+nsThread::AddToThreadList()
+{
+  OffTheBooksMutexAutoLock mal(ThreadListMutex());
+  MOZ_ASSERT(!isInList());
+
+  sActiveThreads++;
+  sMaxActiveThreads = std::max(sActiveThreads, sMaxActiveThreads);
+
+  ThreadList().insertBack(this);
+}
+
+void
+nsThread::MaybeRemoveFromThreadList()
+{
+  if (isInList()) {
+    OffTheBooksMutexAutoLock mal(ThreadListMutex());
+    if (isInList()) {
+      sActiveThreads--;
+      removeFrom(ThreadList());
+    }
+  }
+}
+
 /*static*/ void
 nsThread::ThreadFunc(void* aArg)
 {
@@ -425,6 +460,9 @@ nsThread::ThreadFunc(void* aArg)
 
   ThreadInitData* initData = static_cast<ThreadInitData*>(aArg);
   nsThread* self = initData->thread;  // strong reference
+
+  MOZ_ASSERT(self->mEventTarget);
+  MOZ_ASSERT(self->mEvents);
 
   self->mThread = PR_GetCurrentThread();
   self->mVirtualThread = GetCurrentVirtualThread();
@@ -587,76 +625,10 @@ nsThread::InitCommon()
 #endif
   }
 
-  OffTheBooksMutexAutoLock mal(ThreadListMutex());
-  ThreadList().insertBack(this);
+  AddToThreadList();
 }
 
 //-----------------------------------------------------------------------------
-
-// Tell the crash reporter to save a memory report if our heuristics determine
-// that an OOM failure is likely to occur soon.
-// Memory usage will not be checked more than every 30 seconds or saved more
-// than every 3 minutes
-// If |aShouldSave == kForceReport|, a report will be saved regardless of
-// whether the process is low on memory or not. However, it will still not be
-// saved if a report was saved less than 3 minutes ago.
-bool
-nsThread::SaveMemoryReportNearOOM(ShouldSaveMemoryReport aShouldSave)
-{
-  // Keep an eye on memory usage (cheap, ~7ms) somewhat frequently,
-  // but save memory reports (expensive, ~75ms) less frequently.
-  const size_t kLowMemoryCheckSeconds = 30;
-  const size_t kLowMemorySaveSeconds = 3 * 60;
-
-  static TimeStamp nextCheck = TimeStamp::NowLoRes()
-    + TimeDuration::FromSeconds(kLowMemoryCheckSeconds);
-  static bool recentlySavedReport = false; // Keeps track of whether a report
-                                           // was saved last time we checked
-
-  // Are we checking again too soon?
-  TimeStamp now = TimeStamp::NowLoRes();
-  if ((aShouldSave == ShouldSaveMemoryReport::kMaybeReport ||
-      recentlySavedReport) && now < nextCheck) {
-    return false;
-  }
-
-  bool needMemoryReport = (aShouldSave == ShouldSaveMemoryReport::kForceReport);
-#ifdef XP_WIN // XXX implement on other platforms as needed
-  // If the report is forced there is no need to check whether it is necessary
-  if (aShouldSave != ShouldSaveMemoryReport::kForceReport) {
-    const size_t LOWMEM_THRESHOLD_VIRTUAL = 200 * 1024 * 1024;
-    MEMORYSTATUSEX statex;
-    statex.dwLength = sizeof(statex);
-    if (GlobalMemoryStatusEx(&statex)) {
-      if (statex.ullAvailVirtual < LOWMEM_THRESHOLD_VIRTUAL) {
-        needMemoryReport = true;
-      }
-    }
-  }
-#endif
-
-  if (needMemoryReport) {
-    if (XRE_IsContentProcess()) {
-      dom::ContentChild* cc = dom::ContentChild::GetSingleton();
-      if (cc) {
-        cc->SendNotifyLowMemory();
-      }
-    } else {
-      nsCOMPtr<nsICrashReporter> cr =
-        do_GetService("@mozilla.org/toolkit/crash-reporter;1");
-      if (cr) {
-        cr->SaveMemoryReport();
-      }
-    }
-    recentlySavedReport = true;
-    nextCheck = now + TimeDuration::FromSeconds(kLowMemorySaveSeconds);
-  } else {
-    recentlySavedReport = false;
-    nextCheck = now + TimeDuration::FromSeconds(kLowMemoryCheckSeconds);
-  }
-
-  return recentlySavedReport;
-}
 
 #ifdef MOZ_CANARY
 int sCanaryOutputFD = -1;
@@ -681,6 +653,31 @@ nsThread::nsThread(NotNull<SynchronizedEventQueue*> aQueue,
   , mCurrentEventStart(TimeStamp::Now())
   , mCurrentPerformanceCounter(nullptr)
 {
+  mLastLongTaskEnd = mCurrentEventStart;
+  mLastLongNonIdleTaskEnd = mCurrentEventStart;
+}
+
+
+nsThread::nsThread()
+  : mEvents(nullptr)
+  , mEventTarget(nullptr)
+  , mShutdownContext(nullptr)
+  , mScriptObserver(nullptr)
+  , mThread(nullptr)
+  , mStackSize(0)
+  , mNestedEventLoopDepth(0)
+  , mCurrentEventLoopDepth(-1)
+  , mShutdownRequired(false)
+  , mPriority(PRIORITY_NORMAL)
+  , mIsMainThread(NOT_MAIN_THREAD)
+  , mCanInvokeJS(false)
+  , mCurrentEvent(nullptr)
+  , mCurrentEventStart(TimeStamp::Now())
+  , mCurrentPerformanceCounter(nullptr)
+{
+  mLastLongTaskEnd = mCurrentEventStart;
+  mLastLongNonIdleTaskEnd = mCurrentEventStart;
+  MOZ_ASSERT(!NS_IsMainThread());
 }
 
 nsThread::~nsThread()
@@ -688,15 +685,7 @@ nsThread::~nsThread()
   NS_ASSERTION(mRequestedShutdownContexts.IsEmpty(),
                "shouldn't be waiting on other threads to shutdown");
 
-  // We shouldn't need to lock before checking isInList at this point. We're
-  // destroying the last reference to this object, so there's no way for anyone
-  // else to remove it in the middle of our check. And the not-in-list state is
-  // determined the element's next and previous members pointing to itself, so a
-  // non-atomic update to an adjacent member won't affect the outcome either.
-  if (isInList()) {
-    OffTheBooksMutexAutoLock mal(ThreadListMutex());
-    removeFrom(ThreadList());
-  }
+  MaybeRemoveFromThreadList();
 
 #ifdef DEBUG
   // We deliberately leak these so they can be tracked by the leak checker.
@@ -714,6 +703,9 @@ nsThread::~nsThread()
 nsresult
 nsThread::Init(const nsACString& aName)
 {
+  MOZ_ASSERT(mEvents);
+  MOZ_ASSERT(mEventTarget);
+
   // spawn thread and wait until it is fully setup
   RefPtr<nsThreadStartupEvent> startup = new nsThreadStartupEvent();
 
@@ -762,6 +754,9 @@ nsThread::InitCurrentThread()
 NS_IMETHODIMP
 nsThread::DispatchFromScript(nsIRunnable* aEvent, uint32_t aFlags)
 {
+  MOZ_ASSERT(mEventTarget);
+  NS_ENSURE_TRUE(mEventTarget, NS_ERROR_NOT_IMPLEMENTED);
+
   nsCOMPtr<nsIRunnable> event(aEvent);
   return mEventTarget->Dispatch(event.forget(), aFlags);
 }
@@ -769,6 +764,9 @@ nsThread::DispatchFromScript(nsIRunnable* aEvent, uint32_t aFlags)
 NS_IMETHODIMP
 nsThread::Dispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags)
 {
+  MOZ_ASSERT(mEventTarget);
+  NS_ENSURE_TRUE(mEventTarget, NS_ERROR_NOT_IMPLEMENTED);
+
   LOG(("THRD(%p) Dispatch [%p %x]\n", this, /* XXX aEvent */nullptr, aFlags));
 
   return mEventTarget->Dispatch(std::move(aEvent), aFlags);
@@ -777,13 +775,20 @@ nsThread::Dispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags)
 NS_IMETHODIMP
 nsThread::DelayedDispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aDelayMs)
 {
+  MOZ_ASSERT(mEventTarget);
+  NS_ENSURE_TRUE(mEventTarget, NS_ERROR_NOT_IMPLEMENTED);
+
   return mEventTarget->DelayedDispatch(std::move(aEvent), aDelayMs);
 }
 
 NS_IMETHODIMP
 nsThread::IsOnCurrentThread(bool* aResult)
 {
-  return mEventTarget->IsOnCurrentThread(aResult);
+  if (mEventTarget) {
+    return mEventTarget->IsOnCurrentThread(aResult);
+  }
+  *aResult = GetCurrentVirtualThread() == mVirtualThread;
+  return NS_OK;
 }
 
 NS_IMETHODIMP_(bool)
@@ -818,6 +823,18 @@ nsThread::SetCanInvokeJS(bool aCanInvokeJS)
 }
 
 NS_IMETHODIMP
+nsThread::GetLastLongTaskEnd(TimeStamp* _retval) {
+  *_retval = mLastLongTaskEnd;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsThread::GetLastLongNonIdleTaskEnd(TimeStamp* _retval) {
+  *_retval = mLastLongNonIdleTaskEnd;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsThread::AsyncShutdown()
 {
   LOG(("THRD(%p) async shutdown\n", this));
@@ -835,6 +852,8 @@ nsThread::AsyncShutdown()
 nsThreadShutdownContext*
 nsThread::ShutdownInternal(bool aSync)
 {
+  MOZ_ASSERT(mEvents);
+  MOZ_ASSERT(mEventTarget);
   MOZ_ASSERT(mThread);
   MOZ_ASSERT(mThread != PR_GetCurrentThread());
   if (NS_WARN_IF(mThread == PR_GetCurrentThread())) {
@@ -846,15 +865,13 @@ nsThread::ShutdownInternal(bool aSync)
     return nullptr;
   }
 
-  {
-    OffTheBooksMutexAutoLock mal(ThreadListMutex());
-    if (isInList()) {
-      removeFrom(ThreadList());
-    }
-  }
+  MaybeRemoveFromThreadList();
 
   NotNull<nsThread*> currentThread =
     WrapNotNull(nsThreadManager::get().GetCurrentThread());
+
+  MOZ_DIAGNOSTIC_ASSERT(currentThread->EventQueue(),
+                        "Shutdown() may only be called from an XPCOM thread");
 
   nsAutoPtr<nsThreadShutdownContext>& context =
     *currentThread->mRequestedShutdownContexts.AppendElement();
@@ -876,15 +893,12 @@ nsThread::ShutdownInternal(bool aSync)
 void
 nsThread::ShutdownComplete(NotNull<nsThreadShutdownContext*> aContext)
 {
+  MOZ_ASSERT(mEvents);
+  MOZ_ASSERT(mEventTarget);
   MOZ_ASSERT(mThread);
   MOZ_ASSERT(aContext->mTerminatingThread == this);
 
-  {
-    OffTheBooksMutexAutoLock mal(ThreadListMutex());
-    if (isInList()) {
-      removeFrom(ThreadList());
-    }
-  }
+  MaybeRemoveFromThreadList();
 
   if (aContext->mAwaitingShutdownAck) {
     // We're in a synchronous shutdown, so tell whatever is up the stack that
@@ -904,8 +918,9 @@ nsThread::ShutdownComplete(NotNull<nsThreadShutdownContext*> aContext)
 #endif
 
   // Delete aContext.
-  MOZ_ALWAYS_TRUE(
-    aContext->mJoiningThread->mRequestedShutdownContexts.RemoveElement(aContext));
+  // aContext might not be in mRequestedShutdownContexts if it belongs to a
+  // thread that was leaked by calling nsIThreadPool::ShutdownWithTimeout.
+  aContext->mJoiningThread->mRequestedShutdownContexts.RemoveElement(aContext);
 }
 
 void
@@ -1099,24 +1114,14 @@ nsThread::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 NS_IMETHODIMP
 nsThread::ProcessNextEvent(bool aMayWait, bool* aResult)
 {
+  MOZ_ASSERT(mEvents);
+  NS_ENSURE_TRUE(mEvents, NS_ERROR_NOT_IMPLEMENTED);
+
   LOG(("THRD(%p) ProcessNextEvent [%u %u]\n", this, aMayWait,
        mNestedEventLoopDepth));
 
   if (NS_WARN_IF(PR_GetCurrentThread() != mThread)) {
     return NS_ERROR_NOT_SAME_THREAD;
-  }
-
-  // When recording or replaying, execute triggers that were activated
-  // non-deterministically at some point since the last turn of the event loop.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    recordreplay::ExecuteTriggers();
-
-    // Vsync observers are notified whenever processing events on the main
-    // thread. Waiting for explicit vsync messages from the UI process can
-    // result in paints happening at unexpected times when replaying/rewinding.
-    if (mIsMainThread == MAIN_THREAD) {
-      recordreplay::child::NotifyVsyncObserver();
-    }
   }
 
   // The toplevel event loop normally blocks waiting for the next event, but
@@ -1175,6 +1180,10 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult)
     if (event) {
       LOG(("THRD(%p) running [%p]\n", this, event.get()));
 
+      // Delay event processing to encourage whoever dispatched this event
+      // to run.
+      DelayForChaosMode(ChaosFeature::TaskRunning, 1000);
+
       if (IsMainThread()) {
         BackgroundHangMonitor().NotifyActivity();
       }
@@ -1221,18 +1230,41 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult)
       }
 
       // The event starts to run, storing the timestamp.
-      bool recursiveEvent = false;
+      bool recursiveEvent = mNestedEventLoopDepth > mCurrentEventLoopDepth;
+      mCurrentEventLoopDepth = mNestedEventLoopDepth;
+      if (IsMainThread() && !recursiveEvent) {
+        mCurrentEventStart = mozilla::TimeStamp::Now();
+      }
       RefPtr<mozilla::PerformanceCounter> currentPerformanceCounter;
       if (schedulerLoggingEnabled) {
-        recursiveEvent = mNestedEventLoopDepth > mCurrentEventLoopDepth;
         mCurrentEventStart = mozilla::TimeStamp::Now();
         mCurrentEvent = event;
-        mCurrentEventLoopDepth = mNestedEventLoopDepth;
         mCurrentPerformanceCounter = GetPerformanceCounter(event);
         currentPerformanceCounter = mCurrentPerformanceCounter;
       }
 
       event->Run();
+
+      mozilla::TimeDuration duration;
+      // Remember the last 50ms+ task on mainthread for Long Task.
+      if (IsMainThread() && !recursiveEvent) {
+        TimeStamp now = TimeStamp::Now();
+        duration = now - mCurrentEventStart;
+        if (duration.ToMilliseconds() > LONGTASK_BUSY_WINDOW_MS) {
+          // Idle events (gc...) don't *really* count here
+          if (priority != EventPriority::Idle) {
+            mLastLongNonIdleTaskEnd = now;
+          }
+          mLastLongTaskEnd = now;
+#ifdef MOZ_GECKO_PROFILER
+          if (profiler_is_active()) {
+              profiler_add_marker(
+                (priority != EventPriority::Idle) ? "LongTask" : "LongIdleTask",
+                MakeUnique<LongTaskMarkerPayload>(mCurrentEventStart, now));
+          }
+#endif
+        }
+      }
 
       // End of execution, we can send the duration for the group
       if (schedulerLoggingEnabled) {
@@ -1333,6 +1365,9 @@ nsThread::AdjustPriority(int32_t aDelta)
 NS_IMETHODIMP
 nsThread::GetObserver(nsIThreadObserver** aObs)
 {
+  MOZ_ASSERT(mEvents);
+  NS_ENSURE_TRUE(mEvents, NS_ERROR_NOT_IMPLEMENTED);
+
   nsCOMPtr<nsIThreadObserver> obs = mEvents->GetObserver();
   obs.forget(aObs);
   return NS_OK;
@@ -1341,6 +1376,9 @@ nsThread::GetObserver(nsIThreadObserver** aObs)
 NS_IMETHODIMP
 nsThread::SetObserver(nsIThreadObserver* aObs)
 {
+  MOZ_ASSERT(mEvents);
+  NS_ENSURE_TRUE(mEvents, NS_ERROR_NOT_IMPLEMENTED);
+
   if (NS_WARN_IF(PR_GetCurrentThread() != mThread)) {
     return NS_ERROR_NOT_SAME_THREAD;
   }
@@ -1359,6 +1397,9 @@ nsThread::RecursionDepth() const
 NS_IMETHODIMP
 nsThread::AddObserver(nsIThreadObserver* aObserver)
 {
+  MOZ_ASSERT(mEvents);
+  NS_ENSURE_TRUE(mEvents, NS_ERROR_NOT_IMPLEMENTED);
+
   if (NS_WARN_IF(!aObserver)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -1374,6 +1415,9 @@ nsThread::AddObserver(nsIThreadObserver* aObserver)
 NS_IMETHODIMP
 nsThread::RemoveObserver(nsIThreadObserver* aObserver)
 {
+  MOZ_ASSERT(mEvents);
+  NS_ENSURE_TRUE(mEvents, NS_ERROR_NOT_IMPLEMENTED);
+
   if (NS_WARN_IF(PR_GetCurrentThread() != mThread)) {
     return NS_ERROR_NOT_SAME_THREAD;
   }
@@ -1424,10 +1468,6 @@ nsThread::DoMainThreadSpecificProcessing(bool aReallyWait)
         NS_WARNING("Can't get observer service!");
       }
     }
-  }
-
-  if (!ShuttingDown()) {
-    SaveMemoryReportNearOOM(ShouldSaveMemoryReport::kMaybeReport);
   }
 }
 

@@ -24,8 +24,8 @@ interop_init()
   cd "${HOSTDIR}/interop"
   INTEROP=${INTEROP:=tls_interop}
   if [ ! -d "$INTEROP" ]; then
-    git clone -q https://github.com/jallmann/tls-interop "$INTEROP"
-    git -C "$INTEROP" checkout -q a4878c30db639053fc4f08573d3ae6cbd3cf1d6f
+    git clone -q https://github.com/mozilla/tls-interop "$INTEROP"
+    git -C "$INTEROP" checkout -q c00685aa953c49f1e844e614746aadc783e81b19
   fi
   INTEROP=$(cd "$INTEROP";pwd -P)
 
@@ -33,7 +33,7 @@ interop_init()
   BORING=${BORING:=boringssl}
   if [ ! -d "$BORING" ]; then
     git clone -q https://boringssl.googlesource.com/boringssl "$BORING"
-    git -C "$BORING" checkout -q 9af1edbe2201e6c6d58e5e484bf56281d8c751d9
+    git -C "$BORING" checkout -q 7f4f41fa81c03e0f8ef1ab5b3d1d566b5968f107
   fi
   BORING=$(cd "$BORING";pwd -P)
   mkdir "$BORING/build"
@@ -51,7 +51,7 @@ interop_init()
   OSSL=${OSSL:=openssl}
   if [ ! -d "$OSSL" ]; then
     git clone -q https://github.com/openssl/openssl.git "$OSSL"
-    git -C "$OSSL" checkout -q 9e6a32025e6e69949ad3e53a29a0b85f61f30b85
+    git -C "$OSSL" checkout -q 7d38ca3f8bca58bf7b69e78c1f1ab69e5f429dff
   fi
   OSSL=$(cd "$OSSL";pwd -P)
   cd "$OSSL"
@@ -92,6 +92,7 @@ interop_run()
   html_msg $? 1 "Interop ${test_name}" "No failures"
 }
 
+cd "$(dirname "$0")"
 interop_init
 NSS_SHIM="$BINDIR"/nss_bogo_shim
 BORING_SHIM="$BORING"/build/ssl/test/bssl_shim

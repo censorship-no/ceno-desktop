@@ -16,7 +16,6 @@
 
 #include "gc/GC.h"
 #include "gc/RelocationOverlay.h"
-#include "gc/Zone.h"
 #include "vm/HelperThreads.h"
 #include "vm/Runtime.h"
 
@@ -141,15 +140,18 @@ class MOZ_RAII AutoStopVerifyingBarriers
         // gc::Statistics phase tree. So we pause the "real" GC, if in fact one
         // is in progress.
         gcstats::PhaseKind outer = gc->stats().currentPhaseKind();
-        if (outer != gcstats::PhaseKind::NONE)
+        if (outer != gcstats::PhaseKind::NONE) {
             gc->stats().endPhase(outer);
+        }
         MOZ_ASSERT(gc->stats().currentPhaseKind() == gcstats::PhaseKind::NONE);
 
-        if (restartPreVerifier)
+        if (restartPreVerifier) {
             gc->startVerifyPreBarriers();
+        }
 
-        if (outer != gcstats::PhaseKind::NONE)
+        if (outer != gcstats::PhaseKind::NONE) {
             gc->stats().beginPhase(outer);
+        }
     }
 };
 #else
@@ -177,7 +179,7 @@ struct MovingTracer : JS::CallbackTracer
     void onScopeEdge(Scope** basep) override;
     void onRegExpSharedEdge(RegExpShared** sharedp) override;
     void onChild(const JS::GCCellPtr& thing) override {
-        MOZ_ASSERT(!RelocationOverlay::isCellForwarded(thing.asCell()));
+        MOZ_ASSERT(!thing.asCell()->isForwarded());
     }
 
 #ifdef DEBUG
@@ -321,7 +323,7 @@ IsOOMReason(JS::gcreason::Reason reason)
 }
 
 TenuredCell*
-AllocateCellInGC(Zone* zone, AllocKind thingKind);
+AllocateCellInGC(JS::Zone* zone, AllocKind thingKind);
 
 } /* namespace gc */
 } /* namespace js */

@@ -13,6 +13,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/BlobBinding.h"
+#include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/File.h"
@@ -74,6 +75,7 @@
 #include "nsStringBuffer.h"
 #include "nsIFileChannel.h"
 #include "mozilla/Telemetry.h"
+#include "js/JSON.h"
 #include "jsfriendapi.h"
 #include "GeckoProfiler.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
@@ -130,6 +132,8 @@ namespace {
   const nsString kLiteralString_readystatechange = NS_LITERAL_STRING("readystatechange");
   const nsString kLiteralString_xmlhttprequest = NS_LITERAL_STRING("xmlhttprequest");
   const nsString kLiteralString_DOMContentLoaded = NS_LITERAL_STRING("DOMContentLoaded");
+  const nsCString kLiteralString_charset = NS_LITERAL_CSTRING("charset");
+  const nsCString kLiteralString_UTF_8 = NS_LITERAL_CSTRING("UTF-8");
 }
 
 // CIDs
@@ -193,7 +197,6 @@ XMLHttpRequestMainThread::sDontWarnAboutSyncXHR = false;
 
 XMLHttpRequestMainThread::XMLHttpRequestMainThread()
   : mResponseBodyDecodedPos(0),
-    mResponseCharset(nullptr),
     mResponseType(XMLHttpRequestResponseType::_empty),
     mRequestObserver(nullptr),
     mState(XMLHttpRequest_Binding::UNSENT),
@@ -219,7 +222,8 @@ XMLHttpRequestMainThread::XMLHttpRequestMainThread()
     mResultArrayBuffer(nullptr),
     mIsMappedArrayBuffer(false),
     mXPCOMifier(nullptr),
-    mEventDispatchingSuspended(false)
+    mEventDispatchingSuspended(false),
+    mEofDecoded(false)
 {
   mozilla::HoldJSObjects(this);
 }
@@ -309,6 +313,7 @@ XMLHttpRequestMainThread::ResetResponse()
   mResultJSON.setUndefined();
   mLoadTransferred = 0;
   mResponseBodyDecodedPos = 0;
+  mEofDecoded = false;
 }
 
 void
@@ -455,7 +460,6 @@ XMLHttpRequestMainThread::GetResponseXML(ErrorResult& aRv)
 nsresult
 XMLHttpRequestMainThread::DetectCharset()
 {
-  mResponseCharset = nullptr;
   mDecoder = nullptr;
 
   if (mResponseType != XMLHttpRequestResponseType::_empty &&
@@ -481,50 +485,67 @@ XMLHttpRequestMainThread::DetectCharset()
     encoding = UTF_8_ENCODING;
   }
 
-  mResponseCharset = encoding;
-  mDecoder = encoding->NewDecoderWithBOMRemoval();
+  // Only sniff the BOM for non-JSON responseTypes
+  if (mResponseType == XMLHttpRequestResponseType::Json) {
+    mDecoder = encoding->NewDecoderWithBOMRemoval();
+  } else {
+    mDecoder = encoding->NewDecoder();
+  }
 
   return NS_OK;
 }
 
 nsresult
-XMLHttpRequestMainThread::AppendToResponseText(const char * aSrcBuffer,
-                                               uint32_t aSrcBufferLen)
+XMLHttpRequestMainThread::AppendToResponseText(Span<const uint8_t> aBuffer,
+                                               bool aLast)
 {
+  // Call this with an empty buffer to send the decoder the signal
+  // that we have hit the end of the stream.
+
   NS_ENSURE_STATE(mDecoder);
 
   CheckedInt<size_t> destBufferLen =
-    mDecoder->MaxUTF16BufferLength(aSrcBufferLen);
-  if (!destBufferLen.isValid()) {
-    return NS_ERROR_OUT_OF_MEMORY;
+    mDecoder->MaxUTF16BufferLength(aBuffer.Length());
+
+  { // scope for holding the mutex that protects mResponseText
+    XMLHttpRequestStringWriterHelper helper(mResponseText);
+
+    uint32_t len = helper.Length();
+
+    destBufferLen += len;
+    if (!destBufferLen.isValid() || destBufferLen.value() > UINT32_MAX) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+
+    nsresult rv;
+    BulkWriteHandle<char16_t> handle =
+      helper.BulkWrite(destBufferLen.value(), rv);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    uint32_t result;
+    size_t read;
+    size_t written;
+    bool hadErrors;
+    Tie(result, read, written, hadErrors) = mDecoder->DecodeToUTF16(
+      aBuffer,
+      handle.AsSpan().From(len),
+      aLast);
+    MOZ_ASSERT(result == kInputEmpty);
+    MOZ_ASSERT(read == aBuffer.Length());
+    len += written;
+    MOZ_ASSERT(len <= destBufferLen.value());
+    Unused << hadErrors;
+    handle.Finish(len, false);
+  } // release mutex
+
+  if (aLast) {
+    // Drop the finished decoder to avoid calling into a decoder
+    // that has finished.
+    mDecoder = nullptr;
+    mEofDecoded = true;
   }
-
-  CheckedInt32 size = mResponseText.Length();
-  size += destBufferLen.value();
-  if (!size.isValid()) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  XMLHttpRequestStringWriterHelper helper(mResponseText);
-
-  if (!helper.AddCapacity(destBufferLen.value())) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  // XXX there's no handling for incomplete byte sequences on EOF!
-  uint32_t result;
-  size_t read;
-  size_t written;
-  bool hadErrors;
-  Tie(result, read, written, hadErrors) = mDecoder->DecodeToUTF16(
-    AsBytes(MakeSpan(aSrcBuffer, aSrcBufferLen)),
-    MakeSpan(helper.EndOfExistingData(), destBufferLen.value()),
-    false);
-  MOZ_ASSERT(result == kInputEmpty);
-  MOZ_ASSERT(read == aSrcBufferLen);
-  MOZ_ASSERT(written <= destBufferLen.value());
-  Unused << hadErrors;
-  helper.AddLength(written);
   return NS_OK;
 }
 
@@ -571,24 +592,28 @@ XMLHttpRequestMainThread::GetResponseText(XMLHttpRequestStringSnapshot& aSnapsho
   // Also, if we've decoded all current data already, then no need to decode
   // more.
   if ((!mResponseXML && !mErrorParsingXML) ||
-      mResponseBodyDecodedPos == mResponseBody.Length()) {
+      (mResponseBodyDecodedPos == mResponseBody.Length() &&
+       (mState != XMLHttpRequest_Binding::DONE ||
+        mEofDecoded))) {
     mResponseText.CreateSnapshot(aSnapshot);
     return;
   }
 
   MatchCharsetAndDecoderToResponseDocument();
 
-  NS_ASSERTION(mResponseBodyDecodedPos < mResponseBody.Length(),
-               "Unexpected mResponseBodyDecodedPos");
-  aRv = AppendToResponseText(mResponseBody.get() + mResponseBodyDecodedPos,
-                             mResponseBody.Length() - mResponseBodyDecodedPos);
+  MOZ_ASSERT(mResponseBodyDecodedPos < mResponseBody.Length() ||
+             mState == XMLHttpRequest_Binding::DONE,
+             "Unexpected mResponseBodyDecodedPos");
+  Span<const uint8_t> span = mResponseBody;
+  aRv = AppendToResponseText(span.From(mResponseBodyDecodedPos),
+                             mState == XMLHttpRequest_Binding::DONE);
   if (aRv.Failed()) {
     return;
   }
 
   mResponseBodyDecodedPos = mResponseBody.Length();
 
-  if (mState == XMLHttpRequest_Binding::DONE) {
+  if (mEofDecoded) {
     // Free memory buffer which we no longer need
     mResponseBody.Truncate();
     mResponseBodyDecodedPos = 0;
@@ -1161,11 +1186,13 @@ XMLHttpRequestMainThread::GetResponseHeader(const nsACString& header,
 
     // Even non-http channels supply content type and content length.
     // Remember we don't leak header information from denied cross-site
-    // requests.
+    // requests. However, we handle file: and blob: URLs for blob response
+    // types by canceling them with a specific error, so we have to allow
+    // them to pass through this check.
     nsresult status;
     if (!mChannel ||
         NS_FAILED(mChannel->GetStatus(&status)) ||
-        NS_FAILED(status)) {
+        (NS_FAILED(status) && status != NS_ERROR_FILE_ALREADY_EXISTS)) {
       return;
     }
 
@@ -1511,6 +1538,7 @@ XMLHttpRequestMainThread::Open(const nsACString& aMethod,
   mFlagHadUploadListenersOnSend = false;
   mFlagAborted = false;
   mFlagTimedOut = false;
+  mDecoder = nullptr;
 
   // Per spec we should only create the channel on send(), but we have internal
   // code that relies on the channel being created now, and that code is not
@@ -1587,9 +1615,9 @@ XMLHttpRequestMainThread::StreamReaderFunc(nsIInputStream* in,
   } else if (xmlHttpRequest->mResponseType == XMLHttpRequestResponseType::_empty ||
              xmlHttpRequest->mResponseType == XMLHttpRequestResponseType::Text ||
              xmlHttpRequest->mResponseType == XMLHttpRequestResponseType::Json) {
-    NS_ASSERTION(!xmlHttpRequest->mResponseXML,
-                 "We shouldn't be parsing a doc here");
-    rv = xmlHttpRequest->AppendToResponseText(fromRawSegment, count);
+    MOZ_ASSERT(!xmlHttpRequest->mResponseXML,
+               "We shouldn't be parsing a doc here");
+    rv = xmlHttpRequest->AppendToResponseText(AsBytes(MakeSpan(fromRawSegment, count)));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -1629,6 +1657,32 @@ XMLHttpRequestMainThread::StreamReaderFunc(nsIInputStream* in,
 }
 
 namespace {
+
+void
+GetBlobURIFromChannel(nsIRequest* aRequest, nsIURI** aURI)
+{
+  MOZ_ASSERT(aRequest);
+  MOZ_ASSERT(aURI);
+
+  *aURI = nullptr;
+
+  nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
+  if (!channel) {
+    return;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = channel->GetURI(getter_AddRefs(uri));
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  if (!dom::IsBlobURI(uri)) {
+    return;
+  }
+
+  uri.forget(aURI);
+}
 
 nsresult
 GetLocalFileFromChannel(nsIRequest* aRequest, nsIFile** aFile)
@@ -1746,14 +1800,29 @@ XMLHttpRequestMainThread::OnDataAvailable(nsIRequest *request,
 
   nsresult rv;
 
-  nsCOMPtr<nsIFile> localFile;
   if (mResponseType == XMLHttpRequestResponseType::Blob) {
-    rv = GetLocalFileFromChannel(request, getter_AddRefs(localFile));
+    nsCOMPtr<nsIFile> localFile;
+    nsCOMPtr<nsIURI> blobURI;
+    GetBlobURIFromChannel(request, getter_AddRefs(blobURI));
+    if (blobURI) {
+      RefPtr<BlobImpl> blobImpl;
+      rv = NS_GetBlobForBlobURI(blobURI, getter_AddRefs(blobImpl));
+      if (NS_SUCCEEDED(rv)) {
+        if (blobImpl) {
+          mResponseBlob = Blob::Create(GetOwner(), blobImpl);
+        }
+        if (!mResponseBlob) {
+          rv = NS_ERROR_FILE_NOT_FOUND;
+        }
+      }
+    } else {
+      rv = GetLocalFileFromChannel(request, getter_AddRefs(localFile));
+    }
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
 
-    if (localFile) {
+    if (mResponseBlob || localFile) {
       mBlobStorage = nullptr;
       NS_ASSERTION(mResponseBody.IsEmpty(), "mResponseBody should be empty");
 
@@ -1816,12 +1885,11 @@ XMLHttpRequestMainThread::OnStartRequest(nsIRequest *request, nsISupports *ctxt)
     return NS_OK;
   }
 
-  /* Apparently, Abort() should set UNSENT.  See bug 361773.
-     XHR2 spec says this is correct. */
+  // Don't do anything if we're in mid-abort, but let the request
+  // know (this can happen due to race conditions in valid XHRs,
+  // see bz1070763 for info).
   if (mFlagAborted) {
-    NS_ERROR("Ugh, still getting data on an aborted XMLHttpRequest!");
-
-    return NS_ERROR_UNEXPECTED;
+    return NS_BINDING_ABORTED;
   }
 
   // Don't do anything if we have timed out.
@@ -2075,6 +2143,15 @@ XMLHttpRequestMainThread::OnStopRequest(nsIRequest *request, nsISupports *ctxt, 
     return NS_OK;
   }
 
+  // Send the decoder the signal that we've hit the end of the stream,
+  // but only when decoding text eagerly.
+  if (mDecoder &&
+      ((mResponseType == XMLHttpRequestResponseType::Text) ||
+        (mResponseType == XMLHttpRequestResponseType::Json) ||
+        (mResponseType == XMLHttpRequestResponseType::_empty && !mResponseXML))) {
+    AppendToResponseText(Span<const uint8_t>(), true);
+  }
+
   mWaitingForOnStopRequest = false;
 
   if (mRequestObserver) {
@@ -2108,12 +2185,18 @@ XMLHttpRequestMainThread::OnStopRequest(nsIRequest *request, nsISupports *ctxt, 
     return NS_OK;
   }
 
+  // If we were just reading a blob URL, we're already done
+  if (status == NS_ERROR_FILE_ALREADY_EXISTS && mResponseBlob) {
+    ChangeStateToDone();
+    return NS_OK;
+  }
+
   bool waitingForBlobCreation = false;
 
   // If we have this error, we have to deal with a file: URL + responseType =
   // blob. We have this error because we canceled the channel. The status will
   // be set to NS_OK.
-  if (status == NS_ERROR_FILE_ALREADY_EXISTS &&
+  if (!mResponseBlob && status == NS_ERROR_FILE_ALREADY_EXISTS &&
       mResponseType == XMLHttpRequestResponseType::Blob) {
     nsCOMPtr<nsIFile> file;
     nsresult rv = GetLocalFileFromChannel(request, getter_AddRefs(file));
@@ -2155,7 +2238,11 @@ XMLHttpRequestMainThread::OnStopRequest(nsIRequest *request, nsISupports *ctxt, 
     // Smaller files may be written in cache map instead of separate files.
     // Also, no-store response cannot be written in persistent cache.
     nsAutoCString contentType;
-    mChannel->GetContentType(contentType);
+    if (!mOverrideMimeType.IsEmpty()) {
+      contentType.Assign(NS_ConvertUTF16toUTF8(mOverrideMimeType));
+    } else {
+      mChannel->GetContentType(contentType);
+    }
 
     // mBlobStorage can be null if the channel is non-file non-cacheable
     // and if the response length is zero.
@@ -2223,7 +2310,7 @@ XMLHttpRequestMainThread::OnStopRequest(nsIRequest *request, nsISupports *ctxt, 
     NS_ASSERTION(!mFlagSyncLooping,
       "We weren't supposed to support HTML parsing with XHR!");
     mParseEndListener = new nsXHRParseEndListener(this);
-    nsCOMPtr<EventTarget> eventTarget = do_QueryInterface(mResponseXML);
+    nsCOMPtr<EventTarget> eventTarget = mResponseXML;
     EventListenerManager* manager =
       eventTarget->GetOrCreateListenerManager();
     manager->AddEventListenerByType(mParseEndListener,
@@ -2257,11 +2344,11 @@ XMLHttpRequestMainThread::OnBodyParseEnd()
 void
 XMLHttpRequestMainThread::MatchCharsetAndDecoderToResponseDocument()
 {
-  if (mResponseXML && mResponseCharset != mResponseXML->GetDocumentCharacterSet()) {
-    mResponseCharset = mResponseXML->GetDocumentCharacterSet();
+  if (mResponseXML && (!mDecoder || mDecoder->Encoding() != mResponseXML->GetDocumentCharacterSet())) {
     TruncateResponseText();
     mResponseBodyDecodedPos = 0;
-    mDecoder = mResponseCharset->NewDecoderWithBOMRemoval();
+    mEofDecoded = false;
+    mDecoder = mResponseXML->GetDocumentCharacterSet()->NewDecoder();
   }
 }
 
@@ -2389,6 +2476,16 @@ XMLHttpRequestMainThread::CreateChannel()
                        loadFlags);
   }
   NS_ENSURE_SUCCESS(rv, rv);
+
+  if (mCSPEventListener) {
+    nsCOMPtr<nsILoadInfo> loadInfo = mChannel->GetLoadInfo();
+    if (NS_WARN_IF(!loadInfo)) {
+      return NS_ERROR_UNEXPECTED;
+    }
+
+    rv = loadInfo->SetCspEventListener(mCSPEventListener);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(mChannel));
   if (httpChannel) {
@@ -2693,7 +2790,7 @@ XMLHttpRequestMainThread::Send(JSContext* aCx,
 
   if (aData.Value().IsDocument()) {
     BodyExtractor<nsIDocument> body(&aData.Value().GetAsDocument());
-    aRv = SendInternal(&body);
+    aRv = SendInternal(&body, true);
     return;
   }
 
@@ -2730,7 +2827,7 @@ XMLHttpRequestMainThread::Send(JSContext* aCx,
 
   if (aData.Value().IsUSVString()) {
     BodyExtractor<const nsAString> body(&aData.Value().GetAsUSVString());
-    aRv = SendInternal(&body);
+    aRv = SendInternal(&body, true);
     return;
   }
 }
@@ -2756,7 +2853,8 @@ XMLHttpRequestMainThread::MaybeSilentSendFailure(nsresult aRv)
 }
 
 nsresult
-XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody)
+XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
+                                       bool aBodyIsDocumentOrString)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -2781,6 +2879,12 @@ XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody)
   // as per spec. We really should create the channel here in send(), but
   // we have internal code relying on the channel being created in open().
   if (!mChannel) {
+    mFlagSend = true; // so CloseRequestWithError sets us to DONE.
+    return MaybeSilentSendFailure(NS_ERROR_DOM_NETWORK_ERR);
+  }
+
+  // non-GET requests aren't allowed for blob.
+  if (IsBlobURI(mRequestURL) && !mRequestMethod.EqualsLiteral("GET")) {
     mFlagSend = true; // so CloseRequestWithError sets us to DONE.
     return MaybeSilentSendFailure(NS_ERROR_DOM_NETWORK_ERR);
   }
@@ -2818,6 +2922,13 @@ XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody)
       mAuthorRequestHeaders.Get("content-type", uploadContentType);
       if (uploadContentType.IsVoid()) {
         uploadContentType = defaultContentType;
+      } else if (aBodyIsDocumentOrString &&
+                 StaticPrefs::dom_xhr_standard_content_type_normalization()) {
+        UniquePtr<CMimeType> parsed = CMimeType::Parse(uploadContentType);
+        if (parsed && parsed->HasParameter(kLiteralString_charset)) {
+          parsed->SetParameterValue(kLiteralString_charset, kLiteralString_UTF_8);
+          parsed->Serialize(uploadContentType);
+        }
       }
 
       // We don't want to set a charset for streams.
@@ -3047,13 +3158,13 @@ XMLHttpRequestMainThread::SetTimeout(uint32_t aTimeout, ErrorResult& aRv)
   }
 }
 
-void
-XMLHttpRequestMainThread::SetTimerEventTarget(nsITimer* aTimer)
+nsIEventTarget*
+XMLHttpRequestMainThread::GetTimerEventTarget()
 {
   if (nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal()) {
-    nsCOMPtr<nsIEventTarget> target = global->EventTargetFor(TaskCategory::Other);
-    aTimer->SetTarget(target);
+    return global->EventTargetFor(TaskCategory::Other);
   }
+  return nullptr;
 }
 
 nsresult
@@ -3088,8 +3199,7 @@ XMLHttpRequestMainThread::StartTimeoutTimer()
   }
 
   if (!mTimeoutTimer) {
-    mTimeoutTimer = NS_NewTimer();
-    SetTimerEventTarget(mTimeoutTimer);
+    mTimeoutTimer = NS_NewTimer(GetTimerEventTarget());
   }
   uint32_t elapsed =
     (uint32_t)((PR_Now() - mRequestSentTime) / PR_USEC_PER_MSEC);
@@ -3118,7 +3228,12 @@ XMLHttpRequestMainThread::OverrideMimeType(const nsAString& aMimeType,
     return;
   }
 
-  mOverrideMimeType = aMimeType;
+  UniquePtr<MimeType> parsed = MimeType::Parse(aMimeType);
+  if (parsed) {
+    parsed->Serialize(mOverrideMimeType);
+  } else {
+    mOverrideMimeType.AssignLiteral(APPLICATION_OCTET_STREAM);
+  }
 }
 
 bool
@@ -3501,8 +3616,7 @@ void
 XMLHttpRequestMainThread::StartProgressEventTimer()
 {
   if (!mProgressNotifier) {
-    mProgressNotifier = NS_NewTimer();
-    SetTimerEventTarget(mProgressNotifier);
+    mProgressNotifier = NS_NewTimer(GetTimerEventTarget());
   }
   if (mProgressNotifier) {
     mProgressTimerIsActive = true;
@@ -3528,8 +3642,7 @@ XMLHttpRequestMainThread::MaybeStartSyncTimeoutTimer()
     return eErrorOrExpired;
   }
 
-  mSyncTimeoutTimer = NS_NewTimer();
-  SetTimerEventTarget(mSyncTimeoutTimer);
+  mSyncTimeoutTimer = NS_NewTimer(GetTimerEventTarget());
   if (!mSyncTimeoutTimer) {
     return eErrorOrExpired;
   }

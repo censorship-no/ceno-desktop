@@ -29,8 +29,7 @@ class DeviceRunner(BaseRunner):
            'MOZ_LOG': 'signaling:3,mtransport:4,DataChannel:4,jsep:4,MediaPipelineFactory:4',
            'R_LOG_LEVEL': '6',
            'R_LOG_DESTINATION': 'stderr',
-           'R_LOG_VERBOSE': '1',
-           'NO_EM_RESTART': '1', }
+           'R_LOG_VERBOSE': '1', }
 
     def __init__(self, device_class, device_args=None, **kwargs):
         process_log = tempfile.NamedTemporaryFile(suffix='pidlog')
@@ -93,6 +92,9 @@ class DeviceRunner(BaseRunner):
         return pid
 
     def stop(self, sig=None):
+        if not sig and self.is_running():
+            self.app_ctx.stop_application()
+
         if self.is_running():
             timeout = 10
 

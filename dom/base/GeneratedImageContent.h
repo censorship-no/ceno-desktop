@@ -26,20 +26,17 @@ public:
   static already_AddRefed<GeneratedImageContent>
     Create(nsIDocument&, uint32_t aContentIndex);
 
-  explicit GeneratedImageContent(already_AddRefed<dom::NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElement(aNodeInfo)
+  explicit GeneratedImageContent(already_AddRefed<dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo))
   {
     MOZ_ASSERT(IsInNamespace(kNameSpaceID_XHTML), "Someone messed up our nodeinfo");
   }
 
-  nsresult Clone(dom::NodeInfo* aNodeInfo,
-                 nsINode** aResult,
-                 bool aPreallocateChildren) const final;
+  nsresult Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const final;
 
-  nsresult CopyInnerTo(GeneratedImageContent* aDest, bool aPreallocateChildren)
+  nsresult CopyInnerTo(GeneratedImageContent* aDest)
   {
-    nsresult rv =
-      nsGenericHTMLElement::CopyInnerTo(aDest, aPreallocateChildren);
+    nsresult rv = nsGenericHTMLElement::CopyInnerTo(aDest);
     NS_ENSURE_SUCCESS(rv, rv);
     aDest->mIndex = mIndex;
     return NS_OK;

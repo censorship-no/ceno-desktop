@@ -63,7 +63,7 @@ interface nsIXPConnectWrappedNative;
  * boolean to PR_TRUE before making the call.  Implementations may skip writing
  * to *_retval unless they want to return PR_FALSE.
  */
-[uuid(19b70b26-7c3f-437f-a04a-2a8f9e28b617)]
+[builtinclass, uuid(19b70b26-7c3f-437f-a04a-2a8f9e28b617)]
 interface nsIXPCScriptable : nsISupports
 {
     readonly attribute AUTF8String className;
@@ -79,7 +79,8 @@ interface nsIXPCScriptable : nsISupports
 
     boolean newEnumerate(in nsIXPConnectWrappedNative wrapper,
                         in JSContextPtr cx, in JSObjectPtr obj,
-                        in JSAutoIdVector properties);
+                        in JSAutoIdVector properties,
+                        in boolean enumerableOnly);
 
     boolean resolve(in nsIXPConnectWrappedNative wrapper,
                     in JSContextPtr cx, in JSObjectPtr obj, in jsid id,

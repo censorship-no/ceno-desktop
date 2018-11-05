@@ -6,7 +6,7 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import functools
+import os.path
 import json
 import time
 import yaml
@@ -15,7 +15,8 @@ from datetime import datetime
 from mozbuild.util import ReadOnlyDict, memoize
 from mozversioncontrol import get_repository_object
 
-from . import APP_VERSION_PATH, GECKO, VERSION_PATH
+from . import GECKO
+from .util.attributes import RELEASE_PROJECTS
 
 
 class ParameterMismatch(Exception):
@@ -33,8 +34,16 @@ def get_contents(path):
     return contents
 
 
-get_version = functools.partial(get_contents, VERSION_PATH)
-get_app_version = functools.partial(get_contents, APP_VERSION_PATH)
+def get_version(product_dir='browser'):
+    version_path = os.path.join(GECKO, product_dir, 'config',
+                                'version_display.txt')
+    return get_contents(version_path)
+
+
+def get_app_version(product_dir='browser'):
+    app_version_path = os.path.join(GECKO, product_dir, 'config',
+                                    'version.txt')
+    return get_contents(app_version_path)
 
 
 # Please keep this list sorted and in sync with taskcluster/docs/parameters.rst
@@ -46,11 +55,11 @@ PARAMETERS = {
     'build_number': 1,
     'do_not_optimize': [],
     'existing_tasks': {},
-    'filters': ['check_servo', 'target_tasks_method'],
+    'filters': ['target_tasks_method'],
     'head_ref': get_head_ref,
     'head_repository': 'https://hg.mozilla.org/mozilla-central',
     'head_rev': get_head_ref,
-    'include_nightly': False,
+    'hg_branch': 'default',
     'level': '3',
     'message': '',
     'moz_build_date': lambda: datetime.now().strftime("%Y%m%d%H%M%S"),
@@ -67,7 +76,7 @@ PARAMETERS = {
     'release_partners': None,
     'release_partner_config': None,
     'release_partner_build_number': 1,
-    'release_type': '',
+    'release_type': 'nightly',
     'release_product': None,
     'target_tasks_method': 'default',
     'try_mode': None,
@@ -142,9 +151,10 @@ class Parameters(ReadOnlyDict):
 
     def is_try(self):
         """
-        Determine whether this graph is being built on a try project.
+        Determine whether this graph is being built on a try project or for
+        `mach try fuzzy`.
         """
-        return 'try' in self['project']
+        return 'try' in self['project'] or self['try_mode'] == 'try_select'
 
     def file_url(self, path):
         """
@@ -165,8 +175,16 @@ class Parameters(ReadOnlyDict):
 
         return '{}/file/{}/{}'.format(repo, rev, path)
 
+    def release_level(self):
+        """
+        Whether this is a staging release or not.
 
-def load_parameters_file(filename, strict=True):
+        :return basestring: One of "production" or "staging".
+        """
+        return 'production' if self['project'] in RELEASE_PROJECTS else 'staging'
+
+
+def load_parameters_file(filename, strict=True, overrides=None):
     """
     Load parameters from a path, url, decision task-id or project.
 
@@ -177,8 +195,11 @@ def load_parameters_file(filename, strict=True):
     import urllib
     from taskgraph.util.taskcluster import get_artifact_url, find_task_id
 
+    if overrides is None:
+        overrides = {}
+
     if not filename:
-        return Parameters(strict=strict)
+        return Parameters(strict=strict, **overrides)
 
     try:
         # reading parameters from a local parameters.yml file
@@ -199,8 +220,12 @@ def load_parameters_file(filename, strict=True):
         f = urllib.urlopen(filename)
 
     if filename.endswith('.yml'):
-        return Parameters(strict=strict, **yaml.safe_load(f))
+        kwargs = yaml.safe_load(f)
     elif filename.endswith('.json'):
-        return Parameters(strict=strict, **json.load(f))
+        kwargs = json.load(f)
     else:
         raise TypeError("Parameters file `{}` is not JSON or YAML".format(filename))
+
+    kwargs.update(overrides)
+
+    return Parameters(strict=strict, **kwargs)

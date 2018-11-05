@@ -20,6 +20,27 @@
 namespace mozilla {
 namespace interceptor {
 
+#if defined(_M_IX86)
+
+template <typename T> bool
+CommitAndWriteShortInternal(const T& aMMPolicy, void* aDest, uint16_t aValue);
+
+template <> inline bool
+CommitAndWriteShortInternal<MMPolicyInProcess>(
+  const MMPolicyInProcess& aMMPolicy, void* aDest, uint16_t aValue)
+{
+  return aMMPolicy.WriteAtomic(aDest, aValue);
+}
+
+template <> inline bool
+CommitAndWriteShortInternal<MMPolicyOutOfProcess>(
+  const MMPolicyOutOfProcess& aMMPolicy, void* aDest, uint16_t aValue)
+{
+  return aMMPolicy.Write(aDest, &aValue, sizeof(uint16_t));
+}
+
+#endif // defined(_M_IX86)
+
 template <typename MMPolicy>
 class MOZ_STACK_CLASS WritableTargetFunction final
 {
@@ -233,24 +254,6 @@ public:
   }
 
 #if defined(_M_IX86)
-private:
-  template <typename T>
-  bool CommitAndWriteShortInternal(const T& aMMPolicy, void* aDest, uint16_t aValue);
-
-  template <>
-  bool CommitAndWriteShortInternal<MMPolicyInProcess>(const MMPolicyInProcess& aMMPolicy,
-                                                      void* aDest, uint16_t aValue)
-  {
-    return aMMPolicy.WriteAtomic(aDest, aValue);
-  }
-
-  template <>
-  bool CommitAndWriteShortInternal<MMPolicyOutOfProcess>(const MMPolicyOutOfProcess& aMMPolicy,
-                                                         void* aDest, uint16_t aValue)
-  {
-    return aMMPolicy.Write(aDest, &aValue, sizeof(uint16_t));
-  }
-
 public:
   /**
    * Commits any dirty writes, and then writes a short, atomically if possible.
@@ -361,7 +364,7 @@ private:
   // needs to touch the heap.
 #if defined(_M_IX86)
   static const size_t kInlineStorage = 16;
-#elif defined(_M_X64)
+#elif defined(_M_X64) || defined(_M_ARM64)
   static const size_t kInlineStorage = 32;
 #endif
   Vector<uint8_t, kInlineStorage> mLocalBytes;
@@ -586,7 +589,7 @@ private:
   // needs to touch the heap.
 #if defined(_M_IX86)
   static const size_t kInlineStorage = 16;
-#elif defined(_M_X64)
+#elif defined(_M_X64) || defined(_M_ARM64)
   static const size_t kInlineStorage = 32;
 #endif
 
@@ -595,82 +598,81 @@ private:
   uint8_t const * const           mBase;
 };
 
+template <typename TargetMMPolicy> class TargetBytesPtr;
+
+template<>
+class TargetBytesPtr<MMPolicyInProcess>
+{
+public:
+  typedef TargetBytesPtr<MMPolicyInProcess> Type;
+
+  static Type Make(const MMPolicyInProcess& aMMPolicy, const void* aFunc)
+  {
+    return TargetBytesPtr(aMMPolicy, aFunc);
+  }
+
+  static Type CopyFromOffset(const TargetBytesPtr& aOther,
+                             const uint32_t aOffsetFromOther)
+  {
+    return TargetBytesPtr(aOther, aOffsetFromOther);
+  }
+
+  ReadOnlyTargetBytes<MMPolicyInProcess>* operator->()
+  {
+    return &mTargetBytes;
+  }
+
+  TargetBytesPtr(TargetBytesPtr&& aOther)
+    : mTargetBytes(std::move(aOther.mTargetBytes))
+  {
+  }
+
+  TargetBytesPtr(const TargetBytesPtr& aOther)
+    : mTargetBytes(aOther.mTargetBytes)
+  {
+  }
+
+  TargetBytesPtr& operator=(const TargetBytesPtr&) = delete;
+  TargetBytesPtr& operator=(TargetBytesPtr&&) = delete;
+
+private:
+  TargetBytesPtr(const MMPolicyInProcess& aMMPolicy, const void* aFunc)
+    : mTargetBytes(aMMPolicy, aFunc)
+  {
+  }
+
+  TargetBytesPtr(const TargetBytesPtr& aOther,
+                 const uint32_t aOffsetFromOther)
+    : mTargetBytes(aOther.mTargetBytes, aOffsetFromOther)
+  {
+  }
+
+  ReadOnlyTargetBytes<MMPolicyInProcess> mTargetBytes;
+};
+
+template <>
+class TargetBytesPtr<MMPolicyOutOfProcess>
+{
+public:
+  typedef std::shared_ptr<ReadOnlyTargetBytes<MMPolicyOutOfProcess>> Type;
+
+  static Type Make(const MMPolicyOutOfProcess& aMMPolicy, const void* aFunc)
+  {
+    return std::make_shared<ReadOnlyTargetBytes<MMPolicyOutOfProcess>>(
+                  aMMPolicy, aFunc);
+  }
+
+  static Type CopyFromOffset(const Type& aOther,
+                             const uint32_t aOffsetFromOther)
+  {
+    return std::make_shared<ReadOnlyTargetBytes<MMPolicyOutOfProcess>>(
+                  *aOther, aOffsetFromOther);
+  }
+};
+
 template <typename MMPolicy>
 class MOZ_STACK_CLASS ReadOnlyTargetFunction final
 {
-  template <typename TargetMMPolicy>
-  class TargetBytesPtr;
-
-  template<>
-  class TargetBytesPtr<MMPolicyInProcess>
-  {
-  public:
-    typedef TargetBytesPtr<MMPolicyInProcess> Type;
-
-    static Type Make(const MMPolicyInProcess& aMMPolicy, const void* aFunc)
-    {
-      return std::move(TargetBytesPtr(aMMPolicy, aFunc));
-    }
-
-    static Type CopyFromOffset(const TargetBytesPtr& aOther,
-                               const uint32_t aOffsetFromOther)
-    {
-      return std::move(TargetBytesPtr(aOther, aOffsetFromOther));
-    }
-
-    ReadOnlyTargetBytes<MMPolicyInProcess>* operator->()
-    {
-      return &mTargetBytes;
-    }
-
-    TargetBytesPtr(TargetBytesPtr&& aOther)
-      : mTargetBytes(std::move(aOther.mTargetBytes))
-    {
-    }
-
-    TargetBytesPtr(const TargetBytesPtr& aOther)
-      : mTargetBytes(aOther.mTargetBytes)
-    {
-    }
-
-    TargetBytesPtr& operator=(const TargetBytesPtr&) = delete;
-    TargetBytesPtr& operator=(TargetBytesPtr&&) = delete;
-
-  private:
-    TargetBytesPtr(const MMPolicyInProcess& aMMPolicy, const void* aFunc)
-      : mTargetBytes(aMMPolicy, aFunc)
-    {
-    }
-
-    TargetBytesPtr(const TargetBytesPtr& aOther,
-                   const uint32_t aOffsetFromOther)
-      : mTargetBytes(aOther.mTargetBytes, aOffsetFromOther)
-    {
-    }
-
-    ReadOnlyTargetBytes<MMPolicyInProcess> mTargetBytes;
-  };
-
-  template <>
-  class TargetBytesPtr<MMPolicyOutOfProcess>
-  {
-  public:
-    typedef std::shared_ptr<ReadOnlyTargetBytes<MMPolicyOutOfProcess>> Type;
-
-    static Type Make(const MMPolicyOutOfProcess& aMMPolicy, const void* aFunc)
-    {
-      return std::move(std::make_shared<ReadOnlyTargetBytes<MMPolicyOutOfProcess>>(
-                    aMMPolicy, aFunc));
-    }
-
-    static Type CopyFromOffset(const Type& aOther,
-                               const uint32_t aOffsetFromOther)
-    {
-      return std::move(std::make_shared<ReadOnlyTargetBytes<MMPolicyOutOfProcess>>(
-                    *aOther, aOffsetFromOther));
-    }
-  };
-
 public:
   ReadOnlyTargetFunction(const MMPolicy& aMMPolicy, const void* aFunc)
     : mTargetBytes(TargetBytesPtr<MMPolicy>::Make(aMMPolicy, aFunc))
@@ -808,8 +810,8 @@ private:
   template <typename T>
   struct ChasePointerHelper
   {
-    template <typename MMPolicy>
-    static T Result(const MMPolicy&, T aValue)
+    template <typename MMPolicy_>
+    static T Result(const MMPolicy_&, T aValue)
     {
       return aValue;
     }
@@ -818,10 +820,10 @@ private:
   template <typename T>
   struct ChasePointerHelper<T*>
   {
-    template <typename MMPolicy>
-    static auto Result(const MMPolicy& aPolicy, T* aValue)
+    template <typename MMPolicy_>
+    static auto Result(const MMPolicy_& aPolicy, T* aValue)
     {
-      ReadOnlyTargetFunction<MMPolicy> ptr(aPolicy, aValue);
+      ReadOnlyTargetFunction<MMPolicy_> ptr(aPolicy, aValue);
       return ptr.template ChasePointer<T>();
     }
   };

@@ -38,6 +38,7 @@
 #include "js/ProfilingFrameIterator.h"
 #include "threading/Thread.h"
 #include "vm/MutexIDs.h"
+#include "wasm/WasmSignalHandlers.h"
 
 namespace js {
 
@@ -160,7 +161,7 @@ class Simulator {
     };
 
     // Returns nullptr on OOM.
-    static Simulator* Create(JSContext* cx);
+    static Simulator* Create();
 
     static void Destroy(Simulator* simulator);
 
@@ -317,8 +318,21 @@ class Simulator {
     JS::ProfilingFrameIterator::RegisterState registerState();
 
     // Handle any wasm faults, returning true if the fault was handled.
-    bool handleWasmFault(uint64_t addr, unsigned numBytes);
-    bool handleWasmTrapFault();
+    // This method is rather hot so inline the normal (no-wasm) case.
+    bool MOZ_ALWAYS_INLINE handleWasmSegFault(uint64_t addr, unsigned numBytes) {
+        if (MOZ_LIKELY(!js::wasm::CodeExists)) {
+            return false;
+        }
+
+        uint8_t* newPC;
+        if (!js::wasm::MemoryAccessTraps(registerState(), (uint8_t*)addr, numBytes, &newPC)) {
+            return false;
+        }
+
+        LLBit_ = false;
+        set_pc(int64_t(newPC));
+        return true;
+    }
 
     // Executes one instruction.
     void instructionDecode(SimInstruction* instr);
@@ -427,7 +441,7 @@ class SimulatorProcess
 
     static bool initialize() {
         singleton_ = js_new<SimulatorProcess>();
-        return singleton_ && singleton_->init();
+        return singleton_;
     }
     static void destroy() {
         js_delete(singleton_);
@@ -438,8 +452,6 @@ class SimulatorProcess
     ~SimulatorProcess();
 
   private:
-    bool init();
-
     static SimulatorProcess* singleton_;
 
     // This lock creates a critical section around 'redirection_' and

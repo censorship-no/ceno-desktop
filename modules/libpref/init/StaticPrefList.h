@@ -88,6 +88,36 @@ VARCACHE_PREF(
 )
 
 //---------------------------------------------------------------------------
+// Fuzzing prefs. It's important that these can only be checked in fuzzing
+// builds (when FUZZING is defined), otherwise you could enable the fuzzing
+// stuff on your regular build which would be bad :)
+//---------------------------------------------------------------------------
+
+#ifdef FUZZING
+VARCACHE_PREF(
+  "fuzzing.enabled",
+   fuzzing_enabled,
+  bool, false
+)
+#endif
+
+//---------------------------------------------------------------------------
+// Clipboard prefs
+//---------------------------------------------------------------------------
+
+#if !defined(ANDROID) && !defined(XP_MACOSX) && defined(XP_UNIX)
+# define PREF_VALUE true
+#else
+# define PREF_VALUE false
+#endif
+VARCACHE_PREF(
+  "clipboard.autocopy",
+   clipboard_autocopy,
+  bool, PREF_VALUE
+)
+#undef PREF_VALUE
+
+//---------------------------------------------------------------------------
 // DOM prefs
 //---------------------------------------------------------------------------
 
@@ -149,6 +179,14 @@ VARCACHE_PREF(
 )
 #undef PREF_VALUE
 
+// If this is true, "keypress" event's keyCode value and charCode value always
+// become same if the event is not created/initialized by JS.
+VARCACHE_PREF(
+  "dom.keyboardevent.keypress.set_keycode_and_charcode_to_same_value",
+   dom_keyboardevent_keypress_set_keycode_and_charcode_to_same_value,
+  bool, false
+)
+
 // NOTE: This preference is used in unit tests. If it is removed or its default
 // value changes, please update test_sharedMap_var_caches.js accordingly.
 VARCACHE_PREF(
@@ -170,7 +208,13 @@ VARCACHE_PREF(
 VARCACHE_PREF(
   "dom.performance.enable_scheduler_timing",
   dom_performance_enable_scheduler_timing,
-  RelaxedAtomicBool, false
+  RelaxedAtomicBool, true
+)
+
+VARCACHE_PREF(
+  "dom.performance.children_results_ipc_timeout",
+  dom_performance_children_results_ipc_timeout,
+  uint32_t, 1000
 )
 
 // If true. then the service worker interception and the ServiceWorkerManager
@@ -178,12 +222,205 @@ VARCACHE_PREF(
 // Note, this is not currently safe to use for normal browsing yet.
 PREF("dom.serviceWorkers.parent_intercept", bool, false)
 
+// Enable PaymentRequest API
+#if defined(NIGHTLY_BUILD) && (defined(XP_WIN) || defined(XP_MACOSX))
+# define PREF_VALUE  true
+#else
+# define PREF_VALUE  false
+#endif
+VARCACHE_PREF(
+  "dom.payments.request.enabled",
+   dom_payments_request_enabled,
+  bool, PREF_VALUE
+)
+#undef PREF_VALUE
+
+// Whether a user gesture is required to call PaymentRequest.prototype.show().
+VARCACHE_PREF(
+  "dom.payments.request.user_interaction_required",
+  dom_payments_request_user_interaction_required,
+  bool, true
+)
+
 // Time in milliseconds for PaymentResponse to wait for
 // the Web page to call complete().
 VARCACHE_PREF(
   "dom.payments.response.timeout",
    dom_payments_response_timeout,
   uint32_t, 5000
+)
+
+// SW Cache API
+VARCACHE_PREF(
+  "dom.caches.enabled",
+   dom_caches_enabled,
+  RelaxedAtomicBool, true
+)
+
+VARCACHE_PREF(
+  "dom.caches.testing.enabled",
+   dom_caches_testing_enabled,
+  RelaxedAtomicBool, false
+)
+
+// Enable printing performance marks/measures to log
+VARCACHE_PREF(
+  "dom.performance.enable_user_timing_logging",
+   dom_performance_enable_user_timing_logging,
+  RelaxedAtomicBool, false
+)
+
+VARCACHE_PREF(
+  "dom.webnotifications.enabled",
+   dom_webnotifications_enabled,
+  RelaxedAtomicBool, true
+)
+
+VARCACHE_PREF(
+  "dom.webnotifications.serviceworker.enabled",
+   dom_webnotifications_serviceworker_enabled,
+  RelaxedAtomicBool, true
+)
+
+#ifdef NIGHTLY_BUILD
+# define PREF_VALUE  true
+#else
+# define PREF_VALUE  false
+#endif
+VARCACHE_PREF(
+  "dom.webnotifications.requireinteraction.enabled",
+   dom_webnotifications_requireinteraction_enabled,
+  RelaxedAtomicBool, PREF_VALUE
+)
+#undef PREF_VALUE
+
+VARCACHE_PREF(
+  "dom.serviceWorkers.enabled",
+   dom_serviceWorkers_enabled,
+  RelaxedAtomicBool, false
+)
+
+VARCACHE_PREF(
+  "dom.serviceWorkers.testing.enabled",
+   dom_serviceWorkers_testing_enabled,
+  RelaxedAtomicBool, false
+)
+
+VARCACHE_PREF(
+  "dom.testing.structuredclonetester.enabled",
+  dom_testing_structuredclonetester_enabled,
+  RelaxedAtomicBool, false
+)
+
+// Enable Storage API for all platforms except Android.
+#if !defined(MOZ_WIDGET_ANDROID)
+# define PREF_VALUE true
+#else
+# define PREF_VALUE false
+#endif
+VARCACHE_PREF(
+  "dom.storageManager.enabled",
+   dom_storageManager_enabled,
+  RelaxedAtomicBool, PREF_VALUE
+)
+#undef PREF_VALUE
+
+// WHATWG promise rejection events. See
+// https://html.spec.whatwg.org/multipage/webappapis.html#promiserejectionevent
+// TODO: Enable the event interface once actually firing it (bug 1362272).
+VARCACHE_PREF(
+  "dom.promise_rejection_events.enabled",
+   dom_promise_rejection_events_enabled,
+  RelaxedAtomicBool, false
+)
+
+// Push
+VARCACHE_PREF(
+  "dom.push.enabled",
+   dom_push_enabled,
+  RelaxedAtomicBool, false
+)
+
+#if !defined(MOZ_WIDGET_ANDROID)
+# define PREF_VALUE true
+#else
+# define PREF_VALUE false
+#endif
+VARCACHE_PREF(
+  "dom.webkitBlink.dirPicker.enabled",
+   dom_webkitBlink_dirPicker_enabled,
+  RelaxedAtomicBool, PREF_VALUE
+)
+#undef PREF_VALUE
+
+// Network Information API
+#if defined(MOZ_WIDGET_ANDROID)
+# define PREF_VALUE true
+#else
+# define PREF_VALUE false
+#endif
+VARCACHE_PREF(
+  "dom.netinfo.enabled",
+   dom_netinfo_enabled,
+  RelaxedAtomicBool, PREF_VALUE
+)
+#undef PREF_VALUE
+
+VARCACHE_PREF(
+  "dom.fetchObserver.enabled",
+   dom_fetchObserver_enabled,
+  RelaxedAtomicBool, false
+)
+
+// Enable Performance Observer API
+VARCACHE_PREF(
+  "dom.enable_performance_observer",
+   dom_enable_performance_observer,
+  RelaxedAtomicBool, true
+)
+
+// Enable passing the "storage" option to indexedDB.open.
+VARCACHE_PREF(
+  "dom.indexedDB.storageOption.enabled",
+   dom_indexedDB_storageOption_enabled,
+  RelaxedAtomicBool, false
+)
+
+#ifdef JS_BUILD_BINAST
+VARCACHE_PREF(
+  "dom.script_loader.binast_encoding.enabled",
+   dom_script_loader_binast_encoding_enabled,
+  RelaxedAtomicBool, false
+)
+#endif
+
+// IMPORTANT: Keep this in condition in sync with all.js. The value
+// of MOZILLA_OFFICIAL is different between full and artifact builds, so without
+// it being specified there, dump is disabled in artifact builds (see Bug 1490412).
+#ifdef MOZILLA_OFFICIAL
+# define PREF_VALUE false
+#else
+# define PREF_VALUE true
+#endif
+VARCACHE_PREF(
+  "browser.dom.window.dump.enabled",
+   browser_dom_window_dump_enabled,
+  RelaxedAtomicBool, PREF_VALUE
+)
+#undef PREF_VALUE
+
+VARCACHE_PREF(
+  "dom.worker.canceling.timeoutMilliseconds",
+   dom_worker_canceling_timeoutMilliseconds,
+  RelaxedAtomicUint32, 30000 /* 30 seconds */
+)
+
+// Enable content type normalization of XHR uploads via MIME Sniffing standard
+// Disabled for now in bz1499136
+VARCACHE_PREF(
+  "dom.xhr.standard_content_type_normalization",
+   dom_xhr_standard_content_type_normalization,
+  RelaxedAtomicBool, false
 )
 
 //---------------------------------------------------------------------------
@@ -200,17 +437,11 @@ VARCACHE_PREF(
 // Full-screen prefs
 //---------------------------------------------------------------------------
 
-#ifdef RELEASE_OR_BETA
-# define PREF_VALUE false
-#else
-# define PREF_VALUE true
-#endif
 VARCACHE_PREF(
   "full-screen-api.unprefix.enabled",
    full_screen_api_unprefix_enabled,
-  bool, PREF_VALUE
+  bool, true
 )
-#undef PREF_VALUE
 
 //---------------------------------------------------------------------------
 // Graphics prefs
@@ -220,6 +451,18 @@ VARCACHE_PREF(
   "gfx.font_rendering.opentype_svg.enabled",
    gfx_font_rendering_opentype_svg_enabled,
   bool, true
+)
+
+VARCACHE_PREF(
+  "gfx.offscreencanvas.enabled",
+   gfx_offscreencanvas_enabled,
+  RelaxedAtomicBool, false
+)
+
+VARCACHE_PREF(
+  "gfx.font_ahem_antialias_none",
+   gfx_font_ahem_antialias_none,
+  RelaxedAtomicBool, false
 )
 
 //---------------------------------------------------------------------------
@@ -254,12 +497,129 @@ VARCACHE_PREF(
 // Layout prefs
 //---------------------------------------------------------------------------
 
+// Debug-only pref to force enable the AccessibleCaret. If you want to
+// control AccessibleCaret by mouse, you'll need to set
+// "layout.accessiblecaret.hide_carets_for_mouse_input" to false.
+VARCACHE_PREF(
+  "layout.accessiblecaret.enabled",
+   layout_accessiblecaret_enabled,
+  bool, false
+)
+
+// Enable the accessible caret on platforms/devices
+// that we detect have touch support. Note that this pref is an
+// additional way to enable the accessible carets, rather than
+// overriding the layout.accessiblecaret.enabled pref.
+VARCACHE_PREF(
+  "layout.accessiblecaret.enabled_on_touch",
+   layout_accessiblecaret_enabled_on_touch,
+  bool, true
+)
+
+// By default, carets become tilt only when they are overlapping.
+VARCACHE_PREF(
+  "layout.accessiblecaret.always_tilt",
+   layout_accessiblecaret_always_tilt,
+  bool, false
+)
+
+// Show caret in cursor mode when long tapping on an empty content. This
+// also changes the default update behavior in cursor mode, which is based
+// on the emptiness of the content, into something more heuristic. See
+// AccessibleCaretManager::UpdateCaretsForCursorMode() for the details.
+VARCACHE_PREF(
+  "layout.accessiblecaret.caret_shown_when_long_tapping_on_empty_content",
+   layout_accessiblecaret_caret_shown_when_long_tapping_on_empty_content,
+  bool, false
+)
+
+// 0 = by default, always hide carets for selection changes due to JS calls.
+// 1 = update any visible carets for selection changes due to JS calls,
+//     but don't show carets if carets are hidden.
+// 2 = always show carets for selection changes due to JS calls.
+VARCACHE_PREF(
+  "layout.accessiblecaret.script_change_update_mode",
+   layout_accessiblecaret_script_change_update_mode,
+  int32_t, 0
+)
+
+// Allow one caret to be dragged across the other caret without any limitation.
+// This matches the built-in convention for all desktop platforms.
+VARCACHE_PREF(
+  "layout.accessiblecaret.allow_dragging_across_other_caret",
+   layout_accessiblecaret_allow_dragging_across_other_caret,
+  bool, true
+)
+
+// Optionally provide haptic feedback on long-press selection events.
+VARCACHE_PREF(
+  "layout.accessiblecaret.hapticfeedback",
+   layout_accessiblecaret_hapticfeedback,
+  bool, false
+)
+
+// Smart phone-number selection on long-press is not enabled by default.
+VARCACHE_PREF(
+  "layout.accessiblecaret.extend_selection_for_phone_number",
+   layout_accessiblecaret_extend_selection_for_phone_number,
+  bool, false
+)
+
+// Keep the accessible carets hidden when the user is using mouse input (as
+// opposed to touch/pen/etc.).
+VARCACHE_PREF(
+  "layout.accessiblecaret.hide_carets_for_mouse_input",
+   layout_accessiblecaret_hide_carets_for_mouse_input,
+  bool, true
+)
+
+// CSS attributes (width, height, margin-left) of the AccessibleCaret in CSS
+// pixels.
+VARCACHE_PREF(
+  "layout.accessiblecaret.width",
+   layout_accessiblecaret_width,
+  float, 34.0f
+)
+
+VARCACHE_PREF(
+  "layout.accessiblecaret.height",
+   layout_accessiblecaret_height,
+  float, 36.0f
+)
+
+VARCACHE_PREF(
+  "layout.accessiblecaret.margin-left",
+   layout_accessiblecaret_margin_left,
+  float, -18.5f
+)
+
+// Simulate long tap events to select words. Mainly used in manual testing
+// with mouse.
+VARCACHE_PREF(
+  "layout.accessiblecaret.use_long_tap_injector",
+   layout_accessiblecaret_use_long_tap_injector,
+  bool, false
+)
+
 // Is parallel CSS parsing enabled?
 VARCACHE_PREF(
   "layout.css.parsing.parallel",
    layout_css_parsing_parallel,
   bool, true
 )
+
+// Are style system use counters enabled?
+#ifdef RELEASE_OR_BETA
+#define PREF_VALUE false
+#else
+#define PREF_VALUE true
+#endif
+VARCACHE_PREF(
+  "layout.css.use-counters.enabled",
+   layout_css_use_counters_enabled,
+  bool, PREF_VALUE
+)
+#undef PREF_VALUE
 
 // Is CSS error reporting enabled?
 VARCACHE_PREF(
@@ -318,19 +678,6 @@ VARCACHE_PREF(
 )
 #undef PREF_VALUE
 
-// Is support for the frames() timing function enabled?
-#ifdef RELEASE_OR_BETA
-# define PREF_VALUE false
-#else
-# define PREF_VALUE true
-#endif
-VARCACHE_PREF(
-  "layout.css.frames-timing.enabled",
-   layout_css_frames_timing_enabled,
-  bool, PREF_VALUE
-)
-#undef PREF_VALUE
-
 // Should the :visited selector ever match (otherwise :link matches instead)?
 VARCACHE_PREF(
   "layout.css.visited_links_enabled",
@@ -342,7 +689,7 @@ VARCACHE_PREF(
 VARCACHE_PREF(
   "layout.css.webkit-appearance.enabled",
    layout_css_webkit_appearance_enabled,
-  bool, false
+  bool, true
 )
 
 // Pref to control whether @-moz-document rules are enabled in content pages.
@@ -351,6 +698,18 @@ VARCACHE_PREF(
    layout_css_moz_document_content_enabled,
   bool, false
 )
+
+#ifdef NIGHTLY_BUILD
+# define PREF_VALUE true
+#else
+# define PREF_VALUE false
+#endif
+VARCACHE_PREF(
+  "layout.css.supports-selector.enabled",
+   layout_css_supports_selector_enabled,
+  bool, PREF_VALUE
+)
+#undef PREF_VALUE
 
 // Pref to control whether @-moz-document url-prefix() is parsed in content
 // pages. Only effective when layout.css.moz-document.content.enabled is false.
@@ -374,31 +733,19 @@ VARCACHE_PREF(
 
 // Pref to control whether display: -moz-box and display: -moz-inline-box are
 // parsed in content pages.
-#ifdef EARLY_BETA_OR_EARLIER
-#define PREF_VALUE false
-#else
-#define PREF_VALUE true
-#endif
 VARCACHE_PREF(
   "layout.css.xul-box-display-values.content.enabled",
    layout_css_xul_box_display_values_content_enabled,
-  bool, PREF_VALUE
+  bool, false
 )
-#undef PREF_VALUE
 
 // Pref to control whether ::xul-tree-* pseudo-elements are parsed in content
 // pages.
-#ifdef EARLY_BETA_OR_EARLIER
-#define PREF_VALUE false
-#else
-#define PREF_VALUE true
-#endif
 VARCACHE_PREF(
   "layout.css.xul-tree-pseudos.content.enabled",
    layout_css_xul_tree_pseudos_content_enabled,
-  bool, PREF_VALUE
+  bool, false
 )
-#undef PREF_VALUE
 
 // Is support for CSS "grid-template-{columns,rows}: subgrid X" enabled?
 VARCACHE_PREF(
@@ -426,6 +773,41 @@ VARCACHE_PREF(
   "layout.css.overflow.moz-scrollbars.enabled",
    layout_css_overflow_moz_scrollbars_enabled,
   bool, false
+)
+
+// Does overflow-break: break-word affect intrinsic size?
+VARCACHE_PREF(
+  "layout.css.overflow-break.intrinsic-size",
+   layout_css_overflow_break_intrinsic_size,
+  bool, false
+)
+
+// Does arbitrary ::-webkit-* pseudo-element parsed?
+VARCACHE_PREF(
+  "layout.css.unknown-webkit-pseudo-element",
+   layout_css_unknown_webkit_pseudo_element,
+  bool, true
+)
+
+// Is path() supported in clip-path?
+VARCACHE_PREF(
+  "layout.css.clip-path-path.enabled",
+   layout_css_clip_path_path_enabled,
+  bool, false
+)
+
+// Is support for CSS column-span enabled?
+VARCACHE_PREF(
+  "layout.css.column-span.enabled",
+   layout_css_column_span_enabled,
+  bool, false
+)
+
+// Is steps(jump-*) supported in easing functions?
+VARCACHE_PREF(
+  "layout.css.step-position-jump.enabled",
+   layout_css_step_position_jump_enabled,
+  bool, true
 )
 
 //---------------------------------------------------------------------------
@@ -482,6 +864,14 @@ VARCACHE_PREF(
    javascript_options_mem_notify,
   bool, false
 )
+
+// Streams API
+VARCACHE_PREF(
+  "javascript.options.streams",
+   javascript_options_streams,
+  RelaxedAtomicBool, false
+)
+
 
 //---------------------------------------------------------------------------
 // Media prefs
@@ -688,6 +1078,13 @@ VARCACHE_PREF(
    MediaNavigatorMediadatadecoderEnabled,
   bool, false
 )
+// Use MediaDataDecoder API for WebRTC. This includes hardware acceleration for
+// decoding.
+VARCACHE_PREF(
+  "media.navigator.mediadatadecoder_h264_enabled",
+   MediaNavigatorMediadatadecoderH264Enabled,
+  bool, false
+)
 #endif // MOZ_WEBRTC
 
 #ifdef MOZ_OMX
@@ -732,7 +1129,7 @@ VARCACHE_PREF(
 VARCACHE_PREF(
   "media.ffmpeg.low-latency.enabled",
    MediaFfmpegLowLatencyEnabled,
-  bool, false
+  RelaxedAtomicBool, false
 )
 #endif
 
@@ -860,6 +1257,18 @@ VARCACHE_PREF(
    MediaWebspeechRecognitionForceEnable,
   bool, false
 )
+
+#if defined(MOZ_WEBM_ENCODER)
+# define PREF_VALUE true
+#else
+# define PREF_VALUE false
+#endif
+VARCACHE_PREF(
+  "media.encoder.webm.enabled",
+   MediaEncoderWebMEnabled,
+  RelaxedAtomicBool, true
+)
+#undef PREF_VALUE
 
 #if defined(RELEASE_OR_BETA)
 # define PREF_VALUE 3
@@ -998,6 +1407,12 @@ VARCACHE_PREF(
 VARCACHE_PREF(
   "media.media-capabilities.enabled",
    MediaCapabilitiesEnabled,
+  RelaxedAtomicBool, true
+)
+
+VARCACHE_PREF(
+  "media.media-capabilities.screen.enabled",
+   MediaCapabilitiesScreenEnabled,
   RelaxedAtomicBool, false
 )
 
@@ -1067,12 +1482,13 @@ VARCACHE_PREF(
   bool, false
 )
 
-// 0-Accept, 1-dontAcceptForeign, 2-dontAcceptAny, 3-limitForeign
+// 0-Accept, 1-dontAcceptForeign, 2-dontAcceptAny, 3-limitForeign,
+// 4-rejectTracker
 // Keep the old default of accepting all cookies
 VARCACHE_PREF(
   "network.cookie.cookieBehavior",
   network_cookie_cookieBehavior,
-  int32_t, 0
+  RelaxedAtomicInt32, 0
 )
 
 // Enables the predictive service.
@@ -1207,16 +1623,32 @@ PREF("preferences.allow.omt-write", bool, true)
 // Privacy prefs
 //---------------------------------------------------------------------------
 
+// Whether Content Blocking Third-Party Cookies UI has been enabled.
 VARCACHE_PREF(
-  "privacy.restrict3rdpartystorage.enabled",
-   privacy_restrict3rdpartystorage_enabled,
-  RelaxedAtomicBool, false
+  "browser.contentblocking.allowlist.storage.enabled",
+   browser_contentblocking_allowlist_storage_enabled,
+  bool, false
 )
 
 VARCACHE_PREF(
-  "privacy.restrict3rdpartystorage.ui.enabled",
-   privacy_restrict3rdpartystorage_ui_enabled,
-  RelaxedAtomicBool, false
+  "browser.contentblocking.allowlist.annotations.enabled",
+   browser_contentblocking_allowlist_annotations_enabled,
+  bool, true
+)
+
+// How many recent block/unblock actions per origins we remember in the
+// Content Blocking log for each top-level window.
+VARCACHE_PREF(
+  "browser.contentblocking.originlog.length",
+   browser_contentblocking_originlog_length,
+  uint32_t, 32
+)
+
+// Whether FastBlock has been enabled.
+VARCACHE_PREF(
+  "browser.fastblock.enabled",
+  browser_fastblock_enabled,
+  bool, false
 )
 
 // Anti-tracking permission expiration
@@ -1224,6 +1656,33 @@ VARCACHE_PREF(
   "privacy.restrict3rdpartystorage.expiration",
    privacy_restrict3rdpartystorage_expiration,
   uint32_t, 2592000 // 30 days (in seconds)
+)
+
+// Anti-tracking user-interaction expiration
+VARCACHE_PREF(
+  "privacy.userInteraction.expiration",
+   privacy_userInteraction_expiration,
+  uint32_t, 2592000 // 30 days (in seconds)
+)
+
+// Anti-tracking user-interaction document interval
+VARCACHE_PREF(
+  "privacy.userInteraction.document.interval",
+   privacy_userInteraction_document_interval,
+  uint32_t, 1800 // 30 minutes (in seconds)
+)
+
+// Anti-fingerprinting, disabled by default
+VARCACHE_PREF(
+  "privacy.resistFingerprinting",
+   privacy_resistFingerprinting,
+  RelaxedAtomicBool, false
+)
+
+VARCACHE_PREF(
+  "privacy.resistFingerprinting.autoDeclineNoUserInputCanvasPrompts",
+   privacy_resistFingerprinting_autoDeclineNoUserInputCanvasPrompts,
+  RelaxedAtomicBool, false
 )
 
 //---------------------------------------------------------------------------
@@ -1249,12 +1708,6 @@ VARCACHE_PREF(
 )
 
 VARCACHE_PREF(
-  "security.csp.enable_violation_events",
-   security_csp_enable_violation_events,
-  bool, true
-)
-
-VARCACHE_PREF(
   "security.csp.reporting.script-sample.max-length",
    security_csp_reporting_script_sample_max_length,
   int32_t, 40
@@ -1269,6 +1722,32 @@ VARCACHE_PREF(
    view_source_editor_external,
   bool, false
 )
+
+//---------------------------------------------------------------------------
+// DevTools prefs
+//---------------------------------------------------------------------------
+
+VARCACHE_PREF(
+  "devtools.enabled",
+   devtools_enabled,
+  RelaxedAtomicBool, false
+)
+
+//---------------------------------------------------------------------------
+// Feature-Policy prefs
+//---------------------------------------------------------------------------
+
+#ifdef NIGHTLY_BUILD
+# define PREF_VALUE true
+#else
+# define PREF_VALUE false
+#endif
+VARCACHE_PREF(
+  "dom.security.featurePolicy.enabled",
+   dom_security_featurePolicy_enabled,
+  bool, PREF_VALUE
+)
+#undef PREF_VALUE
 
 //---------------------------------------------------------------------------
 // End of prefs

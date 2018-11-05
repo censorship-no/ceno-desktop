@@ -10,12 +10,12 @@ const kWidget2Id  = "test-890262-widget2";
 
 setupArea();
 
-// Destroying a widget after defaulting it to a non-legacy area should work.
+// Destroying a widget after defaulting it to a lazy area should work.
 add_task(function() {
   CustomizableUI.createWidget({
     id: kWidget1Id,
     removable: true,
-    defaultArea: kLazyAreaId
+    defaultArea: kLazyAreaId,
   });
   let noError = true;
   try {
@@ -27,12 +27,12 @@ add_task(function() {
   ok(noError, "Shouldn't throw an exception for a widget that was created in a not-yet-constructed area");
 });
 
-// Destroying a widget after moving it to a non-legacy area should work.
+// Destroying a widget after moving it to a lazy area should work.
 add_task(function() {
   CustomizableUI.createWidget({
     id: kWidget2Id,
     removable: true,
-    defaultArea: CustomizableUI.AREA_NAVBAR
+    defaultArea: CustomizableUI.AREA_NAVBAR,
   });
 
   CustomizableUI.addWidgetToArea(kWidget2Id, kLazyAreaId);
@@ -63,6 +63,6 @@ function setupArea() {
   document.getElementById("nav-bar").appendChild(lazyArea);
   CustomizableUI.registerArea(kLazyAreaId, {
     type: CustomizableUI.TYPE_TOOLBAR,
-    defaultPlacements: []
+    defaultPlacements: [],
   });
 }

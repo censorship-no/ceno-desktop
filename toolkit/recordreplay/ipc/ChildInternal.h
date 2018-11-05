@@ -7,12 +7,17 @@
 #ifndef mozilla_recordreplay_ChildInternal_h
 #define mozilla_recordreplay_ChildInternal_h
 
+#include "Channel.h"
 #include "ChildIPC.h"
 #include "JSControl.h"
+#include "MiddlemanCall.h"
 #include "Monitor.h"
 
 namespace mozilla {
 namespace recordreplay {
+
+// This file has internal definitions for communication between the main
+// record/replay infrastructure and child side IPC code.
 
 // The navigation namespace has definitions for managing breakpoints and all
 // other state that persists across rewinds, and for keeping track of the
@@ -59,6 +64,10 @@ js::ExecutionPoint CurrentExecutionPoint(const js::BreakpointPosition& aPosition
 // executing into an ExecutionPoint.
 js::ExecutionPoint TimeWarpTargetExecutionPoint(ProgressCounter aTarget);
 
+// Synchronously paint the current contents into the graphics shared memory
+// object, returning the size of the painted area via aWidth/aHeight.
+void Repaint(size_t* aWidth, size_t* aHeight);
+
 // Called when running forward, immediately before hitting a normal or
 // temporary checkpoint.
 void BeforeCheckpoint();
@@ -67,19 +76,59 @@ void BeforeCheckpoint();
 // when running forward or immediately after rewinding.
 void AfterCheckpoint(const CheckpointId& aCheckpoint);
 
+// Get the ID of the last normal checkpoint.
+size_t LastNormalCheckpoint();
+
 } // namespace navigation
 
-// IPC activity that can be triggered by navigation.
 namespace child {
 
+// IPC activity that can be triggered by navigation.
 void RespondToRequest(const js::CharBuffer& aBuffer);
-
 void HitCheckpoint(size_t aId, bool aRecordingEndpoint);
-
 void HitBreakpoint(bool aRecordingEndpoint, const uint32_t* aBreakpoints, size_t aNumBreakpoints);
+
+// Optional information about a crash that occurred. If not provided to
+// ReportFatalError, the current thread will be treated as crashed.
+struct MinidumpInfo
+{
+  int mExceptionType;
+  int mCode;
+  int mSubcode;
+  mach_port_t mThread;
+
+  MinidumpInfo(int aExceptionType, int aCode, int aSubcode, mach_port_t aThread)
+    : mExceptionType(aExceptionType), mCode(aCode), mSubcode(aSubcode), mThread(aThread)
+  {}
+};
+
+// Generate a minidump and report a fatal error to the middleman process.
+void ReportFatalError(const Maybe<MinidumpInfo>& aMinidumpInfo,
+                      const char* aFormat, ...);
 
 // Monitor used for various synchronization tasks.
 extern Monitor* gMonitor;
+
+// Notify the middleman that the recording was flushed.
+void NotifyFlushedRecording();
+
+// Notify the middleman about an AlwaysMarkMajorCheckpoints directive.
+void NotifyAlwaysMarkMajorCheckpoints();
+
+// Report a fatal error to the middleman process.
+void ReportFatalError(const char* aFormat, ...);
+
+// Mark a time span when the main thread is idle.
+void BeginIdleTime();
+void EndIdleTime();
+
+// Whether the middleman runs developer tools server code.
+bool DebuggerRunsInMiddleman();
+
+// Send messages operating on middleman calls.
+bool SendMiddlemanCallRequest(const char* aInputData, size_t aInputSize,
+                              InfallibleVector<char>* aOutputData);
+void SendResetMiddlemanCalls();
 
 } // namespace child
 

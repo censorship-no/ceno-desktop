@@ -52,6 +52,16 @@ var ActionBarHandler = {
   handleEvent: function(e) {
     e.stopImmediatePropagation();
 
+    if (e.reason === "presscaret" || e.reason === "releasecaret") {
+      const dispatcher = this._getDispatcher(Services.focus.focusedWindow);
+      if (dispatcher) {
+        dispatcher.sendRequest({
+          type: "GeckoView:PinOnScreen",
+          pinned: e.reason === "presscaret",
+        });
+      }
+    }
+
     // Close an open ActionBar, if carets no longer logically visible.
     if (this._selectionID && !e.caretVisible) {
       this._uninit(false);
@@ -317,7 +327,7 @@ var ActionBarHandler = {
         x: this._boundingClientRect.x,
         y: this._boundingClientRect.y,
         width: this._boundingClientRect.width,
-        height: this._boundingClientRect.height
+        height: this._boundingClientRect.height,
       });
     }
 

@@ -177,6 +177,7 @@ public:
   struct TextBoxParams {
     bool disabled = false;
     bool focused = false;
+    bool borderless = false;
   };
 
   struct SearchFieldParams {
@@ -535,7 +536,6 @@ protected:
                       bool aIsActive);
 
   // Scrollbars
-  nsIFrame* GetParentScrollbarFrame(nsIFrame *aFrame);
   bool IsParentScrollbarRolledOver(nsIFrame* aFrame);
 
   void RenderWidget(const WidgetInfo& aWidgetInfo,

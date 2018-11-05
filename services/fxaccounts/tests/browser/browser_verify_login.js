@@ -9,12 +9,12 @@ add_task(async function() {
       deviceName: "Laptop",
       url: "http://localhost/newLogin",
       title: "Sign-in Request",
-      body: "New sign-in request from vershwal's Nighty on Intel Mac OS X 10.12"
-    }
+      body: "New sign-in request from vershwal's Nighty on Intel Mac OS X 10.12",
+    },
   };
   info("testVerifyNewSignin");
   setupMockAlertsService();
-  gBrowser.selectedBrowser.loadURI("about:robots");
+  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:robots");
   await waitForDocLoadComplete();
 
   let waitForTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);

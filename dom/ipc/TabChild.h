@@ -23,7 +23,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsFrameMessageManager.h"
 #include "nsIPresShell.h"
-#include "nsIScriptObjectPrincipal.h"
 #include "nsWeakReference.h"
 #include "nsITabChild.h"
 #include "nsITooltipListener.h"
@@ -80,28 +79,21 @@ class ClonedMessageData;
 class CoalescedMouseData;
 class CoalescedWheelData;
 
-class TabChildGlobal : public ContentFrameMessageManager,
-                       public nsIMessageSender,
-                       public nsIScriptObjectPrincipal,
-                       public nsIGlobalObject,
-                       public nsSupportsWeakReference
+class TabChildMessageManager : public ContentFrameMessageManager,
+                               public nsIMessageSender,
+                               public DispatcherTrait,
+                               public nsSupportsWeakReference
 {
 public:
-  explicit TabChildGlobal(TabChild* aTabChild);
+  explicit TabChildMessageManager(TabChild* aTabChild);
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(TabChildGlobal, DOMEventTargetHelper)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(TabChildMessageManager, DOMEventTargetHelper)
 
   void MarkForCC();
 
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override
-  {
-    MOZ_CRASH("We should never get here!");
-  }
-  bool WrapGlobalObject(JSContext* aCx,
-                        JS::RealmOptions& aOptions,
-                        JS::MutableHandle<JSObject*> aReflector);
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   virtual already_AddRefed<nsPIDOMWindowOuter> GetContent(ErrorResult& aError) override;
   virtual already_AddRefed<nsIDocShell> GetDocShell(ErrorResult& aError) override;
@@ -116,9 +108,6 @@ public:
     aVisitor.mForceContentDispatch = true;
   }
 
-  virtual nsIPrincipal* GetPrincipal() override;
-  virtual JSObject* GetGlobalJSObject() override;
-
   // Dispatch a runnable related to the global.
   virtual nsresult Dispatch(mozilla::TaskCategory aCategory,
                             already_AddRefed<nsIRunnable>&& aRunnable) override;
@@ -132,7 +121,7 @@ public:
   RefPtr<TabChild> mTabChild;
 
 protected:
-  ~TabChildGlobal();
+  ~TabChildMessageManager();
 };
 
 class ContentListener final : public nsIDOMEventListener
@@ -163,18 +152,18 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TabChildBase)
 
-  virtual bool WrapGlobalObject(JSContext* aCx,
-                                JS::RealmOptions& aOptions,
-                                JS::MutableHandle<JSObject*> aReflector) override
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto)
   {
-    return mTabChildGlobal->WrapGlobalObject(aCx, aOptions, aReflector);
+    return mTabChildMessageManager->WrapObject(aCx, aGivenProto);
   }
+
 
   virtual nsIWebNavigation* WebNavigation() const = 0;
   virtual PuppetWidget* WebWidget() = 0;
   nsIPrincipal* GetPrincipal() { return mPrincipal; }
   virtual bool DoUpdateZoomConstraints(const uint32_t& aPresShellId,
-                                       const mozilla::layers::FrameMetrics::ViewID& aViewId,
+                                       const mozilla::layers::ScrollableLayerGuid::ViewID& aViewId,
                                        const Maybe<mozilla::layers::ZoomConstraints>& aConstraints) = 0;
 
   virtual ScreenIntSize GetInnerSize() = 0;
@@ -196,12 +185,12 @@ protected:
   void DispatchMessageManagerMessage(const nsAString& aMessageName,
                                      const nsAString& aJSONData);
 
-  void ProcessUpdateFrame(const mozilla::layers::FrameMetrics& aFrameMetrics);
+  void ProcessUpdateFrame(const mozilla::layers::RepaintRequest& aRequest);
 
-  bool UpdateFrameHandler(const mozilla::layers::FrameMetrics& aFrameMetrics);
+  bool UpdateFrameHandler(const mozilla::layers::RepaintRequest& aRequest);
 
 protected:
-  RefPtr<TabChildGlobal> mTabChildGlobal;
+  RefPtr<TabChildMessageManager> mTabChildMessageManager;
   nsCOMPtr<nsIWebBrowserChrome3> mWebBrowserChrome;
 };
 
@@ -279,9 +268,9 @@ public:
 
   FORWARD_SHMEM_ALLOCATOR_TO(PBrowserChild)
 
-  TabChildGlobal* GetMessageManager()
+  TabChildMessageManager* GetMessageManager()
   {
-    return mTabChildGlobal;
+    return mTabChildMessageManager;
   }
 
   /**
@@ -488,7 +477,7 @@ public:
     mMaxTouchPoints = aMaxTouchPoints;
   }
 
-  ScreenOrientationInternal GetOrientation() const { return mOrientation; }
+  hal::ScreenOrientation GetOrientation() const { return mOrientation; }
 
   void SetBackgroundColor(const nscolor& aColor);
 
@@ -551,6 +540,7 @@ public:
 
   void ClearCachedResources();
   void InvalidateLayers();
+  void SchedulePaint();
   void ReinitRendering();
   void ReinitRenderingForDeviceReset();
 
@@ -645,13 +635,13 @@ public:
   void SetAllowedTouchBehavior(uint64_t aInputBlockId,
                                const nsTArray<TouchBehaviorFlags>& aFlags) const;
 
-  bool UpdateFrame(const FrameMetrics& aFrameMetrics);
+  bool UpdateFrame(const layers::RepaintRequest& aRequest);
   bool NotifyAPZStateChange(const ViewID& aViewId,
                             const layers::GeckoContentController::APZStateChange& aChange,
                             const int& aArg);
   void StartScrollbarDrag(const layers::AsyncDragMetrics& aDragMetrics);
   void ZoomToRect(const uint32_t& aPresShellId,
-                  const FrameMetrics::ViewID& aViewId,
+                  const ScrollableLayerGuid::ViewID& aViewId,
                   const CSSRect& aRect,
                   const uint32_t& aFlags);
 
@@ -734,6 +724,10 @@ protected:
 
   virtual mozilla::ipc::IPCResult RecvRenderLayers(const bool& aEnabled, const bool& aForce, const layers::LayersObserverEpoch& aEpoch) override;
 
+  virtual mozilla::ipc::IPCResult RecvRequestRootPaint(const IntRect& aRect, const float& aScale, const nscolor& aBackgroundColor, RequestRootPaintResolver&& aResolve) override;
+
+  virtual mozilla::ipc::IPCResult RecvRequestSubPaint(const float& aScale, const nscolor& aBackgroundColor, RequestSubPaintResolver&& aResolve) override;
+
   virtual mozilla::ipc::IPCResult RecvNavigateByKey(const bool& aForward,
                                                     const bool& aForDocumentNavigation) override;
 
@@ -752,9 +746,13 @@ protected:
 
   virtual mozilla::ipc::IPCResult RecvSetWindowName(const nsString& aName) override;
 
+  virtual mozilla::ipc::IPCResult RecvAllowScriptsToClose() override;
+
   virtual mozilla::ipc::IPCResult RecvSetOriginAttributes(const OriginAttributes& aOriginAttributes) override;
 
   virtual mozilla::ipc::IPCResult RecvSetWidgetNativeData(const WindowsHandle& aWidgetNativeData) override;
+
+  virtual mozilla::ipc::IPCResult RecvGetContentBlockingLog(GetContentBlockingLogResolver&& aResolve) override;
 
 private:
   void HandleDoubleTap(const CSSPoint& aPoint, const Modifiers& aModifiers,
@@ -773,7 +771,7 @@ private:
 
   void ActorDestroy(ActorDestroyReason why) override;
 
-  bool InitTabChildGlobal();
+  bool InitTabChildMessageManager();
 
   void InitRenderingState(const TextureFactoryIdentifier& aTextureFactoryIdentifier,
                           const layers::LayersId& aLayersId,
@@ -839,7 +837,7 @@ private:
   bool mDidFakeShow;
   bool mNotified;
   bool mTriedBrowserInit;
-  ScreenOrientationInternal mOrientation;
+  hal::ScreenOrientation mOrientation;
 
   bool mIgnoreKeyPressEvent;
   RefPtr<APZEventState> mAPZEventState;

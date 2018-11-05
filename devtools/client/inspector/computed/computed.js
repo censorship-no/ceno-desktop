@@ -6,15 +6,15 @@
 
 "use strict";
 
+const promise = require("promise");
+const flags = require("devtools/shared/flags");
 const ToolDefinitions = require("devtools/client/definitions").Tools;
 const CssLogic = require("devtools/shared/inspector/css-logic");
 const {ELEMENT_STYLE} = require("devtools/shared/specs/styles");
-const promise = require("promise");
 const OutputParser = require("devtools/client/shared/output-parser");
 const {PrefObserver} = require("devtools/client/shared/prefs");
 const {createChild} = require("devtools/client/inspector/shared/utils");
 const {gDevTools} = require("devtools/client/framework/devtools");
-const {getCssProperties} = require("devtools/shared/fronts/css-properties");
 const {
   VIEW_NODE_SELECTOR_TYPE,
   VIEW_NODE_PROPERTY_TYPE,
@@ -157,8 +157,7 @@ function CssComputedView(inspector, document, pageStyle) {
 
   this.propertyViews = [];
 
-  const cssProperties = getCssProperties(inspector.toolbox);
-  this._outputParser = new OutputParser(document, cssProperties);
+  this._outputParser = new OutputParser(document, inspector.cssProperties);
 
   // Create bound methods.
   this.focusWindow = this.focusWindow.bind(this);
@@ -183,13 +182,19 @@ function CssComputedView(inspector, document, pageStyle) {
   this.styleDocument.addEventListener("mousedown", this.focusWindow);
   this.element.addEventListener("click", this._onClick);
   this.element.addEventListener("contextmenu", this._onContextMenu);
-  this.element.addEventListener("mousemove", () => {
-    this.addHighlightersToView();
-  }, { once: true });
   this.searchField.addEventListener("input", this._onFilterStyles);
   this.searchClearButton.addEventListener("click", this._onClearSearch);
   this.includeBrowserStylesCheckbox.addEventListener("input",
     this._onIncludeBrowserStyles);
+
+  if (flags.testing) {
+    // In tests, we start listening immediately to avoid having to simulate a mousemove.
+    this.highlighters.addToView(this);
+  } else {
+    this.element.addEventListener("mousemove", () => {
+      this.highlighters.addToView(this);
+    }, { once: true });
+  }
 
   this.searchClearButton.hidden = true;
 
@@ -341,7 +346,7 @@ CssComputedView.prototype = {
       }
       return {
         type: VIEW_NODE_SELECTOR_TYPE,
-        value: selectorText.trim()
+        value: selectorText.trim(),
       };
     }
 
@@ -373,7 +378,7 @@ CssComputedView.prototype = {
                          isHref)) {
       value = {
         property: parent.querySelector(".computed-property-name").firstChild.textContent,
-        value: parent.querySelector(".computed-property-value").textContent
+        value: parent.querySelector(".computed-property-value").textContent,
       };
     }
     if (propertyContent && (classes.contains("computed-other-property-value") ||
@@ -381,7 +386,7 @@ CssComputedView.prototype = {
       const view = propertyContent.previousSibling;
       value = {
         property: view.querySelector(".computed-property-name").firstChild.textContent,
-        value: node.textContent
+        value: node.textContent,
       };
     }
     if (classes.contains("computed-font-family")) {
@@ -389,13 +394,13 @@ CssComputedView.prototype = {
         value = {
           property: parent.querySelector(
             ".computed-property-name").firstChild.textContent,
-          value: node.parentNode.textContent
+          value: node.parentNode.textContent,
         };
       } else if (propertyContent) {
         const view = propertyContent.previousSibling;
         value = {
           property: view.querySelector(".computed-property-name").firstChild.textContent,
-          value: node.parentNode.textContent
+          value: node.parentNode.textContent,
         };
       } else {
         return null;
@@ -455,7 +460,7 @@ CssComputedView.prototype = {
             this.element.appendChild(fragment);
             this.noResults.hidden = this.numVisibleProperties > 0;
             resolve(undefined);
-          }
+          },
         }
       );
     });
@@ -482,8 +487,8 @@ CssComputedView.prototype = {
       this.pageStyle.getComputed(this._viewedElement, {
         filter: this._sourceFilter,
         onlyMatched: !this.includeBrowserStyles,
-        markMatched: true
-      })
+        markMatched: true,
+      }),
     ]).then(([, computed]) => {
       if (viewedElement !== this._viewedElement) {
         return promise.resolve();
@@ -533,7 +538,7 @@ CssComputedView.prototype = {
 
               this.inspector.emit("computed-view-refreshed");
               resolve(undefined);
-            }
+            },
           }
         );
         this._refreshProcess.schedule();
@@ -733,14 +738,6 @@ CssComputedView.prototype = {
   },
 
   /**
-   * Adds the highlighters overlay to the computed view. This is called by the "mousemove"
-   * event handler and in shared-head.js when opening and selecting the computed view.
-   */
-  addHighlightersToView() {
-    this.highlighters.addToView(this);
-  },
-
-  /**
    * Destructor for CssComputedView.
    */
   destroy: function() {
@@ -797,7 +794,7 @@ CssComputedView.prototype = {
     this.styleWindow = null;
 
     this._isDestroyed = true;
-  }
+  },
 };
 
 function PropertyInfo(tree, name) {
@@ -812,7 +809,7 @@ PropertyInfo.prototype = {
       return value;
     }
     return null;
-  }
+  },
 };
 
 /**
@@ -955,7 +952,7 @@ PropertyView.prototype = {
     this.element.setAttribute("tabindex", "0");
     this.shortcuts = new KeyShortcuts({
       window: this.tree.styleWindow,
-      target: this.element
+      target: this.element,
     });
     this.shortcuts.on("F1", event => {
       this.mdnLinkClick(event);
@@ -1117,7 +1114,7 @@ PropertyView.prototype = {
     for (const selector of this.matchedSelectorViews) {
       const p = createChild(frag, "p");
       const span = createChild(p, "span", {
-        class: "rule-link"
+        class: "rule-link",
       });
       const link = createChild(span, "a", {
         target: "_blank",
@@ -1125,28 +1122,28 @@ PropertyView.prototype = {
         title: selector.href,
         sourcelocation: selector.source,
         tabindex: "0",
-        textContent: selector.source
+        textContent: selector.source,
       });
       link.addEventListener("click", selector.openStyleEditor);
       const shortcuts = new KeyShortcuts({
         window: this.tree.styleWindow,
-        target: link
+        target: link,
       });
       shortcuts.on("Return", () => selector.openStyleEditor());
 
       const status = createChild(p, "span", {
         dir: "ltr",
         class: "rule-text theme-fg-color3 " + selector.statusClass,
-        title: selector.statusText
+        title: selector.statusText,
       });
 
       createChild(status, "div", {
         class: "fix-get-selection",
-        textContent: selector.sourceText
+        textContent: selector.sourceText,
       });
 
       const valueDiv = createChild(status, "div", {
-        class: "fix-get-selection computed-other-property-value theme-fg-color1"
+        class: "fix-get-selection computed-other-property-value theme-fg-color1",
       });
       valueDiv.appendChild(selector.outputFragment);
     }
@@ -1215,7 +1212,7 @@ PropertyView.prototype = {
 
     this.valueNode.removeEventListener("click", this.onFocus);
     this.valueNode = null;
-  }
+  },
 };
 
 /**
@@ -1263,7 +1260,7 @@ SelectorView.STATUS_NAMES = [
 ];
 
 SelectorView.CLASS_NAMES = [
-  "parentmatch", "matched", "bestmatch"
+  "parentmatch", "matched", "bestmatch",
 ];
 
 SelectorView.prototype = {
@@ -1333,7 +1330,7 @@ SelectorView.prototype = {
         colorClass: "computed-color",
         urlClass: "theme-link",
         fontFamilyClass: "computed-font-family",
-        baseURI: this.selectorInfo.rule.href
+        baseURI: this.selectorInfo.rule.href,
       }
     );
     return frag;
@@ -1520,7 +1517,7 @@ ComputedViewTool.prototype = {
     this.computedView.destroy();
 
     this.computedView = this.document = this.inspector = null;
-  }
+  },
 };
 
 exports.CssComputedView = CssComputedView;

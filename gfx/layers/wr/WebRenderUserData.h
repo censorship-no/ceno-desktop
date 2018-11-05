@@ -57,6 +57,8 @@ public:
 
   static bool SupportsAsyncUpdate(nsIFrame* aFrame);
 
+  static bool ProcessInvalidateForImage(nsIFrame* aFrame, DisplayItemType aType);
+
   NS_INLINE_DECL_REFCOUNTING(WebRenderUserData)
 
   WebRenderUserData(WebRenderLayerManager* aWRManager, nsDisplayItem* aItem);
@@ -149,6 +151,8 @@ public:
     return mPipelineId.isSome();
   }
 
+  bool IsAsyncAnimatedImage() const;
+
 protected:
   void ClearImageKey();
 
@@ -177,6 +181,7 @@ public:
   void SetScale(gfx::Size aScale) { mScale = aScale; }
   gfx::Size GetScale() { return mScale; }
   bool IsInvalid() { return mInvalid; }
+  void SetFonts(const std::vector<RefPtr<gfx::ScaledFont>>& aFonts) { mFonts = aFonts; }
 
   RefPtr<BasicLayerManager> mBasicLayerManager;
   std::vector<RefPtr<gfx::SourceSurface>> mExternalSurfaces;
@@ -185,6 +190,7 @@ protected:
   nsRect mBounds;
   bool mInvalid;
   gfx::Size mScale;
+  std::vector<RefPtr<gfx::ScaledFont>> mFonts;
 };
 
 class WebRenderAnimationData : public WebRenderUserData

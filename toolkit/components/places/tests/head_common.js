@@ -327,26 +327,6 @@ function visits_in_database(aURI) {
 }
 
 /**
- * Checks that we don't have any bookmark
- */
-function check_no_bookmarks() {
-  let query = PlacesUtils.history.getNewQuery();
-  let folders = [
-    PlacesUtils.bookmarks.toolbarFolder,
-    PlacesUtils.bookmarks.bookmarksMenuFolder,
-    PlacesUtils.bookmarks.unfiledBookmarksFolder,
-  ];
-  query.setFolders(folders, 3);
-  let options = PlacesUtils.history.getNewQueryOptions();
-  options.queryType = Ci.nsINavHistoryQueryOptions.QUERY_TYPE_BOOKMARKS;
-  let root = PlacesUtils.history.executeQuery(query, options).root;
-  root.containerOpen = true;
-  if (root.childCount != 0)
-    do_throw("Unable to remove all bookmarks");
-  root.containerOpen = false;
-}
-
-/**
  * Allows waiting for an observer notification once.
  *
  * @param aTopic
@@ -715,14 +695,13 @@ function NavBookmarkObserver() {}
 NavBookmarkObserver.prototype = {
   onBeginUpdateBatch() {},
   onEndUpdateBatch() {},
-  onItemAdded() {},
   onItemRemoved() {},
   onItemChanged() {},
   onItemVisited() {},
   onItemMoved() {},
   QueryInterface: ChromeUtils.generateQI([
     Ci.nsINavBookmarkObserver,
-  ])
+  ]),
 };
 
 /**
@@ -741,7 +720,7 @@ NavHistoryObserver.prototype = {
   onDeleteVisits() {},
   QueryInterface: ChromeUtils.generateQI([
     Ci.nsINavHistoryObserver,
-  ])
+  ]),
 };
 
 /**
@@ -770,7 +749,7 @@ NavHistoryResultObserver.prototype = {
   sortingChanged() {},
   QueryInterface: ChromeUtils.generateQI([
     Ci.nsINavHistoryResultObserver,
-  ])
+  ]),
 };
 
 function checkBookmarkObject(info) {
@@ -869,7 +848,7 @@ async function compareFavicons(icon1, icon2, msg) {
     return new Promise((resolve, reject) => {
       NetUtil.asyncFetch({
         uri: icon.href, loadUsingSystemPrincipal: true,
-        contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE_FAVICON
+        contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE_FAVICON,
       }, function(inputStream, status) {
           if (!Components.isSuccessCode(status))
             reject();
@@ -972,4 +951,24 @@ function getItemsWithAnnotation(name) {
 
     return rows.map(row => row.getResultByName("guid"));
   });
+}
+
+/**
+ * Checks there are no orphan page annotations in the database, and no
+ * orphan anno attribute names.
+ */
+async function assertNoOrphanPageAnnotations() {
+  let db = await PlacesUtils.promiseDBConnection();
+
+  let rows = await db.execute(`
+    SELECT place_id FROM moz_annos
+    WHERE place_id NOT IN (SELECT id FROM moz_places)
+  `);
+
+  Assert.equal(rows.length, 0, "Should not have any orphan page annotations");
+
+  rows = await db.execute(`
+    SELECT id FROM moz_anno_attributes
+    WHERE id NOT IN (SELECT anno_attribute_id FROM moz_annos) AND
+          id NOT IN (SELECT anno_attribute_id FROM moz_items_annos)`);
 }

@@ -29,9 +29,13 @@ public:
   void NotifyVRDisplayConnect(uint32_t aDisplayID);
   void NotifyVRDisplayDisconnect(uint32_t aDisplayID);
   void NotifyVRDisplayPresentChange(uint32_t aDisplayID);
+  void NotifyPresentationGenerationChanged(uint32_t aDisplayID);
 
   void DisconnectFromOwner();
   void UpdateSpentTimeIn2DTelemetry(bool aUpdate);
+  void StartActivity();
+  void StopActivity();
+  bool GetStopActivityStatus();
 
 private:
   ~VREventObserver();
@@ -42,6 +46,7 @@ private:
   TimeStamp mSpendTimeIn2DView;
   bool mIs2DView;
   bool mHasReset;
+  bool mStopActivity;
 };
 
 } // namespace dom

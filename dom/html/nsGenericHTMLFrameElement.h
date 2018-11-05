@@ -36,9 +36,9 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
                                   public nsIMozBrowserFrame
 {
 public:
-  nsGenericHTMLFrameElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+  nsGenericHTMLFrameElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                             mozilla::dom::FromParser aFromParser)
-    : nsGenericHTMLElement(aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo))
     , nsBrowserElement()
     , mSrcLoadHappened(false)
     , mNetworkCreated(aFromParser == mozilla::dom::FROM_PARSER_NETWORK)
@@ -64,7 +64,7 @@ public:
                               bool aNullParent = true) override;
   virtual void DestroyContent() override;
 
-  nsresult CopyInnerTo(mozilla::dom::Element* aDest, bool aPreallocateChildren);
+  nsresult CopyInnerTo(mozilla::dom::Element* aDest);
 
   virtual int32_t TabIndexDefault() override;
 

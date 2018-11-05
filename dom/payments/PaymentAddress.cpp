@@ -24,22 +24,22 @@ PaymentAddress::PaymentAddress(nsPIDOMWindowInner* aWindow,
                                const nsAString& aCountry,
                                const nsTArray<nsString>& aAddressLine,
                                const nsAString& aRegion,
+                               const nsAString& aRegionCode,
                                const nsAString& aCity,
                                const nsAString& aDependentLocality,
                                const nsAString& aPostalCode,
                                const nsAString& aSortingCode,
-                               const nsAString& aLanguageCode,
                                const nsAString& aOrganization,
                                const nsAString& aRecipient,
                                const nsAString& aPhone)
   : mCountry(aCountry)
   , mAddressLine(aAddressLine)
   , mRegion(aRegion)
+  , mRegionCode(aRegionCode)
   , mCity(aCity)
   , mDependentLocality(aDependentLocality)
   , mPostalCode(aPostalCode)
   , mSortingCode(aSortingCode)
-  , mLanguageCode(aLanguageCode)
   , mOrganization(aOrganization)
   , mRecipient(aRecipient)
   , mPhone(aPhone)
@@ -66,6 +66,12 @@ PaymentAddress::GetRegion(nsAString& aRetVal) const
 }
 
 void
+PaymentAddress::GetRegionCode(nsAString& aRetVal) const
+{
+  aRetVal = mRegionCode;
+}
+
+void
 PaymentAddress::GetCity(nsAString& aRetVal) const
 {
   aRetVal = mCity;
@@ -87,12 +93,6 @@ void
 PaymentAddress::GetSortingCode(nsAString& aRetVal) const
 {
   aRetVal = mSortingCode;
-}
-
-void
-PaymentAddress::GetLanguageCode(nsAString& aRetVal) const
-{
-  aRetVal = mLanguageCode;
 }
 
 void

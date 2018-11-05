@@ -323,6 +323,14 @@ LookupHelper::OnLookupComplete(nsICancelable *aRequest,
     return NS_OK;
 }
 
+NS_IMETHODIMP
+LookupHelper::OnLookupByTypeComplete(nsICancelable *aRequest,
+                                     nsIDNSByTypeRecord *aRes,
+                                     nsresult aStatus)
+{
+    return NS_OK;
+}
+
 nsresult
 LookupHelper::ConstructAnswer(LookupArgument *aArgument)
 {
@@ -886,7 +894,7 @@ HttpConnInfo::SetHTTP2ProtocolVersion(SpdyVersion pv)
 NS_IMETHODIMP
 Dashboard::GetLogPath(nsACString &aLogPath)
 {
-    aLogPath.SetCapacity(2048);
+    aLogPath.SetLength(2048);
     uint32_t len = LogModule::GetLogFile(aLogPath.BeginWriting(), 2048);
     aLogPath.SetLength(len);
     return NS_OK;

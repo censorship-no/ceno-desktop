@@ -218,7 +218,7 @@ SpecialPowersObserverAPI.prototype = {
 
     var channel = NetUtil.newChannel({
       uri: aUrl,
-      loadUsingSystemPrincipal: true
+      loadUsingSystemPrincipal: true,
     });
     var input = channel.open2();
     scriptableStream.init(input);
@@ -260,17 +260,10 @@ SpecialPowersObserverAPI.prototype = {
     const serviceMarker = "service,";
 
     // First create observers from the category manager.
-    let cm =
-      Cc["@mozilla.org/categorymanager;1"].getService(Ci.nsICategoryManager);
-    let enumerator = cm.enumerateCategory(topic);
 
     let observers = [];
 
-    while (enumerator.hasMoreElements()) {
-      let entry =
-        enumerator.getNext().QueryInterface(Ci.nsISupportsCString).data;
-      let contractID = cm.getCategoryEntry(topic, entry);
-
+    for (let {value: contractID} of Services.catMan.enumerateCategory(topic)) {
       let factoryFunction;
       if (contractID.substring(0, serviceMarker.length) == serviceMarker) {
         contractID = contractID.substring(serviceMarker.length);
@@ -289,14 +282,11 @@ SpecialPowersObserverAPI.prototype = {
     }
 
     // Next enumerate the registered observers.
-    enumerator = Services.obs.enumerateObservers(topic);
-    while (enumerator.hasMoreElements()) {
-      try {
-        let observer = enumerator.getNext().QueryInterface(Ci.nsIObserver);
-        if (!observers.includes(observer)) {
-          observers.push(observer);
-        }
-      } catch (e) { }
+    for (let observer of Services.obs.enumerateObservers(topic)) {
+      if (observer instanceof Ci.nsIObserver &&
+          !observers.includes(observer)) {
+        observers.push(observer);
+      }
     }
 
     observers.forEach(function(observer) {
@@ -509,7 +499,7 @@ SpecialPowersObserverAPI.prototype = {
             delete sb.assert;
             return sb.assert = assert;
           },
-          configurable: true
+          configurable: true,
         });
 
         // Evaluate the chrome script
@@ -657,5 +647,5 @@ SpecialPowersObserverAPI.prototype = {
     // we should never be arriving here anyway.
     throw new SpecialPowersError("Unreached code"); // eslint-disable-line no-unreachable
     return undefined;
-  }
+  },
 };

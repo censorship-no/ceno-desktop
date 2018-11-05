@@ -116,11 +116,11 @@ function promiseNewWindow() {
 }
 
 async function createTabWithStorageData(urls, win = window) {
-  let tab = win.gBrowser.addTab();
+  let tab = BrowserTestUtils.addTab(win.gBrowser);
   let browser = tab.linkedBrowser;
 
   for (let url of urls) {
-    browser.loadURI(url);
+    BrowserTestUtils.loadURI(browser, url);
     await promiseBrowserLoaded(browser);
     await modifySessionStorage(browser, {test: INITIAL_VALUE});
   }

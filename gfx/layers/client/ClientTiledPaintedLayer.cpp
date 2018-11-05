@@ -112,7 +112,7 @@ ClientTiledPaintedLayer::GetAncestorLayers(LayerMetricsWrapper* aOutScrollAncest
   for (LayerMetricsWrapper ancestor(this, LayerMetricsWrapper::StartAt::BOTTOM); ancestor; ancestor = ancestor.GetParent()) {
     hasTransformAnimation |= ancestor.HasTransformAnimation();
     const FrameMetrics& metrics = ancestor.Metrics();
-    if (!scrollAncestor && metrics.GetScrollId() != FrameMetrics::NULL_SCROLL_ID) {
+    if (!scrollAncestor && metrics.GetScrollId() != ScrollableLayerGuid::NULL_SCROLL_ID) {
       scrollAncestor = ancestor;
     }
     if (!metrics.GetDisplayPort().IsEmpty()) {
@@ -440,7 +440,7 @@ ClientTiledPaintedLayer::RenderLayer()
     ClientManager()->GetPaintedLayerCallback();
   void *data = ClientManager()->GetPaintedLayerCallbackData();
 
-  IntSize layerSize = mVisibleRegion.ToUnknownRegion().GetBounds().Size();
+  IntSize layerSize = mVisibleRegion.GetBounds().ToUnknownRect().Size();
   IntSize tileSize = gfx::gfxVars::TileSize();
   bool isHalfTileWidthOrHeight = layerSize.width <= tileSize.width / 2 ||
     layerSize.height <= tileSize.height / 2;

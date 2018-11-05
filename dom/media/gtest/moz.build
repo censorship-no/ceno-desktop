@@ -16,7 +16,6 @@ UNIFIED_SOURCES += [
     'MockMediaResource.cpp',
     'TestAudioBuffers.cpp',
     'TestAudioCompactor.cpp',
-    'TestAudioDeviceEnumerator.cpp',
     'TestAudioMixer.cpp',
     'TestAudioPacketizer.cpp',
     'TestAudioSegment.cpp',
@@ -34,6 +33,7 @@ UNIFIED_SOURCES += [
     'TestMediaMIMETypes.cpp',
     'TestMP3Demuxer.cpp',
     'TestMP4Demuxer.cpp',
+    'TestOpusParser.cpp',
     'TestRust.cpp',
     'TestVideoSegment.cpp',
     'TestVideoUtils.cpp',
@@ -45,6 +45,11 @@ if CONFIG['MOZ_WEBM_ENCODER']:
     UNIFIED_SOURCES += [
         'TestVideoTrackEncoder.cpp',
         'TestWebMWriter.cpp',
+    ]
+
+if CONFIG['MOZ_WEBRTC']:
+    UNIFIED_SOURCES += [
+        'TestAudioDeviceEnumerator.cpp',
     ]
 
 TEST_HARNESS_FILES.gtest += [
@@ -81,13 +86,15 @@ LOCAL_INCLUDES += [
     '/dom/media/platforms',
     '/dom/media/platforms/agnostic',
     '/security/certverifier',
-    '/security/pkix/include',
 ]
 
 FINAL_LIBRARY = 'xul-gtest'
 
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
-    CXXFLAGS += ['-Wno-error=shadow', '-Wno-unused-private-field']
+    CXXFLAGS += ['-Wno-error=shadow']
+
+if CONFIG['CC_TYPE'] == 'clang':
+    CXXFLAGS += ['-Wno-unused-private-field']
 
 if CONFIG['CC_TYPE'] == 'clang-cl':
     AllowCompilerWarnings()  # workaround for bug 1090497

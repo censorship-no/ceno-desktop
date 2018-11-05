@@ -7,6 +7,7 @@
 #define nsIDocument_h___
 
 #include "mozilla/FlushType.h"           // for enum
+#include "mozilla/Pair.h"                // for Pair
 #include "nsAutoPtr.h"                   // for member
 #include "nsCOMArray.h"                  // for member
 #include "nsCompatibility.h"             // for member
@@ -15,6 +16,7 @@
 #include "nsIApplicationCache.h"
 #include "nsIApplicationCacheContainer.h"
 #include "nsIContentViewer.h"
+#include "nsIDOMXULCommandDispatcher.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadContext.h"
 #include "nsILoadGroup.h"                // for member (in nsCOMPtr)
@@ -28,13 +30,14 @@
 #include "nsIServiceManager.h"
 #include "nsIURI.h"                      // for use in inline functions
 #include "nsIUUIDGenerator.h"
+#include "nsIWebProgressListener.h"      // for nsIWebProgressListener
+#include "nsIWeakReferenceUtils.h"       // for nsWeakPtr
 #include "nsPIDOMWindow.h"               // for use in inline functions
 #include "nsPropertyTable.h"             // for member
 #include "nsStringFwd.h"
 #include "nsTHashtable.h"                // for member
 #include "nsURIHashKey.h"
 #include "mozilla/net/ReferrerPolicy.h"  // for member
-#include "nsWeakReference.h"
 #include "mozilla/UseCounter.h"
 #include "mozilla/WeakPtr.h"
 #include "Units.h"
@@ -42,8 +45,10 @@
 #include "nsExpirationTracker.h"
 #include "nsClassHashtable.h"
 #include "mozilla/CORSMode.h"
+#include "mozilla/dom/ContentBlockingLog.h"
 #include "mozilla/dom/DispatcherTrait.h"
 #include "mozilla/dom/DocumentOrShadowRoot.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/SegmentedVector.h"
@@ -107,6 +112,7 @@ class nsIVariant;
 class nsViewManager;
 class nsPresContext;
 class nsRange;
+class nsSimpleContentList;
 class nsSMILAnimationController;
 class nsSVGElement;
 class nsTextNode;
@@ -124,6 +130,8 @@ class Encoding;
 class ErrorResult;
 class EventStates;
 class EventListenerManager;
+class FullscreenExit;
+class FullscreenRequest;
 class PendingAnimationTracker;
 class ServoStyleSet;
 template<typename> class OwningNonNull;
@@ -140,12 +148,14 @@ class Animation;
 class AnonymousContent;
 class Attr;
 class BoxObject;
+class XULBroadcastManager;
 class ClientInfo;
 class ClientState;
 class CDATASection;
 class Comment;
 struct CustomElementDefinition;
 class DocGroup;
+class DocumentL10n;
 class DocumentFragment;
 class DocumentTimeline;
 class DocumentType;
@@ -156,9 +166,9 @@ class Element;
 struct ElementCreationOptions;
 class Event;
 class EventTarget;
+class FeaturePolicy;
 class FontFaceSet;
 class FrameRequestCallback;
-struct FullscreenRequest;
 class ImageTracker;
 class HTMLBodyElement;
 class HTMLSharedElement;
@@ -280,6 +290,8 @@ public:
    * nsIDocument::RequestExternalResource is documented to do.
    */
   nsIDocument* RequestResource(nsIURI* aURI,
+                               nsIURI* aReferrer,
+                               uint32_t aReferrerPolicy,
                                nsINode* aRequestingNode,
                                nsIDocument* aDisplayDocument,
                                ExternalResourceLoad** aPendingLoad);
@@ -345,8 +357,10 @@ protected:
      * Start aURI loading.  This will perform the necessary security checks and
      * so forth.
      */
-    nsresult StartLoad(nsIURI* aURI, nsINode* aRequestingNode);
-
+    nsresult StartLoad(nsIURI* aURI,
+                       nsIURI* aReferrer,
+                       uint32_t aReferrerPolicy,
+                       nsINode* aRequestingNode);
     /**
      * Set up an nsIContentViewer based on aRequest.  This is guaranteed to
      * put null in *aViewer and *aLoadGroup on all failures.
@@ -444,9 +458,9 @@ protected:
 
 public:
   typedef nsExternalResourceMap::ExternalResourceLoad ExternalResourceLoad;
+  typedef mozilla::FullscreenRequest FullscreenRequest;
   typedef mozilla::net::ReferrerPolicy ReferrerPolicyEnum;
   typedef mozilla::dom::Element Element;
-  typedef mozilla::dom::FullscreenRequest FullscreenRequest;
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_IDOCUMENT_IID)
 
@@ -535,8 +549,7 @@ public:
                              bool aNotify) override;
   void RemoveChildNode(nsIContent* aKid, bool aNotify) final;
   nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo,
-                 nsINode **aResult,
-                 bool aPreallocateChildren) const override
+                 nsINode **aResult) const override
   {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -970,11 +983,38 @@ public:
   }
 
   /**
+   * Get the content blocking log.
+   */
+  mozilla::dom::ContentBlockingLog* GetContentBlockingLog()
+  {
+    return &mContentBlockingLog;
+  }
+
+  /**
    * Get tracking content blocked flag for this document.
    */
   bool GetHasTrackingContentBlocked()
   {
-    return mHasTrackingContentBlocked;
+    return mContentBlockingLog.HasBlockedAnyOfType(
+        nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT);
+  }
+
+  /**
+   * Get slow tracking content blocked flag for this document.
+   */
+  bool GetHasSlowTrackingContentBlocked()
+  {
+    return mContentBlockingLog.HasBlockedAnyOfType(
+        nsIWebProgressListener::STATE_BLOCKED_SLOW_TRACKING_CONTENT);
+  }
+
+  /**
+   * Get all cookies blocked flag for this document.
+   */
+  bool GetHasAllCookiesBlocked()
+  {
+    return mContentBlockingLog.HasBlockedAnyOfType(
+        nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL);
   }
 
   /**
@@ -982,23 +1022,92 @@ public:
    */
   bool GetHasTrackingCookiesBlocked()
   {
-    return mHasTrackingCookiesBlocked;
+    return mContentBlockingLog.HasBlockedAnyOfType(
+        nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER);
+  }
+
+  /**
+   * Get third-party cookies blocked flag for this document.
+   */
+  bool GetHasForeignCookiesBlocked()
+  {
+    return mContentBlockingLog.HasBlockedAnyOfType(
+        nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN);
+  }
+
+  /**
+   * Get cookies blocked by site permission flag for this document.
+   */
+  bool GetHasCookiesBlockedByPermission()
+  {
+    return mContentBlockingLog.HasBlockedAnyOfType(
+        nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION);
   }
 
   /**
    * Set the tracking content blocked flag for this document.
    */
-  void SetHasTrackingContentBlocked(bool aHasTrackingContentBlocked)
+  void SetHasTrackingContentBlocked(bool aHasTrackingContentBlocked,
+                                    const nsAString& aOriginBlocked)
   {
-    mHasTrackingContentBlocked = aHasTrackingContentBlocked;
+    RecordContentBlockingLog(aOriginBlocked,
+                             nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT,
+                             aHasTrackingContentBlocked);
+  }
+
+  /**
+   * Set the slow tracking content blocked flag for this document.
+   */
+  void SetHasSlowTrackingContentBlocked(bool aHasSlowTrackingContentBlocked,
+                                        const nsAString& aOriginBlocked)
+  {
+    RecordContentBlockingLog(aOriginBlocked,
+                             nsIWebProgressListener::STATE_BLOCKED_SLOW_TRACKING_CONTENT,
+                             aHasSlowTrackingContentBlocked);
+  }
+
+  /**
+   * Set the all cookies blocked flag for this document.
+   */
+  void SetHasAllCookiesBlocked(bool aHasAllCookiesBlocked,
+                               const nsAString& aOriginBlocked)
+  {
+    RecordContentBlockingLog(aOriginBlocked,
+                             nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL,
+                             aHasAllCookiesBlocked);
   }
 
   /**
    * Set the tracking cookies blocked flag for this document.
    */
-  void SetHasTrackingCookiesBlocked(bool aHasTrackingCookiesBlocked)
+  void SetHasTrackingCookiesBlocked(bool aHasTrackingCookiesBlocked,
+                                    const nsAString& aOriginBlocked)
   {
-    mHasTrackingCookiesBlocked = aHasTrackingCookiesBlocked;
+    RecordContentBlockingLog(aOriginBlocked,
+                             nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER,
+                             aHasTrackingCookiesBlocked);
+  }
+
+  /**
+   * Set the third-party cookies blocked flag for this document.
+   */
+  void SetHasForeignCookiesBlocked(bool aHasForeignCookiesBlocked,
+                                   const nsAString& aOriginBlocked)
+  {
+    RecordContentBlockingLog(aOriginBlocked,
+                             nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN,
+                             aHasForeignCookiesBlocked);
+  }
+
+  /**
+   * Set the cookies blocked by site permission flag for this document.
+   */
+  void SetHasCookiesBlockedByPermission(bool aHasCookiesBlockedByPermission,
+                                        const nsAString& aOriginBlocked)
+  {
+    RecordContentBlockingLog(aOriginBlocked,
+                             nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION,
+                             aHasCookiesBlockedByPermission);
   }
 
   /**
@@ -1168,6 +1277,11 @@ public:
 
   mozilla::dom::Selection* GetSelection(mozilla::ErrorResult& aRv);
 
+  already_AddRefed<mozilla::dom::Promise>
+    HasStorageAccess(mozilla::ErrorResult& aRv);
+  already_AddRefed<mozilla::dom::Promise>
+    RequestStorageAccess(mozilla::ErrorResult& aRv);
+
   /**
    * Gets the event target to dispatch key events to if there is no focused
    * content in the document.
@@ -1329,6 +1443,8 @@ protected:
 
   nsresult InitCSP(nsIChannel* aChannel);
 
+  nsresult InitFeaturePolicy(nsIChannel* aChannel);
+
   void PostUnblockOnloadEvent();
 
   void DoUnblockOnload();
@@ -1341,7 +1457,8 @@ protected:
 
   void DispatchPageTransition(mozilla::dom::EventTarget* aDispatchTarget,
                               const nsAString& aType,
-                              bool aPersisted);
+                              bool aPersisted,
+                              bool aOnlySystemGroup = false);
 
   // Call this before the document does something that will unbind all content.
   // That will stop us from doing a lot of work as each element is removed.
@@ -1679,36 +1796,37 @@ public:
    * Asynchronously requests that the document make aElement the fullscreen
    * element, and move into fullscreen mode. The current fullscreen element
    * (if any) is pushed onto the fullscreen element stack, and it can be
-   * returned to fullscreen status by calling RestorePreviousFullScreenState().
+   * returned to fullscreen status by calling RestorePreviousFullscreenState().
    *
    * Note that requesting fullscreen in a document also makes the element which
    * contains this document in this document's parent document fullscreen. i.e.
    * the <iframe> or <browser> that contains this document is also mode
    * fullscreen. This happens recursively in all ancestor documents.
    */
-  void AsyncRequestFullScreen(mozilla::UniquePtr<FullscreenRequest>&&);
+  void AsyncRequestFullscreen(mozilla::UniquePtr<FullscreenRequest>);
 
   // Do the "fullscreen element ready check" from the fullscreen spec.
   // It returns true if the given element is allowed to go into fullscreen.
-  bool FullscreenElementReadyCheck(Element* aElement, bool aWasCallerChrome);
+  // It is responsive to dispatch "fullscreenerror" event when necessary.
+  bool FullscreenElementReadyCheck(const FullscreenRequest&);
 
-  // This is called asynchronously by nsIDocument::AsyncRequestFullScreen()
-  // to move this document into full-screen mode if allowed.
-  void RequestFullScreen(mozilla::UniquePtr<FullscreenRequest>&& aRequest);
+  // This is called asynchronously by nsIDocument::AsyncRequestFullscreen()
+  // to move this document into fullscreen mode if allowed.
+  void RequestFullscreen(mozilla::UniquePtr<FullscreenRequest> aRequest);
 
-  // Removes all elements from the full-screen stack, removing full-scren
+  // Removes all elements from the fullscreen stack, removing full-scren
   // styles from the top element in the stack.
   void CleanupFullscreenState();
 
-  // Pushes aElement onto the full-screen stack, and removes full-screen styles
-  // from the former full-screen stack top, and its ancestors, and applies the
-  // styles to aElement. aElement becomes the new "full-screen element".
-  bool FullScreenStackPush(Element* aElement);
+  // Pushes aElement onto the fullscreen stack, and removes fullscreen styles
+  // from the former fullscreen stack top, and its ancestors, and applies the
+  // styles to aElement. aElement becomes the new "fullscreen element".
+  bool FullscreenStackPush(Element* aElement);
 
-  // Remove the top element from the full-screen stack. Removes the full-screen
+  // Remove the top element from the fullscreen stack. Removes the fullscreen
   // styles from the former top element, and applies them to the new top
   // element, if there is one.
-  void FullScreenStackPop();
+  void FullscreenStackPop();
 
   /**
    * Called when a frame in a child process has entered fullscreen or when a
@@ -1730,11 +1848,12 @@ public:
    nsresult RemoteFrameFullscreenReverted();
 
   /**
-   * Restores the previous full-screen element to full-screen status. If there
-   * is no former full-screen element, this exits full-screen, moving the
-   * top-level browser window out of full-screen mode.
+   * Restores the previous fullscreen element to fullscreen status. If there
+   * is no former fullscreen element, this exits fullscreen, moving the
+   * top-level browser window out of fullscreen mode.
    */
-  void RestorePreviousFullScreenState();
+  void RestorePreviousFullscreenState(
+    mozilla::UniquePtr<mozilla::FullscreenExit>);
 
   /**
    * Returns true if this document is a fullscreen leaf document, i.e. it
@@ -1786,12 +1905,6 @@ public:
    * Returns whether there is any fullscreen request handled.
    */
   static bool HandlePendingFullscreenRequests(nsIDocument* aDocument);
-
-  /**
-   * Dispatch fullscreenerror event and report the failure message to
-   * the console.
-   */
-  void DispatchFullscreenError(const char* aMessage);
 
   void RequestPointerLock(Element* aElement, mozilla::dom::CallerType);
   bool SetPointerLock(Element* aElement, int aCursorStyle);
@@ -2197,12 +2310,14 @@ public:
    * PageTransitionEvent.webidl for a description of the |aPersisted|
    * parameter. If aDispatchStartTarget is null, the pageshow event is
    * dispatched on the ScriptGlobalObject for this document, otherwise it's
-   * dispatched on aDispatchStartTarget.
+   * dispatched on aDispatchStartTarget. If |aOnlySystemGroup| is true, the
+   * event is only dispatched to listeners in the system group.
    * Note: if aDispatchStartTarget isn't null, the showing state of the
    * document won't be altered.
    */
   virtual void OnPageShow(bool aPersisted,
-                          mozilla::dom::EventTarget* aDispatchStartTarget);
+                          mozilla::dom::EventTarget* aDispatchStartTarget,
+                          bool aOnlySystemGroup = false);
 
   /**
    * Notification that the page has been hidden, for documents which are loaded
@@ -2212,12 +2327,14 @@ public:
    * window.  See PageTransitionEvent.webidl for a description of the
    * |aPersisted| parameter. If aDispatchStartTarget is null, the pagehide
    * event is dispatched on the ScriptGlobalObject for this document,
-   * otherwise it's dispatched on aDispatchStartTarget.
+   * otherwise it's dispatched on aDispatchStartTarget. If |aOnlySystemGroup| is
+   * true, the event is only dispatched to listeners in the system group.
    * Note: if aDispatchStartTarget isn't null, the showing state of the
    * document won't be altered.
    */
   void OnPageHide(bool aPersisted,
-                  mozilla::dom::EventTarget* aDispatchStartTarget);
+                  mozilla::dom::EventTarget* aDispatchStartTarget,
+                  bool aOnlySystemGroup = false);
 
   /*
    * We record the set of links in the document that are relevant to
@@ -2475,10 +2592,14 @@ public:
    * one in the future.
    *
    * @param aURI the URI to get
+   * @param aReferrer the referrer of the request
+   * @param aReferrerPolicy the referrer policy of the request
    * @param aRequestingNode the node making the request
    * @param aPendingLoad the pending load for this request, if any
    */
   nsIDocument* RequestExternalResource(nsIURI* aURI,
+                                       nsIURI* aReferrer,
+                                       uint32_t aReferrerPolicy,
                                        nsINode* aRequestingNode,
                                        ExternalResourceLoad** aPendingLoad);
 
@@ -2795,8 +2916,9 @@ public:
    * Doc_Theme_Neutral for any other theme. This is used to determine the state
    * of the pseudoclasses :-moz-lwtheme and :-moz-lwtheme-text.
    */
-  virtual DocumentTheme GetDocumentLWTheme() { return Doc_Theme_None; }
-  virtual DocumentTheme ThreadSafeGetDocumentLWTheme() const { return Doc_Theme_None; }
+  DocumentTheme GetDocumentLWTheme();
+  DocumentTheme ThreadSafeGetDocumentLWTheme() const;
+  void ResetDocumentLWTheme() { mDocLWTheme = Doc_Theme_Uninitialized; }
 
   // Whether we're a media document or not.
   enum class MediaDocumentKind
@@ -2843,15 +2965,6 @@ public:
   using mozilla::dom::DocumentOrShadowRoot::GetElementsByTagName;
   using mozilla::dom::DocumentOrShadowRoot::GetElementsByTagNameNS;
   using mozilla::dom::DocumentOrShadowRoot::GetElementsByClassName;
-
-  /**
-   * Lookup an image element using its associated ID, which is usually provided
-   * by |-moz-element()|. Similar to GetElementById, with the difference that
-   * elements set using mozSetImageElement have higher priority.
-   * @param aId the ID associated the element we want to lookup
-   * @return the element associated with |aId|
-   */
-  Element* LookupImageElement(const nsAString& aElementId);
 
   mozilla::dom::DocumentTimeline* Timeline();
   mozilla::LinkedList<mozilla::dom::DocumentTimeline>& Timelines()
@@ -3020,6 +3133,10 @@ public:
   void PostVisibilityUpdateEvent();
 
   bool IsSyntheticDocument() const { return mIsSyntheticDocument; }
+
+  // Adds the size of a given node, which must not be a document node, to the
+  // window sizes passed-in.
+  static void AddSizeOfNodeTree(nsINode&, nsWindowSizes&);
 
   // Note: nsIDocument is a sub-class of nsINode, which has a
   // SizeOfExcludingThis function.  However, because nsIDocument objects can
@@ -3211,14 +3328,14 @@ public:
   void ReleaseCapture() const;
   void MozSetImageElement(const nsAString& aImageElementId, Element* aElement);
   nsIURI* GetDocumentURIObject() const;
-  // Not const because all the full-screen goop is not const
+  // Not const because all the fullscreen goop is not const
   bool FullscreenEnabled(mozilla::dom::CallerType aCallerType);
-  Element* FullScreenStackTop();
+  Element* FullscreenStackTop();
   bool Fullscreen()
   {
     return !!GetFullscreenElement();
   }
-  void ExitFullscreen();
+  already_AddRefed<mozilla::dom::Promise> ExitFullscreen(ErrorResult&);
   void ExitPointerLock()
   {
     UnlockPointer(this);
@@ -3325,6 +3442,16 @@ public:
 
   mozilla::dom::Promise* GetDocumentReadyForIdle(mozilla::ErrorResult& aRv);
 
+  nsIDOMXULCommandDispatcher* GetCommandDispatcher();
+  bool HasXULBroadcastManager() const
+  {
+    return mXULBroadcastManager;
+  };
+  void InitializeXULBroadcastManager();
+  mozilla::dom::XULBroadcastManager* GetXULBroadcastManager() const
+  {
+    return mXULBroadcastManager;
+  }
   already_AddRefed<nsINode> GetPopupNode();
   void SetPopupNode(nsINode* aNode);
   nsINode* GetPopupRangeParent(ErrorResult& aRv);
@@ -3405,6 +3532,11 @@ public:
     }
   }
 
+  const StyleUseCounters* GetStyleUseCounters()
+  {
+    return mStyleUseCounters.get();
+  }
+
   void SetPageUseCounter(mozilla::UseCounter aUseCounter);
 
   void SetDocumentAndPageUseCounter(mozilla::UseCounter aUseCounter)
@@ -3417,11 +3549,12 @@ public:
 
   // Called to track whether this document has had any interaction.
   // This is used to track whether we should permit "beforeunload".
-  void SetUserHasInteracted(bool aUserHasInteracted);
+  void SetUserHasInteracted();
   bool UserHasInteracted()
   {
     return mUserHasInteracted;
   }
+  void ResetUserInteractionTimer();
 
   // This should be called when this document receives events which are likely
   // to be user interaction with the document, rather than the byproduct of
@@ -3491,6 +3624,73 @@ public:
   // For more information on Flash classification, see
   // toolkit/components/url-classifier/flash-block-lists.rst
   mozilla::dom::FlashClassification DocumentFlashClassification();
+
+  /**
+   * Localization
+   *
+   * For more information on DocumentL10n see
+   * intl/l10n/docs/fluent_tutorial.rst
+   */
+
+public:
+  /**
+   * This is a public method exposed on Document WebIDL
+   * to chrome only documents.
+   */
+  mozilla::dom::DocumentL10n* GetL10n();
+
+  /**
+   * This method should be called when the container
+   * of l10n resources parsing is completed.
+   *
+   * It triggers initial async fetch of the resources
+   * as early as possible.
+   *
+   * In HTML case this is </head>.
+   * In XUL case this is </linkset>.
+   */
+  void OnL10nResourceContainerParsed();
+
+  /**
+   * This method should be called when a link element
+   * with rel="localization" is being added to the
+   * l10n resource container element.
+   */
+  void LocalizationLinkAdded(Element* aLinkElement);
+
+  /**
+   * This method should be called when a link element
+   * with rel="localization" is being removed.
+   */
+  void LocalizationLinkRemoved(Element* aLinkElement);
+
+protected:
+  /**
+   * This method should be collect as soon as the
+   * parsing of the document is completed.
+   *
+   * In HTML this happens when readyState becomes
+   * `interactive`.
+   * In XUL it happens at `DoneWalking`, during
+   * `MozBeforeInitialXULLayout`.
+   *
+   * It triggers the initial translation of the
+   * document.
+   */
+  void TriggerInitialDocumentTranslation();
+
+  RefPtr<mozilla::dom::DocumentL10n> mDocumentL10n;
+
+private:
+  void InitializeLocalization(nsTArray<nsString>& aResourceIds);
+
+  void ParseWidthAndHeightInMetaViewport(const nsAString& aWidthString,
+                                         const nsAString& aHeightString,
+                                         const nsAString& aScaleString);
+
+  nsTArray<nsString> mL10nResources;
+
+public:
   bool IsThirdParty();
 
   bool IsScopedStyleEnabled();
@@ -3548,6 +3748,39 @@ public:
     --mIgnoreOpensDuringUnloadCounter;
   }
 
+  void IncrementTrackerCount()
+  {
+    MOZ_ASSERT(!GetSameTypeParentDocument());
+    ++mNumTrackersFound;
+  }
+
+  void IncrementTrackerBlockedCount()
+  {
+    MOZ_ASSERT(!GetSameTypeParentDocument());
+    ++mNumTrackersBlocked;
+  }
+
+  void NoteTrackerBlockedReason(
+    mozilla::Telemetry::LABELS_DOCUMENT_ANALYTICS_TRACKER_FASTBLOCKED aLabel)
+  {
+    MOZ_ASSERT(!GetSameTypeParentDocument());
+    mTrackerBlockedReasons += aLabel;
+  }
+
+  uint32_t NumTrackersFound()
+  {
+    MOZ_ASSERT(!GetSameTypeParentDocument() || mNumTrackersFound == 0);
+
+    return mNumTrackersFound;
+  }
+
+  uint32_t NumTrackersBlocked()
+  {
+    MOZ_ASSERT(!GetSameTypeParentDocument() || mNumTrackersBlocked == 0);
+
+    return mNumTrackersBlocked;
+  }
+
   bool AllowPaymentRequest() const
   {
     return mAllowPaymentRequest;
@@ -3557,6 +3790,9 @@ public:
   {
     mAllowPaymentRequest = aAllowPaymentRequest;
   }
+
+  mozilla::dom::FeaturePolicy*
+  Policy() const;
 
   bool IsShadowDOMEnabled() const
   {
@@ -3631,7 +3867,7 @@ protected:
   // Apply the fullscreen state to the document, and trigger related
   // events. It returns false if the fullscreen element ready check
   // fails and nothing gets changed.
-  bool ApplyFullscreen(const FullscreenRequest& aRequest);
+  bool ApplyFullscreen(mozilla::UniquePtr<FullscreenRequest> aRequest);
 
   bool GetUseCounter(mozilla::UseCounter aUseCounter)
   {
@@ -3670,6 +3906,12 @@ protected:
                                        bool aUpdateCSSLoader);
 
 private:
+  void RecordContentBlockingLog(const nsAString& aOrigin,
+                                uint32_t aType, bool aBlocked)
+  {
+    mContentBlockingLog.RecordLog(aOrigin, aType, aBlocked);
+  }
+
   mutable std::bitset<eDeprecatedOperationCount> mDeprecationWarnedAbout;
   mutable std::bitset<eDocumentWarningCount> mDocWarningWarnedAbout;
 
@@ -3742,6 +3984,8 @@ protected:
 
   void MaybeAllowStorageForOpener();
 
+  void MaybeStoreUserInteractionAsPermission();
+
   // Helpers for GetElementsByName.
   static bool MatchNameAttribute(mozilla::dom::Element* aElement,
                                  int32_t aNamespaceID,
@@ -3796,7 +4040,7 @@ protected:
 
   // A hashtable of ShadowRoots belonging to the composed doc.
   //
-  // See ShadowRoot::SetIsComposedDocParticipant.
+  // See ShadowRoot::Bind and ShadowRoot::Unbind.
   ShadowRootSet mComposedShadowRoots;
 
   using SVGUseElementSet =
@@ -3862,6 +4106,8 @@ protected:
   mozilla::EventStates mDocumentState;
 
   RefPtr<mozilla::dom::Promise> mReadyForIdle;
+
+  RefPtr<mozilla::dom::FeaturePolicy> mFeaturePolicy;
 
   // True if BIDI is enabled.
   bool mBidiEnabled : 1;
@@ -3966,12 +4212,6 @@ protected:
 
   // True if a document load has a CSP with unsafe-inline attached.
   bool mHasUnsafeInlineCSP : 1;
-
-  // True if a document has blocked Tracking Content
-  bool mHasTrackingContentBlocked : 1;
-
-  // True if a document has blocked Tracking Cookies
-  bool mHasTrackingCookiesBlocked : 1;
 
   // True if a document has loaded Tracking Content
   bool mHasTrackingContentLoaded : 1;
@@ -4078,11 +4318,7 @@ protected:
 
   // These member variables cache information about the viewport so we don't
   // have to recalculate it each time.
-  bool mValidWidth: 1;
-  bool mValidHeight: 1;
-  bool mAutoSize: 1;
   bool mAllowZoom: 1;
-  bool mAllowDoubleTapZoom: 1;
   bool mValidScaleFloat: 1;
   bool mValidMaxScale: 1;
   bool mScaleStrEmpty: 1;
@@ -4298,8 +4534,16 @@ protected:
   // for this child document.
   std::bitset<mozilla::eUseCounter_Count> mNotifiedPageForUseCounter;
 
+  // The CSS property use counters.
+  mozilla::UniquePtr<StyleUseCounters> mStyleUseCounters;
+
   // Whether the user has interacted with the document or not:
   bool mUserHasInteracted;
+
+  // We constantly update the user-interaction anti-tracking permission at any
+  // user-interaction using a timer. This boolean value is set to true when this
+  // timer is scheduled.
+  bool mHasUserInteractionTimerScheduled;
 
   // Whether the user has interacted with the document via a restricted
   // set of gestures which are likely to be interaction with the document,
@@ -4316,6 +4560,11 @@ protected:
   // calling NoteScriptTrackingStatus().  Currently we assume that a URL not
   // existing in the set means the corresponding script isn't a tracking script.
   nsTHashtable<nsCStringHashKey> mTrackingScripts;
+
+  // The log of all content blocking actions taken on this document.  This is only
+  // stored on top-level documents and includes the activity log for all of the
+  // nested subdocuments as well.
+  mozilla::dom::ContentBlockingLog mContentBlockingLog;
 
   // List of ancestor principals.  This is set at the point a document
   // is connected to a docshell and not mutated thereafter.
@@ -4400,10 +4649,10 @@ protected:
   nsTHashtable<nsPtrHashKey<mozilla::dom::DOMIntersectionObserver>>
     mIntersectionObservers;
 
-  // Stack of full-screen elements. When we request full-screen we push the
-  // full-screen element onto this stack, and when we cancel full-screen we
-  // pop one off this stack, restoring the previous full-screen state
-  nsTArray<nsWeakPtr> mFullScreenStack;
+  // Stack of fullscreen elements. When we request fullscreen we push the
+  // fullscreen element onto this stack, and when we cancel fullscreen we
+  // pop one off this stack, restoring the previous fullscreen state
+  nsTArray<nsWeakPtr> mFullscreenStack;
 
   // The root of the doc tree in which this document is in. This is only
   // non-null when this document is in fullscreen mode.
@@ -4460,7 +4709,11 @@ protected:
   mozilla::LayoutDeviceToScreenScale mScaleMaxFloat;
   mozilla::LayoutDeviceToScreenScale mScaleFloat;
   mozilla::CSSToLayoutDeviceScale mPixelRatio;
-  mozilla::CSSSize mViewportSize;
+
+  mozilla::CSSCoord mMinWidth;
+  mozilla::CSSCoord mMaxWidth;
+  mozilla::CSSCoord mMinHeight;
+  mozilla::CSSCoord mMaxHeight;
 
   RefPtr<mozilla::EventListenerManager> mListenerManager;
 
@@ -4498,6 +4751,26 @@ protected:
 
   // Count of unload/beforeunload/pagehide operations in progress.
   uint32_t mIgnoreOpensDuringUnloadCounter;
+
+  nsCOMPtr<nsIDOMXULCommandDispatcher> mCommandDispatcher; // [OWNER] of the focus tracker
+
+  RefPtr<mozilla::dom::XULBroadcastManager> mXULBroadcastManager;
+
+  // At the moment, trackers might be blocked by Tracking Protection or FastBlock.
+  // In order to know the numbers of trackers detected and blocked, we add
+  // these two values here and those are shared by TP and FB.
+  uint32_t mNumTrackersFound;
+  uint32_t mNumTrackersBlocked;
+
+  mozilla::EnumSet<mozilla::Telemetry::LABELS_DOCUMENT_ANALYTICS_TRACKER_FASTBLOCKED>
+    mTrackerBlockedReasons;
+
+  // document lightweight theme for use with :-moz-lwtheme, :-moz-lwtheme-brighttext
+  // and :-moz-lwtheme-darktext
+  DocumentTheme                         mDocLWTheme;
+
+  // Pres shell resolution saved before entering fullscreen mode.
+  float mSavedResolution;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIDocument, NS_IDOCUMENT_IID)
@@ -4657,17 +4930,26 @@ nsINode::OwnerDocAsNode() const
 template<typename T>
 inline bool ShouldUseXBLScope(const T* aNode)
 {
-  // TODO(emilio): Is the <svg:use> shadow tree check needed now?
-  return aNode->IsInAnonymousSubtree() && !aNode->IsInSVGUseShadowTree();
+  return aNode->IsInAnonymousSubtree();
+}
+
+template<typename T>
+inline bool ShouldUseUAWidgetScope(const T* aNode)
+{
+  return aNode->IsInUAWidget();
 }
 
 inline mozilla::dom::ParentObject
 nsINode::GetParentObject() const
 {
   mozilla::dom::ParentObject p(OwnerDoc());
-    // Note that mUseXBLScope is a no-op for chrome, and other places where we
-    // don't use XBL scopes.
-  p.mUseXBLScope = ShouldUseXBLScope(this);
+    // Note that mReflectionScope is a no-op for chrome, and other places
+    // where we don't check this value.
+  if (ShouldUseXBLScope(this)) {
+    p.mReflectionScope = mozilla::dom::ReflectionScope::XBL;
+  } else if (ShouldUseUAWidgetScope(this)) {
+    p.mReflectionScope = mozilla::dom::ReflectionScope::UAWidget;
+  }
   return p;
 }
 

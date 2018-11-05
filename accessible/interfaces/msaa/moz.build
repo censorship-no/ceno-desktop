@@ -18,7 +18,7 @@ DEFINES['REGISTER_PROXY_DLL'] = True
 # of AccessibleMarshal.dll.
 DEFINES['PROXY_CLSID'] = 'IID_ISimpleDOMNode'
 
-DEFFILE = SRCDIR + '/AccessibleMarshal.def'
+DEFFILE = 'AccessibleMarshal.def'
 
 OS_LIBS += [
     'kernel32',
@@ -44,6 +44,3 @@ if CONFIG['CC_TYPE'] == 'clang-cl':
         '-Wno-missing-braces',
         '-Wno-unused-const-variable',
     ]
-
-if CONFIG['MOZ_PGO'] and CONFIG['CC_TYPE'] == 'clang-cl':
-    AllowCompilerWarnings()  # workaround for bug 1090497

@@ -20,9 +20,9 @@ use std::sync::mpsc::Receiver;
 use time;
 use webrender;
 use webrender::api::*;
-use webrender::{DebugFlags, RendererStats};
+use webrender::{DebugFlags, RendererStats, ShaderPrecacheFlags};
 use yaml_frame_writer::YamlFrameWriterReceiver;
-use {WindowWrapper, NotifierEvent, BLACK_COLOR, WHITE_COLOR};
+use {WindowWrapper, NotifierEvent};
 
 // TODO(gw): This descriptor matches what we currently support for fonts
 //           but is quite a mess. We should at least document and
@@ -205,6 +205,12 @@ impl Wrench {
         debug_flags.set(DebugFlags::DISABLE_BATCHING, no_batch);
         let callbacks = Arc::new(Mutex::new(blob::BlobCallbacks::new()));
 
+        let precache_flags = if precache_shaders {
+            ShaderPrecacheFlags::FULL_COMPILE
+        } else {
+            ShaderPrecacheFlags::empty()
+        };
+
         let opts = webrender::RendererOptions {
             device_pixel_ratio: dp_ratio,
             resource_override_path: shader_override_path,
@@ -213,7 +219,7 @@ impl Wrench {
             debug_flags,
             enable_clear_scissor: !no_scissor,
             max_recorded_profiles: 16,
-            precache_shaders,
+            precache_flags,
             blob_image_handler: Some(Box::new(blob::CheckerboardRenderer::new(callbacks.clone()))),
             disable_dual_source_blending,
             chase_primitive,
@@ -232,7 +238,7 @@ impl Wrench {
             Box::new(Notifier(data))
         });
 
-        let (renderer, sender) = webrender::Renderer::new(window.clone_gl(), notifier, opts).unwrap();
+        let (renderer, sender) = webrender::Renderer::new(window.clone_gl(), notifier, opts, None).unwrap();
         let api = sender.create_api();
         let document_id = api.add_document(size, 0);
 
@@ -552,6 +558,8 @@ impl Wrench {
             "O - Toggle showing intermediate targets",
             "I - Toggle showing texture caches",
             "B - Toggle showing alpha primitive rects",
+            "V - Toggle showing overdraw",
+            "G - Toggle showing gpu cache updates",
             "S - Toggle compact profiler",
             "Q - Toggle GPU queries for time and samples",
             "M - Trigger memory pressure event",
@@ -560,7 +568,7 @@ impl Wrench {
             "X - Do a hit test at the current cursor position",
         ];
 
-        let color_and_offset = [(*BLACK_COLOR, 2.0), (*WHITE_COLOR, 0.0)];
+        let color_and_offset = [(ColorF::BLACK, 2.0), (ColorF::WHITE, 0.0)];
         let dr = self.renderer.debug_renderer().unwrap();
 
         for ref co in &color_and_offset {

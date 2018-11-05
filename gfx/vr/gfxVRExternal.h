@@ -14,6 +14,7 @@
 
 #include "mozilla/gfx/2D.h"
 #include "mozilla/EnumeratedArray.h"
+#include "mozilla/UniquePtr.h"
 
 #include "gfxVR.h"
 #include "VRDisplayHost.h"
@@ -23,15 +24,12 @@ class MacIOSurface;
 #endif
 namespace mozilla {
 namespace gfx {
-class VRThread;
-
 namespace impl {
 
 class VRDisplayExternal : public VRDisplayHost
 {
 public:
   void ZeroSensor() override;
-  static int sPushIndex;
 
 protected:
   VRHMDSensorState GetSensorState() override;
@@ -49,6 +47,15 @@ public:
   explicit VRDisplayExternal(const VRDisplayState& aDisplayState);
   void Refresh();
   const VRControllerState& GetLastControllerState(uint32_t aStateIndex) const;
+  void VibrateHaptic(uint32_t aControllerIdx,
+                     uint32_t aHapticIndex,
+                     double aIntensity,
+                     double aDuration,
+                     const VRManagerPromise& aPromise);
+  void StopVibrateHaptic(uint32_t aControllerIdx);
+  void StopAllHaptics();
+  void Run1msTasks(double aDeltaTime) override;
+  void Run10msTasks() override;
 protected:
   virtual ~VRDisplayExternal();
   void Destroy();
@@ -60,12 +67,15 @@ private:
   void PushState(bool aNotifyCond = false);
 #if defined(MOZ_WIDGET_ANDROID)
   bool PullState(const std::function<bool()>& aWaitCondition = nullptr);
-  void PostVRTask();
-  void RunVRTask();
 #else
   bool PullState();
 #endif
-
+  void ClearHapticSlot(size_t aSlot);
+  void ExpireNavigationTransition();
+  void UpdateHaptics(double aDeltaTime);
+  nsTArray<UniquePtr<VRManagerPromise>> mHapticPromises;
+  // Duration of haptic pulse time remaining (milliseconds)
+  double mHapticPulseRemaining[kVRHapticsMaxCount];
   VRTelemetry mTelemetry;
   TimeStamp mVRNavigationTransitionEnd;
   VRBrowserState mBrowserState;
@@ -81,7 +91,7 @@ public:
 
   virtual void Destroy() override;
   virtual void Shutdown() override;
-  virtual void NotifyVSync() override;
+  virtual void Run100msTasks() override;
   virtual void Enumerate() override;
   virtual bool ShouldInhibitEnumeration() override;
   virtual void GetHMDs(nsTArray<RefPtr<VRDisplayHost>>& aHMDResult) override;
@@ -119,17 +129,19 @@ private:
 #if defined(XP_MACOSX)
   int mShmemFD;
 #elif defined(XP_WIN)
-  HANDLE mShmemFile;
+  base::ProcessHandle mShmemFile;
 #elif defined(MOZ_WIDGET_ANDROID)
-  bool mDoShutdown;
+  
   bool mExternalStructFailed;
   bool mEnumerationCompleted;
 #endif
+  bool mDoShutdown;
 
   volatile VRExternalShmem* mExternalShmem;
 #if !defined(MOZ_WIDGET_ANDROID)
   bool mSameProcess;
 #endif
+  TimeStamp mEarliestRestartTime;
 
   void OpenShmem();
   void CloseShmem();

@@ -174,23 +174,20 @@ void
 Bench_Cpp_MozHashSet(const Params* aParams, void** aVals, size_t aLen)
 {
   mozilla::HashSet<void*, mozilla::DefaultHasher<void*>, MallocAllocPolicy> hs;
-  MOZ_RELEASE_ASSERT(hs.init());
 
   for (size_t j = 0; j < aParams->mNumInserts; j++) {
-    auto p = hs.lookupForAdd(aVals[j]);
-    MOZ_RELEASE_ASSERT(!p);
-    MOZ_RELEASE_ASSERT(hs.add(p, aVals[j]));
+    MOZ_RELEASE_ASSERT(hs.put(aVals[j]));
   }
 
   for (size_t i = 0; i < aParams->mNumSuccessfulLookups; i++) {
     for (size_t j = 0; j < aParams->mNumInserts; j++) {
-      MOZ_RELEASE_ASSERT(hs.lookup(aVals[j]));
+      MOZ_RELEASE_ASSERT(hs.has(aVals[j]));
     }
   }
 
   for (size_t i = 0; i < aParams->mNumFailingLookups; i++) {
     for (size_t j = aParams->mNumInserts; j < aParams->mNumInserts*2; j++) {
-      MOZ_RELEASE_ASSERT(!hs.lookup(aVals[j]));
+      MOZ_RELEASE_ASSERT(!hs.has(aVals[j]));
     }
   }
 
@@ -225,12 +222,14 @@ static const size_t VALS_LEN = 131072;
 // Note that no "Inserts" value can exceed VALS_LEN.
 // Also, if any failing lookups are done, Inserts must be <= VALS_LEN/2.
 const Params gParamsList[] = {
+  // clang-format off
   //                           Successful Failing              Remove
   //                 Inserts   lookups    lookups  Iterations  inserts
   { "succ_lookups",  1024,     5000,      0,       0,          false },
   { "fail_lookups",  1024,     0,         5000,    0,          false },
   { "insert_remove", VALS_LEN, 0,         0,       0,          true  },
   { "iterate",       1024,     0,         0,       5000,       false },
+  // clang-format on
 };
 
 class BenchCollections : public ::testing::Test

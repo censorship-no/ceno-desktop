@@ -425,14 +425,6 @@ CustomizeMode.prototype = {
 
       await this._unwrapToolbarItems();
 
-      if (this._changed) {
-        // XXXmconley: At first, it seems strange to also persist the old way with
-        //             currentset - but this might actually be useful for switching
-        //             to old builds. We might want to keep this around for a little
-        //             bit.
-        this.persistCurrentSets();
-      }
-
       // And drop all area references.
       this.areas.clear();
 
@@ -441,7 +433,7 @@ CustomizeMode.prototype = {
       CustomizableUI.dispatchToolboxEvent("customizationending", {}, window);
 
       window.PanelUI.menuButton.disabled = false;
-      let overflowContainer = document.getElementById("widget-overflow-mainView").firstChild;
+      let overflowContainer = document.getElementById("widget-overflow-mainView").firstElementChild;
       overflowContainer.appendChild(window.PanelUI.overflowFixedList);
       document.getElementById("nav-bar-overflow-button").disabled = false;
       let panelContextMenu = document.getElementById(kPanelItemContextMenu);
@@ -584,8 +576,8 @@ CustomizeMode.prototype = {
 
   async addToToolbar(aNode) {
     aNode = this._getCustomizableChildForNode(aNode);
-    if (aNode.localName == "toolbarpaletteitem" && aNode.firstChild) {
-      aNode = aNode.firstChild;
+    if (aNode.localName == "toolbarpaletteitem" && aNode.firstElementChild) {
+      aNode = aNode.firstElementChild;
     }
     let widgetAnimationPromise = this._promiseWidgetAnimationOut(aNode);
     if (widgetAnimationPromise) {
@@ -621,8 +613,8 @@ CustomizeMode.prototype = {
 
   async addToPanel(aNode) {
     aNode = this._getCustomizableChildForNode(aNode);
-    if (aNode.localName == "toolbarpaletteitem" && aNode.firstChild) {
-      aNode = aNode.firstChild;
+    if (aNode.localName == "toolbarpaletteitem" && aNode.firstElementChild) {
+      aNode = aNode.firstElementChild;
     }
     let widgetAnimationPromise = this._promiseWidgetAnimationOut(aNode);
     if (widgetAnimationPromise) {
@@ -669,8 +661,8 @@ CustomizeMode.prototype = {
 
   async removeFromArea(aNode) {
     aNode = this._getCustomizableChildForNode(aNode);
-    if (aNode.localName == "toolbarpaletteitem" && aNode.firstChild) {
-      aNode = aNode.firstChild;
+    if (aNode.localName == "toolbarpaletteitem" && aNode.firstElementChild) {
+      aNode = aNode.firstElementChild;
     }
     let widgetAnimationPromise = this._promiseWidgetAnimationOut(aNode);
     if (widgetAnimationPromise) {
@@ -746,11 +738,11 @@ CustomizeMode.prototype = {
   depopulatePalette() {
     return (async () => {
       this.visiblePalette.hidden = true;
-      let paletteChild = this.visiblePalette.firstChild;
+      let paletteChild = this.visiblePalette.firstElementChild;
       let nextChild;
       while (paletteChild) {
         nextChild = paletteChild.nextElementSibling;
-        let itemId = paletteChild.firstChild.id;
+        let itemId = paletteChild.firstElementChild.id;
         if (CustomizableUI.isSpecialWidget(itemId)) {
           this.visiblePalette.removeChild(paletteChild);
         } else {
@@ -816,7 +808,7 @@ CustomizeMode.prototype = {
       wrapper = aNode.parentNode;
       aPlace = wrapper.getAttribute("place");
     } else {
-      wrapper = this.document.createElement("toolbarpaletteitem");
+      wrapper = this.document.createXULElement("toolbarpaletteitem");
       // "place" is used to show the label when it's sitting in the palette.
       wrapper.setAttribute("place", aPlace);
     }
@@ -925,7 +917,7 @@ CustomizeMode.prototype = {
 
     let place = aWrapper.getAttribute("place");
 
-    let toolbarItem = aWrapper.firstChild;
+    let toolbarItem = aWrapper.firstElementChild;
     if (!toolbarItem) {
       log.error("no toolbarItem child for " + aWrapper.tagName + "#" + aWrapper.id);
       aWrapper.remove();
@@ -1065,19 +1057,6 @@ CustomizeMode.prototype = {
     })().catch(log.error);
   },
 
-  persistCurrentSets(aSetBeforePersisting) {
-    let document = this.document;
-    let toolbars = document.querySelectorAll("toolbar[customizable='true'][currentset]");
-    for (let toolbar of toolbars) {
-      if (aSetBeforePersisting) {
-        let set = toolbar.currentSet;
-        toolbar.setAttribute("currentset", set);
-      }
-      // Persist the currentset attribute directly on hardcoded toolbars.
-      Services.xulStore.persist(toolbar, "currentset");
-    }
-  },
-
   reset() {
     this.resetting = true;
     // Disable the reset button temporarily while resetting:
@@ -1093,8 +1072,6 @@ CustomizeMode.prototype = {
 
       await this._wrapToolbarItems();
       this.populatePalette();
-
-      this.persistCurrentSets(true);
 
       this._updateResetButton();
       this._updateUndoResetButton();
@@ -1120,8 +1097,6 @@ CustomizeMode.prototype = {
 
       await this._wrapToolbarItems();
       this.populatePalette();
-
-      this.persistCurrentSets(true);
 
       this._updateResetButton();
       this._updateUndoResetButton();
@@ -1361,7 +1336,7 @@ CustomizeMode.prototype = {
     let doc = this.window.document;
 
     function buildToolbarButton(aTheme) {
-      let tbb = doc.createElement("toolbarbutton");
+      let tbb = doc.createXULElement("toolbarbutton");
       tbb.theme = aTheme;
       tbb.setAttribute("label", aTheme.name);
       tbb.setAttribute("image", aTheme.iconURL);
@@ -1459,7 +1434,7 @@ CustomizeMode.prototype = {
       });
       panel.insertBefore(button, footer);
     }
-    let hideRecommendedLabel = (footer.previousSibling == recommendedLabel);
+    let hideRecommendedLabel = (footer.previousElementSibling == recommendedLabel);
     recommendedLabel.hidden = hideRecommendedLabel;
   },
 
@@ -1467,9 +1442,9 @@ CustomizeMode.prototype = {
     let footer = this.$("customization-lwtheme-menu-footer");
     let recommendedLabel = this.$("customization-lwtheme-menu-recommended");
     for (let element of [footer, recommendedLabel]) {
-      while (element.previousSibling &&
-             element.previousSibling.localName == "toolbarbutton") {
-        element.previousSibling.remove();
+      while (element.previousElementSibling &&
+             element.previousElementSibling.localName == "toolbarbutton") {
+        element.previousElementSibling.remove();
       }
     }
 
@@ -1667,7 +1642,7 @@ CustomizeMode.prototype = {
       item = item.parentNode;
     }
 
-    let draggedItem = item.firstChild;
+    let draggedItem = item.firstElementChild;
     let placeForItem = CustomizableUI.getPlaceForItem(item);
 
     let dt = aEvent.dataTransfer;
@@ -1700,12 +1675,12 @@ CustomizeMode.prototype = {
         item.hidden = true;
         DragPositionManager.start(this.window);
         let canUsePrevSibling = placeForItem == "toolbar" || placeForItem == "menu-panel";
-        if (item.nextSibling) {
-          this._setDragActive(item.nextSibling, "before", draggedItem.id, placeForItem);
-          this._dragOverItem = item.nextSibling;
-        } else if (canUsePrevSibling && item.previousSibling) {
-          this._setDragActive(item.previousSibling, "after", draggedItem.id, placeForItem);
-          this._dragOverItem = item.previousSibling;
+        if (item.nextElementSibling) {
+          this._setDragActive(item.nextElementSibling, "before", draggedItem.id, placeForItem);
+          this._dragOverItem = item.nextElementSibling;
+        } else if (canUsePrevSibling && item.previousElementSibling) {
+          this._setDragActive(item.previousElementSibling, "after", draggedItem.id, placeForItem);
+          this._dragOverItem = item.previousElementSibling;
         }
         let currentArea = this._getCustomizableParent(item);
         currentArea.setAttribute("draggingover", "true");
@@ -1765,8 +1740,8 @@ CustomizeMode.prototype = {
       // We'll assume if the user is dragging directly over the target, that
       // they're attempting to append a child to that target.
       dragOverItem = (targetAreaType == "toolbar"
-                        ? this._findVisiblePreviousSiblingNode(targetNode.lastChild)
-                        : targetNode.lastChild) ||
+                        ? this._findVisiblePreviousSiblingNode(targetNode.lastElementChild)
+                        : targetNode.lastElementChild) ||
                      targetNode;
       dragValue = "after";
     } else {
@@ -1774,8 +1749,8 @@ CustomizeMode.prototype = {
       let position = Array.indexOf(targetParent.children, targetNode);
       if (position == -1) {
         dragOverItem = (targetAreaType == "toolbar"
-                          ? this._findVisiblePreviousSiblingNode(targetNode.lastChild)
-                          : targetNode.lastChild);
+                          ? this._findVisiblePreviousSiblingNode(targetNode.lastElementChild)
+                          : targetNode.lastElementChild);
         dragValue = "after";
       } else {
         dragOverItem = targetParent.children[position];
@@ -1851,14 +1826,14 @@ CustomizeMode.prototype = {
     let dropDir = targetNode.getAttribute("dragover");
     // Need to insert *after* this node if we promised the user that:
     if (targetNode != targetArea && dropDir == "after") {
-      if (targetNode.nextSibling) {
-        targetNode = targetNode.nextSibling;
+      if (targetNode.nextElementSibling) {
+        targetNode = targetNode.nextElementSibling;
       } else {
         targetNode = targetArea;
       }
     }
     if (targetNode.tagName == "toolbarpaletteitem") {
-      targetNode = targetNode.firstChild;
+      targetNode = targetNode.firstElementChild;
     }
 
     this._cancelDragActive(this._dragOverItem, null, true);
@@ -1959,14 +1934,14 @@ CustomizeMode.prototype = {
     while (itemForPlacement && itemForPlacement.getAttribute("skipintoolbarset") == "true" &&
            itemForPlacement.parentNode &&
            itemForPlacement.parentNode.nodeName == "toolbarpaletteitem") {
-      itemForPlacement = itemForPlacement.parentNode.nextSibling;
+      itemForPlacement = itemForPlacement.parentNode.nextElementSibling;
       if (itemForPlacement && itemForPlacement.nodeName == "toolbarpaletteitem") {
-        itemForPlacement = itemForPlacement.firstChild;
+        itemForPlacement = itemForPlacement.firstElementChild;
       }
     }
     if (itemForPlacement) {
       let targetNodeId = (itemForPlacement.nodeName == "toolbarpaletteitem") ?
-                            itemForPlacement.firstChild && itemForPlacement.firstChild.id :
+                            itemForPlacement.firstElementChild && itemForPlacement.firstElementChild.id :
                             itemForPlacement.id;
       placement = CustomizableUI.getPlacementOfWidget(targetNodeId);
     }
@@ -2193,7 +2168,7 @@ CustomizeMode.prototype = {
 
     // Calculate size of the item when it'd be dropped in this position.
     let currentParent = aDraggedItem.parentNode;
-    let currentSibling = aDraggedItem.nextSibling;
+    let currentSibling = aDraggedItem.nextElementSibling;
     const kAreaType = "cui-areatype";
     let areaType, currentType;
 
@@ -2322,8 +2297,8 @@ CustomizeMode.prototype = {
   _findVisiblePreviousSiblingNode(aReferenceNode) {
     while (aReferenceNode &&
            aReferenceNode.localName == "toolbarpaletteitem" &&
-           aReferenceNode.firstChild.hidden) {
-      aReferenceNode = aReferenceNode.previousSibling;
+           aReferenceNode.firstElementChild.hidden) {
+      aReferenceNode = aReferenceNode.previousElementSibling;
     }
     return aReferenceNode;
   },
@@ -2642,7 +2617,7 @@ CustomizeMode.prototype = {
     let document = this.document;
     let rAFHandle = 0;
     let elements = {
-      arena: document.getElementById("customization-pong-arena")
+      arena: document.getElementById("customization-pong-arena"),
     };
     let isRTL = document.documentElement.matches(":-moz-locale-dir(rtl)");
 
@@ -2650,7 +2625,7 @@ CustomizeMode.prototype = {
     document.addEventListener("keyup", onkeyup);
 
     for (let id of ["player1", "player2", "ball", "score", "lives"]) {
-      let el = document.createElement("box");
+      let el = document.createXULElement("box");
       el.id = "wp-" + id;
       elements[el.id] = elements.arena.appendChild(el);
     }

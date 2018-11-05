@@ -223,7 +223,7 @@ nsMenuPopupFrame::PopupLevel(bool aIsNoAutoHide) const
 
   // If the level attribute has been set, use that.
   static Element::AttrValuesArray strings[] =
-    {&nsGkAtoms::top, &nsGkAtoms::parent, &nsGkAtoms::floating, nullptr};
+    {nsGkAtoms::top, nsGkAtoms::parent, nsGkAtoms::floating, nullptr};
   switch (mContent->AsElement()->FindAttrValueIn(kNameSpaceID_None,
                                                  nsGkAtoms::level, strings,
                                                  eCaseMatters)) {
@@ -1382,7 +1382,7 @@ nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame, bool aIsMove, bool aS
     // If anchored to a rectangle, use that rectangle. Otherwise, determine the
     // rectangle from the anchor.
     if (mAnchorType == MenuPopupAnchorType_Rect) {
-      anchorRect = ToAppUnits(mScreenRect, nsPresContext::AppUnitsPerCSSPixel());
+      anchorRect = ToAppUnits(mScreenRect, AppUnitsPerCSSPixel());
     }
     else {
       // if the frame is not specified, use the anchor node passed to OpenPopup. If
@@ -1789,14 +1789,10 @@ ConsumeOutsideClicksResult nsMenuPopupFrame::ConsumeOutsideClicks()
         ni->Equals(nsGkAtoms::popupset, kNameSpaceID_XUL) ||
         ((ni->Equals(nsGkAtoms::button, kNameSpaceID_XUL) ||
           ni->Equals(nsGkAtoms::toolbarbutton, kNameSpaceID_XUL)) &&
-         (parentContent->AsElement()->AttrValueIs(kNameSpaceID_None,
-                                                  nsGkAtoms::type,
-                                                  nsGkAtoms::menu,
-                                                  eCaseMatters) ||
-          parentContent->AsElement()->AttrValueIs(kNameSpaceID_None,
-                                                  nsGkAtoms::type,
-                                                  nsGkAtoms::menuButton,
-                                                  eCaseMatters)))) {
+         parentContent->AsElement()->AttrValueIs(kNameSpaceID_None,
+                                                 nsGkAtoms::type,
+                                                 nsGkAtoms::menu,
+                                                 eCaseMatters))) {
       return ConsumeOutsideClicks_Never;
     }
 #endif

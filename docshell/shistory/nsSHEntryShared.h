@@ -12,10 +12,10 @@
 #include "nsCOMPtr.h"
 #include "nsExpirationTracker.h"
 #include "nsIBFCacheEntry.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsRect.h"
 #include "nsString.h"
 #include "nsStubMutationObserver.h"
-#include "nsWeakPtr.h"
 
 #include "mozilla/Attributes.h"
 
@@ -64,7 +64,7 @@ private:
   static already_AddRefed<nsSHEntryShared> Duplicate(nsSHEntryShared* aEntry);
 
   void RemoveFromExpirationTracker();
-  nsresult SyncPresentationState();
+  void SyncPresentationState();
   void DropPresentationState();
 
   nsresult SetContentViewer(nsIContentViewer* aViewer);

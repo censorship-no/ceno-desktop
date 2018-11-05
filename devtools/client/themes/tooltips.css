@@ -15,6 +15,22 @@
   --bezier-grid-color: rgba(0, 0, 0, 0.2);
   --onboarding-link-color: var(--theme-highlight-blue);
   --onboarding-link-active-color: var(--blue-40);
+
+  /* Tooltips */
+  --theme-tooltip-border: #434850;
+  --theme-tooltip-background: rgba(19, 28, 38, .9);
+  --theme-tooltip-shadow: rgba(25, 25, 25, 0.76);
+
+  /* Doorhangers */
+  /* These colors are based on the colors used for doorhangers elsewhere in
+   * Firefox. */
+  --theme-arrowpanel-background: var(--theme-popup-background);
+  --theme-arrowpanel-color: var(--theme-popup-color);
+  --theme-arrowpanel-border-color: var(--theme-popup-border-color);
+  --theme-arrowpanel-separator: rgba(249,249,250,.1);
+  --theme-arrowpanel-dimmed: var(--theme-popup-dimmed);
+  --theme-arrowpanel-dimmed-further: rgba(249,249,250,.15);
+  --theme-arrowpanel-disabled-color: rgba(249,249,250,.5);
 }
 
 .theme-light {
@@ -22,6 +38,33 @@
   --bezier-grid-color: rgba(0, 0, 0, 0.05);
   --onboarding-link-color: var(--blue-60);
   --onboarding-link-active-color: var(--blue-70);
+
+  /* Tooltips */
+  --theme-tooltip-border: #d9e1e8;
+  --theme-tooltip-background: rgba(255, 255, 255, .9);
+  --theme-tooltip-shadow: rgba(155, 155, 155, 0.26);
+
+  /* Doorhangers */
+  /* These colors are based on the colors used for doorhangers elsewhere in
+   * Firefox. */
+  --theme-arrowpanel-background: var(--theme-popup-background);
+  --theme-arrowpanel-color: var(--theme-popup-color);
+  --theme-arrowpanel-border-color: var(--theme-popup-border-color);
+  --theme-arrowpanel-separator: ThreeDShadow;
+  --theme-arrowpanel-dimmed: var(--theme-popup-dimmed);
+  --theme-arrowpanel-dimmed-further: hsla(0,0%,80%,.45);
+  --theme-arrowpanel-disabled-color: GrayText;
+}
+
+:root {
+  --theme-arrowpanel-border-radius: 0px;
+}
+:root[platform="mac"] {
+  --theme-arrowpanel-border-radius: 3.5px;
+}
+
+:root[platform="mac"].theme-light {
+  --theme-arrowpanel-separator: hsla(210,4%,10%,.14);
 }
 
 /* Tooltip: CSS variables tooltip */
@@ -192,13 +235,6 @@
 
 /* Tooltip : doorhanger style */
 
-:root {
-  --theme-arrowpanel-border-radius: 0px;
-}
-:root[platform="mac"] {
-  --theme-arrowpanel-border-radius: 3.5px;
-}
-
 .tooltip-container[type="doorhanger"] > .tooltip-panel {
   padding: 2px 0;
   color: var(--theme-arrowpanel-color);
@@ -364,7 +400,7 @@
   list-style-image: none;
   -moz-context-properties: fill;
   fill: currentColor;
-  background: url(chrome://browser/skin/check.svg) no-repeat transparent;
+  background: url(chrome://global/skin/icons/check.svg) no-repeat transparent;
   background-size: 11px 11px;
   background-position: center left 7px;
 }
@@ -563,9 +599,9 @@
   padding: 7px;
 }
 
-/* Tooltip: 3 Pane Inspecot Onboarding Tooltip */
+/* Tooltip: Onboarding Tooltip */
 
-.three-pane-onboarding-container {
+.onboarding-container {
   align-items: center;
   background-color: var(--theme-toolbar-background);
   box-sizing: border-box;
@@ -577,7 +613,7 @@
   -moz-user-select: none;
 }
 
-.three-pane-onboarding-icon {
+.onboarding-icon {
   display: inline-block;
   background-size: 21px;
   width: 21px;
@@ -586,29 +622,29 @@
   background-image: url("chrome://devtools/skin/images/fox-smiling.svg");
 }
 
-.three-pane-onboarding-content {
+.onboarding-content {
   flex: 1;
   padding-inline-start: 5px;
 }
 
-.three-pane-onboarding-link {
+.onboarding-link {
   color: var(--onboarding-link-color);
   cursor: pointer;
 }
 
-.three-pane-onboarding-link:hover {
+.onboarding-link:hover {
   text-decoration: underline;
 }
 
-.three-pane-onboarding-link:active {
+.onboarding-link:active {
   color: var(--onboarding-link-active-color);
 }
 
-.three-pane-onboarding-close-button {
+.onboarding-close-button {
   align-self: flex-start;
 }
 
-.three-pane-onboarding-close-button::before {
+.onboarding-close-button::before {
   background-image: url("chrome://devtools/skin/images/close.svg");
   margin: -6px 0 0 -6px;
 }

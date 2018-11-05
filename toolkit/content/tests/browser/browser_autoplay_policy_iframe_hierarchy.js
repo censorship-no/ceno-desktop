@@ -25,7 +25,7 @@ const PAGE_A1_A2_B3 = "https://example.com/browser/toolkit/content/tests/browser
 function setup_test_preference() {
   return SpecialPowers.pushPrefEnv({"set": [
     ["media.autoplay.default", SpecialPowers.Ci.nsIAutoplay.BLOCKED],
-    ["media.autoplay.enabled.user-gestures-needed", true]
+    ["media.autoplay.enabled.user-gestures-needed", true],
   ]});
 }
 
@@ -36,7 +36,7 @@ var frameTestArray = [
   { name: "A1_B2_A3", layersNum: 3, src: PAGE_A1_B2_A3 },
   { name: "A1_B2_B3", layersNum: 3, src: PAGE_A1_B2_B3 },
   { name: "A1_A2_A3", layersNum: 3, src: PAGE_A1_A2_A3 },
-  { name: "A1_A2_B3", layersNum: 3, src: PAGE_A1_A2_B3 }
+  { name: "A1_A2_B3", layersNum: 3, src: PAGE_A1_A2_B3 },
 ];
 
 async function test_permission_propagation(testName, testSrc, layersNum) {
@@ -45,7 +45,7 @@ async function test_permission_propagation(testName, testSrc, layersNum) {
     info("- open new tab -");
     let tab = await BrowserTestUtils.openNewForegroundTab(window.gBrowser,
                                                           "about:blank");
-    tab.linkedBrowser.loadURI(testSrc);
+    BrowserTestUtils.loadURI(tab.linkedBrowser, testSrc);
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
     // If the frame isn't activated, the video play will fail.

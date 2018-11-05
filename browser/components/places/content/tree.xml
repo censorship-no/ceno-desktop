@@ -534,7 +534,7 @@
           return new PlacesInsertionPoint({
             parentId: PlacesUtils.getConcreteItemId(container),
             parentGuid: PlacesUtils.getConcreteItemGuid(container),
-            index, orientation, tagName, dropNearNode
+            index, orientation, tagName, dropNearNode,
           });
         ]]></body>
       </method>
@@ -741,8 +741,8 @@
             return;
           }
 
-          // If this node is child of a readonly container (e.g. a livemark)
-          // or cannot be moved, we must force a copy.
+          // If this node is child of a readonly container or cannot be moved,
+          // we must force a copy.
           if (!this.controller.canMoveNode(node)) {
             event.dataTransfer.effectAllowed = "copyLink";
             break;

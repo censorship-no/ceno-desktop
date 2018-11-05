@@ -5,6 +5,9 @@
 Services.scriptloader.loadSubScript(new URL("head_webNavigation.js", gTestPath).href,
                                     this);
 
+SpecialPowers.pushPrefEnv({"set": [["security.allow_eval_with_system_principal",
+                                    true]]});
+
 async function background() {
   const tabs = await browser.tabs.query({active: true, currentWindow: true});
   const sourceTabId = tabs[0].id;
@@ -119,7 +122,7 @@ add_task(async function test_on_created_navigation_target_from_mouse_click_subfr
   await runCreatedNavigationTargetTest({
     extension,
     openNavTarget() {
-      BrowserTestUtils.synthesizeMouseAtCenter(function() {
+      BrowserTestUtils.synthesizeMouseAtCenter(() => {
         // This code runs as a framescript in the child process and it returns the
         // target link in the subframe.
         return this.content.frames[0].document
@@ -138,7 +141,7 @@ add_task(async function test_on_created_navigation_target_from_mouse_click_subfr
   await runCreatedNavigationTargetTest({
     extension,
     openNavTarget() {
-      BrowserTestUtils.synthesizeMouseAtCenter(function() {
+      BrowserTestUtils.synthesizeMouseAtCenter(() => {
         // This code runs as a framescript in the child process and it returns the
         // target link in the subframe.
         return this.content.frames[0].document
@@ -157,7 +160,7 @@ add_task(async function test_on_created_navigation_target_from_mouse_click_subfr
   await runCreatedNavigationTargetTest({
     extension,
     openNavTarget() {
-      BrowserTestUtils.synthesizeMouseAtCenter(function() {
+      BrowserTestUtils.synthesizeMouseAtCenter(() => {
         // This code runs as a framescript in the child process and it returns the
         // target link in the subframe.
         return this.content.frames[0].document

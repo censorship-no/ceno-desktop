@@ -53,6 +53,7 @@ Decoder::Decoder(RasterImage* aImage)
   , mColormap(nullptr)
   , mColormapSize(0)
   , mImage(aImage)
+  , mFrameRecycler(nullptr)
   , mProgress(NoProgress)
   , mFrameCount(0)
   , mLoopLength(FrameTimeout::Zero())
@@ -291,7 +292,7 @@ Decoder::AllocateFrame(const gfx::IntSize& aOutputSize,
 {
   mCurrentFrame = AllocateFrameInternal(aOutputSize, aFrameRect, aFormat,
                                         aPaletteDepth, aAnimParams,
-                                        mCurrentFrame.get());
+                                        std::move(mCurrentFrame));
 
   if (mCurrentFrame) {
     mHasFrameToTake = true;
@@ -321,7 +322,7 @@ Decoder::AllocateFrameInternal(const gfx::IntSize& aOutputSize,
                                SurfaceFormat aFormat,
                                uint8_t aPaletteDepth,
                                const Maybe<AnimationParams>& aAnimParams,
-                               imgFrame* aPreviousFrame)
+                               RawAccessFrameRef&& aPreviousFrame)
 {
   if (HasError()) {
     return RawAccessFrameRef();
@@ -339,42 +340,88 @@ Decoder::AllocateFrameInternal(const gfx::IntSize& aOutputSize,
     return RawAccessFrameRef();
   }
 
-  auto frame = MakeNotNull<RefPtr<imgFrame>>();
-  bool nonPremult = bool(mSurfaceFlags & SurfaceFlags::NO_PREMULTIPLY_ALPHA);
-  if (NS_FAILED(frame->InitForDecoder(aOutputSize, aFrameRect, aFormat,
-                                      aPaletteDepth, nonPremult,
-                                      aAnimParams))) {
-    NS_WARNING("imgFrame::Init should succeed");
-    return RawAccessFrameRef();
-  }
-
-  RawAccessFrameRef ref = frame->RawAccessRef();
-  if (!ref) {
-    frame->Abort();
-    return RawAccessFrameRef();
-  }
-
   if (frameNum == 1) {
     MOZ_ASSERT(aPreviousFrame, "Must provide a previous frame when animated");
     aPreviousFrame->SetRawAccessOnly();
-
-    // If we dispose of the first frame by clearing it, then the first frame's
-    // refresh area is all of itself.
-    // RESTORE_PREVIOUS is invalid (assumed to be DISPOSE_CLEAR).
-    DisposalMethod prevDisposal = aPreviousFrame->GetDisposalMethod();
-    if (prevDisposal == DisposalMethod::CLEAR ||
-        prevDisposal == DisposalMethod::CLEAR_ALL ||
-        prevDisposal == DisposalMethod::RESTORE_PREVIOUS) {
-      mFirstFrameRefreshArea = aPreviousFrame->GetRect();
-    }
   }
 
   if (frameNum > 0) {
-    ref->SetRawAccessOnly();
+    if (ShouldBlendAnimation()) {
+      if (aPreviousFrame->GetDisposalMethod() !=
+          DisposalMethod::RESTORE_PREVIOUS) {
+        // If the new restore frame is the direct previous frame, then we know
+        // the dirty rect is composed only of the current frame's blend rect and
+        // the restore frame's clear rect (if applicable) which are handled in
+        // filters.
+        mRestoreFrame = std::move(aPreviousFrame);
+        mRestoreDirtyRect.SetBox(0, 0, 0, 0);
+      } else {
+        // We only need the previous frame's dirty rect, because while there may
+        // have been several frames between us and mRestoreFrame, the only areas
+        // that changed are the restore frame's clear rect, the current frame
+        // blending rect, and the previous frame's blending rect. All else is
+        // forgotten due to us restoring the same frame again.
+        mRestoreDirtyRect = aPreviousFrame->GetBoundedBlendRect();
+      }
+    }
+  }
 
-    // Some GIFs are huge but only have a small area that they animate. We only
-    // need to refresh that small area when frame 0 comes around again.
-    mFirstFrameRefreshArea.UnionRect(mFirstFrameRefreshArea, frame->GetRect());
+  RawAccessFrameRef ref;
+
+  // If we have a frame recycler, it must be for an animated image producing
+  // full frames. If the higher layers are discarding frames because of the
+  // memory footprint, then the recycler will allow us to reuse the buffers.
+  // Each frame should be the same size and have mostly the same properties.
+  if (mFrameRecycler) {
+    MOZ_ASSERT(ShouldBlendAnimation());
+    MOZ_ASSERT(aPaletteDepth == 0);
+    MOZ_ASSERT(aAnimParams);
+    MOZ_ASSERT(aFrameRect.IsEqualEdges(IntRect(IntPoint(0, 0), aOutputSize)));
+
+    ref = mFrameRecycler->RecycleFrame(mRecycleRect);
+    if (ref) {
+      // If the recycled frame is actually the current restore frame, we cannot
+      // use it. If the next restore frame is the new frame we are creating, in
+      // theory we could reuse it, but we would need to store the restore frame
+      // animation parameters elsewhere. For now we just drop it.
+      bool blocked = ref.get() == mRestoreFrame.get();
+      if (!blocked) {
+        nsresult rv = ref->InitForDecoderRecycle(aAnimParams.ref());
+        blocked = NS_WARN_IF(NS_FAILED(rv));
+      }
+
+      if (blocked) {
+        ref.reset();
+      }
+    }
+  }
+
+  // Either the recycler had nothing to give us, or we don't have a recycler.
+  // Produce a new frame to store the data.
+  if (!ref) {
+    // There is no underlying data to reuse, so reset the recycle rect to be
+    // the full frame, to ensure the restore frame is fully copied.
+    mRecycleRect = IntRect(IntPoint(0, 0), aOutputSize);
+
+    bool nonPremult = bool(mSurfaceFlags & SurfaceFlags::NO_PREMULTIPLY_ALPHA);
+    auto frame = MakeNotNull<RefPtr<imgFrame>>();
+    if (NS_FAILED(frame->InitForDecoder(aOutputSize, aFrameRect, aFormat,
+                                        aPaletteDepth, nonPremult,
+                                        aAnimParams, ShouldBlendAnimation(),
+                                        bool(mFrameRecycler)))) {
+      NS_WARNING("imgFrame::Init should succeed");
+      return RawAccessFrameRef();
+    }
+
+    ref = frame->RawAccessRef();
+    if (!ref) {
+      frame->Abort();
+      return RawAccessFrameRef();
+    }
+
+    if (frameNum > 0) {
+      frame->SetRawAccessOnly();
+    }
   }
 
   mFrameCount++;
@@ -471,11 +518,34 @@ Decoder::PostFrameStop(Opacity aFrameOpacity)
 
   mLoopLength += mCurrentFrame->GetTimeout();
 
-  // If we're not sending partial invalidations, then we send an invalidation
-  // here when the first frame is complete.
-  if (!ShouldSendPartialInvalidations() && mFrameCount == 1) {
-    mInvalidRect.UnionRect(mInvalidRect,
-                           IntRect(IntPoint(), Size()));
+  if (mFrameCount == 1) {
+    // If we're not sending partial invalidations, then we send an invalidation
+    // here when the first frame is complete.
+    if (!ShouldSendPartialInvalidations()) {
+      mInvalidRect.UnionRect(mInvalidRect,
+                             IntRect(IntPoint(), Size()));
+    }
+
+    // If we dispose of the first frame by clearing it, then the first frame's
+    // refresh area is all of itself. RESTORE_PREVIOUS is invalid (assumed to
+    // be DISPOSE_CLEAR).
+    switch (mCurrentFrame->GetDisposalMethod()) {
+      default:
+        MOZ_FALLTHROUGH_ASSERT("Unexpected DisposalMethod");
+      case DisposalMethod::CLEAR:
+      case DisposalMethod::CLEAR_ALL:
+      case DisposalMethod::RESTORE_PREVIOUS:
+        mFirstFrameRefreshArea = IntRect(IntPoint(), Size());
+        break;
+      case DisposalMethod::KEEP:
+      case DisposalMethod::NOT_SPECIFIED:
+        break;
+    }
+  } else {
+    // Some GIFs are huge but only have a small area that they animate. We only
+    // need to refresh that small area when frame 0 comes around again.
+    mFirstFrameRefreshArea.UnionRect(mFirstFrameRefreshArea,
+                                     mCurrentFrame->GetBoundedBlendRect());
   }
 }
 

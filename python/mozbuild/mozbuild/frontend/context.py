@@ -44,7 +44,6 @@ from ..testing import (
     all_test_flavors,
     read_manifestparser_manifest,
     read_reftest_manifest,
-    read_wpt_manifest,
 )
 
 import mozpack.path as mozpath
@@ -373,6 +372,10 @@ class AsmFlags(BaseCompileFlags):
                     debug_flags += ['-g', 'cv8']
                 elif self._context.config.substs.get('OS_ARCH') != 'Darwin':
                     debug_flags += ['-g', 'dwarf2']
+            elif (self._context.config.substs.get('OS_ARCH') == 'WINNT' and
+                  self._context.config.substs.get('CPU_ARCH') == 'aarch64'):
+                # armasm64 accepts a paucity of options compared to ml/ml64.
+                pass
             else:
                 debug_flags += self._context.config.substs.get('MOZ_DEBUG_FLAGS', '').split()
         return debug_flags
@@ -406,19 +409,6 @@ class LinkFlags(BaseCompileFlags):
         if all([self._context.config.substs.get('OS_ARCH') == 'WINNT',
                 not self._context.config.substs.get('GNU_CC'),
                 not self._context.config.substs.get('MOZ_DEBUG')]):
-
-            # MOZ_DEBUG_SYMBOLS generates debug symbols in separate PDB files.
-            # Used for generating an optimized build with debugging symbols.
-            # Used in the Windows nightlies to generate symbols for crash reporting.
-            if self._context.config.substs.get('MOZ_DEBUG_SYMBOLS'):
-                flags.append('-DEBUG')
-
-
-            if self._context.config.substs.get('MOZ_DMD'):
-                # On Windows Opt DMD builds we actually override everything
-                # from OS_LDFLAGS. Bug 1413728 is on file to figure out whether
-                # this is necessary.
-                flags = ['-DEBUG']
 
             if self._context.config.substs.get('MOZ_OPTIMIZE'):
                 flags.append('-OPT:REF,ICF')
@@ -472,6 +462,8 @@ class CompileFlags(BaseCompileFlags):
              ('CFLAGS', 'CXXFLAGS', 'CXX_LDFLAGS', 'C_LDFLAGS')),
             ('WARNINGS_AS_ERRORS', self._warnings_as_errors(),
              ('CXXFLAGS', 'CFLAGS', 'CXX_LDFLAGS', 'C_LDFLAGS')),
+            ('WARNINGS_CFLAGS', context.config.substs.get('WARNINGS_CFLAGS'),
+             ('CFLAGS', 'C_LDFLAGS')),
             ('MOZBUILD_CFLAGS', None, ('CFLAGS',)),
             ('MOZBUILD_CXXFLAGS', None, ('CXXFLAGS',)),
         )
@@ -902,12 +894,8 @@ def TypedListWithAction(typ, action):
             super(_TypedListWithAction, self).__init__(action=_action, *args)
     return _TypedListWithAction
 
-WebPlatformTestManifest = TypedNamedTuple("WebPlatformTestManifest",
-                                          [("manifest_path", unicode),
-                                           ("test_root", unicode)])
 ManifestparserManifestList = OrderedPathListWithAction(read_manifestparser_manifest)
 ReftestManifestList = OrderedPathListWithAction(read_reftest_manifest)
-WptManifestList = TypedListWithAction(WebPlatformTestManifest, read_wpt_manifest)
 
 OrderedSourceList = ContextDerivedTypedList(SourcePath, StrictOrderingOnAppendList)
 OrderedTestFlavorList = TypedList(Enum(*all_test_flavors()),
@@ -1076,9 +1064,9 @@ class Files(SubContext):
             """),
     }
 
-    def __init__(self, parent, pattern=None):
+    def __init__(self, parent, *patterns):
         super(Files, self).__init__(parent)
-        self.pattern = pattern
+        self.patterns = patterns
         self.finalized = set()
         self.test_files = set()
         self.test_tags = set()
@@ -1552,6 +1540,18 @@ VARIABLES = {
         Implies FORCE_SHARED_LIB.
         """),
 
+    'SHARED_LIBRARY_OUTPUT_CATEGORY': (unicode, unicode,
+        """The output category for this context's shared library. If set this will
+        correspond to the build command that will build this shared library, and
+        the library will not be built as part of the default build.
+        """),
+
+    'RUST_LIBRARY_OUTPUT_CATEGORY': (unicode, unicode,
+        """The output category for this context's rust library. If set this will
+        correspond to the build command that will build this rust library, and
+        the library will not be built as part of the default build.
+        """),
+
     'IS_FRAMEWORK': (bool, bool,
         """Whether the library to build should be built as a framework on OSX.
 
@@ -1609,7 +1609,7 @@ VARIABLES = {
         This variable can only be used on Windows.
         """),
 
-    'DEFFILE': (unicode, unicode,
+    'DEFFILE': (Path, unicode,
         """The program .def (module definition) file.
 
         This variable can only be used on Windows.
@@ -1877,10 +1877,6 @@ VARIABLES = {
         These are commonly named crashtests.list.
         """),
 
-    'WEB_PLATFORM_TESTS_MANIFESTS': (WptManifestList, list,
-        """List of (manifest_path, test_path) defining web-platform-tests.
-        """),
-
     'WEBRTC_SIGNALLING_TEST_MANIFESTS': (ManifestparserManifestList, list,
         """List of manifest files defining WebRTC signalling tests.
         """),
@@ -1930,17 +1926,6 @@ VARIABLES = {
         By default, the name of the manifest is ${JAR_MANIFEST}.manifest.
         Setting this variable to ``True`` changes the name of the manifest to
         chrome.manifest.
-        """),
-
-    'NO_JS_MANIFEST': (bool, bool,
-        """Explicitly disclaims responsibility for manifest listing in EXTRA_COMPONENTS.
-
-        Normally, if you have .js files listed in ``EXTRA_COMPONENTS`` or
-        ``EXTRA_PP_COMPONENTS``, you are expected to have a corresponding
-        .manifest file to go with those .js files.  Setting ``NO_JS_MANIFEST``
-        indicates that the relevant .manifest file and entries for those .js
-        files are elsehwere (jar.mn, for instance) and this state of affairs
-        is OK.
         """),
 
     'GYP_DIRS': (StrictOrderingOnAppendListWithFlagsFactory({

@@ -27,9 +27,9 @@
 namespace mozilla {
 namespace dom {
 
-HTMLObjectElement::HTMLObjectElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
+HTMLObjectElement::HTMLObjectElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                                      FromParser aFromParser)
-  : nsGenericHTMLFormElement(aNodeInfo, NS_FORM_OBJECT),
+  : nsGenericHTMLFormElement(std::move(aNodeInfo), NS_FORM_OBJECT),
     mIsDoneAddingChildren(!aFromParser)
 {
   RegisterActivityObserver();
@@ -526,10 +526,9 @@ HTMLObjectElement::DestroyContent()
 }
 
 nsresult
-HTMLObjectElement::CopyInnerTo(Element* aDest, bool aPreallocateChildren)
+HTMLObjectElement::CopyInnerTo(Element* aDest)
 {
-  nsresult rv = nsGenericHTMLFormElement::CopyInnerTo(aDest,
-                                                      aPreallocateChildren);
+  nsresult rv = nsGenericHTMLFormElement::CopyInnerTo(aDest);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (aDest->OwnerDoc()->IsStaticDocument()) {

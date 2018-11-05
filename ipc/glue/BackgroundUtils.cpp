@@ -112,20 +112,20 @@ PrincipalInfoToPrincipal(const PrincipalInfo& aPrincipalInfo,
     case PrincipalInfo::TExpandedPrincipalInfo: {
       const ExpandedPrincipalInfo& info = aPrincipalInfo.get_ExpandedPrincipalInfo();
 
-      nsTArray<nsCOMPtr<nsIPrincipal>> whitelist;
-      nsCOMPtr<nsIPrincipal> wlPrincipal;
+      nsTArray<nsCOMPtr<nsIPrincipal>> allowlist;
+      nsCOMPtr<nsIPrincipal> alPrincipal;
 
-      for (uint32_t i = 0; i < info.whitelist().Length(); i++) {
-        wlPrincipal = PrincipalInfoToPrincipal(info.whitelist()[i], &rv);
+      for (uint32_t i = 0; i < info.allowlist().Length(); i++) {
+        alPrincipal = PrincipalInfoToPrincipal(info.allowlist()[i], &rv);
         if (NS_WARN_IF(NS_FAILED(rv))) {
           return nullptr;
         }
-        // append that principal to the whitelist
-        whitelist.AppendElement(wlPrincipal);
+        // append that principal to the allowlist
+        allowlist.AppendElement(alPrincipal);
       }
 
       RefPtr<ExpandedPrincipal> expandedPrincipal =
-        ExpandedPrincipal::Create(whitelist, info.attrs());
+        ExpandedPrincipal::Create(allowlist, info.attrs());
       if (!expandedPrincipal) {
         NS_WARNING("could not instantiate expanded principal");
         return nullptr;
@@ -194,21 +194,21 @@ PrincipalToPrincipalInfo(nsIPrincipal* aPrincipal,
   if (basePrin->Is<ExpandedPrincipal>()) {
     auto* expanded = basePrin->As<ExpandedPrincipal>();
 
-    nsTArray<PrincipalInfo> whitelistInfo;
+    nsTArray<PrincipalInfo> allowlistInfo;
     PrincipalInfo info;
 
-    for (auto& prin : expanded->WhiteList()) {
+    for (auto& prin : expanded->AllowList()) {
       rv = PrincipalToPrincipalInfo(prin, &info);
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
-      // append that spec to the whitelist
-      whitelistInfo.AppendElement(info);
+      // append that spec to the allowlist
+      allowlistInfo.AppendElement(info);
     }
 
     *aPrincipalInfo =
       ExpandedPrincipalInfo(aPrincipal->OriginAttributesRef(),
-                            std::move(whitelistInfo));
+                            std::move(allowlistInfo));
     return NS_OK;
   }
 
@@ -339,6 +339,15 @@ LoadInfoToLoadInfoArgs(nsILoadInfo *aLoadInfo,
     sandboxedLoadingPrincipalInfo = sandboxedLoadingPrincipalInfoTemp;
   }
 
+  OptionalPrincipalInfo topLevelPrincipalInfo = mozilla::void_t();
+  if (aLoadInfo->TopLevelPrincipal()) {
+    PrincipalInfo topLevelPrincipalInfoTemp;
+    rv = PrincipalToPrincipalInfo(aLoadInfo->TopLevelPrincipal(),
+                                  &topLevelPrincipalInfoTemp);
+    NS_ENSURE_SUCCESS(rv, rv);
+    topLevelPrincipalInfo = topLevelPrincipalInfoTemp;
+  }
+
   OptionalPrincipalInfo topLevelStorageAreaPrincipalInfo = mozilla::void_t();
   if (aLoadInfo->TopLevelStorageAreaPrincipal()) {
     PrincipalInfo topLevelStorageAreaPrincipalInfoTemp;
@@ -408,6 +417,7 @@ LoadInfoToLoadInfoArgs(nsILoadInfo *aLoadInfo,
       triggeringPrincipalInfo,
       principalToInheritInfo,
       sandboxedLoadingPrincipalInfo,
+      topLevelPrincipalInfo,
       topLevelStorageAreaPrincipalInfo,
       optionalResultPrincipalURI,
       aLoadInfo->GetSecurityFlags(),
@@ -445,7 +455,9 @@ LoadInfoToLoadInfoArgs(nsILoadInfo *aLoadInfo,
       aLoadInfo->GetForcePreflight(),
       aLoadInfo->GetIsPreflight(),
       aLoadInfo->GetLoadTriggeredFromExternal(),
-      aLoadInfo->GetServiceWorkerTaintingSynthesized()
+      aLoadInfo->GetServiceWorkerTaintingSynthesized(),
+      aLoadInfo->GetDocumentHasUserInteracted(),
+      aLoadInfo->GetDocumentHasLoaded()
       );
 
   return NS_OK;
@@ -485,6 +497,13 @@ LoadInfoArgsToLoadInfo(const OptionalLoadInfoArgs& aOptionalLoadInfoArgs,
   if (loadInfoArgs.sandboxedLoadingPrincipalInfo().type() != OptionalPrincipalInfo::Tvoid_t) {
     sandboxedLoadingPrincipal =
       PrincipalInfoToPrincipal(loadInfoArgs.sandboxedLoadingPrincipalInfo(), &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  nsCOMPtr<nsIPrincipal> topLevelPrincipal;
+  if (loadInfoArgs.topLevelPrincipalInfo().type() != OptionalPrincipalInfo::Tvoid_t) {
+    topLevelPrincipal =
+      PrincipalInfoToPrincipal(loadInfoArgs.topLevelPrincipalInfo(), &rv);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -561,6 +580,7 @@ LoadInfoArgsToLoadInfo(const OptionalLoadInfoArgs& aOptionalLoadInfoArgs,
                           triggeringPrincipal,
                           principalToInherit,
                           sandboxedLoadingPrincipal,
+                          topLevelPrincipal,
                           topLevelStorageAreaPrincipal,
                           resultPrincipalURI,
                           clientInfo,
@@ -598,7 +618,9 @@ LoadInfoArgsToLoadInfo(const OptionalLoadInfoArgs& aOptionalLoadInfoArgs,
                           loadInfoArgs.forcePreflight(),
                           loadInfoArgs.isPreflight(),
                           loadInfoArgs.loadTriggeredFromExternal(),
-                          loadInfoArgs.serviceWorkerTaintingSynthesized()
+                          loadInfoArgs.serviceWorkerTaintingSynthesized(),
+                          loadInfoArgs.documentHasUserInteracted(),
+                          loadInfoArgs.documentHasLoaded()
                           );
 
    loadInfo.forget(outLoadInfo);
@@ -612,7 +634,13 @@ LoadInfoToParentLoadInfoForwarder(nsILoadInfo* aLoadInfo,
   if (!aLoadInfo) {
     *aForwarderArgsOut = ParentLoadInfoForwarderArgs(false, void_t(),
                                                      nsILoadInfo::TAINTING_BASIC,
-                                                     false);
+                                                     false, // serviceWorkerTaintingSynthesized
+                                                     false, // isTracker
+                                                     false, // isTrackerBlocked
+                                                     mozilla::Telemetry::LABELS_DOCUMENT_ANALYTICS_TRACKER_FASTBLOCKED::all, // trackerBlockedReason
+                                                     false, // documentHasUserInteracted
+                                                     false  // documentHasLoaded
+                                                    );
     return;
   }
 
@@ -625,11 +653,20 @@ LoadInfoToParentLoadInfoForwarder(nsILoadInfo* aLoadInfo,
   uint32_t tainting = nsILoadInfo::TAINTING_BASIC;
   Unused << aLoadInfo->GetTainting(&tainting);
 
+  mozilla::Telemetry::LABELS_DOCUMENT_ANALYTICS_TRACKER_FASTBLOCKED label =
+    mozilla::Telemetry::LABELS_DOCUMENT_ANALYTICS_TRACKER_FASTBLOCKED::all;
+  Unused << aLoadInfo->GetTrackerBlockedReason(&label);
+
   *aForwarderArgsOut = ParentLoadInfoForwarderArgs(
     aLoadInfo->GetAllowInsecureRedirectToDataURI(),
     ipcController,
     tainting,
-    aLoadInfo->GetServiceWorkerTaintingSynthesized()
+    aLoadInfo->GetServiceWorkerTaintingSynthesized(),
+    aLoadInfo->GetIsTracker(),
+    aLoadInfo->GetIsTrackerBlocked(),
+    label,
+    aLoadInfo->GetDocumentHasUserInteracted(),
+    aLoadInfo->GetDocumentHasLoaded()
   );
 }
 
@@ -660,6 +697,12 @@ MergeParentLoadInfoForwarder(ParentLoadInfoForwarderArgs const& aForwarderArgs,
   } else {
     aLoadInfo->MaybeIncreaseTainting(aForwarderArgs.tainting());
   }
+
+  MOZ_ALWAYS_SUCCEEDS(aLoadInfo->SetIsTracker(aForwarderArgs.isTracker()));
+  MOZ_ALWAYS_SUCCEEDS(aLoadInfo->SetIsTrackerBlocked(aForwarderArgs.isTrackerBlocked()));
+  MOZ_ALWAYS_SUCCEEDS(aLoadInfo->SetTrackerBlockedReason(aForwarderArgs.trackerBlockedReason()));
+  MOZ_ALWAYS_SUCCEEDS(aLoadInfo->SetDocumentHasUserInteracted(aForwarderArgs.documentHasUserInteracted()));
+  MOZ_ALWAYS_SUCCEEDS(aLoadInfo->SetDocumentHasLoaded(aForwarderArgs.documentHasLoaded()));
 
   return NS_OK;
 }

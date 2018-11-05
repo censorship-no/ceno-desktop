@@ -6,7 +6,12 @@
 /* eslint mozilla/avoid-Date-timing: "off" */
 
 ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 ChromeUtils.import("resource://gre/modules/E10SUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+
+XPCOMUtils.defineLazyScriptGetter(this, "TalosParentProfiler",
+                                  "resource://talos-powers/TalosParentProfiler.js");
 
 var NUM_CYCLES = 5;
 var numPageCycles = 1;
@@ -181,7 +186,7 @@ function plInit() {
       toolbars = "titlebar,resizable";
     }
 
-    browserWindow = Services.ww.openWindow(null, "chrome://browser/content/", "_blank",
+    browserWindow = Services.ww.openWindow(null, AppConstants.BROWSER_CHROME_URL, "_blank",
        `chrome,${toolbars},dialog=no,width=${winWidth},height=${winHeight}`, blank);
 
     gPaintWindow = browserWindow;
@@ -231,7 +236,7 @@ function plInit() {
 
         }
         content.selectedBrowser.messageManager.loadFrameScript("chrome://pageloader/content/talos-content.js", false);
-        content.selectedBrowser.messageManager.loadFrameScript("chrome://talos-powers-content/content/TalosContentProfiler.js", false, true);
+        content.selectedBrowser.messageManager.loadFrameScript("resource://talos-powers/TalosContentProfiler.js", false, true);
         content.selectedBrowser.messageManager.loadFrameScript("chrome://pageloader/content/tscroll.js", false, true);
         content.selectedBrowser.messageManager.loadFrameScript("chrome://pageloader/content/Profiler.js", false, true);
 
@@ -269,7 +274,6 @@ var ContentListener = {
 };
 
 // load the current page, start timing
-var removeLastAddedListener = null;
 var removeLastAddedMsgListener = null;
 function plLoadPage() {
   if (profilingInfo) {
@@ -277,11 +281,6 @@ function plLoadPage() {
   }
 
   var pageName = pages[pageIndex].url.spec;
-
-  if (removeLastAddedListener) {
-    removeLastAddedListener();
-    removeLastAddedListener = null;
-  }
 
   if (removeLastAddedMsgListener) {
     removeLastAddedMsgListener();
@@ -325,10 +324,13 @@ function startAndLoadURI(pageName) {
   start_time = Date.now();
   if (loadNoCache) {
     content.loadURI(pageName, {
-      flags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      flags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE,
     });
   } else {
-    content.loadURI(pageName);
+    content.loadURI(pageName, {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
   }
 }
 
@@ -376,7 +378,6 @@ function loadFail() {
     content.removeEventListener("MozAfterPaint", plPainted, true);
     gPaintWindow.removeEventListener("MozAfterPaint", plPaintedCapturing, true);
     gPaintWindow.removeEventListener("MozAfterPaint", plPainted, true);
-    removeLastAddedListener = null;
     removeLastAddedMsgListener = null;
     gPaintListener = false;
 
@@ -535,7 +536,6 @@ function plLoadHandlerCapturing(evt) {
   };
 
   content.removeEventListener("load", plLoadHandlerCapturing, true);
-  removeLastAddedListener = null;
 
   setTimeout(plWaitForPaintingCapturing, 0);
 }

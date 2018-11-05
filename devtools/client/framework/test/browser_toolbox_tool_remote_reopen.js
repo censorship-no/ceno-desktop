@@ -76,7 +76,7 @@ function getTarget(client) {
       const target = TargetFactory.forRemoteTab({
         client: client,
         form: tabList.tabs[tabList.selected],
-        chrome: false
+        chrome: false,
       });
       resolve(target);
     });
@@ -92,22 +92,31 @@ function test() {
     const target = await getTarget(client);
     await runTools(target);
 
+    const rootFronts = [...client.mainRoot.fronts.values()];
+
     // Actor fronts should be destroyed now that the toolbox has closed, but
     // look for any that remain.
     for (const pool of client.__pools) {
       if (!pool.__poolMap) {
         continue;
       }
+
+      // Ignore the root fronts, which are top-level pools and aren't released
+      // on toolbox destroy, but on client close.
+      if (rootFronts.includes(pool)) {
+        continue;
+      }
+
       for (const actor of pool.__poolMap.keys()) {
+        // Ignore the root front as it is only release on client close
+        if (actor == "root") {
+          continue;
+        }
         // Bug 1056342: Profiler fails today because of framerate actor, but
         // this appears more complex to rework, so leave it for that bug to
         // resolve.
         if (actor.includes("framerateActor")) {
           todo(false, "Front for " + actor + " still held in pool!");
-          continue;
-        }
-        // gcliActor is for the commandline which is separate to the toolbox
-        if (actor.includes("gcliActor")) {
           continue;
         }
         ok(false, "Front for " + actor + " still held in pool!");

@@ -269,7 +269,7 @@ class GeckoInstance(object):
             args["preferences"].update(self.prefs)
 
         if self.verbose:
-            level = "TRACE" if self.verbose >= 2 else "DEBUG"
+            level = "Trace" if self.verbose >= 2 else "Debug"
             args["preferences"]["marionette.log.level"] = level
             args["preferences"]["marionette.logging"] = level
 
@@ -443,16 +443,6 @@ class FennecInstance(GeckoInstance):
             exc, val, tb = sys.exc_info()
             message = "Error possibly due to runner or device args: {}"
             reraise(exc, message.format(e.message), tb)
-        # gecko_log comes from logcat when running with device/emulator
-        logcat_args = {
-            "filterspec": "Gecko",
-            "serial": self.runner.device.app_ctx.device_serial
-        }
-        if self.gecko_log == "-":
-            logcat_args["stream"] = sys.stdout
-        else:
-            logcat_args["logfile"] = self.gecko_log
-        self.runner.device.start_logcat(**logcat_args)
 
         # forward marionette port
         self.runner.device.device.forward(
@@ -568,6 +558,9 @@ class DesktopInstance(GeckoInstance):
         # Turn off the location bar search suggestions opt-in.  It interferes with
         # tests that don't expect it to be there.
         "browser.urlbar.userMadeSearchSuggestionsChoice": True,
+
+        # Don't warn when exiting the browser
+        "browser.warnOnQuit": False,
 
         # Disable first-run welcome page
         "startup.homepage_welcome_url": "about:blank",

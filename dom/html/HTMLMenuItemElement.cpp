@@ -157,8 +157,8 @@ protected:
 
 
 HTMLMenuItemElement::HTMLMenuItemElement(
-  already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo, FromParser aFromParser)
-  : nsGenericHTMLElement(aNodeInfo),
+  already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo, FromParser aFromParser)
+  : nsGenericHTMLElement(std::move(aNodeInfo)),
     mType(kMenuItemDefaultType->value),
     mParserCreating(false),
     mShouldInitChecked(false),
@@ -176,14 +176,12 @@ HTMLMenuItemElement::~HTMLMenuItemElement()
 //NS_IMPL_ELEMENT_CLONE(HTMLMenuItemElement)
 
 nsresult
-HTMLMenuItemElement::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
-                           bool aPreallocateArrays) const
+HTMLMenuItemElement::Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const
 {
   *aResult = nullptr;
-  already_AddRefed<mozilla::dom::NodeInfo> ni = RefPtr<mozilla::dom::NodeInfo>(aNodeInfo).forget();
   RefPtr<HTMLMenuItemElement> it =
-    new HTMLMenuItemElement(ni, NOT_FROM_PARSER);
-  nsresult rv = const_cast<HTMLMenuItemElement*>(this)->CopyInnerTo(it, aPreallocateArrays);
+    new HTMLMenuItemElement(do_AddRef(aNodeInfo), NOT_FROM_PARSER);
+  nsresult rv = const_cast<HTMLMenuItemElement*>(this)->CopyInnerTo(it);
   if (NS_SUCCEEDED(rv)) {
     switch (mType) {
       case CMD_TYPE_CHECKBOX:

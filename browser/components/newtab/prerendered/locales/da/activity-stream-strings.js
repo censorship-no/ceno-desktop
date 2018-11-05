@@ -74,6 +74,10 @@ window.gActivityStreamStrings = {
   "topsites_form_image_validation": "Kunne ikke indlæse billede. Prøv en anden URL.",
   "pocket_read_more": "Populære emner:",
   "pocket_read_even_more": "Se flere historier",
+  "pocket_more_reccommendations": "Flere anbefalinger",
+  "pocket_how_it_works": "Sådan virker det",
+  "pocket_cta_button": "Hent Pocket",
+  "pocket_cta_text": "Gem dine yndlingshistorier i Pocket og hav dem altid ved hånden.",
   "highlights_empty_state": "Gå i gang med at browse, så vil vi vise dig nogle af de artikler, videoer og andre sider, du har besøgt eller gemt et bogmærke til for nylig.",
   "topstories_empty_state": "Der er ikke flere nye historier. Kom tilbage senere for at se flere tophistorier fra {provider}. Kan du ikke vente? Vælg et populært emne og find flere spændende historier fra hele verden.",
   "manual_migration_explanation2": "Prøv Firefox med bogmærkerne, historikken og adgangskoderne fra en anden browser.",
@@ -87,6 +91,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_manage_section": "Håndter afsnit",
   "section_menu_action_manage_webext": "Håndter udvidelse",
   "section_menu_action_add_topsite": "Tilføj ny webside",
+  "section_menu_action_add_search_engine": "Tilføj søgetjeneste",
   "section_menu_action_move_up": "Flyt op",
   "section_menu_action_move_down": "Flyt ned",
   "section_menu_action_privacy_notice": "Privatlivspolitik",
@@ -102,6 +107,7 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "privatlivspolitik",
   "firstrun_continue_to_login": "Fortsæt",
   "firstrun_skip_login": "Spring dette trin over",
+  "context_menu_title": "Åbn menu",
   "prefs_restore_defaults_button": "Gendan standarder",
   "settings_pane_header": "Indstillinger for Nyt faneblad",
   "settings_pane_body2": "Vælg, hvad du vil se på denne side.",
@@ -114,5 +120,6 @@ window.gActivityStreamStrings = {
   "settings_pane_snippets_body": "Læs korte opdateringer fra Mozilla om Firefox, internet-kultur og lidt underholdning fra tid til anden.",
   "settings_pane_done_button": "Færdig",
   "settings_pane_topstories_options_sponsored": "Vis sponsorerede historier",
+  "pocket_learn_more": "Læs mere",
   "pocket_description": "Opdag indhold af høj kvalitet, som du måske ellers ikke ville have opdaget. Indholdet kommer fra Pocket, der nu er en del af Mozilla."
 };

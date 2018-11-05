@@ -8,6 +8,7 @@
 #include "gfxPrefs.h"
 #include "gfxVR.h"
 #include "ipc/VRLayerParent.h"
+#include "mozilla/layers/CompositorThread.h" // for CompositorThreadHolder
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/dom/GamepadBinding.h" // For GamepadMappingType
 #include "VRThread.h"
@@ -28,6 +29,9 @@
 
 #if defined(MOZ_WIDGET_ANDROID)
 #include "mozilla/layers/CompositorThread.h"
+// Max frame duration on Android before the watchdog submits a new one.
+// Probably we can get rid of this when we enforce that SubmitFrame can only be called in a VRDisplay loop.
+#define ANDROID_MAX_FRAME_DURATION 4000
 #endif // defined(MOZ_WIDGET_ANDROID)
 
 
@@ -79,6 +83,11 @@ VRDisplayHost::VRDisplayHost(VRDeviceType aType)
   mDisplayInfo.mFrameId = 0;
   mDisplayInfo.mDisplayState.mPresentingGeneration = 0;
   mDisplayInfo.mDisplayState.mDisplayName[0] = '\0';
+
+#if defined(MOZ_WIDGET_ANDROID)
+  mLastSubmittedFrameId = 0;
+  mLastStartedFrame = 0;
+#endif // defined(MOZ_WIDGET_ANDROID)
 }
 
 VRDisplayHost::~VRDisplayHost()
@@ -200,14 +209,45 @@ VRDisplayHost::StartFrame()
 {
   AUTO_PROFILER_TRACING("VR", "GetSensorState");
 
-  mLastFrameStart = TimeStamp::Now();
+  TimeStamp now = TimeStamp::Now();
+#if defined(MOZ_WIDGET_ANDROID)
+  const TimeStamp lastFrameStart = mDisplayInfo.mLastFrameStart[mDisplayInfo.mFrameId % kVRMaxLatencyFrames];
+  const bool isPresenting = mLastUpdateDisplayInfo.GetPresentingGroups() != 0;
+  double duration = lastFrameStart.IsNull() ? 0.0 : (now - lastFrameStart).ToMilliseconds();
+  /**
+   * Do not start more VR frames until the last submitted frame is already processed.
+   */
+  if (isPresenting && mLastStartedFrame > 0 && mDisplayInfo.mDisplayState.mLastSubmittedFrameId < mLastStartedFrame && duration < (double)ANDROID_MAX_FRAME_DURATION) {
+    return;
+  }
+#endif // !defined(MOZ_WIDGET_ANDROID)
+
   ++mDisplayInfo.mFrameId;
-  mDisplayInfo.mLastSensorState[mDisplayInfo.mFrameId % kVRMaxLatencyFrames] = GetSensorState();
+  size_t bufferIndex = mDisplayInfo.mFrameId % kVRMaxLatencyFrames;
+  mDisplayInfo.mLastSensorState[bufferIndex] = GetSensorState();
+  mDisplayInfo.mLastFrameStart[bufferIndex] = now;
   mFrameStarted = true;
+#if defined(MOZ_WIDGET_ANDROID)
+  mLastStartedFrame = mDisplayInfo.mFrameId;
+#endif // !defined(MOZ_WIDGET_ANDROID)  
 }
 
 void
 VRDisplayHost::NotifyVSync()
+{
+  /**
+   * If this display isn't presenting, refresh the sensors and trigger
+   * VRDisplay.requestAnimationFrame at the normal 2d display refresh rate.
+   */
+  if (mDisplayInfo.mPresentingGroups == 0) {
+    VRManager *vm = VRManager::Get();
+    MOZ_ASSERT(vm);
+    vm->NotifyVRVsync(mDisplayInfo.mDisplayID);
+  }
+}
+
+void
+VRDisplayHost::CheckWatchDog()
 {
   /**
    * We will trigger a new frame immediately after a successful frame texture
@@ -238,20 +278,15 @@ VRDisplayHost::NotifyVSync()
    */
   bool bShouldStartFrame = false;
 
-  if (mDisplayInfo.mPresentingGroups == 0) {
-    // If this display isn't presenting, refresh the sensors and trigger
-    // VRDisplay.requestAnimationFrame at the normal 2d display refresh rate.
+  // If content fails to call VRDisplay.submitFrame, we must eventually
+  // time-out and trigger a new frame.
+  TimeStamp lastFrameStart = mDisplayInfo.mLastFrameStart[mDisplayInfo.mFrameId % kVRMaxLatencyFrames];
+  if (lastFrameStart.IsNull()) {
     bShouldStartFrame = true;
   } else {
-    // If content fails to call VRDisplay.submitFrame, we must eventually
-    // time-out and trigger a new frame.
-    if (mLastFrameStart.IsNull()) {
+    TimeDuration duration = TimeStamp::Now() - lastFrameStart;
+    if (duration.ToMilliseconds() > gfxPrefs::VRDisplayRafMaxDuration()) {
       bShouldStartFrame = true;
-    } else {
-      TimeDuration duration = TimeStamp::Now() - mLastFrameStart;
-      if (duration.ToMilliseconds() > gfxPrefs::VRDisplayRafMaxDuration()) {
-        bShouldStartFrame = true;
-      }
     }
   }
 
@@ -260,6 +295,24 @@ VRDisplayHost::NotifyVSync()
     MOZ_ASSERT(vm);
     vm->NotifyVRVsync(mDisplayInfo.mDisplayID);
   }
+}
+
+void
+VRDisplayHost::Run1msTasks(double aDeltaTime)
+{
+ // To override in children
+}
+
+void
+VRDisplayHost::Run10msTasks()
+{
+  CheckWatchDog();
+}
+
+void
+VRDisplayHost::Run100msTasks()
+{
+  // to override in children
 }
 
 void
@@ -290,7 +343,7 @@ VRDisplayHost::SubmitFrameInternal(const layers::SurfaceDescriptor &aTexture,
    * succeeds again.
    */
   VRManager* vm = VRManager::Get();
-  MessageLoop* loop = VRListenerThreadHolder::Loop();
+  MessageLoop* loop = CompositorThreadHolder::Loop();
 
   loop->PostTask(NewRunnableMethod<const uint32_t>(
     "gfx::VRManager::NotifyVRVsync",
@@ -315,6 +368,19 @@ VRDisplayHost::SubmitFrame(VRLayerParent* aLayer,
   if (!mFrameStarted || aFrameId != mDisplayInfo.mFrameId) {
     return;
   }
+
+#if defined(MOZ_WIDGET_ANDROID)
+  /**
+   * Do not queue more submit frames until the last submitted frame is already processed 
+   * and the new WebGL texture is ready.
+   */
+  if (mLastSubmittedFrameId > 0 && mLastSubmittedFrameId != mDisplayInfo.mDisplayState.mLastSubmittedFrameId) {
+    mLastStartedFrame = 0;
+    return;
+  }
+
+  mLastSubmittedFrameId = aFrameId;
+#endif // !defined(MOZ_WIDGET_ANDROID)
 
   mFrameStarted = false;
 

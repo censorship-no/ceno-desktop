@@ -6,11 +6,6 @@
 #ifndef nsEditingSession_h__
 #define nsEditingSession_h__
 
-
-#ifndef nsWeakReference_h__
-#include "nsWeakReference.h"            // for nsSupportsWeakReference, etc
-#endif
-
 #include "nsCOMPtr.h"                   // for nsCOMPtr
 #include "nsISupportsImpl.h"            // for NS_DECL_ISUPPORTS
 #include "nsIWeakReferenceUtils.h"      // for nsWeakPtr
@@ -31,11 +26,6 @@ class mozIDOMWindowProxy;
 class nsIDOMWindow;
 class nsISupports;
 class nsITimer;
-
-#define NS_EDITINGSESSION_CID                            \
-{ 0xbc26ff01, 0xf2bd, 0x11d4, { 0xa7, 0x3c, 0xe5, 0xa4, 0xb5, 0xa8, 0xbd, 0xfc } }
-
-
 class nsIChannel;
 class nsIControllers;
 class nsIDocShell;
@@ -67,10 +57,12 @@ public:
 protected:
   virtual         ~nsEditingSession();
 
-  nsresult        SetupEditorCommandController(const char *aControllerClassName,
+  typedef already_AddRefed<nsIController> (*ControllerCreatorFn)();
+
+  nsresult        SetupEditorCommandController(ControllerCreatorFn aControllerCreatorFn,
                                                mozIDOMWindowProxy* aWindow,
-                                               nsISupports *aContext,
-                                               uint32_t *aControllerId);
+                                               nsISupports* aContext,
+                                               uint32_t* aControllerId);
 
   nsresult        SetContextOnControllerById(nsIControllers* aControllers,
                                             nsISupports* aContext,
