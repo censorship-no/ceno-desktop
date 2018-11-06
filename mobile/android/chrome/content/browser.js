@@ -340,6 +340,8 @@ function injectOuinetClientCARootCertificate() {
     var settings = window.arguments[0].QueryInterface(Ci.nsIAndroidView).initData.settings;
     var file = new FileUtils.File(settings.ouinetClientRootCert);
 
+    if (!file) return;
+
     // TODO: This prompts the user to accept the certificate, try to disable that.
     certdb.importCertsFromFile(file, Ci.nsIX509Cert.CA_CERT);
 }
