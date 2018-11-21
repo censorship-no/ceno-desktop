@@ -974,10 +974,28 @@ public abstract class GeckoApp extends GeckoActivity
             return;
         }
 
-        mOuinet = new Ouinet(this,
-                getResources().getString(R.string.ouinet_injector_ipfs_id),
-                getResources().getString(R.string.ouinet_injector_endpoint),
-                getResources().getString(R.string.ouinet_injector_credentials));
+        //------------------------------------------------------------
+        // Ouinet
+        //------------------------------------------------------------
+        Ouinet.Config ouinet_cfg = new Ouinet.Config();
+
+        ouinet_cfg.injector_ipfs_id     = getResources().getString(R.string.ouinet_injector_ipfs_id);
+        ouinet_cfg.injector_endpoint    = getResources().getString(R.string.ouinet_injector_endpoint);
+        ouinet_cfg.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
+        ouinet_cfg.injector_tls_cert    = getResources().getString(R.string.ouinet_injector_tls_cert);
+
+        if (ouinet_cfg.injector_tls_cert != null) {
+            Log.i(LOGTAG, "Injector's TLS certificate:");
+
+            String[] lines = ouinet_cfg.injector_tls_cert.split("\n");
+
+            for (String line : lines) {
+                Log.i(LOGTAG, "\"" + line + "\"");
+            }
+        }
+
+        mOuinet = new Ouinet(this, ouinet_cfg);
+        //------------------------------------------------------------
 
         // The clock starts...now. Better hurry!
         mJavaUiStartupTimer = new Telemetry.UptimeTimer("FENNEC_STARTUP_TIME_JAVAUI");
