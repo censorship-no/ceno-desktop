@@ -1,0 +1,25 @@
+{
+  "manifest_version": 2,
+  "name": "CENO",
+  "version": "1.0",
+
+  "description": "Censorship circumvention tool",
+
+  "permissions": [
+    "webRequest", "webRequestBlocking", "<all_urls>"
+  ],
+
+  "background": {
+    "scripts": ["background.js"]
+  },
+
+  "web_accessible_resources": [
+    "update-page/index.html",
+    "update-page/style.css",
+    "update-page/img/ceno-logo-h.png",
+    "update-page/img/ceno-update-icon.png",
+    "update-page/img/ceno-warning-icon.png",
+    "update-page/img/google-play-badge-2.png",
+    "update-page/img/paskoocheh-download-badge.png"
+  ]
+}

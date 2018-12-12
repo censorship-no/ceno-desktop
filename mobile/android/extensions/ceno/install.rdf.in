@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+#filter substitution
+
+<RDF xmlns="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+     xmlns:em="http://www.mozilla.org/2004/em-rdf#">
+
+  <Description about="urn:mozilla:install-manifest">
+    <em:id>ceno@equalit.ie</em:id>
+    <em:version>1.0.0</em:version>
+    <em:type>2</em:type>
+    <em:bootstrap>true</em:bootstrap>
+    <em:multiprocessCompatible>true</em:multiprocessCompatible>
+    <em:hasEmbeddedWebExtension>true</em:hasEmbeddedWebExtension>
+
+    <!-- Firefox for Android -->
+    <em:targetApplication>
+      <Description>
+        <em:id>{aa3c5121-dab2-40e2-81ca-7ea25febc110}</em:id>
+        <em:minVersion>@MOZ_APP_VERSION@</em:minVersion>
+        <em:maxVersion>@MOZ_APP_MAXVERSION@</em:maxVersion>
+      </Description>
+    </em:targetApplication>
+
+    <!-- Front End MetaData -->
+    <em:name>CENO</em:name>
+    <em:description>Censorship no</em:description>
+  </Description>
+</RDF>
