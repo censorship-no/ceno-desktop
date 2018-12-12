@@ -1,9 +1,15 @@
 {
   "manifest_version": 2,
   "name": "CENO",
-  "version": "1.0",
-
   "description": "Censorship circumvention tool",
+  "version": "1.0.0",
+
+  "applications": {
+    "gecko": {
+      "id": "ceno@equalit.ie",
+      "strict_min_version": "59.0b5"
+    }
+  },
 
   "permissions": [
     "webRequest", "webRequestBlocking", "<all_urls>"

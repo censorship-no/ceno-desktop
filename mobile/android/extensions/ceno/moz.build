@@ -5,29 +5,21 @@ DEFINES['MOZ_APP_VERSION'] = CONFIG['MOZ_APP_VERSION']
 DEFINES['MOZ_APP_MAXVERSION'] = CONFIG['MOZ_APP_MAXVERSION']
 
 FINAL_TARGET_FILES.features['ceno@equalit.ie'] += [
-  'bootstrap.js'
+  'background.js',
+  'manifest.json'
 ]
 
-FINAL_TARGET_FILES.features['ceno@equalit.ie']['webextension'] += [
-  'webextension/background.js',
-  'webextension/manifest.json'
+FINAL_TARGET_FILES.features['ceno@equalit.ie']['update-page'] += [
+  'update-page/index.html',
+  'update-page/style.css',
 ]
 
-FINAL_TARGET_FILES.features['ceno@equalit.ie']['webextension']['update-page'] += [
-  'webextension/update-page/index.html',
-  'webextension/update-page/style.css',
-]
-
-FINAL_TARGET_FILES.features['ceno@equalit.ie']['webextension']['update-page']['img'] += [
-  'webextension/update-page/img/ceno-logo-h.png',
-  'webextension/update-page/img/ceno-update-icon.png',
-  'webextension/update-page/img/ceno-warning-icon.png',
-  'webextension/update-page/img/google-play-badge-2.png',
-  'webextension/update-page/img/paskoocheh-download-badge.png',
-]
-
-FINAL_TARGET_PP_FILES.features['ceno@equalit.ie'] += [
-  'install.rdf.in'
+FINAL_TARGET_FILES.features['ceno@equalit.ie']['update-page']['img'] += [
+  'update-page/img/ceno-logo-h.png',
+  'update-page/img/ceno-update-icon.png',
+  'update-page/img/ceno-warning-icon.png',
+  'update-page/img/google-play-badge-2.png',
+  'update-page/img/paskoocheh-download-badge.png',
 ]
 
 with Files('**'):
