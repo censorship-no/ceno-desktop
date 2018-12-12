@@ -8,7 +8,7 @@ with Files('**'):
     BUG_COMPONENT = ('Firefox for Android', 'General')
 
 DIRS += [
-    'webcompat',
+    'webcompat', 'ceno',
 ]
 
 # Only include the following system add-ons if building Nightly
