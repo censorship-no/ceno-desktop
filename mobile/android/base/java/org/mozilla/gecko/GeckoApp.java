@@ -985,6 +985,7 @@ public abstract class GeckoApp extends GeckoActivity
         ouinet_cfg.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
         ouinet_cfg.injector_tls_cert    = getResources().getString(R.string.ouinet_injector_tls_cert);
         ouinet_cfg.tls_ca_cert_store_path = "file:///android_asset/ceno/cacert.pem";
+        ouinet_cfg.injector_bt_pubkey   = getResources().getString(R.string.ouinet_injector_bt_pubkey);
 
         if (ouinet_cfg.injector_tls_cert != null) {
             Log.i(LOGTAG, "Injector's TLS certificate:");
