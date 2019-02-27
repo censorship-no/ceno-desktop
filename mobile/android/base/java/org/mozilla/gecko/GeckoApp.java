@@ -123,6 +123,16 @@ public abstract class GeckoApp extends GeckoActivity
                                           Tabs.OnTabsChangedListener,
                                           ViewTreeObserver.OnGlobalLayoutListener {
 
+    static {
+        System.setProperty("http.proxyHost", "127.0.0.1");
+        System.setProperty("http.proxyPort", "8080");
+
+        System.setProperty("https.proxyHost", "127.0.0.1");
+        System.setProperty("https.proxyPort", "8080");
+    }
+
+    private boolean USE_SERVICE = true;
+
     private static final String LOGTAG = "GeckoApp";
     private static final long ONE_DAY_MS = TimeUnit.MILLISECONDS.convert(1, TimeUnit.DAYS);
 
@@ -978,16 +988,22 @@ public abstract class GeckoApp extends GeckoActivity
         //------------------------------------------------------------
         // Ouinet
         //------------------------------------------------------------
-        Ouinet.Config ouinet_cfg = new Ouinet.Config();
+        if (USE_SERVICE) {
+            Log.d(LOGTAG, " --------- Starting ouinet service");
+            Intent startOuinetIntent = new Intent(this, OuinetService.class);
+            startService(startOuinetIntent);
+        } else {
+            Log.d(LOGTAG, " --------- Starting ouinet in activity");
 
-        ouinet_cfg.injector_ipfs_id     = getResources().getString(R.string.ouinet_injector_ipfs_id);
-        ouinet_cfg.injector_endpoint    = getResources().getString(R.string.ouinet_injector_endpoint);
-        ouinet_cfg.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
-        ouinet_cfg.injector_tls_cert    = getResources().getString(R.string.ouinet_injector_tls_cert);
-        ouinet_cfg.tls_ca_cert_store_path = "file:///android_asset/ceno/cacert.pem";
-        ouinet_cfg.injector_bt_pubkey   = getResources().getString(R.string.ouinet_injector_bt_pubkey);
+            Ouinet.Config ouinet_cfg = new Ouinet.Config();
 
-        if (ouinet_cfg.injector_tls_cert != null) {
+            ouinet_cfg.injector_ipfs_id = getResources().getString(R.string.ouinet_injector_ipfs_id);
+            ouinet_cfg.injector_endpoint = getResources().getString(R.string.ouinet_injector_endpoint);
+            ouinet_cfg.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
+            ouinet_cfg.injector_tls_cert = getResources().getString(R.string.ouinet_injector_tls_cert);
+            ouinet_cfg.tls_ca_cert_store_path = "file:///android_asset/ceno/cacert.pem";
+            ouinet_cfg.injector_bt_pubkey = getResources().getString(R.string.ouinet_injector_bt_pubkey);
+
             Log.i(LOGTAG, "Injector's TLS certificate:");
 
             String[] lines = ouinet_cfg.injector_tls_cert.split("\n");
@@ -995,9 +1011,10 @@ public abstract class GeckoApp extends GeckoActivity
             for (String line : lines) {
                 Log.i(LOGTAG, "\"" + line + "\"");
             }
-        }
 
-        mOuinet = new Ouinet(this, ouinet_cfg);
+            mOuinet = new Ouinet(this, ouinet_cfg);
+            mOuinet.start();
+        }
         //------------------------------------------------------------
 
         // The clock starts...now. Better hurry!
@@ -1109,8 +1126,10 @@ public abstract class GeckoApp extends GeckoActivity
         final GeckoSession session = new GeckoSession();
         session.getSettings().setString(GeckoSessionSettings.CHROME_URI,
                                         "chrome://browser/content/browser.xul");
+        //TOOD(sarah) Replace this with a binder call to Ouinet service.
         session.getSettings().setString(GeckoSessionSettings.OUINET_CLIENT_ROOT_CERTIFICATE,
-                                        mOuinet.pathToCARootCert());
+            "/data/user/0/ie.equalit.ceno/files/ouinet/ssl-ca-cert.pem");
+                                        // mOuinet.pathToCARootCert());
         session.setContentDelegate(this);
 
         // If the view already has a session, we need to ensure it is closed.
@@ -2085,10 +2104,15 @@ public abstract class GeckoApp extends GeckoActivity
 
     @Override
     public void onDestroy() {
-        if (mOuinet != null) {
-            mOuinet.stop();
+        Log.d(LOGTAG, "---------------- Destroying----------------------------");
+        if (USE_SERVICE) {
+            sAlreadyLoaded = false;
+        } else {
+            if (mOuinet != null) {
+                mOuinet.stop();
+                mOuinet = null;
+            }
         }
-
         if (mIsAbortingAppLaunch) {
             // This build does not support the Android version of the device:
             // We did not initialize anything, so skip cleaning up.
