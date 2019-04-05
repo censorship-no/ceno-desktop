@@ -59,6 +59,8 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Configuration;
 import android.graphics.BitmapFactory;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -68,6 +70,7 @@ import android.provider.ContactsContract;
 import android.support.annotation.NonNull;
 import android.support.annotation.WorkerThread;
 import android.support.design.widget.Snackbar;
+import android.support.v4.app.ActivityCompat;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
@@ -149,7 +152,7 @@ public abstract class GeckoApp extends GeckoActivity
     /**
      * Used with SharedPreferences, per profile, to determine if this is the first run of
      * the application. When accessing SharedPreferences, the default value of true should be used.
-
+     *
      * Originally, this was only used for the telemetry core ping logic. To avoid
      * having to write custom migration logic, we just keep the original pref key.
      * Be aware of {@link org.mozilla.gecko.fxa.EnvironmentUtils#GECKO_PREFS_IS_FIRST_RUN}.
@@ -1301,6 +1304,30 @@ public abstract class GeckoApp extends GeckoActivity
                 BrowserLocaleManager.storeAndNotifyOSLocale(getSharedPreferencesForProfile(), osLocale);
             }
         });
+
+        ConnectivityManager connectivityMgr =
+                (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo wifi = connectivityMgr.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+
+        if (!wifi.isConnected()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("CENO Browser")
+                    .setMessage("The CENO browser is designed to work on wifi as it uses large "+
+                            "amounts of data. Please re-open the app when you are connected to WiFi.")
+                    .setCancelable(false)
+                    .setPositiveButton("Close", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            Log.d(LOGTAG, "Closing app from dialog");
+                            /**
+                             * This is the preferred way to exit the app, but it is triggering an
+                             * exception in the cpp code which brings up the crash handler dialog.
+                             * ActivityCompat.finishAffinity(GeckoApp.this);
+                             */
+                            android.os.Process.killProcess(android.os.Process.myPid());
+                        }
+                    }).show();
+        }
     }
 
     @Override
