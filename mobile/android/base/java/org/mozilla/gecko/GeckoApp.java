@@ -51,9 +51,11 @@ import android.animation.ObjectAnimator;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -62,6 +64,7 @@ import android.graphics.BitmapFactory;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -1309,25 +1312,56 @@ public abstract class GeckoApp extends GeckoActivity
                 (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         NetworkInfo wifi = connectivityMgr.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
 
+        DialogInterface.OnClickListener closeApp = new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                Log.d(LOGTAG, "Closing app from dialog");
+                /**
+                 * This is the preferred way to exit the app, but it is triggering an
+                 * exception in the cpp code which brings up the crash handler dialog.
+                 * ActivityCompat.finishAffinity(GeckoApp.this);
+                 */
+                android.os.Process.killProcess(android.os.Process.myPid());
+            }
+        };
+        DialogInterface.OnClickListener doNothing = new DialogInterface.OnClickListener() {
+           @Override
+            public void onClick(DialogInterface dialog, int which) {
+                Log.d(LOGTAG, "Dismissing dialog");
+            }
+        };
+
         if (!wifi.isConnected()) {
             new AlertDialog.Builder(this)
-                    .setTitle("CENO Browser")
-                    .setMessage("The CENO browser is designed to work on wifi as it uses large "+
-                            "amounts of data. Please re-open the app when you are connected to WiFi.")
+                    .setTitle(R.string.no_wifi_dialog_title)
+                    .setMessage(R.string.no_wifi_dialog_description)
                     .setCancelable(false)
-                    .setPositiveButton("Close", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialog, int which) {
-                            Log.d(LOGTAG, "Closing app from dialog");
-                            /**
-                             * This is the preferred way to exit the app, but it is triggering an
-                             * exception in the cpp code which brings up the crash handler dialog.
-                             * ActivityCompat.finishAffinity(GeckoApp.this);
-                             */
-                            android.os.Process.killProcess(android.os.Process.myPid());
-                        }
-                    }).show();
+                    .setPositiveButton(R.string.no_wifi_close_button, closeApp).show();
         }
+
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(WifiManager.SUPPLICANT_CONNECTION_CHANGE_ACTION);
+        registerReceiver(new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                final String action = intent.getAction();
+                if (!WifiManager.SUPPLICANT_CONNECTION_CHANGE_ACTION.equals(action)) {
+                    return;
+                }
+                if (intent.getBooleanExtra(WifiManager.EXTRA_SUPPLICANT_CONNECTED, false)) {
+                    // Wifi connected
+                    return;
+                }
+                // Wifi disconnected
+                Log.d(LOGTAG, "Wifi connection lost, showing dialog");
+                new AlertDialog.Builder(GeckoApp.this)
+                        .setTitle(R.string.wifi_disconnected_dialog_title)
+                        .setMessage(R.string.wifi_disconnected_dialog_description)
+                        .setNegativeButton(R.string.wifi_disconnected_dismiss_button, doNothing)
+                        .setPositiveButton(R.string.no_wifi_close_button, closeApp)
+                        .show();
+            }
+        }, intentFilter);
     }
 
     @Override

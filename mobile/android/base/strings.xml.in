@@ -655,4 +655,12 @@
   <string name="updater_notification_channel">&updater_notification_channel;</string>
   <string name="synced_tabs_notification_channel">&synced_tabs_notification_channel;</string>
   <string name="site_notifications_channel">&site_notifications_channel;</string>
+
+  <!-- CENO dialog strings -->
+  <string name="no_wifi_dialog_title">&no_wifi_dialog_title;</string>
+  <string name="no_wifi_dialog_description">&no_wifi_dialog_description;</string>
+  <string name="no_wifi_close_button">&no_wifi_close_button;</string>
+  <string name="wifi_disconnected_dialog_title">&wifi_disconnected_dialog_title;</string>
+  <string name="wifi_disconnected_dialog_description">&wifi_disconnected_dialog_description;</string>
+  <string name="wifi_disconnected_dismiss_button">&wifi_disconnected_dismiss_button;</string>
 </resources>

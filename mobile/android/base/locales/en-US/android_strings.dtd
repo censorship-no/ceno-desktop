@@ -908,3 +908,12 @@ Picture-in-picture mini window -->
 <!-- LOCALIZATION NOTE (site_notifications_channel): This is for system notifications displayed by
 web sites through the HTML Notifications API. -->
 <!ENTITY site_notifications_channel "Site notifications">
+
+<!-- CENO wifi dialog strings -->
+<!ENTITY no_wifi_dialog_title "CENO Browser">
+<!ENTITY no_wifi_dialog_description "The CENO browser is designed to work on wifi as it uses large amounts of data. Please re-open the app when you are connected to WiFi.">
+<!ENTITY no_wifi_close_button "Close">
+<!ENTITY wifi_disconnected_dialog_title "CENO Browser Warning">
+<!ENTITY wifi_disconnected_dialog_description "The CENO browser is designed to work on wifi as it uses large amounts of data. It is recommended that you close the app and re-open it when you are on wifi.">
+<!ENTITY wifi_disconnected_dismiss_button "Dismiss">
+
