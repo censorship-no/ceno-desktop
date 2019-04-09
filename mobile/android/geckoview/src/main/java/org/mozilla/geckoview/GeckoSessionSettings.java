@@ -604,7 +604,7 @@ public final class GeckoSessionSettings implements Parcelable {
         setString(CHROME_URI, value);
     }
 
-    private void setChromeUri(final @NonNull String value) {
+    private void setOuinetClientRootCertificate(final @NonNull String value) {
         setString(OUINET_CLIENT_ROOT_CERTIFICATE, value);
     }
 
