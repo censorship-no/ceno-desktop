@@ -253,7 +253,8 @@ function PopupNotifications(tabbrowser, panel,
         // Ignore focused elements inside the notification.
         getNotificationFromElement(focusedElement) == notification ||
         notification.contains(focusedElement)) {
-      this._onButtonEvent(aEvent, "secondarybuttoncommand", "esc-press", notification);
+      let escAction = notification.notification.options.escAction;
+      this._onButtonEvent(aEvent, escAction, "esc-press", notification);
     }
   };
 
@@ -329,10 +330,12 @@ PopupNotifications.prototype = {
    *        at a time. If a notification already exists with the given ID, it
    *        will be replaced.
    * @param message
-   *        A string containing the text to be displayed as the notification header.
-   *        The string may optionally contain "<>" as a  placeholder which is later
-   *        replaced by a host name or an addon name that is formatted to look bold,
-   *        in which case the options.name property needs to be specified.
+   *        A string containing the text to be displayed as the notification
+   *        header.  The string may optionally contain one or two "<>" as a
+   *        placeholder which is later replaced by a host name or an addon name
+   *        that is formatted to look bold, in which case the options.name
+   *        property (as well as options.secondName if passing two "<>"
+   *        placeholders) needs to be specified.
    * @param anchorID
    *        The ID of the element that should be used as this notification
    *        popup's anchor. May be null, in which case the notification will be
@@ -460,6 +463,16 @@ PopupNotifications.prototype = {
    *                     An optional string formatted to look bold and used in the
    *                     notifiation description header text. Usually a host name or
    *                     addon name.
+   *        secondName:
+   *                     An optional string formatted to look bold and used in the
+   *                     notification description header text. Usually a host name or
+   *                     addon name. This is similar to name, and only used in case
+   *                     where message contains two "<>" placeholders.
+   *        escAction:
+   *                     An optional string indicating the action to take when the
+   *                     Esc key is pressed. This should be set to the name of the
+   *                     command to run. If not provided, "secondarybuttoncommand"
+   *                     will be used.
    * @returns the Notification object corresponding to the added notification.
    */
   show: function PopupNotifications_show(browser, id, message, anchorID,
@@ -479,6 +492,15 @@ PopupNotifications.prototype = {
 
     let notification = new Notification(id, message, anchorID, mainAction,
                                         secondaryActions, browser, this, options);
+
+    if (options) {
+      let escAction = options.escAction;
+      if (escAction != "buttoncommand" &&
+          escAction != "secondarybuttoncommand") {
+        escAction = "secondarybuttoncommand";
+      }
+      notification.options.escAction = escAction;
+    }
 
     if (options && options.dismissed)
       notification.dismissed = true;
@@ -781,6 +803,13 @@ PopupNotifications.prototype = {
     text.start = array[0] || "";
     text.name = n.options.name || "";
     text.end = array[1] || "";
+    if (array.length == 3) {
+      text.secondName = n.options.secondName || "";
+      text.secondEnd = array[2] || "";
+    } else if (array.length > 3) {
+      Cu.reportError("Unexpected array length encountered in " +
+                     "_formatDescriptionMessage: " + array.length);
+    }
     return text;
   },
 
@@ -807,19 +836,24 @@ PopupNotifications.prototype = {
       popupnotification.setAttribute("label", desc.start);
       popupnotification.setAttribute("name", desc.name);
       popupnotification.setAttribute("endlabel", desc.end);
+      if (("secondName" in desc) &&
+          ("secondEnd" in desc)) {
+        popupnotification.setAttribute("secondname", desc.secondName);
+        popupnotification.setAttribute("secondendlabel", desc.secondEnd);
+      }
 
       popupnotification.setAttribute("id", popupnotificationID);
       popupnotification.setAttribute("popupid", n.id);
       popupnotification.setAttribute("oncommand", "PopupNotifications._onCommand(event);");
       if (Services.prefs.getBoolPref("privacy.permissionPrompts.showCloseButton")) {
-        popupnotification.setAttribute("closebuttoncommand", "PopupNotifications._onButtonEvent(event, 'secondarybuttoncommand', 'esc-press');");
+        popupnotification.setAttribute("closebuttoncommand", "PopupNotifications._onButtonEvent(event, '" + n.options.escAction + "', 'esc-press');");
       } else {
         popupnotification.setAttribute("closebuttoncommand", `PopupNotifications._dismiss(event, ${TELEMETRY_STAT_DISMISSAL_CLOSE_BUTTON});`);
       }
       if (n.mainAction) {
         popupnotification.setAttribute("buttonlabel", n.mainAction.label);
         popupnotification.setAttribute("buttonaccesskey", n.mainAction.accessKey);
-        popupnotification.setAttribute("buttonhighlight", !n.mainAction.disableHighlight);
+        popupnotification.toggleAttribute("buttonhighlight", !n.mainAction.disableHighlight);
         popupnotification.setAttribute("buttoncommand", "PopupNotifications._onButtonEvent(event, 'buttoncommand');");
         popupnotification.setAttribute("dropmarkerpopupshown", "PopupNotifications._onButtonEvent(event, 'dropmarkerpopupshown');");
         popupnotification.setAttribute("learnmoreclick", "PopupNotifications._onButtonEvent(event, 'learnmoreclick');");
@@ -827,7 +861,7 @@ PopupNotifications.prototype = {
       } else {
         // Enable the default button to let the user close the popup if the close button is hidden
         popupnotification.setAttribute("buttoncommand", "PopupNotifications._onButtonEvent(event, 'buttoncommand');");
-        popupnotification.setAttribute("buttonhighlight", "true");
+        popupnotification.toggleAttribute("buttonhighlight", true);
         popupnotification.removeAttribute("buttonlabel");
         popupnotification.removeAttribute("buttonaccesskey");
         popupnotification.removeAttribute("dropmarkerpopupshown");

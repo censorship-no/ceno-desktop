@@ -150,6 +150,26 @@ class TrySelect(MachCommandBase):
         return run_fuzzy_try(**kwargs)
 
     @SubCommand('try',
+                'chooser',
+                description='Schedule tasks by selecting them from a web '
+                            'interface.',
+                parser=get_parser('chooser'))
+    def try_chooser(self, **kwargs):
+        """Push tasks selected from a web interface to try.
+
+        This selector will build the taskgraph and spin up a dynamically
+        created 'trychooser-like' web-page on the localhost. After a selection
+        has been made, pressing the 'Push' button will automatically push the
+        selection to try.
+        """
+        self._activate_virtualenv()
+        self.virtualenv_manager.install_pip_package('flask')
+        self.virtualenv_manager.install_pip_package('flask-wtf')
+
+        from tryselect.selectors.chooser import run_try_chooser
+        return run_try_chooser(**kwargs)
+
+    @SubCommand('try',
                 'again',
                 description='Schedule a previously generated (non try syntax) '
                             'push again.',
@@ -234,6 +254,16 @@ class TrySelect(MachCommandBase):
 
         at = AutoTry(self.topsrcdir, self._mach_context)
         return at.run(**kwargs)
+
+    @SubCommand('try',
+                'coverage',
+                description='Select tasks on try using coverage data',
+                parser=get_parser('coverage'))
+    def try_coverage(self, **kwargs):
+        """Select which tasks to use using coverage data.
+        """
+        from tryselect.selectors.coverage import run_coverage_try
+        return run_coverage_try(**kwargs)
 
     @SubCommand('try',
                 'release',

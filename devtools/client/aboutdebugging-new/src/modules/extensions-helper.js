@@ -53,14 +53,15 @@ exports.debugLocalAddon = async function(addonID) {
  *        Required for remote debugging.
  */
 exports.debugRemoteAddon = async function(id, client) {
-  const { addons } = await client.listAddons();
-  const addonForm = addons.find(addon => addon.id === id);
+  const addonFront = await client.mainRoot.getAddon({ id });
+
+  const addonTargetFront = await addonFront.connect();
 
   // Close previous addon debugging toolbox.
   closeToolbox();
 
   const options = {
-    form: addonForm,
+    activeTab: addonTargetFront,
     chrome: true,
     client,
   };

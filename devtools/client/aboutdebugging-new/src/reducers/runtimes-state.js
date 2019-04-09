@@ -7,16 +7,20 @@
 const {
   CONNECT_RUNTIME_SUCCESS,
   DISCONNECT_RUNTIME_SUCCESS,
-  NETWORK_LOCATIONS_UPDATED,
   RUNTIMES,
-  UNWATCH_RUNTIME_SUCCESS,
-  USB_RUNTIMES_UPDATED,
-  WATCH_RUNTIME_SUCCESS,
+  UPDATE_CONNECTION_PROMPT_SETTING_SUCCESS,
+  UPDATE_RUNTIME_MULTIE10S_SUCCESS,
+  REMOTE_RUNTIMES_UPDATED,
+  SELECTED_RUNTIME_ID_UPDATED,
+  THIS_FIREFOX_RUNTIME_CREATED,
 } = require("../constants");
 
 const {
   findRuntimeById,
 } = require("../modules/runtimes-state-helper");
+
+const { remoteClientManager } =
+  require("devtools/client/shared/remote-debugging/remote-client-manager");
 
 // Map between known runtime types and nodes in the runtimes state.
 const TYPE_TO_RUNTIMES_KEY = {
@@ -29,11 +33,10 @@ function RuntimesState() {
   return {
     networkRuntimes: [],
     selectedRuntimeId: null,
-    thisFirefoxRuntimes: [{
-      id: RUNTIMES.THIS_FIREFOX,
-      name: "This Firefox",
-      type: RUNTIMES.THIS_FIREFOX,
-    }],
+    // "This Firefox" runtimes is an array for consistency, but it should only contain one
+    // runtime. This runtime will be added after initializing the application via
+    // THIS_FIREFOX_RUNTIME_CREATED.
+    thisFirefoxRuntimes: [],
     usbRuntimes: [],
   };
 }
@@ -69,54 +72,53 @@ function _updateRuntimeById(runtimeId, updatedRuntime, state) {
 function runtimesReducer(state = RuntimesState(), action) {
   switch (action.type) {
     case CONNECT_RUNTIME_SUCCESS: {
-      const { id, connection } = action.runtime;
-      return _updateRuntimeById(id, { connection }, state);
+      const { id, runtimeDetails, type } = action.runtime;
+      remoteClientManager.setClient(id, type, runtimeDetails.clientWrapper.client);
+      return _updateRuntimeById(id, { runtimeDetails }, state);
     }
 
     case DISCONNECT_RUNTIME_SUCCESS: {
-      const { id } = action.runtime;
-      return _updateRuntimeById(id, { connection: null }, state);
+      const { id, type } = action.runtime;
+      remoteClientManager.removeClient(id, type);
+      return _updateRuntimeById(id, { runtimeDetails: null }, state);
     }
 
-    case NETWORK_LOCATIONS_UPDATED: {
-      const { locations } = action;
-      const networkRuntimes = locations.map(location => {
-        const [ host, port ] = location.split(":");
-        return {
-          id: location,
-          extra: {
-            connectionParameters: { host, port: parseInt(port, 10) },
-          },
-          name: location,
-          type: RUNTIMES.NETWORK,
-        };
+    case SELECTED_RUNTIME_ID_UPDATED: {
+      const selectedRuntimeId = action.runtimeId || null;
+      return Object.assign({}, state, { selectedRuntimeId });
+    }
+
+    case UPDATE_CONNECTION_PROMPT_SETTING_SUCCESS: {
+      const { connectionPromptEnabled } = action;
+      const { id: runtimeId } = action.runtime;
+      const runtime = findRuntimeById(runtimeId, state);
+      const runtimeDetails =
+        Object.assign({}, runtime.runtimeDetails, { connectionPromptEnabled });
+      return _updateRuntimeById(runtimeId, { runtimeDetails }, state);
+    }
+
+    case UPDATE_RUNTIME_MULTIE10S_SUCCESS: {
+      const { isMultiE10s } = action;
+      const { id: runtimeId } = action.runtime;
+      const runtime = findRuntimeById(runtimeId, state);
+      const runtimeDetails =
+        Object.assign({}, runtime.runtimeDetails, { isMultiE10s });
+      return _updateRuntimeById(runtimeId, { runtimeDetails }, state);
+    }
+
+    case REMOTE_RUNTIMES_UPDATED: {
+      const { runtimes, runtimeType } = action;
+      const key = TYPE_TO_RUNTIMES_KEY[runtimeType];
+      return Object.assign({}, state, {
+        [key]: runtimes,
       });
-      return Object.assign({}, state, { networkRuntimes });
     }
 
-    case UNWATCH_RUNTIME_SUCCESS: {
-      return Object.assign({}, state, { selectedRuntimeId: null });
-    }
-
-    case USB_RUNTIMES_UPDATED: {
-      const { runtimes } = action;
-      const usbRuntimes = runtimes.map(runtime => {
-        return {
-          id: runtime.id,
-          extra: {
-            connectionParameters: { socketPath: runtime._socketPath },
-            deviceName: runtime.deviceName,
-          },
-          name: runtime.shortName,
-          type: RUNTIMES.USB,
-        };
+    case THIS_FIREFOX_RUNTIME_CREATED: {
+      const { runtime } = action;
+      return Object.assign({}, state, {
+        thisFirefoxRuntimes: [runtime],
       });
-      return Object.assign({}, state, { usbRuntimes });
-    }
-
-    case WATCH_RUNTIME_SUCCESS: {
-      const { id } = action.runtime;
-      return Object.assign({}, state, { selectedRuntimeId: id });
     }
 
     default:

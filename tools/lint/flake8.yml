@@ -22,13 +22,17 @@ flake8:
         - python/mozboot
         - python/mozbuild/mozpack/path.py
         - python/mozlint
+        - python/mozrelease
         - python/mozterm
         - python/mozversioncontrol
         - python/safety
         - security/
         - security/manager
         - taskcluster
+        - testing/awsy
         - testing/firefox-ui
+        - testing/geckodriver
+        - testing/gtest
         - testing/mach_commands.py
         - testing/marionette/client
         - testing/marionette/harness
@@ -41,10 +45,12 @@ flake8:
         - testing/mozharness/mozharness/mozilla/tooltool.py
         - testing/mozharness/mozinfo
         - testing/mozharness/scripts
+        - testing/mozharness/test
         - testing/raptor
         - testing/remotecppunittests.py
         - testing/runcppunittests.py
         - testing/talos/
+        - testing/tps/
         - testing/xpcshell
         - toolkit/components/telemetry
         - toolkit/crashreporter/tools/upload_symbols.py

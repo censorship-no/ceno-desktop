@@ -1,101 +1,113 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.statusType = undefined;
-exports.initialProjectTextSearchState = initialProjectTextSearchState;
-exports.getTextSearchResults = getTextSearchResults;
-exports.getTextSearchStatus = getTextSearchStatus;
-exports.getTextSearchQuery = getTextSearchQuery;
-
-var _immutable = require("devtools/client/shared/vendor/immutable");
-
-var I = _interopRequireWildcard(_immutable);
-
-var _makeRecord = require("../utils/makeRecord");
-
-var _makeRecord2 = _interopRequireDefault(_makeRecord);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = Object.defineProperty && Object.getOwnPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : {}; if (desc.get || desc.set) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } } newObj.default = obj; return newObj; } }
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+// @flow
 // @format
 
 /**
  * Project text search reducer
  * @module reducers/project-text-search
  */
-const statusType = exports.statusType = {
+
+import type { Action } from "../actions/types";
+import type { Cancellable } from "../types";
+
+export type Search = {
+  +sourceId: string,
+  +filepath: string,
+  +matches: any[]
+};
+
+export type SearchOperation = Cancellable;
+
+export type StatusType =
+  | "INITIAL"
+  | "FETCHING"
+  | "CANCELLED"
+  | "DONE"
+  | "ERROR";
+export const statusType = {
   initial: "INITIAL",
   fetching: "FETCHING",
+  cancelled: "CANCELLED",
   done: "DONE",
   error: "ERROR"
 };
 
-function initialProjectTextSearchState() {
-  return (0, _makeRecord2.default)({
+export type ResultList = Search[];
+export type ProjectTextSearchState = {
+  +query: string,
+  +ongoingSearch: ?SearchOperation,
+  +results: ResultList,
+  +status: string
+};
+
+export function initialProjectTextSearchState(): ProjectTextSearchState {
+  return {
     query: "",
-    results: I.List(),
+    results: [],
+    ongoingSearch: null,
     status: statusType.initial
-  })();
+  };
 }
 
-function update(state = initialProjectTextSearchState(), action) {
+function update(
+  state: ProjectTextSearchState = initialProjectTextSearchState(),
+  action: Action
+): ProjectTextSearchState {
   switch (action.type) {
     case "ADD_QUERY":
-      const actionCopy = action;
-      return state.update("query", value => actionCopy.query);
-
-    case "CLEAR_QUERY":
-      return state.merge({
-        query: "",
-        status: statusType.initial
-      });
+      return { ...state, query: action.query };
 
     case "ADD_SEARCH_RESULT":
-      const results = state.get("results");
-      return state.merge({
-        results: results.push(action.result)
-      });
+      const results = state.results;
+      if (action.result.matches.length === 0) {
+        return state;
+      }
+
+      const result = {
+        type: "RESULT",
+        ...action.result,
+        matches: action.result.matches.map(m => ({ type: "MATCH", ...m }))
+      };
+      return { ...state, results: [...results, result] };
 
     case "UPDATE_STATUS":
-      return state.merge({
-        status: action.status
-      });
+      const ongoingSearch =
+        action.status == statusType.fetching ? state.ongoingSearch : null;
+      return { ...state, status: action.status, ongoingSearch };
 
     case "CLEAR_SEARCH_RESULTS":
-      return state.merge({
-        results: state.get("results").clear()
-      });
+      return { ...state, results: [] };
+
+    case "ADD_ONGOING_SEARCH":
+      return { ...state, ongoingSearch: action.ongoingSearch };
 
     case "CLEAR_SEARCH":
     case "CLOSE_PROJECT_SEARCH":
     case "NAVIGATE":
-      return state.merge({
-        query: "",
-        results: state.get("results").clear(),
-        status: statusType.initial
-      });
+      return initialProjectTextSearchState();
   }
-
   return state;
 }
 
-function getTextSearchResults(state) {
-  return state.projectTextSearch.get("results");
+type OuterState = { projectTextSearch: ProjectTextSearchState };
+
+export function getTextSearchOperation(state: OuterState) {
+  return state.projectTextSearch.ongoingSearch;
 }
 
-function getTextSearchStatus(state) {
-  return state.projectTextSearch.get("status");
+export function getTextSearchResults(state: OuterState) {
+  return state.projectTextSearch.results;
 }
 
-function getTextSearchQuery(state) {
-  return state.projectTextSearch.get("query");
+export function getTextSearchStatus(state: OuterState) {
+  return state.projectTextSearch.status;
 }
 
-exports.default = update;
+export function getTextSearchQuery(state: OuterState) {
+  return state.projectTextSearch.query;
+}
+
+export default update;

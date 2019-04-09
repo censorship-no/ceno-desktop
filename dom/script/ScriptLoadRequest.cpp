@@ -4,11 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ModuleLoadRequest.h"
+#include "ScriptLoadRequest.h"
 
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/Unused.h"
 
+#include "nsContentUtils.h"
 #include "nsICacheInfoChannel.h"
 #include "ScriptLoadRequest.h"
 #include "ScriptSettings.h"
@@ -20,27 +21,23 @@ namespace dom {
 // ScriptFetchOptions
 //////////////////////////////////////////////////////////////
 
-NS_IMPL_CYCLE_COLLECTION(ScriptFetchOptions,
-                         mElement,
-                         mTriggeringPrincipal)
+NS_IMPL_CYCLE_COLLECTION(ScriptFetchOptions, mElement, mTriggeringPrincipal)
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(ScriptFetchOptions, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(ScriptFetchOptions, Release)
 
-ScriptFetchOptions::ScriptFetchOptions(mozilla::CORSMode aCORSMode,
-                                       mozilla::net::ReferrerPolicy aReferrerPolicy,
-                                       nsIScriptElement* aElement,
-                                       nsIPrincipal* aTriggeringPrincipal)
-  : mCORSMode(aCORSMode)
-  , mReferrerPolicy(aReferrerPolicy)
-  , mElement(aElement)
-  , mTriggeringPrincipal(aTriggeringPrincipal)
-{
+ScriptFetchOptions::ScriptFetchOptions(
+    mozilla::CORSMode aCORSMode, mozilla::net::ReferrerPolicy aReferrerPolicy,
+    nsIScriptElement* aElement, nsIPrincipal* aTriggeringPrincipal)
+    : mCORSMode(aCORSMode),
+      mReferrerPolicy(aReferrerPolicy),
+      mIsPreload(false),
+      mElement(aElement),
+      mTriggeringPrincipal(aTriggeringPrincipal) {
   MOZ_ASSERT(mTriggeringPrincipal);
 }
 
-ScriptFetchOptions::~ScriptFetchOptions()
-{}
+ScriptFetchOptions::~ScriptFetchOptions() {}
 
 //////////////////////////////////////////////////////////////
 // ScriptLoadRequest
@@ -55,54 +52,51 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(ScriptLoadRequest)
 NS_IMPL_CYCLE_COLLECTION_CLASS(ScriptLoadRequest)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ScriptLoadRequest)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFetchOptions)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mCacheInfo)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFetchOptions, mCacheInfo)
+  tmp->mScript = nullptr;
   tmp->DropBytecodeCacheReferences();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ScriptLoadRequest)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFetchOptions)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCacheInfo)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFetchOptions, mCacheInfo)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(ScriptLoadRequest)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mScript)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
-ScriptLoadRequest::ScriptLoadRequest(ScriptKind aKind,
-                                     nsIURI* aURI,
+ScriptLoadRequest::ScriptLoadRequest(ScriptKind aKind, nsIURI* aURI,
                                      ScriptFetchOptions* aFetchOptions,
-                                     const SRIMetadata &aIntegrity,
+                                     const SRIMetadata& aIntegrity,
                                      nsIURI* aReferrer)
-  : mKind(aKind)
-  , mScriptMode(ScriptMode::eBlocking)
-  , mProgress(Progress::eLoading)
-  , mDataType(DataType::eUnknown)
-  , mScriptFromHead(false)
-  , mIsInline(true)
-  , mHasSourceMapURL(false)
-  , mInDeferList(false)
-  , mInAsyncList(false)
-  , mIsNonAsyncScriptInserted(false)
-  , mIsXSLT(false)
-  , mIsCanceled(false)
-  , mWasCompiledOMT(false)
-  , mIsTracking(false)
-  , mFetchOptions(aFetchOptions)
-  , mOffThreadToken(nullptr)
-  , mScriptTextLength(0)
-  , mScriptBytecode()
-  , mBytecodeOffset(0)
-  , mURI(aURI)
-  , mLineNo(1)
-  , mIntegrity(aIntegrity)
-  , mReferrer(aReferrer)
-{
+    : mKind(aKind),
+      mScriptMode(ScriptMode::eBlocking),
+      mProgress(Progress::eLoading),
+      mDataType(DataType::eUnknown),
+      mScriptFromHead(false),
+      mIsInline(true),
+      mHasSourceMapURL(false),
+      mInDeferList(false),
+      mInAsyncList(false),
+      mIsNonAsyncScriptInserted(false),
+      mIsXSLT(false),
+      mIsCanceled(false),
+      mWasCompiledOMT(false),
+      mIsTracking(false),
+      mFetchOptions(aFetchOptions),
+      mOffThreadToken(nullptr),
+      mScriptTextLength(0),
+      mScriptBytecode(),
+      mBytecodeOffset(0),
+      mURI(aURI),
+      mLineNo(1),
+      mIntegrity(aIntegrity),
+      mReferrer(aReferrer),
+      mUnreportedPreloadError(NS_OK) {
   MOZ_ASSERT(mFetchOptions);
 }
 
-ScriptLoadRequest::~ScriptLoadRequest()
-{
+ScriptLoadRequest::~ScriptLoadRequest() {
   // We should always clean up any off-thread script parsing resources.
   MOZ_ASSERT(!mOffThreadToken);
 
@@ -113,25 +107,21 @@ ScriptLoadRequest::~ScriptLoadRequest()
   if (mScript) {
     DropBytecodeCacheReferences();
   }
+
+  DropJSObjects(this);
 }
 
-void
-ScriptLoadRequest::SetReady()
-{
+void ScriptLoadRequest::SetReady() {
   MOZ_ASSERT(mProgress != Progress::eReady);
   mProgress = Progress::eReady;
 }
 
-void
-ScriptLoadRequest::Cancel()
-{
+void ScriptLoadRequest::Cancel() {
   MaybeCancelOffThreadScript();
   mIsCanceled = true;
 }
 
-void
-ScriptLoadRequest::MaybeCancelOffThreadScript()
-{
+void ScriptLoadRequest::MaybeCancelOffThreadScript() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!mOffThreadToken) {
@@ -151,24 +141,18 @@ ScriptLoadRequest::MaybeCancelOffThreadScript()
   mOffThreadToken = nullptr;
 }
 
-void
-ScriptLoadRequest::DropBytecodeCacheReferences()
-{
+void ScriptLoadRequest::DropBytecodeCacheReferences() {
   mCacheInfo = nullptr;
   mScript = nullptr;
   DropJSObjects(this);
 }
 
-inline ModuleLoadRequest*
-ScriptLoadRequest::AsModuleRequest()
-{
+inline ModuleLoadRequest* ScriptLoadRequest::AsModuleRequest() {
   MOZ_ASSERT(IsModuleRequest());
   return static_cast<ModuleLoadRequest*>(this);
 }
 
-void
-ScriptLoadRequest::SetScriptMode(bool aDeferAttr, bool aAsyncAttr)
-{
+void ScriptLoadRequest::SetScriptMode(bool aDeferAttr, bool aAsyncAttr) {
   if (aAsyncAttr) {
     mScriptMode = ScriptMode::eAsync;
   } else if (aDeferAttr || IsModuleRequest()) {
@@ -178,24 +162,18 @@ ScriptLoadRequest::SetScriptMode(bool aDeferAttr, bool aAsyncAttr)
   }
 }
 
-void
-ScriptLoadRequest::SetUnknownDataType()
-{
+void ScriptLoadRequest::SetUnknownDataType() {
   mDataType = DataType::eUnknown;
   mScriptData.reset();
 }
 
-void
-ScriptLoadRequest::SetTextSource()
-{
+void ScriptLoadRequest::SetTextSource() {
   MOZ_ASSERT(IsUnknownDataType());
   mDataType = DataType::eTextSource;
   mScriptData.emplace(VariantType<ScriptTextBuffer>());
 }
 
-void
-ScriptLoadRequest::SetBinASTSource()
-{
+void ScriptLoadRequest::SetBinASTSource() {
 #ifdef JS_BUILD_BINAST
   MOZ_ASSERT(IsUnknownDataType());
   mDataType = DataType::eBinASTSource;
@@ -205,16 +183,12 @@ ScriptLoadRequest::SetBinASTSource()
 #endif
 }
 
-void
-ScriptLoadRequest::SetBytecode()
-{
+void ScriptLoadRequest::SetBytecode() {
   MOZ_ASSERT(IsUnknownDataType());
   mDataType = DataType::eBytecode;
 }
 
-bool
-ScriptLoadRequest::ShouldAcceptBinASTEncoding() const
-{
+bool ScriptLoadRequest::ShouldAcceptBinASTEncoding() const {
 #ifdef JS_BUILD_BINAST
   // We accept the BinAST encoding if we're using a secure connection.
 
@@ -223,15 +197,24 @@ ScriptLoadRequest::ShouldAcceptBinASTEncoding() const
   MOZ_ASSERT(NS_SUCCEEDED(rv));
   Unused << rv;
 
-  return isHTTPS;
+  if (!isHTTPS) {
+    return false;
+  }
+
+  if (StaticPrefs::dom_script_loader_binast_encoding_domain_restrict()) {
+    if (!nsContentUtils::IsURIInPrefList(
+            mURI, "dom.script_loader.binast_encoding.domain.restrict.list")) {
+      return false;
+    }
+  }
+
+  return true;
 #else
   MOZ_CRASH("BinAST not supported");
 #endif
 }
 
-void
-ScriptLoadRequest::ClearScriptSource()
-{
+void ScriptLoadRequest::ClearScriptSource() {
   if (IsTextSource()) {
     ScriptText().clearAndFree();
   } else if (IsBinASTSource()) {
@@ -239,18 +222,19 @@ ScriptLoadRequest::ClearScriptSource()
   }
 }
 
+void ScriptLoadRequest::SetScript(JSScript* aScript) {
+  MOZ_ASSERT(!mScript);
+  mScript = aScript;
+  HoldJSObjects(this);
+}
+
 //////////////////////////////////////////////////////////////
 // ScriptLoadRequestList
 //////////////////////////////////////////////////////////////
 
-ScriptLoadRequestList::~ScriptLoadRequestList()
-{
-  Clear();
-}
+ScriptLoadRequestList::~ScriptLoadRequestList() { Clear(); }
 
-void
-ScriptLoadRequestList::Clear()
-{
+void ScriptLoadRequestList::Clear() {
   while (!isEmpty()) {
     RefPtr<ScriptLoadRequest> first = StealFirst();
     first->Cancel();
@@ -259,11 +243,8 @@ ScriptLoadRequestList::Clear()
 }
 
 #ifdef DEBUG
-bool
-ScriptLoadRequestList::Contains(ScriptLoadRequest* aElem) const
-{
-  for (const ScriptLoadRequest* req = getFirst();
-       req; req = req->getNext()) {
+bool ScriptLoadRequestList::Contains(ScriptLoadRequest* aElem) const {
+  for (const ScriptLoadRequest* req = getFirst(); req; req = req->getNext()) {
     if (req == aElem) {
       return true;
     }
@@ -271,28 +252,22 @@ ScriptLoadRequestList::Contains(ScriptLoadRequest* aElem) const
 
   return false;
 }
-#endif // DEBUG
+#endif  // DEBUG
 
-inline void
-ImplCycleCollectionUnlink(ScriptLoadRequestList& aField)
-{
+inline void ImplCycleCollectionUnlink(ScriptLoadRequestList& aField) {
   while (!aField.isEmpty()) {
     RefPtr<ScriptLoadRequest> first = aField.StealFirst();
   }
 }
 
-inline void
-ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
-                            ScriptLoadRequestList& aField,
-                            const char* aName,
-                            uint32_t aFlags)
-{
-  for (ScriptLoadRequest* request = aField.getFirst();
-       request; request = request->getNext())
-  {
+inline void ImplCycleCollectionTraverse(
+    nsCycleCollectionTraversalCallback& aCallback,
+    ScriptLoadRequestList& aField, const char* aName, uint32_t aFlags) {
+  for (ScriptLoadRequest* request = aField.getFirst(); request;
+       request = request->getNext()) {
     CycleCollectionNoteChild(aCallback, request, aName, aFlags);
   }
 }
 
-} // dom namespace
-} // mozilla namespace
+}  // namespace dom
+}  // namespace mozilla

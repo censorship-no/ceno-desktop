@@ -16,7 +16,7 @@ from mozbuild.util import ReadOnlyDict, memoize
 from mozversioncontrol import get_repository_object
 
 from . import GECKO
-from .util.attributes import RELEASE_PROJECTS
+from .util.attributes import release_level
 
 
 class ParameterMismatch(Exception):
@@ -47,7 +47,7 @@ def get_app_version(product_dir='browser'):
 
 
 # Please keep this list sorted and in sync with taskcluster/docs/parameters.rst
-# Parameters are of the form: {name: default}
+# Parameters are of the form: {name: default} or {name: lambda: default}
 PARAMETERS = {
     'app_version': get_app_version(),
     'base_repository': 'https://hg.mozilla.org/mozilla-unified',
@@ -55,7 +55,7 @@ PARAMETERS = {
     'build_number': 1,
     'do_not_optimize': [],
     'existing_tasks': {},
-    'filters': ['check_servo', 'target_tasks_method'],
+    'filters': ['target_tasks_method'],
     'head_ref': get_head_ref,
     'head_repository': 'https://hg.mozilla.org/mozilla-central',
     'head_rev': get_head_ref,
@@ -78,7 +78,10 @@ PARAMETERS = {
     'release_partner_build_number': 1,
     'release_type': 'nightly',
     'release_product': None,
+    'required_signoffs': [],
+    'signoff_urls': {},
     'target_tasks_method': 'default',
+    'tasks_for': 'hg-push',
     'try_mode': None,
     'try_options': None,
     'try_task_config': None,
@@ -181,7 +184,7 @@ class Parameters(ReadOnlyDict):
 
         :return basestring: One of "production" or "staging".
         """
-        return 'production' if self['project'] in RELEASE_PROJECTS else 'staging'
+        return release_level(self['project'])
 
 
 def load_parameters_file(filename, strict=True, overrides=None):

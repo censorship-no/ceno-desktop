@@ -20,26 +20,18 @@ namespace dom {
 
 InternalHeaders::InternalHeaders(const nsTArray<Entry>&& aHeaders,
                                  HeadersGuardEnum aGuard)
-  : mGuard(aGuard)
-  , mList(aHeaders)
-  , mListDirty(true)
-{
-}
+    : mGuard(aGuard), mList(aHeaders), mListDirty(true) {}
 
-InternalHeaders::InternalHeaders(const nsTArray<HeadersEntry>& aHeadersEntryList,
-                                 HeadersGuardEnum aGuard)
-  : mGuard(aGuard)
-  , mListDirty(true)
-{
+InternalHeaders::InternalHeaders(
+    const nsTArray<HeadersEntry>& aHeadersEntryList, HeadersGuardEnum aGuard)
+    : mGuard(aGuard), mListDirty(true) {
   for (const HeadersEntry& headersEntry : aHeadersEntryList) {
     mList.AppendElement(Entry(headersEntry.name(), headersEntry.value()));
   }
 }
 
-void
-InternalHeaders::ToIPC(nsTArray<HeadersEntry>& aIPCHeaders,
-                       HeadersGuardEnum& aGuard)
-{
+void InternalHeaders::ToIPC(nsTArray<HeadersEntry>& aIPCHeaders,
+                            HeadersGuardEnum& aGuard) {
   aGuard = mGuard;
 
   aIPCHeaders.Clear();
@@ -48,10 +40,8 @@ InternalHeaders::ToIPC(nsTArray<HeadersEntry>& aIPCHeaders,
   }
 }
 
-void
-InternalHeaders::Append(const nsACString& aName, const nsACString& aValue,
-                        ErrorResult& aRv)
-{
+void InternalHeaders::Append(const nsACString& aName, const nsACString& aValue,
+                             ErrorResult& aRv) {
   nsAutoCString lowerName;
   ToLowerCase(aName, lowerName);
   nsAutoCString trimValue;
@@ -61,14 +51,15 @@ InternalHeaders::Append(const nsACString& aName, const nsACString& aValue,
     return;
   }
 
+  nsAutoCString name(aName);
+  ReuseExistingNameIfExists(name);
+
   SetListDirty();
 
-  mList.AppendElement(Entry(lowerName, trimValue));
+  mList.AppendElement(Entry(name, trimValue));
 }
 
-void
-InternalHeaders::Delete(const nsACString& aName, ErrorResult& aRv)
-{
+void InternalHeaders::Delete(const nsACString& aName, ErrorResult& aRv) {
   nsAutoCString lowerName;
   ToLowerCase(aName, lowerName);
 
@@ -80,15 +71,14 @@ InternalHeaders::Delete(const nsACString& aName, ErrorResult& aRv)
 
   // remove in reverse order to minimize copying
   for (int32_t i = mList.Length() - 1; i >= 0; --i) {
-    if (lowerName == mList[i].mName) {
+    if (mList[i].mName.EqualsIgnoreCase(lowerName.get())) {
       mList.RemoveElementAt(i);
     }
   }
 }
 
-void
-InternalHeaders::Get(const nsACString& aName, nsACString& aValue, ErrorResult& aRv) const
-{
+void InternalHeaders::Get(const nsACString& aName, nsACString& aValue,
+                          ErrorResult& aRv) const {
   nsAutoCString lowerName;
   ToLowerCase(aName, lowerName);
 
@@ -100,7 +90,7 @@ InternalHeaders::Get(const nsACString& aName, nsACString& aValue, ErrorResult& a
   bool firstValueFound = false;
 
   for (uint32_t i = 0; i < mList.Length(); ++i) {
-    if (lowerName == mList[i].mName) {
+    if (mList[i].mName.EqualsIgnoreCase(lowerName.get())) {
       if (firstValueFound) {
         aValue += delimiter;
       }
@@ -115,9 +105,8 @@ InternalHeaders::Get(const nsACString& aName, nsACString& aValue, ErrorResult& a
   }
 }
 
-void
-InternalHeaders::GetFirst(const nsACString& aName, nsACString& aValue, ErrorResult& aRv) const
-{
+void InternalHeaders::GetFirst(const nsACString& aName, nsACString& aValue,
+                               ErrorResult& aRv) const {
   nsAutoCString lowerName;
   ToLowerCase(aName, lowerName);
 
@@ -126,7 +115,7 @@ InternalHeaders::GetFirst(const nsACString& aName, nsACString& aValue, ErrorResu
   }
 
   for (uint32_t i = 0; i < mList.Length(); ++i) {
-    if (lowerName == mList[i].mName) {
+    if (mList[i].mName.EqualsIgnoreCase(lowerName.get())) {
       aValue = mList[i].mValue;
       return;
     }
@@ -136,9 +125,7 @@ InternalHeaders::GetFirst(const nsACString& aName, nsACString& aValue, ErrorResu
   aValue.SetIsVoid(true);
 }
 
-bool
-InternalHeaders::Has(const nsACString& aName, ErrorResult& aRv) const
-{
+bool InternalHeaders::Has(const nsACString& aName, ErrorResult& aRv) const {
   nsAutoCString lowerName;
   ToLowerCase(aName, lowerName);
 
@@ -147,16 +134,15 @@ InternalHeaders::Has(const nsACString& aName, ErrorResult& aRv) const
   }
 
   for (uint32_t i = 0; i < mList.Length(); ++i) {
-    if (lowerName == mList[i].mName) {
+    if (mList[i].mName.EqualsIgnoreCase(lowerName.get())) {
       return true;
     }
   }
   return false;
 }
 
-void
-InternalHeaders::Set(const nsACString& aName, const nsACString& aValue, ErrorResult& aRv)
-{
+void InternalHeaders::Set(const nsACString& aName, const nsACString& aValue,
+                          ErrorResult& aRv) {
   nsAutoCString lowerName;
   ToLowerCase(aName, lowerName);
   nsAutoCString trimValue;
@@ -172,7 +158,7 @@ InternalHeaders::Set(const nsACString& aName, const nsACString& aValue, ErrorRes
 
   // remove in reverse order to minimize copying
   for (int32_t i = mList.Length() - 1; i >= 0; --i) {
-    if (lowerName == mList[i].mName) {
+    if (mList[i].mName.EqualsIgnoreCase(lowerName.get())) {
       firstIndex = std::min(firstIndex, i);
       mList.RemoveElementAt(i);
     }
@@ -180,61 +166,56 @@ InternalHeaders::Set(const nsACString& aName, const nsACString& aValue, ErrorRes
 
   if (firstIndex < INT32_MAX) {
     Entry* entry = mList.InsertElementAt(firstIndex);
-    entry->mName = lowerName;
+    entry->mName = aName;
     entry->mValue = trimValue;
   } else {
-    mList.AppendElement(Entry(lowerName, trimValue));
+    mList.AppendElement(Entry(aName, trimValue));
   }
 }
 
-void
-InternalHeaders::Clear()
-{
+void InternalHeaders::Clear() {
   SetListDirty();
   mList.Clear();
 }
 
-void
-InternalHeaders::SetGuard(HeadersGuardEnum aGuard, ErrorResult& aRv)
-{
+void InternalHeaders::SetGuard(HeadersGuardEnum aGuard, ErrorResult& aRv) {
   // The guard is only checked during ::Set() and ::Append() in the spec.  It
   // does not require revalidating headers already set.
   mGuard = aGuard;
 }
 
-InternalHeaders::~InternalHeaders()
-{
-}
+InternalHeaders::~InternalHeaders() {}
 
 // static
-bool
-InternalHeaders::IsSimpleHeader(const nsACString& aName, const nsACString& aValue)
-{
+bool InternalHeaders::IsSimpleHeader(const nsCString& aName,
+                                     const nsACString& aValue) {
+  if (aValue.Length() > 128) {
+    return false;
+  }
   // Note, we must allow a null content-type value here to support
   // get("content-type"), but the IsInvalidValue() check will prevent null
   // from being set or appended.
-  return aName.EqualsLiteral("accept") ||
-         aName.EqualsLiteral("accept-language") ||
-         aName.EqualsLiteral("content-language") ||
-         (aName.EqualsLiteral("content-type") &&
+  return (aName.EqualsIgnoreCase("accept") &&
+          nsContentUtils::IsAllowedNonCorsAccept(aValue)) ||
+         (aName.EqualsIgnoreCase("accept-language") &&
+          nsContentUtils::IsAllowedNonCorsLanguage(aValue)) ||
+         (aName.EqualsIgnoreCase("content-language") &&
+          nsContentUtils::IsAllowedNonCorsLanguage(aValue)) ||
+         (aName.EqualsIgnoreCase("content-type") &&
           nsContentUtils::IsAllowedNonCorsContentType(aValue));
 }
 
 // static
-bool
-InternalHeaders::IsRevalidationHeader(const nsACString& aName)
-{
-  return aName.EqualsLiteral("if-modified-since") ||
-         aName.EqualsLiteral("if-none-match") ||
-         aName.EqualsLiteral("if-unmodified-since") ||
-         aName.EqualsLiteral("if-match") ||
-         aName.EqualsLiteral("if-range");
+bool InternalHeaders::IsRevalidationHeader(const nsCString& aName) {
+  return aName.EqualsIgnoreCase("if-modified-since") ||
+         aName.EqualsIgnoreCase("if-none-match") ||
+         aName.EqualsIgnoreCase("if-unmodified-since") ||
+         aName.EqualsIgnoreCase("if-match") ||
+         aName.EqualsIgnoreCase("if-range");
 }
 
-//static
-bool
-InternalHeaders::IsInvalidName(const nsACString& aName, ErrorResult& aRv)
-{
+// static
+bool InternalHeaders::IsInvalidName(const nsACString& aName, ErrorResult& aRv) {
   if (!NS_IsValidHTTPToken(aName)) {
     NS_ConvertUTF8toUTF16 label(aName);
     aRv.ThrowTypeError<MSG_INVALID_HEADER_NAME>(label);
@@ -245,9 +226,8 @@ InternalHeaders::IsInvalidName(const nsACString& aName, ErrorResult& aRv)
 }
 
 // static
-bool
-InternalHeaders::IsInvalidValue(const nsACString& aValue, ErrorResult& aRv)
-{
+bool InternalHeaders::IsInvalidValue(const nsACString& aValue,
+                                     ErrorResult& aRv) {
   if (!NS_IsReasonableHTTPHeaderValue(aValue)) {
     NS_ConvertUTF8toUTF16 label(aValue);
     aRv.ThrowTypeError<MSG_INVALID_HEADER_VALUE>(label);
@@ -256,9 +236,7 @@ InternalHeaders::IsInvalidValue(const nsACString& aValue, ErrorResult& aRv)
   return false;
 }
 
-bool
-InternalHeaders::IsImmutable(ErrorResult& aRv) const
-{
+bool InternalHeaders::IsImmutable(ErrorResult& aRv) const {
   if (mGuard == HeadersGuardEnum::Immutable) {
     aRv.ThrowTypeError<MSG_HEADERS_IMMUTABLE>();
     return true;
@@ -266,38 +244,29 @@ InternalHeaders::IsImmutable(ErrorResult& aRv) const
   return false;
 }
 
-bool
-InternalHeaders::IsForbiddenRequestHeader(const nsACString& aName) const
-{
+bool InternalHeaders::IsForbiddenRequestHeader(const nsCString& aName) const {
   return mGuard == HeadersGuardEnum::Request &&
          nsContentUtils::IsForbiddenRequestHeader(aName);
 }
 
-bool
-InternalHeaders::IsForbiddenRequestNoCorsHeader(const nsACString& aName) const
-{
+bool InternalHeaders::IsForbiddenRequestNoCorsHeader(
+    const nsCString& aName) const {
   return mGuard == HeadersGuardEnum::Request_no_cors &&
          !IsSimpleHeader(aName, EmptyCString());
 }
 
-bool
-InternalHeaders::IsForbiddenRequestNoCorsHeader(const nsACString& aName,
-                                                const nsACString& aValue) const
-{
+bool InternalHeaders::IsForbiddenRequestNoCorsHeader(
+    const nsCString& aName, const nsACString& aValue) const {
   return mGuard == HeadersGuardEnum::Request_no_cors &&
          !IsSimpleHeader(aName, aValue);
 }
 
-bool
-InternalHeaders::IsForbiddenResponseHeader(const nsACString& aName) const
-{
+bool InternalHeaders::IsForbiddenResponseHeader(const nsCString& aName) const {
   return mGuard == HeadersGuardEnum::Response &&
          nsContentUtils::IsForbiddenResponseHeader(aName);
 }
 
-void
-InternalHeaders::Fill(const InternalHeaders& aInit, ErrorResult& aRv)
-{
+void InternalHeaders::Fill(const InternalHeaders& aInit, ErrorResult& aRv) {
   const nsTArray<Entry>& list = aInit.mList;
   for (uint32_t i = 0; i < list.Length() && !aRv.Failed(); ++i) {
     const Entry& entry = list[i];
@@ -305,9 +274,8 @@ InternalHeaders::Fill(const InternalHeaders& aInit, ErrorResult& aRv)
   }
 }
 
-void
-InternalHeaders::Fill(const Sequence<Sequence<nsCString>>& aInit, ErrorResult& aRv)
-{
+void InternalHeaders::Fill(const Sequence<Sequence<nsCString>>& aInit,
+                           ErrorResult& aRv) {
   for (uint32_t i = 0; i < aInit.Length() && !aRv.Failed(); ++i) {
     const Sequence<nsCString>& tuple = aInit[i];
     if (tuple.Length() != 2) {
@@ -318,9 +286,8 @@ InternalHeaders::Fill(const Sequence<Sequence<nsCString>>& aInit, ErrorResult& a
   }
 }
 
-void
-InternalHeaders::Fill(const Record<nsCString, nsCString>& aInit, ErrorResult& aRv)
-{
+void InternalHeaders::Fill(const Record<nsCString, nsCString>& aInit,
+                           ErrorResult& aRv) {
   for (auto& entry : aInit.Entries()) {
     Append(entry.mKey, entry.mValue, aRv);
     if (aRv.Failed()) {
@@ -331,24 +298,21 @@ InternalHeaders::Fill(const Record<nsCString, nsCString>& aInit, ErrorResult& aR
 
 namespace {
 
-class FillHeaders final : public nsIHttpHeaderVisitor
-{
+class FillHeaders final : public nsIHttpHeaderVisitor {
   RefPtr<InternalHeaders> mInternalHeaders;
 
   ~FillHeaders() = default;
 
-public:
+ public:
   NS_DECL_ISUPPORTS
 
   explicit FillHeaders(InternalHeaders* aInternalHeaders)
-    : mInternalHeaders(aInternalHeaders)
-  {
+      : mInternalHeaders(aInternalHeaders) {
     MOZ_DIAGNOSTIC_ASSERT(mInternalHeaders);
   }
 
   NS_IMETHOD
-  VisitHeader(const nsACString& aHeader, const nsACString& aValue) override
-  {
+  VisitHeader(const nsACString& aHeader, const nsACString& aValue) override {
     mInternalHeaders->Append(aHeader, aValue, IgnoreErrors());
     return NS_OK;
   }
@@ -356,11 +320,9 @@ public:
 
 NS_IMPL_ISUPPORTS(FillHeaders, nsIHttpHeaderVisitor)
 
-} // namespace
+}  // namespace
 
-void
-InternalHeaders::FillResponseHeaders(nsIRequest* aRequest)
-{
+void InternalHeaders::FillResponseHeaders(nsIRequest* aRequest) {
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest);
   if (!httpChannel) {
     return;
@@ -373,9 +335,7 @@ InternalHeaders::FillResponseHeaders(nsIRequest* aRequest)
   }
 }
 
-bool
-InternalHeaders::HasOnlySimpleHeaders() const
-{
+bool InternalHeaders::HasOnlySimpleHeaders() const {
   for (uint32_t i = 0; i < mList.Length(); ++i) {
     if (!IsSimpleHeader(mList[i].mName, mList[i].mValue)) {
       return false;
@@ -385,9 +345,7 @@ InternalHeaders::HasOnlySimpleHeaders() const
   return true;
 }
 
-bool
-InternalHeaders::HasRevalidationHeaders() const
-{
+bool InternalHeaders::HasRevalidationHeaders() const {
   for (uint32_t i = 0; i < mList.Length(); ++i) {
     if (IsRevalidationHeader(mList[i].mName)) {
       return true;
@@ -398,9 +356,8 @@ InternalHeaders::HasRevalidationHeaders() const
 }
 
 // static
-already_AddRefed<InternalHeaders>
-InternalHeaders::BasicHeaders(InternalHeaders* aHeaders)
-{
+already_AddRefed<InternalHeaders> InternalHeaders::BasicHeaders(
+    InternalHeaders* aHeaders) {
   RefPtr<InternalHeaders> basic = new InternalHeaders(*aHeaders);
   ErrorResult result;
   // The Set-Cookie headers cannot be invalid mutable headers, so the Delete
@@ -413,14 +370,14 @@ InternalHeaders::BasicHeaders(InternalHeaders* aHeaders)
 }
 
 // static
-already_AddRefed<InternalHeaders>
-InternalHeaders::CORSHeaders(InternalHeaders* aHeaders)
-{
+already_AddRefed<InternalHeaders> InternalHeaders::CORSHeaders(
+    InternalHeaders* aHeaders) {
   RefPtr<InternalHeaders> cors = new InternalHeaders(aHeaders->mGuard);
   ErrorResult result;
 
   nsAutoCString acExposedNames;
-  aHeaders->GetFirst(NS_LITERAL_CSTRING("Access-Control-Expose-Headers"), acExposedNames, result);
+  aHeaders->GetFirst(NS_LITERAL_CSTRING("Access-Control-Expose-Headers"),
+                     acExposedNames, result);
   MOZ_ASSERT(!result.Failed());
 
   AutoTArray<nsCString, 5> exposeNamesArray;
@@ -432,7 +389,9 @@ InternalHeaders::CORSHeaders(InternalHeaders* aHeaders)
     }
 
     if (!NS_IsValidHTTPToken(token)) {
-      NS_WARNING("Got invalid HTTP token in Access-Control-Expose-Headers. Header value is:");
+      NS_WARNING(
+          "Got invalid HTTP token in Access-Control-Expose-Headers. Header "
+          "value is:");
       NS_WARNING(acExposedNames.get());
       exposeNamesArray.Clear();
       break;
@@ -444,12 +403,12 @@ InternalHeaders::CORSHeaders(InternalHeaders* aHeaders)
   nsCaseInsensitiveCStringArrayComparator comp;
   for (uint32_t i = 0; i < aHeaders->mList.Length(); ++i) {
     const Entry& entry = aHeaders->mList[i];
-    if (entry.mName.EqualsASCII("cache-control") ||
-        entry.mName.EqualsASCII("content-language") ||
-        entry.mName.EqualsASCII("content-type") ||
-        entry.mName.EqualsASCII("expires") ||
-        entry.mName.EqualsASCII("last-modified") ||
-        entry.mName.EqualsASCII("pragma") ||
+    if (entry.mName.EqualsIgnoreCase("cache-control") ||
+        entry.mName.EqualsIgnoreCase("content-language") ||
+        entry.mName.EqualsIgnoreCase("content-type") ||
+        entry.mName.EqualsIgnoreCase("expires") ||
+        entry.mName.EqualsIgnoreCase("last-modified") ||
+        entry.mName.EqualsIgnoreCase("pragma") ||
         exposeNamesArray.Contains(entry.mName, comp)) {
       cors->Append(entry.mName, entry.mValue, result);
       MOZ_ASSERT(!result.Failed());
@@ -459,16 +418,13 @@ InternalHeaders::CORSHeaders(InternalHeaders* aHeaders)
   return cors.forget();
 }
 
-void
-InternalHeaders::GetEntries(nsTArray<InternalHeaders::Entry>& aEntries) const
-{
+void InternalHeaders::GetEntries(
+    nsTArray<InternalHeaders::Entry>& aEntries) const {
   MOZ_ASSERT(aEntries.IsEmpty());
   aEntries.AppendElements(mList);
 }
 
-void
-InternalHeaders::GetUnsafeHeaders(nsTArray<nsCString>& aNames) const
-{
+void InternalHeaders::GetUnsafeHeaders(nsTArray<nsCString>& aNames) const {
   MOZ_ASSERT(aNames.IsEmpty());
   for (uint32_t i = 0; i < mList.Length(); ++i) {
     const Entry& header = mList[i];
@@ -478,18 +434,14 @@ InternalHeaders::GetUnsafeHeaders(nsTArray<nsCString>& aNames) const
   }
 }
 
-void
-InternalHeaders::MaybeSortList()
-{
+void InternalHeaders::MaybeSortList() {
   class Comparator {
-  public:
-    bool Equals(const Entry& aA, const Entry& aB) const
-    {
-       return aA.mName == aB.mName;
+   public:
+    bool Equals(const Entry& aA, const Entry& aB) const {
+      return aA.mName == aB.mName;
     }
 
-    bool LessThan(const Entry& aA, const Entry& aB) const
-    {
+    bool LessThan(const Entry& aA, const Entry& aB) const {
       return aA.mName < aB.mName;
     }
   };
@@ -506,7 +458,7 @@ InternalHeaders::MaybeSortList()
   for (const Entry& entry : mList) {
     bool found = false;
     for (Entry& sortedEntry : mSortedList) {
-      if (sortedEntry.mName == entry.mName) {
+      if (sortedEntry.mName.EqualsIgnoreCase(entry.mName.get())) {
         sortedEntry.mValue += ", ";
         sortedEntry.mValue += entry.mValue;
         found = true;
@@ -515,17 +467,26 @@ InternalHeaders::MaybeSortList()
     }
 
     if (!found) {
-      mSortedList.InsertElementSorted(entry, comparator);
+      Entry newEntry = entry;
+      ToLowerCase(newEntry.mName);
+      mSortedList.InsertElementSorted(newEntry, comparator);
     }
   }
 }
 
-void
-InternalHeaders::SetListDirty()
-{
+void InternalHeaders::SetListDirty() {
   mSortedList.Clear();
   mListDirty = true;
 }
 
-} // namespace dom
-} // namespace mozilla
+void InternalHeaders::ReuseExistingNameIfExists(nsCString& aName) const {
+  for (const Entry& entry : mList) {
+    if (entry.mName.EqualsIgnoreCase(aName.get())) {
+      aName = entry.mName;
+      break;
+    }
+  }
+}
+
+}  // namespace dom
+}  // namespace mozilla

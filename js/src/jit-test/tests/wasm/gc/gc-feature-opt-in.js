@@ -1,4 +1,12 @@
-// |jit-test| skip-if: !wasmGcEnabled()
+// |jit-test| skip-if: !wasmReftypesEnabled()
+//
+// Also see gc-feature-opt-in-struct.js for tests that use the struct feature.
+
+// Version numbers
+
+let CURRENT_VERSION = 2;
+let OLDER_INCOMPATIBLE_VERSION = 1; // v1 incompatible with v2
+let FUTURE_VERSION = 3;
 
 // Encoding.  If the section is present it must be first.
 
@@ -12,42 +20,37 @@ var bad_order =
 
                     0x2a,                   // GcFeatureOptIn section
                     0x01,                   // Section size
-                    0x01]);                 // Version
+                    CURRENT_VERSION]);      // Version
 
 assertErrorMessage(() => new WebAssembly.Module(bad_order),
                    WebAssembly.CompileError,
                    /expected custom section/);
 
-// Version numbers.  Version 1 is good, version 2 is bad.
+new WebAssembly.Module(wasmTextToBinary(
+    `(module
+      (gc_feature_opt_in ${CURRENT_VERSION}))`));
 
 new WebAssembly.Module(wasmTextToBinary(
     `(module
-      (gc_feature_opt_in 1))`));
+      (gc_feature_opt_in ${CURRENT_VERSION}))`));
 
 assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
     `(module
-      (gc_feature_opt_in 2))`)),
+      (gc_feature_opt_in ${OLDER_INCOMPATIBLE_VERSION}))`)),
                    WebAssembly.CompileError,
-                   /unsupported version of the gc feature/);
-
-// Struct types are only available if we opt in.
-
-new WebAssembly.Module(wasmTextToBinary(
-    `(module
-      (gc_feature_opt_in 1)
-      (type (struct (field i32))))`));
+                   /GC feature version \d+ is no longer supported by this engine/);
 
 assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
     `(module
-      (type (struct (field i32))))`)),
+      (gc_feature_opt_in ${FUTURE_VERSION}))`)),
                    WebAssembly.CompileError,
-                   /Structure types not enabled/);
+                   /GC feature version is unknown/);
 
 // Parameters of ref type are only available if we opt in.
 
 new WebAssembly.Module(wasmTextToBinary(
     `(module
-      (gc_feature_opt_in 1)
+      (gc_feature_opt_in ${CURRENT_VERSION})
       (type (func (param anyref))))`));
 
 assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
@@ -60,7 +63,7 @@ assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
 
 new WebAssembly.Module(wasmTextToBinary(
     `(module
-      (gc_feature_opt_in 1)
+      (gc_feature_opt_in ${CURRENT_VERSION})
       (type (func (result anyref))))`));
 
 assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
@@ -73,7 +76,7 @@ assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
 
 new WebAssembly.Module(wasmTextToBinary(
     `(module
-      (gc_feature_opt_in 1)
+      (gc_feature_opt_in ${CURRENT_VERSION})
       (func (result i32)
        (local anyref)
        (i32.const 0)))`));
@@ -90,12 +93,12 @@ assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
 
 new WebAssembly.Module(wasmTextToBinary(
     `(module
-      (gc_feature_opt_in 1)
-      (global (mut anyref) (ref.null anyref)))`));
+      (gc_feature_opt_in ${CURRENT_VERSION})
+      (global (mut anyref) (ref.null)))`));
 
 assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
     `(module
-      (global (mut anyref) (ref.null anyref)))`)),
+      (global (mut anyref) (ref.null)))`)),
                    WebAssembly.CompileError,
                    /reference types not enabled/);
 
@@ -107,7 +110,7 @@ assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
 
 assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
     `(module
-      (func (ref.null anyref)))`)),
+      (func ref.null))`)),
                    WebAssembly.CompileError,
                    /unrecognized opcode/);
 
@@ -123,26 +126,3 @@ assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
                    WebAssembly.CompileError,
                    /unrecognized opcode/);
 
-assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
-    `(module
-      (func (struct.new 0)))`)),
-                   WebAssembly.CompileError,
-                   /unrecognized opcode/);
-
-assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
-    `(module
-      (func (struct.get 0 0)))`)),
-                   WebAssembly.CompileError,
-                   /unrecognized opcode/);
-
-assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
-    `(module
-      (func (struct.set 0 0)))`)),
-                   WebAssembly.CompileError,
-                   /unrecognized opcode/);
-
-assertErrorMessage(() => new WebAssembly.Module(wasmTextToBinary(
-    `(module
-      (func (struct.narrow anyref anyref)))`)),
-                   WebAssembly.CompileError,
-                   /unrecognized opcode/);

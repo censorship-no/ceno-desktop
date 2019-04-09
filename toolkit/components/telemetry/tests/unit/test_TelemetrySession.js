@@ -330,7 +330,7 @@ function checkPayload(payload, reason, successfulPings) {
     sum: 0,
   };
   let flag = payload.histograms[TELEMETRY_TEST_FLAG];
-  Assert.equal(uneval(flag), uneval(expected_flag));
+  Assert.deepEqual(flag, expected_flag);
 
   // We should have a test count.
   const expected_count = {
@@ -341,7 +341,7 @@ function checkPayload(payload, reason, successfulPings) {
     sum: 1,
   };
   let count = payload.histograms[TELEMETRY_TEST_COUNT];
-  Assert.equal(uneval(count), uneval(expected_count));
+  Assert.deepEqual(count, expected_count);
 
   // There should be one successful report from the previous telemetry ping.
   if (successfulPings > 0) {
@@ -353,7 +353,7 @@ function checkPayload(payload, reason, successfulPings) {
       sum: successfulPings,
     };
     let tc = payload.histograms[TELEMETRY_SUCCESS];
-    Assert.equal(uneval(tc), uneval(expected_tc));
+    Assert.deepEqual(tc, expected_tc);
   }
 
   // The ping should include data from memory reporters.  We can't check that
@@ -366,6 +366,7 @@ function checkPayload(payload, reason, successfulPings) {
   // Telemetry doesn't touch a memory reporter with these units that's
   // available on all platforms.
 
+  Assert.ok("MEMORY_TOTAL" in payload.histograms); // UNITS_BYTES
   Assert.ok("MEMORY_JS_GC_HEAP" in payload.histograms); // UNITS_BYTES
   Assert.ok("MEMORY_JS_COMPARTMENTS_SYSTEM" in payload.histograms); // UNITS_COUNT
 
@@ -441,6 +442,7 @@ add_task(async function test_setup() {
   do_get_profile();
   loadAddonManager(APP_ID, APP_NAME, APP_VERSION, PLATFORM_VERSION);
   finishAddonManagerStartup();
+  fakeIntlReady();
   // Make sure we don't generate unexpected pings due to pref changes.
   await setEmptyPrefWatchlist();
 
@@ -951,9 +953,11 @@ add_task(async function test_environmentChange() {
     }
 
     let expectedPrioResult = {
-      "browserIsUserDefault": true,
-      "newTabPageEnabled": true,
-      "pdfViewerUsed": false,
+      "booleans": [
+        true,
+        true,
+        false,
+      ],
     };
 
     Preferences.set(PREF_TEST, 3);

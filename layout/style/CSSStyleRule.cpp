@@ -20,13 +20,10 @@ namespace dom {
 // -- CSSStyleRuleDeclaration ---------------------------------------
 
 CSSStyleRuleDeclaration::CSSStyleRuleDeclaration(
-  already_AddRefed<RawServoDeclarationBlock> aDecls)
-  : mDecls(new DeclarationBlock(std::move(aDecls)))
-{
-}
+    already_AddRefed<RawServoDeclarationBlock> aDecls)
+    : mDecls(new DeclarationBlock(std::move(aDecls))) {}
 
-CSSStyleRuleDeclaration::~CSSStyleRuleDeclaration()
-{
+CSSStyleRuleDeclaration::~CSSStyleRuleDeclaration() {
   mDecls->SetOwningRule(nullptr);
 }
 
@@ -39,37 +36,26 @@ NS_INTERFACE_MAP_BEGIN(CSSStyleRuleDeclaration)
       aIID.Equals(NS_GET_IID(nsXPCOMCycleCollectionParticipant))) {
     return Rule()->QueryInterface(aIID, aInstancePtr);
   }
-  else
-NS_IMPL_QUERY_TAIL_INHERITING(nsDOMCSSDeclaration)
+NS_INTERFACE_MAP_END_INHERITING(nsDOMCSSDeclaration)
 
 NS_IMPL_ADDREF_USING_AGGREGATOR(CSSStyleRuleDeclaration, Rule())
 NS_IMPL_RELEASE_USING_AGGREGATOR(CSSStyleRuleDeclaration, Rule())
 
 /* nsDOMCSSDeclaration implementation */
 
-css::Rule*
-CSSStyleRuleDeclaration::GetParentRule()
-{
-  return Rule();
-}
+css::Rule* CSSStyleRuleDeclaration::GetParentRule() { return Rule(); }
 
-nsINode*
-CSSStyleRuleDeclaration::GetParentObject()
-{
+nsINode* CSSStyleRuleDeclaration::GetParentObject() {
   return Rule()->GetParentObject();
 }
 
-DeclarationBlock*
-CSSStyleRuleDeclaration::GetOrCreateCSSDeclaration(Operation aOperation,
-                                                   DeclarationBlock** aCreated)
-{
+DeclarationBlock* CSSStyleRuleDeclaration::GetOrCreateCSSDeclaration(
+    Operation aOperation, DeclarationBlock** aCreated) {
   return mDecls;
 }
 
-nsresult
-CSSStyleRuleDeclaration::SetCSSDeclaration(DeclarationBlock* aDecl,
-                                           MutationClosureData* aClosureData)
-{
+nsresult CSSStyleRuleDeclaration::SetCSSDeclaration(
+    DeclarationBlock* aDecl, MutationClosureData* aClosureData) {
   CSSStyleRule* rule = Rule();
   if (RefPtr<StyleSheet> sheet = rule->GetStyleSheet()) {
     if (aDecl != mDecls) {
@@ -84,31 +70,22 @@ CSSStyleRuleDeclaration::SetCSSDeclaration(DeclarationBlock* aDecl,
   return NS_OK;
 }
 
-nsIDocument*
-CSSStyleRuleDeclaration::DocToUpdate()
-{
-  return nullptr;
-}
+Document* CSSStyleRuleDeclaration::DocToUpdate() { return nullptr; }
 
 nsDOMCSSDeclaration::ParsingEnvironment
 CSSStyleRuleDeclaration::GetParsingEnvironment(
-  nsIPrincipal* aSubjectPrincipal) const
-{
+    nsIPrincipal* aSubjectPrincipal) const {
   return GetParsingEnvironmentForRule(Rule());
 }
 
 // -- CSSStyleRule --------------------------------------------------
 
 CSSStyleRule::CSSStyleRule(already_AddRefed<RawServoStyleRule> aRawRule,
-                           StyleSheet* aSheet,
-                           css::Rule* aParentRule,
-                           uint32_t aLine,
-                           uint32_t aColumn)
-  : BindingStyleRule(aSheet, aParentRule, aLine, aColumn)
-  , mRawRule(aRawRule)
-  , mDecls(Servo_StyleRule_GetStyle(mRawRule).Consume())
-{
-}
+                           StyleSheet* aSheet, css::Rule* aParentRule,
+                           uint32_t aLine, uint32_t aColumn)
+    : BindingStyleRule(aSheet, aParentRule, aLine, aColumn),
+      mRawRule(aRawRule),
+      mDecls(Servo_StyleRule_GetStyle(mRawRule).Consume()) {}
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(CSSStyleRule, css::Rule)
 
@@ -136,9 +113,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(CSSStyleRule, css::Rule)
   // Keep this in sync with IsCCLeaf.
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-bool
-CSSStyleRule::IsCCLeaf() const
-{
+bool CSSStyleRule::IsCCLeaf() const {
   if (!Rule::IsCCLeaf()) {
     return false;
   }
@@ -146,13 +121,11 @@ CSSStyleRule::IsCCLeaf() const
   return !mDecls.PreservingWrapper();
 }
 
-size_t
-CSSStyleRule::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
-{
+size_t CSSStyleRule::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
   size_t n = aMallocSizeOf(this);
 
-  // Measurement of the following members may be added later if DMD finds it is
-  // worthwhile:
+  // Measurement of the following members may be added later if DMD finds it
+  // is worthwhile:
   // - mRawRule
   // - mDecls
 
@@ -160,9 +133,7 @@ CSSStyleRule::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
 }
 
 #ifdef DEBUG
-void
-CSSStyleRule::List(FILE* out, int32_t aIndent) const
-{
+void CSSStyleRule::List(FILE* out, int32_t aIndent) const {
   nsAutoCString str;
   for (int32_t i = 0; i < aIndent; i++) {
     str.AppendLiteral("  ");
@@ -174,29 +145,19 @@ CSSStyleRule::List(FILE* out, int32_t aIndent) const
 
 /* CSSRule implementation */
 
-void
-CSSStyleRule::GetCssText(nsAString& aCssText) const
-{
+void CSSStyleRule::GetCssText(nsAString& aCssText) const {
   Servo_StyleRule_GetCssText(mRawRule, &aCssText);
 }
 
-nsICSSDeclaration*
-CSSStyleRule::Style()
-{
-  return &mDecls;
-}
+nsICSSDeclaration* CSSStyleRule::Style() { return &mDecls; }
 
 /* CSSStyleRule implementation */
 
-void
-CSSStyleRule::GetSelectorText(nsAString& aSelectorText)
-{
+void CSSStyleRule::GetSelectorText(nsAString& aSelectorText) {
   Servo_StyleRule_GetSelectorText(mRawRule, &aSelectorText);
 }
 
-void
-CSSStyleRule::SetSelectorText(const nsAString& aSelectorText)
-{
+void CSSStyleRule::SetSelectorText(const nsAString& aSelectorText) {
   if (RefPtr<StyleSheet> sheet = GetStyleSheet()) {
     // StyleRule lives inside of the Inner, it is unsafe to call WillDirty
     // if sheet does not already have a unique Inner.
@@ -210,34 +171,28 @@ CSSStyleRule::SetSelectorText(const nsAString& aSelectorText)
   }
 }
 
-uint32_t
-CSSStyleRule::GetSelectorCount()
-{
+uint32_t CSSStyleRule::GetSelectorCount() {
   uint32_t aCount;
   Servo_StyleRule_GetSelectorCount(mRawRule, &aCount);
   return aCount;
 }
 
-nsresult
-CSSStyleRule::GetSelectorText(uint32_t aSelectorIndex, nsAString& aText)
-{
+nsresult CSSStyleRule::GetSelectorText(uint32_t aSelectorIndex,
+                                       nsAString& aText) {
   Servo_StyleRule_GetSelectorTextAtIndex(mRawRule, aSelectorIndex, &aText);
   return NS_OK;
 }
 
-nsresult
-CSSStyleRule::GetSpecificity(uint32_t aSelectorIndex, uint64_t* aSpecificity)
-{
+nsresult CSSStyleRule::GetSpecificity(uint32_t aSelectorIndex,
+                                      uint64_t* aSpecificity) {
   Servo_StyleRule_GetSpecificityAtIndex(mRawRule, aSelectorIndex, aSpecificity);
   return NS_OK;
 }
 
-nsresult
-CSSStyleRule::SelectorMatchesElement(Element* aElement,
-                                       uint32_t aSelectorIndex,
-                                       const nsAString& aPseudo,
-                                       bool* aMatches)
-{
+nsresult CSSStyleRule::SelectorMatchesElement(Element* aElement,
+                                              uint32_t aSelectorIndex,
+                                              const nsAString& aPseudo,
+                                              bool* aMatches) {
   CSSPseudoElementType pseudoType = CSSPseudoElementType::NotPseudo;
   if (!aPseudo.IsEmpty()) {
     RefPtr<nsAtom> pseudoElt = NS_Atomize(aPseudo);
@@ -250,17 +205,15 @@ CSSStyleRule::SelectorMatchesElement(Element* aElement,
     }
   }
 
-  *aMatches = Servo_StyleRule_SelectorMatchesElement(mRawRule, aElement,
-                                                     aSelectorIndex, pseudoType);
+  *aMatches = Servo_StyleRule_SelectorMatchesElement(
+      mRawRule, aElement, aSelectorIndex, pseudoType);
 
   return NS_OK;
 }
 
-NotNull<DeclarationBlock*>
-CSSStyleRule::GetDeclarationBlock() const
-{
+NotNull<DeclarationBlock*> CSSStyleRule::GetDeclarationBlock() const {
   return WrapNotNull(mDecls.mDecls);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

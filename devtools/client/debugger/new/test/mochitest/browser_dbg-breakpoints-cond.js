@@ -1,13 +1,14 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-function findBreakpoint(dbg, url, line) {
+function findBreakpoint(dbg, url, line, column = 0) {
   const {
     selectors: { getBreakpoint },
     getState
   } = dbg;
   const source = findSource(dbg, url);
-  return getBreakpoint(getState(), { sourceId: source.id, line });
+  const location = { sourceId: source.id, line, column };
+  return getBreakpoint(getState(), location);
 }
 
 function getLineEl(dbg, line) {
@@ -38,8 +39,15 @@ async function assertConditionalBreakpointIsFocused(dbg) {
 }
 
 async function setConditionalBreakpoint(dbg, index, condition) {
+  const {
+    addConditionalBreakpoint,
+    editConditionalBreakpoint
+  } = selectors.gutterContextMenu;
+  // Make this work with either add or edit menu items
+  const selector = `${addConditionalBreakpoint},${editConditionalBreakpoint}`;
+
   rightClickElement(dbg, "gutter", index);
-  selectMenuItem(dbg, 2);
+  selectContextMenuItem(dbg, selector);
   await waitForElement(dbg, "conditionalPanelInput");
   await assertConditionalBreakpointIsFocused(dbg);
 
@@ -50,16 +58,20 @@ async function setConditionalBreakpoint(dbg, index, condition) {
 }
 
 add_task(async function() {
-  const dbg = await initDebugger("doc-scripts.html");
+  const dbg = await initDebugger("doc-scripts.html", "simple2");
+  await pushPref("devtools.debugger.features.column-breakpoints", false);
+
   await selectSource(dbg, "simple2");
   await waitForSelectedSource(dbg, "simple2");
 
   await setConditionalBreakpoint(dbg, 5, "1");
   await waitForDispatch(dbg, "ADD_BREAKPOINT");
+
   let bp = findBreakpoint(dbg, "simple2", 5);
   is(bp.condition, "1", "breakpoint is created with the condition");
   assertEditorBreakpoint(dbg, 5, true);
 
+  // Edit the conditional breakpoint set above
   await setConditionalBreakpoint(dbg, 5, "2");
   await waitForDispatch(dbg, "SET_BREAKPOINT_CONDITION");
   bp = findBreakpoint(dbg, "simple2", 5);
@@ -81,4 +93,13 @@ add_task(async function() {
   bp = findBreakpoint(dbg, "simple2", 5);
   is(bp.condition, "1", "breakpoint is created with the condition");
   assertEditorBreakpoint(dbg, 5, true);
+
+  const bpCondition = waitForDispatch(dbg, "SET_BREAKPOINT_CONDITION");
+  //right click breakpoint in breakpoints list
+  rightClickElement(dbg, "breakpointItem", 3)
+  // select "remove condition";
+  selectContextMenuItem(dbg, selectors.breakpointContextMenu.removeCondition);
+  await bpCondition;
+  bp = findBreakpoint(dbg, "simple2", 5);
+  is(bp.condition, undefined, "breakpoint condition removed");
 });

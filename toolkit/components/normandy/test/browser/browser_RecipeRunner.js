@@ -10,6 +10,8 @@ ChromeUtils.import("resource://normandy/lib/ActionsManager.jsm", this);
 ChromeUtils.import("resource://normandy/lib/AddonStudies.jsm", this);
 ChromeUtils.import("resource://normandy/lib/Uptake.jsm", this);
 
+const { RemoteSettings } = ChromeUtils.import("resource://services-settings/remote-settings.js", {});
+
 add_task(async function getFilterContext() {
   const recipe = {id: 17, arguments: {foo: "bar"}, unrelated: false};
   const context = RecipeRunner.getFilterContext(recipe);
@@ -35,26 +37,29 @@ add_task(async function getFilterContext() {
     "version",
   ];
   for (const key of expectedNormandyKeys) {
+    ok(key in context.env, `env.${key} is available`);
     ok(key in context.normandy, `normandy.${key} is available`);
   }
+  Assert.deepEqual(context.normandy, context.env,
+                   "context offers normandy as backwards-compatible alias for context.environment");
 
   is(
-    context.normandy.recipe.id,
+    context.env.recipe.id,
     recipe.id,
-    "normandy.recipe is the recipe passed to getFilterContext",
+    "environment.recipe is the recipe passed to getFilterContext",
   );
   delete recipe.unrelated;
   Assert.deepEqual(
-    context.normandy.recipe,
+    context.env.recipe,
     recipe,
-    "normandy.recipe drops unrecognized attributes from the recipe",
+    "environment.recipe drops unrecognized attributes from the recipe",
   );
 
   // Filter context attributes are cached.
   await SpecialPowers.pushPrefEnv({set: [["app.normandy.user_id", "some id"]]});
-  is(context.normandy.userId, "some id", "User id is read from prefs when accessed");
+  is(context.env.userId, "some id", "User id is read from prefs when accessed");
   await SpecialPowers.pushPrefEnv({set: [["app.normandy.user_id", "real id"]]});
-  is(context.normandy.userId, "some id", "userId was cached");
+  is(context.env.userId, "some id", "userId was cached");
 
 });
 
@@ -128,7 +133,6 @@ async function withMockActionSandboxManagers(actions, testFunction) {
 }
 
 decorate_task(
-  withSpy(AddonStudies, "close"),
   withStub(Uptake, "reportRunner"),
   withStub(NormandyApi, "fetchRecipes"),
   withStub(ActionsManager.prototype, "fetchRemoteActions"),
@@ -136,7 +140,6 @@ decorate_task(
   withStub(ActionsManager.prototype, "runRecipe"),
   withStub(ActionsManager.prototype, "finalize"),
   async function testRun(
-    closeSpy,
     reportRunnerStub,
     fetchRecipesStub,
     fetchRemoteActionsStub,
@@ -170,16 +173,47 @@ decorate_task(
       [[Uptake.RUNNER_SUCCESS]],
       "RecipeRunner should report uptake telemetry",
     );
+  }
+);
 
-    // Ensure storage is closed after the run.
-    ok(closeSpy.calledOnce, "Storage should be closed after the run");
+decorate_task(
+  withPrefEnv({
+    set: [
+      ["app.normandy.remotesettings.enabled", true],
+    ],
+  }),
+  withStub(ActionsManager.prototype, "runRecipe"),
+  withStub(ActionsManager.prototype, "fetchRemoteActions"),
+  withStub(ActionsManager.prototype, "finalize"),
+  async function testReadFromRemoteSettings(
+    runRecipeStub,
+    fetchRemoteActionsStub,
+    finalizeStub,
+  ) {
+    const matchRecipe = { id: "match", action: "matchAction", filter_expression: "true", _status: "synced", enabled: true };
+    const noMatchRecipe = { id: "noMatch", action: "noMatchAction", filter_expression: "false", _status: "synced", enabled: true };
+    const missingRecipe = { id: "missing", action: "missingAction", filter_expression: "true", _status: "synced", enabled: true };
+
+    const rsCollection = await RemoteSettings("normandy-recipes").openCollection();
+    await rsCollection.create(matchRecipe, { synced: true });
+    await rsCollection.create(noMatchRecipe, { synced: true });
+    await rsCollection.create(missingRecipe, { synced: true });
+    await rsCollection.db.saveLastModified(42);
+    rsCollection.db.close();
+
+    await RecipeRunner.run();
+
+    Assert.deepEqual(
+      runRecipeStub.args,
+      [[matchRecipe], [missingRecipe]],
+      "recipe with matching filters should be executed",
+    );
   }
 );
 
 decorate_task(
   withMockNormandyApi,
   async function testRunFetchFail(mockApi) {
-    const closeSpy = sinon.spy(AddonStudies, "close");
     const reportRunner = sinon.stub(Uptake, "reportRunner");
 
     const action = {name: "action"};
@@ -207,11 +241,6 @@ decorate_task(
       sinon.assert.calledWith(reportRunner, Uptake.RUNNER_INVALID_SIGNATURE);
     });
 
-    // If the recipe fetch failed, we don't need to call close since nothing
-    // opened a connection in the first place.
-    sinon.assert.notCalled(closeSpy);
-
-    closeSpy.restore();
     reportRunner.restore();
   }
 );

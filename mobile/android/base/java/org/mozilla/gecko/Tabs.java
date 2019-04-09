@@ -154,6 +154,7 @@ public class Tabs implements BundleEventListener {
             "Content:LocationChange",
             "Content:SubframeNavigation",
             "Content:SecurityChange",
+            "Content:ContentBlockingEvent",
             "Content:StateChange",
             "Content:LoadError",
             "Content:DOMContentLoaded",
@@ -343,8 +344,11 @@ public class Tabs implements BundleEventListener {
         }
 
         // Pass a message to Gecko to update tab state in BrowserApp.
-        final GeckoBundle data = new GeckoBundle(1);
+        final GeckoBundle data = new GeckoBundle(2);
         data.putInt("id", tab.getId());
+        if (oldTab != null && mTabs.containsKey(oldTab.getId())) {
+            data.putInt("previousTabId", oldTab.getId());
+        }
         mEventDispatcher.dispatch("Tab:Selected", data);
         EventDispatcher.getInstance().dispatch("Tab:Selected", data);
         return tab;
@@ -617,6 +621,10 @@ public class Tabs implements BundleEventListener {
             tab.updatePageAction();
             notifyListeners(tab, TabEvents.SECURITY_CHANGE);
 
+        } else if ("Content:ContentBlockingEvent".equals(event)) {
+            tab.updateTracking(message.getString("tracking"));
+            notifyListeners(tab, TabEvents.TRACKING_CHANGE);
+
         } else if ("Content:StateChange".equals(event)) {
             final int state = message.getInt("state");
             if ((state & GeckoAppShell.WPL_STATE_IS_NETWORK) == 0) {
@@ -761,6 +769,7 @@ public class Tabs implements BundleEventListener {
         PAGE_SHOW,
         LINK_FEED,
         SECURITY_CHANGE,
+        TRACKING_CHANGE,
         DESKTOP_MODE_CHANGE,
         RECORDING_CHANGE,
         BOOKMARK_ADDED,

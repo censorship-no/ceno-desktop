@@ -10,6 +10,7 @@ FORCE_STATIC_LIB = True
 
 UNIFIED_SOURCES += [
     'DllBlocklistWin.cpp',
+    'ErrorHandler.cpp',
     'LauncherProcessWin.cpp',
     'LaunchUnelevated.cpp',
 ]
@@ -23,6 +24,13 @@ OS_LIBS += [
 TEST_DIRS += [
     'test',
 ]
+
+if CONFIG['MOZ_LAUNCHER_PROCESS']:
+    UNIFIED_SOURCES += [
+        '/toolkit/xre/LauncherRegistryInfo.cpp',
+    ]
+    for var in ('MOZ_APP_BASENAME', 'MOZ_APP_VENDOR'):
+        DEFINES[var] = '"%s"' % CONFIG[var]
 
 DisableStlWrapping()
 

@@ -1,26 +1,24 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Specified types for CSS values that are related to transformations.
 
+use crate::parser::{Parse, ParserContext};
+use crate::values::computed::{Context, LengthPercentage as ComputedLengthPercentage};
+use crate::values::computed::{Percentage as ComputedPercentage, ToComputedValue};
+use crate::values::generics::transform as generic;
+use crate::values::generics::transform::{Matrix, Matrix3D};
+use crate::values::specified::position::{Side, X, Y};
+use crate::values::specified::{self, Angle, Integer, Length, LengthPercentage, Number};
 use cssparser::Parser;
-use parser::{Parse, ParserContext};
-use selectors::parser::SelectorParseErrorKind;
 use style_traits::{ParseError, StyleParseErrorKind};
-use values::computed::{Context, LengthOrPercentage as ComputedLengthOrPercentage};
-use values::computed::{Percentage as ComputedPercentage, ToComputedValue};
-use values::computed::transform::TimingFunction as ComputedTimingFunction;
-use values::generics::transform as generic;
-use values::generics::transform::{Matrix, Matrix3D, StepPosition, TimingKeyword};
-use values::specified::{self, Angle, Integer, Length, LengthOrPercentage, Number};
-use values::specified::position::{Side, X, Y};
 
-pub use values::generics::transform::TransformStyle;
+pub use crate::values::generics::transform::TransformStyle;
 
 /// A single operation in a specified CSS `transform`
 pub type TransformOperation =
-    generic::TransformOperation<Angle, Number, Length, Integer, LengthOrPercentage>;
+    generic::TransformOperation<Angle, Number, Length, Integer, LengthPercentage>;
 
 /// A specified CSS `transform`
 pub type Transform = generic::Transform<TransformOperation>;
@@ -107,20 +105,20 @@ impl Transform {
                         }))
                     },
                     "translate" => {
-                        let sx = specified::LengthOrPercentage::parse(context, input)?;
+                        let sx = specified::LengthPercentage::parse(context, input)?;
                         if input.try(|input| input.expect_comma()).is_ok() {
-                            let sy = specified::LengthOrPercentage::parse(context, input)?;
+                            let sy = specified::LengthPercentage::parse(context, input)?;
                             Ok(generic::TransformOperation::Translate(sx, Some(sy)))
                         } else {
                             Ok(generic::TransformOperation::Translate(sx, None))
                         }
                     },
                     "translatex" => {
-                        let tx = specified::LengthOrPercentage::parse(context, input)?;
+                        let tx = specified::LengthPercentage::parse(context, input)?;
                         Ok(generic::TransformOperation::TranslateX(tx))
                     },
                     "translatey" => {
-                        let ty = specified::LengthOrPercentage::parse(context, input)?;
+                        let ty = specified::LengthPercentage::parse(context, input)?;
                         Ok(generic::TransformOperation::TranslateY(ty))
                     },
                     "translatez" => {
@@ -128,9 +126,9 @@ impl Transform {
                         Ok(generic::TransformOperation::TranslateZ(tz))
                     },
                     "translate3d" => {
-                        let tx = specified::LengthOrPercentage::parse(context, input)?;
+                        let tx = specified::LengthPercentage::parse(context, input)?;
                         input.expect_comma()?;
-                        let ty = specified::LengthOrPercentage::parse(context, input)?;
+                        let ty = specified::LengthPercentage::parse(context, input)?;
                         input.expect_comma()?;
                         let tz = specified::Length::parse(context, input)?;
                         Ok(generic::TransformOperation::Translate3D(tx, ty, tz))
@@ -237,14 +235,11 @@ impl Parse for Transform {
 pub enum OriginComponent<S> {
     /// `center`
     Center,
-    /// `<lop>`
-    Length(LengthOrPercentage),
+    /// `<length-percentage>`
+    Length(LengthPercentage),
     /// `<side>`
     Side(S),
 }
-
-/// A specified timing function.
-pub type TimingFunction = generic::TimingFunction<Integer, Number>;
 
 impl Parse for TransformOrigin {
     fn parse<'i, 't>(
@@ -311,8 +306,8 @@ where
         if input.try(|i| i.expect_ident_matching("center")).is_ok() {
             return Ok(OriginComponent::Center);
         }
-        if let Ok(lop) = input.try(|i| LengthOrPercentage::parse(context, i)) {
-            return Ok(OriginComponent::Length(lop));
+        if let Ok(lp) = input.try(|i| LengthPercentage::parse(context, i)) {
+            return Ok(OriginComponent::Length(lp));
         }
         let keyword = S::parse(context, input)?;
         Ok(OriginComponent::Side(keyword))
@@ -323,17 +318,17 @@ impl<S> ToComputedValue for OriginComponent<S>
 where
     S: Side,
 {
-    type ComputedValue = ComputedLengthOrPercentage;
+    type ComputedValue = ComputedLengthPercentage;
 
     fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
         match *self {
             OriginComponent::Center => {
-                ComputedLengthOrPercentage::Percentage(ComputedPercentage(0.5))
+                ComputedLengthPercentage::new_percent(ComputedPercentage(0.5))
             },
             OriginComponent::Length(ref length) => length.to_computed_value(context),
             OriginComponent::Side(ref keyword) => {
                 let p = ComputedPercentage(if keyword.is_start() { 0. } else { 1. });
-                ComputedLengthOrPercentage::Percentage(p)
+                ComputedLengthPercentage::new_percent(p)
             },
         }
     }
@@ -346,129 +341,7 @@ where
 impl<S> OriginComponent<S> {
     /// `0%`
     pub fn zero() -> Self {
-        OriginComponent::Length(LengthOrPercentage::Percentage(ComputedPercentage::zero()))
-    }
-}
-
-#[cfg(feature = "gecko")]
-#[inline]
-fn allow_frames_timing() -> bool {
-    use gecko_bindings::structs::mozilla;
-    unsafe { mozilla::StaticPrefs_sVarCache_layout_css_frames_timing_enabled }
-}
-
-#[cfg(feature = "servo")]
-#[inline]
-fn allow_frames_timing() -> bool {
-    true
-}
-
-impl Parse for TimingFunction {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        if let Ok(keyword) = input.try(TimingKeyword::parse) {
-            return Ok(generic::TimingFunction::Keyword(keyword));
-        }
-        if let Ok(ident) = input.try(|i| i.expect_ident_cloned()) {
-            let position = match_ignore_ascii_case! { &ident,
-                "step-start" => StepPosition::Start,
-                "step-end" => StepPosition::End,
-                _ => return Err(input.new_custom_error(SelectorParseErrorKind::UnexpectedIdent(ident.clone()))),
-            };
-            return Ok(generic::TimingFunction::Steps(Integer::new(1), position));
-        }
-        let location = input.current_source_location();
-        let function = input.expect_function()?.clone();
-        input.parse_nested_block(move |i| {
-            (match_ignore_ascii_case! { &function,
-                "cubic-bezier" => {
-                    let x1 = Number::parse(context, i)?;
-                    i.expect_comma()?;
-                    let y1 = Number::parse(context, i)?;
-                    i.expect_comma()?;
-                    let x2 = Number::parse(context, i)?;
-                    i.expect_comma()?;
-                    let y2 = Number::parse(context, i)?;
-
-                    if x1.get() < 0.0 || x1.get() > 1.0 || x2.get() < 0.0 || x2.get() > 1.0 {
-                        return Err(i.new_custom_error(StyleParseErrorKind::UnspecifiedError));
-                    }
-
-                    Ok(generic::TimingFunction::CubicBezier { x1, y1, x2, y2 })
-                },
-                "steps" => {
-                    let steps = Integer::parse_positive(context, i)?;
-                    let position = i.try(|i| {
-                        i.expect_comma()?;
-                        StepPosition::parse(i)
-                    }).unwrap_or(StepPosition::End);
-                    Ok(generic::TimingFunction::Steps(steps, position))
-                },
-                "frames" => {
-                    if allow_frames_timing() {
-                        let frames = Integer::parse_with_minimum(context, i, 2)?;
-                        Ok(generic::TimingFunction::Frames(frames))
-                    } else {
-                        Err(())
-                    }
-                },
-                _ => Err(()),
-            }).map_err(|()| {
-                location.new_custom_error(StyleParseErrorKind::UnexpectedFunction(function.clone()))
-            })
-        })
-    }
-}
-
-impl ToComputedValue for TimingFunction {
-    type ComputedValue = ComputedTimingFunction;
-
-    #[inline]
-    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
-        match *self {
-            generic::TimingFunction::Keyword(keyword) => generic::TimingFunction::Keyword(keyword),
-            generic::TimingFunction::CubicBezier { x1, y1, x2, y2 } => {
-                generic::TimingFunction::CubicBezier {
-                    x1: x1.to_computed_value(context),
-                    y1: y1.to_computed_value(context),
-                    x2: x2.to_computed_value(context),
-                    y2: y2.to_computed_value(context),
-                }
-            },
-            generic::TimingFunction::Steps(steps, position) => {
-                generic::TimingFunction::Steps(steps.to_computed_value(context) as u32, position)
-            },
-            generic::TimingFunction::Frames(frames) => {
-                generic::TimingFunction::Frames(frames.to_computed_value(context) as u32)
-            },
-        }
-    }
-
-    #[inline]
-    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
-        match *computed {
-            generic::TimingFunction::Keyword(keyword) => generic::TimingFunction::Keyword(keyword),
-            generic::TimingFunction::CubicBezier {
-                ref x1,
-                ref y1,
-                ref x2,
-                ref y2,
-            } => generic::TimingFunction::CubicBezier {
-                x1: Number::from_computed_value(x1),
-                y1: Number::from_computed_value(y1),
-                x2: Number::from_computed_value(x2),
-                y2: Number::from_computed_value(y2),
-            },
-            generic::TimingFunction::Steps(steps, position) => generic::TimingFunction::Steps(
-                Integer::from_computed_value(&(steps as i32)),
-                position,
-            ),
-            generic::TimingFunction::Frames(frames) => {
-                generic::TimingFunction::Frames(Integer::from_computed_value(&(frames as i32)))
-            },
-        }
+        OriginComponent::Length(LengthPercentage::Percentage(ComputedPercentage::zero()))
     }
 }
 
@@ -484,22 +357,43 @@ impl Parse for Rotate {
             return Ok(generic::Rotate::None);
         }
 
-        if let Ok(rx) = input.try(|i| Number::parse(context, i)) {
-            // 'rotate: <number>{3} <angle>'
-            let ry = Number::parse(context, input)?;
-            let rz = Number::parse(context, input)?;
-            let angle = specified::Angle::parse(context, input)?;
-            return Ok(generic::Rotate::Rotate3D(rx, ry, rz, angle));
-        }
+        // Parse <angle> or [ x | y | z | <number>{3} ] && <angle>.
+        //
+        // The rotate axis and angle could be in any order, so we parse angle twice to cover
+        // two cases. i.e. `<number>{3} <angle>` or `<angle> <number>{3}`
+        let angle = input.try(|i| specified::Angle::parse(context, i)).ok();
+        let axis = input
+            .try(|i| {
+                Ok(try_match_ident_ignore_ascii_case! { i,
+                    "x" => (Number::new(1.), Number::new(0.), Number::new(0.)),
+                    "y" => (Number::new(0.), Number::new(1.), Number::new(0.)),
+                    "z" => (Number::new(0.), Number::new(0.), Number::new(1.)),
+                })
+            })
+            .or_else(|_: ParseError| -> Result<_, ParseError> {
+                input.try(|i| {
+                    Ok((
+                        Number::parse(context, i)?,
+                        Number::parse(context, i)?,
+                        Number::parse(context, i)?,
+                    ))
+                })
+            })
+            .ok();
+        let angle = match angle {
+            Some(a) => a,
+            None => specified::Angle::parse(context, input)?,
+        };
 
-        // 'rotate: <angle>'
-        let angle = specified::Angle::parse(context, input)?;
-        Ok(generic::Rotate::Rotate(angle))
+        Ok(match axis {
+            Some((x, y, z)) => generic::Rotate::Rotate3D(x, y, z, angle),
+            None => generic::Rotate::Rotate(angle),
+        })
     }
 }
 
 /// A specified CSS `translate`
-pub type Translate = generic::Translate<LengthOrPercentage, Length>;
+pub type Translate = generic::Translate<LengthPercentage, Length>;
 
 impl Parse for Translate {
     fn parse<'i, 't>(
@@ -510,8 +404,8 @@ impl Parse for Translate {
             return Ok(generic::Translate::None);
         }
 
-        let tx = specified::LengthOrPercentage::parse(context, input)?;
-        if let Ok(ty) = input.try(|i| specified::LengthOrPercentage::parse(context, i)) {
+        let tx = specified::LengthPercentage::parse(context, input)?;
+        if let Ok(ty) = input.try(|i| specified::LengthPercentage::parse(context, i)) {
             if let Ok(tz) = input.try(|i| specified::Length::parse(context, i)) {
                 // 'translate: <length-percentage> <length-percentage> <length>'
                 return Ok(generic::Translate::Translate3D(tx, ty, tz));
@@ -522,7 +416,10 @@ impl Parse for Translate {
         }
 
         // 'translate: <length-percentage> '
-        Ok(generic::Translate::TranslateX(tx))
+        Ok(generic::Translate::Translate(
+            tx,
+            specified::LengthPercentage::zero(),
+        ))
     }
 }
 
@@ -550,6 +447,6 @@ impl Parse for Scale {
         }
 
         // 'scale: <number>'
-        Ok(generic::Scale::ScaleX(sx))
+        Ok(generic::Scale::Scale(sx, sx))
     }
 }

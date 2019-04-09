@@ -39,7 +39,6 @@ const WRAP_TEXT = "devtools.scratchpad.wrapText";
 const SHOW_TRAILING_SPACE = "devtools.scratchpad.showTrailingSpace";
 const EDITOR_FONT_SIZE = "devtools.scratchpad.editorFontSize";
 const ENABLE_AUTOCOMPLETION = "devtools.scratchpad.enableAutocompletion";
-const TAB_SIZE = "devtools.editor.tabsize";
 const FALLBACK_CHARSET_LIST = "intl.fallbackCharsetList.ISO-8859-1";
 
 const VARIABLES_VIEW_URL = "chrome://devtools/content/shared/widgets/VariablesView.xul";
@@ -49,9 +48,7 @@ const {require, loader} = ChromeUtils.import("resource://devtools/shared/Loader.
 const Editor = require("devtools/client/sourceeditor/editor");
 const TargetFactory = require("devtools/client/framework/target").TargetFactory;
 const EventEmitter = require("devtools/shared/event-emitter");
-const {DevToolsWorker} = require("devtools/shared/worker/worker");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const flags = require("devtools/shared/flags");
 const Services = require("Services");
 const {gDevTools} = require("devtools/client/framework/devtools");
 const { extend } = require("devtools/shared/extend");
@@ -203,9 +200,6 @@ var Scratchpad = {
       "sp-cmd-display": () => {
         Scratchpad.display();
       },
-      "sp-cmd-pprint": () => {
-        Scratchpad.prettyPrint();
-      },
       "sp-cmd-contentContext": () => {
         Scratchpad.setContentContext();
       },
@@ -327,14 +321,6 @@ var Scratchpad = {
       this.editor.setClean();
     }
     this._updateTitle();
-  },
-
-  /**
-   * Retrieve the xul:notificationbox DOM element. It notifies the user when
-   * the current code execution context is SCRATCHPAD_CONTEXT_BROWSER.
-   */
-  get notificationBox() {
-    return document.getElementById("scratchpad-notificationbox");
   },
 
   /**
@@ -496,7 +482,7 @@ var Scratchpad = {
     const { debuggerClient, webConsoleClient } = await connection;
     this.debuggerClient = debuggerClient;
     this.webConsoleClient = webConsoleClient;
-    const response = await webConsoleClient.evaluateJSAsync(string, null, evalOptions);
+    const response = await webConsoleClient.evaluateJSAsync(string, evalOptions);
 
     if (response.error) {
       throw new Error(response.error);
@@ -605,45 +591,6 @@ var Scratchpad = {
       this.writeAsComment(response.displayString);
       return [string, error, result];
     }
-  },
-
-  _prettyPrintWorker: null,
-
-  /**
-   * Get or create the worker that handles pretty printing.
-   */
-  get prettyPrintWorker() {
-    if (!this._prettyPrintWorker) {
-      this._prettyPrintWorker = new DevToolsWorker(
-        "resource://devtools/server/actors/pretty-print-worker.js",
-        { name: "pretty-print",
-          verbose: flags.wantLogging }
-      );
-    }
-    return this._prettyPrintWorker;
-  },
-
-  /**
-   * Pretty print the source text inside the scratchpad.
-   *
-   * @return Promise
-   *         A promise resolved with the pretty printed code, or rejected with
-   *         an error.
-   */
-  prettyPrint: function SP_prettyPrint() {
-    const uglyText = this.getText();
-    const tabsize = Services.prefs.getIntPref(TAB_SIZE);
-
-    return this.prettyPrintWorker.performTask("pretty-print", {
-      url: "(scratchpad)",
-      indent: tabsize,
-      source: uglyText,
-    }).then(data => {
-      this.editor.setText(data.code);
-    }).catch(error => {
-      this.writeAsErrorComment({ exception: error });
-      throw error;
-    });
   },
 
   /**
@@ -1571,6 +1518,10 @@ var Scratchpad = {
       return;
     }
 
+    this.notificationBox = new window.MozElements.NotificationBox(element => {
+      document.getElementById("scratchpad-container").prepend(element);
+    });
+
     const chrome = Services.prefs.getBoolPref(DEVTOOLS_CHROME_ENABLED);
     if (chrome) {
       const environmentMenu = document.getElementById("sp-environment-menu");
@@ -1631,7 +1582,7 @@ var Scratchpad = {
       const okstring = this.strings.GetStringFromName("selfxss.okstring");
       const msg = this.strings.formatStringFromName("selfxss.msg", [okstring], 1);
       this._onPaste = WebConsoleUtils.pasteHandlerGen(this.editor.container.contentDocument.body,
-                                                      document.querySelector("#scratchpad-notificationbox"),
+                                                      this.notificationBox,
                                                       msg, okstring);
       editorElement.addEventListener("paste", this._onPaste, true);
       editorElement.addEventListener("drop", this._onPaste);
@@ -1730,11 +1681,6 @@ var Scratchpad = {
     if (this._sidebar) {
       this._sidebar.destroy();
       this._sidebar = null;
-    }
-
-    if (this._prettyPrintWorker) {
-      this._prettyPrintWorker.destroy();
-      this._prettyPrintWorker = null;
     }
 
     scratchpadTargets = null;
@@ -2014,16 +1960,12 @@ ScratchpadTab.prototype = {
           message: Scratchpad.strings.GetStringFromName("connectionTimeout"),
         });
       }, REMOTE_TIMEOUT);
-
-      const target = await this._attach(subject);
-      const consoleActor = target.form.consoleActor;
-      const client = target.client;
       try {
-        const [, webConsoleClient] = await client.attachConsole(consoleActor, []);
+        const target = await this._attach(subject);
         clearTimeout(connectTimer);
         resolve({
-          webConsoleClient,
-          debuggerClient: client,
+          webConsoleClient: target.activeConsole,
+          debuggerClient: target.client,
         });
       } catch (error) {
         reportError("attachConsole", error);
@@ -2040,7 +1982,7 @@ ScratchpadTab.prototype = {
    * @param object subject
    *        The tab or window to obtain the connection for.
    * @return Promise
-   *         The promise for the TabTarget for this tab.
+   *         The promise for the Target for this tab.
    */
   async _attach(subject) {
     const target = await TargetFactory.forTab(this._tab);
@@ -2075,8 +2017,12 @@ ScratchpadWindow.prototype = extend(ScratchpadTab.prototype, {
 
     const client = new DebuggerClient(DebuggerServer.connectPipe());
     await client.connect();
-    const response = await client.mainRoot.getProcess(0);
-    return { form: response.form, client };
+    const front = await client.mainRoot.getMainProcess();
+    const target = await TargetFactory.forRemoteTab({
+      activeTab: front,
+      client,
+    });
+    return target;
   },
 });
 
@@ -2088,10 +2034,8 @@ ScratchpadTarget.consoleFor = ScratchpadTab.consoleFor;
 
 ScratchpadTarget.prototype = extend(ScratchpadTab.prototype, {
   _attach() {
-    if (this._target.isRemote) {
-      return Promise.resolve(this._target);
-    }
-    return this._target.attach().then(() => this._target);
+    // We return a promise here to match the typing of ScratchpadWindow._attach.
+    return Promise.resolve(this._target);
   },
 });
 

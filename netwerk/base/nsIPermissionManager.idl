@@ -126,13 +126,23 @@ interface nsIPermissionManager : nsISupports
   nsISimpleEnumerator getAllForPrincipal(in nsIPrincipal principal);
 
   /**
+   * Get all custom permissions of a specific type, specified with a prefix
+   * string.  This will return an array of all permissions which are not set to
+   * default.  Also the passed type argument is either equal to or a prefix of
+   * the type of the returned permissions.
+   *
+   * @param prefix  the type prefix string
+   */
+  Array<nsIPermission> getAllWithTypePrefix(in ACString prefix);
+
+  /**
    * Add permission information for a given principal.
    * It is internally calling the other add() method using the nsIURI from the
    * principal.
    * Passing a system principal will be a no-op because they will always be
    * granted permissions.
    */
-  void addFromPrincipal(in nsIPrincipal principal, in string typed,
+  void addFromPrincipal(in nsIPrincipal principal, in string type,
                         in uint32_t permission,
                         [optional] in uint32_t expireType,
                         [optional] in int64_t expireTime);
@@ -200,6 +210,21 @@ interface nsIPermissionManager : nsISupports
    */
   uint32_t testPermissionFromPrincipal(in nsIPrincipal principal,
                                        in string type);
+
+  /**
+   * Test whether a website specified by a given origin string has permission
+   * to perform the given action.  This function is similar to testPermission()
+   * and is intended to be used where the cost of parsing a URI in the common
+   * case is to be avoided.
+   * @param originNoSuffix the origin string to be tested.
+   * @param type           a case-sensitive ASCII string, identifying the
+   *                       permission.
+   * @param return         see add(), param permission. returns UNKNOWN_ACTION
+   *                       when there is no stored permission for this uri and/
+   *                       or type.
+   */
+  uint32_t testPermissionOriginNoSuffix(in ACString originNoSuffix,
+                                        in string type);
 
   /**
    * Test whether the principal associated with the window's document has the

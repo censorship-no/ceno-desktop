@@ -12,7 +12,7 @@
 #include "ContentChild.h"
 
 #if defined(XP_WIN)
-#include "mozilla/mscom/MainThreadRuntime.h"
+#  include "mozilla/mscom/MainThreadRuntime.h"
 #endif
 
 namespace mozilla {
@@ -22,22 +22,18 @@ namespace dom {
  * ContentProcess is a singleton on the content process which represents
  * the main thread where tab instances live.
  */
-class ContentProcess : public mozilla::ipc::ProcessChild
-{
+class ContentProcess : public mozilla::ipc::ProcessChild {
   typedef mozilla::ipc::ProcessChild ProcessChild;
 
-public:
-  explicit ContentProcess(ProcessId aParentPid)
-    : ProcessChild(aParentPid)
-  { }
+ public:
+  explicit ContentProcess(ProcessId aParentPid) : ProcessChild(aParentPid) {}
 
-  ~ContentProcess()
-  { }
+  ~ContentProcess() {}
 
   virtual bool Init(int aArgc, char* aArgv[]) override;
   virtual void CleanUp() override;
 
-private:
+ private:
   ContentChild mContent;
   mozilla::ipc::ScopedXREEmbed mXREEmbed;
 
@@ -49,14 +45,7 @@ private:
   DISALLOW_EVIL_CONSTRUCTORS(ContentProcess);
 };
 
-#ifdef ANDROID
-// Android doesn't use -prefsHandle or -prefMapHandle. It gets those FDs
-// another way.
-void SetPrefsFd(int aFd);
-void SetPrefMapFd(int aFd);
-#endif
-
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif  // ifndef dom_tabs_ContentThread_h

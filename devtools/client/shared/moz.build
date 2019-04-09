@@ -13,6 +13,7 @@ TEST_HARNESS_FILES.xpcshell.devtools.client.shared.test += [
 DIRS += [
     'components',
     'redux',
+    'remote-debugging',
     'source-map',
     'vendor',
     'webpack',
@@ -21,6 +22,7 @@ DIRS += [
 
 DevToolsModules(
     'autocomplete-popup.js',
+    'browser-loader-mocks.js',
     'browser-loader.js',
     'css-angle.js',
     'curl.js',

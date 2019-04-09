@@ -23,12 +23,12 @@
 //! Here `Ebb1` and `Ebb2` would each have a single predecessor denoted as `(Ebb0, brz)`
 //! and `(Ebb0, jmp Ebb2)` respectively.
 
-use bforest;
-use entity::EntityMap;
-use ir::instructions::BranchInfo;
-use ir::{Ebb, Function, Inst};
-use std::mem;
-use timing;
+use crate::bforest;
+use crate::entity::SecondaryMap;
+use crate::ir::instructions::BranchInfo;
+use crate::ir::{Ebb, Function, Inst};
+use crate::timing;
+use core::mem;
 
 /// A basic block denoted by its enclosing Ebb and last instruction.
 #[derive(PartialEq, Eq)]
@@ -72,7 +72,7 @@ struct CFGNode {
 /// and successors where predecessors are basic blocks and successors are
 /// extended basic blocks.
 pub struct ControlFlowGraph {
-    data: EntityMap<Ebb, CFGNode>,
+    data: SecondaryMap<Ebb, CFGNode>,
     pred_forest: bforest::MapForest<Inst, Ebb>,
     succ_forest: bforest::SetForest<Ebb>,
     valid: bool,
@@ -82,7 +82,7 @@ impl ControlFlowGraph {
     /// Allocate a new blank control flow graph.
     pub fn new() -> Self {
         Self {
-            data: EntityMap::new(),
+            data: SecondaryMap::new(),
             valid: false,
             pred_forest: bforest::MapForest::new(),
             succ_forest: bforest::SetForest::new(),
@@ -125,9 +125,12 @@ impl ControlFlowGraph {
                 BranchInfo::SingleDest(dest, _) => {
                     self.add_edge(ebb, inst, dest);
                 }
-                BranchInfo::Table(jt) => {
-                    for (_, dest) in func.jump_tables[jt].entries() {
+                BranchInfo::Table(jt, dest) => {
+                    if let Some(dest) = dest {
                         self.add_edge(ebb, inst, dest);
+                    }
+                    for dest in func.jump_tables[jt].iter() {
+                        self.add_edge(ebb, inst, *dest);
                     }
                 }
                 BranchInfo::NotABranch => {}
@@ -209,8 +212,8 @@ pub type SuccIter<'a> = bforest::SetIter<'a, Ebb>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cursor::{Cursor, FuncCursor};
-    use ir::{types, Function, InstBuilder};
+    use crate::cursor::{Cursor, FuncCursor};
+    use crate::ir::{types, Function, InstBuilder};
     use std::vec::Vec;
 
     #[test]

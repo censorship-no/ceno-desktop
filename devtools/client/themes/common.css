@@ -13,17 +13,26 @@
   font: message-box;
   font-size: var(--theme-body-font-size);
 
-  --clear-icon-url: url("chrome://devtools/skin/images/clear.svg");
   --tab-line-hover-color: rgba(0,0,0,.2);
   --tab-line-selected-color: var(--blue-50);
   --toggle-thumb-color: white;
   --toggle-track-color: var(--grey-30);
+
+  --searchbox-background-color: var(--theme-highlight-yellow);
+  --searchbox-border-color: #ffbf00;
+  --searchbox-no-match-background-color: #ffe5e5;
+  --searchbox-no-match-stroke-color: var(--red-60);
 }
 
 :root.theme-dark {
   --tab-line-hover-color: rgba(255,255,255,.2);
   --toggle-thumb-color: var(--grey-40);
   --toggle-track-color: var(--grey-60);
+
+  --searchbox-background-color: #4d4222;
+  --searchbox-border-color: #d99f2b;
+  --searchbox-no-match-background-color: #402325;
+  --searchbox-no-match-stroke-color: var(--red-50);
 }
 
 :root[platform="mac"] {
@@ -272,13 +281,13 @@ checkbox:-moz-focusring {
 .devtools-button {
   -moz-appearance: none;
   background: transparent;
-  border: 1px solid var(--toolbarbutton-border-color);
+  border: none;
   border-radius: 2px;
   color: var(--theme-body-color);
   transition: background-color 0.05s ease-in-out;
   -moz-box-align: center;
   text-shadow: none;
-  padding: 1px;
+  padding: 2px;
   margin: 1px;
 
   /* Button text should not wrap on multiple lines */
@@ -296,8 +305,9 @@ checkbox:-moz-focusring {
   height: 16px;
   margin: 0 3px;
   transition: opacity 0.05s ease-in-out;
-
-  color: var(--theme-toolbar-color);
+  -moz-context-properties: fill;
+  fill: currentColor;
+  color: var(--theme-icon-color);
   direction: ltr;
   font-size: 11px;
 }
@@ -309,8 +319,10 @@ checkbox:-moz-focusring {
   vertical-align: middle;
 }
 
+.devtools-toolbarbutton:not([label])[checked=true] > .toolbarbutton-icon,
+.devtools-toolbarbutton:not([label])[open=true] > .toolbarbutton-icon,
 .devtools-button.checked:empty::before {
-  color: var(--theme-toolbar-checked-color);
+  color: var(--theme-icon-checked-color);
 }
 
 /* Standalone buttons */
@@ -345,12 +357,6 @@ checkbox:-moz-focusring {
   opacity: 0.5 !important;
 }
 
-.devtools-button.checked::before,
-.devtools-toolbarbutton:not([label])[checked=true] > image,
-.devtools-toolbarbutton:not([label])[open=true] > image {
-  fill: var(--theme-toolbar-checked-color);
-}
-
 /* Button states */
 .devtools-toolbarbutton[label],
 .devtools-toolbarbutton[standalone],
@@ -377,7 +383,6 @@ checkbox:-moz-focusring {
 .devtools-toolbarbutton:not([label]):-moz-any([checked],[open],:hover:active),
 .devtools-button[aria-haspopup="menu"][aria-expanded="true"] {
   background-color: var(--toolbarbutton-hover-background);
-  border-color: var(--toolbarbutton-hover-border-color);
 }
 
 .devtools-button:not(:empty):not(.checked):not(:disabled):hover:active,
@@ -397,7 +402,6 @@ checkbox:-moz-focusring {
 .devtools-toolbarbutton:not([disabled])[label][open],
 .devtools-button:not(:empty).checked {
   background: var(--toolbarbutton-checked-background);
-  border-color: var(--toolbarbutton-checked-border-color);
   color: var(--toolbarbutton-checked-color);
 }
 
@@ -410,19 +414,19 @@ checkbox:-moz-focusring {
 /* Icons */
 
 .devtools-button.devtools-clear-icon::before {
-  background-image: var(--clear-icon-url);
+  background-image: url("chrome://devtools/skin/images/clear.svg");
 }
 
 .devtools-button.devtools-filter-icon::before {
-  background-image: var(--filter-image);
+  background-image: url("chrome://devtools/skin/images/filter.svg");
 }
 
 .devtools-toolbarbutton.devtools-clear-icon {
-  list-style-image: var(--clear-icon-url);
+  list-style-image: url("chrome://devtools/skin/images/clear.svg");
 }
 
 .devtools-option-toolbarbutton {
-  list-style-image: var(--tool-options-image);
+  list-style-image: url("chrome://devtools/skin/images/settings.svg");
 }
 
 .devtools-toolbarbutton-group > .devtools-toolbarbutton:last-child {
@@ -469,10 +473,12 @@ checkbox:-moz-focusring {
   padding: 0;
   padding-inline-start: 22px;
   padding-inline-end: 4px;
-  background-position: 8px center;
-  background-size: 11px 11px;
+  background-position: 7px center;
+  background-size: 12px;
   background-repeat: no-repeat;
   font-size: inherit;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-dimmed-color);
 }
 
 /*
@@ -485,28 +491,18 @@ checkbox:-moz-focusring {
 }
 
 .devtools-searchinput {
-  background-image: var(--magnifying-glass-image);
+  background-image: url(chrome://devtools/skin/images/search.svg);
 }
 
 .devtools-filterinput {
-  background-image: url(chrome://devtools/skin/images/filter.svg#filterinput);
+  background-image: url(chrome://devtools/skin/images/filter-small.svg);
 }
 
 .devtools-searchinput:-moz-locale-dir(rtl),
 .devtools-searchinput:dir(rtl),
 .devtools-filterinput:-moz-locale-dir(rtl),
 .devtools-filterinput:dir(rtl) {
-  background-position: calc(100% - 8px) center;
-}
-
-/* This is needed to remove the default search icon on windows. See bug 1400615. */
-.devtools-filterinput > .textbox-input-box > .textbox-search-sign {
-  display: none;
-}
-
-.devtools-searchinput > .textbox-input-box > .textbox-search-icons > .textbox-search-icon,
-.devtools-filterinput > .textbox-input-box > .textbox-search-icons > .textbox-search-icon {
-  visibility: hidden;
+  background-position-x: right 7px;
 }
 
 .devtools-searchinput .textbox-input::placeholder,
@@ -607,8 +603,8 @@ checkbox:-moz-focusring {
 }
 
 .devtools-style-searchbox-no-match {
-  background-color: var(--searcbox-no-match-background-color) !important;
-  border-color: var(--searcbox-no-match-border-color) !important;
+  background-color: var(--searchbox-no-match-background-color) !important;
+  border-color: var(--searchbox-no-match-stroke-color) !important;
 }
 
 .devtools-searchinput-clear {
@@ -619,115 +615,88 @@ checkbox:-moz-focusring {
   border: 0;
   width: 16px;
   height: 16px;
-  background-position: 0 0;
-  background-repeat: no-repeat;
   background-color: transparent;
-}
-
-.theme-dark .devtools-searchinput-clear {
-  background-image: url("chrome://devtools/skin/images/search-clear-dark.svg");
-}
-
-.theme-light .devtools-searchinput-clear {
-  background-image: url("chrome://devtools/skin/images/search-clear-light.svg");
+  background-image: url("chrome://devtools/skin/images/search-clear.svg");
+  -moz-context-properties: fill, fill-opacity;
+  fill: var(--theme-icon-color);
+  fill-opacity: 0.8;
 }
 
 .devtools-style-searchbox-no-match + .devtools-searchinput-clear {
-  background-image: url("chrome://devtools/skin/images/search-clear-failed.svg") !important;
+  fill: var(--searchbox-no-match-stroke-color);
 }
 
 .devtools-searchinput-clear:hover {
-  background-position: -16px 0;
-}
-
-.theme-dark .devtools-searchinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear,
-.theme-dark .devtools-filterinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear {
-  list-style-image: url("chrome://devtools/skin/images/search-clear-dark.svg");
-  -moz-image-region: rect(0, 16px, 16px, 0);
-}
-
-.theme-light .devtools-searchinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear,
-.theme-light .devtools-filterinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear {
-  list-style-image: url("chrome://devtools/skin/images/search-clear-light.svg");
-  -moz-image-region: rect(0, 16px, 16px, 0);
-}
-
-.devtools-searchinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear,
-.devtools-filterinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear {
-  margin-bottom: 0;
-}
-
-.devtools-searchinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear:hover,
-.devtools-filterinput > .textbox-input-box > .textbox-search-icons > .textbox-search-clear:hover {
-  -moz-image-region: rect(0, 32px, 16px, 16px);
+  fill-opacity: 1;
 }
 
 /* Twisty and checkbox controls */
-.theme-twisty, .theme-checkbox {
-  width: 14px;
-  height: 14px;
-  background-repeat: no-repeat;
-  background-image: url("chrome://devtools/skin/images/controls.png");
-  background-size: 56px 28px;
-}
 
 .theme-twisty {
+  width: 14px;
+  height: 14px;
   cursor: pointer;
-  background-position: 0 -14px;
+  background-image: url("chrome://devtools/skin/images/arrow.svg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 10px;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-dimmed-color);
+  transform: rotate(-90deg);
 }
 
-.theme-selected ~ .theme-twisty,
-.theme-dark .theme-twisty {
-  background-position: -28px -14px;
+/* Mirror the twisty for rtl direction */
+.theme-twisty:dir(rtl),
+.theme-twisty:-moz-locale-dir(rtl) {
+  transform: rotate(90deg);
+}
+
+.theme-selected ~ .theme-twisty {
+  fill: var(--theme-selection-color);
 }
 
 .theme-twisty:-moz-focusring {
   outline-style: none;
 }
 
-.theme-twisty[open], .theme-twisty.open {
-  background-position: -14px -14px;
-}
-
-.theme-selected ~ .theme-twisty[open],
-.theme-dark .theme-twisty[open], .theme-dark .theme-twisty.open  {
-  background-position: -42px -14px;
+.theme-twisty[open],
+.theme-twisty.open {
+  transform: none;
 }
 
 .theme-twisty[invisible] {
   visibility: hidden;
 }
 
-/* Mirror the twisty for rtl direction */
-.theme-twisty:dir(rtl),
-.theme-twisty:-moz-locale-dir(rtl) {
-  transform: scaleX(-1);
-}
-
 .theme-checkbox {
   display: inline-block;
+  width: 14px;
+  height: 14px;
   border: 0;
   padding: 0;
   outline: none;
-  background-position: 0 0;
+  background-image: url("chrome://devtools/skin/images/checkbox.svg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+  /* Using fill to paint the border, and stroke for the tick */
+  -moz-context-properties: fill, stroke;
+  fill: rgba(0,0,0,.3);
+  stroke: transparent;
 }
 
 .theme-dark .theme-checkbox {
-  background-position: -28px 0;
+  fill: rgba(255,255,255,.4);
 }
 
+.theme-checkbox.checked,
 .theme-checkbox[checked] {
-  background-position: -14px 0;
+  stroke: rgba(0,0,0,.6);
 }
 
+.theme-dark .theme-checkbox.checked,
 .theme-dark .theme-checkbox[checked] {
-  background-position: -42px 0;
-}
-
-@media (min-resolution: 1.1dppx) {
-  .theme-twisty, .theme-checkbox {
-    background-image: url("chrome://devtools/skin/images/controls@2x.png");
-  }
+  stroke: rgba(255,255,255,.8);
 }
 
 /* Throbbers */
@@ -772,7 +741,7 @@ checkbox:-moz-focusring {
   background-repeat: no-repeat;
   background-position: center;
   -moz-context-properties: fill;
-  fill: var(--theme-toolbar-photon-icon-color);
+  fill: var(--theme-icon-color);
 }
 
 .all-tabs-menu:hover {
@@ -843,8 +812,14 @@ checkbox:-moz-focusring {
   width: 2em;
   height: 1em;
   border-radius: 1em;
+  border: 1px solid transparent;
+  box-sizing: content-box;
   /* Animate the thumb position between states of the checkbox. */
   transition: background-color .1s ease-out;
+}
+
+.devtools-checkbox-toggle[disabled]{
+  opacity: 0.5;
 }
 
 /* For right-to-left layout, the toggle thumb goes in the opposite direction. */
@@ -852,13 +827,12 @@ html[dir="rtl"] .devtools-checkbox-toggle {
   --x-pos: -.15em;
 }
 
-.devtools-checkbox-toggle:focus {
-  box-shadow: 0 0 0 1px var(--blue-55);
+.devtools-checkbox-toggle:not(:checked):focus {
+  border-color: var(--blue-55);
 }
 
 .devtools-checkbox-toggle:checked:focus {
   background-color: var(--blue-40);
-  box-shadow: none;
 }
 
 .devtools-checkbox-toggle:checked {

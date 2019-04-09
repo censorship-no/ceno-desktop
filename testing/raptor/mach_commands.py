@@ -27,7 +27,7 @@ BENCHMARK_REVISION = '2720cdc790828952964524bb44ce8b4c14670e90'
 
 
 class RaptorRunner(MozbuildObject):
-    def run_test(self, raptor_args, app=None):
+    def run_test(self, raptor_args, kwargs):
         """
         We want to do couple of things before running raptor
         1. Clone mozharness
@@ -35,26 +35,32 @@ class RaptorRunner(MozbuildObject):
         3. Run mozharness
         """
 
-        self.init_variables(raptor_args, app=app)
+        self.init_variables(raptor_args, kwargs)
         self.setup_benchmarks()
         self.make_config()
         self.write_config()
         self.make_args()
         return self.run_mozharness()
 
-    def init_variables(self, raptor_args, app=None):
+    def init_variables(self, raptor_args, kwargs):
         self.raptor_dir = os.path.join(self.topsrcdir, 'testing', 'raptor')
         self.mozharness_dir = os.path.join(self.topsrcdir, 'testing',
                                            'mozharness')
         self.config_file_path = os.path.join(self._topobjdir, 'testing',
                                              'raptor-in_tree_conf.json')
-        self.binary_path = self.get_binary_path() if app != 'geckoview' else None
+        self.binary_path = self.get_binary_path() if kwargs['app'] not in \
+            ['geckoview', 'fennec'] else None
         self.virtualenv_script = os.path.join(self.topsrcdir, 'third_party', 'python',
                                               'virtualenv', 'virtualenv.py')
         self.virtualenv_path = os.path.join(self._topobjdir, 'testing',
                                             'raptor-venv')
         self.python_interp = sys.executable
         self.raptor_args = raptor_args
+        if kwargs.get('host', None) == 'HOST_IP':
+            kwargs['host'] = os.environ['HOST_IP']
+        self.host = kwargs['host']
+        self.power_test = kwargs['power_test']
+        self.is_release_build = kwargs['is_release_build']
 
     def setup_benchmarks(self):
         """Make sure benchmarks are linked to the proper location in the objdir.
@@ -66,6 +72,13 @@ class RaptorRunner(MozbuildObject):
 
         # Set up the external repo
         external_repo_path = os.path.join(get_state_dir()[0], 'performance-tests')
+
+        try:
+            subprocess.check_output(['git', '--version'])
+        except Exception as ex:
+            print("Git is not available! Please install git and "
+                  "ensure it is included in the terminal path")
+            raise ex
 
         if not os.path.isdir(external_repo_path):
             subprocess.check_call(['git', 'clone', BENCHMARK_REPOSITORY, external_repo_path])
@@ -122,7 +135,10 @@ class RaptorRunner(MozbuildObject):
             'python3_manifest': {
                 'win32': 'python3.manifest',
                 'win64': 'python3_x64.manifest',
-            }
+            },
+            'host': self.host,
+            'power_test': self.power_test,
+            'is_release_build': self.is_release_build,
         }
 
     def make_args(self):
@@ -164,8 +180,9 @@ class MachRaptor(MachCommandBase):
 
         build_obj = MozbuildObject.from_environment(cwd=HERE)
 
-        if conditions.is_android(build_obj) or kwargs['app'] == 'geckoview':
+        if conditions.is_android(build_obj) or kwargs['app'] in ['geckoview', 'fennec']:
             from mozrunner.devices.android_device import verify_android_device
+            from mozdevice import ADBAndroid, ADBHost
             if not verify_android_device(build_obj, install=True, app=kwargs['binary']):
                 return 1
 
@@ -176,7 +193,28 @@ class MachRaptor(MachCommandBase):
         raptor = self._spawn(RaptorRunner)
 
         try:
-            return raptor.run_test(sys.argv[2:], app=kwargs['app'])
+            if kwargs['app'] == 'geckoview' and kwargs['power_test']:
+                device = ADBAndroid(verbose=True)
+                adbhost = ADBHost(verbose=True)
+                device_serial = "%s:5555" % device.get_ip_address()
+                device.command_output(["tcpip", "5555"])
+                raw_input("Please disconnect your device from USB then press ENTER...")
+                adbhost.command_output(["connect", device_serial])
+                while len(adbhost.devices()) > 1:
+                    raw_input("You must disconnect your device from USB before continuing.")
+                # must reset the environment DEVICE_SERIAL which was set during
+                # verify_android_device to match our new tcpip value.
+                os.environ["DEVICE_SERIAL"] = device_serial
+            return raptor.run_test(sys.argv[2:], kwargs)
         except Exception as e:
-            print(str(e))
+            print(repr(e))
             return 1
+        finally:
+            try:
+                if kwargs['app'] == 'geckoview' and kwargs['power_test']:
+                    raw_input("Connect device via usb and press ENTER...")
+                    device = ADBAndroid(device=device_serial, verbose=True)
+                    device.command_output(["usb"])
+                    adbhost.command_output(["disconnect", device_serial])
+            except Exception:
+                adbhost.command_output(["kill-server"])

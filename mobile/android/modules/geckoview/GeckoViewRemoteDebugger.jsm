@@ -23,6 +23,11 @@ XPCOMUtils.defineLazyGetter(this, "DebuggerServer", () => {
   return DebuggerServer;
 });
 
+XPCOMUtils.defineLazyGetter(this, "SocketListener", () => {
+  let { SocketListener } = require("devtools/shared/security/socket");
+  return SocketListener;
+});
+
 GeckoViewUtils.initLogging("RemoteDebugger", this);
 
 var GeckoViewRemoteDebugger = {
@@ -56,6 +61,8 @@ var GeckoViewRemoteDebugger = {
     DebuggerServer.setRootActor(createRootActor);
     DebuggerServer.allowChromeProcess = true;
     DebuggerServer.chromeWindowType = "navigator:geckoview";
+    // Force the Server to stay alive even if there are no connections at the moment.
+    DebuggerServer.keepAlive = true;
 
     // Socket address for USB remote debugger expects
     // @ANDROID_PACKAGE_NAME/firefox-debugger-socket.
@@ -94,12 +101,14 @@ var GeckoViewRemoteDebugger = {
 class USBRemoteDebugger {
   start(aPortOrPath) {
     try {
-      let AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
-      let authenticator = new AuthenticatorType.Server();
+      const AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
+      const authenticator = new AuthenticatorType.Server();
       authenticator.allowConnection = this.allowConnection.bind(this);
-      this._listener = DebuggerServer.createListener();
-      this._listener.portOrPath = aPortOrPath;
-      this._listener.authenticator = authenticator;
+      const socketOptions = {
+        authenticator,
+        portOrPath: aPortOrPath,
+      };
+      this._listener = new SocketListener(DebuggerServer, socketOptions);
       this._listener.open();
       debug `USB remote debugger - listening on ${aPortOrPath}`;
     } catch (e) {

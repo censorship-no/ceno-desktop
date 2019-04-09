@@ -85,20 +85,18 @@ class WorkerPrivate;
 class StrongWorkerRef;
 class ThreadSafeWorkerRef;
 
-class WorkerRef
-{
-public:
+class WorkerRef {
+ public:
   NS_INLINE_DECL_REFCOUNTING(WorkerRef)
 
-protected:
+ protected:
   class Holder;
   friend class Holder;
 
   explicit WorkerRef(WorkerPrivate* aWorkerPrivate);
   virtual ~WorkerRef();
 
-  virtual void
-  Notify();
+  virtual void Notify();
 
   WorkerPrivate* mWorkerPrivate;
   UniquePtr<WorkerHolder> mHolder;
@@ -106,59 +104,69 @@ protected:
   std::function<void()> mCallback;
 };
 
-class WeakWorkerRef final : public WorkerRef
-{
-public:
-  static already_AddRefed<WeakWorkerRef>
-  Create(WorkerPrivate* aWorkerPrivate,
-         const std::function<void()>& aCallback = nullptr);
+class WeakWorkerRef final : public WorkerRef {
+ public:
+  static already_AddRefed<WeakWorkerRef> Create(
+      WorkerPrivate* aWorkerPrivate,
+      std::function<void()>&& aCallback = nullptr);
 
-  WorkerPrivate*
-  GetPrivate() const;
+  WorkerPrivate* GetPrivate() const;
 
   // This can be called on any thread. It's racy and, in general, the wrong
   // choice.
-  WorkerPrivate*
-  GetUnsafePrivate() const;
+  WorkerPrivate* GetUnsafePrivate() const;
 
-private:
+ private:
   explicit WeakWorkerRef(WorkerPrivate* aWorkerPrivate);
   ~WeakWorkerRef();
 
-  void
-  Notify() override;
+  void Notify() override;
 };
 
-class StrongWorkerRef final : public WorkerRef
-{
-public:
-  static already_AddRefed<StrongWorkerRef>
-  Create(WorkerPrivate* aWorkerPrivate,
-         const char* aName,
-         const std::function<void()>& aCallback = nullptr);
+class StrongWorkerRef final : public WorkerRef {
+ public:
+  static already_AddRefed<StrongWorkerRef> Create(
+      WorkerPrivate* aWorkerPrivate, const char* aName,
+      std::function<void()>&& aCallback = nullptr);
 
-  WorkerPrivate*
-  Private() const;
+  // This function creates a StrongWorkerRef even when in the Canceling state of
+  // the worker's lifecycle. It's intended to be used by system code, e.g. code
+  // that needs to perform IPC.
+  //
+  // This method should only be used in cases where the StrongWorkerRef will be
+  // used for an extremely bounded duration that cannot be impacted by content.
+  // For example, IPCStreams use this type of ref in order to immediately
+  // migrate to an actor on another thread. Whether the IPCStream ever actually
+  // is streamed does not matter; the ref will be dropped once the new actor is
+  // created. For this reason, this method does not take a callback. It's
+  // expected and required that callers will drop the reference when they are
+  // done.
+  static already_AddRefed<StrongWorkerRef> CreateForcibly(
+      WorkerPrivate* aWorkerPrivate, const char* aName);
 
-private:
+  WorkerPrivate* Private() const;
+
+ private:
   friend class WeakWorkerRef;
   friend class ThreadSafeWorkerRef;
+
+  static already_AddRefed<StrongWorkerRef> CreateImpl(
+      WorkerPrivate* aWorkerPrivate, const char* aName,
+      WorkerStatus aFailStatus);
 
   explicit StrongWorkerRef(WorkerPrivate* aWorkerPrivate);
   ~StrongWorkerRef();
 };
 
-class ThreadSafeWorkerRef final
-{
-public:
+class ThreadSafeWorkerRef final {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ThreadSafeWorkerRef)
 
   explicit ThreadSafeWorkerRef(StrongWorkerRef* aRef);
 
-  WorkerPrivate*
-  Private() const;
+  WorkerPrivate* Private() const;
 
-private:
+ private:
   friend class StrongWorkerRef;
 
   ~ThreadSafeWorkerRef();
@@ -166,7 +174,7 @@ private:
   RefPtr<StrongWorkerRef> mRef;
 };
 
-} // dom namespace
-} // mozilla namespace
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_workers_WorkerRef_h */

@@ -1,28 +1,28 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! The [`@font-feature-values`][font-feature-values] at-rule.
 //!
 //! [font-feature-values]: https://drafts.csswg.org/css-fonts-3/#at-font-feature-values-rule
 
-use Atom;
+use crate::error_reporting::ContextualParseError;
+#[cfg(feature = "gecko")]
+use crate::gecko_bindings::bindings::Gecko_AppendFeatureValueHashEntry;
+#[cfg(feature = "gecko")]
+use crate::gecko_bindings::structs::{self, gfxFontFeatureValueSet, nsTArray};
+use crate::parser::{Parse, ParserContext};
+use crate::shared_lock::{SharedRwLockReadGuard, ToCssWithGuard};
+use crate::str::CssStringWriter;
+use crate::stylesheets::CssRuleType;
+use crate::values::computed::font::FamilyName;
+use crate::values::serialize_atom_identifier;
+use crate::Atom;
 use cssparser::{AtRuleParser, AtRuleType, BasicParseErrorKind, CowRcStr};
 use cssparser::{DeclarationListParser, DeclarationParser, Parser};
 use cssparser::{QualifiedRuleParser, RuleListParser, SourceLocation, Token};
-use error_reporting::ContextualParseError;
-#[cfg(feature = "gecko")]
-use gecko_bindings::bindings::Gecko_AppendFeatureValueHashEntry;
-#[cfg(feature = "gecko")]
-use gecko_bindings::structs::{self, gfxFontFeatureValueSet, nsTArray};
-use parser::{Parse, ParserContext};
-use shared_lock::{SharedRwLockReadGuard, ToCssWithGuard};
 use std::fmt::{self, Write};
-use str::CssStringWriter;
 use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
-use stylesheets::CssRuleType;
-use values::computed::font::FamilyName;
-use values::serialize_atom_identifier;
 
 /// A @font-feature-values block declaration.
 /// It is `<ident>: <integer>+`.
@@ -70,11 +70,7 @@ impl Parse for SingleValue {
         match *input.next()? {
             Token::Number {
                 int_value: Some(v), ..
-            }
-                if v >= 0 =>
-            {
-                Ok(SingleValue(v as u32))
-            },
+            } if v >= 0 => Ok(SingleValue(v as u32)),
             ref t => Err(location.new_unexpected_token_error(t.clone())),
         }
     }
@@ -103,22 +99,14 @@ impl Parse for PairValues {
         let first = match *input.next()? {
             Token::Number {
                 int_value: Some(a), ..
-            }
-                if a >= 0 =>
-            {
-                a as u32
-            },
+            } if a >= 0 => a as u32,
             ref t => return Err(location.new_unexpected_token_error(t.clone())),
         };
         let location = input.current_source_location();
         match input.next() {
             Ok(&Token::Number {
                 int_value: Some(b), ..
-            })
-                if b >= 0 =>
-            {
-                Ok(PairValues(first, Some(b as u32)))
-            },
+            }) if b >= 0 => Ok(PairValues(first, Some(b as u32))),
             // It can't be anything other than number.
             Ok(t) => Err(location.new_unexpected_token_error(t.clone())),
             // It can be just one value.
@@ -157,11 +145,9 @@ impl Parse for VectorValues {
             match input.next() {
                 Ok(&Token::Number {
                     int_value: Some(a), ..
-                })
-                    if a >= 0 =>
-                {
+                }) if a >= 0 => {
                     vec.push(a as u32);
-                }
+                },
                 // It can't be anything other than number.
                 Ok(t) => return Err(location.new_unexpected_token_error(t.clone())),
                 Err(_) => break,

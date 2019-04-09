@@ -28,7 +28,12 @@ assert._isSameValue = function (a, b) {
 };
 
 assert.sameValue = function (actual, expected, message) {
-  if (assert._isSameValue(actual, expected)) {
+  try {
+    if (assert._isSameValue(actual, expected)) {
+      return;
+    }
+  } catch (error) {
+    $ERROR(message + ' (_isSameValue operation threw) ' + error);
     return;
   }
 
@@ -350,6 +355,10 @@ $ERROR = function $ERROR(message) {
   throw new Test262Error(message);
 };
 
+function $DONOTEVALUATE() {
+  throw "Test262: This statement should not be evaluated.";
+}
+
 // file: test262-host.js
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -580,4 +589,9 @@ function $DONE(failure) {
         reportFailure(failure);
     else
         reportCompare(0, 0);
+}
+
+// Some tests in test262 leave promise rejections unhandled.
+if ("ignoreUnhandledRejections" in this) {
+  ignoreUnhandledRejections();
 }

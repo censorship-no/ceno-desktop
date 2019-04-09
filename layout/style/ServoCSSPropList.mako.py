@@ -67,14 +67,23 @@ def method(prop):
 # but other non-trivial dependence like scrollbar colors.
 SERIALIZED_PREDEFINED_TYPES = [
     "Appearance",
+    "AlignContent",
+    "AlignItems",
+    "AlignSelf",
     "BackgroundRepeat",
     "BackgroundSize",
+    "BorderImageRepeat",
+    "BorderStyle",
+    "BreakBetween",
+    "BreakWithin",
     "Clear",
     "ClipRectOrAuto",
     "Color",
     "Content",
     "CounterIncrement",
     "CounterReset",
+    "Cursor",
+    "FillRule",
     "Float",
     "FontFamily",
     "FontFeatureSettings",
@@ -93,30 +102,52 @@ SERIALIZED_PREDEFINED_TYPES = [
     "FontWeight",
     "Integer",
     "ImageLayer",
+    "JustifyContent",
+    "JustifyItems",
+    "JustifySelf",
     "Length",
-    "LengthOrPercentage",
+    "LengthPercentage",
     "NonNegativeLength",
-    "NonNegativeLengthOrPercentage",
+    "NonNegativeLengthPercentage",
     "ListStyleType",
     "OffsetPath",
     "Opacity",
+    "OutlineStyle",
+    "OverflowWrap",
+    "Position",
+    "Quotes",
     "Resize",
+    "Rotate",
+    "Scale",
+    "TextAlign",
+    "Translate",
+    "TimingFunction",
     "TransformStyle",
+    "UserSelect",
     "background::BackgroundSize",
     "basic_shape::ClippingShape",
     "basic_shape::FloatAreaShape",
     "position::HorizontalPosition",
     "position::VerticalPosition",
     "url::ImageUrlOrNone",
+    "Appearance",
+    "OverscrollBehavior",
+    "OverflowAnchor",
+    "OverflowClipBox",
+    "ScrollSnapType",
+    "Float",
+    "Overflow",
 ]
 
 def serialized_by_servo(prop):
     # If the property requires layout information, no such luck.
     if "GETCS_NEEDS_LAYOUT_FLUSH" in prop.flags:
         return False
-    # No shorthands yet.
     if prop.type() == "shorthand":
-        return False
+        # FIXME: Need to serialize a value interpolated with currentcolor
+        # properly to be able to use text-decoration, and figure out what to do
+        # with relative mask urls.
+        return prop.name != "text-decoration" and prop.name != "mask"
     # Keywords are all fine, except -moz-osx-font-smoothing, which does
     # resistfingerprinting stuff.
     if prop.keyword and prop.name != "-moz-osx-font-smoothing":
@@ -149,8 +180,8 @@ def flags(prop):
         result.append("CanAnimateOnCompositor")
     if exposed_on_getcs(prop):
         result.append("ExposedOnGetCS")
-    if serialized_by_servo(prop):
-        result.append("SerializedByServo")
+        if serialized_by_servo(prop):
+            result.append("SerializedByServo")
     if prop.type() == "longhand" and prop.logical:
         result.append("IsLogical")
     return ", ".join('"{}"'.format(flag) for flag in result)

@@ -1,18 +1,18 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Specified time values.
 
+use crate::parser::{Parse, ParserContext};
+use crate::values::computed::time::Time as ComputedTime;
+use crate::values::computed::{Context, ToComputedValue};
+use crate::values::specified::calc::CalcNode;
+use crate::values::CSSFloat;
 use cssparser::{Parser, Token};
-use parser::{Parse, ParserContext};
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ParseError, SpecifiedValueInfo, StyleParseErrorKind, ToCss};
 use style_traits::values::specified::AllowedNumericType;
-use values::CSSFloat;
-use values::computed::{Context, ToComputedValue};
-use values::computed::time::Time as ComputedTime;
-use values::specified::calc::CalcNode;
+use style_traits::{CssWriter, ParseError, SpecifiedValueInfo, StyleParseErrorKind, ToCss};
 
 /// A time value according to CSS-VALUES § 6.2.
 #[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq)]
@@ -92,12 +92,10 @@ impl Time {
             // ParsingMode::DEFAULT directly.
             Ok(&Token::Dimension {
                 value, ref unit, ..
-            })
-                if clamping_mode.is_ok(ParsingMode::DEFAULT, value) =>
-            {
+            }) if clamping_mode.is_ok(ParsingMode::DEFAULT, value) => {
                 return Time::parse_dimension(value, unit, /* from_calc = */ false)
                     .map_err(|()| location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
-            }
+            },
             Ok(&Token::Function(ref name)) if name.eq_ignore_ascii_case("calc") => {},
             Ok(t) => return Err(location.new_unexpected_token_error(t.clone())),
             Err(e) => return Err(e.into()),

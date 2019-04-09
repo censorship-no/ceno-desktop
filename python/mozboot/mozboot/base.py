@@ -151,7 +151,7 @@ MODERN_MERCURIAL_VERSION = LooseVersion('4.3.3')
 MODERN_PYTHON_VERSION = LooseVersion('2.7.3')
 
 # Upgrade rust older than this.
-MODERN_RUST_VERSION = LooseVersion('1.29.2')
+MODERN_RUST_VERSION = LooseVersion('1.31.0')
 
 
 class BaseBootstrapper(object):
@@ -216,7 +216,7 @@ class BaseBootstrapper(object):
         Install packages required to build Firefox for Android (application
         'mobile/android', also known as Fennec).
         '''
-        raise NotImplementedError('Cannot bootstrap Firefox for Android: '
+        raise NotImplementedError('Cannot bootstrap GeckoView/Firefox for Android: '
                                   '%s does not yet implement install_mobile_android_packages()'
                                   % __name__)
 
@@ -225,7 +225,7 @@ class BaseBootstrapper(object):
         Print a message to the console detailing what the user's mozconfig
         should contain.
 
-        Firefox for Android needs an application and an ABI set, and it needs
+        GeckoView/Firefox for Android needs an application and an ABI set, and it needs
         paths to the Android SDK and NDK.
         '''
         raise NotImplementedError('%s does not yet implement suggest_mobile_android_mozconfig()' %
@@ -233,11 +233,11 @@ class BaseBootstrapper(object):
 
     def install_mobile_android_artifact_mode_packages(self):
         '''
-        Install packages required to build Firefox for Android (application
+        Install packages required to build GeckoView/Firefox for Android (application
         'mobile/android', also known as Fennec) in Artifact Mode.
         '''
         raise NotImplementedError(
-            'Cannot bootstrap Firefox for Android Artifact Mode: '
+            'Cannot bootstrap GeckoView/Firefox for Android Artifact Mode: '
             '%s does not yet implement install_mobile_android_artifact_mode_packages()'
             % __name__)
 
@@ -246,11 +246,19 @@ class BaseBootstrapper(object):
         Print a message to the console detailing what the user's mozconfig
         should contain.
 
-        Firefox for Android Artifact Mode needs an application and an ABI set,
+        GeckoView/Firefox for Android Artifact Mode needs an application and an ABI set,
         and it needs paths to the Android SDK.
         '''
         raise NotImplementedError(
             '%s does not yet implement suggest_mobile_android_artifact_mode_mozconfig()'
+            % __name__)
+
+    def ensure_clang_static_analysis_package(self, checkout_root):
+        '''
+        Install the clang static analysis package
+        '''
+        raise NotImplementedError(
+            '%s does not yet implement ensure_clang_static_analysis_package()'
             % __name__)
 
     def ensure_stylo_packages(self, state_dir, checkout_root):
@@ -268,28 +276,23 @@ class BaseBootstrapper(object):
             '%s does not yet implement ensure_node_packages()'
             % __name__)
 
-    def ensure_rust_package(self, crate_name, min_version):
-        cargo = self.which('cargo')
-        if not cargo:
-            cargo_home, cargo_bin = self.cargo_home()
-            cargo = os.path.join(cargo_bin, 'cargo')
+    def install_toolchain_static_analysis(self, checkout_root):
+        mach_binary = os.path.join(checkout_root, 'mach')
+        mach_binary = os.path.abspath(mach_binary)
+        if not os.path.exists(mach_binary):
+            raise ValueError("mach not found at %s" % mach_binary)
 
-        list = subprocess.check_output([cargo, 'install', '--list'])
-        target = crate_name + ' v'
-        for line in list.splitlines():
-            if line.startswith(target):
-                version = line[len(target):-1]
-                if LooseVersion(version) >= LooseVersion(min_version):
-                    return
-                print('old version of {name} ({version}) found'.format(
-                    name=crate_name, version=version))
-                break
-        else:
-            print('{name} not found'.format(name=crate_name))
+        if not sys.executable:
+            raise ValueError("cannot determine path to Python executable")
 
-        print('installing via cargo install.'.format(
-            name=crate_name))
-        subprocess.check_call([cargo, 'install', '--force', crate_name])
+        cmd = [sys.executable, mach_binary, 'static-analysis', 'install',
+               '--force', '--minimal-install']
+
+        from subprocess import CalledProcessError
+        try:
+            subprocess.check_call(cmd)
+        except CalledProcessError as e:
+            print(e.output)
 
     def install_toolchain_artifact(self, state_dir, checkout_root, toolchain_job):
         mach_binary = os.path.join(checkout_root, 'mach')
@@ -430,6 +433,20 @@ class BaseBootstrapper(object):
             return choice
         else:
             raise Exception("Error! Reached max attempts of entering option.")
+
+    def prompt_yesno(self, prompt):
+        ''' Prompts the user with prompt and requires a yes/no answer.'''
+        valid = False
+        while not valid:
+            choice = raw_input(prompt + ' [Y/n]: ').strip().lower()[:1]
+            if choice == '':
+                choice = 'y'
+            if choice not in ('y', 'n'):
+                print('ERROR! Please enter y or n!')
+            else:
+                valid = True
+
+        return choice == 'y'
 
     def _ensure_package_manager_updated(self):
         if self.package_manager_updated:
@@ -673,6 +690,16 @@ class BaseBootstrapper(object):
         if rust.platform() == win64 and win32 not in targets:
             subprocess.check_call([rustup, 'target', 'add', win32])
 
+        if 'mobile_android' in self.application:
+            # Let's add the most common targets.
+            android_targets = ('armv7-linux-androideabi',
+                               'aarch64-linux-android',
+                               'i686-linux-android',
+                               'x86_64-linux-android', )
+            for target in android_targets:
+                if target not in targets:
+                    subprocess.check_call([rustup, 'target', 'add', target])
+
     def upgrade_rust(self, rustup):
         """Upgrade Rust.
 
@@ -730,3 +757,57 @@ class BaseBootstrapper(object):
         if h.hexdigest() != hexhash:
             os.remove(dest)
             raise ValueError('Hash of downloaded file does not match expected hash')
+
+    def ensure_java(self, extra_search_dirs=()):
+        """Verify the presence of java.
+
+        Note that we currently require a JDK (not just a JRE) because we
+        use `jarsigner` in local builds.
+
+        Soon we won't require Java 1.8 to build (after Bug 1515248 and
+        we use Android-Gradle plugin 3.2.1), but the Android
+        `sdkmanager` tool still requires exactly 1.8.  Sigh.  Note that
+        we no longer require javac explicitly; it's fetched by
+        Gradle.
+        """
+
+        if 'JAVA_HOME' in os.environ:
+            extra_search_dirs += (os.path.join(os.environ['JAVA_HOME'], 'bin'),)
+        java = self.which('java', extra_search_dirs)
+
+        if not java:
+            raise Exception('You need to have Java version 1.8 installed. '
+                            'Please visit http://www.java.com/en/download '
+                            'to get version 1.8.')
+
+        try:
+            output = subprocess.check_output([java,
+                                              '-XshowSettings:properties',
+                                              '-version'],
+                                             stderr=subprocess.STDOUT).rstrip()
+
+            # -version strings are pretty free-form, like: 'java version
+            # "1.8.0_192"' or 'openjdk version "11.0.1" 2018-10-16', but the
+            # -XshowSettings:properties gives the information (to stderr, sigh)
+            # like 'java.specification.version = 8'.  That flag is non-standard
+            # but has been around since at least 2011.
+            version = [line for line in output.splitlines()
+                       if 'java.specification.version' in line]
+            if not len(version) == 1:
+                raise Exception('You need to have Java version 1.8 installed '
+                                '(found {} but could not parse version "{}"). '
+                                'Check the JAVA_HOME environment variable. '
+                                'Please visit http://www.java.com/en/download '
+                                'to get version 1.8.'.format(java, output))
+
+            version = version[0].split(' = ')[-1]
+            if version not in ['1.8', '8']:
+                raise Exception('You need to have Java version 1.8 installed '
+                                '(found {} with version "{}"). '
+                                'Check the JAVA_HOME environment variable. '
+                                'Please visit http://www.java.com/en/download '
+                                'to get version 1.8.'.format(java, version))
+        except subprocess.CalledProcessError as e:
+            raise Exception('Failed to get java version from {}: {}'.format(java, e.output))
+
+        print('Your version of Java ({}) is at least 1.8 ({}).'.format(java, version))

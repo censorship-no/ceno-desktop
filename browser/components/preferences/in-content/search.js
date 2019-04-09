@@ -149,7 +149,7 @@ var gSearchPane = {
     // This is called each time something affects the list of engines.
     let list = document.getElementById("defaultEngine");
     // Set selection to the current default engine.
-    let currentEngine = Services.search.currentEngine.name;
+    let currentEngine = Services.search.defaultEngine.name;
 
     // If the current engine isn't in the list any more, select the first item.
     let engines = gEngineView._engineStore._engines;
@@ -391,7 +391,7 @@ var gSearchPane = {
   },
 
   setDefaultEngine() {
-    Services.search.currentEngine =
+    Services.search.defaultEngine =
       document.getElementById("defaultEngine").selectedItem.engine;
     ExtensionSettingsStore.setByUser(SEARCH_TYPE, SEARCH_KEY);
   },
@@ -400,9 +400,8 @@ var gSearchPane = {
 function onDragEngineStart(event) {
   var selectedIndex = gEngineView.selectedIndex;
   var tree = document.getElementById("engineList");
-  var row = { }, col = { }, child = { };
-  tree.treeBoxObject.getCellAt(event.clientX, event.clientY, row, col, child);
-  if (selectedIndex >= 0 && !gEngineView.isCheckBox(row.value, col.value)) {
+  let cell = tree.getCellAt(event.clientX, event.clientY);
+  if (selectedIndex >= 0 && !gEngineView.isCheckBox(cell.row, cell.col)) {
     event.dataTransfer.setData(ENGINE_FLAVOR, selectedIndex.toString());
     event.dataTransfer.effectAllowed = "move";
   }
@@ -667,7 +666,6 @@ EngineView.prototype = {
   selectionChanged() { },
   cycleCell(row, column) { },
   isEditable(index, column) { return column.id != "engineName"; },
-  isSelectable(index, column) { return false; },
   setCellValue(index, column, value) {
     if (column.id == "engineShown") {
       this._engineStore.engines[index].shown = value == "true";

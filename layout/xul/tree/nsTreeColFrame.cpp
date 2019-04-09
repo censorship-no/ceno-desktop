@@ -10,54 +10,47 @@
 #include "nsIContent.h"
 #include "mozilla/ComputedStyle.h"
 #include "nsNameSpaceManager.h"
-#include "nsIBoxObject.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/dom/TreeBoxObject.h"
 #include "nsTreeColumns.h"
 #include "nsDisplayList.h"
 #include "nsTreeBodyFrame.h"
 #include "nsXULElement.h"
+#include "mozilla/dom/XULTreeElement.h"
+
+using namespace mozilla;
+using namespace mozilla::dom;
 
 //
 // NS_NewTreeColFrame
 //
 // Creates a new col frame
 //
-nsIFrame*
-NS_NewTreeColFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle)
-{
+nsIFrame* NS_NewTreeColFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsTreeColFrame(aStyle);
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsTreeColFrame)
 
 // Destructor
-nsTreeColFrame::~nsTreeColFrame()
-{
-}
+nsTreeColFrame::~nsTreeColFrame() {}
 
-void
-nsTreeColFrame::Init(nsIContent*       aContent,
-                     nsContainerFrame* aParent,
-                     nsIFrame*         aPrevInFlow)
-{
+void nsTreeColFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
+                          nsIFrame* aPrevInFlow) {
   nsBoxFrame::Init(aContent, aParent, aPrevInFlow);
   InvalidateColumns();
 }
 
-void
-nsTreeColFrame::DestroyFrom(nsIFrame* aDestructRoot, PostDestroyData& aPostDestroyData)
-{
+void nsTreeColFrame::DestroyFrom(nsIFrame* aDestructRoot,
+                                 PostDestroyData& aPostDestroyData) {
   InvalidateColumns(false);
   nsBoxFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
-class nsDisplayXULTreeColSplitterTarget final : public nsDisplayItem
-{
-public:
+class nsDisplayXULTreeColSplitterTarget final : public nsDisplayItem {
+ public:
   nsDisplayXULTreeColSplitterTarget(nsDisplayListBuilder* aBuilder,
-                                    nsIFrame* aFrame) :
-    nsDisplayItem(aBuilder, aFrame) {
+                                    nsIFrame* aFrame)
+      : nsDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayXULTreeColSplitterTarget);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -68,20 +61,21 @@ public:
 
   virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
                        HitTestState* aState,
-                       nsTArray<nsIFrame*> *aOutFrames) override;
-  NS_DISPLAY_DECL_NAME("XULTreeColSplitterTarget", TYPE_XUL_TREE_COL_SPLITTER_TARGET)
+                       nsTArray<nsIFrame*>* aOutFrames) override;
+  NS_DISPLAY_DECL_NAME("XULTreeColSplitterTarget",
+                       TYPE_XUL_TREE_COL_SPLITTER_TARGET)
 };
 
-void
-nsDisplayXULTreeColSplitterTarget::HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
-                                           HitTestState* aState, nsTArray<nsIFrame*> *aOutFrames)
-{
+void nsDisplayXULTreeColSplitterTarget::HitTest(
+    nsDisplayListBuilder* aBuilder, const nsRect& aRect, HitTestState* aState,
+    nsTArray<nsIFrame*>* aOutFrames) {
   nsRect rect = aRect - ToReferenceFrame();
-  // If we are in either in the first 4 pixels or the last 4 pixels, we're going to
-  // do something really strange.  Check for an adjacent splitter.
+  // If we are in either in the first 4 pixels or the last 4 pixels, we're going
+  // to do something really strange.  Check for an adjacent splitter.
   bool left = false;
   bool right = false;
-  if (mFrame->GetSize().width - nsPresContext::CSSPixelsToAppUnits(4) <= rect.XMost()) {
+  if (mFrame->GetSize().width - nsPresContext::CSSPixelsToAppUnits(4) <=
+      rect.XMost()) {
     right = true;
   } else if (nsPresContext::CSSPixelsToAppUnits(4) > rect.x) {
     left = true;
@@ -107,13 +101,10 @@ nsDisplayXULTreeColSplitterTarget::HitTest(nsDisplayListBuilder* aBuilder, const
       aOutFrames->AppendElement(child);
     }
   }
-
 }
 
-void
-nsTreeColFrame::BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
-                                            const nsDisplayListSet& aLists)
-{
+void nsTreeColFrame::BuildDisplayListForChildren(
+    nsDisplayListBuilder* aBuilder, const nsDisplayListSet& aLists) {
   if (!aBuilder->IsForEventDelivery()) {
     nsBoxFrame::BuildDisplayListForChildren(aBuilder, aLists);
     return;
@@ -125,16 +116,14 @@ nsTreeColFrame::BuildDisplayListForChildren(nsDisplayListBuilder*   aBuilder,
   WrapListsInRedirector(aBuilder, set, aLists);
 
   aLists.Content()->AppendToTop(
-    MakeDisplayItem<nsDisplayXULTreeColSplitterTarget>(aBuilder, this));
+      MakeDisplayItem<nsDisplayXULTreeColSplitterTarget>(aBuilder, this));
 }
 
-nsresult
-nsTreeColFrame::AttributeChanged(int32_t aNameSpaceID,
-                                 nsAtom* aAttribute,
-                                 int32_t aModType)
-{
-  nsresult rv = nsBoxFrame::AttributeChanged(aNameSpaceID, aAttribute,
-                                             aModType);
+nsresult nsTreeColFrame::AttributeChanged(int32_t aNameSpaceID,
+                                          nsAtom* aAttribute,
+                                          int32_t aModType) {
+  nsresult rv =
+      nsBoxFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
 
   if (aAttribute == nsGkAtoms::ordinal || aAttribute == nsGkAtoms::primary) {
     InvalidateColumns();
@@ -143,61 +132,43 @@ nsTreeColFrame::AttributeChanged(int32_t aNameSpaceID,
   return rv;
 }
 
-void
-nsTreeColFrame::SetXULBounds(nsBoxLayoutState& aBoxLayoutState,
-                             const nsRect& aRect,
-                             bool aRemoveOverflowArea)
-{
+void nsTreeColFrame::SetXULBounds(nsBoxLayoutState& aBoxLayoutState,
+                                  const nsRect& aRect,
+                                  bool aRemoveOverflowArea) {
   nscoord oldWidth = mRect.width;
 
   nsBoxFrame::SetXULBounds(aBoxLayoutState, aRect, aRemoveOverflowArea);
   if (mRect.width != oldWidth) {
-    nsITreeBoxObject* treeBoxObject = GetTreeBoxObject();
-    if (treeBoxObject) {
-      treeBoxObject->Invalidate();
+    RefPtr<XULTreeElement> tree = GetTree();
+    if (tree) {
+      tree->Invalidate();
     }
   }
 }
 
-nsITreeBoxObject*
-nsTreeColFrame::GetTreeBoxObject()
-{
-  nsITreeBoxObject* result = nullptr;
-
+XULTreeElement* nsTreeColFrame::GetTree() {
   nsIContent* parent = mContent->GetParent();
-  if (parent) {
-    nsIContent* grandParent = parent->GetParent();
-    RefPtr<nsXULElement> treeElement =
-      nsXULElement::FromNodeOrNull(grandParent);
-    if (treeElement) {
-      nsCOMPtr<nsIBoxObject> boxObject =
-        treeElement->GetBoxObject(IgnoreErrors());
-
-      nsCOMPtr<nsITreeBoxObject> treeBoxObject = do_QueryInterface(boxObject);
-      result = treeBoxObject.get();
-    }
-  }
-  return result;
+  return parent ? XULTreeElement::FromNodeOrNull(parent->GetParent()) : nullptr;
 }
 
-void
-nsTreeColFrame::InvalidateColumns(bool aCanWalkFrameTree)
-{
-  nsITreeBoxObject* treeBoxObject = GetTreeBoxObject();
-  if (treeBoxObject) {
-    RefPtr<nsTreeColumns> columns;
-
-    if (aCanWalkFrameTree) {
-      treeBoxObject->GetColumns(getter_AddRefs(columns));
-    } else {
-      nsTreeBodyFrame* body = static_cast<mozilla::dom::TreeBoxObject*>
-        (treeBoxObject)->GetCachedTreeBodyFrame();
-      if (body) {
-        columns = body->Columns();
-      }
-    }
-
-    if (columns)
-      columns->InvalidateColumns();
+void nsTreeColFrame::InvalidateColumns(bool aCanWalkFrameTree) {
+  RefPtr<XULTreeElement> tree = GetTree();
+  if (!tree) {
+    return;
   }
+
+  nsTreeBodyFrame* body = aCanWalkFrameTree
+                              ? tree->GetTreeBodyFrame(FlushType::None)
+                              : tree->GetCachedTreeBodyFrame();
+
+  if (!body) {
+    return;
+  }
+
+  RefPtr<nsTreeColumns> columns = body->Columns();
+  if (!columns) {
+    return;
+  }
+
+  columns->InvalidateColumns();
 }

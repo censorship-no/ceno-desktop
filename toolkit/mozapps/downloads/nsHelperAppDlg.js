@@ -45,7 +45,7 @@ nsUnknownContentTypeDialogProgressListener.prototype = {
     }
   },
 
-  // Ignore onProgressChange, onProgressChange64, onStateChange, onLocationChange, onSecurityChange, and onRefreshAttempted notifications.
+  // Ignore onProgressChange, onProgressChange64, onStateChange, onLocationChange, onSecurityChange, onContentBlockingEvent and onRefreshAttempted notifications.
   onProgressChange(aWebProgress,
                    aRequest,
                    aCurSelfProgress,
@@ -70,8 +70,10 @@ nsUnknownContentTypeDialogProgressListener.prototype = {
   onLocationChange(aWebProgress, aRequest, aLocation, aFlags) {
   },
 
-  onSecurityChange(aWebProgress, aRequest, aOldState, aState,
-                   aContentBlockingLogJSON) {
+  onSecurityChange(aWebProgress, aRequest, aState) {
+  },
+
+  onContentBlockingEvent(aWebProgress, aRequest, aEvent) {
   },
 
   onRefreshAttempted(aWebProgress, aURI, aDelay, aSameURI) {

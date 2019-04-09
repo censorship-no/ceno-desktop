@@ -1,20 +1,19 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Specified types for SVG Path.
 
+use crate::parser::{Parse, ParserContext};
+use crate::values::animated::{Animate, Procedure, ToAnimatedZero};
+use crate::values::distance::{ComputeSquaredDistance, SquaredDistance};
+use crate::values::CSSFloat;
 use cssparser::Parser;
-use parser::{Parse, ParserContext};
 use std::fmt::{self, Write};
 use std::iter::{Cloned, Peekable};
-use std::ops::AddAssign;
 use std::slice;
-use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 use style_traits::values::SequenceWriter;
-use values::CSSFloat;
-use values::animated::{Animate, Procedure, ToAnimatedZero};
-use values::distance::{ComputeSquaredDistance, SquaredDistance};
+use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 
 /// The SVG path data.
 ///
@@ -491,6 +490,7 @@ impl IsAbsolute {
 
 /// The path coord type.
 #[derive(
+    AddAssign,
     Animate,
     Clone,
     ComputeSquaredDistance,
@@ -510,14 +510,6 @@ impl CoordPair {
     #[inline]
     pub fn new(x: CSSFloat, y: CSSFloat) -> Self {
         CoordPair(x, y)
-    }
-}
-
-impl AddAssign for CoordPair {
-    #[inline]
-    fn add_assign(&mut self, other: Self) {
-        self.0 += other.0;
-        self.1 += other.1;
     }
 }
 
@@ -562,7 +554,6 @@ impl ToAnimatedZero for ArcFlag {
         Ok(*self)
     }
 }
-
 
 /// SVG Path parser.
 struct PathParser<'a> {

@@ -58,10 +58,10 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
   TelemetryArchive: "resource://gre/modules/TelemetryArchive.jsm",
   TelemetrySession: "resource://gre/modules/TelemetrySession.jsm",
-  MemoryTelemetry: "resource://gre/modules/MemoryTelemetry.jsm",
   TelemetrySend: "resource://gre/modules/TelemetrySend.jsm",
   TelemetryReportingPolicy: "resource://gre/modules/TelemetryReportingPolicy.jsm",
   TelemetryModules: "resource://gre/modules/ModulesPing.jsm",
+  TelemetryUntrustedModulesPing: "resource://gre/modules/UntrustedModulesPing.jsm",
   UpdatePing: "resource://gre/modules/UpdatePing.jsm",
   TelemetryHealthPing: "resource://gre/modules/HealthPing.jsm",
   TelemetryEventPing: "resource://gre/modules/EventPing.jsm",
@@ -638,7 +638,7 @@ var Impl = {
     // Perform a lightweight, early initialization for the component, just registering
     // a few observers and initializing the session.
     TelemetrySession.earlyInit(this._testMode);
-    MemoryTelemetry.earlyInit(this._testMode);
+    Services.telemetry.earlyInit();
 
     // Annotate crash reports so that we get pings for startup crashes
     TelemetrySend.earlyInit();
@@ -688,7 +688,7 @@ var Impl = {
 
         // Perform TelemetrySession delayed init.
         await TelemetrySession.delayedInit();
-        await MemoryTelemetry.delayedInit();
+        await Services.telemetry.delayedInit();
 
         if (Services.prefs.getBoolPref(TelemetryUtils.Preferences.NewProfilePingEnabled, false) &&
             !TelemetrySession.newProfilePingSent) {
@@ -714,6 +714,12 @@ var Impl = {
 
           // Send coverage ping.
           await CoveragePing.startup();
+
+          // Start the untrusted modules ping, which reports events where
+          // untrusted modules were loaded into the Firefox process.
+          if (AppConstants.NIGHTLY_BUILD && AppConstants.platform == "win") {
+            TelemetryUntrustedModulesPing.start();
+          }
         }
 
         TelemetryEventPing.startup();
@@ -748,7 +754,15 @@ var Impl = {
       this._log.trace("setupContentTelemetry - Content process recording disabled.");
       return;
     }
-    MemoryTelemetry.setupContent(testing);
+    Services.telemetry.earlyInit();
+
+    // FIXME: This is a terrible abuse of DeferredTask.
+    let delayedTask = new DeferredTask(() => {
+      Services.telemetry.delayedInit();
+    }, testing ? TELEMETRY_TEST_DELAY : TELEMETRY_DELAY,
+       testing ? 0 : undefined);
+
+    delayedTask.arm();
   },
 
   // Do proper shutdown waiting and cleanup.
@@ -781,7 +795,7 @@ var Impl = {
       await TelemetryHealthPing.shutdown();
 
       await TelemetrySession.shutdown();
-      await MemoryTelemetry.shutdown();
+      await Services.telemetry.shutdown();
 
       // First wait for clients processing shutdown.
       await this._shutdownBarrier.wait();

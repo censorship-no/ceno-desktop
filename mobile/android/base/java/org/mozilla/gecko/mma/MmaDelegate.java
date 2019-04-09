@@ -12,9 +12,9 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.text.TextUtils;
-import android.util.Log;
 
 import org.mozilla.gecko.AppConstants;
+import org.mozilla.gecko.BrowserApp;
 import org.mozilla.gecko.Experiments;
 import org.mozilla.gecko.MmaConstants;
 import org.mozilla.gecko.PrefsHelper;
@@ -33,6 +33,8 @@ import org.mozilla.gecko.util.ThreadUtils;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+
+import static android.content.Context.MODE_PRIVATE;
 
 
 public class MmaDelegate {
@@ -84,12 +86,21 @@ public class MmaDelegate {
 
     public static void init(final Activity activity,
                             final MmaVariablesChangedListener remoteVariablesListener) {
+        ThreadUtils.postToUiThread(() -> {
+            if (isActivityAlive(activity)) {
+                registerInstalledPackagesReceiver(activity);
+            }
+        });
         applicationContext = activity.getApplicationContext();
         // Since user attributes are gathered in Fennec, not in MMA implementation,
         // we gather the information here then pass to mmaHelper.init()
         // Note that generateUserAttribute always return a non null HashMap.
         final Map<String, Object> attributes = gatherUserAttributes(activity);
-        final String deviceId = getDeviceId(activity);
+        String deviceId = getDeviceId(activity);
+        if (deviceId == null) {
+            deviceId = UUID.randomUUID().toString();
+            setDeviceId(activity, deviceId);
+        }
         mmaHelper.setDeviceId(deviceId);
         PrefsHelper.setPref(GeckoPreferences.PREFS_MMA_DEVICE_ID, deviceId);
         // above two config setup required to be invoked before mmaHelper.init.
@@ -101,15 +112,9 @@ public class MmaDelegate {
         mmaHelper.event(MmaDelegate.LAUNCH_BROWSER);
 
         activityName = activity.getLocalClassName();
-        registerInstalledPackagesReceiver(activity);
         notifyAboutPreviouslyInstalledPackages(activity);
 
-        ThreadUtils.postToUiThread(new Runnable() {
-            @Override
-            public void run() {
-                mmaHelper.listenOnceForVariableChanges(remoteVariablesListener);
-            }
-        });
+        ThreadUtils.postToUiThread(() -> mmaHelper.listenOnceForVariableChanges(remoteVariablesListener));
     }
 
     /**
@@ -285,12 +290,21 @@ public class MmaDelegate {
         }
 
         final SharedPreferences prefs = activity.getPreferences(Context.MODE_PRIVATE);
-        String deviceId = prefs.getString(KEY_ANDROID_PREF_STRING_LEANPLUM_DEVICE_ID, null);
-        if (deviceId == null) {
-            deviceId = UUID.randomUUID().toString();
-            prefs.edit().putString(KEY_ANDROID_PREF_STRING_LEANPLUM_DEVICE_ID, deviceId).apply();
+        return prefs.getString(KEY_ANDROID_PREF_STRING_LEANPLUM_DEVICE_ID, null);
+    }
+
+    public static String getDeviceId(Context context) {
+        if (SwitchBoard.isInExperiment(context, Experiments.LEANPLUM_DEBUG)) {
+            return DEBUG_LEANPLUM_DEVICE_ID;
         }
-        return deviceId;
+
+        //MMA preferences are stored in the initialising activity's preferences, which in our case is BrowserApp.
+        return context.getSharedPreferences(BrowserApp.class.getName(), MODE_PRIVATE).getString(MmaDelegate.KEY_ANDROID_PREF_STRING_LEANPLUM_DEVICE_ID, null);
+    }
+
+    private static void setDeviceId(Activity activity, String deviceId) {
+        final SharedPreferences prefs = activity.getPreferences(Context.MODE_PRIVATE);
+        prefs.edit().putString(KEY_ANDROID_PREF_STRING_LEANPLUM_DEVICE_ID, deviceId).apply();
     }
 
     private static void registerInstalledPackagesReceiver(@NonNull final Activity activity) {
@@ -300,18 +314,30 @@ public class MmaDelegate {
 
     private static void unregisterInstalledPackagesReceiver(@NonNull final Activity activity) {
         if (packageAddedReceiver != null) {
-            try {
-                // TODO investigate why the receiver would not be registered - bug 1505685
-                activity.unregisterReceiver(packageAddedReceiver);
-            } catch (IllegalArgumentException e) {
-                if (AppConstants.RELEASE_OR_BETA) {
-                    Log.w(TAG, "bug 1505685", e);
-                } else {
-                   throw e;
-                }
-            }
+            activity.unregisterReceiver(packageAddedReceiver);
             packageAddedReceiver = null;
         }
+    }
+
+    /**
+     * Check and return if the Activity is still alive.
+     *
+     * @param activity an instance of {@link Activity} to be checked if it is still alive.<br>
+     *                 Might be an already leaked instance.
+     * @return <code>true</code> if the Activity is still alive;<br>
+     *         <code>false</code> if the Activity is destroyed / in the process of being destroyed.
+     * @throws IllegalThreadStateException
+     *         if {@link AppConstants#RELEASE_OR_BETA} and called on another thread than Main
+     */
+    private static boolean isActivityAlive(@NonNull final Activity activity) throws IllegalThreadStateException {
+        // all lifecycle methods are run on Main
+        ThreadUtils.assertOnUiThread();
+
+        if (activity.isFinishing()) {
+            return false;
+        }
+
+        return true;
     }
 
     public interface MmaVariablesChangedListener {

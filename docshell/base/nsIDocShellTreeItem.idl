@@ -8,8 +8,9 @@
 
 interface mozIDOMWindowProxy;
 interface nsIDocShellTreeOwner;
-interface nsIDocument;
 interface nsPIDOMWindowOuter;
+
+webidl Document;
 
 /**
  * The nsIDocShellTreeItem supplies the methods that are required of any item
@@ -47,7 +48,7 @@ interface nsIDocShellTreeItem : nsISupports
 	/*
 	The type this item is.  
 	*/
-	attribute long itemType;
+	readonly attribute long itemType;
 	[noscript,notxpcom,nostdcall] long ItemType();
 
 	/*
@@ -184,7 +185,7 @@ interface nsIDocShellTreeItem : nsISupports
    */
   readonly attribute mozIDOMWindowProxy domWindow;
 
-  [noscript,nostdcall,notxpcom] nsIDocument getDocument();
+  [noscript,nostdcall,notxpcom] Document getDocument();
   [noscript,nostdcall,notxpcom] nsPIDOMWindowOuter getWindow();
 };
 

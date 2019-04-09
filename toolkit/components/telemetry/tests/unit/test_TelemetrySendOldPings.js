@@ -136,6 +136,7 @@ add_task(async function test_setup() {
   do_get_profile();
   loadAddonManager("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
   finishAddonManagerStartup();
+  fakeIntlReady();
   // Make sure we don't generate unexpected pings due to pref changes.
   await setEmptyPrefWatchlist();
 
@@ -479,7 +480,7 @@ add_task(async function test_pendingPingsQuota() {
   h = Telemetry.getHistogramById("TELEMETRY_PING_SIZE_EXCEEDED_PENDING").snapshot();
   Assert.equal(h.sum, 1, "Telemetry must report 1 oversized ping in the pending pings directory.");
   h = Telemetry.getHistogramById("TELEMETRY_DISCARDED_PENDING_PINGS_SIZE_MB").snapshot();
-  Assert.equal(h.counts[2], 1, "Telemetry must report a 2MB, oversized, ping.");
+  Assert.equal(h.values[2], 1, "Telemetry must report a 2MB, oversized, ping.");
 
   // Save the ping again to check if it gets pruned when scanning the pings directory.
   await TelemetryStorage.savePendingPing(OVERSIZED_PING);
@@ -494,7 +495,7 @@ add_task(async function test_pendingPingsQuota() {
   h = Telemetry.getHistogramById("TELEMETRY_PING_SIZE_EXCEEDED_PENDING").snapshot();
   Assert.equal(h.sum, 2, "Telemetry must report 1 oversized ping in the pending pings directory.");
   h = Telemetry.getHistogramById("TELEMETRY_DISCARDED_PENDING_PINGS_SIZE_MB").snapshot();
-  Assert.equal(h.counts[2], 2, "Telemetry must report two 2MB, oversized, pings.");
+  Assert.equal(h.values[2], 2, "Telemetry must report two 2MB, oversized, pings.");
 
   Services.prefs.setBoolPref(TelemetryUtils.Preferences.FhrUploadEnabled, true);
 });

@@ -6,8 +6,6 @@
 
 #include "URIUtils.h"
 
-#include "nsIIPCSerializableURI.h"
-
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/BlobURL.h"
@@ -33,48 +31,34 @@ NS_DEFINE_CID(kStandardURLMutatorCID, NS_STANDARDURLMUTATOR_CID);
 NS_DEFINE_CID(kJARURIMutatorCID, NS_JARURIMUTATOR_CID);
 NS_DEFINE_CID(kIconURIMutatorCID, NS_MOZICONURIMUTATOR_CID);
 
-} // namespace
+}  // namespace
 
 namespace mozilla {
 namespace ipc {
 
-void
-SerializeURI(nsIURI* aURI,
-             URIParams& aParams)
-{
+void SerializeURI(nsIURI* aURI, URIParams& aParams) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aURI);
 
-  nsCOMPtr<nsIIPCSerializableURI> serializable = do_QueryInterface(aURI);
-  if (!serializable) {
-    MOZ_CRASH("All IPDL URIs must be serializable!");
-  }
-
-  serializable->Serialize(aParams);
+  aURI->Serialize(aParams);
   if (aParams.type() == URIParams::T__None) {
     MOZ_CRASH("Serialize failed!");
   }
 }
 
-void
-SerializeURI(nsIURI* aURI,
-             OptionalURIParams& aParams)
-{
+void SerializeURI(nsIURI* aURI, OptionalURIParams& aParams) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (aURI) {
     URIParams params;
     SerializeURI(aURI, params);
     aParams = params;
-  }
-  else {
+  } else {
     aParams = mozilla::void_t();
   }
 }
 
-already_AddRefed<nsIURI>
-DeserializeURI(const URIParams& aParams)
-{
+already_AddRefed<nsIURI> DeserializeURI(const URIParams& aParams) {
   MOZ_ASSERT(NS_IsMainThread());
 
   nsCOMPtr<nsIURIMutator> mutator;
@@ -132,9 +116,7 @@ DeserializeURI(const URIParams& aParams)
   return uri.forget();
 }
 
-already_AddRefed<nsIURI>
-DeserializeURI(const OptionalURIParams& aParams)
-{
+already_AddRefed<nsIURI> DeserializeURI(const OptionalURIParams& aParams) {
   MOZ_ASSERT(NS_IsMainThread());
 
   nsCOMPtr<nsIURI> uri;
@@ -154,5 +136,5 @@ DeserializeURI(const OptionalURIParams& aParams)
   return uri.forget();
 }
 
-} // namespace ipc
-} // namespace mozilla
+}  // namespace ipc
+}  // namespace mozilla

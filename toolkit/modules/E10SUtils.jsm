@@ -15,6 +15,8 @@ XPCOMUtils.defineLazyPreferenceGetter(this, "allowLinkedWebInFileUriProcess",
                                       "browser.tabs.remote.allowLinkedWebInFileUriProcess", false);
 XPCOMUtils.defineLazyPreferenceGetter(this, "useSeparatePrivilegedContentProcess",
                                       "browser.tabs.remote.separatePrivilegedContentProcess", false);
+XPCOMUtils.defineLazyPreferenceGetter(this, "useHttpResponseProcessSelection",
+                                      "browser.tabs.remote.useHTTPResponseProcessSelection", false);
 ChromeUtils.defineModuleGetter(this, "Utils",
                                "resource://gre/modules/sessionstore/Utils.jsm");
 
@@ -47,7 +49,7 @@ function validatedWebRemoteType(aPreferredRemoteType, aTargetUri, aCurrentUri) {
   // If the domain is whitelisted to allow it to use file:// URIs, then we have
   // to run it in a file content process, in case it uses file:// sub-resources.
   const sm = Services.scriptSecurityManager;
-  if (sm.inFileURIWhitelist(aTargetUri)) {
+  if (sm.inFileURIAllowlist(aTargetUri)) {
     return FILE_REMOTE_TYPE;
   }
 
@@ -90,10 +92,18 @@ var E10SUtils = {
   PRIVILEGED_REMOTE_TYPE,
   LARGE_ALLOCATION_REMOTE_TYPE,
 
-  canLoadURIInProcess(aURL, aProcess) {
-    let remoteType = aProcess == Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT
-                     ? DEFAULT_REMOTE_TYPE : NOT_REMOTE;
-    return remoteType == this.getRemoteTypeForURI(aURL, true, remoteType);
+  useHttpResponseProcessSelection() {
+    return useHttpResponseProcessSelection;
+  },
+
+  canLoadURIInRemoteType(aURL, aRemoteType = DEFAULT_REMOTE_TYPE) {
+    // We need a strict equality here because the value of `NOT_REMOTE` is
+    // `null`, and there is a possibility that `undefined` is passed as the
+    // second argument, which might result a load in the parent process.
+    let preferredRemoteType = aRemoteType === NOT_REMOTE
+      ? NOT_REMOTE
+      : DEFAULT_REMOTE_TYPE;
+    return aRemoteType == this.getRemoteTypeForURI(aURL, true, preferredRemoteType);
   },
 
   getRemoteTypeForURI(aURL, aMultiProcess,
@@ -103,7 +113,7 @@ var E10SUtils = {
       return NOT_REMOTE;
     }
 
-    // loadURI in browser.xml treats null as about:blank
+    // loadURI in browser.js treats null as about:blank
     if (!aURL) {
       aURL = "about:blank";
     }
@@ -192,6 +202,18 @@ var E10SUtils = {
         return WebExtensionPolicy.useRemoteWebExtensions ? EXTENSION_REMOTE_TYPE : NOT_REMOTE;
 
       default:
+        // WebExtensions may set up protocol handlers for protocol names
+        // beginning with ext+.  These may redirect to http(s) pages or to
+        // moz-extension pages.  We can't actually tell here where one of
+        // these pages will end up loading but Talos tests use protocol
+        // handlers that redirect to extension pages that rely on this
+        // behavior so a pageloader frame script is injected correctly.
+        // Protocols that redirect to http(s) will just flip back to a
+        // regular content process after the redirect.
+        if (aURI.scheme.startsWith("ext+")) {
+          return WebExtensionPolicy.useRemoteWebExtensions ? EXTENSION_REMOTE_TYPE : NOT_REMOTE;
+        }
+
         // For any other nested URIs, we use the innerURI to determine the
         // remote type. In theory we should use the innermost URI, but some URIs
         // have fake inner URIs (e.g. about URIs with inner moz-safe-about) and
@@ -208,6 +230,36 @@ var E10SUtils = {
 
         return validatedWebRemoteType(aPreferredRemoteType, aURI, aCurrentUri);
     }
+  },
+
+  getRemoteTypeForPrincipal(aPrincipal, aMultiProcess,
+                            aPreferredRemoteType = DEFAULT_REMOTE_TYPE,
+                            aCurrentPrincipal) {
+    if (!aMultiProcess) {
+      return NOT_REMOTE;
+    }
+
+    // We can't pick a process based on a system principal or expanded
+    // principal. In fact, we should never end up with one here!
+    if (aPrincipal.isSystemPrincipal || aPrincipal.isExpandedPrincipal) {
+      throw Cr.NS_ERROR_UNEXPECTED;
+    }
+
+    // Null principals can be loaded in any remote process.
+    if (aPrincipal.isNullPrincipal) {
+      return aPreferredRemoteType == NOT_REMOTE ? DEFAULT_REMOTE_TYPE
+                                                : aPreferredRemoteType;
+    }
+
+    // We might care about the currently loaded URI. Pull it out of our current
+    // principal. We never care about the current URI when working with a
+    // non-codebase principal.
+    let currentURI = (aCurrentPrincipal && aCurrentPrincipal.isCodebasePrincipal)
+                     ? aCurrentPrincipal.URI : null;
+    return E10SUtils.getRemoteTypeForURIObject(aPrincipal.URI,
+                                               aMultiProcess,
+                                               aPreferredRemoteType,
+                                               currentURI);
   },
 
   shouldLoadURIInBrowser(browser, uri, multiProcess = true,
@@ -260,8 +312,21 @@ var E10SUtils = {
 
   shouldLoadURI(aDocShell, aURI, aReferrer, aHasPostData) {
     // Inner frames should always load in the current process
-    if (aDocShell.sameTypeParent)
+    if (aDocShell.sameTypeParent) {
       return true;
+    }
+
+    // If we are performing HTTP response process selection, and are loading an
+    // HTTP URI, we can start the load in the current process, and then perform
+    // the switch later-on using the RedirectProcessChooser mechanism.
+    //
+    // We should never be sending a POST request from the parent process to a
+    // http(s) uri, so make sure we switch if we're currently in that process.
+    if (useHttpResponseProcessSelection &&
+        (aURI.scheme == "http" || aURI.scheme == "https") &&
+        Services.appinfo.remoteType != NOT_REMOTE) {
+      return true;
+    }
 
     // If we are in a Large-Allocation process, and it wouldn't be content visible
     // to change processes, we want to load into a new process so that we can throw
@@ -316,9 +381,7 @@ var E10SUtils = {
         uri: aURI.spec,
         flags: aFlags || Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
         referrer: aReferrer ? aReferrer.spec : null,
-        triggeringPrincipal: aTriggeringPrincipal
-                             ? Utils.serializePrincipal(aTriggeringPrincipal)
-                             : null,
+        triggeringPrincipal: Utils.serializePrincipal(aTriggeringPrincipal || Services.scriptSecurityManager.createNullPrincipal({})),
         reloadInFreshProcess: !!aFreshProcess,
       },
       historyIndex: sessionHistory.legacySHistory.requestedIndex,

@@ -27,13 +27,19 @@
  * NS_ERROR_DNS_LOOKUP_QUEUE_FULL
  * NS_ERROR_UNKNOWN_PROXY_HOST
  */
-mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_SERVER_2
-NSErrorToLabel(nsresult rv);
+mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_SERVER_2 NSErrorToLabel(
+    nsresult aRv);
 
 /**
  * Convert http response status to telemetry labels
  */
-mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_SERVER_2
-HTTPStatusToLabel(uint32_t status);
+mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_SERVER_2 HTTPStatusToLabel(
+    uint32_t aStatus);
 
-#endif //ApplicationReputationTelemetryUtils_h__
+/**
+ * Convert verdict type to telemetry labels
+ */
+mozilla::Telemetry::LABELS_APPLICATION_REPUTATION_SERVER_VERDICT_2
+VerdictToLabel(uint32_t aVerdict);
+
+#endif  // ApplicationReputationTelemetryUtils_h__

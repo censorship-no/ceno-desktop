@@ -461,7 +461,7 @@ var pktUI = (function() {
         var _initL10NMessageId = "initL10N";
         pktUIMessaging.addMessageListener(iframe, _initL10NMessageId, function(panelId, data) {
             var strings = {};
-            var bundle = Services.strings.createBundle("chrome://pocket/locale/pocket.properties");
+            var bundle = Services.strings.createBundle("chrome://browser/locale/pocket.properties");
             for (let str of bundle.getSimpleEnumeration()) {
                 if (str.key in data) {
                     strings[str.key] = bundle.formatStringFromName(str.key, data[str.key], data[str.key].length);
@@ -517,11 +517,11 @@ var pktUI = (function() {
     // -- Helper Functions -- //
 
     function getCurrentUrl() {
-        return getBrowser().currentURI.spec;
+        return gBrowser.currentURI.spec;
     }
 
     function getCurrentTitle() {
-        return getBrowser().contentTitle;
+        return gBrowser.contentTitle;
     }
 
     function getPanel() {

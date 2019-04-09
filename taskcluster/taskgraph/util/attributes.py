@@ -22,6 +22,7 @@ RELEASE_PROJECTS = {
     'comm-central',
     'comm-beta',
     'comm-esr60',
+    'oak',
 }
 
 RELEASE_PROMOTION_PROJECTS = {
@@ -34,11 +35,14 @@ RELEASE_PROMOTION_PROJECTS = {
 _OPTIONAL_ATTRIBUTES = (
     'artifact_prefix',
     'l10n_chunk',
+    'locale',
     'nightly',
+    'required_signoffs',
     'signed',
     'shipping_phase',
     'shipping_product',
     'stub-installer',
+    'update-channel',
 )
 
 
@@ -130,3 +134,18 @@ def copy_attributes_from_dependent_job(dep_job):
     })
 
     return attributes
+
+
+def sorted_unique_list(*args):
+    """Join one or more lists, and return a sorted list of unique members"""
+    combined = set().union(*args)
+    return sorted(combined)
+
+
+def release_level(project):
+    """
+    Whether this is a staging release or not.
+
+    :return basestring: One of "production" or "staging".
+    """
+    return 'production' if project in RELEASE_PROJECTS else 'staging'

@@ -34,15 +34,12 @@ var ChildActor = protocol.ActorClassWithSpec(childSpec, {
   },
 });
 
-var ChildFront = protocol.FrontClassWithSpec(childSpec, {
-  initialize(client) {
-    protocol.Front.prototype.initialize.call(this, client);
-  },
-
+class ChildFront extends protocol.FrontClassWithSpec(childSpec) {
   form(v, ctx, detail) {
     this.extra = v.extra;
-  },
-});
+  }
+}
+protocol.registerFront(ChildFront);
 
 const rootSpec = protocol.generateActorSpec({
   typeName: "root",
@@ -127,19 +124,19 @@ var RootActor = protocol.ActorClassWithSpec(rootSpec, {
   },
 });
 
-var RootFront = protocol.FrontClassWithSpec(rootSpec, {
-  initialize(client) {
+class RootFront extends protocol.FrontClassWithSpec(rootSpec) {
+  constructor(client) {
+    super(client);
     this.actorID = "root";
-    protocol.Front.prototype.initialize.call(this, client);
 
     // Root owns itself.
     this.manage(this);
-  },
+  }
 
   form(v, ctx, detail) {
     this.lastForm = v;
-  },
-});
+  }
+}
 
 const run_test = Test(async function() {
   DebuggerServer.createRootActor = (conn => {
@@ -153,7 +150,12 @@ const run_test = Test(async function() {
 
   await client.connect();
 
-  const rootFront = RootFront(conn);
+  // DebuggerClient.connect() will instantiate the regular RootFront
+  // which will override the one we just registered and mess up with this test.
+  // So override it again with test one before asserting.
+  protocol.types.registeredTypes.get("root").actorSpec = rootSpec;
+
+  const rootFront = new RootFront(conn);
 
   // Trigger some methods that return forms.
   let retval = await rootFront.getDefault();

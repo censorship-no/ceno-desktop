@@ -11,8 +11,9 @@
 # will likely look very different (and much more reasonable)
 
 [package]
+edition = "2018"
 name = "cranelift-wasm"
-version = "0.20.1"
+version = "0.28.0"
 authors = ["The Cranelift Project Developers"]
 description = "Translator from WebAssembly to Cranelift IR"
 readme = "README.md"
@@ -20,16 +21,20 @@ keywords = ["webassembly", "wasm"]
 categories = ["no-std", "wasm"]
 license = "Apache-2.0 WITH LLVM-exception"
 repository = "https://github.com/CraneStation/cranelift"
+[dependencies.cast]
+version = "0.2.2"
+default-features = false
+
 [dependencies.cranelift-codegen]
-version = "0.20.0"
+version = "0.28.0"
 default-features = false
 
 [dependencies.cranelift-entity]
-version = "0.20.0"
+version = "0.28.0"
 default-features = false
 
 [dependencies.cranelift-frontend]
-version = "0.20.0"
+version = "0.28.0"
 default-features = false
 
 [dependencies.failure]
@@ -46,24 +51,22 @@ version = "0.1.9"
 optional = true
 
 [dependencies.log]
-version = "0.4.4"
-features = ["release_max_level_warn"]
-default-features = false
-
-[dependencies.target-lexicon]
-version = "0.0.3"
+version = "0.4.6"
 default-features = false
 
 [dependencies.wasmparser]
-version = "0.17.2"
+version = "0.23.0"
 default-features = false
+[dev-dependencies.target-lexicon]
+version = "0.2.0"
+
 [dev-dependencies.wabt]
-version = "0.5.0"
+version = "0.7.0"
 
 [features]
 core = ["hashmap_core", "cranelift-codegen/core", "cranelift-frontend/core", "wasmparser/core"]
 default = ["std"]
-std = ["cranelift-codegen/std", "cranelift-frontend/std", "wasmparser/std", "target-lexicon/std"]
+std = ["cranelift-codegen/std", "cranelift-frontend/std", "wasmparser/std"]
 [badges.maintenance]
 status = "experimental"
 

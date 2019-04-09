@@ -16,11 +16,15 @@
 
 #include "entropy_coding.h"
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <arm64_neon.h>
+#else
 #include <arm_neon.h>
+#endif
 #include <stddef.h>
 
 #include "signal_processing_library.h"
-#include "webrtc/base/checks.h"
+#include "rtc_base/checks.h"
 
 void WebRtcIsacfix_MatrixProduct1Neon(const int16_t matrix0[],
                                       const int32_t matrix1[],

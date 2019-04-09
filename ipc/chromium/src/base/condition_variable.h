@@ -72,15 +72,15 @@
 #include "build/build_config.h"
 
 #if defined(OS_POSIX)
-#include <pthread.h>
+#  include <pthread.h>
 #endif
 
 #if defined(OS_WIN)
-#include <windows.h>
+#  include <windows.h>
 #endif
 
 namespace base {
-  class TimeDelta;
+class TimeDelta;
 }
 
 class ConditionVariable {
@@ -103,7 +103,6 @@ class ConditionVariable {
   void Signal();
 
  private:
-
 #if defined(OS_WIN)
   CONDITION_VARIABLE cv_;
   SRWLOCK* const srwlock_;

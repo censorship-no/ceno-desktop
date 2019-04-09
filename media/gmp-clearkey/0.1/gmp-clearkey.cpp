@@ -28,37 +28,33 @@
 #include "content_decryption_module_ext.h"
 
 #ifndef XP_WIN
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#  include <sys/types.h>
+#  include <sys/stat.h>
+#  include <unistd.h>
 #endif
 
 #ifdef ENABLE_WMF
-#include "WMFUtils.h"
-#endif // ENABLE_WMF
+#  include "WMFUtils.h"
+#endif  // ENABLE_WMF
 
 extern "C" {
 
 CDM_API
-void INITIALIZE_CDM_MODULE() {
-
-}
+void INITIALIZE_CDM_MODULE() {}
 
 static bool sCanReadHostVerificationFiles = false;
 
 CDM_API
-void* CreateCdmInstance(int cdm_interface_version,
-                        const char* key_system,
+void* CreateCdmInstance(int cdm_interface_version, const char* key_system,
                         uint32_t key_system_size,
-                        GetCdmHostFunc get_cdm_host_func,
-                        void* user_data)
-{
-
+                        GetCdmHostFunc get_cdm_host_func, void* user_data) {
   CK_LOGE("ClearKey CreateCDMInstance");
 
-  if (cdm_interface_version != cdm::ContentDecryptionModule_9::kVersion) {
-    CK_LOGE("ClearKey CreateCDMInstance failed due to requesting unsupported version %d.",
-            cdm_interface_version);
+  if (cdm_interface_version != cdm::ContentDecryptionModule_10::kVersion) {
+    CK_LOGE(
+        "ClearKey CreateCDMInstance failed due to requesting unsupported "
+        "version %d.",
+        cdm_interface_version);
     return nullptr;
   }
 #ifdef ENABLE_WMF
@@ -75,8 +71,8 @@ void* CreateCdmInstance(int cdm_interface_version,
   }
 #endif
 
-  cdm::Host_9* host = static_cast<cdm::Host_9*>(
-    get_cdm_host_func(cdm_interface_version, user_data));
+  cdm::Host_10* host = static_cast<cdm::Host_10*>(
+      get_cdm_host_func(cdm_interface_version, user_data));
   ClearKeyCDM* clearKey = new ClearKeyCDM(host);
 
   CK_LOGE("Created ClearKeyCDM instance!");
@@ -86,9 +82,7 @@ void* CreateCdmInstance(int cdm_interface_version,
 
 const size_t TEST_READ_SIZE = 16 * 1024;
 
-bool
-CanReadSome(cdm::PlatformFile aFile)
-{
+bool CanReadSome(cdm::PlatformFile aFile) {
   vector<uint8_t> data;
   data.resize(TEST_READ_SIZE);
 #ifdef XP_WIN
@@ -100,9 +94,7 @@ CanReadSome(cdm::PlatformFile aFile)
 #endif
 }
 
-void
-ClosePlatformFile(cdm::PlatformFile aFile)
-{
+void ClosePlatformFile(cdm::PlatformFile aFile) {
 #ifdef XP_WIN
   CloseHandle(aFile);
 #else
@@ -111,9 +103,7 @@ ClosePlatformFile(cdm::PlatformFile aFile)
 }
 
 CDM_API
-bool
-VerifyCdmHost_0(const cdm::HostFile* aHostFiles, uint32_t aNumFiles)
-{
+bool VerifyCdmHost_0(const cdm::HostFile* aHostFiles, uint32_t aNumFiles) {
   // We expect 4 binaries: clearkey, libxul, plugin-container, and Firefox.
   bool rv = (aNumFiles == 4);
   // Verify that each binary is readable inside the sandbox,
@@ -134,4 +124,4 @@ VerifyCdmHost_0(const cdm::HostFile* aHostFiles, uint32_t aNumFiles)
   return rv;
 }
 
-} // extern "C".
+}  // extern "C".

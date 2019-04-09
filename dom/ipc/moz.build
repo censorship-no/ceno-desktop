@@ -36,10 +36,11 @@ EXPORTS.mozilla.dom += [
     'ContentChild.h',
     'ContentParent.h',
     'ContentProcess.h',
-    'ContentProcessHost.h',
     'ContentProcessManager.h',
     'CPOWManagerGetter.h',
+    'DocShellMessageUtils.h',
     'FilePickerParent.h',
+    'JSWindowActorService.h',
     'MemoryReportRequest.h',
     'nsIContentChild.h',
     'nsIContentParent.h',
@@ -50,6 +51,8 @@ EXPORTS.mozilla.dom += [
     'TabParent.h',
     'URLClassifierChild.h',
     'URLClassifierParent.h',
+    'WindowGlobalChild.h',
+    'WindowGlobalParent.h',
 ]
 
 EXPORTS.mozilla += [
@@ -67,11 +70,13 @@ UNIFIED_SOURCES += [
     'ContentBridgeParent.cpp',
     'ContentParent.cpp',
     'ContentProcess.cpp',
-    'ContentProcessHost.cpp',
     'ContentProcessManager.cpp',
+    'DocShellMessageUtils.cpp',
     'FilePickerParent.cpp',
+    'JSWindowActorService.cpp',
     'MemMapSnapshot.cpp',
     'MemoryReportRequest.cpp',
+    'MMPrinter.cpp',
     'nsIContentChild.cpp',
     'nsIContentParent.cpp',
     'PermissionMessageUtils.cpp',
@@ -85,6 +90,8 @@ UNIFIED_SOURCES += [
     'TabMessageUtils.cpp',
     'TabParent.cpp',
     'URLClassifierParent.cpp',
+    'WindowGlobalChild.cpp',
+    'WindowGlobalParent.cpp',
 ]
 
 # ContentChild.cpp cannot be compiled in unified mode on  linux due to Time conflict
@@ -108,10 +115,12 @@ IPDL_SOURCES += [
     'PLoginReputation.ipdl',
     'PPluginWidget.ipdl',
     'PProcessHangMonitor.ipdl',
+    'PrefsTypes.ipdlh',
     'PTabContext.ipdlh',
     'PURLClassifier.ipdl',
     'PURLClassifierInfo.ipdlh',
     'PURLClassifierLocal.ipdl',
+    'PWindowGlobal.ipdl',
     'ServiceWorkerConfiguration.ipdlh',
 ]
 
@@ -145,9 +154,11 @@ LOCAL_INCLUDES += [
     '/gfx/2d',
     '/hal/sandbox',
     '/js/xpconnect/loader',
+    '/js/xpconnect/src',
     '/layout/base',
     '/media/webrtc',
     '/netwerk/base',
+    '/netwerk/protocol/http',
     '/toolkit/components/printingui/ipc',
     '/toolkit/crashreporter',
     '/toolkit/xre',

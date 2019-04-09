@@ -13,9 +13,13 @@
 // WebRtcIsacfix_AllpassFilter2FixDec16C() in filterbanks.c. Prototype
 // C code is at end of this file.
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <arm64_neon.h>
+#else
 #include <arm_neon.h>
+#endif
 
-#include "webrtc/base/checks.h"
+#include "rtc_base/checks.h"
 
 void WebRtcIsacfix_AllpassFilter2FixDec16Neon(
     int16_t* data_ch1,  // Input and output in channel 1, in Q0

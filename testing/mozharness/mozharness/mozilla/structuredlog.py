@@ -9,6 +9,8 @@ from mozharness.base import log
 from mozharness.base.log import OutputParser, WARNING, INFO, ERROR
 from mozharness.mozilla.automation import TBPL_WARNING, TBPL_FAILURE
 from mozharness.mozilla.automation import TBPL_SUCCESS, TBPL_WORST_LEVEL_TUPLE
+from mozharness.mozilla.automation import TBPL_RETRY
+from mozharness.mozilla.testing.errors import TinderBoxPrintRe
 from mozharness.mozilla.testing.unittest import tbox_print_summary
 
 from collections import (
@@ -35,6 +37,7 @@ class StructuredOutputParser(OutputParser):
 
         tbpl_compact = kwargs.pop("log_compact", False)
         super(StructuredOutputParser, self).__init__(**kwargs)
+        self.allow_crashes = kwargs.pop("allow_crashes", False)
 
         mozlog = self._get_mozlog_module()
         self.formatter = mozlog.formatters.TbplFormatter(compact=tbpl_compact)
@@ -43,6 +46,8 @@ class StructuredOutputParser(OutputParser):
 
         self.worst_log_level = INFO
         self.tbpl_status = TBPL_SUCCESS
+        self.harness_retry_re = TinderBoxPrintRe['harness_error']['retry_regex']
+        self.prev_was_unstructured = False
 
     def _get_mozlog_module(self):
         try:
@@ -75,12 +80,18 @@ class StructuredOutputParser(OutputParser):
 
         if data is None:
             if self.strict:
-                self.critical(("Test harness output was not a valid structured log message: "
-                              "\n%s") % line)
+                if not self.prev_was_unstructured:
+                    self.critical(("Test harness output was not a valid structured log message: "
+                                   "\n%s") % line)
+                else:
+                    self.critical(line)
                 self.update_levels(TBPL_FAILURE, log.CRITICAL)
+                self.prev_was_unstructured = True
             else:
                 self._handle_unstructured_output(line)
             return
+
+        self.prev_was_unstructured = False
 
         self.handler(data)
 
@@ -98,6 +109,11 @@ class StructuredOutputParser(OutputParser):
             error_level = self._handle_unstructured_output(message, log_output=False)
             if error_level is not None:
                 level = self.worst_level(error_level, level)
+
+            if self.harness_retry_re.search(message):
+                self.update_levels(TBPL_RETRY, log.CRITICAL)
+                tbpl_level = TBPL_RETRY
+                level = log.CRITICAL
 
         log_data = self.formatter(data)
         if log_data is not None:
@@ -135,7 +151,10 @@ class StructuredOutputParser(OutputParser):
                                           defaultdict(int),
                                           defaultdict(int))
         if previous_summary:
-            self.tbpl_status = TBPL_SUCCESS
+            # Always preserve retry status: if any failure triggers retry, the script
+            # must exit with TBPL_RETRY to trigger task retry.
+            if self.tbpl_status != TBPL_RETRY:
+                self.tbpl_status = TBPL_SUCCESS
             joined_summary = summary
 
             # Remove previously known status messages
@@ -161,13 +180,24 @@ class StructuredOutputParser(OutputParser):
 
         # These are warning/orange statuses.
         failure_conditions = [
-            sum(summary.unexpected_statuses.values()) > 0,
-            summary.action_counts.get('crash', 0) > summary.expected_statuses.get('CRASH', 0),
-            summary.action_counts.get('valgrind_error', 0) > 0
+            (sum(summary.unexpected_statuses.values()), 0, "statuses", False),
+            (summary.action_counts.get('crash', 0),
+             summary.expected_statuses.get('CRASH', 0), "crashes", self.allow_crashes),
+            (summary.action_counts.get('valgrind_error', 0), 0,
+             "valgrind errors", False)
         ]
-        for condition in failure_conditions:
-            if condition:
-                self.update_levels(*fail_pair)
+        for value, limit, type_name, allow in failure_conditions:
+            if value > limit:
+                msg = "%d unexpected %s" % (value, type_name)
+                if limit != 0:
+                    msg += " expected at most %d" % (limit)
+                if not allow:
+                    self.update_levels(*fail_pair)
+                    msg = "Got " + msg
+                    self.error(msg)
+                else:
+                    msg = "Ignored " + msg
+                    self.warning(msg)
 
         # These are error/red statuses. A message is output here every time something
         # wouldn't otherwise be highlighted in the UI.

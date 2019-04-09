@@ -11,7 +11,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   DeferredTask: "resource://gre/modules/DeferredTask.jsm",
   OS: "resource://gre/modules/osfile.jsm",
-  TelemetryStopwatch: "resource://gre/modules/TelemetryStopwatch.jsm",
   Deprecated: "resource://gre/modules/Deprecated.jsm",
   SearchStaticData: "resource://gre/modules/SearchStaticData.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
@@ -189,40 +188,6 @@ const SEARCH_DEFAULT_UPDATE_INTERVAL = 7;
 // default engine for the region, in seconds. Only used if the response
 // from the server doesn't specify an interval.
 const SEARCH_GEO_DEFAULT_UPDATE_INTERVAL = 2592000; // 30 days.
-
-// Used to identify various parameters (query, code, etc.) in search URLS.
-const SEARCH_PROVIDER_INFO = {
-  "google": {
-    "regexp": /^https:\/\/www\.(google)\.(?:.+)\/search/,
-    "queryParam": "q",
-    "codeParam": "client",
-    "codePrefixes": ["firefox"],
-    "followonParams": ["oq", "ved", "ei"],
-  },
-  "duckduckgo": {
-    "regexp": /^https:\/\/(duckduckgo)\.com\//,
-    "queryParam": "q",
-    "codeParam": "t",
-    "codePrefixes": ["ff"],
-  },
-  "yahoo": {
-    "regexp": /^https:\/\/(?:.*)search\.(yahoo)\.com\/search/,
-    "queryParam": "p",
-  },
-  "baidu": {
-    "regexp": /^https:\/\/www\.(baidu)\.com\/(?:s|baidu)/,
-    "queryParam": "wd",
-    "codeParam": "tn",
-    "codePrefixes": ["monline_dg"],
-    "followonParams": ["oq"],
-  },
-  "bing": {
-    "regexp": /^https:\/\/www\.(bing)\.com\/search/,
-    "queryParam": "q",
-    "codeParam": "pc",
-    "codePrefixes": ["MOZ", "MZ"],
-  },
-};
 
 const SEARCH_COUNTS_HISTOGRAM_KEY = "SEARCH_COUNTS";
 /**
@@ -475,13 +440,20 @@ var ensureKnownRegion = async function(ss) {
 // Store the result of the geoip request as well as any other values and
 // telemetry which depend on it.
 function storeRegion(region) {
-  Services.prefs.setCharPref("browser.search.region", region);
-  // and telemetry...
   let isTimezoneUS = isUSTimezone();
+  // If it's a US region, but not a US timezone, we don't store the value.
+  // This works because no region defaults to ZZ (unknown) in nsURLFormatter
+  if (region != "US" || isTimezoneUS) {
+    Services.prefs.setCharPref("browser.search.region", region);
+  }
+
+  // and telemetry...
   if (region == "US" && !isTimezoneUS) {
+    LOG("storeRegion mismatch - US Region, non-US timezone");
     Services.telemetry.getHistogramById("SEARCH_SERVICE_US_COUNTRY_MISMATCHED_TIMEZONE").add(1);
   }
   if (region != "US" && isTimezoneUS) {
+    LOG("storeRegion mismatch - non-US Region, US timezone");
     Services.telemetry.getHistogramById("SEARCH_SERVICE_US_TIMEZONE_MISMATCHED_COUNTRY").add(1);
   }
   // telemetry to compare our geoip response with platform-specific country data.
@@ -614,6 +586,32 @@ function fetchRegion(ss) {
     request.responseType = "json";
     request.send("{}");
   });
+}
+
+// This converts our legacy google engines to the
+// new codes. We have to manually change them here
+// because we can't change the default name in absearch.
+function convertGoogleEngines(engineNames) {
+  let overrides = {
+    "google": "google-b-d",
+    "google-2018": "google-b-1-d",
+  };
+
+  let mobileOverrides = {
+    "google": "google-b-m",
+    "google-2018": "google-b-1-m",
+  };
+
+  if (AppConstants.platform == "android") {
+    overrides = mobileOverrides;
+  }
+  for (let engine in overrides) {
+    let index = engineNames.indexOf(engine);
+    if (index > -1) {
+      engineNames[index] = overrides[engine];
+    }
+  }
+  return engineNames;
 }
 
 // This will make an HTTP request to a Mozilla server that will return
@@ -2412,7 +2410,7 @@ Engine.prototype = {
     if (aResponseType == URLTYPE_SEARCH_HTML &&
         ((resetPending = resetStatus == "pending") ||
          resetEnabled) &&
-        this.name == Services.search.currentEngine.name &&
+        this.name == Services.search.defaultEngine.name &&
         !this._isDefault &&
         this.name != Services.search.originalDefaultEngine.name &&
         (resetPending || !this.getAttr("loadPathHash") ||
@@ -3182,10 +3180,12 @@ SearchService.prototype = {
   _submissionURLIgnoreList: [
     "ignore=true",
     "hspart=lvs",
-    "form=CONBDF",
+    "pc=COSP",
     "clid=2308146",
-    "fr=mcafee",
+    "fr=mca",
     "PC=MC0",
+    "lavasoft.gosearchresults",
+    "securedsearch.lavasoft",
   ],
 
   _loadPathIgnoreList: [
@@ -3513,6 +3513,8 @@ SearchService.prototype = {
       return;
     }
 
+    let searchRegion = Services.prefs.getCharPref("browser.search.region", null);
+
     let searchSettings;
     let locale = Services.locale.appLocaleAsBCP47;
     if ("locales" in json &&
@@ -3545,9 +3547,19 @@ SearchService.prototype = {
         for (let engine of searchSettings[region].visibleDefaultEngines) {
           jarNames.add(engine);
         }
+        if ("regionOverrides" in json &&
+            searchRegion in json.regionOverrides) {
+          for (let engine in json.regionOverrides[searchRegion]) {
+            jarNames.add(json.regionOverrides[searchRegion][engine]);
+          }
+        }
       }
 
       engineNames = visibleDefaultEngines.split(",");
+      // absearch can't be modified to use the new engine names.
+      // Convert them here.
+      engineNames = convertGoogleEngines(engineNames);
+
       for (let engineName of engineNames) {
         // If all engineName values are part of jarNames,
         // then we can use the region specific list, otherwise ignore it.
@@ -3562,11 +3574,6 @@ SearchService.prototype = {
           break;
         }
       }
-    }
-
-    let searchRegion;
-    if (Services.prefs.prefHasUserValue("browser.search.region")) {
-      searchRegion = Services.prefs.getCharPref("browser.search.region");
     }
 
     // Fallback to building a list based on the regions in the JSON
@@ -3599,6 +3606,21 @@ SearchService.prototype = {
         let index = engineNames.indexOf(engine);
         if (index > -1) {
           engineNames[index] = json.regionOverrides[searchRegion][engine];
+        }
+      }
+    }
+
+    // ESR uses different codes. Convert them here.
+    if (AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")) {
+      let esrOverrides = {
+        "google-b-d": "google-b-e",
+        "google-b-1-d": "google-b-1-e",
+      };
+
+      for (let engine in esrOverrides) {
+        let index = engineNames.indexOf(engine);
+        if (index > -1) {
+          engineNames[index] = esrOverrides[engine];
         }
       }
     }
@@ -4003,7 +4025,7 @@ SearchService.prototype = {
       isBuiltIn: extension.isPrivileged,
       suggestURL: searchProvider.suggest_url,
       suggestPostParams: searchProvider.suggest_url_post_params,
-      queryCharset: "UTF-8",
+      queryCharset: searchProvider.encoding || "UTF-8",
       mozParams: searchProvider.params,
     };
     this.addEngineWithDetails(searchProvider.name.trim(), params);
@@ -4565,67 +4587,6 @@ SearchService.prototype = {
     return new ParseSubmissionResult(mapEntry.engine, terms, offset, length);
   },
 
-  __searchProviderInfo: null,
-  get _searchProviderInfo() {
-    if (!this.__searchProviderInfo) {
-      this.__searchProviderInfo = SEARCH_PROVIDER_INFO;
-    }
-    return this.__searchProviderInfo;
-  },
-
-  recordSearchURLTelemetry(url) {
-    let entry = Object.entries(this._searchProviderInfo).find(
-      ([_, info]) => info.regexp.test(url)
-    );
-    if (!entry) {
-      return;
-    }
-    let [provider, searchProviderInfo] = entry;
-    let queries = new URLSearchParams(url.split("#")[0].split("?")[1]);
-    if (!queries.get(searchProviderInfo.queryParam)) {
-      return;
-    }
-    // Default to organic to simplify things.
-    // We override type in the sap cases.
-    let type = "organic";
-    let code;
-    if (searchProviderInfo.codeParam) {
-      code = queries.get(searchProviderInfo.codeParam);
-      if (code &&
-          searchProviderInfo.codePrefixes.some(p => code.startsWith(p))) {
-        if (searchProviderInfo.followonParams &&
-           searchProviderInfo.followonParams.some(p => queries.has(p))) {
-          type = "sap-follow-on";
-        } else {
-          type = "sap";
-        }
-      } else if (provider == "bing") {
-        // Bing requires lots of extra work related to cookies.
-        let secondaryCode = queries.get("form");
-        // This code is used for all Bing follow-on searches.
-        if (secondaryCode == "QBRE") {
-          for (let cookie of Services.cookies.getCookiesFromHost("www.bing.com", {})) {
-            if (cookie.name == "SRCHS") {
-              // If this cookie is present, it's probably an SAP follow-on.
-              // This might be an organic follow-on in the same session,
-              // but there is no way to tell the difference.
-              if (searchProviderInfo.codePrefixes.some(p => cookie.value.startsWith("PC=" + p))) {
-                type = "sap-follow-on";
-                code = cookie.value.split("=")[1];
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    let payload = `${provider}.in-content:${type}:${code || "none"}`;
-    let histogram = Services.telemetry.getKeyedHistogramById(SEARCH_COUNTS_HISTOGRAM_KEY);
-    histogram.add(payload);
-    LOG("nsSearchService::recordSearchURLTelemetry: " + payload);
-  },
-
   // nsIObserver
   observe: function SRCH_SVC_observe(aEngine, aTopic, aVerb) {
     switch (aTopic) {
@@ -4665,18 +4626,6 @@ SearchService.prototype = {
         // Locales are removed during shutdown, so ignore this message
         if (!Services.startup.shuttingDown) {
           this._asyncReInit();
-        }
-        break;
-
-      case "test:setSearchProviderInfo":
-        if (aVerb) {
-          let infoByProvider = JSON.parse(aVerb);
-          for (let info of Object.values(infoByProvider)) {
-            info.regexp = new RegExp(info.regexp);
-          }
-          this.__searchProviderInfo = infoByProvider;
-        } else {
-          this.__searchProviderInfo = SEARCH_PROVIDER_INFO;
         }
         break;
     }

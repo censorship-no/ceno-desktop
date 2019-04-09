@@ -24,6 +24,14 @@ const READER_MODE_PREFIX = "about:reader";
 let tabTracker;
 let windowTracker;
 
+function isPrivateTab(nativeTab) {
+  return PrivateBrowsingUtils.isBrowserPrivate(nativeTab.linkedBrowser);
+}
+
+function isPrivateWindow(window) {
+  return PrivateBrowsingUtils.isContentWindowPrivate(window);
+}
+
 // This function is pretty tightly tied to Extension.jsm.
 // Its job is to fill in the |tab| property of the sender.
 const getSender = (extension, target, sender) => {
@@ -255,14 +263,19 @@ class WindowTracker extends WindowTrackerBase {
   }
 
   /**
-   * @property {DOMWindow|null} topNormalWindow
+   * @param {BaseContext} context
+   *        The extension context
+   * @returns {DOMWindow|null} topNormalWindow
    *        The currently active, or topmost, browser window, or null if no
    *        browser window is currently open.
    *        Will return the topmost "normal" (i.e., not popup) window.
-   *        @readonly
    */
-  get topNormalWindow() {
-    return BrowserWindowTracker.getTopWindow({allowPopups: false});
+  getTopNormalWindow(context) {
+    let options = {allowPopups: false};
+    if (!context.privateBrowsingAllowed) {
+      options.private = false;
+    }
+    return BrowserWindowTracker.getTopWindow(options);
   }
 }
 
@@ -364,16 +377,18 @@ class TabTracker extends TabTrackerBase {
     this.emit("tab-adopted", adoptingTab, adoptedTab);
     if (this.has("tab-detached")) {
       let nativeTab = adoptedTab;
+      let isPrivate = isPrivateTab(nativeTab);
       let adoptedBy = adoptingTab;
       let oldWindowId = windowTracker.getId(nativeTab.ownerGlobal);
       let oldPosition = nativeTab._tPos;
-      this.emit("tab-detached", {nativeTab, adoptedBy, tabId, oldWindowId, oldPosition});
+      this.emit("tab-detached", {nativeTab, adoptedBy, tabId, oldWindowId, oldPosition, isPrivate});
     }
     if (this.has("tab-attached")) {
       let nativeTab = adoptingTab;
+      let isPrivate = isPrivateTab(nativeTab);
       let newWindowId = windowTracker.getId(nativeTab.ownerGlobal);
       let newPosition = nativeTab._tPos;
-      this.emit("tab-attached", {nativeTab, tabId, newWindowId, newPosition});
+      this.emit("tab-attached", {nativeTab, tabId, newWindowId, newPosition, isPrivate});
     }
   }
 
@@ -458,6 +473,10 @@ class TabTracker extends TabTrackerBase {
           // tab could have been created with a lazy browser but still not have
           // been assigned a SessionStore tab state with the URL and title.
           Promise.resolve().then(() => {
+            if (!event.originalTarget.parentNode) {
+              // If the tab is already be destroyed, do nothing.
+              return;
+            }
             this.emitCreated(event.originalTarget, currentTabSize);
           });
         }
@@ -480,7 +499,11 @@ class TabTracker extends TabTrackerBase {
         // Because we are delaying calling emitCreated above, we also need to
         // delay sending this event because it shouldn't fire before onCreated.
         Promise.resolve().then(() => {
-          this.emitActivated(nativeTab);
+          if (!nativeTab.parentNode) {
+            // If the tab is already be destroyed, do nothing.
+            return;
+          }
+          this.emitActivated(nativeTab, event.detail.previousTab);
         });
         break;
 
@@ -563,11 +586,21 @@ class TabTracker extends TabTrackerBase {
    *
    * @param {NativeTab} nativeTab
    *        The tab element which has been activated.
+   * @param {NativeTab} previousTab
+   *        The tab element which was previously activated.
    * @private
    */
-  emitActivated(nativeTab) {
+  emitActivated(nativeTab, previousTab = undefined) {
+    let previousTabIsPrivate, previousTabId;
+    if (previousTab && !previousTab.closing) {
+      previousTabId = this.getId(previousTab);
+      previousTabIsPrivate = isPrivateTab(previousTab);
+    }
     this.emit("tab-activated", {
+      isPrivate: isPrivateTab(nativeTab),
       tabId: this.getId(nativeTab),
+      previousTabId,
+      previousTabIsPrivate,
       windowId: windowTracker.getId(nativeTab.ownerGlobal)});
   }
 
@@ -581,7 +614,11 @@ class TabTracker extends TabTrackerBase {
   emitHighlighted(window) {
     let tabIds = window.gBrowser.selectedTabs.map(tab => this.getId(tab));
     let windowId = windowTracker.getId(window);
-    this.emit("tabs-highlighted", {tabIds, windowId});
+    this.emit("tabs-highlighted", {
+      tabIds,
+      windowId,
+      isPrivate: isPrivateWindow(window),
+    });
   }
 
   /**
@@ -594,7 +631,7 @@ class TabTracker extends TabTrackerBase {
    * @private
    */
   emitCreated(nativeTab, currentTabSize) {
-    this.emit("tab-created", {nativeTab, currentTabSize});
+    this.emit("tab-created", {nativeTab, currentTabSize, isPrivate: isPrivateTab(nativeTab)});
   }
 
   /**
@@ -611,7 +648,7 @@ class TabTracker extends TabTrackerBase {
     let windowId = windowTracker.getId(nativeTab.ownerGlobal);
     let tabId = this.getId(nativeTab);
 
-    this.emit("tab-removed", {nativeTab, tabId, windowId, isWindowClosing});
+    this.emit("tab-removed", {nativeTab, tabId, windowId, isWindowClosing, isPrivate: isPrivateTab(nativeTab)});
   }
 
   getBrowserData(browser) {
@@ -767,6 +804,11 @@ class Tab extends TabBase {
 
   get isInReaderMode() {
     return this.url && this.url.startsWith(READER_MODE_PREFIX);
+  }
+
+  get successorTabId() {
+    const {successor} = this.nativeTab;
+    return successor ? tabTracker.getId(successor) : -1;
   }
 
   /**
@@ -1032,6 +1074,9 @@ class TabManager extends TabManagerBase {
     let nativeTab = tabTracker.getTab(tabId, default_);
 
     if (nativeTab) {
+      if (!this.extension.canAccessWindow(nativeTab.ownerGlobal)) {
+        throw new ExtensionError(`Invalid tab ID: ${tabId}`);
+      }
       return this.getWrapper(nativeTab);
     }
     return default_;
@@ -1043,6 +1088,11 @@ class TabManager extends TabManagerBase {
 
   revokeActiveTabPermission(nativeTab = tabTracker.activeTab) {
     return super.revokeActiveTabPermission(nativeTab);
+  }
+
+  canAccessTab(nativeTab) {
+    return this.extension.privateBrowsingAllowed ||
+           !PrivateBrowsingUtils.isBrowserPrivate(nativeTab.linkedBrowser);
   }
 
   wrapTab(nativeTab) {
@@ -1057,9 +1107,19 @@ class WindowManager extends WindowManagerBase {
     return this.getWrapper(window);
   }
 
-  * getAll() {
+  canAccessWindow(window, context) {
+    return (context && context.canAccessWindow(window)) || this.extension.canAccessWindow(window);
+  }
+
+  * getAll(context) {
     for (let window of windowTracker.browserWindows()) {
-      yield this.getWrapper(window);
+      if (!this.canAccessWindow(window, context)) {
+        continue;
+      }
+      let wrapped = this.getWrapper(window);
+      if (wrapped) {
+        yield wrapped;
+      }
     }
   }
 

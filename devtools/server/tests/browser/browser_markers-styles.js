@@ -11,8 +11,7 @@ const MARKER_NAME = "Styles";
 add_task(async function() {
   const target = await addTabTarget(MAIN_DOMAIN + "doc_perf.html");
 
-  const front = target.getFront("performance");
-  await front.connect();
+  const front = await target.getFront("performance");
   const rec = await front.startRecording({ withMarkers: true });
 
   const markers = await waitForMarkerType(front, MARKER_NAME);

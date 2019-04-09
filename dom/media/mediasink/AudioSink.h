@@ -8,14 +8,13 @@
 
 #include "AudioStream.h"
 #include "MediaEventSource.h"
-#include "MediaQueue.h"
 #include "MediaInfo.h"
+#include "MediaQueue.h"
 #include "MediaSink.h"
-
 #include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/MozPromise.h"
 #include "mozilla/Monitor.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
 #include "nsISupportsImpl.h"
 
@@ -23,29 +22,26 @@ namespace mozilla {
 
 class AudioConverter;
 
-namespace media {
-
 class AudioSink : private AudioStream::DataSource {
   using PlaybackParams = MediaSink::PlaybackParams;
 
-public:
-  AudioSink(AbstractThread* aThread,
-            MediaQueue<AudioData>& aAudioQueue,
-            const TimeUnit& aStartTime,
-            const AudioInfo& aInfo);
+ public:
+  AudioSink(AbstractThread* aThread, MediaQueue<AudioData>& aAudioQueue,
+            const media::TimeUnit& aStartTime, const AudioInfo& aInfo);
 
   ~AudioSink();
 
   // Return a promise which will be resolved when AudioSink
   // finishes playing, or rejected if any error.
-  nsresult Init(const PlaybackParams& aParams, RefPtr<GenericPromise>& aEndPromise);
+  nsresult Init(const PlaybackParams& aParams,
+                RefPtr<MediaSink::EndedPromise>& aEndedPromise);
 
   /*
    * All public functions are not thread-safe.
    * Called on the task queue of MDSM only.
    */
-  TimeUnit GetPosition();
-  TimeUnit GetEndTime() const;
+  media::TimeUnit GetPosition();
+  media::TimeUnit GetEndTime() const;
 
   // Check whether we've pushed more frames to the audio hardware than it has
   // played.
@@ -59,13 +55,11 @@ public:
   void SetPreservesPitch(bool aPreservesPitch);
   void SetPlaying(bool aPlaying);
 
-  MediaEventSource<bool>& AudibleEvent() {
-    return mAudibleEvent;
-  }
+  MediaEventSource<bool>& AudibleEvent() { return mAudibleEvent; }
 
   nsCString GetDebugInfo();
 
-private:
+ private:
   // Allocate and initialize mAudioStream. Returns NS_OK on success.
   nsresult InitializeAudioStream(const PlaybackParams& aParams);
 
@@ -83,19 +77,19 @@ private:
   // The presentation time of the first audio frame that was played.
   // We can add this to the audio stream position to determine
   // the current audio time.
-  const TimeUnit mStartTime;
+  const media::TimeUnit mStartTime;
 
   // Keep the last good position returned from the audio stream. Used to ensure
   // position returned by GetPosition() is mono-increasing in spite of audio
   // stream error. Used on the task queue of MDSM only.
-  TimeUnit mLastGoodPosition;
+  media::TimeUnit mLastGoodPosition;
 
   const AudioInfo mInfo;
 
   // Used on the task queue of MDSM only.
   bool mPlaying;
 
-  MozPromiseHolder<GenericPromise> mEndPromise;
+  MozPromiseHolder<MediaSink::EndedPromise> mEndedPromise;
 
   /*
    * Members to implement AudioStream::DataSource.
@@ -130,8 +124,8 @@ private:
   // Drain the converter and add the output to the processed audio queue.
   // A maximum of aMaxFrames will be added.
   uint32_t DrainConverter(uint32_t aMaxFrames = UINT32_MAX);
-  already_AddRefed<AudioData> CreateAudioFromBuffer(AlignedAudioBuffer&& aBuffer,
-                                                    AudioData* aReference);
+  already_AddRefed<AudioData> CreateAudioFromBuffer(
+      AlignedAudioBuffer&& aBuffer, AudioData* aReference);
   // Add data to the processsed queue, update mProcessedQueueLength and
   // return the number of frames added.
   uint32_t PushProcessedAudio(AudioData* aData);
@@ -147,7 +141,7 @@ private:
   // at the current input framerate.
   int64_t mFramesParsed;
   Maybe<RefPtr<AudioData>> mLastProcessedPacket;
-  TimeUnit mLastEndTime;
+  media::TimeUnit mLastEndTime;
   // Never modifed after construction.
   uint32_t mOutputRate;
   uint32_t mOutputChannels;
@@ -160,7 +154,6 @@ private:
   MediaQueue<AudioData>& mAudioQueue;
 };
 
-} // namespace media
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // AudioSink_h__
+#endif  // AudioSink_h__

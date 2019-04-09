@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsTreeImageListener.h"
-#include "nsITreeBoxObject.h"
+#include "XULTreeElement.h"
 #include "imgIRequest.h"
 #include "imgIContainer.h"
 #include "nsIContent.h"
@@ -14,20 +14,15 @@
 NS_IMPL_ISUPPORTS(nsTreeImageListener, imgINotificationObserver)
 
 nsTreeImageListener::nsTreeImageListener(nsTreeBodyFrame* aTreeFrame)
-  : mTreeFrame(aTreeFrame),
-    mInvalidationSuppressed(true),
-    mInvalidationArea(nullptr)
-{
-}
+    : mTreeFrame(aTreeFrame),
+      mInvalidationSuppressed(true),
+      mInvalidationArea(nullptr) {}
 
-nsTreeImageListener::~nsTreeImageListener()
-{
-  delete mInvalidationArea;
-}
+nsTreeImageListener::~nsTreeImageListener() { delete mInvalidationArea; }
 
 NS_IMETHODIMP
-nsTreeImageListener::Notify(imgIRequest *aRequest, int32_t aType, const nsIntRect* aData)
-{
+nsTreeImageListener::Notify(imgIRequest* aRequest, int32_t aType,
+                            const nsIntRect* aData) {
   if (aType == imgINotificationObserver::IS_ANIMATED) {
     return mTreeFrame ? mTreeFrame->OnImageIsAnimated(aRequest) : NS_OK;
   }
@@ -55,16 +50,14 @@ nsTreeImageListener::Notify(imgIRequest *aRequest, int32_t aType, const nsIntRec
   return NS_OK;
 }
 
-void
-nsTreeImageListener::AddCell(int32_t aIndex, nsTreeColumn* aCol)
-{
+void nsTreeImageListener::AddCell(int32_t aIndex, nsTreeColumn* aCol) {
   if (!mInvalidationArea) {
     mInvalidationArea = new InvalidationArea(aCol);
     mInvalidationArea->AddRow(aIndex);
-  }
-  else {
+  } else {
     InvalidationArea* currArea;
-    for (currArea = mInvalidationArea; currArea; currArea = currArea->GetNext()) {
+    for (currArea = mInvalidationArea; currArea;
+         currArea = currArea->GetNext()) {
       if (currArea->GetCol() == aCol) {
         currArea->AddRow(aIndex);
         break;
@@ -79,17 +72,16 @@ nsTreeImageListener::AddCell(int32_t aIndex, nsTreeColumn* aCol)
   }
 }
 
-
-void
-nsTreeImageListener::Invalidate()
-{
+void nsTreeImageListener::Invalidate() {
   if (!mInvalidationSuppressed) {
     for (InvalidationArea* currArea = mInvalidationArea; currArea;
          currArea = currArea->GetNext()) {
-      // Loop from min to max, invalidating each cell that was listening for this image.
+      // Loop from min to max, invalidating each cell that was listening for
+      // this image.
       for (int32_t i = currArea->GetMin(); i <= currArea->GetMax(); ++i) {
         if (mTreeFrame) {
-          nsITreeBoxObject* tree = mTreeFrame->GetTreeBoxObject();
+          RefPtr<XULTreeElement> tree =
+              XULTreeElement::FromNodeOrNull(mTreeFrame->GetBaseElement());
           if (tree) {
             tree->InvalidateCell(i, currArea->GetCol());
           }
@@ -100,16 +92,12 @@ nsTreeImageListener::Invalidate()
 }
 
 nsTreeImageListener::InvalidationArea::InvalidationArea(nsTreeColumn* aCol)
-  : mCol(aCol),
-    mMin(-1), // min should start out "undefined"
-    mMax(0),
-    mNext(nullptr)
-{
-}
+    : mCol(aCol),
+      mMin(-1),  // min should start out "undefined"
+      mMax(0),
+      mNext(nullptr) {}
 
-void
-nsTreeImageListener::InvalidationArea::AddRow(int32_t aIndex)
-{
+void nsTreeImageListener::InvalidationArea::AddRow(int32_t aIndex) {
   if (mMin == -1)
     mMin = mMax = aIndex;
   else if (aIndex < mMin)
@@ -119,8 +107,7 @@ nsTreeImageListener::InvalidationArea::AddRow(int32_t aIndex)
 }
 
 NS_IMETHODIMP
-nsTreeImageListener::ClearFrame()
-{
+nsTreeImageListener::ClearFrame() {
   mTreeFrame = nullptr;
   return NS_OK;
 }

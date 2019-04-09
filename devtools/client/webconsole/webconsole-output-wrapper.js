@@ -10,7 +10,8 @@ const ReactDOM = require("devtools/client/shared/vendor/react-dom");
 const { Provider } = require("devtools/client/shared/vendor/react-redux");
 
 const actions = require("devtools/client/webconsole/actions/index");
-const { createContextMenu, createEditContextMenu } = require("devtools/client/webconsole/utils/context-menu");
+const { createEditContextMenu } = require("devtools/client/framework/toolbox-context-menu");
+const { createContextMenu } = require("devtools/client/webconsole/utils/context-menu");
 const { configureStore } = require("devtools/client/webconsole/store");
 
 const { isPacketPrivate } = require("devtools/client/webconsole/utils/messages");
@@ -21,6 +22,8 @@ const EventEmitter = require("devtools/shared/event-emitter");
 const App = createFactory(require("devtools/client/webconsole/components/App"));
 const ObjectClient = require("devtools/shared/client/object-client");
 const LongStringClient = require("devtools/shared/client/long-string-client");
+loader.lazyRequireGetter(this, "Constants", "devtools/client/webconsole/constants");
+loader.lazyRequireGetter(this, "getElementText", "devtools/client/webconsole/utils/clipboard", true);
 
 let store = null;
 
@@ -107,6 +110,60 @@ WebConsoleOutputWrapper.prototype = {
 
           return debuggerClient.release(actor);
         },
+
+        getWebConsoleClient: () => {
+          return hud.webConsoleClient;
+        },
+
+        /**
+         * Retrieve the FrameActor ID given a frame depth, or the selected one if no
+         * frame depth given.
+         *
+         * @param {Number} frame: optional frame depth.
+         * @return {String|null}: The FrameActor ID for the given frame depth (or the
+         *                        selected frame if it exists).
+         */
+        getFrameActor: (frame = null) => {
+          const state = this.owner.getDebuggerFrames();
+          if (!state) {
+            return null;
+          }
+
+          const grip = Number.isInteger(frame)
+            ? state.frames[frame]
+            : state.frames[state.selected];
+          return grip ? grip.actor : null;
+        },
+
+        inputHasSelection: () => {
+          const {editor, inputNode} = hud.jsterm || {};
+          return editor
+            ? !!editor.getSelection()
+            : (inputNode && inputNode.selectionStart !== inputNode.selectionEnd);
+        },
+
+        getInputValue: () => {
+          return hud.jsterm && hud.jsterm.getInputValue();
+        },
+
+        getInputCursor: () => {
+          return hud.jsterm && hud.jsterm.getSelectionStart();
+        },
+
+        getSelectedNodeActor: () => {
+          const inspectorSelection = this.owner.getInspectorSelection();
+          if (inspectorSelection && inspectorSelection.nodeFront) {
+            return inspectorSelection.nodeFront.actorID;
+          }
+          return null;
+        },
+
+        getJsTermTooltipAnchor: () => {
+          if (jstermCodeMirror) {
+            return hud.jsterm.node.querySelector(".CodeMirror-cursor");
+          }
+          return hud.jsterm.completeNode;
+        },
       };
 
       // Set `openContextMenu` this way so, `serviceContainer` variable
@@ -116,7 +173,7 @@ WebConsoleOutputWrapper.prototype = {
         const { screenX, screenY, target } = e;
 
         const messageEl = target.closest(".message");
-        const clipboardText = messageEl ? messageEl.textContent : null;
+        const clipboardText = getElementText(messageEl);
 
         const messageVariable = target.closest(".objectBox");
         // Ensure that console.group and console.groupCollapsed commands are not captured
@@ -164,7 +221,7 @@ WebConsoleOutputWrapper.prototype = {
 
       serviceContainer.openEditContextMenu = (e) => {
         const { screenX, screenY } = e;
-        const menu = createEditContextMenu();
+        const menu = createEditContextMenu(window, "webconsole-menu");
         // Emit the "menu-open" event for testing.
         menu.once("open", () => this.emit("menu-open"));
         menu.popup(screenX, screenY, { doc: this.owner.chromeWindow.document });
@@ -174,7 +231,8 @@ WebConsoleOutputWrapper.prototype = {
 
       if (this.toolbox) {
         this.toolbox.threadClient.addListener("paused", this.dispatchPaused.bind(this));
-        this.toolbox.threadClient.addListener("resumed", this.dispatchResumed.bind(this));
+        this.toolbox.threadClient.addListener(
+          "progress", this.dispatchProgress.bind(this));
 
         Object.assign(serviceContainer, {
           onViewSourceInDebugger: frame => {
@@ -207,19 +265,23 @@ WebConsoleOutputWrapper.prototype = {
             });
           },
           sourceMapService: this.toolbox ? this.toolbox.sourceMapURLService : null,
-          highlightDomElement: (grip, options = {}) => {
-            return this.toolbox.highlighterUtils
-              ? this.toolbox.highlighterUtils.highlightDomValueGrip(grip, options)
-              : null;
+          highlightDomElement: async (grip, options = {}) => {
+            await this.toolbox.initInspector();
+            if (!this.toolbox.highlighter) {
+              return null;
+            }
+            const nodeFront = await this.toolbox.walker.gripToNodeFront(grip);
+            return this.toolbox.highlighter.highlight(nodeFront, options);
           },
           unHighlightDomElement: (forceHide = false) => {
-            return this.toolbox.highlighterUtils
-              ? this.toolbox.highlighterUtils.unhighlight(forceHide)
+            return this.toolbox.highlighter
+              ? this.toolbox.highlighter.unhighlight(forceHide)
               : null;
           },
           openNodeInInspector: async (grip) => {
+            await this.toolbox.initInspector();
             const onSelectInspector = this.toolbox.selectTool("inspector", "inspect_dom");
-            const onGripNodeToFront = this.toolbox.highlighterUtils.gripToNodeFront(grip);
+            const onGripNodeToFront = this.toolbox.walker.gripToNodeFront(grip);
             const [
               front,
               inspector,
@@ -233,6 +295,11 @@ WebConsoleOutputWrapper.prototype = {
           },
           jumpToExecutionPoint: executionPoint =>
             this.toolbox.threadClient.timeWarp(executionPoint),
+
+          onMessageHover: (type, messageId) => {
+            const message = getMessage(store.getState(), messageId);
+            this.hud.emit("message-hover", type, message);
+          },
         });
       }
 
@@ -244,15 +311,16 @@ WebConsoleOutputWrapper.prototype = {
       });
 
       const {prefs} = store.getState();
+      const jstermCodeMirror = prefs.jstermCodeMirror
+        && !Services.appinfo.accessibilityEnabled;
+
       const app = App({
         attachRefToHud,
         serviceContainer,
         hud,
         onFirstMeaningfulPaint: resolve,
         closeSplitConsole: this.closeSplitConsole.bind(this),
-        jstermCodeMirror: prefs.jstermCodeMirror
-          && !Services.appinfo.accessibilityEnabled,
-        jstermReverseSearch: prefs.jstermReverseSearch,
+        jstermCodeMirror,
       });
 
       // Render the root Application component.
@@ -309,6 +377,7 @@ WebConsoleOutputWrapper.prototype = {
     this.queuedMessageUpdates = [];
     this.queuedRequestUpdates = [];
     store.dispatch(actions.messagesClear());
+    this.hud.emit("messages-cleared");
   },
 
   dispatchPrivateMessagesClear: function() {
@@ -364,8 +433,10 @@ WebConsoleOutputWrapper.prototype = {
     }
   },
 
-  dispatchResumed: function(_, packet) {
-    store.dispatch(actions.setPauseExecutionPoint(null));
+  dispatchProgress: function(_, packet) {
+    const {executionPoint, recording} = packet;
+    const point = recording ? null : executionPoint;
+    store.dispatch(actions.setPauseExecutionPoint(point));
   },
 
   dispatchMessageUpdate: function(message, res) {
@@ -403,6 +474,27 @@ WebConsoleOutputWrapper.prototype = {
   dispatchSplitConsoleCloseButtonToggle: function() {
     store.dispatch(actions.splitConsoleCloseButtonToggle(
       this.toolbox && this.toolbox.currentToolId !== "webconsole"));
+  },
+
+  dispatchTabWillNavigate: function(packet) {
+    const { ui } = store.getState();
+
+    // For the browser console, we receive tab navigation
+    // when the original top level window we attached to is closed,
+    // but we don't want to reset console history and just switch to
+    // the next available window.
+    if (ui.persistLogs || this.hud.isBrowserConsole) {
+      // Add a type in order for this event packet to be identified by
+      // utils/messages.js's `transformPacket`
+      packet.type = "will-navigate";
+      this.dispatchMessageAdd(packet);
+    } else {
+      this.hud.webConsoleClient.clearNetworkRequests();
+      this.dispatchMessagesClear();
+      store.dispatch({
+        type: Constants.WILL_NAVIGATE,
+      });
+    }
   },
 
   batchedMessageUpdates: function(info) {
@@ -448,6 +540,13 @@ WebConsoleOutputWrapper.prototype = {
       setTimeout(() => {
         this.throttledDispatchPromise = null;
 
+        if (!store) {
+          // The store is not initialized yet, we can call setTimeoutIfNeeded so the
+          // messages will be handled in the next timeout when the store is ready.
+          this.setTimeoutIfNeeded();
+          return;
+        }
+
         store.dispatch(actions.messagesAdd(this.queuedMessageAdds));
 
         const length = this.queuedMessageAdds.length;
@@ -491,6 +590,10 @@ WebConsoleOutputWrapper.prototype = {
   // Should be used for test purpose only.
   getStore: function() {
     return store;
+  },
+
+  subscribeToStore: function(callback) {
+    store.subscribe(() => callback(store.getState()));
   },
 
   // Called by pushing close button.

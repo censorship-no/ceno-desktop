@@ -14,23 +14,19 @@ namespace fuzzing {
  * Randomly mutates a byte inside |aData| by using bit manipulation.
  */
 /* static */
-void
-FuzzingMutate::ChangeBit(uint8_t* aData, size_t aLength)
-{
+void FuzzingMutate::ChangeBit(uint8_t* aData, size_t aLength) {
   size_t offset = RandomIntegerRange<size_t>(0, aLength);
-  aData[offset] ^= (1 << RandomIntegerRange<unsigned char>(0, 8));
+  aData[offset] ^= (1 << FuzzingTraits::Random(9));
 }
 
 /**
  * Randomly replaces a byte inside |aData| with one in the range of [0, 255].
  */
 /* static */
-void
-FuzzingMutate::ChangeByte(uint8_t* aData, size_t aLength)
-{
+void FuzzingMutate::ChangeByte(uint8_t* aData, size_t aLength) {
   size_t offset = RandomIntegerRange<size_t>(0, aLength);
   aData[offset] = RandomInteger<unsigned char>();
 }
 
-} // namespace fuzzing
-} // namespace mozilla
+}  // namespace fuzzing
+}  // namespace mozilla

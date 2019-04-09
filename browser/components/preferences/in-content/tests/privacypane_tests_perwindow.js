@@ -8,7 +8,7 @@ async function runTestOnPrivacyPrefPane(testFunc) {
   info("loaded about:preferences");
   browser.contentWindow.gotoPref("panePrivacy");
   info("viewing privacy pane, executing testFunc");
-  testFunc(browser.contentWindow);
+  await testFunc(browser.contentWindow);
   BrowserTestUtils.removeTab(tab);
 }
 
@@ -46,23 +46,22 @@ function test_dependent_elements(win) {
   let controls = [
     win.document.getElementById("rememberHistory"),
     win.document.getElementById("rememberForms"),
-    win.document.getElementById("keepUntil"),
-    win.document.getElementById("keepCookiesUntil"),
+    win.document.getElementById("deleteOnClose"),
     win.document.getElementById("alwaysClear"),
   ];
   controls.forEach(function(control) {
     ok(control, "the dependent controls should exist");
   });
   let independents = [
-    win.document.getElementById("blockCookies"),
+    win.document.getElementById("contentBlockingBlockCookiesCheckbox"),
   ];
   independents.forEach(function(control) {
     ok(control, "the independent controls should exist");
   });
   let cookieexceptions = win.document.getElementById("cookieExceptions");
   ok(cookieexceptions, "the cookie exceptions button should exist");
-  let keepuntil = win.document.getElementById("keepCookiesUntil");
-  ok(keepuntil, "the keep cookies until menulist should exist");
+  let deleteOnCloseCheckbox = win.document.getElementById("deleteOnClose");
+  ok(deleteOnCloseCheckbox, "the delete on close checkbox should exist");
   let alwaysclear = win.document.getElementById("alwaysClear");
   ok(alwaysclear, "the clear data on close checkbox should exist");
   let rememberhistory = win.document.getElementById("rememberHistory");
@@ -77,8 +76,6 @@ function test_dependent_elements(win) {
       is(control.disabled, disabled,
         control.getAttribute("id") + " should " + (disabled ? "" : "not ") + "be disabled");
     });
-    is(keepuntil.value, disabled ? 2 : 0,
-      "the keep cookies until menulist value should be as expected");
     if (disabled) {
      ok(!alwaysclear.checked,
         "the clear data on close checkbox value should be as expected");
@@ -114,17 +111,16 @@ function test_dependent_elements(win) {
 }
 
 function test_dependent_cookie_elements(win) {
-  let keepUntil = win.document.getElementById("keepUntil");
-  let keepCookiesUntil = win.document.getElementById("keepCookiesUntil");
-  let blockCookiesLabel = win.document.getElementById("blockCookiesLabel");
+  let deleteOnCloseCheckbox = win.document.getElementById("deleteOnClose");
+  let deleteOnCloseNote = win.document.getElementById("deleteOnCloseNote");
   let blockCookiesMenu = win.document.getElementById("blockCookiesMenu");
 
-  let controls = [blockCookiesLabel, blockCookiesMenu, keepUntil, keepCookiesUntil];
+  let controls = [blockCookiesMenu, deleteOnCloseCheckbox];
   controls.forEach(function(control) {
     ok(control, "the dependent cookie controls should exist");
   });
-  let blockcookies = win.document.getElementById("blockCookies");
-  ok(blockcookies, "the block cookies checkbox should exist");
+  let blockCookiesCheckbox = win.document.getElementById("contentBlockingBlockCookiesCheckbox");
+  ok(blockCookiesCheckbox, "the block cookies checkbox should exist");
 
   function expect_disabled(disabled, c = controls) {
     c.forEach(function(control) {
@@ -133,19 +129,23 @@ function test_dependent_cookie_elements(win) {
     });
   }
 
-  blockcookies.value = "disallow";
-  controlChanged(blockcookies);
+  blockCookiesCheckbox.checked = true;
+  controlChanged(blockCookiesCheckbox);
   expect_disabled(false);
 
-  blockcookies.value = "allow";
-  controlChanged(blockcookies);
-  expect_disabled(true, [blockCookiesLabel, blockCookiesMenu]);
-  expect_disabled(false, [keepUntil, keepCookiesUntil]);
+  blockCookiesCheckbox.checked = false;
+  controlChanged(blockCookiesCheckbox);
+  expect_disabled(true, [blockCookiesMenu]);
+  expect_disabled(false, [deleteOnCloseCheckbox]);
+  is_element_hidden(deleteOnCloseNote,
+    "The notice for delete on close in permanent private browsing mode should be hidden.");
 
   blockCookiesMenu.value = "always";
   controlChanged(blockCookiesMenu);
-  expect_disabled(true, [keepUntil, keepCookiesUntil]);
-  expect_disabled(false, [blockCookiesLabel, blockCookiesMenu]);
+  expect_disabled(true, [deleteOnCloseCheckbox]);
+  expect_disabled(false, [blockCookiesMenu]);
+  is_element_hidden(deleteOnCloseNote,
+    "The notice for delete on close in permanent private browsing mode should be hidden.");
 
   if (win.contentBlockingCookiesAndSiteDataRejectTrackersEnabled) {
     blockCookiesMenu.value = "trackers";
@@ -161,12 +161,16 @@ function test_dependent_cookie_elements(win) {
   // disable the "keep cookies until..." menu.
   historymode.value = "dontremember";
   controlChanged(historymode);
-  expect_disabled(true, [keepUntil, keepCookiesUntil]);
-  expect_disabled(false, [blockCookiesLabel, blockCookiesMenu]);
+  expect_disabled(true, [deleteOnCloseCheckbox]);
+  is_element_visible(deleteOnCloseNote,
+    "The notice for delete on close in permanent private browsing mode should be visible.");
+  expect_disabled(false, [blockCookiesMenu]);
 
   historymode.value = "remember";
   controlChanged(historymode);
   expect_disabled(false);
+  is_element_hidden(deleteOnCloseNote,
+    "The notice for delete on close in permanent private browsing mode should be hidden.");
 }
 
 function test_dependent_clearonclose_elements(win) {
@@ -201,7 +205,7 @@ function test_dependent_clearonclose_elements(win) {
   expect_disabled(true);
 }
 
-function test_dependent_prefs(win) {
+async function test_dependent_prefs(win) {
   let historymode = win.document.getElementById("historyMode");
   ok(historymode, "history mode menulist should exist");
   let controls = [
@@ -222,6 +226,8 @@ function test_dependent_prefs(win) {
   // controls should be checked in remember mode
   historymode.value = "remember";
   controlChanged(historymode);
+  // Initial updates from prefs are not sync, so wait:
+  await TestUtils.waitForCondition(() => controls[0].getAttribute("checked") == "true");
   expect_checked(true);
 
   // even if they're unchecked in custom mode
@@ -285,17 +291,6 @@ function test_custom_retention(controlToChange, expect, valueIncrement) {
       break;
     }
     controlChanged(controlToChange);
-  };
-}
-
-function test_locbar_suggestion_retention(suggestion, autocomplete) {
-  return function(win) {
-    let elem = win.document.getElementById(suggestion + "Suggestion");
-    ok(elem, "Suggest " + suggestion + " checkbox should exist.");
-    elem.click();
-
-    is(Services.prefs.getBoolPref("browser.urlbar.autocomplete.enabled"), autocomplete,
-       "browser.urlbar.autocomplete.enabled pref should be " + autocomplete);
   };
 }
 

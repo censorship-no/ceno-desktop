@@ -46,9 +46,9 @@ var gLastRightClickTimeStamp = Number.NEGATIVE_INFINITY;
 
 var observer = {
   QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver,
-                                           Ci.nsIFormSubmitObserver,
-                                           Ci.nsIWebProgressListener,
-                                           Ci.nsISupportsWeakReference]),
+                                          Ci.nsIFormSubmitObserver,
+                                          Ci.nsIWebProgressListener,
+                                          Ci.nsISupportsWeakReference]),
 
   // nsIFormSubmitObserver
   notify(formElement, aWindow, actionURI) {
@@ -157,10 +157,11 @@ observer.onPrefChange(); // read initial values
 var LoginManagerContent = {
   __formFillService: null, // FormFillController, for username autocompleting
   get _formFillService() {
-    if (!this.__formFillService)
+    if (!this.__formFillService) {
       this.__formFillService =
                       Cc["@mozilla.org/satchel/form-fill-controller;1"].
                       getService(Ci.nsIFormFillController);
+    }
     return this.__formFillService;
   },
 
@@ -212,8 +213,9 @@ var LoginManagerContent = {
     if (--count === 0) {
       this._managers.delete(msg.target);
 
-      for (let message of this._messages)
+      for (let message of this._messages) {
         msg.target.removeMessageListener(message, this);
+      }
     } else {
       this._managers.set(msg.target, count);
     }
@@ -222,13 +224,14 @@ var LoginManagerContent = {
   },
 
   _sendRequest(messageManager, requestData,
-                         name, messageData) {
+               name, messageData) {
     let count;
     if (!(count = this._managers.get(messageManager))) {
       this._managers.set(messageManager, 1);
 
-      for (let message of this._messages)
+      for (let message of this._messages) {
         messageManager.addMessageListener(message, this);
+      }
     } else {
       this._managers.set(messageManager, ++count);
     }
@@ -309,7 +312,7 @@ var LoginManagerContent = {
   },
 
   _autoCompleteSearchAsync(aSearchString, aPreviousResult,
-                                     aElement, aRect) {
+                           aElement, aRect) {
     let doc = aElement.ownerDocument;
     let form = LoginFormFactory.createFromField(aElement);
     let win = doc.defaultView;
@@ -332,7 +335,7 @@ var LoginManagerContent = {
                         rect: aRect,
                         isSecure: InsecurePasswordUtils.isFormSecure(form),
                         isPasswordField: aElement.type == "password",
-                      };
+    };
 
     return this._sendRequest(messageManager, requestData,
                              "RemoteLogins:autoCompleteLogins",
@@ -606,30 +609,36 @@ var LoginManagerContent = {
    * Listens for DOMAutoComplete and blur events on an input field.
    */
   onUsernameInput(event) {
-    if (!event.isTrusted)
+    if (!event.isTrusted) {
       return;
+    }
 
-    if (!gEnabled)
+    if (!gEnabled) {
       return;
+    }
 
     var acInputField = event.target;
 
     // This is probably a bit over-conservatative.
-    if (ChromeUtils.getClassName(acInputField.ownerDocument) != "HTMLDocument")
+    if (ChromeUtils.getClassName(acInputField.ownerDocument) != "HTMLDocument") {
       return;
+    }
 
-    if (!LoginHelper.isUsernameFieldType(acInputField))
+    if (!LoginHelper.isUsernameFieldType(acInputField)) {
       return;
+    }
 
     var acForm = LoginFormFactory.createFromField(acInputField);
-    if (!acForm)
+    if (!acForm) {
       return;
+    }
 
     // If the username is blank, bail out now -- we don't want
     // fillForm() to try filling in a login without a username
     // to filter on (bug 471906).
-    if (!acInputField.value)
+    if (!acInputField.value) {
       return;
+    }
 
     log("onUsernameInput from", event.type);
 
@@ -676,7 +685,8 @@ var LoginManagerContent = {
     for (let i = 0; i < form.elements.length; i++) {
       let element = form.elements[i];
       if (ChromeUtils.getClassName(element) !== "HTMLInputElement" ||
-          element.type != "password") {
+          element.type != "password" ||
+          !element.isConnected) {
         continue;
       }
 
@@ -693,9 +703,9 @@ var LoginManagerContent = {
       }
 
       pwFields[pwFields.length] = {
-                                    index: i,
-                                    element,
-                                  };
+        index: i,
+        element,
+      };
     }
 
     // If too few or too many fields, bail out.
@@ -792,11 +802,12 @@ var LoginManagerContent = {
       }
     }
 
-    if (!usernameField)
+    if (!usernameField) {
       log("(form -- no username field found)");
-    else
+    } else {
       log("Username field ", usernameField, "has name/value:",
           usernameField.name, "/", usernameField.value);
+    }
 
     // If we're not submitting a form (it's a page load), there are no
     // password field values for us to use for identifying fields. So,
@@ -923,8 +934,9 @@ var LoginManagerContent = {
     }
 
     // If password saving is disabled (globally or for host), bail out now.
-    if (!gEnabled)
+    if (!gEnabled) {
       return;
+    }
 
     var hostname = LoginUtils._getPasswordOrigin(doc.documentURI);
     if (!hostname) {
@@ -942,8 +954,9 @@ var LoginManagerContent = {
           this._getFormFields(form, true, recipes);
 
     // Need at least 1 valid password field to do anything.
-    if (newPasswordField == null)
+    if (newPasswordField == null) {
       return;
+    }
 
     // Check for autocomplete=off attribute. We don't use it to prevent
     // autofilling (for existing logins), but won't save logins when it's
@@ -1129,16 +1142,19 @@ var LoginManagerContent = {
       var maxPasswordLen = Number.MAX_VALUE;
 
       // If attribute wasn't set, default is -1.
-      if (usernameField && usernameField.maxLength >= 0)
+      if (usernameField && usernameField.maxLength >= 0) {
         maxUsernameLen = usernameField.maxLength;
-      if (passwordField.maxLength >= 0)
+      }
+      if (passwordField.maxLength >= 0) {
         maxPasswordLen = passwordField.maxLength;
+      }
 
       var logins = foundLogins.filter(function(l) {
         var fit = (l.username.length <= maxUsernameLen &&
                    l.password.length <= maxPasswordLen);
-        if (!fit)
+        if (!fit) {
           log("Ignored", l.username, "login: won't fit");
+        }
 
         return fit;
       }, this);
@@ -1166,7 +1182,7 @@ var LoginManagerContent = {
         var username = usernameField.value.toLowerCase();
 
         let matchingLogins = logins.filter(l =>
-                                           l.username.toLowerCase() == username);
+          l.username.toLowerCase() == username);
         if (matchingLogins.length == 0) {
           log("Password not filled. None of the stored logins match the username already present.");
           autofillResult = AUTOFILL_RESULT.EXISTING_USERNAME;
@@ -1191,10 +1207,11 @@ var LoginManagerContent = {
         // (eg, a PIN). Prefer the login that matches the type of the form
         // (user+pass or pass-only) when there's exactly one that matches.
         let matchingLogins;
-        if (usernameField)
+        if (usernameField) {
           matchingLogins = logins.filter(l => l.username);
-        else
+        } else {
           matchingLogins = logins.filter(l => !l.username);
+        }
 
         if (matchingLogins.length != 1) {
           log("Multiple logins for form, so not filling any.");
@@ -1334,6 +1351,33 @@ var LoginManagerContent = {
   },
 
   /**
+   * Returns the username and password fields found in the form by input
+   * element into form.
+   *
+   * @param {HTMLInputElement} aField
+   *                           A form field into form.
+   * @return {Array} [usernameField, newPasswordField, oldPasswordField]
+   *
+   * More detail of these values is same as _getFormFields.
+   */
+  getUserNameAndPasswordFields(aField) {
+    // If the element is not a proper form field, return null.
+    if (ChromeUtils.getClassName(aField) !== "HTMLInputElement" ||
+        (aField.type != "password" && !LoginHelper.isUsernameFieldType(aField)) ||
+        aField.nodePrincipal.isNullPrincipal ||
+        !aField.ownerDocument) {
+      return [null, null, null];
+    }
+    let form = LoginFormFactory.createFromField(aField);
+
+    let doc = aField.ownerDocument;
+    let formOrigin = LoginUtils._getPasswordOrigin(doc.documentURI);
+    let recipes = LoginRecipesContent.getRecipes(formOrigin, doc.defaultView);
+
+    return this._getFormFields(form, false, recipes);
+  },
+
+  /**
    * Verify if a field is a valid login form field and
    * returns some information about it's FormLike.
    *
@@ -1352,14 +1396,9 @@ var LoginManagerContent = {
         !aField.ownerDocument) {
       return null;
     }
-    let form = LoginFormFactory.createFromField(aField);
-
-    let doc = aField.ownerDocument;
-    let formOrigin = LoginUtils._getPasswordOrigin(doc.documentURI);
-    let recipes = LoginRecipesContent.getRecipes(formOrigin, doc.defaultView);
 
     let [usernameField, newPasswordField] =
-          this._getFormFields(form, false, recipes);
+          this.getUserNameAndPasswordFields(aField);
 
     // If we are not verifying a password field, we want
     // to use aField as the username field.
@@ -1390,8 +1429,9 @@ var LoginUtils = {
     try {
       var uri = Services.io.newURI(uriString);
 
-      if (allowJS && uri.scheme == "javascript")
+      if (allowJS && uri.scheme == "javascript") {
         return "javascript:";
+      }
 
       // Build this manually instead of using prePath to avoid including the userPass portion.
       realm = uri.scheme + "://" + uri.displayHostPort;
@@ -1409,8 +1449,9 @@ var LoginUtils = {
     var uriString = form.action;
 
     // A blank or missing action submits to where it came from.
-    if (uriString == "")
-      uriString = form.baseURI; // ala bug 297761
+    if (uriString == "") {
+      uriString = form.baseURI;
+    } // ala bug 297761
 
     return this._getPasswordOrigin(uriString, true);
   },
@@ -1422,11 +1463,13 @@ function UserAutoCompleteResult(aSearchString, matchingLogins, {isSecure, messag
     var userA = a.username.toLowerCase();
     var userB = b.username.toLowerCase();
 
-    if (userA < userB)
+    if (userA < userB) {
       return -1;
+    }
 
-    if (userA > userB)
+    if (userA > userB) {
       return 1;
+    }
 
     return 0;
   }
@@ -1463,7 +1506,7 @@ function UserAutoCompleteResult(aSearchString, matchingLogins, {isSecure, messag
 
 UserAutoCompleteResult.prototype = {
   QueryInterface: ChromeUtils.generateQI([Ci.nsIAutoCompleteResult,
-                                           Ci.nsISupportsWeakReference]),
+                                          Ci.nsISupportsWeakReference]),
 
   // private
   logins: null,
@@ -1563,8 +1606,9 @@ UserAutoCompleteResult.prototype = {
     var [removedLogin] = this.logins.splice(index, 1);
 
     this.matchCount--;
-    if (this.defaultIndex > this.logins.length)
+    if (this.defaultIndex > this.logins.length) {
       this.defaultIndex--;
+    }
 
     if (removeFromDB) {
       if (this._messageManager) {

@@ -22,7 +22,6 @@ XPCOMUtils.defineLazyServiceGetter(this, "aboutNewTabService",
                                    "nsIAboutNewTabService");
 
 Object.defineProperty(this, "BROWSER_NEW_TAB_URL", {
-  configurable: true,
   enumerable: true,
   get() {
     if (PrivateBrowsingUtils.isWindowPrivate(window) &&
@@ -340,7 +339,7 @@ function openLinkIn(url, where, params) {
         userContextId: aUserContextId,
         privateBrowsingId: aIsPrivate || (w && PrivateBrowsingUtils.isWindowPrivate(w)),
       };
-      return Services.scriptSecurityManager.createCodebasePrincipal(principal.URI, attrs);
+      return Services.scriptSecurityManager.principalWithOA(principal, attrs);
     }
     return principal;
   }
@@ -502,6 +501,14 @@ function openLinkIn(url, where, params) {
       // Unless we know for sure we're not inheriting principals,
       // force the about:blank viewer to have the right principal:
       targetBrowser.createAboutBlankContentViewer(aPrincipal);
+    }
+
+    // When navigating a recording tab, use a new content process in order to
+    // start a new recording.
+    if (targetBrowser.hasAttribute("recordExecution") &&
+        targetBrowser.currentURI.spec != "about:blank") {
+      w.gBrowser.updateBrowserRemoteness(targetBrowser, true,
+                                         { recordExecution: "*", newFrameloader: true });
     }
 
     targetBrowser.loadURI(url, {
@@ -966,13 +973,9 @@ function openHelpLink(aHelpTopic, aCalledFromModal, aWhere) {
   openTrustedLinkIn(url, where);
 }
 
-function openPrefsHelp() {
-  // non-instant apply prefwindows are usually modal, so we can't open in the topmost window,
-  // since its probably behind the window.
-  var instantApply = Services.prefs.getBoolPref("browser.preferences.instantApply");
-
-  var helpTopic = document.documentElement.getAttribute("helpTopic");
-  openHelpLink(helpTopic, !instantApply);
+function openPrefsHelp(aEvent) {
+  let helpTopic = aEvent.target.getAttribute("helpTopic");
+  openHelpLink(helpTopic);
 }
 
 function trimURL(aURL) {

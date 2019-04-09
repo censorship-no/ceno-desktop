@@ -1,27 +1,30 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.InitialState = InitialState;
-exports.default = update;
-exports.getExpandedState = getExpandedState;
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+// @flow
 
 /**
  * Source tree reducer
  * @module reducers/source-tree
  */
-function InitialState() {
+
+import type { SourceTreeAction } from "../actions/types";
+
+export type SourceTreeState = {
+  expanded: { [string]: Set<string> }
+};
+
+export function InitialState(): SourceTreeState {
   return {
-    expanded: null
+    expanded: {}
   };
 }
 
-function update(state = InitialState(), action) {
+export default function update(
+  state: SourceTreeState = InitialState(),
+  action: SourceTreeAction
+): SourceTreeState {
   switch (action.type) {
     case "SET_EXPANDED_STATE":
       return updateExpanded(state, action);
@@ -31,11 +34,16 @@ function update(state = InitialState(), action) {
 }
 
 function updateExpanded(state, action) {
-  return { ...state,
-    expanded: new Set(action.expanded)
+  return {
+    ...state,
+    expanded: { ...state.expanded, [action.thread]: new Set(action.expanded) }
   };
 }
 
-function getExpandedState(state) {
-  return state.sourceTree.expanded;
+type OuterState = {
+  sourceTree: SourceTreeState
+};
+
+export function getExpandedState(state: OuterState, thread: string) {
+  return state.sourceTree.expanded[thread];
 }

@@ -1,11 +1,12 @@
 //! Emitting binary x86 machine code.
 
+use super::enc_tables::{needs_offset, needs_sib_byte};
 use super::registers::RU;
-use binemit::{bad_encoding, CodeSink, Reloc};
-use ir::condcodes::{CondCode, FloatCC, IntCC};
-use ir::{Ebb, Function, Inst, InstructionData, Opcode, TrapCode};
-use isa::{RegUnit, StackBase, StackBaseMask, StackRef};
-use regalloc::RegDiversions;
+use crate::binemit::{bad_encoding, CodeSink, Reloc};
+use crate::ir::condcodes::{CondCode, FloatCC, IntCC};
+use crate::ir::{Ebb, Function, Inst, InstructionData, JumpTable, Opcode, TrapCode};
+use crate::isa::{RegUnit, StackBase, StackBaseMask, StackRef};
+use crate::regalloc::RegDiversions;
 
 include!(concat!(env!("OUT_DIR"), "/binemit-x86.rs"));
 
@@ -249,6 +250,7 @@ fn sib_noindex<CS: CodeSink + ?Sized>(base: RegUnit, sink: &mut CS) {
     sink.put1(b);
 }
 
+/// Emit a SIB byte with a scale, base, and index.
 fn sib<CS: CodeSink + ?Sized>(scale: u8, index: RegUnit, base: RegUnit, sink: &mut CS) {
     // SIB        SS_III_BBB.
     debug_assert_eq!(scale & !0x03, 0, "Scale out of range");
@@ -268,7 +270,7 @@ fn sib<CS: CodeSink + ?Sized>(scale: u8, index: RegUnit, base: RegUnit, sink: &m
 /// 0x0f 0x90: SetCC.
 ///
 fn icc2opc(cond: IntCC) -> u16 {
-    use ir::condcodes::IntCC::*;
+    use crate::ir::condcodes::IntCC::*;
     match cond {
         // 0x0 = Overflow.
         // 0x1 = !Overflow.
@@ -301,7 +303,7 @@ fn icc2opc(cond: IntCC) -> u16 {
 ///
 /// Not all floating point condition codes are supported.
 fn fcc2opc(cond: FloatCC) -> u16 {
-    use ir::condcodes::FloatCC::*;
+    use crate::ir::condcodes::FloatCC::*;
     match cond {
         Ordered                    => 0xb, // EQ|LT|GT => *np (P=0)
         Unordered                  => 0xa, // UN       => *p  (P=1)
@@ -327,8 +329,14 @@ fn disp1<CS: CodeSink + ?Sized>(destination: Ebb, func: &Function, sink: &mut CS
     sink.put1(delta as u8);
 }
 
-/// Emit a single-byte branch displacement to `destination`.
+/// Emit a four-byte branch displacement to `destination`.
 fn disp4<CS: CodeSink + ?Sized>(destination: Ebb, func: &Function, sink: &mut CS) {
     let delta = func.offsets[destination].wrapping_sub(sink.offset() + 4);
+    sink.put4(delta);
+}
+
+/// Emit a four-byte displacement to jump table `jt`.
+fn jt_disp4<CS: CodeSink + ?Sized>(jt: JumpTable, func: &Function, sink: &mut CS) {
+    let delta = func.jt_offsets[jt].wrapping_sub(sink.offset() + 4);
     sink.put4(delta);
 }

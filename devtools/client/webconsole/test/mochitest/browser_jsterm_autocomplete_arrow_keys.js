@@ -67,4 +67,31 @@ async function performTests() {
   checkInput("window.foo.aa|");
   is(popup.isOpen, false, "popup is closed");
   checkJsTermCompletionValue(jsterm, "", "completeNode is empty");
+
+  info("Test that Ctrl/Cmd + Left removes complete node");
+  await setInputValueForAutocompletion(jsterm, "window.foo.a");
+  const prefix = jsterm.getInputValue().replace(/[\S]/g, " ");
+  checkJsTermCompletionValue(jsterm, prefix + "a", "completeNode has expected value");
+
+  const isOSX = Services.appinfo.OS == "Darwin";
+  EventUtils.synthesizeKey("KEY_ArrowLeft", {
+    [isOSX ? "metaKey" : "ctrlKey"]: true,
+  });
+  checkJsTermCompletionValue(jsterm, "",
+    "completeNode was cleared after Ctrl/Cmd + left");
+
+  info("Test that Ctrl/Cmd + Right closes the popup if there's text after cursor");
+  jsterm.setInputValue(".");
+  EventUtils.synthesizeKey("KEY_ArrowLeft");
+  onPopUpOpen = popup.once("popup-opened");
+  EventUtils.sendString("win");
+  await onPopUpOpen;
+  ok(popup.isOpen, "popup is open");
+
+  onPopUpClose = popup.once("popup-closed");
+  EventUtils.synthesizeKey("KEY_ArrowRight", {
+    [isOSX ? "metaKey" : "ctrlKey"]: true,
+  });
+  await onPopUpClose;
+  is(jsterm.getInputValue(), "win.", "input value wasn't modified");
 }

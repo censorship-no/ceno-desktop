@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TrackingDummyChannelParent.h"
+#include "mozilla/net/AsyncUrlChannelClassifier.h"
 #include "mozilla/Unused.h"
-#include "nsChannelClassifier.h"
 #include "nsIChannel.h"
 #include "nsIPrincipal.h"
 #include "nsNetUtil.h"
@@ -14,39 +14,28 @@
 namespace mozilla {
 namespace net {
 
-TrackingDummyChannelParent::TrackingDummyChannelParent()
-  : mIPCActive(true)
-{}
+TrackingDummyChannelParent::TrackingDummyChannelParent() : mIPCActive(true) {}
 
 TrackingDummyChannelParent::~TrackingDummyChannelParent() = default;
 
-void
-TrackingDummyChannelParent::Init(nsIURI* aURI,
-                                 nsIURI* aTopWindowURI,
-                                 nsresult aTopWindowURIResult,
-                                 nsILoadInfo* aLoadInfo)
-{
+void TrackingDummyChannelParent::Init(nsIURI* aURI, nsIURI* aTopWindowURI,
+                                      nsresult aTopWindowURIResult,
+                                      nsILoadInfo* aLoadInfo) {
   MOZ_ASSERT(mIPCActive);
 
   RefPtr<TrackingDummyChannelParent> self = this;
-  auto onExit = MakeScopeExit([self] {
-    Unused << Send__delete__(self, false);
-  });
+  auto onExit =
+      MakeScopeExit([self] { Unused << Send__delete__(self, false); });
 
   if (!aURI) {
     return;
   }
 
-  RefPtr<TrackingDummyChannel> channel =
-    new TrackingDummyChannel(aURI, aTopWindowURI, aTopWindowURIResult,
-                             aLoadInfo);
+  RefPtr<TrackingDummyChannel> channel = new TrackingDummyChannel(
+      aURI, aTopWindowURI, aTopWindowURIResult, aLoadInfo);
 
-  RefPtr<nsChannelClassifier> channelClassifier =
-    new nsChannelClassifier(channel);
-
-  bool willCallback =
-    NS_SUCCEEDED(channelClassifier->CheckIsTrackerWithLocalTable(
-      [self = std::move(self), channel]() {
+  bool willCallback = NS_SUCCEEDED(AsyncUrlChannelClassifier::CheckChannel(
+      channel, [self = std::move(self), channel]() {
         if (self->mIPCActive) {
           Unused << Send__delete__(self, channel->IsTrackingResource());
         }
@@ -57,11 +46,9 @@ TrackingDummyChannelParent::Init(nsIURI* aURI,
   }
 }
 
-void
-TrackingDummyChannelParent::ActorDestroy(ActorDestroyReason aWhy)
-{
+void TrackingDummyChannelParent::ActorDestroy(ActorDestroyReason aWhy) {
   mIPCActive = false;
 }
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla

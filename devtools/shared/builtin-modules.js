@@ -20,8 +20,13 @@ const { Services } = jsmScope;
 // Steal various globals only available in JSM scope (and not Sandbox one)
 const {
   console,
+  DOMPoint,
+  DOMQuad,
+  DOMRect,
   HeapSnapshot,
+  NodeFilter,
   StructuredCloneHolder,
+  TelemetryStopwatch,
 } = Cu.getGlobalForObject(jsmScope);
 
 // Create a single Sandbox to access global properties needed in this module.
@@ -29,6 +34,7 @@ const {
 const {
   atob,
   btoa,
+  Blob,
   ChromeUtils,
   CSS,
   CSSRule,
@@ -48,6 +54,7 @@ const {
   wantGlobalProperties: [
     "atob",
     "btoa",
+    "Blob",
     "ChromeUtils",
     "CSS",
     "CSSRule",
@@ -209,7 +216,6 @@ function lazyRequireGetter(obj, property, module, destructure) {
 // List of pseudo modules exposed to all devtools modules.
 exports.modules = {
   ChromeUtils,
-  FileReader,
   HeapSnapshot,
   InspectorUtils,
   promise,
@@ -218,6 +224,7 @@ exports.modules = {
   // pull it is destroyed. See bug 1402779.
   Promise,
   Services: Object.create(Services),
+  TelemetryStopwatch,
 };
 
 defineLazyGetter(exports.modules, "Debugger", () => {
@@ -260,6 +267,7 @@ defineLazyGetter(exports.modules, "xpcInspector", () => {
 // Changes here should be mirrored to devtools/.eslintrc.
 exports.globals = {
   atob,
+  Blob,
   btoa,
   console,
   CSS,
@@ -281,8 +289,13 @@ exports.globals = {
     factory(this.require, this.exports, this.module);
   },
   DOMParser,
+  DOMPoint,
+  DOMQuad,
+  NodeFilter,
+  DOMRect,
   Element,
   Event,
+  FileReader,
   FormData,
   isWorker: false,
   loader: {

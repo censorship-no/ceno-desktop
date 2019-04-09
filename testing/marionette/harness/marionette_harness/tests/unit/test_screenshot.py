@@ -8,7 +8,9 @@ import base64
 import hashlib
 import imghdr
 import struct
+import sys
 import tempfile
+import unittest
 import urllib
 
 from marionette_driver import By
@@ -65,10 +67,7 @@ class ScreenCaptureTestCase(MarionetteTestCase):
 
     @property
     def viewport_dimensions(self):
-        return self.marionette.execute_script("""
-            return [arguments[0].clientWidth,
-                    arguments[0].clientHeight];
-            """, script_args=[self.document_element])
+        return self.marionette.execute_script("return [window.innerWidth, window.innerHeight];")
 
     def assert_png(self, screenshot):
         """Test that screenshot is a Base64 encoded PNG file."""
@@ -122,8 +121,10 @@ class TestScreenCaptureChrome(WindowManagerMixin, ScreenCaptureTestCase):
     def setUp(self):
         super(TestScreenCaptureChrome, self).setUp()
         self.marionette.set_context("chrome")
+        self.marionette.set_pref("marionette.log.truncate", False)
 
     def tearDown(self):
+        self.marionette.clear_pref("marionette.log.truncate")
         self.close_all_windows()
         super(TestScreenCaptureChrome, self).tearDown()
 
@@ -135,22 +136,8 @@ class TestScreenCaptureChrome(WindowManagerMixin, ScreenCaptureTestCase):
             return [rect.width, rect.height];
             """))
 
-    def open_dialog(self, url=None, width=None, height=None):
-        if url is None:
-            url = "chrome://marionette/content/test_dialog.xul"
-
-        def opener():
-            features = "chrome"
-            if height is not None:
-                features += ",height={}".format(height)
-            if width is not None:
-                features += ",width={}".format(width)
-
-            self.marionette.execute_script("""
-                window.openDialog(arguments[0], "", arguments[1]);
-                """, script_args=[url, features])
-
-        return self.open_window(opener)
+    def open_dialog(self):
+        return self.open_chrome_window("chrome://marionette/content/test_dialog.xul")
 
     def test_capture_different_context(self):
         """Check that screenshots in content and chrome are different."""
@@ -217,6 +204,7 @@ class TestScreenCaptureChrome(WindowManagerMixin, ScreenCaptureTestCase):
         self.marionette.switch_to_window(self.start_window)
 
     @skip_if_mobile("Fennec doesn't support other chrome windows")
+    @unittest.skipIf(sys.platform.startswith("linux"), "Bug 1504201")
     def test_formats(self):
         dialog = self.open_dialog()
         self.marionette.switch_to_window(dialog)
@@ -265,7 +253,8 @@ class TestScreenCaptureChrome(WindowManagerMixin, ScreenCaptureTestCase):
 
         chrome_document_element = self.document_element
         with self.marionette.using_context('content'):
-            self.assertRaisesRegexp(NoSuchElementException, "Web element reference not seen before",
+            self.assertRaisesRegexp(NoSuchElementException,
+                                    "Web element reference not seen before",
                                     self.marionette.screenshot,
                                     highlights=[chrome_document_element])
 
@@ -286,10 +275,9 @@ class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):
             return [document.body.scrollWidth, document.body.scrollHeight]
             """))
 
-    @skip_if_mobile("Needs application independent method to open a new tab")
     def test_capture_tab_already_closed(self):
-        tab = self.open_tab()
-        self.marionette.switch_to_window(tab)
+        new_tab = self.open_tab()
+        self.marionette.switch_to_window(new_tab)
         self.marionette.close()
 
         self.assertRaises(NoSuchWindowException, self.marionette.screenshot)

@@ -11,6 +11,12 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const FluentReact = require("devtools/client/shared/vendor/fluent-react");
 const Localized = createFactory(FluentReact.Localized);
 
+const FieldPair = createFactory(require("./FieldPair"));
+const Message = createFactory(require("../shared/Message"));
+
+const { MESSAGE_LEVEL } = require("../../constants");
+const Types = require("../../types/index");
+
 /**
  * This component displays detail information for extension.
  */
@@ -19,27 +25,38 @@ class ExtensionDetail extends PureComponent {
     return {
       // Provided by wrapping the component with FluentReact.withLocalization.
       getString: PropTypes.func.isRequired,
-      target: PropTypes.object.isRequired,
+      target: Types.debugTarget.isRequired,
     };
   }
 
-  renderField(key, name, value, title) {
-    return [
-      dom.dt({ key: `${ key }-dt` }, name),
-      dom.dd(
-        {
-          className: "ellipsis-text",
-          key: `${ key }-dd`,
-          title: title || value,
-        },
-        value,
-      ),
-    ];
+  renderWarnings() {
+    const { warnings } = this.props.target.details;
+    return dom.section(
+      {
+        key: "extension-warnings",
+      },
+      warnings.map((warning, index) => {
+        return Message(
+          {
+            level: MESSAGE_LEVEL.WARNING,
+            key: `warning-${index}`,
+          },
+          dom.p(
+            {
+              className: "extension-details__warning technical-text",
+            },
+            warning
+          )
+        );
+      })
+    );
   }
 
   renderUUID() {
-    const { target } = this.props;
-    const { manifestURL, uuid } = target.details;
+    const { manifestURL, uuid } = this.props.target.details;
+    if (!uuid) {
+      return null;
+    }
 
     const value = [
       uuid,
@@ -50,7 +67,7 @@ class ExtensionDetail extends PureComponent {
         },
         dom.a(
           {
-            className: "extension-detail__manifest",
+            className: "extension-detail__manifest js-manifest-url",
             href: manifestURL,
             target: "_blank",
           },
@@ -59,26 +76,73 @@ class ExtensionDetail extends PureComponent {
       ),
     ];
 
-    const uuidName = this.props.getString("about-debugging-extension-uuid");
-    return this.renderField("uuid", uuidName, value, uuid);
+    return Localized(
+      {
+        id: "about-debugging-extension-uuid",
+        attrs: { label: true },
+      },
+      FieldPair(
+        {
+          slug: "uuid",
+          label: "Internal UUID",
+          value,
+        }
+      )
+    );
+  }
+
+  renderExtensionId() {
+    const { id } = this.props.target;
+
+    return Localized(
+      {
+        id: "about-debugging-extension-id",
+        attrs: { label: true },
+      },
+      FieldPair(
+        {
+          slug: "extension",
+          label: "Extension ID",
+          value: id,
+        }
+      )
+    );
+  }
+
+  renderLocation() {
+    const { location } = this.props.target.details;
+    if (!location) {
+      return null;
+    }
+
+    return Localized(
+      {
+        id: "about-debugging-extension-location",
+        attrs: { label: true },
+      },
+      FieldPair(
+        {
+          slug: "location",
+          label: "Location",
+          value: location,
+        }
+      )
+    );
   }
 
   render() {
-    const { target } = this.props;
-    const { id, details } = target;
-    const { location, uuid } = details;
-
-    const locationName = this.props.getString("about-debugging-extension-location");
-    const idName = this.props.getString("about-debugging-extension-id");
-
-    return dom.dl(
-      {
-        className: "extension-detail",
-      },
-      location ? this.renderField("location", locationName, location) : null,
-      this.renderField("extension", idName, id),
-      uuid ? this.renderUUID() : null,
-    );
+    return [
+      this.renderWarnings(),
+      dom.dl(
+        {
+          key: "extension-detail",
+          className: "extension-detail",
+        },
+        this.renderLocation(),
+        this.renderExtensionId(),
+        this.renderUUID(),
+      ),
+    ];
   }
 }
 

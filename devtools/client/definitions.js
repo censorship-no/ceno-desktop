@@ -12,7 +12,6 @@ const { Cu } = require("chrome");
 loader.lazyGetter(this, "OptionsPanel", () => require("devtools/client/framework/toolbox-options").OptionsPanel);
 loader.lazyGetter(this, "InspectorPanel", () => require("devtools/client/inspector/panel").InspectorPanel);
 loader.lazyGetter(this, "WebConsolePanel", () => require("devtools/client/webconsole/panel").WebConsolePanel);
-loader.lazyGetter(this, "DebuggerPanel", () => require("devtools/client/debugger/panel").DebuggerPanel);
 loader.lazyGetter(this, "NewDebuggerPanel", () => require("devtools/client/debugger/new/panel").DebuggerPanel);
 loader.lazyGetter(this, "StyleEditorPanel", () => require("devtools/client/styleeditor/panel").StyleEditorPanel);
 loader.lazyGetter(this, "CanvasDebuggerPanel", () => require("devtools/client/canvasdebugger/panel").CanvasDebuggerPanel);
@@ -48,7 +47,7 @@ Tools.options = {
   id: "options",
   ordinal: 0,
   url: "chrome://devtools/content/framework/toolbox-options.xhtml",
-  icon: "chrome://devtools/skin/images/tool-options.svg",
+  icon: "chrome://devtools/skin/images/settings.svg",
   bgTheme: "theme-body",
   label: l10n("options.label"),
   iconOnly: true,
@@ -86,7 +85,7 @@ Tools.inspector = {
 
   preventClosingOnKey: true,
   onkey: function(panel, toolbox) {
-    toolbox.highlighterUtils.togglePicker();
+    toolbox.inspector.nodePicker.togglePicker();
   },
 
   isTargetSupported: function(target) {
@@ -136,43 +135,20 @@ Tools.jsdebugger = {
   accesskey: l10n("debuggerMenu.accesskey"),
   ordinal: 3,
   icon: "chrome://devtools/skin/images/tool-debugger.svg",
-  url: "chrome://devtools/content/debugger/index.xul",
+  url: "chrome://devtools/content/debugger/new/index.html",
   label: l10n("ToolboxDebugger.label"),
   panelLabel: l10n("ToolboxDebugger.panelLabel"),
   get tooltip() {
-    return l10n("ToolboxDebugger.tooltip2",
-    (osString == "Darwin" ? "Cmd+Opt+" : "Ctrl+Shift+") +
-    l10n("debugger.commandkey"));
+    return l10n("ToolboxDebugger.tooltip3");
   },
   inMenu: true,
   isTargetSupported: function() {
     return true;
   },
-
   build: function(iframeWindow, toolbox) {
-    return new DebuggerPanel(iframeWindow, toolbox);
+    return new NewDebuggerPanel(iframeWindow, toolbox);
   },
 };
-
-function switchDebugger() {
-  if (Services.prefs.getBoolPref("devtools.debugger.new-debugger-frontend")) {
-    Tools.jsdebugger.url = "chrome://devtools/content/debugger/new/index.html";
-    Tools.jsdebugger.build = function(iframeWindow, toolbox) {
-      return new NewDebuggerPanel(iframeWindow, toolbox);
-    };
-  } else {
-    Tools.jsdebugger.url = "chrome://devtools/content/debugger/index.xul";
-    Tools.jsdebugger.build = function(iframeWindow, toolbox) {
-      return new DebuggerPanel(iframeWindow, toolbox);
-    };
-  }
-}
-switchDebugger();
-
-Services.prefs.addObserver(
-  "devtools.debugger.new-debugger-frontend",
-  { observe: switchDebugger }
-);
 
 Tools.styleEditor = {
   id: "styleeditor",
@@ -301,7 +277,8 @@ Tools.memory = {
   tooltip: l10n("memory.tooltip"),
 
   isTargetSupported: function(target) {
-    return target.getTrait("heapSnapshots") && !target.isAddon;
+    return target.getTrait("heapSnapshots") && !target.isAddon
+      && !target.isWorkerTarget;
   },
 
   build: function(frame, target) {
@@ -326,7 +303,7 @@ Tools.netMonitor = {
   inMenu: true,
 
   isTargetSupported: function(target) {
-    return target.getTrait("networkMonitor");
+    return target.getTrait("networkMonitor") && !target.isWorkerTarget;
   },
 
   build: function(iframeWindow, toolbox) {
@@ -433,7 +410,8 @@ Tools.accessibility = {
   label: l10n("accessibility.label"),
   panelLabel: l10n("accessibility.panelLabel"),
   get tooltip() {
-    return l10n("accessibility.tooltip2");
+    return l10n("accessibility.tooltip3",
+                "Shift+" + functionkey(l10n("accessibilityF12.commandkey")));
   },
   inMenu: true,
 
@@ -590,7 +568,7 @@ exports.ToolboxButtons = [
       if (clipboardEnabled) {
         args.clipboard = true;
       }
-      const screenshotFront = toolbox.target.getFront("screenshot");
+      const screenshotFront = await toolbox.target.getFront("screenshot");
       await screenshotFront.captureAndSave(toolbox.win, args);
     },
   },
@@ -604,8 +582,9 @@ function createHighlightButton(highlighterName, id) {
     description: l10n(`toolbox.buttons.${id}`),
     isTargetSupported: target => !target.chrome,
     async onClick(event, toolbox) {
+      await toolbox.initInspector();
       const highlighter =
-        await toolbox.highlighterUtils.getOrCreateHighlighterByType(highlighterName);
+        await toolbox.inspector.getOrCreateHighlighterByType(highlighterName);
       if (highlighter.isShown()) {
         return highlighter.hide();
       }
@@ -615,7 +594,21 @@ function createHighlightButton(highlighterName, id) {
       return highlighter.show({});
     },
     isChecked(toolbox) {
-      const highlighter = toolbox.highlighterUtils.getKnownHighlighter(highlighterName);
+      // if the inspector doesn't exist, then the highlighter has not yet been connected
+      // to the front end.
+      // TODO: we are using target._inspector here, but we should be using
+      // target.getCachedFront. This is a temporary solution until the inspector no
+      // longer relies on the toolbox and can be destroyed the same way any other
+      // front would be. Related: #1487677
+      const inspectorFront = toolbox.target._inspector;
+      if (!inspectorFront) {
+        // initialize the inspector front asyncronously. There is a potential for buggy
+        // behavior here, but we need to change how the buttons get data (have them
+        // consume data from reducers rather than writing our own version) in order to
+        // fix this properly.
+        return false;
+      }
+      const highlighter = inspectorFront.getKnownHighlighter(highlighterName);
       return highlighter && highlighter.isShown();
     },
   };

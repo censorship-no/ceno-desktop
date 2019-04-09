@@ -1,18 +1,20 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Generic types for CSS values that are related to transformations.
 
+use crate::values::computed::length::Length as ComputedLength;
+use crate::values::computed::length::LengthPercentage as ComputedLengthPercentage;
+use crate::values::specified::angle::Angle as SpecifiedAngle;
+use crate::values::specified::length::Length as SpecifiedLength;
+use crate::values::specified::length::LengthPercentage as SpecifiedLengthPercentage;
+use crate::values::{computed, CSSFloat};
 use app_units::Au;
 use euclid::{self, Rect, Transform3D};
 use num_traits::Zero;
-use values::{computed, CSSFloat};
-use values::computed::length::Length as ComputedLength;
-use values::computed::length::LengthOrPercentage as ComputedLengthOrPercentage;
-use values::specified::angle::Angle as SpecifiedAngle;
-use values::specified::length::Length as SpecifiedLength;
-use values::specified::length::LengthOrPercentage as SpecifiedLengthOrPercentage;
+use std::fmt::{self, Write};
+use style_traits::{CssWriter, ToCss};
 
 /// A generic 2D transformation matrix.
 #[allow(missing_docs)]
@@ -90,67 +92,6 @@ pub struct TransformOrigin<H, V, Depth> {
     pub depth: Depth,
 }
 
-/// A generic timing function.
-///
-/// <https://drafts.csswg.org/css-timing-1/#single-timing-function-production>
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss)]
-#[value_info(ty = "TIMING_FUNCTION")]
-pub enum TimingFunction<Integer, Number> {
-    /// `linear | ease | ease-in | ease-out | ease-in-out`
-    Keyword(TimingKeyword),
-    /// `cubic-bezier(<number>, <number>, <number>, <number>)`
-    #[allow(missing_docs)]
-    #[css(comma, function)]
-    CubicBezier {
-        x1: Number,
-        y1: Number,
-        x2: Number,
-        y2: Number,
-    },
-    /// `step-start | step-end | steps(<integer>, [ start | end ]?)`
-    #[css(comma, function)]
-    #[value_info(other_values = "step-start,step-end")]
-    Steps(Integer, #[css(skip_if = "is_end")] StepPosition),
-    /// `frames(<integer>)`
-    #[css(comma, function)]
-    Frames(Integer),
-}
-
-#[allow(missing_docs)]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    MallocSizeOf,
-    Parse,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToComputedValue,
-    ToCss,
-)]
-pub enum TimingKeyword {
-    Linear,
-    Ease,
-    EaseIn,
-    EaseOut,
-    EaseInOut,
-}
-
-#[allow(missing_docs)]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, Parse, PartialEq, ToComputedValue, ToCss)]
-pub enum StepPosition {
-    Start,
-    End,
-}
-
-#[inline]
-fn is_end(position: &StepPosition) -> bool {
-    *position == StepPosition::End
-}
-
 impl<H, V, D> TransformOrigin<H, V, D> {
     /// Returns a new transform origin.
     pub fn new(horizontal: H, vertical: V, depth: D) -> Self {
@@ -162,32 +103,9 @@ impl<H, V, D> TransformOrigin<H, V, D> {
     }
 }
 
-impl<Integer, Number> TimingFunction<Integer, Number> {
-    /// `ease`
-    #[inline]
-    pub fn ease() -> Self {
-        TimingFunction::Keyword(TimingKeyword::Ease)
-    }
-}
-
-impl TimingKeyword {
-    /// Returns the keyword as a quadruplet of Bezier point coordinates
-    /// `(x1, y1, x2, y2)`.
-    #[inline]
-    pub fn to_bezier(self) -> (CSSFloat, CSSFloat, CSSFloat, CSSFloat) {
-        match self {
-            TimingKeyword::Linear => (0., 0., 1., 1.),
-            TimingKeyword::Ease => (0.25, 0.1, 0.25, 1.),
-            TimingKeyword::EaseIn => (0.42, 0., 1., 1.),
-            TimingKeyword::EaseOut => (0., 0., 0.58, 1.),
-            TimingKeyword::EaseInOut => (0.42, 0., 0.58, 1.),
-        }
-    }
-}
-
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss)]
 /// A single operation in the list of a `transform` value
-pub enum TransformOperation<Angle, Number, Length, Integer, LengthOrPercentage> {
+pub enum TransformOperation<Angle, Number, Length, Integer, LengthPercentage> {
     /// Represents a 2D 2x3 matrix.
     Matrix(Matrix<Number>),
     /// Represents a 3D 4x4 matrix.
@@ -207,19 +125,19 @@ pub enum TransformOperation<Angle, Number, Length, Integer, LengthOrPercentage> 
     SkewY(Angle),
     /// translate(x, y) or translate(x)
     #[css(comma, function)]
-    Translate(LengthOrPercentage, Option<LengthOrPercentage>),
+    Translate(LengthPercentage, Option<LengthPercentage>),
     /// translateX(x)
     #[css(function = "translateX")]
-    TranslateX(LengthOrPercentage),
+    TranslateX(LengthPercentage),
     /// translateY(y)
     #[css(function = "translateY")]
-    TranslateY(LengthOrPercentage),
+    TranslateY(LengthPercentage),
     /// translateZ(z)
     #[css(function = "translateZ")]
     TranslateZ(Length),
     /// translate3d(x, y, z)
     #[css(comma, function = "translate3d")]
-    Translate3D(LengthOrPercentage, LengthOrPercentage, Length),
+    Translate3D(LengthPercentage, LengthPercentage, Length),
     /// A 2D scaling factor.
     ///
     /// `scale(2)` is parsed as `Scale(Number::new(2.0), None)` and is equivalent to
@@ -273,18 +191,16 @@ pub enum TransformOperation<Angle, Number, Length, Integer, LengthOrPercentage> 
     #[allow(missing_docs)]
     #[css(comma, function = "interpolatematrix")]
     InterpolateMatrix {
-        from_list:
-            Transform<TransformOperation<Angle, Number, Length, Integer, LengthOrPercentage>>,
-        to_list: Transform<TransformOperation<Angle, Number, Length, Integer, LengthOrPercentage>>,
+        from_list: Transform<TransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
+        to_list: Transform<TransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
         progress: computed::Percentage,
     },
     /// A intermediate type for accumulation of mismatched transform lists.
     #[allow(missing_docs)]
     #[css(comma, function = "accumulatematrix")]
     AccumulateMatrix {
-        from_list:
-            Transform<TransformOperation<Angle, Number, Length, Integer, LengthOrPercentage>>,
-        to_list: Transform<TransformOperation<Angle, Number, Length, Integer, LengthOrPercentage>>,
+        from_list: Transform<TransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
+        to_list: Transform<TransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
         count: Integer,
     },
 }
@@ -293,8 +209,8 @@ pub enum TransformOperation<Angle, Number, Length, Integer, LengthOrPercentage> 
 /// A value of the `transform` property
 pub struct Transform<T>(#[css(if_empty = "none", iterable)] pub Vec<T>);
 
-impl<Angle, Number, Length, Integer, LengthOrPercentage>
-    TransformOperation<Angle, Number, Length, Integer, LengthOrPercentage>
+impl<Angle, Number, Length, Integer, LengthPercentage>
+    TransformOperation<Angle, Number, Length, Integer, LengthPercentage>
 {
     /// Check if it is any rotate function.
     pub fn is_rotate(&self) -> bool {
@@ -345,13 +261,13 @@ impl ToAbsoluteLength for SpecifiedLength {
     }
 }
 
-impl ToAbsoluteLength for SpecifiedLengthOrPercentage {
+impl ToAbsoluteLength for SpecifiedLengthPercentage {
     // This returns Err(()) if there is any relative length or percentage. We use this when
     // parsing a transform list of DOMMatrix because we want to return a DOM Exception
     // if there is relative length.
     #[inline]
     fn to_pixel_length(&self, _containing_len: Option<Au>) -> Result<CSSFloat, ()> {
-        use self::SpecifiedLengthOrPercentage::*;
+        use self::SpecifiedLengthPercentage::*;
         match *self {
             Length(len) => len.to_computed_pixel_length_without_context(),
             Calc(ref calc) => calc.to_computed_pixel_length_without_context(),
@@ -367,21 +283,17 @@ impl ToAbsoluteLength for ComputedLength {
     }
 }
 
-impl ToAbsoluteLength for ComputedLengthOrPercentage {
+impl ToAbsoluteLength for ComputedLengthPercentage {
     #[inline]
     fn to_pixel_length(&self, containing_len: Option<Au>) -> Result<CSSFloat, ()> {
-        let extract_pixel_length = |lop: &ComputedLengthOrPercentage| match *lop {
-            ComputedLengthOrPercentage::Length(px) => px.px(),
-            ComputedLengthOrPercentage::Percentage(_) => 0.,
-            ComputedLengthOrPercentage::Calc(calc) => calc.length().px(),
-        };
-
         match containing_len {
             Some(relative_len) => Ok(self.to_pixel_length(relative_len).px()),
             // If we don't have reference box, we cannot resolve the used value,
             // so only retrieve the length part. This will be used for computing
             // distance without any layout info.
-            None => Ok(extract_pixel_length(self)),
+            //
+            // FIXME(emilio): This looks wrong.
+            None => Ok(self.length_component().px()),
         }
     }
 }
@@ -596,8 +508,8 @@ pub fn get_normalized_vector_and_angle<T: Zero>(
     z: CSSFloat,
     angle: T,
 ) -> (CSSFloat, CSSFloat, CSSFloat, T) {
+    use crate::values::computed::transform::DirectionVector;
     use euclid::approxeq::ApproxEq;
-    use values::computed::transform::DirectionVector;
     let vector = DirectionVector::new(x, y, z);
     if vector.square_length().approx_eq(&f32::zero()) {
         // https://www.w3.org/TR/css-transforms-1/#funcdef-rotate3d
@@ -611,16 +523,7 @@ pub fn get_normalized_vector_and_angle<T: Zero>(
 }
 
 #[derive(
-    Clone,
-    ComputeSquaredDistance,
-    Copy,
-    Debug,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToAnimatedZero,
-    ToComputedValue,
-    ToCss,
+    Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToAnimatedZero, ToComputedValue,
 )]
 /// A value of the `Rotate` property
 ///
@@ -634,17 +537,55 @@ pub enum Rotate<Number, Angle> {
     Rotate3D(Number, Number, Number, Angle),
 }
 
+/// A trait to check if the current 3D vector is parallel to the DirectionVector.
+/// This is especially for serialization on Rotate.
+pub trait IsParallelTo {
+    /// Returns true if this is parallel to the vector.
+    fn is_parallel_to(&self, vector: &computed::transform::DirectionVector) -> bool;
+}
+
+impl<Number, Angle> ToCss for Rotate<Number, Angle>
+where
+    Number: Copy + ToCss,
+    Angle: ToCss,
+    (Number, Number, Number): IsParallelTo,
+{
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        use crate::values::computed::transform::DirectionVector;
+        match *self {
+            Rotate::None => dest.write_str("none"),
+            Rotate::Rotate(ref angle) => angle.to_css(dest),
+            Rotate::Rotate3D(x, y, z, ref angle) => {
+                // If a 3d rotation is specified, the property must serialize with an axis
+                // specified. If the axis is parallel with the x, y, or z axises, it must
+                // serialize as the appropriate keyword.
+                // https://drafts.csswg.org/css-transforms-2/#individual-transform-serialization
+                let v = (x, y, z);
+                if v.is_parallel_to(&DirectionVector::new(1., 0., 0.)) {
+                    dest.write_char('x')?;
+                } else if v.is_parallel_to(&DirectionVector::new(0., 1., 0.)) {
+                    dest.write_char('y')?;
+                } else if v.is_parallel_to(&DirectionVector::new(0., 0., 1.)) {
+                    dest.write_char('z')?;
+                } else {
+                    x.to_css(dest)?;
+                    dest.write_char(' ')?;
+                    y.to_css(dest)?;
+                    dest.write_char(' ')?;
+                    z.to_css(dest)?;
+                }
+                dest.write_char(' ')?;
+                angle.to_css(dest)
+            },
+        }
+    }
+}
+
 #[derive(
-    Clone,
-    ComputeSquaredDistance,
-    Copy,
-    Debug,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToAnimatedZero,
-    ToComputedValue,
-    ToCss,
+    Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToAnimatedZero, ToComputedValue,
 )]
 /// A value of the `Scale` property
 ///
@@ -652,37 +593,95 @@ pub enum Rotate<Number, Angle> {
 pub enum Scale<Number> {
     /// 'none'
     None,
-    /// '<number>'
-    ScaleX(Number),
-    /// '<number>{2}'
+    /// '<number>{1,2}'
     Scale(Number, Number),
     /// '<number>{3}'
     Scale3D(Number, Number, Number),
 }
 
+impl<Number: ToCss + PartialEq> ToCss for Scale<Number> {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        match *self {
+            Scale::None => dest.write_str("none"),
+            Scale::Scale(ref x, ref y) => {
+                x.to_css(dest)?;
+                if x != y {
+                    dest.write_char(' ')?;
+                    y.to_css(dest)?;
+                }
+                Ok(())
+            },
+            Scale::Scale3D(ref x, ref y, ref z) => {
+                x.to_css(dest)?;
+                dest.write_char(' ')?;
+                y.to_css(dest)?;
+                dest.write_char(' ')?;
+                z.to_css(dest)
+            },
+        }
+    }
+}
+
 #[derive(
-    Clone,
-    ComputeSquaredDistance,
-    Debug,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToAnimatedZero,
-    ToComputedValue,
-    ToCss,
+    Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToAnimatedZero, ToComputedValue,
 )]
 /// A value of the `Translate` property
 ///
 /// <https://drafts.csswg.org/css-transforms-2/#individual-transforms>
-pub enum Translate<LengthOrPercentage, Length> {
+pub enum Translate<LengthPercentage, Length> {
     /// 'none'
     None,
-    /// '<length-percentage>'
-    TranslateX(LengthOrPercentage),
-    /// '<length-percentage> <length-percentage>'
-    Translate(LengthOrPercentage, LengthOrPercentage),
+    /// '<length-percentage>' or '<length-percentage> <length-percentage>'
+    Translate(LengthPercentage, LengthPercentage),
     /// '<length-percentage> <length-percentage> <length>'
-    Translate3D(LengthOrPercentage, LengthOrPercentage, Length),
+    Translate3D(LengthPercentage, LengthPercentage, Length),
+}
+
+/// A trait to check if this is a zero length.
+/// An alternative way is use num_traits::Zero. However, in order to implement num_traits::Zero,
+/// we also have to implement Add, which may be complicated for LengthPercentage::Calc.
+/// We could do this if other types also need it. If so, we could drop this trait.
+pub trait IsZeroLength {
+    /// Returns true if this is a zero length.
+    fn is_zero_length(&self) -> bool;
+}
+
+impl<LoP: ToCss + IsZeroLength, L: ToCss> ToCss for Translate<LoP, L> {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        // The spec says:
+        // 1. If a 2d translation is specified, the property must serialize with only one or two
+        //    values (per usual, if the second value is 0px, the default, it must be omitted when
+        //    serializing).
+        // 2. If a 3d translation is specified, all three values must be serialized.
+        // https://drafts.csswg.org/css-transforms-2/#individual-transform-serialization
+        //
+        // We don't omit the 3rd component even if it is 0px for now, and the related
+        // spec issue is https://github.com/w3c/csswg-drafts/issues/3305
+        match *self {
+            Translate::None => dest.write_str("none"),
+            Translate::Translate(ref x, ref y) => {
+                x.to_css(dest)?;
+                if !y.is_zero_length() {
+                    dest.write_char(' ')?;
+                    y.to_css(dest)?;
+                }
+                Ok(())
+            },
+            Translate::Translate3D(ref x, ref y, ref z) => {
+                x.to_css(dest)?;
+                dest.write_char(' ')?;
+                y.to_css(dest)?;
+                dest.write_char(' ')?;
+                z.to_css(dest)
+            },
+        }
+    }
 }
 
 #[allow(missing_docs)]

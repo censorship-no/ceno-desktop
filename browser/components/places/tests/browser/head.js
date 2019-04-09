@@ -66,16 +66,15 @@ function promiseClipboard(aPopulateClipboardFn, aFlavor) {
 }
 
 function synthesizeClickOnSelectedTreeCell(aTree, aOptions) {
-  let tbo = aTree.treeBoxObject;
-  if (tbo.view.selection.count != 1)
+  if (aTree.view.selection.count < 1)
      throw new Error("The test node should be successfully selected");
   // Get selection rowID.
   let min = {}, max = {};
-  tbo.view.selection.getRangeAt(0, min, max);
+  aTree.view.selection.getRangeAt(0, min, max);
   let rowID = min.value;
-  tbo.ensureRowIsVisible(rowID);
+  aTree.ensureRowIsVisible(rowID);
   // Calculate the click coordinates.
-  var rect = tbo.getCoordsForCellItem(rowID, aTree.columns[0], "text");
+  var rect = aTree.getCoordsForCellItem(rowID, aTree.columns[0], "text");
   var x = rect.x + rect.width / 2;
   var y = rect.y + rect.height / 2;
   // Simulate the click.
@@ -404,16 +403,16 @@ function getToolbarNodeForItemGuid(itemGuid) {
 }
 
 // Open the bookmarks Star UI by clicking the star button on the address bar.
-async function clickBookmarkStar() {
-  let shownPromise = promisePopupShown(document.getElementById("editBookmarkPanel"));
-  BookmarkingUI.star.click();
+async function clickBookmarkStar(win = window) {
+  let shownPromise = promisePopupShown(win.document.getElementById("editBookmarkPanel"));
+  win.BookmarkingUI.star.click();
   await shownPromise;
 }
 
 // Close the bookmarks Star UI by clicking the "Done" button.
-async function hideBookmarksPanel() {
-  let hiddenPromise = promisePopupHidden(document.getElementById("editBookmarkPanel"));
+async function hideBookmarksPanel(win = window) {
+  let hiddenPromise = promisePopupHidden(win.document.getElementById("editBookmarkPanel"));
   // Confirm and close the dialog.
-  document.getElementById("editBookmarkPanelDoneButton").click();
+  win.document.getElementById("editBookmarkPanelDoneButton").click();
   await hiddenPromise;
 }

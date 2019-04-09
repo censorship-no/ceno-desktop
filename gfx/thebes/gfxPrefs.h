@@ -6,7 +6,7 @@
 #ifndef GFX_PREFS_H
 #define GFX_PREFS_H
 
-#include <cmath>                 // for M_PI
+#include <cmath>  // for M_PI
 #include <stdint.h>
 #include <string>
 #include "mozilla/Assertions.h"
@@ -64,21 +64,32 @@
 // processes will not affect the result in other processes. Changing gfxPrefs
 // values in the GPU process is not supported at all.
 
-#define DECL_GFX_PREF(Update, Prefname, Name, Type, Default)                  \
-public:                                                                       \
-static Type Name() { MOZ_ASSERT(SingletonExists()); return GetSingleton().mPref##Name.mValue; } \
-static void Set##Name(Type aVal) { MOZ_ASSERT(SingletonExists());             \
-    GetSingleton().mPref##Name.Set(UpdatePolicy::Update, Get##Name##PrefName(), aVal); } \
-static const char* Get##Name##PrefName() { return Prefname; }                 \
-static Type Get##Name##PrefDefault() { return Default; }                      \
-static void Set##Name##ChangeCallback(Pref::ChangeCallback aCallback) {       \
-    MOZ_ASSERT(SingletonExists());                                            \
-    GetSingleton().mPref##Name.SetChangeCallback(aCallback); }                \
-private:                                                                      \
-PrefTemplate<UpdatePolicy::Update, Type, Get##Name##PrefDefault, Get##Name##PrefName> mPref##Name
+#define DECL_GFX_PREF(Update, Prefname, Name, Type, Default)              \
+ public:                                                                  \
+  static Type Name() {                                                    \
+    MOZ_ASSERT(SingletonExists());                                        \
+    return GetSingleton().mPref##Name.mValue;                             \
+  }                                                                       \
+  static void Set##Name(Type aVal) {                                      \
+    MOZ_ASSERT(SingletonExists());                                        \
+    GetSingleton().mPref##Name.Set(UpdatePolicy::Update,                  \
+                                   Get##Name##PrefName(), aVal);          \
+  }                                                                       \
+  static const char* Get##Name##PrefName() { return Prefname; }           \
+  static Type Get##Name##PrefDefault() { return Default; }                \
+  static void Set##Name##ChangeCallback(Pref::ChangeCallback aCallback) { \
+    MOZ_ASSERT(SingletonExists());                                        \
+    GetSingleton().mPref##Name.SetChangeCallback(aCallback);              \
+  }                                                                       \
+                                                                          \
+ private:                                                                 \
+  PrefTemplate<UpdatePolicy::Update, Type, Get##Name##PrefDefault,        \
+               Get##Name##PrefName>                                       \
+      mPref##Name
 
-// This declares an "override" pref, which is exposed as a "bool" pref by the API,
-// but is internally stored as a tri-state int pref with three possible values:
+// This declares an "override" pref, which is exposed as a "bool" pref by the
+// API, but is internally stored as a tri-state int pref with three possible
+// values:
 // - A value of 0 means that it has been force-disabled, and is exposed as a
 //   false-valued bool.
 // - A value of 1 means that it has been force-enabled, and is exposed as a
@@ -88,50 +99,56 @@ PrefTemplate<UpdatePolicy::Update, Type, Get##Name##PrefDefault, Get##Name##Pref
 // If the prefs defined with this macro are listed in prefs files (e.g. all.js),
 // then they must be listed with an int value (default to 2, but you can use 0
 // or 1 if you want to force it on or off).
-#define DECL_OVERRIDE_PREF(Update, Prefname, Name, BaseValue)                 \
-public:                                                                       \
-static bool Name() { MOZ_ASSERT(SingletonExists());                           \
-    int32_t val = GetSingleton().mPref##Name.mValue;                          \
-    return val == 2 ? !!(BaseValue) : !!val; }                                  \
-static void Set##Name(bool aVal) { MOZ_ASSERT(SingletonExists());             \
-    GetSingleton().mPref##Name.Set(UpdatePolicy::Update, Get##Name##PrefName(), aVal ? 1 : 0); } \
-static const char* Get##Name##PrefName() { return Prefname; }                 \
-static int32_t Get##Name##PrefDefault() { return 2; }                         \
-static void Set##Name##ChangeCallback(Pref::ChangeCallback aCallback) {       \
-    MOZ_ASSERT(SingletonExists());                                            \
-    GetSingleton().mPref##Name.SetChangeCallback(aCallback); }                \
-private:                                                                      \
-PrefTemplate<UpdatePolicy::Update, int32_t, Get##Name##PrefDefault, Get##Name##PrefName> mPref##Name
+#define DECL_OVERRIDE_PREF(Update, Prefname, Name, BaseValue)             \
+ public:                                                                  \
+  static bool Name() {                                                    \
+    MOZ_ASSERT(SingletonExists());                                        \
+    int32_t val = GetSingleton().mPref##Name.mValue;                      \
+    return val == 2 ? !!(BaseValue) : !!val;                              \
+  }                                                                       \
+  static void Set##Name(bool aVal) {                                      \
+    MOZ_ASSERT(SingletonExists());                                        \
+    GetSingleton().mPref##Name.Set(UpdatePolicy::Update,                  \
+                                   Get##Name##PrefName(), aVal ? 1 : 0);  \
+  }                                                                       \
+  static const char* Get##Name##PrefName() { return Prefname; }           \
+  static int32_t Get##Name##PrefDefault() { return 2; }                   \
+  static void Set##Name##ChangeCallback(Pref::ChangeCallback aCallback) { \
+    MOZ_ASSERT(SingletonExists());                                        \
+    GetSingleton().mPref##Name.SetChangeCallback(aCallback);              \
+  }                                                                       \
+                                                                          \
+ private:                                                                 \
+  PrefTemplate<UpdatePolicy::Update, int32_t, Get##Name##PrefDefault,     \
+               Get##Name##PrefName>                                       \
+      mPref##Name
 
 namespace mozilla {
 namespace gfx {
-class GfxPrefValue;   // defined in PGPU.ipdl
-} // namespace gfx
-} // namespace mozilla
+class GfxPrefValue;  // defined in PGPU.ipdl
+}  // namespace gfx
+}  // namespace mozilla
 
 class gfxPrefs;
-class gfxPrefs final
-{
+class gfxPrefs final {
   typedef mozilla::gfx::GfxPrefValue GfxPrefValue;
 
   typedef mozilla::Atomic<bool, mozilla::Relaxed> AtomicBool;
   typedef mozilla::Atomic<int32_t, mozilla::Relaxed> AtomicInt32;
   typedef mozilla::Atomic<uint32_t, mozilla::Relaxed> AtomicUint32;
 
-private:
+ private:
   // Enums for the update policy.
   enum class UpdatePolicy {
-    Skip, // Set the value to default, skip any Preferences calls
-    Once, // Evaluate the preference once, unchanged during the session
-    Live  // Evaluate the preference and set callback so it stays current/live
+    Skip,  // Set the value to default, skip any Preferences calls
+    Once,  // Evaluate the preference once, unchanged during the session
+    Live   // Evaluate the preference and set callback so it stays current/live
   };
 
-public:
-  class Pref
-  {
-  public:
-    Pref() : mChangeCallback(nullptr)
-    {
+ public:
+  class Pref {
+   public:
+    Pref() : mChangeCallback(nullptr) {
       mIndex = sGfxPrefList->Length();
       sGfxPrefList->AppendElement(this);
     }
@@ -156,28 +173,23 @@ public:
     // Change the cached value. GfxPrefValue must be a compatible type.
     virtual void SetCachedValue(const GfxPrefValue& aOutValue) = 0;
 
-  protected:
+   protected:
     void FireChangeCallback();
 
-  private:
+   private:
     size_t mIndex;
     ChangeCallback mChangeCallback;
   };
 
-  static const nsTArray<Pref*>& all() {
-    return *sGfxPrefList;
-  }
+  static const nsTArray<Pref*>& all() { return *sGfxPrefList; }
 
-private:
+ private:
   // We split out a base class to reduce the number of virtual function
   // instantiations that we do, which saves code size.
-  template<class T>
-  class TypedPref : public Pref
-  {
-  public:
-    explicit TypedPref(T aValue)
-      : mValue(aValue)
-    {}
+  template <class T>
+  class TypedPref : public Pref {
+   public:
+    explicit TypedPref(T aValue) : mValue(aValue) {}
 
     void GetCachedValue(GfxPrefValue* aOutValue) const override {
       CopyPrefValue(&mValue, aOutValue);
@@ -195,7 +207,7 @@ private:
       }
     }
 
-  protected:
+   protected:
     T GetLiveValueByName(const char* aPrefName) const {
       if (IsPrefsServiceAvailable()) {
         return PrefGet(aPrefName, mValue);
@@ -203,19 +215,18 @@ private:
       return mValue;
     }
 
-  public:
+   public:
     T mValue;
   };
 
   // Since we cannot use const char*, use a function that returns it.
-  template <UpdatePolicy Update, class T, T Default(void), const char* Prefname(void)>
-  class PrefTemplate final : public TypedPref<T>
-  {
+  template <UpdatePolicy Update, class T, T Default(void),
+            const char* Prefname(void)>
+  class PrefTemplate final : public TypedPref<T> {
     typedef TypedPref<T> BaseClass;
-  public:
-    PrefTemplate()
-      : BaseClass(Default())
-    {
+
+   public:
+    PrefTemplate() : BaseClass(Default()) {
       // If not using the Preferences service, values are synced over IPC, so
       // there's no need to register us as a Preferences observer.
       if (IsPrefsServiceAvailable()) {
@@ -232,8 +243,7 @@ private:
         UnwatchChanges(Prefname(), this);
       }
     }
-    void Register(UpdatePolicy aUpdate, const char* aPreference)
-    {
+    void Register(UpdatePolicy aUpdate, const char* aPreference) {
       AssertMainThread();
       switch (aUpdate) {
         case UpdatePolicy::Skip:
@@ -241,19 +251,16 @@ private:
         case UpdatePolicy::Once:
           this->mValue = PrefGet(aPreference, this->mValue);
           break;
-        case UpdatePolicy::Live:
-          {
-            nsCString pref;
-            pref.AssignLiteral(aPreference, strlen(aPreference));
-            PrefAddVarCache(&this->mValue, pref, this->mValue);
-          }
-          break;
+        case UpdatePolicy::Live: {
+          nsCString pref;
+          pref.AssignLiteral(aPreference, strlen(aPreference));
+          PrefAddVarCache(&this->mValue, pref, this->mValue);
+        } break;
         default:
           MOZ_CRASH("Incomplete switch");
       }
     }
-    void Set(UpdatePolicy aUpdate, const char* aPref, T aValue)
-    {
+    void Set(UpdatePolicy aUpdate, const char* aPref, T aValue) {
       AssertMainThread();
       PrefSet(aPref, aValue);
       switch (aUpdate) {
@@ -267,9 +274,7 @@ private:
           MOZ_CRASH("Incomplete switch");
       }
     }
-    const char *Name() const override {
-      return Prefname();
-    }
+    const char* Name() const override { return Prefname(); }
     void GetLiveValue(GfxPrefValue* aOutValue) const override {
       T value = GetLiveValue();
       CopyPrefValue(&value, aOutValue);
@@ -277,22 +282,19 @@ private:
     // When using the Preferences service, the change callback can be triggered
     // *before* our cached value is updated, so we expose a method to grab the
     // true live value.
-    T GetLiveValue() const {
-      return BaseClass::GetLiveValueByName(Prefname());
-    }
-    bool HasDefaultValue() const override {
-      return this->mValue == Default();
-    }
+    T GetLiveValue() const { return BaseClass::GetLiveValueByName(Prefname()); }
+    bool HasDefaultValue() const override { return this->mValue == Default(); }
   };
 
-  // This is where DECL_GFX_PREF for each of the preferences should go.
-  // We will keep these in an alphabetical order to make it easier to see if
-  // a method accessing a pref already exists. Just add yours in the list.
+  // clang-format off
+
+  // This is where DECL_GFX_PREF for each of the preferences should go.  We
+  // will keep these in an alphabetical order to make it easier to see if a
+  // method accessing a pref already exists. Just add yours in the list.
 
   DECL_GFX_PREF(Live, "accessibility.browsewithcaret", AccessibilityBrowseWithCaret, bool, false);
 
   // The apz prefs are explained in AsyncPanZoomController.cpp
-  DECL_GFX_PREF(Live, "apz.allow_checkerboarding",             APZAllowCheckerboarding, bool, true);
   DECL_GFX_PREF(Live, "apz.allow_double_tap_zooming",          APZAllowDoubleTapZooming, bool, true);
   DECL_GFX_PREF(Live, "apz.allow_immediate_handoff",           APZAllowImmediateHandoff, bool, true);
   DECL_GFX_PREF(Live, "apz.allow_zooming",                     APZAllowZooming, bool, false);
@@ -365,6 +367,7 @@ private:
   DECL_GFX_PREF(Live, "apz.y_stationary_size_multiplier",      APZYStationarySizeMultiplier, float, 3.5f);
   DECL_GFX_PREF(Live, "apz.zoom_animation_duration_ms",        APZZoomAnimationDuration, int32_t, 250);
   DECL_GFX_PREF(Live, "apz.scale_repaint_delay_ms",            APZScaleRepaintDelay, int32_t, 500);
+  DECL_GFX_PREF(Live, "apz.relative-update.enabled",           APZRelativeUpdate, bool, false);
 
   DECL_GFX_PREF(Live, "browser.ui.scroll-toolbar-threshold",   ToolbarScrollThreshold, int32_t, 10);
   DECL_GFX_PREF(Live, "browser.ui.zoom.force-user-scalable",   ForceUserScalable, bool, false);
@@ -372,11 +375,10 @@ private:
 
   DECL_GFX_PREF(Live, "dom.ipc.plugins.asyncdrawing.enabled",  PluginAsyncDrawingEnabled, bool, false);
   DECL_GFX_PREF(Live, "dom.meta-viewport.enabled",             MetaViewportEnabled, bool, false);
-  DECL_GFX_PREF(Live, "dom.visualviewport.enabled",            VisualViewportEnabled, bool, false);
   DECL_GFX_PREF(Once, "dom.vr.enabled",                        VREnabled, bool, false);
   DECL_GFX_PREF(Live, "dom.vr.autoactivate.enabled",           VRAutoActivateEnabled, bool, false);
   DECL_GFX_PREF(Live, "dom.vr.controller_trigger_threshold",   VRControllerTriggerThreshold, float, 0.1f);
-  DECL_GFX_PREF(Once, "dom.vr.external.enabled",               VRExternalEnabled, bool, true);
+  DECL_GFX_PREF(Once, "dom.vr.external.enabled",               VRExternalEnabled, bool, false);
   DECL_GFX_PREF(Live, "dom.vr.external.notdetected.timeout",   VRExternalNotDetectedTimeout, int32_t, 60000);
   DECL_GFX_PREF(Live, "dom.vr.external.quit.timeout",          VRExternalQuitTimeout, int32_t, 10000);
   DECL_GFX_PREF(Live, "dom.vr.navigation.timeout",             VRNavigationTimeout, int32_t, 1000);
@@ -385,6 +387,11 @@ private:
   DECL_GFX_PREF(Live, "dom.vr.oculus.present.timeout",         VROculusPresentTimeout, int32_t, 500);
   DECL_GFX_PREF(Live, "dom.vr.oculus.quit.timeout",            VROculusQuitTimeout, int32_t, 10000);
   DECL_GFX_PREF(Once, "dom.vr.openvr.enabled",                 VROpenVREnabled, bool, false);
+#if defined(RELEASE_OR_BETA)
+  DECL_GFX_PREF(Once, "dom.vr.openvr.action_input",            VROpenVRActionInputEnabled, bool, false);
+#else
+  DECL_GFX_PREF(Once, "dom.vr.openvr.action_input",             VROpenVRActionInputEnabled, bool, true);
+#endif
   DECL_GFX_PREF(Once, "dom.vr.osvr.enabled",                   VROSVREnabled, bool, false);
   DECL_GFX_PREF(Live, "dom.vr.controller.enumerate.interval",  VRControllerEnumerateInterval, int32_t, 1000);
   DECL_GFX_PREF(Live, "dom.vr.display.enumerate.interval",     VRDisplayEnumerateInterval, int32_t, 5000);
@@ -444,15 +451,21 @@ private:
                 SmoothScrollMSDPhysicsRegularSpringConstant, int32_t, 1000);
 
   DECL_GFX_PREF(Once, "gfx.android.rgb16.force",               AndroidRGB16Force, bool, false);
-#if defined(ANDROID)
   DECL_GFX_PREF(Once, "gfx.apitrace.enabled",                  UseApitrace, bool, false);
-#endif
 #if defined(RELEASE_OR_BETA)
   // "Skip" means this is locked to the default value in beta and release.
   DECL_GFX_PREF(Skip, "gfx.blocklist.all",                     BlocklistAll, int32_t, 0);
 #else
   DECL_GFX_PREF(Once, "gfx.blocklist.all",                     BlocklistAll, int32_t, 0);
 #endif
+#if defined(MOZ_WIDGET_ANDROID)
+  // Overrides the glClear color used when the surface origin is not (0, 0)
+  // Used for drawing a border around the content.
+  DECL_GFX_PREF(Live, "gfx.compositor.override.clear-color.r", CompositorOverrideClearColorR, float, 0.0f);
+  DECL_GFX_PREF(Live, "gfx.compositor.override.clear-color.g", CompositorOverrideClearColorG, float, 0.0f);
+  DECL_GFX_PREF(Live, "gfx.compositor.override.clear-color.b", CompositorOverrideClearColorB, float, 0.0f);
+  DECL_GFX_PREF(Live, "gfx.compositor.override.clear-color.a", CompositorOverrideClearColorA, float, 0.0f);
+#endif // defined(MOZ_WIDGET_ANDROID)
   DECL_GFX_PREF(Live, "gfx.compositor.clearstate",             CompositorClearState, bool, false);
   DECL_GFX_PREF(Live, "gfx.compositor.glcontext.opaque",       CompositorGLContextOpaque, bool, false);
   DECL_GFX_PREF(Live, "gfx.canvas.auto_accelerate.min_calls",  CanvasAutoAccelerateMinCalls, int32_t, 4);
@@ -523,6 +536,11 @@ private:
 
   DECL_GFX_PREF(Once, "gfx.webrender.all",                     WebRenderAll, bool, false);
   DECL_GFX_PREF(Once, "gfx.webrender.all.qualified",           WebRenderAllQualified, bool, false);
+  DECL_GFX_PREF(Once,
+                "gfx.webrender.all.qualified.default",
+                WebRenderAllQualifiedDefault,
+                bool,
+                false);
   DECL_GFX_PREF(Live, "gfx.webrender.blob-images",             WebRenderBlobImages, bool, true);
   DECL_GFX_PREF(Live, "gfx.webrender.blob.invalidation",       WebRenderBlobInvalidation, bool, false);
   DECL_GFX_PREF(Live, "gfx.webrender.blob.paint-flashing",     WebRenderBlobPaintFlashing, bool, false);
@@ -531,6 +549,9 @@ private:
   DECL_GFX_PREF(Once, "gfx.webrender.enabled",                 WebRenderEnabledDoNotUseDirectly, bool, false);
   DECL_GFX_PREF(Once, "gfx.webrender.force-disabled",          WebRenderForceDisabled, bool, false);
   DECL_GFX_PREF(Live, "gfx.webrender.highlight-painted-layers",WebRenderHighlightPaintedLayers, bool, false);
+  DECL_GFX_PREF(Live, "gfx.webrender.late-scenebuild-threshold", WebRenderLateSceneBuildThreshold, int32_t, 4);
+  DECL_GFX_PREF(Live, "gfx.webrender.max-filter-ops-per-chain", WebRenderMaxFilterOpsPerChain, uint32_t, 64);
+  DECL_GFX_PREF(Live, "gfx.webrender.picture-caching",         WebRenderPictureCaching, bool, false);
 
   // Use vsync events generated by hardware
   DECL_GFX_PREF(Once, "gfx.work-around-driver-bugs",           WorkAroundDriverBugs, bool, true);
@@ -545,7 +566,8 @@ private:
 
   DECL_GFX_PREF(Live, "image.animated.decode-on-demand.threshold-kb", ImageAnimatedDecodeOnDemandThresholdKB, uint32_t, 20480);
   DECL_GFX_PREF(Live, "image.animated.decode-on-demand.batch-size", ImageAnimatedDecodeOnDemandBatchSize, uint32_t, 6);
-  DECL_GFX_PREF(Live, "image.animated.generate-full-frames",   ImageAnimatedGenerateFullFrames, bool, false);
+  DECL_GFX_PREF(Live, "image.animated.decode-on-demand.recycle", ImageAnimatedDecodeOnDemandRecycle, bool, false);
+  DECL_GFX_PREF(Once, "image.animated.generate-full-frames",   ImageAnimatedGenerateFullFrames, bool, false);
   DECL_GFX_PREF(Live, "image.animated.resume-from-last-displayed", ImageAnimatedResumeFromLastDisplayed, bool, false);
   DECL_GFX_PREF(Live, "image.cache.factor2.threshold-surfaces", ImageCacheFactor2ThresholdSurfaces, int32_t, -1);
   DECL_GFX_PREF(Live, "image.cache.max-rasterized-svg-threshold-kb", ImageCacheMaxRasterizedSVGThresholdKB, int32_t, 90*1024);
@@ -568,6 +590,7 @@ private:
   DECL_GFX_PREF(Live, "image.mem.volatile.min_threshold_kb",   ImageMemVolatileMinThresholdKB, int32_t, -1);
   DECL_GFX_PREF(Once, "image.multithreaded_decoding.limit",    ImageMTDecodingLimit, int32_t, -1);
   DECL_GFX_PREF(Once, "image.multithreaded_decoding.idle_timeout", ImageMTDecodingIdleTimeout, int32_t, -1);
+  DECL_GFX_PREF(Live, "image.webp.enabled",                    ImageWebPEnabled, bool, false);
 
   DECL_GFX_PREF(Once, "layers.acceleration.disabled",          LayersAccelerationDisabledDoNotUseDirectly, bool, false);
   DECL_GFX_PREF(Live, "layers.acceleration.draw-fps",          LayersDrawFPS, bool, false);
@@ -696,8 +719,7 @@ private:
   DECL_GFX_PREF(Live, "layout.display-list.show-rebuild-area", LayoutDisplayListShowArea, bool, false);
   DECL_GFX_PREF(Live, "layout.display-list.flatten-transform", LayoutFlattenTransform, bool, true);
 
-  DECL_GFX_PREF(Once, "layout.frame_rate",                     LayoutFrameRate, int32_t, -1);
-  DECL_GFX_PREF(Once, "layout.less-event-region-items",        LessEventRegionItems, bool, true);
+  DECL_GFX_PREF(Live, "layout.frame_rate",                     LayoutFrameRate, int32_t, -1);
   DECL_GFX_PREF(Live, "layout.min-active-layer-size",          LayoutMinActiveLayerSize, int, 64);
   DECL_GFX_PREF(Once, "layout.paint_rects_separately",         LayoutPaintRectsSeparately, bool, true);
 
@@ -738,7 +760,14 @@ private:
 
   DECL_GFX_PREF(Live, "nglayout.debug.widget_update_flashing", WidgetUpdateFlashing, bool, false);
 
+  DECL_GFX_PREF(Live, "performance.adjust_to_machine",         AdjustToMachine, bool, false);
+  // Use gfxPlatform::ShouldAdjustForLowEndMachine() to determine if you should use low-end
+  // machine code-paths, rather than checking this pref directly.
+  DECL_GFX_PREF(Live, "performance.low_end_machine",           IsLowEndMachineDoNotUseDirectly, bool, false);
+
   DECL_GFX_PREF(Live, "print.font-variations-as-paths",        PrintFontVariationsAsPaths, bool, true);
+
+  DECL_GFX_PREF(Live, "privacy.resistFingerprinting",          ResistFingerprinting, bool, false);
 
   DECL_GFX_PREF(Once, "slider.snapMultiplier",                 SliderSnapMultiplier, int32_t, 0);
 
@@ -799,29 +828,31 @@ private:
   DECL_GFX_PREF(Live, "widget.window-transforms.disabled",     WindowTransformsDisabled, bool, false);
 
   // WARNING:
-  // Please make sure that you've added your new preference to the list above in alphabetical order.
+  // Please make sure that you've added your new preference to the list above
+  // in alphabetical order.
   // Please do not just append it to the end of the list.
 
-public:
+  // clang-format on
+
+ public:
   // Manage the singleton:
-  static gfxPrefs& GetSingleton()
-  {
+  static gfxPrefs& GetSingleton() {
     return sInstance ? *sInstance : CreateAndInitializeSingleton();
   }
   static void DestroySingleton();
   static bool SingletonExists();
 
-private:
+ private:
   static gfxPrefs& CreateAndInitializeSingleton();
 
   static gfxPrefs* sInstance;
   static bool sInstanceHasBeenDestroyed;
   static nsTArray<Pref*>* sGfxPrefList;
 
-private:
+ private:
   // The constructor cannot access GetSingleton(), since sInstance (necessarily)
-  // has not been assigned yet. Follow-up initialization that needs GetSingleton()
-  // must be added to Init().
+  // has not been assigned yet. Follow-up initialization that needs
+  // GetSingleton() must be added to Init().
   void Init();
 
   static bool IsPrefsServiceAvailable();

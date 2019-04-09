@@ -1,5 +1,8 @@
 .SnippetBaseContainer {
   position: fixed;
+  // Make sure ASR snippets show on top of legacy snippets
+  // This can happen when ASR preview is used with legacy snippets
+  z-index: 2;
   bottom: 0;
   left: 0;
   right: 0;
@@ -20,7 +23,7 @@
       text-decoration: underline;
     }
 
-    [lwt-newtab-brighttext] & {
+    [lwt-newtab-brighttext]:not(.force-light-theme) & {
       font-weight: bold;
     }
   }

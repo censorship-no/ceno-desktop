@@ -3,5 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 .connect-page__usb__toggle-button {
-  margin-top: calc(var(--base-distance) * 4);
+  margin-top: calc(var(--base-unit) * 4);
+}
+
+.connect-page__disabled-section {
+  color: var(--grey-40);
 }

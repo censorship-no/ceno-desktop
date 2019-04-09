@@ -26,24 +26,25 @@ UNSUPPORTED_FEATURES = set([
     "class-static-fields-private",
     "class-methods-private",
     "class-static-methods-private",
-    "dynamic-import",
     "regexp-dotall",
     "regexp-lookbehind",
     "regexp-named-groups",
     "regexp-unicode-property-escapes",
     "numeric-separator-literal",
     "Intl.Locale",
-    "String.prototype.matchAll",
-    "Symbol.matchAll",
     "global",
     "export-star-as-namespace-from-module",
+    "Intl.ListFormat",
+    "Intl.Segmenter",
+    "Intl.NumberFormat-unified",
 ])
 FEATURE_CHECK_NEEDED = {
     "Atomics": "!this.hasOwnProperty('Atomics')",
     "BigInt": "!this.hasOwnProperty('BigInt')",
     "SharedArrayBuffer": "!this.hasOwnProperty('SharedArrayBuffer')",
-    "Intl.ListFormat": "!Intl.hasOwnProperty('ListFormat')",
-    "Intl.Segmenter": "!Intl.hasOwnProperty('Segmenter')",
+    "dynamic-import": "!xulRuntime.shell",
+    "String.prototype.matchAll": "!String.prototype.hasOwnProperty('matchAll')",
+    "Symbol.matchAll": "!Symbol.hasOwnProperty('matchAll')",
 }
 RELEASE_OR_BETA = set()
 
@@ -372,11 +373,6 @@ def process_test262(test262Dir, test262OutDir, strictTests):
     explicitIncludes[os.path.join("built-ins", "TypedArray")] = ["byteConversionValues.js",
                                                                  "detachArrayBuffer.js", "nans.js"]
     explicitIncludes[os.path.join("built-ins", "TypedArrays")] = ["detachArrayBuffer.js"]
-
-    # Intl.RelativeTimeFormat isn't yet enabled by default.
-    localIncludesMap[os.path.join("intl402", "RelativeTimeFormat")] = [
-        "test262-intl-relativetimeformat.js"
-    ]
 
     # Process all test directories recursively.
     for (dirPath, dirNames, fileNames) in os.walk(testDir):

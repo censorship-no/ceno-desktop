@@ -9,50 +9,39 @@
 
 using namespace mozilla;
 
-EventQueue::EventQueue(EventPriority aPriority)
-{
-}
+EventQueue::EventQueue(EventQueuePriority aPriority) {}
 
-void
-EventQueue::PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
-                     EventPriority aPriority,
-                     const MutexAutoLock& aProofOfLock)
-{
+void EventQueue::PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
+                          EventQueuePriority aPriority,
+                          const MutexAutoLock& aProofOfLock) {
   nsCOMPtr<nsIRunnable> event(aEvent);
   mQueue.Push(std::move(event));
 }
 
-already_AddRefed<nsIRunnable>
-EventQueue::GetEvent(EventPriority* aPriority,
-                     const MutexAutoLock& aProofOfLock)
-{
+already_AddRefed<nsIRunnable> EventQueue::GetEvent(
+    EventQueuePriority* aPriority, const MutexAutoLock& aProofOfLock) {
   if (mQueue.IsEmpty()) {
     return nullptr;
   }
 
   if (aPriority) {
-    *aPriority = EventPriority::Normal;
+    *aPriority = EventQueuePriority::Normal;
   }
 
   nsCOMPtr<nsIRunnable> result = mQueue.Pop();
   return result.forget();
 }
 
-bool
-EventQueue::IsEmpty(const MutexAutoLock& aProofOfLock)
-{
+bool EventQueue::IsEmpty(const MutexAutoLock& aProofOfLock) {
   return mQueue.IsEmpty();
 }
 
-bool
-EventQueue::HasReadyEvent(const MutexAutoLock& aProofOfLock)
-{
+bool EventQueue::HasReadyEvent(const MutexAutoLock& aProofOfLock) {
   return !IsEmpty(aProofOfLock);
 }
 
-already_AddRefed<nsIRunnable>
-EventQueue::PeekEvent(const MutexAutoLock& aProofOfLock)
-{
+already_AddRefed<nsIRunnable> EventQueue::PeekEvent(
+    const MutexAutoLock& aProofOfLock) {
   if (mQueue.IsEmpty()) {
     return nullptr;
   }
@@ -61,8 +50,6 @@ EventQueue::PeekEvent(const MutexAutoLock& aProofOfLock)
   return result.forget();
 }
 
-size_t
-EventQueue::Count(const MutexAutoLock& aProofOfLock) const
-{
+size_t EventQueue::Count(const MutexAutoLock& aProofOfLock) const {
   return mQueue.Count();
 }

@@ -12,7 +12,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=675884
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=675884">Mozilla Bug 675884</a>
 <p id="display"></p>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
 <script type="application/javascript">
@@ -364,7 +364,7 @@ ok(ex, "KeyboardEvent: First parameter is required!");
 ex = false;
 
 e = new KeyboardEvent("hello");
-ok(e.type, "hello", "KeyboardEvent: Wrong event type!");
+is(e.type, "hello", "KeyboardEvent: Wrong event type!");
 ok(!e.isTrusted, "KeyboardEvent: Event shouldn't be trusted!");
 ok(!e.bubbles, "KeyboardEvent: Event shouldn't bubble!");
 ok(!e.cancelable, "KeyboardEvent: Event shouldn't be cancelable!");
@@ -439,7 +439,7 @@ for (var i = 0; i < keyboardEventProps.length; ++i) {
     if (!isMethodResultInitializer(prop)) {
       ok(prop in e, "keyboardEvent: KeyboardEvent doesn't have property " + prop + "!");
     }
-    defaultKeyboardEventValues[prop] = keyboardEventProps[i][prop]; 
+    defaultKeyboardEventValues[prop] = keyboardEventProps[i][prop];
   }
 }
 
@@ -698,7 +698,7 @@ for (var i = 0; i < mouseEventProps.length; ++i) {
     if (!isMethodResultInitializer(prop)) {
       ok(prop in e, "MouseEvent: MouseEvent doesn't have property " + prop + "!");
     }
-    defaultMouseEventValues[prop] = mouseEventProps[i][prop]; 
+    defaultMouseEventValues[prop] = mouseEventProps[i][prop];
   }
 }
 
@@ -824,7 +824,7 @@ for (var i = 0; i < wheelEventProps.length; ++i) {
     if (!isMethodResultInitializer(prop)) {
       ok(prop in e, "WheelEvent: WheelEvent doesn't have property " + prop + "!");
     }
-    defaultWheelEventValues[prop] = wheelEventProps[i][prop]; 
+    defaultWheelEventValues[prop] = wheelEventProps[i][prop];
   }
 }
 
@@ -884,6 +884,25 @@ is(e.cancelable, false, "Lack of cancelable property in AnimationEventInit");
 is(e.type, "hello", "Wrong event type!");
 is(e.isTrusted, false, "Event shouldn't be trusted!");
 is(e.eventPhase, Event.NONE, "Wrong event phase");
+
+// InputEvent
+e = new InputEvent("hello", {data: "something data", inputType: "invalid input type", isComposing: true});
+is(e.type, "hello", "InputEvent should set type attribute");
+todo_is(e.data, "something data", "InputEvent should have data attribute");
+is(e.inputType, "invalid input type", "InputEvent should have inputType attribute");
+is(e.isComposing, true, "InputEvent should have isComposing attribute");
+
+e = new InputEvent("hello", {inputType: "insertText"});
+is(e.inputType, "insertText", "InputEvent.inputType should return valid inputType from EditorInputType enum");
+e = new InputEvent("hello", {inputType: "deleteWordBackward"});
+is(e.inputType, "deleteWordBackward", "InputEvent.inputType should return valid inputType from EditorInputType enum");
+e = new InputEvent("hello", {inputType: "formatFontName"});
+is(e.inputType, "formatFontName", "InputEvent.inputType should return valid inputType from EditorInputType enum");
+
+e = new InputEvent("input", {});
+todo_is(e.data, "", "InputEvent.data should be empty string in default");
+is(e.inputType, "", "InputEvent.inputType should be empty string in default");
+is(e.isComposing, false, "InputEvent.isComposing should be false in default");
 
 </script>
 </pre>

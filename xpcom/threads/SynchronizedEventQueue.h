@@ -31,34 +31,34 @@ namespace mozilla {
 // different synchronized queue on the main thread, SchedulerEventQueue, which
 // will handle the cooperative threading model.
 
-class ThreadTargetSink
-{
-public:
+class ThreadTargetSink {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ThreadTargetSink)
 
   virtual bool PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
-                        EventPriority aPriority) = 0;
+                        EventQueuePriority aPriority) = 0;
 
   // After this method is called, no more events can be posted.
   virtual void Disconnect(const MutexAutoLock& aProofOfLock) = 0;
 
-  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
-  {
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
   }
 
-  virtual size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const = 0;
+  virtual size_t SizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf) const = 0;
 
-protected:
+ protected:
   virtual ~ThreadTargetSink() {}
 };
 
-class SynchronizedEventQueue : public ThreadTargetSink
-{
-public:
-  virtual already_AddRefed<nsIRunnable> GetEvent(bool aMayWait,
-                                                 EventPriority* aPriority) = 0;
+class SynchronizedEventQueue : public ThreadTargetSink {
+ public:
+  virtual already_AddRefed<nsIRunnable> GetEvent(
+      bool aMayWait, EventQueuePriority* aPriority) = 0;
   virtual bool HasPendingEvent() = 0;
+
+  virtual bool HasPendingHighPriorityEvents() = 0;
 
   // This method atomically checks if there are pending events and, if there are
   // none, forbids future events from being posted. It returns true if there
@@ -83,18 +83,18 @@ public:
   virtual void SuspendInputEventPrioritization() = 0;
   virtual void ResumeInputEventPrioritization() = 0;
 
-  size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const override
-  {
+  size_t SizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf) const override {
     return mEventObservers.ShallowSizeOfExcludingThis(aMallocSizeOf);
   }
 
-protected:
+ protected:
   virtual ~SynchronizedEventQueue() {}
 
-private:
+ private:
   nsTObserverArray<nsCOMPtr<nsIThreadObserver>> mEventObservers;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_SynchronizedEventQueue_h
+#endif  // mozilla_SynchronizedEventQueue_h

@@ -157,7 +157,7 @@ const GloballyBlockedPermissions = {
                                               Ci.nsISupportsWeakReference]),
       onLocationChange(aWebProgress, aRequest, aLocation, aFlags) {
         if (aWebProgress.isTopLevel) {
-          GloballyBlockedPermissions.remove(browser, id);
+          GloballyBlockedPermissions.remove(browser, id, prePath);
           browser.removeProgressListener(this);
         }
       },
@@ -165,9 +165,11 @@ const GloballyBlockedPermissions = {
   },
 
   // Removes a permission with the specified id for the specified browser.
-  remove(browser, id) {
+  remove(browser, id, prePath = null) {
     let entry = this._stateByBrowser.get(browser);
-    let prePath = browser.currentURI.prePath;
+    if (!prePath) {
+      prePath = browser.currentURI.prePath;
+    }
     if (entry && entry[prePath]) {
       delete entry[prePath][id];
     }
@@ -191,6 +193,15 @@ const GloballyBlockedPermissions = {
       }
     }
     return permissions;
+  },
+
+  // Copies the globally blocked permission state of one browser
+  // into a new entry for the other browser.
+  copy(browser, newBrowser) {
+    let entry = this._stateByBrowser.get(browser);
+    if (entry) {
+      this._stateByBrowser.set(newBrowser, entry);
+    }
   },
 };
 
@@ -220,6 +231,7 @@ var SitePermissions = {
   SCOPE_POLICY: "{SitePermissions.SCOPE_POLICY}",
   SCOPE_GLOBAL: "{SitePermissions.SCOPE_GLOBAL}",
 
+  _permissionsArray: null,
   _defaultPrefBranch: Services.prefs.getBranch("permissions.default."),
 
   /**
@@ -250,8 +262,7 @@ var SitePermissions = {
         }
 
         // Hide canvas permission when privacy.resistFingerprinting is false.
-        if ((permission.type == "canvas") &&
-            !Services.prefs.getBoolPref("privacy.resistFingerprinting")) {
+        if ((permission.type == "canvas") && !this.resistFingerprinting) {
           continue;
         }
 
@@ -321,7 +332,7 @@ var SitePermissions = {
    *             (e.g. SitePermissions.ALLOW)
    *           - scope: a constant representing how long the permission will
    *             be kept.
-   *           - label: the localized label
+   *           - label: the localized label, or null if none is available.
    */
   getAllPermissionDetailsForBrowser(browser) {
     return this.getAllForBrowser(browser).map(({id, scope, state}) =>
@@ -348,14 +359,33 @@ var SitePermissions = {
    * @return {Array<String>} an array of all permission IDs.
    */
   listPermissions() {
-    let permissions = Object.keys(gPermissionObject);
+    if (this._permissionsArray === null) {
+      let permissions = Object.keys(gPermissionObject);
 
-    // Hide canvas permission when privacy.resistFingerprinting is false.
-    if (!Services.prefs.getBoolPref("privacy.resistFingerprinting")) {
-      permissions = permissions.filter(permission => permission !== "canvas");
+      // Hide canvas permission when privacy.resistFingerprinting is false.
+      if (!this.resistFingerprinting) {
+        permissions = permissions.filter(permission => permission !== "canvas");
+      }
+      this._permissionsArray = permissions;
     }
 
-    return permissions;
+    return this._permissionsArray;
+  },
+
+  /**
+   * Called when the privacy.resistFingerprinting preference changes its value.
+   *
+   * @param {string} data
+   *        The last argument passed to the preference change observer
+   * @param {string} previous
+   *        The previous value of the preference
+   * @param {string} latest
+   *        The latest value of the preference
+   */
+  onResistFingerprintingChanged(data, previous, latest) {
+    // Ensure that listPermissions() will reconstruct its return value the next
+    // time it's called.
+    this._permissionsArray = null;
   },
 
   /**
@@ -398,40 +428,6 @@ var SitePermissions = {
 
     // Otherwise try to get the default preference for that permission.
     return this._defaultPrefBranch.getIntPref(permissionID, this.UNKNOWN);
-  },
-
-  /**
-   * Return whether the browser should notify the user if a permission was
-   * globally blocked due to a preference.
-   *
-   * @param {string} permissionID
-   *        The ID to get the state for.
-   *
-   * @return boolean Whether to show notification for globally blocked permissions.
-   */
-  showGloballyBlocked(permissionID) {
-    if (permissionID in gPermissionObject &&
-        gPermissionObject[permissionID].showGloballyBlocked)
-      return gPermissionObject[permissionID].showGloballyBlocked;
-
-    return false;
-  },
-
-  /*
-   * Return whether SitePermissions is permitted to store a TEMPORARY ALLOW
-   * state for a particular permission.
-   *
-   * @param {string} permissionID
-   *        The ID to get the state for.
-   *
-   * @return boolean Whether storing TEMPORARY ALLOW is permitted.
-   */
-  permitTemporaryAllow(permissionID) {
-    if (permissionID in gPermissionObject &&
-        gPermissionObject[permissionID].permitTemporaryAllow)
-      return gPermissionObject[permissionID].permitTemporaryAllow;
-
-    return false;
   },
 
   /**
@@ -539,7 +535,7 @@ var SitePermissions = {
       // If you ever consider removing this line, you likely want to implement
       // a more fine-grained TemporaryPermissions that temporarily blocks for the
       // entire browser, but temporarily allows only for specific frames.
-      if (state != this.BLOCK && !this.permitTemporaryAllow(permissionID)) {
+      if (state != this.BLOCK) {
         throw "'Block' is the only permission we can save temporarily on a browser";
       }
 
@@ -610,6 +606,7 @@ var SitePermissions = {
    */
   copyTemporaryPermissions(browser, newBrowser) {
     TemporaryPermissions.copy(browser, newBrowser);
+    GloballyBlockedPermissions.copy(browser, newBrowser);
   },
 
   /**
@@ -619,9 +616,18 @@ var SitePermissions = {
    * @param {string} permissionID
    *        The permission to get the label for.
    *
-   * @return {String} the localized label.
+   * @return {String} the localized label or null if none is available.
    */
   getPermissionLabel(permissionID) {
+    if (!(permissionID in gPermissionObject)) {
+      // Permission can't be found.
+      return null;
+    }
+    if ("labelID" in gPermissionObject[permissionID] &&
+        gPermissionObject[permissionID].labelID === null) {
+      // Permission doesn't support having a label.
+      return null;
+    }
     let labelID = gPermissionObject[permissionID].labelID || permissionID;
     return gStringBundle.GetStringFromName("permission." + labelID + ".label");
   },
@@ -720,19 +726,18 @@ var gPermissionObject = {
 
   "autoplay-media": {
     exactHostMatch: true,
-    showGloballyBlocked: true,
-    permitTemporaryAllow: true,
     getDefault() {
       let state = Services.prefs.getIntPref("media.autoplay.default",
-                                            Ci.nsIAutoplay.PROMPT);
+                                            Ci.nsIAutoplay.BLOCKED);
       if (state == Ci.nsIAutoplay.ALLOWED) {
         return SitePermissions.ALLOW;
-      } if (state == Ci.nsIAutoplay.BLOCKED) {
+      } else if (state == Ci.nsIAutoplay.BLOCKED) {
         return SitePermissions.BLOCK;
       }
       return SitePermissions.UNKNOWN;
     },
-    labelID: "autoplay-media",
+    labelID: "autoplay-media2",
+    states: [ SitePermissions.ALLOW, SitePermissions.BLOCK ],
   },
 
   "image": {
@@ -817,6 +822,13 @@ var gPermissionObject = {
   "midi-sysex": {
     exactHostMatch: true,
   },
+
+  "storage-access": {
+    labelID: null,
+    getDefault() {
+      return SitePermissions.UNKNOWN;
+    },
+  },
 };
 
 if (!Services.prefs.getBoolPref("dom.webmidi.enabled")) {
@@ -829,3 +841,6 @@ if (!Services.prefs.getBoolPref("dom.webmidi.enabled")) {
 
 XPCOMUtils.defineLazyPreferenceGetter(SitePermissions, "temporaryPermissionExpireTime",
                                       "privacy.temporary_permission_expire_time_ms", 3600 * 1000);
+XPCOMUtils.defineLazyPreferenceGetter(SitePermissions, "resistFingerprinting",
+                                      "privacy.resistFingerprinting", false,
+                                      SitePermissions.onResistFingerprintingChanged.bind(SitePermissions));

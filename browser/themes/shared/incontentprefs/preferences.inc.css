@@ -24,17 +24,21 @@
   padding: 0;
 }
 
-.prefpane > groupbox + groupbox {
-  margin-top: 16px;
+groupbox[data-category] {
+  margin: 0 0 32px;
 }
 
-groupbox + groupbox > .groupbox-body,
-groupbox + vbox groupbox > .groupbox-body {
-  margin-top: 4px;
+html|h1 {
+  margin: 0 0 8px;
+  font-size: 1.46em;
+  font-weight: 300;
+  line-height: 1.3em;
 }
 
-.groupbox-title {
-  margin-top: 16px;
+html|h2 {
+  margin: 16px 0 4px;
+  font-size: 1.14em;
+  line-height: normal;
 }
 
 description.indent,
@@ -60,8 +64,7 @@ button[flex] {
 description,
 label {
   line-height: 1.8em;
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
+  margin: 0;
 }
 
 .tip-caption {
@@ -106,10 +109,20 @@ button > hbox > label {
 }
 
 .spotlight {
-  background-color: rgba(0,200,215,0.3);
+  background-color: var(--blue-40-a10);
+  outline: var(--blue-60) 1px dotted;
+  -moz-outline-radius: 2px;
+  animation: fade-out 0.5s ease-out 2s forwards;
   /* Show the border to spotlight the components in high-contrast mode. */
   border: 1px solid transparent;
   border-radius: 2px;
+}
+
+@keyframes fade-out {
+  100% {
+    background-color: transparent;
+    outline-color: transparent;
+   }
 }
 
 [data-subcategory] {
@@ -117,10 +130,6 @@ button > hbox > label {
   margin-right: -4px;
   padding-left: 4px;
   padding-right: 4px;
-}
-
-[data-subcategory] > .groupbox-title {
-  padding-inline-start: 4px;
 }
 
 .ac-site-icon {
@@ -141,11 +150,8 @@ button > hbox > label {
 
 /* Category List */
 
-#categories > scrollbox {
+#categories {
   overflow: visible !important; /* Cancel scrollbar and do not clip overflow content when window size goes very small */
-}
-
-#categories > scrollbox > box {
   padding: 1px; /* Adding padding around richlistitem in order to make entire keyboard focusing outline visible */
 }
 
@@ -186,21 +192,28 @@ button > hbox > label {
   font-weight: 600;
 }
 
+.info-panel,
 .extension-controlled {
   margin-top: 18px !important;
   margin-bottom: 18px !important;
   background: var(--grey-20);
   border-radius: 5px;
-  -moz-padding-end: 10px;
+  padding-inline-end: 10px;
 }
 
+.info-panel > description,
 .extension-controlled > description {
   line-height: 16px;
   background: url(chrome://browser/skin/identity-icon.svg) 10px 14px no-repeat;
   padding: 10px;
-  -moz-padding-start: 30px;
+  padding-inline-start: 32px;
 }
 
+.info-panel > description {
+  line-height: unset;
+}
+
+.info-panel > description:-moz-locale-dir(rtl),
 .extension-controlled > description:-moz-locale-dir(rtl) {
   background-position-x: right 10px;
 }
@@ -234,6 +247,10 @@ button > hbox > label {
   font-size: 90%;
 }
 
+#useDocumentColors {
+  margin: 0;
+}
+
 #activeLanguages {
   height: 16em;
 }
@@ -252,14 +269,6 @@ button > hbox > label {
 
 #downloadFolder:-moz-locale-dir(rtl) {
   background-position-x: right 8px;
-}
-
-#updateApp > .groupbox-body > label {
-  margin: 0 0 4px;
-}
-
-#updateApp > .groupbox-body > description {
-  margin: 0;
 }
 
 #updateBox {
@@ -329,11 +338,6 @@ button > hbox > label {
 }
 
 /* Home Pane */
-#homepageGroup > .groupbox-title {
-  /* The Restore Defaults button will make this heading taller than the other
-   * sections, so lower the top margin to account for it. */
-  margin-top: 6px;
-}
 #homepageGroup menulist,
 #homepageGroup textbox {
   margin: 5px 0;
@@ -386,10 +390,6 @@ button > hbox > label {
 
 /* Privacy Pane */
 
-#formAutofillGroup {
-  margin-top: 28px;
-}
-
 .doNotTrackLearnMore {
   margin-inline-start: calc(1em + 30px);
   margin-bottom: 1em;
@@ -411,16 +411,8 @@ button > hbox > label {
   margin-bottom: 4px;
 }
 
-#trackingProtectionBox {
-  margin-top: 16px;
-}
-
 #doNotTrackLearnMoreBox {
   margin-top: 32px;
-}
-
-#trackingProtectionAdvancedSettings {
-  margin-inline-start: 15px;
 }
 
 #historyPane {
@@ -438,11 +430,6 @@ button > hbox > label {
   margin-top: 1.5em;
 }
 
-#blockCookiesWarning {
-  margin-top: 1.5em !important;
-  margin-bottom: -1em !important;
-}
-
 /* Collapse the non-active vboxes in decks to use only the height the
    active vbox needs */
 #historyPane:not([selectedIndex="1"]) > #historyDontRememberPane,
@@ -451,19 +438,6 @@ button > hbox > label {
 #fxaLoginStatus:not([selectedIndex="1"]) > #fxaLoginUnverified,
 #fxaLoginStatus:not([selectedIndex="2"]) > #fxaLoginRejected {
   visibility: collapse;
-}
-
-#weavePrefsDeck > vbox > label,
-#weavePrefsDeck > vbox > groupbox,
-#weavePrefsDeck > vbox > description,
-#weavePrefsDeck > #hasFxaAccount > vbox > label,
-#weavePrefsDeck > #hasFxaAccount > hbox > label {
-  /* no margin-inline-start for elements at the beginning of a line */
-  margin-inline-start: 0;
-}
-
-#weavePrefsDeck > vbox > groupbox {
-  margin-top: 16px;
 }
 
 #tabsElement {
@@ -541,11 +515,6 @@ button > hbox > label {
   -moz-box-flex: 1;
   /* Default dialog dimensions */
   width: 66ch;
-}
-
-.largeDialogContainer.doScroll {
-  overflow-y: auto;
-  -moz-box-flex: 1;
 }
 
 /**
@@ -697,6 +666,13 @@ button > hbox > label {
   margin-inline-end: 8px;
   margin-top: 7px;
   margin-bottom: 7px;
+}
+
+html|img.update-throbber {
+  vertical-align: middle;
+}
+
+image.update-throbber {
   list-style-image: url("chrome://global/skin/icons/loading.png");
 }
 
@@ -876,7 +852,8 @@ menulist[indicator=true] > menupopup menuitem[indicator=true]:not([image]) > .me
 /* Proxy port input */
 
 .proxy-port-input {
-  width: calc(5ch + 22px); /* 5 chars + 11px padding on both sides */
+  width: calc(5ch + 18px); /* 5 chars + (8px padding + 1px border) on both sides */
+  margin-inline-start: 4px;
 }
 
 #defaultBrowserLanguage {
@@ -884,18 +861,12 @@ menulist[indicator=true] > menupopup menuitem[indicator=true]:not([image]) > .me
   min-width: 20em;
 }
 
-#LanguagesDialog > .dialog-button-box > .dialog-button[dlgtype="help"],
-#BrowserLanguagesDialog > .dialog-button-box > .dialog-button[dlgtype="help"] {
-  margin-inline-start: 0;
+#selectedLocales {
+  height: 150px;
 }
 
-#LanguagesDialog > .dialog-button-box > .dialog-button[dlgtype="accept"],
-#BrowserLanguagesDialog > .dialog-button-box > .dialog-button[dlgtype="accept"] {
-  margin-inline-end: 0;
-}
-
-#requestedLocales {
-  min-height: 200px;
+#selectedLocales > richlistitem {
+  padding-inline-start: 13px;
 }
 
 #availableLanguages,
@@ -906,6 +877,10 @@ menulist[indicator=true] > menupopup menuitem[indicator=true]:not([image]) > .me
 
 #warning-message > .message-bar-description {
   width: 32em;
+}
+
+#warning-message {
+  margin-top: 8px;
 }
 
 .add-web-language,
@@ -921,4 +896,28 @@ menulist[indicator=true] > menupopup menuitem[indicator=true]:not([image]) > .me
 /* Menulist styles */
 .label-item {
   font-size: 0.8em;
+}
+
+.updateSettingCrossUserWarningContainer {
+  background: var(--grey-20);
+  border-radius: 5px;
+  padding-inline: 8px;
+  padding-block-start: 2px;
+  padding-block-end: 8px;
+  margin-block-end: 17px;
+}
+
+#updateSettingCrossUserWarning {
+  padding-inline-start: 30px;
+  margin-block-start: 20px;
+  line-height: 20px;
+  background-image: url("chrome://global/skin/icons/info.svg");
+  background-position-x: left 2px;
+  background-position-y: top 2px;
+  background-size: 16px 16px;
+  background-repeat: no-repeat;
+}
+
+#updateSettingCrossUserWarning:-moz-locale-dir(rtl) {
+  background-position-x: right 2px;
 }

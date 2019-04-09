@@ -13,7 +13,7 @@ function run_test() {
 }
 
 function connectClient(client) {
-  return client.connect(() => client.listTabs());
+  return client.connect();
 }
 
 add_task(async function() {
@@ -30,11 +30,13 @@ add_task(async function() {
     return DebuggerServer.AuthenticationResult.ALLOW;
   };
 
-  const listener = DebuggerServer.createListener();
+  const socketOptions = {
+    authenticator,
+    encryption: true,
+    portOrPath: -1,
+  };
+  const listener = new SocketListener(DebuggerServer, socketOptions);
   ok(listener, "Socket listener created");
-  listener.portOrPath = -1;
-  listener.authenticator = authenticator;
-  listener.encryption = true;
   await listener.open();
   equal(DebuggerServer.listeningSockets, 1, "1 listening socket");
 
@@ -73,11 +75,13 @@ add_task(async function() {
     return DebuggerServer.AuthenticationResult.ALLOW;
   };
 
-  const listener = DebuggerServer.createListener();
+  const socketOptions = {
+    authenticator,
+    encryption: true,
+    portOrPath: -1,
+  };
+  const listener = new SocketListener(DebuggerServer, socketOptions);
   ok(listener, "Socket listener created");
-  listener.portOrPath = -1;
-  listener.authenticator = authenticator;
-  listener.encryption = true;
   await listener.open();
   equal(DebuggerServer.listeningSockets, 1, "1 listening socket");
 

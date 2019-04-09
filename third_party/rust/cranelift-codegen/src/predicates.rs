@@ -9,7 +9,7 @@
 //! Some of these predicates may be unused in certain ISA configurations, so we suppress the
 //! dead code warning.
 
-use ir;
+use crate::ir;
 
 /// Check that a 64-bit floating point value is zero.
 #[allow(dead_code)]
@@ -55,7 +55,7 @@ pub fn is_colocated_func(func_ref: ir::FuncRef, func: &ir::Function) -> bool {
 #[allow(dead_code)]
 pub fn is_colocated_data(global_value: ir::GlobalValue, func: &ir::Function) -> bool {
     match func.global_values[global_value] {
-        ir::GlobalValueData::Sym { colocated, .. } => colocated,
+        ir::GlobalValueData::Symbol { colocated, .. } => colocated,
         _ => panic!("is_colocated_data only makes sense for data with symbolic addresses"),
     }
 }
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn cvt_imm64() {
-        use ir::immediates::Imm64;
+        use crate::ir::immediates::Imm64;
 
         let x1 = Imm64::new(-8);
         let x2 = Imm64::new(8);

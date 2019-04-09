@@ -59,8 +59,8 @@ var progressListener = {
   },
 
   onLocationChange(aWebProgress, aRequest, aLocation, aFlags) {},
-  onSecurityChange(aWebProgress, aRequest, aOldState, aState,
-                   aContentBlockingLogJSON) {},
+  onSecurityChange(aWebProgress, aRequest, state) {},
+  onContentBlockingEvent(aWebProgress, aRequest, event) {},
 
   onStatusChange(aWebProgress, aRequest, aStatus, aMessage) {
     if (aMessage)

@@ -34,7 +34,7 @@ add_task(async function test_show_error_on_addresschange() {
     info("awaiting the shippingoptionchange event");
     await ContentTask.spawn(browser, {
       eventName: "shippingoptionchange",
-    }, PTU.ContentTasks.awaitPaymentRequestEventPromise);
+    }, PTU.ContentTasks.awaitPaymentEventPromise);
 
     await spawnPaymentDialogTask(frame, expectedText => {
       let errorText = content.document.querySelector("header .page-error");
@@ -56,7 +56,7 @@ add_task(async function test_show_error_on_addresschange() {
     info("awaiting the shippingaddresschange event");
     await ContentTask.spawn(browser, {
       eventName: "shippingaddresschange",
-    }, PTU.ContentTasks.awaitPaymentRequestEventPromise);
+    }, PTU.ContentTasks.awaitPaymentEventPromise);
 
     await spawnPaymentDialogTask(frame, () => {
       let errorText = content.document.querySelector("header .page-error");
@@ -101,7 +101,7 @@ add_task(async function test_show_field_specific_error_on_addresschange() {
     info("awaiting the shippingaddresschange event");
     await ContentTask.spawn(browser, {
       eventName: "shippingaddresschange",
-    }, PTU.ContentTasks.awaitPaymentRequestEventPromise);
+    }, PTU.ContentTasks.awaitPaymentEventPromise);
 
     await spawnPaymentDialogTask(frame, async () => {
       let {
@@ -117,23 +117,27 @@ add_task(async function test_show_field_specific_error_on_addresschange() {
          "Error text should be present on dialog");
 
       info("click the Edit link");
-      content.document.querySelector("address-picker .edit-link").click();
+      content.document.querySelector("address-picker.shipping-related .edit-link").click();
 
       await PTU.DialogContentUtils.waitForState(content, (state) => {
-        return state.page.id == "address-page" && state["address-page"].guid;
+        return state.page.id == "shipping-address-page" && state["shipping-address-page"].guid;
       }, "Check edit page state");
 
       // check errors and make corrections
+      let addressForm = content.document.querySelector("#shipping-address-page");
       let {shippingAddressErrors} = PTU.Details.fieldSpecificErrors;
-      is(content.document.querySelectorAll("address-form .error-text:not(:empty)").length,
-         Object.keys(shippingAddressErrors).length,
-         "Each error should be presented");
+      is(addressForm.querySelectorAll(".error-text:not(:empty)").length,
+         Object.keys(shippingAddressErrors).length - 1,
+         "Each error should be presented, but only one of region and regionCode are displayed");
       let errorFieldMap =
-        Cu.waiveXrays(content.document.querySelector("address-form"))._errorFieldMap;
+        Cu.waiveXrays(addressForm)._errorFieldMap;
       for (let [errorName, errorValue] of Object.entries(shippingAddressErrors)) {
+        if (errorName == "region" || errorName == "regionCode") {
+          errorValue = shippingAddressErrors.regionCode;
+        }
         let fieldSelector = errorFieldMap[errorName];
         let containerSelector = fieldSelector + "-container";
-        let container = content.document.querySelector(containerSelector);
+        let container = addressForm.querySelector(containerSelector);
         try {
           is(container.querySelector(".error-text").textContent, errorValue,
              "Field specific error should be associated with " + errorName);
@@ -141,7 +145,7 @@ add_task(async function test_show_field_specific_error_on_addresschange() {
           ok(false, `no container for ${errorName}. selector= ${containerSelector}`);
         }
         try {
-          let field = content.document.querySelector(fieldSelector);
+          let field = addressForm.querySelector(fieldSelector);
           let oldValue = field.value;
           if (field.localName == "select") {
             // Flip between empty and the selected entry so country fields won't change.
@@ -156,6 +160,52 @@ add_task(async function test_show_field_specific_error_on_addresschange() {
       }
     });
 
+    info("setting up the event handler for a 2nd shippingaddresschange with a different error");
+    await ContentTask.spawn(browser, {
+      eventName: "shippingaddresschange",
+      details: Object.assign({},
+                             {
+                               shippingAddressErrors: {
+                                 phone: "Invalid phone number",
+                               },
+                             },
+                             PTU.Details.noShippingOptions,
+                             PTU.Details.total2USD),
+    }, PTU.ContentTasks.updateWith);
+
+    await spawnPaymentDialogTask(frame, PTU.DialogContentTasks.clickPrimaryButton);
+
+    await spawnPaymentDialogTask(frame, async function checkForNewErrors() {
+      let {
+        PaymentTestUtils: PTU,
+      } = ChromeUtils.import("resource://testing-common/PaymentTestUtils.jsm", {});
+
+      await PTU.DialogContentUtils.waitForState(content, (state) => {
+        return state.page.id == "payment-summary" &&
+               state.request.paymentDetails.shippingAddressErrors.phone == "Invalid phone number";
+      }, "Check the new error is in state");
+
+      ok(content.document.querySelector("#payment-summary").innerText
+                .includes("Invalid phone number"),
+         "Check error visibility on summary page");
+      ok(content.document.getElementById("pay").disabled,
+         "Pay button should be disabled until the field error is addressed");
+    });
+
+    await navigateToAddShippingAddressPage(frame, {
+      addLinkSelector: "address-picker[selected-state-key=\"selectedShippingAddress\"] .edit-link",
+    });
+
+    await spawnPaymentDialogTask(frame, async function checkForNewErrorOnEdit() {
+      let addressForm = content.document.querySelector("#shipping-address-page");
+      is(addressForm.querySelectorAll(".error-text:not(:empty)").length, 1,
+         "Check one error shown");
+    });
+
+    await fillInShippingAddressForm(frame, {
+      tel: PTU.Addresses.TimBL2.tel,
+    });
+
     info("setup updateWith to clear errors");
     await ContentTask.spawn(browser, {
       eventName: "shippingaddresschange",
@@ -164,13 +214,12 @@ add_task(async function test_show_field_specific_error_on_addresschange() {
                              PTU.Details.total2USD),
     }, PTU.ContentTasks.updateWith);
 
-    await spawnPaymentDialogTask(frame, async () => {
+    await spawnPaymentDialogTask(frame, PTU.DialogContentTasks.clickPrimaryButton);
+
+    await spawnPaymentDialogTask(frame, async function fixLastError() {
       let {
         PaymentTestUtils: PTU,
       } = ChromeUtils.import("resource://testing-common/PaymentTestUtils.jsm", {});
-
-      info("saving corrections");
-      content.document.querySelector("address-form .save-button").click();
 
       await PTU.DialogContentUtils.waitForState(content, (state) => {
         return state.page.id == "payment-summary";
@@ -187,18 +236,18 @@ add_task(async function test_show_field_specific_error_on_addresschange() {
       content.document.querySelector("address-picker .edit-link").click();
 
       await PTU.DialogContentUtils.waitForState(content, (state) => {
-        return state.page.id == "address-page" && state["address-page"].guid;
+        return state.page.id == "shipping-address-page" && state["shipping-address-page"].guid;
       }, "Check edit page state");
 
+      let addressForm = content.document.querySelector("#shipping-address-page");
       // check no errors present
-      let errorTextSpans =
-        content.document.querySelectorAll("address-form .error-text:not(:empty)");
+      let errorTextSpans = addressForm.querySelectorAll(".error-text:not(:empty)");
       for (let errorTextSpan of errorTextSpans) {
         is(errorTextSpan.textContent, "", "No errors should be present on the field");
       }
 
       info("click the Back button");
-      content.document.querySelector("address-form .back-button").click();
+      addressForm.querySelector(".back-button").click();
 
       await PTU.DialogContentUtils.waitForState(content, (state) => {
         return state.page.id == "payment-summary";

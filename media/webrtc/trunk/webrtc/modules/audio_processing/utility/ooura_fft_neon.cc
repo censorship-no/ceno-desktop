@@ -14,12 +14,16 @@
  * Based on the sse2 version.
  */
 
-#include "webrtc/modules/audio_processing/utility/ooura_fft.h"
+#include "modules/audio_processing/utility/ooura_fft.h"
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <arm64_neon.h>
+#else
 #include <arm_neon.h>
+#endif
 
-#include "webrtc/modules/audio_processing/utility/ooura_fft_tables_common.h"
-#include "webrtc/modules/audio_processing/utility/ooura_fft_tables_neon_sse2.h"
+#include "modules/audio_processing/utility/ooura_fft_tables_common.h"
+#include "modules/audio_processing/utility/ooura_fft_tables_neon_sse2.h"
 
 namespace webrtc {
 

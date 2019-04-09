@@ -97,7 +97,7 @@ How do you get an initial reference to the front?  That's a bit tricky, but basi
 
 Manually - If you're using a DebuggerClient instance, you can discover the actorID manually and create a Front for it:
 
-    let hello = HelloFront(this.client, { actor: <hello actorID> });
+    let hello = new HelloFront(this.client, { actor: <hello actorID> });
 
 Magically - Once you have an initial reference to a protocol.js object, it can return other protocol.js objects and fronts will automatically be created.
 
@@ -617,7 +617,8 @@ For more complex situations, you can define your own lifetime properties.  Take 
       if (!this._temporaryParent) {
         // Create an actor to serve as the parent for all temporary children and explicitly
         // add it as a child of this actor.
-        this._temporaryParent = this.manage(new Actor(this.conn));
+        this._temporaryParent = new Actor(this.conn));
+        this.manage(this._temporaryParent);
       }
       return new ChildActor(this.conn, id);
     }

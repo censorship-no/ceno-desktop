@@ -42,35 +42,51 @@ function getServiceWorkerStatus(isActive, isRunning) {
 
 function toComponentData(workers, isServiceWorker) {
   return workers.map(worker => {
+    // Here `worker` is the worker object created by RootFront.listAllWorkers
     const type = DEBUG_TARGETS.WORKER;
-    const id = worker.workerTargetActor;
     const icon = "chrome://devtools/skin/images/debugging-workers.svg";
-    let { fetch, name, registrationActor, scope } = worker;
+    let { fetch } = worker;
+    const {
+      name,
+      registrationFront,
+      scope,
+      subscription,
+      workerTargetFront,
+    } = worker;
+
+    // For registering service workers, workerTargetFront will not be available.
+    // The only valid identifier we can use at that point is the actorID for the
+    // service worker registration.
+    const id = workerTargetFront ? workerTargetFront.actorID : registrationFront.actorID;
+
     let isActive = false;
     let isRunning = false;
+    let pushServiceEndpoint = null;
     let status = null;
 
     if (isServiceWorker) {
       fetch = fetch ? SERVICE_WORKER_FETCH_STATES.LISTENING
                     : SERVICE_WORKER_FETCH_STATES.NOT_LISTENING;
       isActive = worker.active;
-      isRunning = !!worker.workerTargetActor;
+      isRunning = !!worker.workerTargetFront;
       status = getServiceWorkerStatus(isActive, isRunning);
+      pushServiceEndpoint = subscription ? subscription.endpoint : null;
     }
 
     return {
-      name,
-      icon,
-      id,
-      type,
       details: {
         fetch,
         isActive,
         isRunning,
-        registrationActor,
+        pushServiceEndpoint,
+        registrationFront,
         scope,
         status,
       },
+      icon,
+      id,
+      name,
+      type,
     };
   });
 }

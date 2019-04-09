@@ -142,6 +142,10 @@ class ReftestRunner(MozbuildObject):
         if not args.adb_path:
             args.adb_path = get_adb_path(self)
 
+        if 'geckoview' not in args.app:
+            args.e10s = False
+            print("using e10s=False for non-geckoview app")
+
         # A symlink and some path manipulations are required so that test
         # manifests can be found both locally and remotely (via a url)
         # using the same relative path.
@@ -234,7 +238,7 @@ class MachCommands(MachCommandBase):
         reftest.log_manager.enable_unstructured()
         if conditions.is_android(self):
             from mozrunner.devices.android_device import verify_android_device
-            verify_android_device(self, install=True, xre=True, app=kwargs["app"],
-                                  device_serial=kwargs["deviceSerial"])
+            verify_android_device(self, install=True, xre=True, network=True,
+                                  app=kwargs["app"], device_serial=kwargs["deviceSerial"])
             return reftest.run_android_test(**kwargs)
         return reftest.run_desktop_test(**kwargs)

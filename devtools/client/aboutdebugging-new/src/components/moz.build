@@ -5,13 +5,15 @@
 DIRS += [
     'connect',
     'debugtarget',
+    'shared',
     'sidebar',
 ]
 
 DevToolsModules(
     'App.css',
     'App.js',
-    'RuntimeInfo.css',
+    'ConnectionPromptSetting.js',
     'RuntimeInfo.js',
+    'RuntimePage.css',
     'RuntimePage.js',
 )

@@ -4,13 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/MappedDeclarations.h"
+#include "MappedDeclarations.h"
+
+#include "nsAttrValue.h"
+#include "nsAttrValueInlines.h"
+#include "mozilla/dom/Document.h"
+#include "nsPresContext.h"
 
 namespace mozilla {
 
-void
-MappedDeclarations::SetIdentAtomValue(nsCSSPropertyID aId, nsAtom* aValue)
-{
+void MappedDeclarations::SetIdentAtomValue(nsCSSPropertyID aId,
+                                           nsAtom* aValue) {
   Servo_DeclarationBlock_SetIdentStringValue(mDecl, aId, aValue);
   if (aId == eCSSProperty__x_lang) {
     // This forces the lang prefs result to be cached so that we can access them
@@ -19,15 +23,11 @@ MappedDeclarations::SetIdentAtomValue(nsCSSPropertyID aId, nsAtom* aValue)
     // FIXME(emilio): Can we move mapped attribute declarations across
     // documents? Isn't this wrong in that case? This is pretty out of place
     // anyway.
-    if (nsPresContext* pc = mDocument->GetPresContext()) {
-      pc->ForceCacheLang(aValue);
-    }
+    mDocument->ForceCacheLang(aValue);
   }
 }
 
-void
-MappedDeclarations::SetBackgroundImage(const nsAttrValue& aValue)
-{
+void MappedDeclarations::SetBackgroundImage(const nsAttrValue& aValue) {
   if (aValue.Type() != nsAttrValue::eURL) {
     return;
   }
@@ -35,7 +35,7 @@ MappedDeclarations::SetBackgroundImage(const nsAttrValue& aValue)
   nsAutoString str;
   aValue.ToString(str);
   Servo_DeclarationBlock_SetBackgroundImage(
-    mDecl, str, mDocument->DefaultStyleAttrURLData());
+      mDecl, str, mDocument->DefaultStyleAttrURLData());
 }
 
-} // namespace mozilla
+}  // namespace mozilla

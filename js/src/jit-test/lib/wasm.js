@@ -129,11 +129,8 @@ function wasmFullPassI64(text, expected, maybeImports, ...args) {
 }
 
 function wasmRunWithDebugger(wast, lib, init, done) {
-    let g = newGlobal('');
+    let g = newGlobal({newCompartment: true});
     let dbg = new Debugger(g);
-
-    // Enable binary source mode.
-    dbg.allowWasmBinarySource = true;
 
     g.eval(`
 var wasm = wasmTextToBinary('${wast}');

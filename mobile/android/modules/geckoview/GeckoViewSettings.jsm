@@ -11,7 +11,6 @@ ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(
@@ -32,9 +31,7 @@ XPCOMUtils.defineLazyGetter(
 XPCOMUtils.defineLazyGetter(
   this, "VR_USER_AGENT",
   function() {
-    return MOBILE_USER_AGENT
-           .getService(Ci.nsIHttpProtocolHandler).userAgent
-           .replace(/Android \d+; [a-zA-Z]+/, "VR");
+    return MOBILE_USER_AGENT.replace(/Mobile/, "Mobile VR");
   });
 
 // This needs to match GeckoSessionSettings.java
@@ -46,16 +43,11 @@ const USER_AGENT_MODE_VR = 2;
 // * multiprocess
 // * user agent override
 class GeckoViewSettings extends GeckoViewModule {
-  onInitBrowser() {
-    if (this.settings.useMultiprocess) {
-      this.browser.setAttribute("remote", "true");
-    }
-  }
-
   onInit() {
     debug `onInit`;
     this._useTrackingProtection = false;
     this._userAgentMode = USER_AGENT_MODE_MOBILE;
+    this._userAgentOverride = null;
     // Required for safe browsing and tracking protection.
     SafeBrowsing.init();
 
@@ -80,28 +72,17 @@ class GeckoViewSettings extends GeckoViewModule {
 
     this.displayMode = settings.displayMode;
     this.userAgentMode = settings.userAgentMode;
+    this.userAgentOverride = settings.userAgentOverride;
   }
 
   get useMultiprocess() {
     return this.browser.isRemoteBrowser;
   }
 
-  observe(aSubject, aTopic, aData) {
-    debug `observer`;
-
-    let channel = aSubject.QueryInterface(Ci.nsIHttpChannel);
-
-    if (this.browser.outerWindowID !== channel.topLevelOuterContentWindowId) {
-      return;
-    }
-
-    if (this.userAgentMode === USER_AGENT_MODE_DESKTOP ||
-        this.userAgentMode === USER_AGENT_MODE_VR) {
-      channel.setRequestHeader("User-Agent", this.userAgent, false);
-    }
-  }
-
   get userAgent() {
+    if (this.userAgentOverride !== null) {
+      return this.userAgentOverride;
+    }
     if (this.userAgentMode === USER_AGENT_MODE_DESKTOP) {
       return DESKTOP_USER_AGENT;
     }
@@ -119,12 +100,15 @@ class GeckoViewSettings extends GeckoViewModule {
     if (this.userAgentMode === aMode) {
       return;
     }
-    if (this.userAgentMode === USER_AGENT_MODE_MOBILE) {
-      Services.obs.addObserver(this, "http-on-useragent-request");
-    } else if (aMode === USER_AGENT_MODE_MOBILE) {
-      Services.obs.removeObserver(this, "http-on-useragent-request");
-    }
     this._userAgentMode = aMode;
+  }
+
+  get userAgentOverride() {
+    return this._userAgentOverride;
+  }
+
+  set userAgentOverride(aUserAgent) {
+    this._userAgentOverride = aUserAgent;
   }
 
   get displayMode() {

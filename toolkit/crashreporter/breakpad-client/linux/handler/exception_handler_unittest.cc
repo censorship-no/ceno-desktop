@@ -528,9 +528,30 @@ TEST(ExceptionHandlerTest, StackedHandlersUnhandledToBottom) {
 
 namespace {
 const int kSimpleFirstChanceReturnStatus = 42;
-bool SimpleFirstChanceHandler(int, void*, void*) {
+bool SimpleFirstChanceHandlerDeprecated(int, void*, void*) {
   _exit(kSimpleFirstChanceReturnStatus);
 }
+
+bool SimpleFirstChanceHandler(int, siginfo_t*, void*) {
+  _exit(kSimpleFirstChanceReturnStatus);
+}
+}
+
+TEST(ExceptionHandlerTest, FirstChanceHandlerRunsDeprecated) {
+  AutoTempDir temp_dir;
+
+  const pid_t child = fork();
+  if (child == 0) {
+    ExceptionHandler handler(
+        MinidumpDescriptor(temp_dir.path()), NULL, NULL, NULL, true, -1);
+    google_breakpad::SetFirstChanceExceptionHandler(
+        SimpleFirstChanceHandlerDeprecated);
+    DoNullPointerDereference();
+  }
+  int status;
+  ASSERT_NE(HANDLE_EINTR(waitpid(child, &status, 0)), -1);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_EQ(kSimpleFirstChanceReturnStatus, WEXITSTATUS(status));
 }
 
 TEST(ExceptionHandlerTest, FirstChanceHandlerRuns) {
@@ -909,13 +930,16 @@ TEST(ExceptionHandlerTest, ModuleInfo) {
   const uintptr_t kMemoryAddress = reinterpret_cast<uintptr_t>(memory);
   ASSERT_TRUE(memory);
 
+  PageAllocator allocator;
+  auto_wasteful_vector<uint8_t, sizeof(MDGUID)> guid(&allocator);
+  guid.assign(std::begin(kModuleGUID), std::end(kModuleGUID));
   AutoTempDir temp_dir;
   ExceptionHandler handler(
       MinidumpDescriptor(temp_dir.path()), NULL, NULL, NULL, true, -1);
 
   // Add info about the anonymous memory mapping.
   handler.AddMappingInfo(kMemoryName,
-                         kModuleGUID,
+                         guid,
                          kMemoryAddress,
                          kMemorySize,
                          0);

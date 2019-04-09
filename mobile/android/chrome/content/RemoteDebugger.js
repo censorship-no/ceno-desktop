@@ -14,6 +14,10 @@ XPCOMUtils.defineLazyGetter(this, "DebuggerServer", () => {
   let { DebuggerServer } = require("devtools/server/main");
   return DebuggerServer;
 });
+XPCOMUtils.defineLazyGetter(this, "SocketListener", () => {
+  let { SocketListener } = require("devtools/shared/security/socket");
+  return SocketListener;
+});
 
 var RemoteDebugger = {
   init(aWindow) {
@@ -211,6 +215,8 @@ var RemoteDebugger = {
     // Allow debugging of chrome for any process
     DebuggerServer.allowChromeProcess = true;
     DebuggerServer.chromeWindowType = this._windowType;
+    // Force the Server to stay alive even if there are no connections at the moment.
+    DebuggerServer.keepAlive = true;
   },
 };
 
@@ -266,18 +272,17 @@ var USBRemoteDebugger = {
 
     RemoteDebugger.initServer();
 
-    let portOrPath =
+    const portOrPath =
       Services.prefs.getCharPref("devtools.debugger.unix-domain-socket") ||
       Services.prefs.getIntPref("devtools.debugger.remote-port");
 
     try {
       dump("Starting USB debugger on " + portOrPath);
-      let AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
-      let authenticator = new AuthenticatorType.Server();
+      const AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
+      const authenticator = new AuthenticatorType.Server();
       authenticator.allowConnection = RemoteDebugger.allowConnection;
-      this._listener = DebuggerServer.createListener();
-      this._listener.portOrPath = portOrPath;
-      this._listener.authenticator = authenticator;
+      const socketOptions = { authenticator, portOrPath };
+      this._listener = new SocketListener(DebuggerServer, socketOptions);
       this._listener.open();
     } catch (e) {
       dump("Unable to start USB debugger server: " + e);
@@ -345,15 +350,17 @@ var WiFiRemoteDebugger = {
 
     try {
       dump("Starting WiFi debugger");
-      let AuthenticatorType = DebuggerServer.Authenticators.get("OOB_CERT");
-      let authenticator = new AuthenticatorType.Server();
+      const AuthenticatorType = DebuggerServer.Authenticators.get("OOB_CERT");
+      const authenticator = new AuthenticatorType.Server();
       authenticator.allowConnection = RemoteDebugger.allowConnection;
       authenticator.receiveOOB = RemoteDebugger.receiveOOB;
-      this._listener = DebuggerServer.createListener();
-      this._listener.portOrPath = -1 /* any available port */;
-      this._listener.authenticator = authenticator;
-      this._listener.discoverable = true;
-      this._listener.encryption = true;
+      const socketOptions = {
+        authenticator,
+        discoverable: true,
+        encryption: true,
+        portOrPath: -1,
+      };
+      this._listener = new SocketListener(DebuggerServer, socketOptions);
       this._listener.open();
       let port = this._listener.port;
       dump("Started WiFi debugger on " + port);

@@ -8,11 +8,11 @@ package org.mozilla.geckoview;
 
 import org.mozilla.gecko.AndroidGamepadManager;
 import org.mozilla.gecko.EventDispatcher;
-import org.mozilla.gecko.gfx.DynamicToolbarAnimator;
-import org.mozilla.gecko.gfx.PanZoomController;
 import org.mozilla.gecko.InputMethods;
 import org.mozilla.gecko.util.ActivityUtils;
+import org.mozilla.gecko.util.ThreadUtils;
 
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
@@ -25,8 +25,10 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Parcel;
 import android.os.Parcelable;
-import android.support.annotation.Nullable;
+import android.support.annotation.AnyThread;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.support.annotation.UiThread;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.SparseArray;
@@ -44,6 +46,7 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 
+@UiThread
 public class GeckoView extends FrameLayout {
     private static final String LOGTAG = "GeckoView";
     private static final boolean DEBUG = false;
@@ -211,6 +214,8 @@ public class GeckoView extends FrameLayout {
      * @param color Cover color.
      */
     public void coverUntilFirstPaint(final int color) {
+        ThreadUtils.assertOnUiThread();
+
         if (mSurfaceView != null) {
             mSurfaceView.setBackgroundColor(color);
         }
@@ -226,6 +231,8 @@ public class GeckoView extends FrameLayout {
      * @return True if view should be pinned on the screen.
      */
     public boolean shouldPinOnScreen() {
+        ThreadUtils.assertOnUiThread();
+
         return mDisplay.shouldPinOnScreen();
     }
 
@@ -235,7 +242,17 @@ public class GeckoView extends FrameLayout {
         }
     }
 
-    public GeckoSession releaseSession() {
+    /**
+     * Unsets the current session from this instance and returns it, if any. You must call
+     * this before {@link #setSession(GeckoSession)} if there is already an open session
+     * set for this instance.
+     *
+     * @return The {@link GeckoSession} that was set for this instance. May be null.
+     */
+    @UiThread
+    public @Nullable GeckoSession releaseSession() {
+        ThreadUtils.assertOnUiThread();
+
         if (mSession == null) {
             return null;
         }
@@ -270,11 +287,17 @@ public class GeckoView extends FrameLayout {
 
     /**
      * Attach a session to this view. The session should be opened before
-     * attaching.
+     * attaching. If this instance already has an open session, you must use
+     * {@link #releaseSession()} first, otherwise {@link IllegalStateException}
+     * will be thrown. This is to avoid potentially leaking the currently opened session.
      *
      * @param session The session to be attached.
+     * @throws IllegalArgumentException if an existing open session is already set.
      */
+    @UiThread
     public void setSession(@NonNull final GeckoSession session) {
+        ThreadUtils.assertOnUiThread();
+
         if (!session.isOpen()) {
             throw new IllegalArgumentException("Session must be open before attaching");
         }
@@ -285,12 +308,19 @@ public class GeckoView extends FrameLayout {
     /**
      * Attach a session to this view. The session should be opened before
      * attaching or a runtime needs to be provided for automatic opening.
+     * If this instance already has an open session, you must use
+     * {@link #releaseSession()} first, otherwise {@link IllegalStateException}
+     * will be thrown. This is to avoid potentially leaking the currently opened session.
      *
      * @param session The session to be attached.
      * @param runtime The runtime to be used for opening the session.
+     * @throws IllegalArgumentException if an existing open session is already set.
      */
+    @UiThread
     public void setSession(@NonNull final GeckoSession session,
                            @Nullable final GeckoRuntime runtime) {
+        ThreadUtils.assertOnUiThread();
+
         if (mSession != null && mSession.isOpen()) {
             throw new IllegalStateException("Current session is open");
         }
@@ -357,19 +387,23 @@ public class GeckoView extends FrameLayout {
         }
     }
 
-    public GeckoSession getSession() {
+    @AnyThread
+    public @Nullable GeckoSession getSession() {
         return mSession;
     }
 
-    public EventDispatcher getEventDispatcher() {
+    @AnyThread
+    public @NonNull EventDispatcher getEventDispatcher() {
         return mSession.getEventDispatcher();
     }
 
-    public PanZoomController getPanZoomController() {
+    public @NonNull PanZoomController getPanZoomController() {
+        ThreadUtils.assertOnUiThread();
         return mSession.getPanZoomController();
     }
 
-    public DynamicToolbarAnimator getDynamicToolbarAnimator() {
+    public @NonNull DynamicToolbarAnimator getDynamicToolbarAnimator() {
+        ThreadUtils.assertOnUiThread();
         return mSession.getDynamicToolbarAnimator();
     }
 
@@ -395,10 +429,14 @@ public class GeckoView extends FrameLayout {
             return;
         }
 
+        // Release the display before we detach from the window.
+        mSession.releaseDisplay(mDisplay.release());
+
         // If we saved state earlier, we don't want to close the window.
         if (!mStateSaved && mSession.isOpen()) {
             mSession.close();
         }
+
     }
 
     @Override
@@ -617,6 +655,7 @@ public class GeckoView extends FrameLayout {
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     @Override
     public boolean onTouchEvent(final MotionEvent event) {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {

@@ -6,14 +6,9 @@
 
 #include "nsILabelableRunnable.h"
 
-#include "mozilla/Scheduler.h"
 #include "mozilla/SchedulerGroup.h"
 
-bool
-nsILabelableRunnable::IsReadyToRun()
-{
-  MOZ_ASSERT(mozilla::Scheduler::AnyEventRunning());
-  MOZ_ASSERT(!mozilla::Scheduler::UnlabeledEventRunning());
+bool nsILabelableRunnable::IsReadyToRun() {
   SchedulerGroupSet groups;
   if (!GetAffectedSchedulerGroups(groups)) {
     // it can not be labeled right now.
@@ -27,7 +22,8 @@ nsILabelableRunnable::IsReadyToRun()
 
   if (groups.mMulti.isSome()) {
     MOZ_ASSERT(!groups.mSingle);
-    for (auto iter = groups.mMulti.ref().ConstIter(); !iter.Done(); iter.Next()) {
+    for (auto iter = groups.mMulti.ref().ConstIter(); !iter.Done();
+         iter.Next()) {
       if (iter.Get()->GetKey()->IsRunning()) {
         return false;
       }
@@ -39,9 +35,8 @@ nsILabelableRunnable::IsReadyToRun()
   return true;
 }
 
-void
-nsILabelableRunnable::SchedulerGroupSet::Put(mozilla::SchedulerGroup* aGroup)
-{
+void nsILabelableRunnable::SchedulerGroupSet::Put(
+    mozilla::SchedulerGroup* aGroup) {
   if (mSingle) {
     MOZ_ASSERT(mMulti.isNothing());
     mMulti.emplace();
@@ -61,16 +56,12 @@ nsILabelableRunnable::SchedulerGroupSet::Put(mozilla::SchedulerGroup* aGroup)
   mSingle = aGroup;
 }
 
-void
-nsILabelableRunnable::SchedulerGroupSet::Clear()
-{
+void nsILabelableRunnable::SchedulerGroupSet::Clear() {
   mSingle = nullptr;
   mMulti.reset();
 }
 
-void
-nsILabelableRunnable::SchedulerGroupSet::SetIsRunning(bool aIsRunning)
-{
+void nsILabelableRunnable::SchedulerGroupSet::SetIsRunning(bool aIsRunning) {
   if (mSingle) {
     MOZ_ASSERT(mMulti.isNothing());
     mSingle->SetIsRunning(aIsRunning);

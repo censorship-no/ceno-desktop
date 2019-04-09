@@ -206,6 +206,7 @@ public class GeckoAppShell
     static private int sDensityDpi;
     static private Float sDensity;
     static private int sScreenDepth;
+    static private boolean sUseMaxScreenDepth;
 
     /* Is the value in sVibrationEndTime valid? */
     private static boolean sVibrationMaybePlaying;
@@ -1045,9 +1046,13 @@ public class GeckoAppShell
         return HardwareUtils.getMemSize() > HIGH_MEMORY_DEVICE_THRESHOLD_MB;
     }
 
+    public static synchronized void useMaxScreenDepth(final boolean enable) {
+        sUseMaxScreenDepth = enable;
+    }
+
     /**
      * Returns the colour depth of the default screen. This will either be
-     * 24 or 16.
+     * 32, 24 or 16.
      */
     @WrapForJNI(calledFrom = "gecko")
     public static synchronized int getScreenDepth() {
@@ -1058,7 +1063,7 @@ public class GeckoAppShell
                     getApplicationContext().getSystemService(Context.WINDOW_SERVICE);
             PixelFormat.getPixelFormatInfo(wm.getDefaultDisplay().getPixelFormat(), info);
             if (info.bitsPerPixel >= 24 && isHighMemoryDevice()) {
-                sScreenDepth = 24;
+                sScreenDepth = sUseMaxScreenDepth ? info.bitsPerPixel : 24;
             }
         }
 
@@ -1103,6 +1108,7 @@ public class GeckoAppShell
         }
     }
 
+    @SuppressLint("MissingPermission")
     @WrapForJNI(calledFrom = "gecko")
     private static void vibrate(long milliseconds) {
         sVibrationEndTime = System.nanoTime() + milliseconds * 1000000;
@@ -1114,6 +1120,7 @@ public class GeckoAppShell
         }
     }
 
+    @SuppressLint("MissingPermission")
     @WrapForJNI(calledFrom = "gecko")
     private static void vibrate(long[] pattern, int repeat) {
         // If pattern.length is odd, the last element in the pattern is a
@@ -1133,6 +1140,7 @@ public class GeckoAppShell
         }
     }
 
+    @SuppressLint("MissingPermission")
     @WrapForJNI(calledFrom = "gecko")
     private static void cancelVibrate() {
         sVibrationMaybePlaying = false;
@@ -1955,7 +1963,7 @@ public class GeckoAppShell
     public static int getAudioOutputFramesPerBuffer() {
         final int DEFAULT = 512;
 
-        if (SysInfo.getVersion() < 17) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1) {
             return DEFAULT;
         }
         final AudioManager am = (AudioManager)getApplicationContext()
@@ -1974,7 +1982,7 @@ public class GeckoAppShell
     public static int getAudioOutputSampleRate() {
         final int DEFAULT = 44100;
 
-        if (SysInfo.getVersion() < 17) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1) {
             return DEFAULT;
         }
         final AudioManager am = (AudioManager)getApplicationContext()

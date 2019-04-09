@@ -21,7 +21,6 @@
 
 class nsIPresShell;
 class nsITimer;
-class nsIDocument;
 
 namespace mozilla {
 class AccessibleCaretManager;
@@ -60,12 +59,10 @@ class WidgetTouchEvent;
 // Please see the wiki page for more information.
 // https://wiki.mozilla.org/AccessibleCaret
 //
-class AccessibleCaretEventHub
-  : public nsIReflowObserver
-  , public nsIScrollObserver
-  , public nsSupportsWeakReference
-{
-public:
+class AccessibleCaretEventHub : public nsIReflowObserver,
+                                public nsIScrollObserver,
+                                public nsSupportsWeakReference {
+ public:
   explicit AccessibleCaretEventHub(nsIPresShell* aPresShell);
   void Init();
   void Terminate();
@@ -81,8 +78,7 @@ public:
 
   // nsIReflowObserver
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  NS_IMETHOD Reflow(DOMHighResTimeStamp start,
-                    DOMHighResTimeStamp end) final;
+  NS_IMETHOD Reflow(DOMHighResTimeStamp start, DOMHighResTimeStamp end) final;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   NS_IMETHOD ReflowInterruptible(DOMHighResTimeStamp start,
                                  DOMHighResTimeStamp end) final;
@@ -100,22 +96,20 @@ public:
   State* GetState() const;
 
   MOZ_CAN_RUN_SCRIPT
-  void OnSelectionChange(nsIDocument* aDocument,
-                         dom::Selection* aSelection,
+  void OnSelectionChange(dom::Document* aDocument, dom::Selection* aSelection,
                          int16_t aReason);
 
-protected:
+ protected:
   virtual ~AccessibleCaretEventHub() = default;
 
-#define MOZ_DECL_STATE_CLASS_GETTER(aClassName)                                \
-  class aClassName;                                                            \
+#define MOZ_DECL_STATE_CLASS_GETTER(aClassName) \
+  class aClassName;                             \
   static State* aClassName();
 
-#define MOZ_IMPL_STATE_CLASS_GETTER(aClassName)                                \
-  AccessibleCaretEventHub::State* AccessibleCaretEventHub::aClassName()        \
-  {                                                                            \
-    static class aClassName singleton;                                         \
-    return &singleton;                                                         \
+#define MOZ_IMPL_STATE_CLASS_GETTER(aClassName)                           \
+  AccessibleCaretEventHub::State* AccessibleCaretEventHub::aClassName() { \
+    static class aClassName singleton;                                    \
+    return &singleton;                                                    \
   }
 
   // Concrete state getters
@@ -168,7 +162,7 @@ protected:
   nsCOMPtr<nsITimer> mLongTapInjectorTimer;
 
   // Last mouse button down event or touch start event point.
-  nsPoint mPressPoint{ NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE };
+  nsPoint mPressPoint{NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE};
 
   // For filter multitouch event
   int32_t mActiveTouchId = kInvalidTouchId;
@@ -181,7 +175,7 @@ protected:
 
   static const int32_t kMoveStartToleranceInPixel = 5;
   static const int32_t kInvalidTouchId = -1;
-  static const int32_t kDefaultTouchId = 0; // For mouse event
+  static const int32_t kDefaultTouchId = 0;  // For mouse event
 };
 
 // -----------------------------------------------------------------------------
@@ -189,32 +183,27 @@ protected:
 // class, and override the methods to handle the events or callbacks. A concrete
 // state is also responsible for transforming itself to the next concrete state.
 //
-class AccessibleCaretEventHub::State
-{
-public:
+class AccessibleCaretEventHub::State {
+ public:
   virtual const char* Name() const { return ""; }
 
   virtual nsEventStatus OnPress(AccessibleCaretEventHub* aContext,
                                 const nsPoint& aPoint, int32_t aTouchId,
-                                EventClassID aEventClass)
-  {
+                                EventClassID aEventClass) {
     return nsEventStatus_eIgnore;
   }
 
   virtual nsEventStatus OnMove(AccessibleCaretEventHub* aContext,
-                               const nsPoint& aPoint)
-  {
+                               const nsPoint& aPoint) {
     return nsEventStatus_eIgnore;
   }
 
-  virtual nsEventStatus OnRelease(AccessibleCaretEventHub* aContext)
-  {
+  virtual nsEventStatus OnRelease(AccessibleCaretEventHub* aContext) {
     return nsEventStatus_eIgnore;
   }
 
   virtual nsEventStatus OnLongTap(AccessibleCaretEventHub* aContext,
-                                  const nsPoint& aPoint)
-  {
+                                  const nsPoint& aPoint) {
     return nsEventStatus_eIgnore;
   }
 
@@ -224,7 +213,7 @@ public:
   virtual void OnBlur(AccessibleCaretEventHub* aContext,
                       bool aIsLeavingDocument) {}
   virtual void OnSelectionChanged(AccessibleCaretEventHub* aContext,
-                                  nsIDocument* aDoc, dom::Selection* aSel,
+                                  dom::Document* aDoc, dom::Selection* aSel,
                                   int16_t aReason) {}
   virtual void OnReflow(AccessibleCaretEventHub* aContext) {}
   virtual void Enter(AccessibleCaretEventHub* aContext) {}
@@ -236,6 +225,6 @@ public:
   State& operator=(const State&) = delete;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_AccessibleCaretEventHub_h
+#endif  // mozilla_AccessibleCaretEventHub_h

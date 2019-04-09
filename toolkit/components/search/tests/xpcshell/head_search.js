@@ -25,8 +25,7 @@ const CACHE_FILENAME = "search.json.mozlz4";
 
 // nsSearchService.js uses Services.appinfo.name to build a salt for a hash.
 // eslint-disable-next-line mozilla/use-services
-var XULRuntime = Components.classesByID["{95d89e3e-a169-41a3-8e56-719978e15b12}"]
-                           .getService(Ci.nsIXULRuntime);
+var XULRuntime = Cc["@mozilla.org/xre/runtime;1"].getService(Ci.nsIXULRuntime);
 
 var isChild = XULRuntime.processType == XULRuntime.PROCESS_TYPE_CONTENT;
 
@@ -483,10 +482,9 @@ const TELEMETRY_RESULT_ENUM = {
 function checkCountryResultTelemetry(aExpectedValue) {
   let histogram = Services.telemetry.getHistogramById("SEARCH_SERVICE_COUNTRY_FETCH_RESULT");
   let snapshot = histogram.snapshot();
-  // The probe is declared with 8 values, but we get 9 back from .counts
-  let expectedCounts = [0, 0, 0, 0, 0, 0, 0, 0, 0];
   if (aExpectedValue != null) {
-    expectedCounts[aExpectedValue] = 1;
+    equal(snapshot.values[aExpectedValue], 1);
+  } else {
+    deepEqual(snapshot.values, {});
   }
-  deepEqual(snapshot.counts, expectedCounts);
 }

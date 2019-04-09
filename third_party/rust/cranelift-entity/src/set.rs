@@ -1,13 +1,14 @@
 //! Densely numbered entity references as set keys.
 
-use std::marker::PhantomData;
+use crate::keys::Keys;
+use crate::EntityRef;
+use core::marker::PhantomData;
 use std::vec::Vec;
-use {EntityRef, Keys};
 
 /// A set of `K` for densely indexed entity references.
 ///
 /// The `EntitySet` data structure uses the dense index space to implement a set with a bitvector.
-/// Like `EntityMap`, an `EntitySet` is used to associate secondary information with entities.
+/// Like `SecondaryMap`, an `EntitySet` is used to associate secondary information with entities.
 #[derive(Debug, Clone)]
 pub struct EntitySet<K>
 where
@@ -79,7 +80,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::u32;
+    use core::u32;
 
     // `EntityRef` impl for testing.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]

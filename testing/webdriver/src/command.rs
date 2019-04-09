@@ -1,9 +1,11 @@
-use actions::ActionSequence;
-use capabilities::{BrowserCapabilities, Capabilities, CapabilitiesMatching,
-                   LegacyNewSessionParameters, SpecNewSessionParameters};
-use common::{Date, FrameId, LocatorStrategy, WebElement, MAX_SAFE_INTEGER};
-use error::{ErrorStatus, WebDriverError, WebDriverResult};
-use httpapi::{Route, VoidWebDriverExtensionRoute, WebDriverExtensionRoute};
+use crate::actions::ActionSequence;
+use crate::capabilities::{
+    BrowserCapabilities, Capabilities, CapabilitiesMatching, LegacyNewSessionParameters,
+    SpecNewSessionParameters,
+};
+use crate::common::{Date, FrameId, LocatorStrategy, WebElement, MAX_SAFE_INTEGER};
+use crate::error::{ErrorStatus, WebDriverError, WebDriverResult};
+use crate::httpapi::{Route, VoidWebDriverExtensionRoute, WebDriverExtensionRoute};
 use regex::Captures;
 use serde::de::{self, Deserialize, Deserializer};
 use serde_json::{self, Value};
@@ -21,6 +23,7 @@ pub enum WebDriverCommand<T: WebDriverExtensionCommand> {
     GetPageSource,
     GetWindowHandle,
     GetWindowHandles,
+    NewWindow(NewWindowParameters),
     CloseWindow,
     GetWindowRect,
     SetWindowRect(WindowRectParameters),
@@ -118,6 +121,7 @@ impl<U: WebDriverExtensionRoute> WebDriverMessage<U> {
             Route::GetPageSource => WebDriverCommand::GetPageSource,
             Route::GetWindowHandle => WebDriverCommand::GetWindowHandle,
             Route::GetWindowHandles => WebDriverCommand::GetWindowHandles,
+            Route::NewWindow => WebDriverCommand::NewWindow(serde_json::from_str(raw_body)?),
             Route::CloseWindow => WebDriverCommand::CloseWindow,
             Route::GetTimeouts => WebDriverCommand::GetTimeouts,
             Route::SetTimeouts => WebDriverCommand::SetTimeouts(serde_json::from_str(raw_body)?),
@@ -329,7 +333,7 @@ impl<U: WebDriverExtensionRoute> WebDriverMessage<U> {
                 WebDriverCommand::TakeElementScreenshot(element)
             }
             Route::Status => WebDriverCommand::Status,
-            Route::Extension(ref extension) => try!(extension.command(params, &body_data)),
+            Route::Extension(ref extension) => extension.command(params, &body_data)?,
         };
         Ok(WebDriverMessage::new(session_id, command))
     }
@@ -468,6 +472,12 @@ impl CapabilitiesMatching for NewSessionParameters {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct NewWindowParameters {
+    #[serde(rename = "type")]
+    pub type_hint: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct SendKeysParameters {
     pub text: String,
 }
@@ -488,7 +498,6 @@ pub struct TakeScreenshotParameters {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct TimeoutsParameters {
     #[serde(
         default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_to_u64"
@@ -502,9 +511,38 @@ pub struct TimeoutsParameters {
     )]
     pub page_load: Option<u64>,
     #[serde(
-        default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_to_u64"
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_to_nullable_u64"
     )]
-    pub script: Option<u64>,
+    pub script: Option<Option<u64>>,
+}
+
+fn deserialize_to_nullable_u64<'de, D>(deserializer: D) -> Result<Option<Option<u64>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::deserialize(deserializer)?.map(|value: f64| value);
+    let value = match opt {
+        Some(n) => {
+            if n < 0.0 || n.fract() != 0.0 {
+                return Err(de::Error::custom(format!(
+                    "{} is not a positive Integer",
+                    n
+                )));
+            }
+            if (n as u64) > MAX_SAFE_INTEGER {
+                return Err(de::Error::custom(format!(
+                    "{} is greater than maximum safe integer",
+                    n
+                )));
+            }
+            Some(Some(n as u64))
+        }
+        None => Some(None),
+    };
+
+    Ok(value)
 }
 
 fn deserialize_to_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
@@ -611,9 +649,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use capabilities::SpecNewSessionParameters;
+    use crate::capabilities::SpecNewSessionParameters;
+    use crate::test::check_deserialize;
     use serde_json;
-    use test::check_deserialize;
 
     #[test]
     fn test_json_actions_parameters_missing_actions_field() {
@@ -630,6 +668,14 @@ mod tests {
     #[test]
     fn test_json_action_parameters_empty_list() {
         let json = r#"{"actions":[]}"#;
+        let data = ActionsParameters { actions: vec![] };
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
+    fn test_json_action_parameters_with_unknown_field() {
+        let json = r#"{"actions":[],"foo":"bar"}"#;
         let data = ActionsParameters { actions: vec![] };
 
         check_deserialize(&json, &data);
@@ -712,6 +758,28 @@ mod tests {
     }
 
     #[test]
+    fn test_json_add_cookie_parameters_with_unknown_field() {
+        let json = r#"{"cookie":{
+            "name":"foo",
+            "value":"bar",
+            "secure":true,
+            "httpOnly":false,
+            "foo":"bar"
+        },"foo":"bar"}"#;
+        let data = AddCookieParameters {
+            name: "foo".into(),
+            value: "bar".into(),
+            path: None,
+            domain: None,
+            expiry: None,
+            secure: true,
+            httpOnly: false,
+        };
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
     fn test_json_get_parameters_with_url() {
         let json = r#"{"url":"foo.bar"}"#;
         let data = GetParameters {
@@ -733,6 +801,16 @@ mod tests {
         let json = r#"{"foo":"bar"}"#;
 
         assert!(serde_json::from_str::<GetParameters>(&json).is_err());
+    }
+
+    #[test]
+    fn test_json_get_parameters_with_unknown_field() {
+        let json = r#"{"url":"foo.bar","foo":"bar"}"#;
+        let data = GetParameters {
+            url: "foo.bar".into(),
+        };
+
+        check_deserialize(&json, &data);
     }
 
     #[test]
@@ -766,6 +844,16 @@ mod tests {
         let json = r#"{"name":3"#;
 
         assert!(serde_json::from_str::<GetNamedCookieParameters>(&json).is_err());
+    }
+
+    #[test]
+    fn test_json_get_named_cookie_parameters_with_unknown_field() {
+        let json = r#"{"name":"foo","foo":"bar"}"#;
+        let data = GetNamedCookieParameters {
+            name: Some("foo".into()),
+        };
+
+        check_deserialize(&json, &data);
     }
 
     #[test]
@@ -823,6 +911,17 @@ mod tests {
     }
 
     #[test]
+    fn test_json_javascript_command_parameters_with_unknown_field() {
+        let json = r#"{"script":"foo","foo":"bar"}"#;
+        let data = JavascriptCommandParameters {
+            script: "foo".into(),
+            args: None,
+        };
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
     fn test_json_locator_parameters_with_values() {
         let json = r#"{"using":"xpath","value":"bar"}"#;
         let data = LocatorParameters {
@@ -859,6 +958,17 @@ mod tests {
         let json = r#"{"using":"xpath"}"#;
 
         assert!(serde_json::from_str::<LocatorParameters>(&json).is_err());
+    }
+
+    #[test]
+    fn test_json_locator_parameters_with_unknown_field() {
+        let json = r#"{"using":"xpath","value":"bar","foo":"bar"}"#;
+        let data = LocatorParameters {
+            using: LocatorStrategy::XPath,
+            value: "bar".into(),
+        };
+
+        check_deserialize(&json, &data);
     }
 
     #[test]
@@ -909,6 +1019,71 @@ mod tests {
     }
 
     #[test]
+    fn test_json_new_session_parameters_with_unknown_field() {
+        let json = r#"{
+            "capabilities":{
+                "alwaysMatch":{},
+                "firstMatch":[{}]
+            },
+            "foo":"bar"}"#;
+        let data = NewSessionParameters::Spec(SpecNewSessionParameters {
+            alwaysMatch: Capabilities::new(),
+            firstMatch: vec![Capabilities::new()],
+        });
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
+    fn test_json_new_window_parameters_without_type() {
+        let json = r#"{}"#;
+        let data = NewWindowParameters { type_hint: None };
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
+    fn test_json_new_window_parameters_with_optional_null_type() {
+        let json = r#"{"type":null}"#;
+        let data = NewWindowParameters { type_hint: None };
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
+    fn test_json_new_window_parameters_with_supported_type() {
+        let json = r#"{"type":"tab"}"#;
+        let data = NewWindowParameters { type_hint: Some("tab".into()) };
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
+    fn test_json_new_window_parameters_with_unknown_type() {
+        let json = r#"{"type":"foo"}"#;
+        let data = NewWindowParameters { type_hint: Some("foo".into()) };
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
+    fn test_json_new_window_parameters_with_invalid_type() {
+        let json = r#"{"type":3}"#;
+
+        assert!(serde_json::from_str::<NewWindowParameters>(&json).is_err());
+    }
+
+    #[test]
+    fn test_json_new_window_parameters_with_unknown_field() {
+        let json = r#"{"type":"tab","foo":"bar"}"#;
+        let data = NewWindowParameters {
+            type_hint: Some("tab".into())
+        };
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
     fn test_json_send_keys_parameters_with_value() {
         let json = r#"{"text":"foo"}"#;
         let data = SendKeysParameters { text: "foo".into() };
@@ -928,6 +1103,14 @@ mod tests {
         let json = r#"{}"#;
 
         assert!(serde_json::from_str::<SendKeysParameters>(&json).is_err());
+    }
+
+    #[test]
+    fn test_json_send_keys_parameters_with_unknown_field() {
+        let json = r#"{"text":"foo","foo":"bar"}"#;
+        let data = SendKeysParameters { text: "foo".into() };
+
+        check_deserialize(&json, &data);
     }
 
     #[test]
@@ -958,9 +1141,19 @@ mod tests {
 
     #[test]
     fn test_json_switch_to_frame_parameters_with_invalid_id_field() {
-        let json = r#"{"id":"3""#;
+        let json = r#"{"id":"3"}"#;
 
         assert!(serde_json::from_str::<SwitchToFrameParameters>(&json).is_err());
+    }
+
+    #[test]
+    fn test_json_switch_to_frame_parameters_with_unknown_field() {
+        let json = r#"{"id":3,"foo":"bar"}"#;
+        let data = SwitchToFrameParameters {
+            id: Some(FrameId::Short(3)),
+        };
+
+        check_deserialize(&json, &data);
     }
 
     #[test]
@@ -985,6 +1178,16 @@ mod tests {
         let json = r#"{}"#;
 
         assert!(serde_json::from_str::<SwitchToWindowParameters>(&json).is_err());
+    }
+
+    #[test]
+    fn test_json_switch_to_window_parameters_with_unknown_field() {
+        let json = r#"{"handle":"foo","foo":"bar"}"#;
+        let data = SwitchToWindowParameters {
+            handle: "foo".into(),
+        };
+
+        check_deserialize(&json, &data);
     }
 
     #[test]
@@ -1020,12 +1223,22 @@ mod tests {
     }
 
     #[test]
+    fn test_json_take_screenshot_parameters_with_unknown_field() {
+        let json = r#"{"element":{"element-6066-11e4-a52e-4f735466cecf":"elem"},"foo":"bar"}"#;
+        let data = TakeScreenshotParameters {
+            element: Some(WebElement::new("elem".into())),
+        };
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
     fn test_json_timeout_parameters_with_values() {
         let json = r#"{"implicit":0,"pageLoad":2.0,"script":9007199254740991}"#;
         let data = TimeoutsParameters {
             implicit: Some(0u64),
             page_load: Some(2u64),
-            script: Some(9007199254740991u64),
+            script: Some(Some(9007199254740991u64)),
         };
 
         check_deserialize(&json, &data);
@@ -1051,6 +1264,18 @@ mod tests {
             implicit: None,
             page_load: None,
             script: None,
+        };
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
+    fn test_json_timeout_parameters_with_unknown_field() {
+        let json = r#"{"script":60000,"foo":"bar"}"#;
+        let data = TimeoutsParameters {
+            implicit: None,
+            page_load: None,
+            script: Some(Some(60000)),
         };
 
         check_deserialize(&json, &data);
@@ -1103,6 +1328,19 @@ mod tests {
             y: Some(2),
             width: Some(3),
             height: Some(4),
+        };
+
+        check_deserialize(&json, &data);
+    }
+
+    #[test]
+    fn test_json_window_rect_parameters_with_unknown_field() {
+        let json = r#"{"x":1.1,"y":2.2,"foo":"bar"}"#;
+        let data = WindowRectParameters {
+            x: Some(1),
+            y: Some(2),
+            width: None,
+            height: None,
         };
 
         check_deserialize(&json, &data);

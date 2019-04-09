@@ -8,38 +8,54 @@
 #define GFX_VR_PARENT_H
 
 #include "mozilla/gfx/PVRParent.h"
+#include "VRGPUParent.h"
 
 namespace mozilla {
 namespace gfx {
 
-class VRGPUParent;
 class VRService;
 class VRSystemManagerExternal;
 
 class VRParent final : public PVRParent {
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VRParent);
 
-public:
-  VRParent();
-  bool Init(base::ProcessId aParentPid,
-            const char* aParentBuildID,
-            MessageLoop* aIOLoop,
-            IPC::Channel* aChannel);
+ public:
+  explicit VRParent();
+
+  bool Init(base::ProcessId aParentPid, const char* aParentBuildID,
+            MessageLoop* aIOLoop, IPC::Channel* aChannel);
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
+  bool GetOpenVRControllerActionPath(nsCString* aPath);
+  bool GetOpenVRControllerManifestPath(OpenVRControllerType aType,
+                                       nsCString* aPath);
 
-protected:
-  virtual mozilla::ipc::IPCResult RecvNewGPUVRManager(Endpoint<PVRGPUParent>&& aEndpoint) override;
-  virtual mozilla::ipc::IPCResult RecvInit(nsTArray<GfxPrefSetting>&& prefs,
-                                           nsTArray<GfxVarUpdate>&& vars,
-                                           const DevicePrefs& devicePrefs) override;
-  virtual mozilla::ipc::IPCResult RecvNotifyVsync(const TimeStamp& vsyncTimestamp) override;
-  virtual mozilla::ipc::IPCResult RecvUpdatePref(const GfxPrefSetting& setting) override;
-  virtual mozilla::ipc::IPCResult RecvUpdateVar(const GfxVarUpdate& pref) override;
+ protected:
+  ~VRParent() = default;
 
-private:
+  virtual mozilla::ipc::IPCResult RecvNewGPUVRManager(
+      Endpoint<PVRGPUParent>&& aEndpoint) override;
+  virtual mozilla::ipc::IPCResult RecvInit(
+      nsTArray<GfxPrefSetting>&& prefs, nsTArray<GfxVarUpdate>&& vars,
+      const DevicePrefs& devicePrefs) override;
+  virtual mozilla::ipc::IPCResult RecvNotifyVsync(
+      const TimeStamp& vsyncTimestamp) override;
+  virtual mozilla::ipc::IPCResult RecvUpdatePref(
+      const GfxPrefSetting& setting) override;
+  virtual mozilla::ipc::IPCResult RecvUpdateVar(
+      const GfxVarUpdate& pref) override;
+  virtual mozilla::ipc::IPCResult RecvOpenVRControllerActionPathToVR(
+      const nsCString& aPath) override;
+  virtual mozilla::ipc::IPCResult RecvOpenVRControllerManifestPathToVR(
+      const OpenVRControllerType& aType, const nsCString& aPath) override;
+
+ private:
+  nsCString mOpenVRControllerAction;
+  nsDataHashtable<nsUint32HashKey, nsCString> mOpenVRControllerManifest;
   RefPtr<VRGPUParent> mVRGPUParent;
+  DISALLOW_COPY_AND_ASSIGN(VRParent);
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // GFX_VR_PARENT_H
+#endif  // GFX_VR_PARENT_H

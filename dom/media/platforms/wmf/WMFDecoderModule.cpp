@@ -5,6 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WMFDecoderModule.h"
+#include <algorithm>
+#include <vector>
+#include "DriverCrashGuard.h"
 #include "GfxDriverInfo.h"
 #include "MFTDecoder.h"
 #include "MP4Decoder.h"
@@ -17,123 +20,35 @@
 #include "gfxPrefs.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Services.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/mscom/EnsureMTA.h"
 #include "nsAutoPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIGfxInfo.h"
 #include "nsIWindowsRegKey.h"
+#include "nsIXULRuntime.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWindowsHelpers.h"
 #include "prsystem.h"
-#include "nsIXULRuntime.h"
-#include "mozilla/mscom/EnsureMTA.h"
-#include <algorithm>
-#include <vector>
 
 extern const GUID CLSID_WebmMfVpxDec;
-extern const GUID CLSID_AMDWebmMfVp9Dec;
 
 namespace mozilla {
 
 static Atomic<bool> sDXVAEnabled(false);
+static Atomic<bool> sUsableVPXMFT(false);
 
-WMFDecoderModule::~WMFDecoderModule()
-{
+WMFDecoderModule::~WMFDecoderModule() {
   if (mWMFInitialized) {
     DebugOnly<HRESULT> hr = wmf::MFShutdown();
     NS_ASSERTION(SUCCEEDED(hr), "MFShutdown failed");
   }
 }
 
-/* static */
-void
-WMFDecoderModule::Init()
-{
-  if (XRE_IsContentProcess()) {
-    // If we're in the content process and the UseGPUDecoder pref is set, it
-    // means that we've given up on the GPU process (it's been crashing) so we
-    // should disable DXVA
-    sDXVAEnabled = !StaticPrefs::MediaGpuProcessDecoder();
-  } else if (XRE_IsGPUProcess()) {
-    // Always allow DXVA in the GPU process.
-    sDXVAEnabled = true;
-  } else {
-    // Only allow DXVA in the UI process if we aren't in e10s Firefox
-    sDXVAEnabled = !mozilla::BrowserTabsRemoteAutostart();
-  }
-
-  sDXVAEnabled = sDXVAEnabled && gfx::gfxVars::CanUseHardwareVideoDecoding();
-}
-
-/* static */
-int
-WMFDecoderModule::GetNumDecoderThreads()
-{
-  int32_t numCores = PR_GetNumberOfProcessors();
-
-  // If we have more than 4 cores, let the decoder decide how many threads.
-  // On an 8 core machine, WMF chooses 4 decoder threads.
-  static const int WMF_DECODER_DEFAULT = -1;
-  if (numCores > 4) {
-    return WMF_DECODER_DEFAULT;
-  }
-  return std::max(numCores - 1, 1);
-}
-
-nsresult
-WMFDecoderModule::Startup()
-{
-  mWMFInitialized = SUCCEEDED(wmf::MFStartup());
-  return mWMFInitialized ? NS_OK : NS_ERROR_FAILURE;
-}
-
-already_AddRefed<MediaDataDecoder>
-WMFDecoderModule::CreateVideoDecoder(const CreateDecoderParams& aParams)
-{
-  nsAutoPtr<WMFVideoMFTManager> manager(new WMFVideoMFTManager(
-    aParams.VideoConfig(),
-    aParams.mKnowsCompositor,
-    aParams.mImageContainer,
-    aParams.mRate.mValue,
-    aParams.mOptions,
-    sDXVAEnabled));
-
-  MediaResult result = manager->Init();
-  if (NS_FAILED(result)) {
-    if (aParams.mError) {
-      *aParams.mError = result;
-    }
-    return nullptr;
-  }
-
-  RefPtr<MediaDataDecoder> decoder =
-    new WMFMediaDataDecoder(manager.forget(), aParams.mTaskQueue);
-
-  return decoder.forget();
-}
-
-already_AddRefed<MediaDataDecoder>
-WMFDecoderModule::CreateAudioDecoder(const CreateDecoderParams& aParams)
-{
-  nsAutoPtr<WMFAudioMFTManager> manager(
-    new WMFAudioMFTManager(aParams.AudioConfig()));
-
-  if (!manager->Init()) {
-    return nullptr;
-  }
-
-  RefPtr<MediaDataDecoder> decoder =
-    new WMFMediaDataDecoder(manager.forget(), aParams.mTaskQueue);
-  return decoder.forget();
-}
-
-static bool
-CanCreateMFTDecoder(const GUID& aGuid)
-{
+static bool CanCreateMFTDecoder(const GUID& aGuid) {
   // The IMFTransform interface used by MFTDecoder is documented to require to
   // run on an MTA thread.
   // https://msdn.microsoft.com/en-us/library/windows/desktop/ee892371(v=vs.85).aspx#components
@@ -152,10 +67,91 @@ CanCreateMFTDecoder(const GUID& aGuid)
   return canCreateDecoder;
 }
 
-template<const GUID& aGuid>
-static bool
-CanCreateWMFDecoder()
-{
+/* static */
+void WMFDecoderModule::Init() {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
+  bool testForVPx;
+  if (XRE_IsContentProcess()) {
+    // If we're in the content process and the UseGPUDecoder pref is set, it
+    // means that we've given up on the GPU process (it's been crashing) so we
+    // should disable DXVA
+    sDXVAEnabled = !StaticPrefs::MediaGpuProcessDecoder();
+    // We need to test for VPX in the content process as the GPUDecoderModule
+    // directly calls WMFDecoderModule::Supports in the content process.
+    // This unnecessary requirement will be fixed in bug 1534815.
+    testForVPx = true;
+  } else if (XRE_IsGPUProcess()) {
+    // Always allow DXVA in the GPU process.
+    testForVPx = sDXVAEnabled = true;
+  } else {
+    // Only allow DXVA in the UI process if we aren't in e10s Firefox
+    testForVPx = sDXVAEnabled = !mozilla::BrowserTabsRemoteAutostart();
+  }
+
+  sDXVAEnabled = sDXVAEnabled && gfx::gfxVars::CanUseHardwareVideoDecoding();
+  testForVPx = testForVPx && gfx::gfxVars::CanUseHardwareVideoDecoding();
+  if (testForVPx && StaticPrefs::MediaWmfVp9Enabled()) {
+    gfx::WMFVPXVideoCrashGuard guard;
+    if (!guard.Crashed()) {
+      sUsableVPXMFT = CanCreateMFTDecoder(CLSID_WebmMfVpxDec);
+    }
+  }
+}
+
+/* static */
+int WMFDecoderModule::GetNumDecoderThreads() {
+  int32_t numCores = PR_GetNumberOfProcessors();
+
+  // If we have more than 4 cores, let the decoder decide how many threads.
+  // On an 8 core machine, WMF chooses 4 decoder threads.
+  static const int WMF_DECODER_DEFAULT = -1;
+  if (numCores > 4) {
+    return WMF_DECODER_DEFAULT;
+  }
+  return std::max(numCores - 1, 1);
+}
+
+nsresult WMFDecoderModule::Startup() {
+  mWMFInitialized = SUCCEEDED(wmf::MFStartup());
+  return mWMFInitialized ? NS_OK : NS_ERROR_FAILURE;
+}
+
+already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateVideoDecoder(
+    const CreateDecoderParams& aParams) {
+  nsAutoPtr<WMFVideoMFTManager> manager(new WMFVideoMFTManager(
+      aParams.VideoConfig(), aParams.mKnowsCompositor, aParams.mImageContainer,
+      aParams.mRate.mValue, aParams.mOptions, sDXVAEnabled));
+
+  MediaResult result = manager->Init();
+  if (NS_FAILED(result)) {
+    if (aParams.mError) {
+      *aParams.mError = result;
+    }
+    return nullptr;
+  }
+
+  RefPtr<MediaDataDecoder> decoder =
+      new WMFMediaDataDecoder(manager.forget(), aParams.mTaskQueue);
+
+  return decoder.forget();
+}
+
+already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateAudioDecoder(
+    const CreateDecoderParams& aParams) {
+  nsAutoPtr<WMFAudioMFTManager> manager(
+      new WMFAudioMFTManager(aParams.AudioConfig()));
+
+  if (!manager->Init()) {
+    return nullptr;
+  }
+
+  RefPtr<MediaDataDecoder> decoder =
+      new WMFMediaDataDecoder(manager.forget(), aParams.mTaskQueue);
+  return decoder.forget();
+}
+
+template <const GUID& aGuid>
+static bool CanCreateWMFDecoder() {
   static StaticMutex sMutex;
   StaticMutexAutoLock lock(sMutex);
   static Maybe<bool> result;
@@ -165,23 +161,16 @@ CanCreateWMFDecoder()
   return result.value();
 }
 
-/* static */ bool
-WMFDecoderModule::HasH264()
-{
+/* static */ bool WMFDecoderModule::HasH264() {
   return CanCreateWMFDecoder<CLSID_CMSH264DecoderMFT>();
 }
 
-/* static */ bool
-WMFDecoderModule::HasAAC()
-{
+/* static */ bool WMFDecoderModule::HasAAC() {
   return CanCreateWMFDecoder<CLSID_CMSAACDecMFT>();
 }
 
-bool
-WMFDecoderModule::SupportsMimeType(
-  const nsACString& aMimeType,
-  DecoderDoctorDiagnostics* aDiagnostics) const
-{
+bool WMFDecoderModule::SupportsMimeType(
+    const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
   UniquePtr<TrackInfo> trackInfo = CreateTrackInfoWithMIMEType(aMimeType);
   if (!trackInfo) {
     return false;
@@ -189,10 +178,8 @@ WMFDecoderModule::SupportsMimeType(
   return Supports(*trackInfo, aDiagnostics);
 }
 
-bool
-WMFDecoderModule::Supports(const TrackInfo& aTrackInfo,
-                           DecoderDoctorDiagnostics* aDiagnostics) const
-{
+bool WMFDecoderModule::Supports(const TrackInfo& aTrackInfo,
+                                DecoderDoctorDiagnostics* aDiagnostics) const {
   const auto videoInfo = aTrackInfo.GetAsVideoInfo();
   if (videoInfo && !SupportsColorDepth(videoInfo->mColorDepth, aDiagnostics)) {
     return false;
@@ -200,16 +187,15 @@ WMFDecoderModule::Supports(const TrackInfo& aTrackInfo,
 
   if ((aTrackInfo.mMimeType.EqualsLiteral("audio/mp4a-latm") ||
        aTrackInfo.mMimeType.EqualsLiteral("audio/mp4")) &&
-       WMFDecoderModule::HasAAC()) {
+      WMFDecoderModule::HasAAC()) {
     const auto audioInfo = aTrackInfo.GetAsAudioInfo();
     if (audioInfo && audioInfo->mRate > 0) {
       // Supported sampling rates per:
       // https://msdn.microsoft.com/en-us/library/windows/desktop/dd742784(v=vs.85).aspx
       const std::vector<uint32_t> frequencies = {
-        8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000,
+          8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000,
       };
-      return std::find(frequencies.begin(),
-                       frequencies.end(),
+      return std::find(frequencies.begin(), frequencies.end(),
                        audioInfo->mRate) != frequencies.end();
     }
     return true;
@@ -221,16 +207,12 @@ WMFDecoderModule::Supports(const TrackInfo& aTrackInfo,
       CanCreateWMFDecoder<CLSID_CMP3DecMediaObject>()) {
     return true;
   }
-  if (StaticPrefs::MediaWmfVp9Enabled()) {
+  if (sUsableVPXMFT) {
     static const uint32_t VP8_USABLE_BUILD = 16287;
-    if (VPXDecoder::IsVP8(aTrackInfo.mMimeType) &&
-        IsWindowsBuildOrLater(VP8_USABLE_BUILD) &&
-        CanCreateWMFDecoder<CLSID_WebmMfVpxDec>()) {
-      return true;
-    }
-    if (VPXDecoder::IsVP9(aTrackInfo.mMimeType) &&
-        CanCreateWMFDecoder<CLSID_WebmMfVpxDec>()) {
-      return true;
+    if ((VPXDecoder::IsVP8(aTrackInfo.mMimeType) &&
+         IsWindowsBuildOrLater(VP8_USABLE_BUILD)) ||
+        VPXDecoder::IsVP9(aTrackInfo.mMimeType)) {
+      return CanCreateWMFDecoder<CLSID_WebmMfVpxDec>();
     }
   }
 
@@ -238,4 +220,4 @@ WMFDecoderModule::Supports(const TrackInfo& aTrackInfo,
   return false;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

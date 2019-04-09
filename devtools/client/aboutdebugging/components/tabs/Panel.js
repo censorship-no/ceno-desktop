@@ -42,27 +42,24 @@ class TabsPanel extends Component {
 
   componentDidMount() {
     const { client } = this.props;
-    client.addListener("tabListChanged", this.update);
+    client.mainRoot.on("tabListChanged", this.update);
     this.update();
   }
 
   componentWillUnmount() {
     const { client } = this.props;
-    client.removeListener("tabListChanged", this.update);
+    client.mainRoot.off("tabListChanged", this.update);
   }
 
   async update() {
-    let { tabs } = await this.props.client.mainRoot.listTabs({ favicons: true });
-
-    // Filter out closed tabs (represented as `null`).
-    tabs = tabs.filter(tab => !!tab);
+    const tabs = await this.props.client.mainRoot.listTabs({ favicons: true });
 
     for (const tab of tabs) {
       if (tab.favicon) {
         const base64Favicon = btoa(String.fromCharCode.apply(String, tab.favicon));
         tab.icon = "data:image/png;base64," + base64Favicon;
       } else {
-        tab.icon = "chrome://devtools/skin/images/globe.svg";
+        tab.icon = "chrome://devtools/skin/images/aboutdebugging-globe-icon.svg";
       }
     }
 

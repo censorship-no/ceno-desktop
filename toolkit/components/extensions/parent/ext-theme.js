@@ -78,7 +78,7 @@ class Theme {
    *   properties can be found in the schema under ThemeType.
    */
   load() {
-    const {details} = this;
+    const {extension, details} = this;
 
     if (details.colors) {
       this.loadColors(details.colors);
@@ -95,6 +95,8 @@ class Theme {
     if (details.properties) {
       this.loadProperties(details.properties);
     }
+
+    this.loadMetadata(extension);
 
     let lwtData = {
       theme: this.lwtStyles,
@@ -337,6 +339,17 @@ class Theme {
     }
   }
 
+  /**
+   * Helper method for loading extension metadata required by downstream
+   * consumers.
+   *
+   * @param {Object} extension Extension object.
+   */
+  loadMetadata(extension) {
+    this.lwtStyles.id = extension.id;
+    this.lwtStyles.version = extension.version;
+  }
+
   static unload(windowId) {
     let lwtData = {
       theme: null,
@@ -398,6 +411,10 @@ this.theme = class extends ExtensionAPI {
           if (!windowId) {
             windowId = windowTracker.getId(windowTracker.topWindow);
           }
+          // Force access validation for incognito mode by getting the window.
+          if (!windowTracker.getWindow(windowId, context)) {
+            return Promise.reject(`Invalid window ID: ${windowId}`);
+          }
 
           if (windowOverrides.has(windowId)) {
             return Promise.resolve(windowOverrides.get(windowId).details);
@@ -440,7 +457,10 @@ this.theme = class extends ExtensionAPI {
           register: fire => {
             let callback = (event, theme, windowId) => {
               if (windowId) {
-                fire.async({theme, windowId});
+                // Force access validation for incognito mode by getting the window.
+                if (windowTracker.getWindow(windowId, context, false)) {
+                  fire.async({theme, windowId});
+                }
               } else {
                 fire.async({theme});
               }

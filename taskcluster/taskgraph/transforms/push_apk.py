@@ -11,14 +11,11 @@ import re
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.transforms.task import task_description_schema
-from taskgraph.util.schema import optionally_keyed_by, resolve_keyed_by, Schema, validate_schema
+from taskgraph.util.schema import optionally_keyed_by, resolve_keyed_by, Schema
 from taskgraph.util.scriptworker import get_push_apk_scope
 from taskgraph.util.taskcluster import get_artifact_prefix
 
 from voluptuous import Optional, Required
-
-
-transforms = TransformSequence()
 
 # Voluptuous uses marker objects as dictionary *keys*, but they are not
 # comparable, so we cast all of the keys back to regular strings
@@ -45,41 +42,43 @@ push_apk_description_schema = Schema({
 })
 
 
-REQUIRED_ARCHITECTURES = {
-    'android-x86-nightly',
-    'android-api-16-nightly',
-}
 PLATFORM_REGEX = re.compile(r'build-signing-android-(\S+)-nightly')
+
+transforms = TransformSequence()
+transforms.add_validate(push_apk_description_schema)
 
 
 @transforms.add
-def validate_jobs_schema_transform_partial(config, jobs):
+def validate_dependent_tasks(config, jobs):
     for job in jobs:
-        label = job.get('label', '?no-label?')
-        validate_schema(
-            push_apk_description_schema, job,
-            "In PushApk ({!r} kind) task for {!r}:".format(config.kind, label)
+        check_every_architecture_is_present_in_dependent_tasks(
+            config.params['project'], job['dependent-tasks']
         )
         yield job
 
 
-@transforms.add
-def validate_dependent_tasks(_, jobs):
-    for job in jobs:
-        check_every_architecture_is_present_in_dependent_tasks(job['dependent-tasks'])
-        yield job
-
-
-def check_every_architecture_is_present_in_dependent_tasks(dependent_tasks):
+def check_every_architecture_is_present_in_dependent_tasks(project, dependent_tasks):
     dep_platforms = set(t.attributes.get('build_platform') for t in dependent_tasks)
-    missed_architectures = REQUIRED_ARCHITECTURES - dep_platforms
+    required_architectures = _get_required_architectures(project)
+    missed_architectures = required_architectures - dep_platforms
     if missed_architectures:
         raise Exception('''One or many required architectures are missing.
 
 Required architectures: {}.
 Given dependencies: {}.
-'''.format(REQUIRED_ARCHITECTURES, dependent_tasks)
+'''.format(required_architectures, dependent_tasks)
         )
+
+
+def _get_required_architectures(project):
+    architectures = {
+        'android-api-16-nightly',
+        'android-x86-nightly',
+    }
+    if project == 'mozilla-central':
+        architectures.add('android-aarch64-nightly')
+
+    return architectures
 
 
 @transforms.add

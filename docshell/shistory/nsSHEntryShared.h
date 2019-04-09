@@ -12,21 +12,26 @@
 #include "nsCOMPtr.h"
 #include "nsExpirationTracker.h"
 #include "nsIBFCacheEntry.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsRect.h"
 #include "nsString.h"
 #include "nsStubMutationObserver.h"
-#include "nsWeakPtr.h"
 
 #include "mozilla/Attributes.h"
 
 class nsSHEntry;
 class nsISHEntry;
-class nsIDocument;
 class nsIContentViewer;
 class nsIDocShellTreeItem;
 class nsILayoutHistoryState;
 class nsDocShellEditorData;
 class nsIMutableArray;
+
+namespace mozilla {
+namespace dom {
+class Document;
+}
+}  // namespace mozilla
 
 // A document may have multiple SHEntries, either due to hash navigations or
 // calls to history.pushState.  SHEntries corresponding to the same document
@@ -34,11 +39,9 @@ class nsIMutableArray;
 // back/forward cache.
 //
 // nsSHEntryShared is the vehicle for this sharing.
-class nsSHEntryShared final
-  : public nsIBFCacheEntry
-  , public nsStubMutationObserver
-{
-public:
+class nsSHEntryShared final : public nsIBFCacheEntry,
+                              public nsStubMutationObserver {
+ public:
   static void EnsureHistoryTracker();
   static void Shutdown();
 
@@ -54,9 +57,9 @@ public:
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
 
-  nsExpirationState *GetExpirationState() { return &mExpirationState; }
+  nsExpirationState* GetExpirationState() { return &mExpirationState; }
 
-private:
+ private:
   ~nsSHEntryShared();
 
   friend class nsSHEntry;
@@ -86,7 +89,7 @@ private:
   // they're specific to a particular content viewer.
   uint64_t mID;
   nsCOMPtr<nsIContentViewer> mContentViewer;
-  nsCOMPtr<nsIDocument> mDocument;
+  RefPtr<mozilla::dom::Document> mDocument;
   nsCOMPtr<nsILayoutHistoryState> mLayoutHistoryState;
   nsCOMPtr<nsISupports> mWindowState;
   nsIntRect mViewerBounds;

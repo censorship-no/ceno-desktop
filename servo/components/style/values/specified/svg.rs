@@ -1,20 +1,21 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Specified types for SVG properties.
 
+use crate::parser::{Parse, ParserContext};
+use crate::values::generics::svg as generic;
+use crate::values::specified::color::Color;
+use crate::values::specified::url::SpecifiedUrl;
+use crate::values::specified::LengthPercentage;
+use crate::values::specified::{NonNegativeLengthPercentage, NonNegativeNumber};
+use crate::values::specified::{Number, Opacity};
+use crate::values::CustomIdent;
 use cssparser::Parser;
-use parser::{Parse, ParserContext};
 use std::fmt::{self, Write};
 use style_traits::{CommaWithSpace, CssWriter, ParseError, Separator};
 use style_traits::{StyleParseErrorKind, ToCss};
-use values::CustomIdent;
-use values::generics::svg as generic;
-use values::specified::{LengthOrPercentage, NonNegativeLengthOrPercentage, NonNegativeNumber};
-use values::specified::{Number, Opacity};
-use values::specified::color::Color;
-use values::specified::url::SpecifiedUrl;
 
 /// Specified SVG Paint value
 pub type SVGPaint = generic::SVGPaint<Color, SpecifiedUrl>;
@@ -27,7 +28,7 @@ fn is_context_value_enabled() -> bool {
     // The prefs can only be mutated on the main thread, so it is safe
     // to read whenever we are on the main thread or the main thread is
     // blocked.
-    use gecko_bindings::structs::mozilla;
+    use crate::gecko_bindings::structs::mozilla;
     unsafe { mozilla::StaticPrefs_sVarCache_gfx_font_rendering_opentype_svg_enabled }
 }
 #[cfg(not(feature = "gecko"))]
@@ -49,11 +50,11 @@ fn parse_context_value<'i, 't, T>(
 
 /// A value of <length> | <percentage> | <number> for stroke-dashoffset.
 /// <https://www.w3.org/TR/SVG11/painting.html#StrokeProperties>
-pub type SvgLengthOrPercentageOrNumber =
-    generic::SvgLengthOrPercentageOrNumber<LengthOrPercentage, Number>;
+pub type SvgLengthPercentageOrNumber =
+    generic::SvgLengthPercentageOrNumber<LengthPercentage, Number>;
 
 /// <length> | <percentage> | <number> | context-value
-pub type SVGLength = generic::SVGLength<SvgLengthOrPercentageOrNumber>;
+pub type SVGLength = generic::SVGLength<SvgLengthPercentageOrNumber>;
 
 impl Parse for SVGLength {
     fn parse<'i, 't>(
@@ -61,25 +62,25 @@ impl Parse for SVGLength {
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
         input
-            .try(|i| SvgLengthOrPercentageOrNumber::parse(context, i))
+            .try(|i| SvgLengthPercentageOrNumber::parse(context, i))
             .map(Into::into)
             .or_else(|_| parse_context_value(input, generic::SVGLength::ContextValue))
     }
 }
 
-impl From<SvgLengthOrPercentageOrNumber> for SVGLength {
-    fn from(length: SvgLengthOrPercentageOrNumber) -> Self {
+impl From<SvgLengthPercentageOrNumber> for SVGLength {
+    fn from(length: SvgLengthPercentageOrNumber) -> Self {
         generic::SVGLength::Length(length)
     }
 }
 
 /// A value of <length> | <percentage> | <number> for stroke-width/stroke-dasharray.
 /// <https://www.w3.org/TR/SVG11/painting.html#StrokeProperties>
-pub type NonNegativeSvgLengthOrPercentageOrNumber =
-    generic::SvgLengthOrPercentageOrNumber<NonNegativeLengthOrPercentage, NonNegativeNumber>;
+pub type NonNegativeSvgLengthPercentageOrNumber =
+    generic::SvgLengthPercentageOrNumber<NonNegativeLengthPercentage, NonNegativeNumber>;
 
 /// A non-negative version of SVGLength.
-pub type SVGWidth = generic::SVGLength<NonNegativeSvgLengthOrPercentageOrNumber>;
+pub type SVGWidth = generic::SVGLength<NonNegativeSvgLengthPercentageOrNumber>;
 
 impl Parse for SVGWidth {
     fn parse<'i, 't>(
@@ -87,20 +88,20 @@ impl Parse for SVGWidth {
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
         input
-            .try(|i| NonNegativeSvgLengthOrPercentageOrNumber::parse(context, i))
+            .try(|i| NonNegativeSvgLengthPercentageOrNumber::parse(context, i))
             .map(Into::into)
             .or_else(|_| parse_context_value(input, generic::SVGLength::ContextValue))
     }
 }
 
-impl From<NonNegativeSvgLengthOrPercentageOrNumber> for SVGWidth {
-    fn from(length: NonNegativeSvgLengthOrPercentageOrNumber) -> Self {
+impl From<NonNegativeSvgLengthPercentageOrNumber> for SVGWidth {
+    fn from(length: NonNegativeSvgLengthPercentageOrNumber) -> Self {
         generic::SVGLength::Length(length)
     }
 }
 
 /// [ <length> | <percentage> | <number> ]# | context-value
-pub type SVGStrokeDashArray = generic::SVGStrokeDashArray<NonNegativeSvgLengthOrPercentageOrNumber>;
+pub type SVGStrokeDashArray = generic::SVGStrokeDashArray<NonNegativeSvgLengthPercentageOrNumber>;
 
 impl Parse for SVGStrokeDashArray {
     fn parse<'i, 't>(
@@ -109,7 +110,7 @@ impl Parse for SVGStrokeDashArray {
     ) -> Result<Self, ParseError<'i>> {
         if let Ok(values) = input.try(|i| {
             CommaWithSpace::parse(i, |i| {
-                NonNegativeSvgLengthOrPercentageOrNumber::parse(context, i)
+                NonNegativeSvgLengthPercentageOrNumber::parse(context, i)
             })
         }) {
             Ok(generic::SVGStrokeDashArray::Values(values))

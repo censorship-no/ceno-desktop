@@ -8,22 +8,23 @@
 
 #include "nscore.h"
 #include "nsString.h"
+#include "nsToolkitShellService.h"
 #include "nsIShellService.h"
 
 #include <windows.h>
 #include <ole2.h>
 
-class nsWindowsShellService : public nsIShellService
-{
+class nsWindowsShellService : public nsIShellService,
+                              public nsToolkitShellService {
   virtual ~nsWindowsShellService();
 
-public:
+ public:
   nsWindowsShellService();
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSISHELLSERVICE
 
-protected:
+ protected:
   nsresult LaunchControlPanelDefaultsSelectionUI();
   nsresult LaunchControlPanelDefaultPrograms();
   nsresult LaunchModernSettingsDialogDefaultApps();
@@ -31,4 +32,4 @@ protected:
   nsresult LaunchHTTPHandlerPane();
 };
 
-#endif // nswindowsshellservice_h____
+#endif  // nswindowsshellservice_h____

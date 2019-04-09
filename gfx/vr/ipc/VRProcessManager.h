@@ -6,20 +6,19 @@
 #ifndef GFX_VR_PROCESS_MANAGER_H
 #define GFX_VR_PROCESS_MANAGER_H
 
+#include "VRProcessParent.h"
 
 namespace mozilla {
 namespace gfx {
 
-class VRProcessParent;
 class VRManagerChild;
 class PVRGPUChild;
 class VRChild;
 
 // The VRProcessManager is a singleton responsible for creating VR-bound
 // objects that may live in another process.
-class VRProcessManager final
-{
-public:
+class VRProcessManager final : public VRProcessParent::Listener {
+ public:
   static VRProcessManager* Get();
   static void Initialize();
   static void Shutdown();
@@ -28,33 +27,35 @@ public:
 
   // If not using a VR process, launch a new VR process asynchronously.
   void LaunchVRProcess();
-  void DestroyProcess();
-
   bool CreateGPUBridges(base::ProcessId aOtherProcess,
                         mozilla::ipc::Endpoint<PVRGPUChild>* aOutVRBridge);
 
   VRChild* GetVRChild();
 
-private:
+  virtual void OnProcessLaunchComplete(VRProcessParent* aParent) override;
+  virtual void OnProcessUnexpectedShutdown(VRProcessParent* aParent) override;
+
+ private:
   VRProcessManager();
 
   DISALLOW_COPY_AND_ASSIGN(VRProcessManager);
 
   bool CreateGPUVRManager(base::ProcessId aOtherProcess,
-                              mozilla::ipc::Endpoint<PVRGPUChild>* aOutEndpoint);
+                          mozilla::ipc::Endpoint<PVRGPUChild>* aOutEndpoint);
   void OnXPCOMShutdown();
   void CleanShutdown();
+  void DestroyProcess();
 
   // Permanently disable the VR process and record a message why.
   void DisableVRProcess(const char* aMessage);
 
   class Observer final : public nsIObserver {
-  public:
+   public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
     explicit Observer(VRProcessManager* aManager);
 
-  protected:
+   protected:
     ~Observer() {}
 
     VRProcessManager* mManager;
@@ -65,7 +66,7 @@ private:
   VRProcessParent* mProcess;
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // GFX_VR_PROCESS_MANAGER_H
+#endif  // GFX_VR_PROCESS_MANAGER_H

@@ -227,7 +227,9 @@ EXPORTS.mozilla.layers += [
     'PersistentBufferProvider.h',
     'ProfilerScreenshots.h',
     'RenderTrace.h',
+    'RepaintRequest.h',
     'RotatedBuffer.h',
+    'ScrollableLayerGuid.h',
     'ShareableCanvasRenderer.h',
     'SourceSurfaceSharedData.h',
     'SourceSurfaceVolatileData.h',
@@ -239,6 +241,7 @@ EXPORTS.mozilla.layers += [
     'wr/AsyncImagePipelineManager.h',
     'wr/ClipManager.h',
     'wr/IpcResourceUpdateQueue.h',
+    'wr/RenderRootStateManager.h',
     'wr/StackingContextHelper.h',
     'wr/WebRenderBridgeChild.h',
     'wr/WebRenderBridgeParent.h',
@@ -254,6 +257,7 @@ EXPORTS.mozilla.layers += [
     'wr/WebRenderTextureHost.h',
     'wr/WebRenderTextureHostWrapper.h',
     'wr/WebRenderUserData.h',
+    'ZoomConstraints.h',
 ]
 
 if CONFIG['MOZ_X11']:
@@ -482,6 +486,7 @@ UNIFIED_SOURCES += [
     'wr/AsyncImagePipelineManager.cpp',
     'wr/ClipManager.cpp',
     'wr/IpcResourceUpdateQueue.cpp',
+    'wr/RenderRootStateManager.cpp',
     'wr/StackingContextHelper.cpp',
     'wr/WebRenderBridgeChild.cpp',
     'wr/WebRenderBridgeParent.cpp',
@@ -585,3 +590,11 @@ if CONFIG['MOZ_ENABLE_SKIA']:
   UNIFIED_SOURCES += [
     'composite/PaintCounter.cpp',
   ]
+
+if CONFIG['FUZZING'] and CONFIG['FUZZING_INTERFACES']:
+    TEST_DIRS += [
+        'ipc/fuzztest'
+    ]
+
+# Add libFuzzer configuration directives
+include('/tools/fuzzing/libfuzzer-config.mozbuild')

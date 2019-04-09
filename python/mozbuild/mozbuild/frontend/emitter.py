@@ -1305,14 +1305,13 @@ class TreeMetadataEmitter(LoggingMixin):
                                           Manifest('components',
                                                    mozpath.basename(c)))
 
-        if self.config.substs.get('MOZ_RUST_TESTS', None):
-            rust_tests = context.get('RUST_TESTS', [])
-            if rust_tests:
-                # TODO: more sophisticated checking of the declared name vs.
-                # contents of the Cargo.toml file.
-                features = context.get('RUST_TEST_FEATURES', [])
+        rust_tests = context.get('RUST_TESTS', [])
+        if rust_tests:
+            # TODO: more sophisticated checking of the declared name vs.
+            # contents of the Cargo.toml file.
+            features = context.get('RUST_TEST_FEATURES', [])
 
-                yield RustTests(context, rust_tests, features)
+            yield RustTests(context, rust_tests, features)
 
         for obj in self._process_test_manifests(context):
             yield obj
@@ -1333,6 +1332,15 @@ class TreeMetadataEmitter(LoggingMixin):
             computed_as_flags.resolve_flags('OS',
                                             context.config.substs.get('YASM_ASFLAGS', []))
 
+        if context.get('USE_NASM') is True:
+            nasm = context.config.substs.get('NASM')
+            if not nasm:
+                raise SandboxValidationError('nasm is not available', context)
+            passthru.variables['AS'] = nasm
+            passthru.variables['AS_DASH_C_FLAG'] = ''
+            passthru.variables['ASOUTOPTION'] = '-o '
+            computed_as_flags.resolve_flags('OS',
+                                            context.config.substs.get('NASM_ASFLAGS', []))
 
         if passthru.variables:
             yield passthru

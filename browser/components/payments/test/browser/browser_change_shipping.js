@@ -8,10 +8,16 @@ async function setup() {
   await formAutofillStorage.creditCards.update(prefilledGuids.card1GUID, {
     billingAddressGUID: prefilledGuids.address1GUID,
   }, true);
+
+  return prefilledGuids;
 }
 
 add_task(async function test_change_shipping() {
-  await setup();
+  if (!OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
+    todo(false, "Cannot test OS key store login on official builds.");
+    return;
+  }
+  let prefilledGuids = await setup();
   await BrowserTestUtils.withNewTab({
     gBrowser,
     url: BLANK_PAGE_URL,
@@ -24,6 +30,12 @@ add_task(async function test_change_shipping() {
         merchantTaskFn: PTU.ContentTasks.createAndShowRequest,
       }
     );
+
+    await spawnPaymentDialogTask(frame, async ({prefilledGuids: guids}) => {
+      let paymentMethodPicker = content.document.querySelector("payment-method-picker");
+      content.fillField(Cu.waiveXrays(paymentMethodPicker).dropdown.popupBox,
+                        guids.card1GUID);
+    }, {prefilledGuids});
 
     let shippingOptions =
       await spawnPaymentDialogTask(frame, PTU.DialogContentTasks.getShippingOptions);
@@ -54,7 +66,7 @@ add_task(async function test_change_shipping() {
 
     await ContentTask.spawn(browser, {
       eventName: "shippingaddresschange",
-    }, PTU.ContentTasks.awaitPaymentRequestEventPromise);
+    }, PTU.ContentTasks.awaitPaymentEventPromise);
     info("got shippingaddresschange event");
 
     // verify update of shippingOptions
@@ -108,7 +120,7 @@ add_task(async function test_change_shipping() {
     });
 
     info("clicking pay");
-    spawnPaymentDialogTask(frame, PTU.DialogContentTasks.completePayment);
+    await loginAndCompletePayment(frame);
 
     // Add a handler to complete the payment above.
     info("acknowledging the completion from the merchant page");
@@ -173,7 +185,7 @@ add_task(async function test_default_shippingOptions_noneSelected() {
 
     await ContentTask.spawn(browser, {
       eventName: "shippingaddresschange",
-    }, PTU.ContentTasks.awaitPaymentRequestEventPromise);
+    }, PTU.ContentTasks.awaitPaymentEventPromise);
     info("got shippingaddresschange event");
 
     shippingOptions =
@@ -232,7 +244,7 @@ add_task(async function test_default_shippingOptions_allSelected() {
 
     await ContentTask.spawn(browser, {
       eventName: "shippingaddresschange",
-    }, PTU.ContentTasks.awaitPaymentRequestEventPromise);
+    }, PTU.ContentTasks.awaitPaymentEventPromise);
     info("got shippingaddresschange event");
 
     shippingOptions =
@@ -249,7 +261,11 @@ add_task(async function test_default_shippingOptions_allSelected() {
 });
 
 add_task(async function test_no_shippingchange_without_shipping() {
-  await setup();
+  if (!OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
+    todo(false, "Cannot test OS key store login on official builds.");
+    return;
+  }
+  let prefilledGuids = await setup();
   await BrowserTestUtils.withNewTab({
     gBrowser,
     url: BLANK_PAGE_URL,
@@ -262,6 +278,12 @@ add_task(async function test_no_shippingchange_without_shipping() {
       }
     );
 
+    await spawnPaymentDialogTask(frame, async ({prefilledGuids: guids}) => {
+      let paymentMethodPicker = content.document.querySelector("payment-method-picker");
+      content.fillField(Cu.waiveXrays(paymentMethodPicker).dropdown.popupBox,
+                        guids.card1GUID);
+    }, {prefilledGuids});
+
     ContentTask.spawn(browser, {
       eventName: "shippingaddresschange",
     }, PTU.ContentTasks.ensureNoPaymentRequestEvent);
@@ -272,7 +294,7 @@ add_task(async function test_no_shippingchange_without_shipping() {
     });
 
     info("clicking pay");
-    spawnPaymentDialogTask(frame, PTU.DialogContentTasks.completePayment);
+    await loginAndCompletePayment(frame);
 
     // Add a handler to complete the payment above.
     info("acknowledging the completion from the merchant page");
@@ -322,7 +344,7 @@ add_task(async function test_address_edit() {
 
     await ContentTask.spawn(browser, {
       eventName: "shippingaddresschange",
-    }, PTU.ContentTasks.awaitPaymentRequestEventPromise);
+    }, PTU.ContentTasks.awaitPaymentEventPromise);
 
     addressOptions =
       await spawnPaymentDialogTask(frame, PTU.DialogContentTasks.getShippingAddresses);

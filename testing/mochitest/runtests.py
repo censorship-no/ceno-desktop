@@ -66,7 +66,8 @@ from leaks import ShutdownLeaks, LSANLeaks
 from mochitest_options import (
     MochitestArgumentParser, build_obj, get_default_valgrind_suppression_files
 )
-from mozprofile import Profile, Preferences
+from mozprofile import Profile
+from mozprofile.cli import parse_preferences, parse_key_value, KeyValueParseError
 from mozprofile.permissions import ServerLocations
 from urllib import quote_plus as encodeURIComponent
 from mozlog.formatters import TbplFormatter
@@ -363,13 +364,31 @@ if mozinfo.isWin:
             pid)
         if not pHandle:
             return False
-        pExitCode = ctypes.wintypes.DWORD()
-        ctypes.windll.kernel32.GetExitCodeProcess(
-            pHandle,
-            ctypes.byref(pExitCode))
-        ctypes.windll.kernel32.CloseHandle(pHandle)
-        return pExitCode.value == STILL_ACTIVE
 
+        try:
+            pExitCode = ctypes.wintypes.DWORD()
+            ctypes.windll.kernel32.GetExitCodeProcess(
+                pHandle,
+                ctypes.byref(pExitCode))
+
+            if pExitCode.value != STILL_ACTIVE:
+                return False
+
+            # We have a live process handle.  But Windows aggressively
+            # re-uses pids, so let's attempt to verify that this is
+            # actually Firefox.
+            namesize = 1024
+            pName = ctypes.create_string_buffer(namesize)
+            namelen = ctypes.windll.kernel32.GetProcessImageFileNameA(pHandle,
+                                                                      pName,
+                                                                      namesize)
+            if namelen == 0:
+                # Still an active process, so conservatively assume it's Firefox.
+                return True
+
+            return pName.value.endswith(('firefox.exe', 'plugin-container.exe'))
+        finally:
+            ctypes.windll.kernel32.CloseHandle(pHandle)
 else:
     import errno
 
@@ -567,7 +586,7 @@ class WebSocketServer(object):
 
 class SSLTunnel:
 
-    def __init__(self, options, logger, ignoreSSLTunnelExts=False):
+    def __init__(self, options, logger):
         self.log = logger
         self.process = None
         self.utilityPath = options.utilityPath
@@ -577,7 +596,6 @@ class SSLTunnel:
         self.httpPort = options.httpPort
         self.webServer = options.webServer
         self.webSocketPort = options.webSocketPort
-        self.useSSLTunnelExts = not ignoreSSLTunnelExts
 
         self.customCertRE = re.compile("^cert=(?P<nickname>[0-9a-zA-Z_ ]+)")
         self.clientAuthRE = re.compile("^clientauth=(?P<clientauth>[a-z]+)")
@@ -603,7 +621,7 @@ class SSLTunnel:
                 config.write("redirhost:%s:%s:%s:%s\n" %
                              (loc.host, loc.port, self.sslPort, redirhost))
 
-            if self.useSSLTunnelExts and option in (
+            if option in (
                     'tls1',
                     'ssl3',
                     'rc4',
@@ -780,31 +798,6 @@ def findTestMediaDevices(log):
     return info
 
 
-class KeyValueParseError(Exception):
-
-    """error when parsing strings of serialized key-values"""
-
-    def __init__(self, msg, errors=()):
-        self.errors = errors
-        Exception.__init__(self, msg)
-
-
-def parseKeyValue(strings, separator='=', context='key, value: '):
-    """
-    parse string-serialized key-value pairs in the form of
-    `key = value`. Returns a list of 2-tuples.
-    Note that whitespace is not stripped.
-    """
-
-    # syntax check
-    missing = [string for string in strings if separator not in string]
-    if missing:
-        raise KeyValueParseError(
-            "Error: syntax error in %s" %
-            (context, ','.join(missing)), errors=missing)
-    return [string.split(separator, 1) for string in strings]
-
-
 def create_zip(path):
     """
     Takes a `path` on disk and creates a zipfile with its contents. Returns a
@@ -872,7 +865,6 @@ class MochitestDesktop(object):
         self.start_script = None
         self.mozLogs = None
         self.start_script_kwargs = {}
-        self.urlOpts = []
         self.extraPrefs = {}
 
         if logger_options.get('log'):
@@ -909,20 +901,6 @@ class MochitestDesktop(object):
         kwargs['log'] = self.log
         return test_environment(**kwargs)
 
-    def parseExtraPrefs(self, prefs):
-        """Interpolate extra preferences from option strings"""
-
-        try:
-            prefs = dict(parseKeyValue(prefs, context='--setpref='))
-        except KeyValueParseError as e:
-            print(str(e))
-            sys.exit(1)
-
-        for pref, value in prefs.items():
-            value = Preferences.cast(value)
-            prefs[pref] = value
-        return prefs
-
     def getFullPath(self, path):
         " Get an absolute path relative to self.oldcwd."
         return os.path.normpath(
@@ -958,6 +936,7 @@ class MochitestDesktop(object):
             timeout -- per-test timeout in seconds
             repeat -- How many times to repeat the test, ie: repeat=1 will run the test twice.
         """
+        self.urlOpts = []
 
         if not hasattr(options, 'logFile'):
             options.logFile = ""
@@ -1077,8 +1056,6 @@ class MochitestDesktop(object):
         if options.flavor != 'plain':
             self.testRoot = options.flavor
 
-            if options.flavor == 'browser' and options.immersiveMode:
-                self.testRoot = 'metro'
         else:
             self.testRoot = self.TEST_PATH
         self.testRootAbs = os.path.join(SCRIPT_DIR, self.testRoot)
@@ -1185,7 +1162,7 @@ class MochitestDesktop(object):
             self.log.error("runtests.py | Timed out while waiting for "
                            "websocket/process bridge startup.")
 
-    def startServers(self, options, debuggerInfo, ignoreSSLTunnelExts=False):
+    def startServers(self, options, debuggerInfo):
         # start servers and set ports
         # TODO: pass these values, don't set on `self`
         self.webServer = options.webServer
@@ -1209,8 +1186,7 @@ class MochitestDesktop(object):
         # start SSL pipe
         self.sslTunnel = SSLTunnel(
             options,
-            logger=self.log,
-            ignoreSSLTunnelExts=ignoreSSLTunnelExts)
+            logger=self.log)
         self.sslTunnel.buildConfig(self.locations)
         self.sslTunnel.start()
 
@@ -1662,7 +1638,7 @@ toolbar#nav-bar {
         try:
             browserEnv.update(
                 dict(
-                    parseKeyValue(
+                    parse_key_value(
                         options.environment,
                         context='--setenv')))
         except KeyValueParseError as e:
@@ -2115,7 +2091,8 @@ toolbar#nav-bar {
                detectShutdownLeaks=False,
                screenshotOnFail=False,
                bisectChunk=None,
-               marionette_args=None):
+               marionette_args=None,
+               e10s=True):
         """
         Run the app, log the duration it took to execute, return the status code.
         Kills the app if it runs for longer than |maxTime| seconds, or outputs nothing
@@ -2334,7 +2311,6 @@ toolbar#nav-bar {
             # cleanup
             if os.path.exists(processLog):
                 os.remove(processLog)
-            self.urlOpts = []
 
         if marionette_exception is not None:
             exc, value, tb = marionette_exception
@@ -2351,7 +2327,6 @@ toolbar#nav-bar {
         self.result.clear()
         options.manifestFile = None
         options.profilePath = None
-        self.urlOpts = []
 
     def resolve_runtime_file(self, options):
         """
@@ -2458,7 +2433,6 @@ toolbar#nav-bar {
             stepOptions.keep_open = False
             stepOptions.runUntilFailure = True
             stepOptions.profilePath = None
-            self.urlOpts = []
             result = self.runTests(stepOptions)
             result = result or (-2 if self.countfail > 0 else 0)
             self.message_logger.finish()
@@ -2470,7 +2444,6 @@ toolbar#nav-bar {
             stepOptions.keep_open = False
             for i in xrange(VERIFY_REPEAT_SINGLE_BROWSER):
                 stepOptions.profilePath = None
-                self.urlOpts = []
                 result = self.runTests(stepOptions)
                 result = result or (-2 if self.countfail > 0 else 0)
                 self.message_logger.finish()
@@ -2484,7 +2457,6 @@ toolbar#nav-bar {
             stepOptions.keep_open = False
             stepOptions.environment.append("MOZ_CHAOSMODE=3")
             stepOptions.profilePath = None
-            self.urlOpts = []
             result = self.runTests(stepOptions)
             result = result or (-2 if self.countfail > 0 else 0)
             self.message_logger.finish()
@@ -2497,7 +2469,6 @@ toolbar#nav-bar {
             stepOptions.environment.append("MOZ_CHAOSMODE=3")
             for i in xrange(VERIFY_REPEAT_SINGLE_BROWSER):
                 stepOptions.profilePath = None
-                self.urlOpts = []
                 result = self.runTests(stepOptions)
                 result = result or (-2 if self.countfail > 0 else 0)
                 self.message_logger.finish()
@@ -2560,7 +2531,7 @@ toolbar#nav-bar {
 
     def runTests(self, options):
         """ Prepare, configure, run tests and cleanup """
-        self.extraPrefs = self.parseExtraPrefs(options.extraPrefs)
+        self.extraPrefs = parse_preferences(options.extraPrefs)
 
         # a11y and chrome tests don't run with e10s enabled in CI. Need to set
         # this here since |mach mochitest| sets the flavor after argument parsing.
@@ -2610,7 +2581,7 @@ toolbar#nav-bar {
                 prefs = prefs.strip().split()
                 self.log.info("The following extra prefs will be set:\n  {}".format(
                     '\n  '.join(prefs)))
-                self.extraPrefs.update(self.parseExtraPrefs(prefs))
+                self.extraPrefs.update(parse_preferences(prefs))
 
             # If we are using --run-by-manifest, we should not use the profile path (if) provided
             # by the user, since we need to create a new directory for each run. We would face
@@ -2732,10 +2703,6 @@ toolbar#nav-bar {
         try:
             self.startServers(options, debuggerInfo)
 
-            if options.immersiveMode:
-                options.browserArgs.extend(('-firefoxpath', options.app))
-                options.app = self.immersiveHelperPath
-
             if options.jsdebugger:
                 options.browserArgs.extend(['-jsdebugger', '-wait-for-jsdebugger'])
 
@@ -2796,6 +2763,7 @@ toolbar#nav-bar {
                 if self.urlOpts:
                     testURL += "?" + "&".join(self.urlOpts)
 
+                self.log.info("runtests.py | Running with scheme: {}".format(scheme))
                 self.log.info("runtests.py | Running with e10s: {}".format(options.e10s))
                 self.log.info("runtests.py | Running with serviceworker_e10s: {}".format(
                     mozinfo.info.get('serviceworker_e10s', False)))
@@ -2817,6 +2785,7 @@ toolbar#nav-bar {
                     screenshotOnFail=options.screenshotOnFail,
                     bisectChunk=options.bisectChunk,
                     marionette_args=marionette_args,
+                    e10s=options.e10s
                 )
                 status = ret or status
         except KeyboardInterrupt:
@@ -2943,13 +2912,7 @@ toolbar#nav-bar {
             self.shutdownLeaks = shutdownLeaks
             self.lsanLeaks = lsanLeaks
             self.bisectChunk = bisectChunk
-
-            # With metro browser runs this script launches the metro test harness which launches
-            # the browser. The metro test harness hands back the real browser process id via log
-            # output which we need to pick up on and parse out. This variable tracks the real
-            # browser process id if we find it.
             self.browserProcessId = None
-
             self.stackFixerFunction = self.stackFixer()
 
         def processOutputLine(self, line):

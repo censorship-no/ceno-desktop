@@ -10,6 +10,8 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   UITour: "resource:///modules/UITour.jsm",
   FxAccounts: "resource://gre/modules/FxAccounts.jsm",
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
+  OS: "resource://gre/modules/osfile.jsm",
 });
 const {ASRouterActions: ra, actionTypes: at, actionCreators: ac} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm", {});
 const {CFRMessageProvider} = ChromeUtils.import("resource://activity-stream/lib/CFRMessageProvider.jsm", {});
@@ -26,6 +28,7 @@ ChromeUtils.defineModuleGetter(this, "QueryCache",
   "resource://activity-stream/lib/ASRouterTargeting.jsm");
 ChromeUtils.defineModuleGetter(this, "ASRouterTriggerListeners",
   "resource://activity-stream/lib/ASRouterTriggerListeners.jsm");
+ChromeUtils.import("resource:///modules/AttributionCode.jsm");
 
 const INCOMING_MESSAGE_NAME = "ASRouter:child-to-parent";
 const OUTGOING_MESSAGE_NAME = "ASRouter:parent-to-child";
@@ -204,6 +207,10 @@ const MessageLoaderUtils = {
       messages = [];
       Cu.reportError(new Error(`Tried to load messages for ${provider.id} but the result was not an Array.`));
     }
+    // Filter out messages we temporarily want to exclude
+    if (provider.exclude && provider.exclude.length) {
+      messages = messages.filter(message => !provider.exclude.includes(message.id));
+    }
     const lastUpdated = Date.now();
     return {
       messages: messages.map(msg => ({weight: 100, ...msg, provider: provider.id}))
@@ -212,19 +219,42 @@ const MessageLoaderUtils = {
     };
   },
 
+  /**
+   * _loadAddonIconInURLBar - load addons-notification icon by displaying
+   * box containing addons icon in urlbar. See Bug 1513882
+   *
+   * @param  {XULElement} Target browser element for showing addons icon
+   */
+  _loadAddonIconInURLBar(browser) {
+    if (!browser) {
+      return;
+    }
+    const chromeDoc = browser.ownerDocument;
+    let notificationPopupBox = chromeDoc.getElementById("notification-popup-box");
+    if (!notificationPopupBox) {
+      return;
+    }
+    if (notificationPopupBox.style.display === "none" ||
+        notificationPopupBox.style.display === "") {
+      notificationPopupBox.style.display = "block";
+    }
+  },
+
   async installAddonFromURL(browser, url) {
     try {
+      MessageLoaderUtils._loadAddonIconInURLBar(browser);
       const aUri = Services.io.newURI(url);
       const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
 
-      // AddonManager installation source associated to the addons installed from activitystream
-      // (See Bug 1496167 for a rationale).
-      const amTelemetryInfo = {source: "activitystream"};
+      // AddonManager installation source associated to the addons installed from activitystream's CFR
+      const amTelemetryInfo = {source: "amo"};
       const install = await AddonManager.getInstallForURL(aUri.spec, "application/x-xpinstall", null,
                                                           null, null, null, null, amTelemetryInfo);
       await AddonManager.installAddonFromWebpage("application/x-xpinstall", browser,
         systemPrincipal, install);
-    } catch (e) {}
+    } catch (e) {
+      Cu.reportError(e);
+    }
   },
 
   /**
@@ -403,7 +433,7 @@ class _ASRouter {
       const unseenListeners = new Set(ASRouterTriggerListeners.keys());
       for (const {trigger} of newState.messages) {
         if (trigger && ASRouterTriggerListeners.has(trigger.id)) {
-          ASRouterTriggerListeners.get(trigger.id).init(this._triggerHandler, trigger.params);
+          await ASRouterTriggerListeners.get(trigger.id).init(this._triggerHandler, trigger.params);
           unseenListeners.delete(trigger.id);
         }
       }
@@ -495,13 +525,31 @@ class _ASRouter {
     }
   }
 
-  _updateAdminState(target) {
+  /**
+   * Used by ASRouter Admin returns all ASRouterTargeting.Environment
+   * and ASRouter._getMessagesContext parameters and values
+   */
+  async getTargetingParameters(environment, localContext) {
+    const targetingParameters = {};
+    for (const param of Object.keys(environment)) {
+      targetingParameters[param] = await environment[param];
+    }
+    for (const param of Object.keys(localContext)) {
+      targetingParameters[param] = await localContext[param];
+    }
+
+    return targetingParameters;
+  }
+
+  async _updateAdminState(target) {
     const channel = target || this.messageChannel;
     channel.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {
       type: "ADMIN_SET_STATE",
       data: {
         ...this.state,
         providerPrefs: ASRouterPreferences.providers,
+        userPrefs: ASRouterPreferences.getAllUserPreferences(),
+        targetingParameters: await this.getTargetingParameters(ASRouterTargeting.Environment, this._getMessagesContext()),
       },
     });
   }
@@ -535,6 +583,18 @@ class _ASRouter {
      // Find a message that matches the targeting context as well as the trigger context (if one is provided)
      // If no trigger is provided, we should find a message WITHOUT a trigger property defined.
     return ASRouterTargeting.findMatchingMessage({messages, trigger, context, onError: this._handleTargetingError});
+  }
+
+  async evaluateExpression(target, {expression, context}) {
+    const channel = target || this.messageChannel;
+    let evaluationStatus;
+    try {
+      evaluationStatus = {result: await ASRouterTargeting.isMatch(expression, context), success: true};
+    } catch (e) {
+      evaluationStatus = {result: e.message, success: false};
+    }
+
+    channel.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "ADMIN_SET_STATE", data: {...this.state, evaluationStatus}});
   }
 
   _orderBundle(bundle) {
@@ -847,6 +907,16 @@ class _ASRouter {
     }
   }
 
+  // Ensure we switch to the Onboarding message after RTAMO addon was installed
+  _updateOnboardingState() {
+    let addonInstallObs = (subject, topic) => {
+      Services.obs.removeObserver(addonInstallObs, "webextension-install-notify");
+      this.messageChannel.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "CLEAR_MESSAGE", data: {id: "RETURN_TO_AMO_1"}});
+      this.blockMessageById("RETURN_TO_AMO_1");
+    };
+    Services.obs.addObserver(addonInstallObs, "webextension-install-notify");
+  }
+
   _loadSnippetsWhitelistHosts() {
     let additionalHosts = [];
     const whitelistPrefValue = Services.prefs.getStringPref(SNIPPETS_ENDPOINT_WHITELIST, "");
@@ -891,6 +961,59 @@ class _ASRouter {
     }
   }
 
+  // Windows specific calls to write attribution data
+  // Used by `forceAttribution` to set required targeting attributes for
+  // RTAMO messages. This should only be called from within about:newtab#asrouter
+  /* istanbul ignore next */
+  async _writeAttributionFile(data) {
+    let appDir = Services.dirsvc.get("LocalAppData", Ci.nsIFile);
+    let file = appDir.clone();
+    file.append(Services.appinfo.vendor || "mozilla");
+    file.append(AppConstants.MOZ_APP_NAME);
+
+    await OS.File.makeDir(file.path,
+        {from: appDir.path, ignoreExisting: true});
+
+    file.append("postSigningData");
+    await OS.File.writeAtomic(file.path, data);
+  }
+
+  /**
+   * forceAttribution - this function should only be called from within about:newtab#asrouter.
+   * It forces the browser attribution to be set to something specified in asrouter admin
+   * tools, and reloads the providers in order to get messages that are dependant on this
+   * attribution data (see Return to AMO flow in bug 1475354 for example). Note - OSX and Windows only
+   * @param {data} Object an object containing the attribtion data that came from asrouter admin page
+   */
+  /* istanbul ignore next */
+  async forceAttribution(data) {
+    // Extract the parameters from data that will make up the referrer url
+    const {source, campaign, content} = data;
+    if (AppConstants.platform === "win") {
+      const attributionData = `source=${source}&campaign=${campaign}&content=${content}`;
+      this._writeAttributionFile(encodeURIComponent(attributionData));
+    } else if (AppConstants.platform === "macosx") {
+      let appPath = Services.dirsvc.get("GreD", Ci.nsIFile).parent.parent.path;
+      let attributionSvc = Cc["@mozilla.org/mac-attribution;1"]
+        .getService(Ci.nsIMacAttributionService);
+
+      let referrer = `https://www.mozilla.org/anything/?utm_campaign=${campaign}&utm_source=${source}&utm_content=${encodeURIComponent(content)}`;
+
+      // This sets the Attribution to be the referrer
+      attributionSvc.setReferrerUrl(appPath, referrer, true);
+    }
+
+    // Clear cache call is only possible in a testing environment
+    let env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
+    env.set("XPCSHELL_TEST_PROFILE_DIR", "testing");
+
+    // Clear and refresh Attribution, and then fetch the messages again to update
+    AttributionCode._clearCache();
+    AttributionCode.getAttrDataAsync();
+    this._updateMessageProviders();
+    await this.loadMessagesFromAllProviders();
+  }
+
   async handleUserAction({data: action, target}) {
     switch (action.type) {
       case ra.OPEN_PRIVATE_BROWSER_WINDOW:
@@ -898,7 +1021,7 @@ class _ASRouter {
         target.browser.ownerGlobal.OpenBrowserWindow({private: true});
         break;
       case ra.OPEN_URL:
-        target.browser.ownerGlobal.openLinkIn(action.data.args, "tabshifted", {
+        target.browser.ownerGlobal.openLinkIn(action.data.args, action.data.where || "current", {
           private: false,
           triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
         });
@@ -913,12 +1036,13 @@ class _ASRouter {
         UITour.showMenu(target.browser.ownerGlobal, action.data.args);
         break;
       case ra.INSTALL_ADDON_FROM_URL:
+        this._updateOnboardingState();
         await MessageLoaderUtils.installAddonFromURL(target.browser, action.data.url);
         break;
       case ra.SHOW_FIREFOX_ACCOUNTS:
         const url = await FxAccounts.config.promiseSignUpURI("snippets");
         // We want to replace the current tab.
-        target.browser.ownerGlobal.openLinkIn(url, "tabshifted", {
+        target.browser.ownerGlobal.openLinkIn(url, "current", {
           private: false,
           triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
         });
@@ -964,6 +1088,9 @@ class _ASRouter {
         await this.blockProviderById(action.data.id);
         this.messageChannel.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "CLEAR_PROVIDER", data: {id: action.data.id}});
         break;
+      case "DISMISS_BUNDLE":
+        this.messageChannel.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "CLEAR_BUNDLE"});
+        break;
       case "BLOCK_BUNDLE":
         await this.blockMessageById(action.data.bundle.map(b => b.id));
         this.messageChannel.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "CLEAR_BUNDLE"});
@@ -1004,7 +1131,7 @@ class _ASRouter {
           this._addPreviewEndpoint(action.data.endpoint.url, target.portID);
           await this.loadMessagesFromAllProviders();
         } else {
-          this._updateAdminState(target);
+          await this._updateAdminState(target);
         }
         break;
       case "IMPRESSION":
@@ -1027,6 +1154,14 @@ class _ASRouter {
       case "RESET_PROVIDER_PREF":
         ASRouterPreferences.resetProviderPref();
         break;
+      case "SET_PROVIDER_USER_PREF":
+        ASRouterPreferences.setUserPreference(action.data.id, action.data.value);
+        break;
+      case "EVALUATE_JEXL_EXPRESSION":
+        this.evaluateExpression(target, action.data);
+        break;
+      case "FORCE_ATTRIBUTION":
+        this.forceAttribution(action.data);
     }
   }
 }

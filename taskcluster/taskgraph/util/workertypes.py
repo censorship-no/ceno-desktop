@@ -30,6 +30,7 @@ WORKER_TYPES = {
     'aws-provisioner-v1/gecko-t-win10-64': ('generic-worker', 'windows'),
     'aws-provisioner-v1/gecko-t-win10-64-gpu': ('generic-worker', 'windows'),
     'releng-hardware/gecko-t-win10-64-hw': ('generic-worker', 'windows'),
+    'releng-hardware/gecko-t-win10-64-ux': ('generic-worker', 'windows'),
     'aws-provisioner-v1/gecko-t-win7-32': ('generic-worker', 'windows'),
     'aws-provisioner-v1/gecko-t-win7-32-gpu': ('generic-worker', 'windows'),
     'releng-hardware/gecko-t-win7-32-hw': ('generic-worker', 'windows'),
@@ -48,8 +49,10 @@ WORKER_TYPES = {
     'releng-hardware/gecko-t-osx-1010': ('generic-worker', 'macosx'),
     'proj-autophone/gecko-t-ap-perf-g5': ('script-engine-autophone', 'linux'),
     'proj-autophone/gecko-t-ap-unit-g5': ('script-engine-autophone', 'linux'),
+    'proj-autophone/gecko-t-ap-batt-g5': ('script-engine-autophone', 'linux'),
     'proj-autophone/gecko-t-ap-perf-p2': ('script-engine-autophone', 'linux'),
     'proj-autophone/gecko-t-ap-unit-p2': ('script-engine-autophone', 'linux'),
+    'proj-autophone/gecko-t-ap-batt-p2': ('script-engine-autophone', 'linux'),
     'terraform-packet/gecko-t-linux': ('docker-worker', 'linux'),
 }
 

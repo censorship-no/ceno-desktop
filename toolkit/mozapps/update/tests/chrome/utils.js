@@ -126,6 +126,7 @@ var gCloseWindowTimeoutCounter = 0;
 
 // The following vars are for restoring previous preference values (if present)
 // when the test finishes.
+var gAppUpdateAuto;
 var gAppUpdateDisabled; // app.update.disabledForTesting
 var gAppUpdateServiceEnabled; // app.update.service.enabled
 var gAppUpdateStagingEnabled; // app.update.staging.enabled
@@ -142,7 +143,7 @@ var gUseTestUpdater = false;
 // onload function.
 var DEBUG_AUS_TEST = true;
 
-const DATA_URI_SPEC = "chrome://mochitests/content/chrome/toolkit/mozapps/update/tests/data/";
+const DATA_URI_SPEC = "chrome://mochitests/content/chrome/toolkit/mozapps/update/tests/chrome/";
 /* import-globals-from ../data/shared.js */
 Services.scriptloader.loadSubScript(DATA_URI_SPEC + "shared.js", this);
 
@@ -286,7 +287,7 @@ function finishTestDefault() {
   gEnv.set("MOZ_TEST_SKIP_UPDATE_STAGE", "");
   resetFiles();
   removeUpdateDirsAndFiles();
-  reloadUpdateManagerData();
+  reloadUpdateManagerData(true);
 
   Services.ww.unregisterNotification(gWindowObserver);
   if (gDocElem) {
@@ -788,8 +789,17 @@ function setupPrefs() {
   }
   Services.prefs.setBoolPref(PREF_APP_UPDATE_DISABLEDFORTESTING, false);
 
-  if (!Services.prefs.getBoolPref(PREF_APP_UPDATE_AUTO, false)) {
-    Services.prefs.setBoolPref(PREF_APP_UPDATE_AUTO, true);
+  if (IS_WIN) {
+    let configFile = getUpdateConfigFile();
+    if (configFile.exists()) {
+      let configData = JSON.parse(readFileBytes(configFile));
+      gAppUpdateAuto = !!configData[CONFIG_APP_UPDATE_AUTO];
+    }
+  } else if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_AUTO)) {
+    gAppUpdateAuto = Services.prefs.getBoolPref(PREF_APP_UPDATE_AUTO);
+  }
+  if (gAppUpdateAuto !== true) {
+    setAppUpdateAutoSync(true);
   }
 
   if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_SERVICE_ENABLED)) {
@@ -806,7 +816,6 @@ function setupPrefs() {
   Services.prefs.setIntPref(PREF_APP_UPDATE_PROMPTWAITTIME, 0);
   Services.prefs.setBoolPref(PREF_APP_UPDATE_SILENT, false);
   Services.prefs.setBoolPref(PREF_APP_UPDATE_DOORHANGER, false);
-  Services.prefs.setIntPref(PREF_APP_UPDATE_DOWNLOADBACKGROUNDINTERVAL, 0);
 }
 
 /**
@@ -856,9 +865,7 @@ function resetPrefs() {
     Services.prefs.clearUserPref(PREF_APP_UPDATE_DISABLEDFORTESTING);
   }
 
-  if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_AUTO)) {
-    Services.prefs.clearUserPref(PREF_APP_UPDATE_AUTO);
-  }
+  setAppUpdateAutoSync(gAppUpdateAuto);
 
   if (gAppUpdateServiceEnabled !== undefined) {
     Services.prefs.setBoolPref(PREF_APP_UPDATE_SERVICE_ENABLED, gAppUpdateServiceEnabled);
@@ -906,10 +913,6 @@ function resetPrefs() {
 
   if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_DOORHANGER)) {
     Services.prefs.clearUserPref(PREF_APP_UPDATE_DOORHANGER);
-  }
-
-  if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_DOWNLOADBACKGROUNDINTERVAL)) {
-    Services.prefs.clearUserPref(PREF_APP_UPDATE_DOWNLOADBACKGROUNDINTERVAL);
   }
 }
 

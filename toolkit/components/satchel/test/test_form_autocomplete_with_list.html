@@ -462,8 +462,11 @@ function runTest() {
       // Check that the input event is fired.
       input.addEventListener("input", function(event) {
         ok(true, "oninput should have been received");
+        ok(event instanceof InputEvent,
+           "input event should be dispatched with InputEvent interface");
         ok(event.bubbles, "input event should bubble");
-        ok(event.cancelable, "input event should be cancelable");
+        ok(!event.cancelable, "input event should be cancelable");
+        is(event.inputType, "insertReplacementText", 'inputType should be "insertReplacementText"');
         checkForm("Google");
         input.blur();
         SimpleTest.finish();

@@ -9,11 +9,11 @@ ChromeUtils.defineModuleGetter(this, "AddonManager",
 const EXTENSION1_ID = "extension1@mozilla.com";
 const EXTENSION2_ID = "extension2@mozilla.com";
 
-let defaultEngineName = Services.search.currentEngine.name;
+let defaultEngineName = Services.search.defaultEngine.name;
 
 function restoreDefaultEngine() {
   let engine = Services.search.getEngineByName(defaultEngineName);
-  Services.search.currentEngine = engine;
+  Services.search.defaultEngine = engine;
 }
 registerCleanupFunction(restoreDefaultEngine);
 
@@ -34,11 +34,86 @@ add_task(async function test_extension_setting_default_engine() {
 
   await ext1.startup();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
 
   await ext1.unload();
 
-  is(Services.search.currentEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
+  is(Services.search.defaultEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
+});
+
+// Test the popup displayed when trying to add a non-built-in default
+// search engine.
+add_task(async function test_extension_setting_default_engine_external() {
+  const NAME = "Example Engine";
+
+  // Load an extension that tries to set the default engine,
+  // and wait for the ensuing prompt.
+  async function startExtension(win = window) {
+    let extension = ExtensionTestUtils.loadExtension({
+      manifest: {
+        "chrome_settings_overrides": {
+          "search_provider": {
+            "name": NAME,
+            "search_url": "https://example.com/?q={searchTerms}",
+            "is_default": true,
+          },
+        },
+      },
+      useAddonManager: "temporary",
+    });
+
+    let [panel] = await Promise.all([
+      promisePopupNotificationShown("addon-webext-defaultsearch", win),
+      extension.startup(),
+    ]);
+
+    isnot(panel, null, "Doorhanger was displayed for non-built-in default engine");
+
+    return {panel, extension};
+  }
+
+  // First time around, don't accept the default engine.
+  let {panel, extension} = await startExtension();
+  panel.secondaryButton.click();
+
+  // There is no explicit event we can wait for to know when the click
+  // callback has been fully processed.  One spin through the Promise
+  // microtask queue should be enough.  If this wait isn't long enough,
+  // the test below where we accept the prompt will fail.
+  await Promise.resolve();
+
+  is(Services.search.defaultEngine.name, defaultEngineName,
+     "Default engine was not changed after rejecting prompt");
+
+  await extension.unload();
+
+  // Do it again, this time accept the prompt.
+  ({panel, extension} = await startExtension());
+
+  panel.button.click();
+  await Promise.resolve();
+
+  is(Services.search.defaultEngine.name, NAME,
+     "Default engine was changed after accepting prompt");
+
+  await extension.unload();
+
+  is(Services.search.defaultEngine.name, defaultEngineName,
+     "Default engine is reverted after uninstalling extension.");
+
+  // One more time, this time close the window where the prompt
+  // appears instead of explicitly accepting or denying it.
+  let win = await BrowserTestUtils.openNewBrowserWindow();
+  await BrowserTestUtils.openNewForegroundTab(win.gBrowser, "about:blank");
+
+  ({extension} = await startExtension(win));
+
+  await BrowserTestUtils.closeWindow(win);
+
+  is(Services.search.defaultEngine.name, defaultEngineName,
+     "Default engine is unchanged when prompt is dismissed");
+
+  await extension.unload();
 });
 
 /* This tests that uninstalling add-ons maintains the proper
@@ -72,19 +147,19 @@ add_task(async function test_extension_setting_multiple_default_engine() {
 
   await ext1.startup();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
 
   await ext2.startup();
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
 
   await ext2.unload();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
 
   await ext1.unload();
 
-  is(Services.search.currentEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
+  is(Services.search.defaultEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
 });
 
 /* This tests that uninstalling add-ons in reverse order maintains the proper
@@ -118,19 +193,19 @@ add_task(async function test_extension_setting_multiple_default_engine_reversed(
 
   await ext1.startup();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
 
   await ext2.startup();
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
 
   await ext1.unload();
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
 
   await ext2.unload();
 
-  is(Services.search.currentEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
+  is(Services.search.defaultEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
 });
 
 /* This tests that when the user changes the search engine and the add-on
@@ -151,14 +226,14 @@ add_task(async function test_user_changing_default_engine() {
 
   await ext1.startup();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
 
   let engine = Services.search.getEngineByName("Twitter");
-  Services.search.currentEngine = engine;
+  Services.search.defaultEngine = engine;
 
   await ext1.unload();
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
   restoreDefaultEngine();
 });
 
@@ -185,25 +260,25 @@ add_task(async function test_user_change_with_disabling() {
 
   await ext1.startup();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
 
   let engine = Services.search.getEngineByName("Twitter");
-  Services.search.currentEngine = engine;
+  Services.search.defaultEngine = engine;
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
 
   let disabledPromise = awaitEvent("shutdown", EXTENSION1_ID);
   let addon = await AddonManager.getAddonByID(EXTENSION1_ID);
   await addon.disable();
   await disabledPromise;
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
 
   let enabledPromise = awaitEvent("ready", EXTENSION1_ID);
   await addon.enable();
   await enabledPromise;
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
   await ext1.unload();
   restoreDefaultEngine();
 });
@@ -250,30 +325,30 @@ add_task(async function test_two_addons_with_first_disabled_before_second() {
 
   await ext1.startup();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
 
   let disabledPromise = awaitEvent("shutdown", EXTENSION1_ID);
   let addon1 = await AddonManager.getAddonByID(EXTENSION1_ID);
   await addon1.disable();
   await disabledPromise;
 
-  is(Services.search.currentEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
+  is(Services.search.defaultEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
 
   await ext2.startup();
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
 
   let enabledPromise = awaitEvent("ready", EXTENSION1_ID);
   await addon1.enable();
   await enabledPromise;
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
   await ext2.unload();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
   await ext1.unload();
 
-  is(Services.search.currentEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
+  is(Services.search.defaultEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
 });
 
 /* This tests that when two add-ons are installed that change default
@@ -318,30 +393,30 @@ add_task(async function test_two_addons_with_first_disabled() {
 
   await ext1.startup();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
 
   await ext2.startup();
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
 
   let disabledPromise = awaitEvent("shutdown", EXTENSION1_ID);
   let addon1 = await AddonManager.getAddonByID(EXTENSION1_ID);
   await addon1.disable();
   await disabledPromise;
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
 
   let enabledPromise = awaitEvent("ready", EXTENSION1_ID);
   await addon1.enable();
   await enabledPromise;
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
   await ext2.unload();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
   await ext1.unload();
 
-  is(Services.search.currentEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
+  is(Services.search.defaultEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
 });
 
 /* This tests that when two add-ons are installed that change default
@@ -386,28 +461,28 @@ add_task(async function test_two_addons_with_second_disabled() {
 
   await ext1.startup();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
 
   await ext2.startup();
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
 
   let disabledPromise = awaitEvent("shutdown", EXTENSION2_ID);
   let addon2 = await AddonManager.getAddonByID(EXTENSION2_ID);
   await addon2.disable();
   await disabledPromise;
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
 
   let enabledPromise = awaitEvent("ready", EXTENSION2_ID);
   await addon2.enable();
   await enabledPromise;
 
-  is(Services.search.currentEngine.name, "Twitter", "Default engine is Twitter");
+  is(Services.search.defaultEngine.name, "Twitter", "Default engine is Twitter");
   await ext2.unload();
 
-  is(Services.search.currentEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
+  is(Services.search.defaultEngine.name, "DuckDuckGo", "Default engine is DuckDuckGo");
   await ext1.unload();
 
-  is(Services.search.currentEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
+  is(Services.search.defaultEngine.name, defaultEngineName, `Default engine is ${defaultEngineName}`);
 });

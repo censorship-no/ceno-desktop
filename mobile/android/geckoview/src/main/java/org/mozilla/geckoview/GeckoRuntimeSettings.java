@@ -8,25 +8,31 @@ package org.mozilla.geckoview;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.Collections;
+import java.util.Map;
 
 import android.app.Service;
 import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.support.annotation.AnyThread;
 import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.v4.util.ArrayMap;
 
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.geckoview.GeckoSession.TrackingProtectionDelegate;
 
+@AnyThread
 public final class GeckoRuntimeSettings implements Parcelable {
 
     /**
      * Settings builder used to construct the settings object.
      */
+    @AnyThread
     public static final class Builder {
         private final GeckoRuntimeSettings mSettings;
 
@@ -119,7 +125,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
          * @return This Builder instance.
          */
         public @NonNull Builder webFontsEnabled(final boolean flag) {
-            mSettings.mWebFonts.set(flag);
+            mSettings.mWebFonts.set(flag ? 1 : 0);
             return this;
         }
 
@@ -133,6 +139,20 @@ public final class GeckoRuntimeSettings implements Parcelable {
          */
         public @NonNull Builder pauseForDebugger(boolean enabled) {
             mSettings.mDebugPause = enabled;
+            return this;
+        }
+        /**
+         * Set whether the to report the full bit depth of the device.
+         *
+         * By default, 24 bits are reported for high memory devices and 16 bits
+         * for low memory devices. If set to true, the device's maximum bit depth is
+         * reported. On most modern devices this will be 32 bit screen depth.
+         *
+         * @param enable A flag determining whether maximum screen depth should be used.
+         * @return This Builder.
+         */
+        public @NonNull Builder useMaxScreenDepth(boolean enable) {
+            mSettings.mUseMaxScreenDepth = enable;
             return this;
         }
 
@@ -204,7 +224,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
         /** Set whether or not known malware sites should be blocked.
          *
          * Note: For each blocked site, {@link GeckoSession.NavigationDelegate#onLoadError}
-         * with error category {@link GeckoSession.NavigationDelegate#ERROR_CATEGORY_SAFEBROWSING}
+         * with error category {@link WebRequestError#ERROR_CATEGORY_SAFEBROWSING}
          * is called.
          *
          * @param enabled A flag determining whether or not to block malware
@@ -220,7 +240,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
          * Set whether or not known phishing sites should be blocked.
          *
          * Note: For each blocked site, {@link GeckoSession.NavigationDelegate#onLoadError}
-         * with error category {@link GeckoSession.NavigationDelegate#ERROR_CATEGORY_SAFEBROWSING}
+         * with error category {@link WebRequestError#ERROR_CATEGORY_SAFEBROWSING}
          * is called.
          *
          * @param enabled A flag determining whether or not to block phishing
@@ -297,11 +317,11 @@ public final class GeckoRuntimeSettings implements Parcelable {
         /**
          * Set the locale.
          *
-         * @param languageTag The locale code in Gecko format ("en" or "en-US").
+         * @param requestedLocales List of locale codes in Gecko format ("en" or "en-US").
          * @return The builder instance.
          */
-        public @NonNull Builder locale(String languageTag) {
-            mSettings.mLocale = languageTag;
+        public @NonNull Builder locales(String[] requestedLocales) {
+            mSettings.mRequestedLocales = requestedLocales;
             return this;
         }
     }
@@ -329,16 +349,34 @@ public final class GeckoRuntimeSettings implements Parcelable {
         public void set(T newValue) {
             mValue = newValue;
             mIsSet = true;
-            flush();
+
+            // There is a flush() in GeckoRuntimeSettings, so be explicit.
+            this.flush();
         }
 
         public T get() {
             return mValue;
         }
 
-        public void flush() {
-            if (GeckoRuntimeSettings.this.runtime != null) {
-                GeckoRuntimeSettings.this.runtime.setPref(name, mValue, mIsSet);
+        private void flush() {
+            final GeckoRuntime runtime = GeckoRuntimeSettings.this.runtime;
+            if (runtime != null) {
+                final GeckoBundle prefs = new GeckoBundle(1);
+                intoBundle(prefs);
+                runtime.setDefaultPrefs(prefs);
+            }
+        }
+
+        public void intoBundle(final GeckoBundle bundle) {
+            final T value = mIsSet ? mValue : defaultValue;
+            if (value instanceof String) {
+                bundle.putString(name, (String)value);
+            } else if (value instanceof Integer) {
+                bundle.putInt(name, (Integer)value);
+            } else if (value instanceof Boolean) {
+                bundle.putBoolean(name, (Boolean)value);
+            } else {
+                throw new UnsupportedOperationException("Unhandled pref type for " + name);
             }
         }
     }
@@ -347,8 +385,8 @@ public final class GeckoRuntimeSettings implements Parcelable {
         "javascript.enabled", true);
     /* package */ Pref<Boolean> mRemoteDebugging = new Pref<Boolean>(
         "devtools.debugger.remote-enabled", false);
-    /* package */ Pref<Boolean> mWebFonts = new Pref<Boolean>(
-        "browser.display.use_document_fonts", true);
+    /* package */ Pref<Integer> mWebFonts = new Pref<Integer>(
+        "browser.display.use_document_fonts", 1);
     /* package */ Pref<Integer> mCookieBehavior = new Pref<Integer>(
         "network.cookie.cookieBehavior", COOKIE_ACCEPT_ALL);
     /* package */ Pref<Integer> mCookieLifetime = new Pref<Integer>(
@@ -368,12 +406,13 @@ public final class GeckoRuntimeSettings implements Parcelable {
         "browser.safebrowsing.phishing.enabled", true);
 
     /* package */ boolean mDebugPause;
+    /* package */ boolean mUseMaxScreenDepth;
     /* package */ float mDisplayDensityOverride = -1.0f;
     /* package */ int mDisplayDpiOverride;
     /* package */ int mScreenWidthOverride;
     /* package */ int mScreenHeightOverride;
     /* package */ Class<? extends Service> mCrashHandler;
-    /* package */ String mLocale;
+    /* package */ String[] mRequestedLocales;
 
     private final Pref<?>[] mPrefs = new Pref<?>[] {
         mCookieBehavior, mCookieLifetime, mConsoleOutput,
@@ -411,19 +450,41 @@ public final class GeckoRuntimeSettings implements Parcelable {
         }
 
         mDebugPause = settings.mDebugPause;
+        mUseMaxScreenDepth = settings.mUseMaxScreenDepth;
         mDisplayDensityOverride = settings.mDisplayDensityOverride;
         mDisplayDpiOverride = settings.mDisplayDpiOverride;
         mScreenWidthOverride = settings.mScreenWidthOverride;
         mScreenHeightOverride = settings.mScreenHeightOverride;
         mCrashHandler = settings.mCrashHandler;
-        mLocale = settings.mLocale;
+        mRequestedLocales = settings.mRequestedLocales;
+    }
+
+    /* package */ Map<String, Object> getPrefsMap() {
+        final ArrayMap<String, Object> prefs = new ArrayMap<>(mPrefs.length);
+        for (final Pref<?> pref : mPrefs) {
+            prefs.put(pref.name, pref.get());
+        }
+
+        return Collections.unmodifiableMap(prefs);
     }
 
     /* package */ void flush() {
-        flushLocale();
-        for (final Pref<?> pref: mPrefs) {
-            pref.flush();
+        flushLocales();
+
+        // Prefs are flushed individually when they are set, and
+        // initial values are handled by GeckoRuntime itself.
+        // We may have user prefs due to previous versions of
+        // this class operating differently, though, so we'll
+        // send a message to clear any user prefs that may have
+        // been set on the prefs we manage.
+        final String[] names = new String[mPrefs.length];
+        for (int i = 0; i < mPrefs.length; i++) {
+            names[i] = mPrefs[i].name;
         }
+
+        final GeckoBundle data = new GeckoBundle(1);
+        data.putStringArray("names", names);
+        EventDispatcher.getInstance().dispatch("GeckoView:ResetUserPrefs", data);
     }
 
     /**
@@ -440,7 +501,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
      *
      * @return The Gecko process arguments.
      */
-    public String[] getArguments() {
+    public @NonNull String[] getArguments() {
         return mArgs;
     }
 
@@ -449,7 +510,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
      *
      * @return The Gecko intent extras.
      */
-    public Bundle getExtras() {
+    public @NonNull Bundle getExtras() {
         return mExtras;
     }
 
@@ -499,7 +560,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
      * @return Whether web fonts support is enabled.
      */
     public boolean getWebFontsEnabled() {
-        return mWebFonts.get();
+        return mWebFonts.get() != 0 ? true : false;
     }
 
     /**
@@ -509,7 +570,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
      * @return This GeckoRuntimeSettings instance.
      */
     public @NonNull GeckoRuntimeSettings setWebFontsEnabled(final boolean flag) {
-        mWebFonts.set(flag);
+        mWebFonts.set(flag ? 1 : 0);
         return this;
     }
 
@@ -521,11 +582,18 @@ public final class GeckoRuntimeSettings implements Parcelable {
     public boolean getPauseForDebuggerEnabled() { return mDebugPause; }
 
     /**
+     * Gets whether the compositor should use the maximum screen depth when rendering.
+     *
+     * @return True if the maximum screen depth should be used.
+     */
+    public boolean getUseMaxScreenDepth() { return mUseMaxScreenDepth; }
+
+    /**
      * Gets the display density override value.
      *
      * @return Returns a positive number. Will return null if not set.
      */
-    public Float getDisplayDensityOverride() {
+    public @Nullable Float getDisplayDensityOverride() {
         if (mDisplayDensityOverride > 0.0f) {
             return mDisplayDensityOverride;
         }
@@ -537,14 +605,14 @@ public final class GeckoRuntimeSettings implements Parcelable {
      *
      * @return Returns a positive number. Will return null if not set.
      */
-    public Integer getDisplayDpiOverride() {
+    public @Nullable Integer getDisplayDpiOverride() {
         if (mDisplayDpiOverride > 0) {
             return mDisplayDpiOverride;
         }
         return null;
     }
 
-    public Class<? extends Service> getCrashHandler() {
+    public @Nullable Class<? extends Service> getCrashHandler() {
         return mCrashHandler;
     }
 
@@ -554,7 +622,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
      * @return Returns a Rect containing the dimensions to use for the window size.
      * Will return null if not set.
      */
-    public Rect getScreenSizeOverride() {
+    public @Nullable Rect getScreenSizeOverride() {
         if ((mScreenWidthOverride > 0) && (mScreenHeightOverride > 0)) {
             return new Rect(0, 0, mScreenWidthOverride, mScreenHeightOverride);
         }
@@ -562,25 +630,30 @@ public final class GeckoRuntimeSettings implements Parcelable {
     }
 
     /**
-     * Gets the locale code in Gecko format ("en" or "en-US").
+     * Gets the list of requested locales.
+     *
+     * @return A list of locale codes in Gecko format ("en" or "en-US").
      */
-    public String getLocale() {
-        return mLocale;
+    public @Nullable String[] getLocales() {
+        return mRequestedLocales;
     }
 
     /**
      * Set the locale.
      *
-     * @param languageTag The locale code in Gecko format ("en-US").
+     * @param requestedLocales An ordered list of locales in Gecko format ("en-US").
      */
-    public void setLocale(String languageTag) {
-        mLocale = languageTag;
-        flushLocale();
+    public void setLocales(@Nullable String[] requestedLocales) {
+        mRequestedLocales = requestedLocales;
+        flushLocales();
     }
 
-    private void flushLocale() {
+    private void flushLocales() {
+        if (mRequestedLocales == null) {
+            return;
+        }
         final GeckoBundle data = new GeckoBundle(1);
-        data.putString("languageTag", mLocale);
+        data.putStringArray("requestedLocales", mRequestedLocales);
         EventDispatcher.getInstance().dispatch("GeckoView:SetLocale", data);
     }
 
@@ -734,7 +807,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
      * Set whether or not known malware sites should be blocked.
      *
      * Note: For each blocked site, {@link GeckoSession.NavigationDelegate#onLoadError}
-     * with error category {@link GeckoSession.NavigationDelegate#ERROR_CATEGORY_SAFEBROWSING}
+     * with error category {@link WebRequestError#ERROR_CATEGORY_SAFEBROWSING}
      * is called.
      *
      * @param enabled A flag determining whether or not to block malware sites.
@@ -758,7 +831,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
      * Set whether or not known phishing sites should be blocked.
      *
      * Note: For each blocked site, {@link GeckoSession.NavigationDelegate#onLoadError}
-     * with error category {@link GeckoSession.NavigationDelegate#ERROR_CATEGORY_SAFEBROWSING}
+     * with error category {@link WebRequestError#ERROR_CATEGORY_SAFEBROWSING}
      * is called.
      *
      * @param enabled A flag determining whether or not to block phishing sites.
@@ -794,16 +867,17 @@ public final class GeckoRuntimeSettings implements Parcelable {
         }
 
         ParcelableUtils.writeBoolean(out, mDebugPause);
+        ParcelableUtils.writeBoolean(out, mUseMaxScreenDepth);
         out.writeFloat(mDisplayDensityOverride);
         out.writeInt(mDisplayDpiOverride);
         out.writeInt(mScreenWidthOverride);
         out.writeInt(mScreenHeightOverride);
         out.writeString(mCrashHandler != null ? mCrashHandler.getName() : null);
-        out.writeString(mLocale);
+        out.writeStringArray(mRequestedLocales);
     }
 
     // AIDL code may call readFromParcel even though it's not part of Parcelable.
-    public void readFromParcel(final Parcel source) {
+    public void readFromParcel(final @NonNull Parcel source) {
         mUseContentProcess = ParcelableUtils.readBoolean(source);
         mArgs = source.createStringArray();
         mExtras.readFromParcel(source);
@@ -816,6 +890,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
         }
 
         mDebugPause = ParcelableUtils.readBoolean(source);
+        mUseMaxScreenDepth = ParcelableUtils.readBoolean(source);
         mDisplayDensityOverride = source.readFloat();
         mDisplayDpiOverride = source.readInt();
         mScreenWidthOverride = source.readInt();
@@ -833,7 +908,7 @@ public final class GeckoRuntimeSettings implements Parcelable {
             }
         }
 
-        mLocale = source.readString();
+        mRequestedLocales = source.createStringArray();
     }
 
     public static final Parcelable.Creator<GeckoRuntimeSettings> CREATOR

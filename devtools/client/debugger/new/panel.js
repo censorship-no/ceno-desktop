@@ -6,6 +6,7 @@
 const { Task } = require("devtools/shared/task");
 const { LocalizationHelper } = require("devtools/shared/l10n");
 const { gDevTools } = require("devtools/client/framework/devtools");
+const { gDevToolsBrowser } = require("devtools/client/framework/devtools-browser");
 const { TargetFactory } = require("devtools/client/framework/target");
 const { Toolbox } = require("devtools/client/framework/toolbox");
 loader.lazyRequireGetter(this, "openContentLink", "devtools/client/shared/link", true);
@@ -34,7 +35,23 @@ DebuggerPanel.prototype = {
       toolboxActions: {
         // Open a link in a new browser tab.
         openLink: this.openLink.bind(this),
-        openWorkerToolbox: this.openWorkerToolbox.bind(this)
+        openWorkerToolbox: this.openWorkerToolbox.bind(this),
+        openElementInInspector: async function(grip) {
+          await this.toolbox.initInspector();
+          const onSelectInspector = this.toolbox.selectTool("inspector");
+          const onGripNodeToFront = this.toolbox.walker.gripToNodeFront(grip);
+          const [
+            front,
+            inspector,
+          ] = await Promise.all([onGripNodeToFront, onSelectInspector]);
+
+          const onInspectorUpdated = inspector.once("inspector-updated");
+          const onNodeFrontSet = this.toolbox.selection
+            .setNodeFront(front, { reason: "debugger" });
+
+          return Promise.all([onNodeFrontSet, onInspectorUpdated]);
+        }.bind(this),
+        onReload: this.onReload.bind(this)
       }
     });
 
@@ -43,6 +60,10 @@ DebuggerPanel.prototype = {
     this._selectors = selectors;
     this._client = client;
     this.isReady = true;
+
+    this.panelWin.document.addEventListener("drag:start", this.toolbox.toggleDragging);
+    this.panelWin.document.addEventListener("drag:end", this.toolbox.toggleDragging);
+
     return this;
   },
 
@@ -63,12 +84,8 @@ DebuggerPanel.prototype = {
     openContentLink(url);
   },
 
-  openWorkerToolbox: async function(worker) {
-    const [response, workerTargetFront] =
-      await this.toolbox.target.client.attachWorker(worker.actor);
-    const workerTarget = TargetFactory.forWorker(workerTargetFront);
-    const toolbox = await gDevTools.showToolbox(workerTarget, "jsdebugger", Toolbox.HostType.WINDOW);
-    toolbox.once("destroy", () => workerTargetFront.detach());
+  openWorkerToolbox: function(workerTargetFront) {
+    return gDevToolsBrowser.openWorkerToolbox(workerTargetFront, "jsdebugger");
   },
 
   getFrames: function() {
@@ -106,6 +123,10 @@ DebuggerPanel.prototype = {
 
   getSource(sourceURL) {
     return this._selectors.getSourceByURL(this._getState(), sourceURL);
+  },
+
+  onReload: function() {
+    this.emit("reloaded");
   },
 
   destroy: function() {

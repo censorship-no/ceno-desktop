@@ -22,6 +22,7 @@ not-for-build-platforms:
     - macosx64-nightly/opt
     - win32-nightly/opt
     - win64-nightly/opt
+    - win64-aarch64-nightly/opt
     - linux-devedition-nightly/opt
     - linux64-devedition-nightly/opt
     - macosx64-devedition-nightly/opt
@@ -30,3 +31,5 @@ not-for-build-platforms:
 
 job-template:
     shipping-phase: promote
+    attributes:
+        artifact_map: taskcluster/taskgraph/manifests/fennec_nightly.yml

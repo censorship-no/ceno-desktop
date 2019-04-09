@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 <%namespace name="helpers" file="/helpers.mako.rs" />
 <% from data import ALL_SIDES, maybe_moz_logical_alias %>
@@ -16,10 +16,10 @@
     %>
     ${helpers.predefined_type(
         "padding-%s" % side[0],
-        "NonNegativeLengthOrPercentage",
-        "computed::NonNegativeLengthOrPercentage::zero()",
+        "NonNegativeLengthPercentage",
+        "computed::NonNegativeLengthPercentage::zero()",
         alias=maybe_moz_logical_alias(product, side, "-moz-padding-%s"),
-        animation_value_type="NonNegativeLengthOrPercentage",
+        animation_value_type="NonNegativeLengthPercentage",
         logical=side[1],
         logical_group="padding",
         spec=spec,

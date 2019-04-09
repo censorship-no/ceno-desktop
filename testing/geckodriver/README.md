@@ -51,7 +51,18 @@ Documentation
   * [Enabling trace logs](https://firefox-source-docs.mozilla.org/testing/geckodriver/geckodriver/TraceLogs.html)
   * [Analyzing crash data from Firefox](https://firefox-source-docs.mozilla.org/testing/geckodriver/geckodriver/CrashReports.html)
 
-* [Contributing](https://firefox-source-docs.mozilla.org/testing/geckodriver/geckodriver/index.html#for-developers)
+* [Contributing](https://firefox-source-docs.mozilla.org/testing/geckodriver/geckodriver/#for-developers)
+
+
+Source code
+-----------
+
+geckodriver’s canonical source code can be found in [mozilla-central].
+We only use this GitHub repository for issue tracking and making releases.
+See our [contribution documentation] for more information.
+
+[mozilla-central]: https://hg.mozilla.org/mozilla-central/file/tip/testing/geckodriver
+[contribution documentation]: https://firefox-source-docs.mozilla.org/testing/geckodriver/geckodriver/#for-developers
 
 
 Contact
@@ -61,7 +72,7 @@ The mailing list for geckodriver discussion is
 tools-marionette@lists.mozilla.org ([subscribe], [archive]).
 
 There is also an IRC channel to talk about using and developing
-geckodriver in #ateam on irc.mozilla.org.
+geckodriver in #interop on irc.mozilla.org.
 
 [subscribe]: https://lists.mozilla.org/listinfo/tools-marionette
 [archive]: https://lists.mozilla.org/pipermail/tools-marionette/

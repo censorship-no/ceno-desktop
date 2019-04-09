@@ -15,6 +15,7 @@ const {DebuggerServer} = require("devtools/server/main");
 const {DebuggerClient} = require("devtools/shared/client/debugger-client");
 const ObjectClient = require("devtools/shared/client/object-client");
 const Services = require("Services");
+const {TargetFactory} = require("devtools/client/framework/target");
 
 function initCommon() {
   // Services.prefs.setBoolPref("devtools.debugger.log", true);
@@ -26,107 +27,99 @@ function initDebuggerServer() {
   DebuggerServer.allowChromeProcess = true;
 }
 
-function connectToDebugger() {
+async function connectToDebugger() {
   initCommon();
   initDebuggerServer();
 
   const transport = DebuggerServer.connectPipe();
   const client = new DebuggerClient(transport);
 
-  const dbgState = { dbgClient: client };
-  return new Promise(resolve => {
-    client.connect().then(response => resolve([dbgState, response]));
-  });
+  await client.connect();
+  return client;
 }
 
-function attachConsole(listeners, callback) {
-  _attachConsole(listeners, callback);
+async function attachConsole(listeners, callback) {
+  const { state, response } = await _attachConsole(listeners);
+  callback(state, response);
 }
-function attachConsoleToTab(listeners, callback) {
-  _attachConsole(listeners, callback, true);
+async function attachConsoleToTab(listeners, callback) {
+  const { state, response } = await _attachConsole(listeners, true);
+  callback(state, response);
 }
-function attachConsoleToWorker(listeners, callback) {
-  _attachConsole(listeners, callback, true, true);
+async function attachConsoleToWorker(listeners, callback) {
+  const { state, response } = await _attachConsole(listeners, true, true);
+  callback(state, response);
 }
 
 var _attachConsole = async function(
-  listeners, callback, attachToTab, attachToWorker
+  listeners, attachToTab, attachToWorker
 ) {
-  function _onAttachConsole(state, [response, webConsoleClient]) {
-    state.client = webConsoleClient;
+  try {
+    const client = await connectToDebugger();
 
-    callback(state, response);
-  }
-  function _onAttachError(state, response) {
-    console.error("attachConsole failed: " + response.error + " " +
-                  response.message);
-    callback(state, response);
-  }
-
-  function waitForMessage(target) {
-    return new Promise(resolve => {
-      target.addEventListener("message", resolve, { once: true });
-    });
-  }
-
-  let [state, response] = await connectToDebugger();
-  if (response.error) {
-    console.error("client.connect() failed: " + response.error + " " +
-                  response.message);
-    callback(state, response);
-    return;
-  }
-
-  if (!attachToTab) {
-    response = await state.dbgClient.mainRoot.getProcess(0);
-    await state.dbgClient.attachTarget(response.form.actor);
-    const consoleActor = response.form.consoleActor;
-    state.actor = consoleActor;
-    state.dbgClient.attachConsole(consoleActor, listeners)
-      .then(_onAttachConsole.bind(null, state), _onAttachError.bind(null, state));
-    return;
-  }
-  response = await state.dbgClient.listTabs();
-  if (response.error) {
-    console.error("listTabs failed: " + response.error + " " +
-                  response.message);
-    callback(state, response);
-    return;
-  }
-  const tab = response.tabs[response.selected];
-  const [, targetFront] = await state.dbgClient.attachTarget(tab.actor);
-  if (attachToWorker) {
-    const workerName = "console-test-worker.js#" + new Date().getTime();
-    const worker = new Worker(workerName);
-    // Keep a strong reference to the Worker to avoid it being
-    // GCd during the test (bug 1237492).
-    // eslint-disable-next-line camelcase
-    state._worker_ref = worker;
-    await waitForMessage(worker);
-
-    const { workers } = await targetFront.listWorkers();
-    const workerTargetActor = workers.filter(w => w.url == workerName)[0].actor;
-    if (!workerTargetActor) {
-      console.error("listWorkers failed. Unable to find the " +
-                    "worker actor\n");
-      return;
+    function waitForMessage(target) {
+      return new Promise(resolve => {
+        target.addEventListener("message", resolve, { once: true });
+      });
     }
-    const [workerResponse, workerTargetFront] =
-      await targetFront.attachWorker(workerTargetActor);
-    if (!workerTargetFront || workerResponse.error) {
-      console.error("attachWorker failed. No worker target front or " +
-                    " error: " + workerResponse.error);
-      return;
+
+    // Fetch the console actor out of the expected target
+    // ParentProcessTarget / WorkerTarget / FrameTarget
+    let target, worker;
+    if (!attachToTab) {
+      const front = await client.mainRoot.getMainProcess();
+      target = await TargetFactory.forRemoteTab({
+        client,
+        activeTab: front,
+        chrome: true,
+      });
+    } else {
+      const targetFront = await client.mainRoot.getTab();
+      target = await TargetFactory.forRemoteTab({
+        client,
+        activeTab: targetFront,
+      });
+      if (attachToWorker) {
+        const workerName = "console-test-worker.js#" + new Date().getTime();
+        worker = new Worker(workerName);
+        await waitForMessage(worker);
+
+        const { workers } = await target.activeTab.listWorkers();
+        const workerTargetFront = workers.filter(w => w.url == workerName)[0];
+        if (!workerTargetFront) {
+          console.error("listWorkers failed. Unable to find the worker actor\n");
+          return null;
+        }
+        target = await TargetFactory.forRemoteTab({
+          client,
+          activeTab: workerTargetFront,
+        });
+      }
     }
-    await workerTargetFront.attachThread({});
-    state.actor = workerTargetFront.consoleActor;
-    state.dbgClient.attachConsole(workerTargetFront.consoleActor, listeners)
-      .then(_onAttachConsole.bind(null, state), _onAttachError.bind(null, state));
-  } else {
-    state.actor = tab.consoleActor;
-    state.dbgClient.attachConsole(tab.consoleActor, listeners)
-      .then(_onAttachConsole.bind(null, state), _onAttachError.bind(null, state));
+
+    // Attach the Target in order to instantiate the console client
+    await target.attach();
+    const webConsoleClient = target.activeConsole;
+    // By default the console isn't listening for anything,
+    // request listeners from here
+    const response = await webConsoleClient.startListeners(listeners);
+    return {
+      state: {
+        dbgClient: client,
+        client: webConsoleClient,
+        actor: webConsoleClient.actor,
+        // Keep a strong reference to the Worker to avoid it being
+        // GCd during the test (bug 1237492).
+        // eslint-disable-next-line camelcase
+        _worker_ref: worker,
+      },
+      response,
+    };
+  } catch (error) {
+    console.error(`attachConsole failed: ${error.error} ${error.message} - ` +
+                  error.stack);
   }
+  return null;
 };
 
 function closeDebugger(state, callback) {

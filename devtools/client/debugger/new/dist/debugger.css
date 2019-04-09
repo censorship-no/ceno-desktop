@@ -243,12 +243,15 @@
 
 button.open-accessibility-inspector,
 button.open-inspector {
-  mask: url("chrome://devtools/skin/images/devtools-reps/open-inspector.svg") no-repeat;
+  mask: url("resource://devtools/client/shared/components/reps/images/open-inspector.svg") no-repeat;
   display: inline-block;
+  vertical-align: top;
+  height: 15px;
+  width: 15px;
+  margin: 0 4px;
+  padding: 0;
+  border: none;
   background-color: var(--comment-node-color);
-  height: 16px;
-  margin-left: 0.25em;
-  vertical-align: middle;
   cursor: pointer;
 }
 
@@ -264,7 +267,7 @@ button.open-inspector {
 /* Jump to definition button */
 
 button.jump-definition {
-  mask: url("chrome://devtools/skin/images/devtools-reps/jump-definition.svg") no-repeat;
+  mask: url("resource://devtools/client/shared/components/reps/images/jump-definition.svg") no-repeat;
   display: inline-block;
   background-color: var(--comment-node-color);
   height: 16px;
@@ -273,6 +276,22 @@ button.jump-definition {
 }
 
 .jump-definition:hover {
+  background-color: var(--theme-highlight-blue);
+}
+
+/******************************************************************************/
+/* Invoke getter button */
+
+button.invoke-getter {
+  mask: url("resource://devtools/client/shared/components/reps/images/input.svg") no-repeat;
+  display: inline-block;
+  background-color: var(--comment-node-color);
+  height: 10px;
+  vertical-align: middle;
+  border:none;
+}
+
+.invoke-getter:hover {
   background-color: var(--theme-highlight-blue);
 }
 
@@ -337,24 +356,29 @@ button.jump-definition {
   cursor: default;
 }
 
-.tree-node img.arrow {
-  mask: url("chrome://devtools/skin/images/devtools-components/arrow.svg") no-repeat;
-  mask-size: 100%;
-  width: 9px;
-  height: 9px;
+.tree-node button.arrow {
+  background:url("resource://devtools/client/debugger/new/images/arrow.svg") no-repeat;
+  background-size:contain;
+  background-position:center center;
+  width: 10px;
+  height: 10px;
+  border:0;
+  padding:0;
   margin-inline-start: 1px;
   margin-inline-end: 4px;
-  background-color: var(--theme-splitter-color, #9B9B9B);
   transform: rotate(-90deg);
+  transform-origin: center center;
   transition: transform 0.125s ease;
   align-self: center;
+  -moz-context-properties: fill;
+  fill: var(--theme-splitter-color, #9B9B9B);
 }
 
-html[dir="rtl"] .tree-node img.arrow {
+html[dir="rtl"] .tree-node button.arrow {
   transform: rotate(90deg);
 }
 
-.tree-node img.arrow.expanded.expanded {
+.tree-node button.arrow.expanded.expanded {
   transform: rotate(0deg);
  }
 
@@ -363,8 +387,8 @@ html[dir="rtl"] .tree-node img.arrow {
   background-color: var(--theme-selection-background, #0a84ff);
 }
 
-.tree-node.focused img.arrow {
-  background-color: currentColor;
+.tree-node.focused button.arrow {
+  fill: currentColor;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -404,7 +428,7 @@ html[dir="rtl"] .tree-node img.arrow {
   color: var(--theme-comment);
 }
 
-.object-inspector .tree-node img.arrow {
+.object-inspector .tree-node .arrow {
   display: inline-block;
   vertical-align: middle;
 }
@@ -415,7 +439,8 @@ html[dir="rtl"] .tree-node img.arrow {
 }
 
 .tree-node.focused button.jump-definition,
-.tree-node.focused button.open-inspector {
+.tree-node.focused button.open-inspector,
+.tree-node.focused button.invoke-getter {
   background-color: currentColor;
 }
 .A11y-mouse :focus {
@@ -480,6 +505,7 @@ html[dir="rtl"] .tree-node img.arrow {
   padding: 15px;
   column-width: 250px;
   cursor: default;
+  user-select: none;
 }
 
 .shortcuts-content h2 {
@@ -625,6 +651,14 @@ button:focus {
 
 .min-width-0 {
   min-width: 0;
+}
+
+/*
+  Prevents horizontal scrollbar from displaying when
+  right pane collapsed (#7505)
+*/
+.split-box > .splitter:last-child {
+  display: none;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -951,7 +985,6 @@ menuseparator {
 .split-box.horz > .splitter {
   min-height: calc(var(--devtools-splitter-top-width) +
     var(--devtools-splitter-bottom-width) + 1px);
-
   border-top-width: var(--devtools-splitter-top-width);
   border-bottom-width: var(--devtools-splitter-bottom-width);
 
@@ -973,208 +1006,6 @@ menuseparator {
 .split-box.dragging > .controlled,
 .split-box.dragging > .uncontrolled {
   pointer-events: none;
-}
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-
-.arrow,
-.worker,
-.refresh,
-.shortcut,
-.add-button {
-  fill: var(--theme-splitter-color);
-}
-
-.folder,
-.domain,
-.file,
-.extension {
-  background-color: var(--theme-comment);
-}
-
-.worker,
-.file,
-.folder,
-.sources-list .source-icon,
-.extension {
-  position: relative;
-  top: 2px;
-}
-
-.domain,
-.worker,
-.refresh,
-.add-button {
-  position: relative;
-  top: 1px;
-}
-
-.worker svg,
-.refresh svg,
-.shortcut svg,
-.add-button svg {
-  width: 15px;
-}
-
-img.domain,
-img.folder {
-  width: 15px;
-  height: 15px;
-}
-
-img.extension {
-  width: 13px;
-  height: 13px;
-  margin-inline-start: 2px;
-}
-
-img.result-item-icon {
-  height: 18px;
-  width: 18px;
-}
-
-img.domain {
-  mask: url("chrome://devtools/skin/images/debugger/domain.svg") no-repeat;
-}
-
-img.folder {
-  mask: url("chrome://devtools/skin/images/debugger/folder.svg") no-repeat;
-}
-
-img.coffeescript {
-  mask: url("chrome://devtools/skin/images/debugger/coffeescript.svg") no-repeat;
-}
-
-img.javascript {
-  mask: url("chrome://devtools/skin/images/debugger/javascript.svg") no-repeat;
-}
-
-img.tab {
-  mask: url("chrome://devtools/skin/images/debugger/tab.svg") no-repeat;
-}
-
-img.react {
-  mask: url("chrome://devtools/skin/images/debugger/react.svg") no-repeat;
-}
-
-img.typescript {
-  mask: url("chrome://devtools/skin/images/debugger/typescript.svg") no-repeat;
-}
-
-img.extension {
-  mask: url("chrome://devtools/skin/images/debugger/extension.svg") no-repeat;
-}
-
-img.file {
-  mask: url("chrome://devtools/skin/images/debugger/file.svg") no-repeat;
-  width: 13px;
-  height: 13px;
-}
-
-img.domain,
-img.folder,
-img.file,
-.sources-list img.source-icon,
-img.extension {
-  mask-size: 100%;
-  margin-inline-end: 5px;
-  display: inline-block;
-}
-
-img.result-item-icon {
-  mask-size: 100%;
-  margin-inline-end: 15px;
-  margin-inline-start: 5px;
-  display: inline-block;
-}
-
-.refresh svg,
-.shortcut svg,
-.worker svg {
-  margin-inline-end: 5px;
-}
-
-img.arrow {
-  mask: url("chrome://devtools/skin/images/debugger/arrow.svg");
-  margin-inline-end: 5px;
-  margin-top: 3px;
-  width: 9px;
-  height: 9px;
-  padding-top: 9px;
-  background: var(--disclosure-arrow);
-  mask-size: 100%;
-  display: inline-block;
-  margin-bottom: 1px;
-  transform: rotate(-90deg);
-  transition: transform 0.18s ease;
-}
-
-html[dir="ltr"] img.arrow {
-  transform: rotate(-90deg);
-}
-
-html[dir="rtl"] img.arrow {
-  transform: rotate(90deg);
-}
-
-.arrow svg {
-  transition: transform 0.125s ease;
-  width: 10px;
-  margin-inline-end: 5px;
-  transform: rotate(-90deg);
-}
-
-html[dir="rtl"] .arrow svg,
-.arrow svg:dir(rtl),
-.arrow svg:-moz-locale-dir(rtl) {
-  transform: rotate(90deg);
-}
-
-.arrow.expanded.expanded svg {
-  transform: rotate(0deg);
-}
-
-.arrow.hidden {
-  visibility: hidden;
-}
-
-.webpack svg {
-  width: 15px;
-  height: 15px;
-  margin-right: 5px;
-  vertical-align: sub;
-}
-
-.function svg {
-  height: 10px;
-  width: 15px;
-}
-
-.function path {
-  fill: var(--theme-body-color);
-}
-
-.angular svg,
-.source-icon svg {
-  width: 15px;
-  height: 15px;
-  margin-right: 5px;
-  vertical-align: sub;
-}
-
-.angular,
-.webpack {
-  opacity: 0.8;
-}
-
-.theme-dark .angular,
-.theme-dark .webpack {
-  opacity: 0.5;
-}
-
-.source-icon svg {
-  fill: var(--theme-comment);
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -1227,6 +1058,23 @@ html[dir="rtl"] .managed-tree .tree .node > div {
 .managed-tree .tree-node button {
   position: fixed;
 }
+.img {
+  /* default height an width which will likely be overrode */
+  width: 12px;
+  height: 12px;
+  /* makes span appear like an image */
+  display: inline-block;
+  background: var(--theme-body-color);
+  mask-size: 100%;
+}
+
+.img.arrow.arrow.expanded {
+  transform: rotate(0deg);
+}
+
+.img.arrow.arrow.expanded {
+  transform: rotate(0deg);
+}
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
@@ -1244,17 +1092,20 @@ html[dir="rtl"] .managed-tree .tree .node > div {
 }
 
 .close-btn .close {
-  mask: url("chrome://devtools/skin/images/debugger/close.svg") no-repeat;
+  mask: url("resource://devtools/client/debugger/new/images/close.svg") no-repeat;
   mask-size: 100%;
   background-color: var(--theme-comment);
   width: 8px;
   height: 8px;
-  transition: all 0.15s ease-in-out;
   padding: 0;
   margin-top: 0;
 }
 
-.close-btn:hover img.close {
+.close-btn .close:hover {
+  background-color: var(--theme-comment);
+}
+
+.close-btn:hover .img.close {
   background-color: white;
 }
 
@@ -1266,7 +1117,7 @@ html[dir="rtl"] .managed-tree .tree .node > div {
   background-color: var(--theme-selection-background);
 }
 
-.close-btn:focus img.close {
+.close-btn:focus .img.close {
   background-color: white;
 }
 
@@ -1293,6 +1144,7 @@ img.close::before {
   position: relative;
   padding: 0px 5px;
   fill: currentColor;
+  min-width: 30px;
 }
 
 .command-bar-button:disabled {
@@ -1322,10 +1174,7 @@ img.close::before {
   transform: translate(0, 0px);
   transition: transform 0.25s ease-in-out;
   padding: 5px;
-}
-
-.toggle-button .togglePanes {
-  vertical-align: -2px;
+  height: inherit;
 }
 
 .toggle-button svg {
@@ -1363,8 +1212,406 @@ html .toggle-button.end.vertical svg {
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+.arrow,
+.worker,
+.refresh,
+.shortcut,
+.add-button {
+  fill: var(--theme-splitter-color);
+}
+
+.img.folder,
+.img.domain,
+.img.file,
+.img.extension,
+.img.worker {
+  background-color: var(--theme-comment);
+}
+
+.worker,
+.file,
+.folder,
+.sources-list .source-icon,
+.extension {
+  position: relative;
+  top: 2px;
+}
+
+.domain,
+.worker,
+.refresh,
+.add-button {
+  position: relative;
+  top: 1px;
+}
+
+.worker svg,
+.refresh svg,
+.shortcut svg,
+.add-button svg {
+  width: 15px;
+}
+
+.img.domain,
+.img.folder {
+  width: 15px;
+  height: 15px;
+}
+
+.img.extension,
+.img.worker {
+  width: 13px;
+  height: 13px;
+  margin-inline-start: 2px;
+}
+
+.img.result-item-icon {
+  height: 18px;
+  width: 18px;
+}
+
+.img.domain {
+  mask: url("resource://devtools/client/debugger/new/images/domain.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.folder {
+  mask: url("resource://devtools/client/debugger/new/images/folder.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.coffeescript {
+  mask: url("resource://devtools/client/debugger/new/images/coffeescript.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.javascript {
+  mask: url("resource://devtools/client/debugger/new/images/javascript.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.tab {
+  mask: url("resource://devtools/client/debugger/new/images/tab.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.react {
+  mask: url("resource://devtools/client/debugger/new/images/react.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.aframe {
+  background-image: url("resource://devtools/client/debugger/new/images/aframe.svg");
+  background-size: 15px 15px;
+}
+
+.img.babel {
+  mask: url("resource://devtools/client/debugger/new/images/babel.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.backbone {
+  mask: url("resource://devtools/client/debugger/new/images/backbone.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.choo {
+  mask: url("resource://devtools/client/debugger/new/images/choo.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.dojo {
+  background-image: url("resource://devtools/client/debugger/new/images/dojo.svg");
+}
+
+.img.ember {
+  background-image: url("resource://devtools/client/debugger/new/images/ember.svg");
+}
+
+.img.immutable {
+  mask: url("resource://devtools/client/debugger/new/images/immutable.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.jquery {
+  mask: url("resource://devtools/client/debugger/new/images/jquery.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.lodash {
+  mask: url("resource://devtools/client/debugger/new/images/lodash.svg") no-repeat;
+  mask-size: 100%;
+}
+
+span.img.marko {
+  background-image: url("resource://devtools/client/debugger/new/images/marko.svg");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center center;
+}
+
+.img.mobx {
+  background-image: url("resource://devtools/client/debugger/new/images/mobx.svg");
+}
+
+.img.next-circle {
+  mask: url("resource://devtools/client/debugger/new/images/next-circle.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.next {
+  mask: url("resource://devtools/client/debugger/new/images/next.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.nextjs {
+  background-image: url("resource://devtools/client/debugger/new/images/nextjs.svg");
+}
+
+.img.nuxtjs {
+  background-image: url("resource://devtools/client/debugger/new/images/nuxtjs.svg");
+}
+
+.img.preact {
+  background-image: url("resource://devtools/client/debugger/new/images/preact.svg");
+}
+
+.img.pug {
+  background-image: url("resource://devtools/client/debugger/new/images/pug.svg");
+}
+
+.img.redux {
+  mask: url("resource://devtools/client/debugger/new/images/redux.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.rxjs {
+  background-image: url("resource://devtools/client/debugger/new/images/rxjs.svg");
+}
+
+.img.sencha-extjs {
+  background-image: url("resource://devtools/client/debugger/new/images/sencha-extjs.svg");
+}
+
+.img.underscore {
+  mask: url("resource://devtools/client/debugger/new/images/underscore.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.webpack {
+  background-image: url("resource://devtools/client/debugger/new/images/webpack.svg");
+  background-repeat: no-repeat;
+}
+
+.img.vue {
+  background: url("resource://devtools/client/debugger/new/images/vuejs.svg") 1px 1px no-repeat;
+  background-size: 15px;
+}
+
+.img.typescript {
+  mask: url("resource://devtools/client/debugger/new/images/typescript.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.extension {
+  mask: url("resource://devtools/client/debugger/new/images/extension.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.toggle-panes {
+  mask: url("resource://devtools/client/debugger/new/images/toggle-panes.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.file {
+  mask: url("resource://devtools/client/debugger/new/images/file.svg") no-repeat;
+  mask-size: 100%;
+  width: 13px;
+  height: 13px;
+}
+
+.img.worker {
+  mask: url("resource://devtools/client/debugger/new/images/worker.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.plus {
+  mask: url("resource://devtools/client/debugger/new/images/plus.svg") no-repeat;
+  mask-size: 100%;
+  height: 16px;
+  width: 16px;
+}
+
+.img.magnifying-glass {
+  mask: url("resource://devtools/client/debugger/new/images/magnifying-glass.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.case-match {
+  mask: url("resource://devtools/client/debugger/new/images/case-match.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.regex-match {
+  mask: url("resource://devtools/client/debugger/new/images/regex-match.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.whole-word-match {
+  mask: url("resource://devtools/client/debugger/new/images/whole-word-match.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.breadcrumb {
+  mask: url("resource://devtools/client/debugger/new/images/breadcrumbs-divider.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.home {
+  mask: url("resource://devtools/client/debugger/new/images/home.svg") no-repeat;
+  mask-size: 100%;
+}
+
+.img.angular {
+  background-image: url("resource://devtools/client/debugger/new/images/angular.svg");
+  background-repeat: no-repeat;
+}
+
+.img.angular,
+.img.webpack,
+.img.vue,
+.img.aframe,
+.img.dojo,
+.img.ember,
+.img.marko,
+.img.mobx,
+.img.nextjs,
+.img.nuxtjs,
+.img.preact,
+.img.pug,
+.img.rxjs,
+.img.sencha-extjs {
+  background-size: 15px 15px;
+  background-color: transparent;
+  width: 15px;
+  height: 15px;
+  position: relative;
+}
+
+.sources-list .img.angular,
+.sources-list .img.webpack,
+.sources-list .img.vue,
+.sources-list .img.aframe,
+.sources-list .img.dojo,
+.sources-list .img.ember,
+.sources-list .img.marko,
+.sources-list .img.mobx,
+.sources-list .img.nextjs,
+.sources-list .img.nuxtjs,
+.sources-list .img.preact,
+.sources-list .img.pug,
+.sources-list .img.rxjs,
+.sources-list .img.sencha-extjs {
+  top: 3px;
+}
+
+.img.domain,
+.img.folder,
+.img.file,
+.sources-list .img.source-icon,
+.img.extension,
+.img.worker {
+  mask-size: 100%;
+  margin-inline-end: 5px;
+  display: inline-block;
+}
+
+.img.result-item-icon {
+  mask-size: 100%;
+  margin-inline-end: 15px;
+  margin-inline-start: 5px;
+  display: inline-block;
+}
+
+.img.refresh,
+.img.shortcut,
+.img.worker,
+.img.arrow {
+  margin-inline-end: 5px;
+}
+
+.img.refresh {
+  mask: url("resource://devtools/client/debugger/new/images/reload.svg");
+  mask-size: 100%;
+}
+
+.img.arrow {
+  mask: url("resource://devtools/client/debugger/new/images/arrow.svg");
+  margin-inline-end: 4px;
+  width: 10px;
+  height: 10px;
+  padding-top: 9px;
+  background: var(--disclosure-arrow);
+  mask-size: 100%;
+  display: inline-block;
+  transform: rotate(-90deg);
+  transition: transform 0.18s ease;
+}
+
+/* overrides tree component */
+.tree-node button.arrow {
+  background: none;
+  mask: url("resource://devtools/client/debugger/new/images/arrow.svg");
+  background: var(--disclosure-arrow);
+  mask-size: 100%;
+}
+
+html[dir="rtl"] .img.arrow {
+  transform: rotate(90deg);
+}
+
+.arrow {
+  transition: transform 0.125s ease;
+  height: 10px;
+  width: 10px;
+  transform: rotate(-90deg);
+  vertical-align: -1px;
+}
+
+html[dir="rtl"] .arrow,
+.arrow:dir(rtl),
+.arrow:-moz-locale-dir(rtl) {
+  transform: rotate(90deg);
+}
+
+.arrow.expanded {
+  transform: rotate(0deg);
+}
+
+.arrow.hidden {
+  visibility: hidden;
+}
+
+.angular,
+.webpack {
+  opacity: 0.8;
+}
+
+.theme-dark .angular,
+.theme-dark .webpack {
+  opacity: 0.5;
+}
+
+.source-icon svg {
+  fill: var(--theme-comment);
+}
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
 .search-shadow {
-  border: 1px solid transparent;
+  border: 1px solid var(--theme-toolbar-background);
+  border-bottom: 1px solid var(--theme-splitter-color);
 }
 
 .search-shadow.focused {
@@ -1400,6 +1647,16 @@ html .toggle-button.end.vertical svg {
 
 .search-field.big i svg {
   width: 22px;
+}
+
+.search-field .img.loader {
+  padding-top: 4px;
+  margin-right: 8px;
+  mask-image: url("resource://devtools/client/debugger/new/images/loader.svg");
+  mask-size: 100%;
+  width: 20px;
+  height: 20px;
+  margin-top: 6px;
 }
 
 .search-field input {
@@ -1456,7 +1713,7 @@ html .toggle-button.end.vertical svg {
 }
 
 .search-field input.empty {
-  color: var(--theme-highlight-orange);
+  color: var(--theme-body-color-inactive);
 }
 
 .search-field .summary {
@@ -1468,6 +1725,7 @@ html .toggle-button.end.vertical svg {
   align-self: center;
   padding-top: 1px;
   white-space: nowrap;
+  user-select: none;
 }
 
 .search-field .search-nav-buttons {
@@ -1486,6 +1744,14 @@ html .toggle-button.end.vertical svg {
   padding-right: 5px;
 }
 
+.search-field .search-nav-buttons .img.arrow-up {
+  mask: url("resource://devtools/client/debugger/new/images/arrow-up.svg") no-repeat;
+}
+
+.search-field .search-nav-buttons .img.arrow-down {
+  mask: url("resource://devtools/client/debugger/new/images/arrow-down.svg") no-repeat;
+}
+
 .search-field .search-nav-buttons .nav-btn:hover {
   background: var(--theme-toolbar-background-hover);
 }
@@ -1496,6 +1762,19 @@ html .toggle-button.end.vertical svg {
 
 .search-field .search-nav-buttons .nav-btn path {
   fill: var(--theme-comment);
+}
+
+.search-field i.loader svg {
+  animation: rotate 0.5s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -1558,6 +1837,8 @@ html .toggle-button.end.vertical svg {
 .project-text-search .result .line-value {
   grid-column: 2/3;
   padding-left: 5px;
+  text-overflow: ellipsis;
+  overflow-x: hidden;
 }
 
 .project-text-search .tree-indent {
@@ -1595,6 +1876,8 @@ html .toggle-button.end.vertical svg {
   display: flex;
   align-self: stretch;
   flex-grow: 1;
+  width: 100%;
+  border-bottom: none;
 }
 
 .project-text-search .search-field .close-btn.big {
@@ -1610,6 +1893,7 @@ html .toggle-button.end.vertical svg {
   height: 100%;
   display: grid;
   grid-template-columns: auto 1fr;
+  overflow-x: hidden;
 }
 
 .project-text-search .managed-tree .tree .tree-node {
@@ -1617,6 +1901,10 @@ html .toggle-button.end.vertical svg {
 }
 
 /* Focus values */
+
+.project-text-search .file-result.focused .img.file {
+  background-color: white;
+}
 
 .project-text-search .file-result.focused,
 .project-text-search .result.focused .line-value {
@@ -1647,268 +1935,6 @@ html .toggle-button.end.vertical svg {
   list-style: none;
   margin: 0;
   padding: 0;
-}
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-
-.sources-panel {
-  background-color: var(--theme-sidebar-background);
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  overflow: hidden;
-  position: relative;
-}
-
-.sources-panel * {
-  -moz-user-select: none;
-  user-select: none;
-}
-
-.sources-clear-root {
-  padding: 4px 3px 4px 3px;
-  width: 100%;
-  text-align: start;
-  white-space: nowrap;
-  color: inherit;
-  display: block;
-  position: absolute;
-  top: 0;
-  left: 0;
-  border-bottom: 1px solid var(--theme-splitter-color);
-}
-
-.sources-clear-root i {
-  margin-right: 5px;
-  position: relative;
-}
-
-.sources-clear-root svg {
-  width: 13px;
-  height: 13px;
-}
-
-.theme-dark .sources-clear-root svg {
-  fill: var(--theme-body-color);
-}
-
-.sources-clear-root .home {
-  opacity: 0.5;
-}
-
-.sources-clear-root .breadcrumb svg {
-  width: 5px;
-  top: 2px;
-  position: absolute;
-  margin-right: 5px;
-}
-
-.sources-clear-root-label {
-  margin-left: 5px;
-}
-
-.sources-pane {
-  display: flex;
-  flex: 1;
-  overflow-x: auto;
-  overflow-y: auto;
-  height: 100%;
-  padding: 4px 0;
-}
-
-.sources-list {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-}
-
-.sources-list .managed-tree {
-  flex: 1;
-  display: flex;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-.sources-list .managed-tree .tree .node {
-  padding: 0 10px 0 3px;
-  width: 100%;
-}
-
-.sources-list .tree img.arrow {
-  margin-right: 5px;
-}
-
-.sources-list .tree .focused img.arrow {
-  background-color: white;
-}
-
-.sources-list .tree .label .suffix {
-  font-style: italic;
-  font-size: 0.9em;
-  color: var(--theme-comment);
-}
-
-.sources-list .tree .focused .label .suffix {
-  color: inherit;
-}
-
-.sources-list .tree img.arrow.expanded {
-  transform: rotate(0deg);
-}
-
-.theme-dark .source-list .tree .node.focused {
-  background-color: var(--theme-tab-toolbar-background);
-}
-
-.sources-list .tree .focused .label {
-  background-color: var(--theme-selection-background);
-}
-
-.sources-list .tree .label {
-  padding: 3px 0px 3px 0px;
-  display: inline-block;
-}
-
-.sources-list .tree .node .no-arrow {
-  width: 10px;
-  display: inline-block;
-}
-
-.no-sources-message {
-  width: 100%;
-  font-style: italic;
-  text-align: center;
-  padding: 0.5em;
-  font-size: 12px;
-  user-select: none;
-  justify-content: center;
-  align-items: center;
-}
-
-.sources-panel .outline {
-  display: flex;
-  height: 100%;
-}
-
-.tree-indent {
-  border-inline-start: 0 none;
-}
-
-.source-outline-tabs {
-  width: 100%;
-  background: var(--theme-body-background);
-  border-top: 1px solid var(--theme-splitter-color);
-  display: flex;
-  -moz-user-select: none;
-  user-select: none;
-  box-sizing: border-box;
-  height: 29px;
-  margin: 0;
-  padding: 0;
-}
-
-.source-outline-tabs .tab {
-  background-color: var(--theme-toolbar-background);
-  border-bottom: 1px solid transparent;
-  border-color: var(--theme-splitter-color);
-  color: var(--theme-body-color);
-  cursor: default;
-  display: inline-flex;
-  flex: 1;
-  justify-content: center;
-  margin-bottom: 0px;
-  margin-top: -1px;
-  overflow: hidden;
-  padding: 8px 8px 7px 8px;
-  position: relative;
-  transition: all 0.25s ease;
-}
-
-.source-outline-tabs .tab:first-child {
-  border-inline-end: 1px solid var(--theme-splitter-color);
-}
-
-.source-outline-tabs .tab:hover {
-  background-color: var(--theme-toolbar-background-alt);
-  border-color: var(--theme-splitter-color);
-}
-
-.source-outline-tabs .tab.active {
-  background-color: var(--theme-body-background);
-  border-bottom-color: transparent;
-}
-
-.source-outline-tabs .tab.active path,
-.source-outline-tabs .tab:hover path {
-  fill: var(--theme-body-color);
-}
-
-.source-outline-panel {
-  flex: 1;
-  overflow: auto;
-}
-
-.sources-list .managed-tree .tree .node img.blackBox {
-  mask: url("chrome://devtools/skin/images/debugger/blackBox.svg") no-repeat;
-  mask-size: 100%;
-  background-color: var(--theme-highlight-blue);
-  width: 13px;
-  height: 13px;
-  display: inline-block;
-  margin-inline-end: 6px;
-  margin-inline-start: 1px;
-  margin-top: 2px;
-}
-
-.sources-list .managed-tree .tree .node.focused img {
-  background-color: white;
-}
-
-.theme-dark .sources-list .managed-tree .tree .node:not(.focused) img.blackBox {
-  background-color: var(--theme-comment);
-}
-
-.theme-dark .sources-list .managed-tree .tree .node img.blackBox {
-  background-color: var(--theme-body-color);
-}
-
-.theme-dark .sources-list .managed-tree .tree .node.focused img.blackBox {
-  background-color: white;
-}
-
-.tree:not(.object-inspector)
-  .tree-node[data-expandable="false"]
-  .tree-indent:last-of-type {
-  margin-inline-end: 4px;
-}
-
-/*
-  Custom root styles
-*/
-.sources-pane.sources-list-custom-root {
-  display: block;
-  position: relative;
-}
-
-.sources-list-custom-root .sources-pane {
-  display: block;
-}
-
-.sources-list-custom-root .sources-list,
-.sources-list-custom-root .no-sources-message {
-  position: absolute;
-  top: 26px;
-  right: 0;
-  bottom: 0;
-  left: 0;
-}
-
-/* Removes start margin when a custom root is used */
-.sources-list-custom-root
-  .tree
-  > .tree-node[data-expandable="false"][aria-level="0"] {
-  padding-inline-start: 4px;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -2000,6 +2026,33 @@ menuseparator {
   height: 100%;
   z-index: 999;
 }
+.outline-filter {
+  padding: 4px 10px 0 10px;
+}
+
+.outline-filter-input {
+  padding: 0.5em 1.6em;
+  width: 100%;
+  border: 1px solid var(--theme-splitter-color);
+  background-color: var(--theme-sidebar-background);
+  color: var(--theme-body-color);
+  font-size: 12px;
+  -moz-user-select: text;
+  user-select: text;
+}
+
+.outline-filter-input.focused {
+  border: 1px solid var(--theme-highlight-blue);
+}
+
+.outline-filter-input::placeholder {
+  font-style: italic;
+  color: var(--theme-comment);
+}
+
+.theme-dark .outline-filter-input.focused {
+  border: 1px solid var(--blue-50);
+}
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
@@ -2014,32 +2067,32 @@ menuseparator {
 }
 
 .outline-pane-info {
+  padding: 0.5em;
   width: 100%;
   font-style: italic;
   text-align: center;
-  padding: 0.5em;
   user-select: none;
   font-size: 12px;
   overflow: hidden;
 }
 
 .outline-list {
-  list-style-type: none;
-  padding: 4px 0;
   margin: 0;
+  padding: 0 0 4px 0;
+  position: absolute;
+  top: 38px;
+  bottom: 25px;
+  left: 0;
+  right: 0;
+  list-style-type: none;
   font-family: var(--monospace-font-family);
   overflow: auto;
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  bottom: 25px;
 }
 
 .outline-list__class-list {
-  list-style: none;
   margin: 0;
   padding: 0;
+  list-style: none;
 }
 
 .outline-list__class-list .function-signature .function-name {
@@ -2051,9 +2104,9 @@ menuseparator {
 }
 
 .outline-list h2 {
+  margin: 10px 0 10px 10px;
   font-weight: normal;
   font-size: 1em;
-  margin: 10px 0 10px 10px;
   color: var(--blue-55);
 }
 
@@ -2085,19 +2138,19 @@ menuseparator {
 }
 
 .outline-footer {
-  background: var(--theme-body-background);
-  border-top: 1px solid var(--theme-splitter-color);
+  display: flex;
+  box-sizing: border-box;
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
+  height: 25px;
+  background: var(--theme-body-background);
+  border-top: 1px solid var(--theme-splitter-color);
   opacity: 1;
   z-index: 1;
   -moz-user-select: none;
   user-select: none;
-  height: 25px;
-  box-sizing: border-box;
-  display: flex;
 }
 
 .theme-dark .outline-footer button {
@@ -2106,6 +2159,11 @@ menuseparator {
 
 .outline-footer button.active {
   background: var(--theme-highlight-blue);
+  color: #ffffff;
+}
+
+.theme-dark .outline-footer button.active {
+  background: var(--theme-selection-background);
   color: #ffffff;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -2139,31 +2197,30 @@ menuseparator {
   margin-inline-end: 5px;
 }
 
-.source-icon,
-.source-icon svg {
+.source-icon {
   width: 15px;
   height: 15px;
 }
 
 .source-icon.prettyPrint {
-  mask: url("chrome://devtools/skin/images/debugger/prettyPrint.svg") no-repeat;
+  mask: url("resource://devtools/client/debugger/new/images/prettyPrint.svg") no-repeat;
   mask-size: 100%;
   background: var(--theme-highlight-blue);
   fill: var(--theme-textbox-box-shadow);
 }
 
 .source-icon.vue {
-  background: url("chrome://devtools/skin/images/debugger/vuejs.svg") 1px 1px no-repeat;
+  background: url("resource://devtools/client/debugger/new/images/vuejs.svg") 1px 1px no-repeat;
   background-size: 15px;
 }
 
 .source-icon.angular {
-  background: url("chrome://devtools/skin/images/debugger/angular.svg") 1px 1px no-repeat;
+  background: url("resource://devtools/client/debugger/new/images/angular.svg") 1px 1px no-repeat;
   background-size: 13px 13px;
 }
 
 .source-icon.blackBox {
-  mask: url("chrome://devtools/skin/images/debugger/blackBox.svg") no-repeat;
+  mask: url("resource://devtools/client/debugger/new/images/blackBox.svg") no-repeat;
   mask-size: 100%;
   background: var(--theme-highlight-blue);
 }
@@ -2171,6 +2228,274 @@ menuseparator {
 .source-icon.react {
   mask-size: 100%;
   background: var(--theme-highlight-bluegrey);
+}
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+.sources-panel {
+  background-color: var(--theme-sidebar-background);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.sources-panel * {
+  -moz-user-select: none;
+  user-select: none;
+}
+
+.sources-clear-root {
+  padding: 4px 3px 4px 3px;
+  width: 100%;
+  text-align: start;
+  white-space: nowrap;
+  color: inherit;
+  display: block;
+  border-bottom: 1px solid var(--theme-splitter-color);
+}
+
+.sources-clear-root i {
+  margin-right: 5px;
+  position: relative;
+}
+
+.sources-clear-root svg {
+  width: 13px;
+  height: 13px;
+}
+
+.theme-dark .sources-clear-root {
+  fill: var(--theme-body-color);
+}
+
+.sources-clear-root .home {
+  opacity: 0.5;
+}
+
+.sources-clear-root .breadcrumb {
+  width: 5px;
+  margin: 0 2px 0 6px;
+  vertical-align: bottom;
+  background: var(--theme-body-color-alt);
+}
+
+.sources-clear-root-label {
+  margin-left: 5px;
+}
+
+.sources-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.sources-list {
+  flex: 1;
+  display: flex;
+}
+
+.sources-list .managed-tree {
+  flex: 1;
+  display: flex;
+}
+
+.sources-list .managed-tree .tree {
+  padding: 4px 0;
+}
+
+.sources-list .managed-tree .tree .node {
+  padding: 0 10px 0 3px;
+  width: 100%;
+}
+
+.sources-list .img {
+  margin-inline-end: 5px;
+}
+
+.sources-list .tree .focused .img:not(.vue):not(.angular):not(.webpack):not(.dojo):not(.ember):not(.aframe):not(.marko):not(.mobx):not(.nextjs):not(.nuxtjs):not(.preact):not(.pug):not(.rxjs):not(.sencha-extjs),
+.sources-list .managed-tree .tree .node.focused .img.blackBox {
+  background: #ffffff;
+}
+
+.sources-list .tree .label .suffix {
+  font-style: italic;
+  font-size: 0.9em;
+  color: var(--theme-comment);
+}
+
+.sources-list .tree .focused .label .suffix {
+  color: inherit;
+}
+
+.theme-dark .source-list .tree .node.focused {
+  background-color: var(--theme-tab-toolbar-background);
+}
+
+.sources-list .tree .focused .label {
+  background-color: var(--theme-selection-background);
+}
+
+.sources-list .tree .label {
+  padding: 3px 0px 3px 0px;
+  display: inline-block;
+}
+
+.sources-list .tree .arrow {
+  vertical-align: 1px;
+}
+
+.sources-list .tree .node .no-arrow {
+  width: 10px;
+  display: inline-block;
+}
+
+.no-sources-message {
+  width: 100%;
+  font-style: italic;
+  text-align: center;
+  padding: 0.5em;
+  font-size: 12px;
+  user-select: none;
+  justify-content: center;
+  align-items: center;
+}
+
+.sources-panel .outline {
+  display: flex;
+  height: 100%;
+}
+
+.tree-indent {
+  border-inline-start: 0 none;
+}
+
+.source-outline-tabs {
+  font-size: 12px;
+  width: 100%;
+  background: var(--theme-body-background);
+  border-top: 1px solid var(--theme-splitter-color);
+  display: flex;
+  -moz-user-select: none;
+  user-select: none;
+  box-sizing: border-box;
+  height: 29px;
+  margin: 0;
+  padding: 0;
+}
+
+.source-outline-tabs .tab {
+  background-color: var(--theme-toolbar-background);
+  border-top: 2px solid transparent;
+  border-bottom: 1px solid var(--theme-splitter-color);
+  color: var(--theme-toolbar-color);
+  cursor: default;
+  display: inline-flex;
+  flex: 1;
+  justify-content: center;
+  margin-bottom: 0px;
+  margin-top: -1px;
+  overflow: hidden;
+  padding: 5px 8px 7px 8px;
+  position: relative;
+  transition: all 0.25s ease;
+}
+
+.source-outline-tabs .tab:not(.active):hover {
+  background-color: var(--theme-toolbar-hover);
+  border-top: 2px solid rgba(0, 0, 0, 0.2);
+}
+
+.theme-dark .source-outline-tabs .tab:hover {
+  border-top: 2px solid var(--tab-line-hover-color);
+}
+
+.source-outline-tabs .tab.active {
+  border-top: 2px solid var(--tab-line-selected-color);
+  color: var(--theme-toolbar-selected-color);
+}
+
+.theme-dark .source-outline-tabs .tab.active {
+  color: var(--theme-toolbar-selected-color);
+}
+
+.theme-dark .source-outline-tabs .tab.active:hover {
+  border-top: 2px solid var(--tab-line-selected-color);
+}
+
+.source-outline-tabs .tab.active path,
+.source-outline-tabs .tab:hover path {
+  fill: var(--theme-body-color);
+}
+
+.source-outline-panel {
+  flex: 1;
+  overflow: auto;
+}
+
+.source-outline-panel.has-root > div {
+  height: 100%;
+}
+
+.source-outline-panel.has-root .thread-header {
+  margin-top: 4px;
+}
+
+.sources-list .managed-tree .tree .node .img.blackBox {
+  mask: url("resource://devtools/client/debugger/new/images/blackBox.svg") no-repeat;
+  mask-size: 100%;
+  background-color: var(--theme-highlight-blue);
+  width: 13px;
+  height: 13px;
+  display: inline-block;
+  margin-inline-end: 6px;
+  margin-inline-start: 1px;
+  margin-top: 2px;
+}
+
+.theme-dark .sources-list .managed-tree .tree .node .img.blackBox {
+  background-color: var(--theme-body-color);
+}
+
+/*
+  Custom root styles
+*/
+.sources-pane.sources-list-custom-root {
+  display: block;
+  position: relative;
+}
+
+.sources-list-custom-root .sources-pane {
+  display: block;
+}
+
+.sources-list-custom-root .no-sources-message {
+  position: absolute;
+  top: 26px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+/* Removes start margin when a custom root is used */
+.sources-list-custom-root
+  .tree
+  > .tree-node[data-expandable="false"][aria-level="0"] {
+  padding-inline-start: 4px;
+}
+
+.sources-list .tree-node[data-expandable="false"] .tree-indent:last-of-type {
+  margin-inline-end: 0;
+}
+
+.thread-header {
+  margin-top: 10px;
+}
+
+.thread-header .label {
+  line-height: 15px;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -2190,6 +2515,7 @@ menuseparator {
   user-select: none;
   height: var(--editor-footer-height);
   box-sizing: border-box;
+  justify-content: space-between;
 }
 
 .source-footer .commands {
@@ -2212,7 +2538,7 @@ menuseparator {
   padding: 6px;
 }
 
-.source-footer > .commands > .action img {
+.source-footer > .commands > .action .img {
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -2237,44 +2563,40 @@ menuseparator {
   margin: 0 4px;
 }
 
-.source-footer > .commands > .action > img.prettyPrint {
-  mask: url("chrome://devtools/skin/images/debugger/prettyPrint.svg") no-repeat;
+.source-footer > .commands > .action > .img.prettyPrint {
+  mask: url("resource://devtools/client/debugger/new/images/prettyPrint.svg") no-repeat;
   height: 16px;
   width: 16px;
   background: var(--theme-body-color);
 }
 
-.source-footer > .commands > .action > img.blackBox {
-  mask: url("chrome://devtools/skin/images/debugger/blackBox.svg") no-repeat;
+.source-footer > .commands > .action > .img.blackBox {
+  mask: url("resource://devtools/client/debugger/new/images/blackBox.svg") no-repeat;
   height: 16px;
   width: 16px;
   background: var(--theme-body-color);
 }
 
-.source-footer .commands .coverage {
-  color: var(--theme-body-color);
-}
-
-.coverage-on .source-footer .commands .coverage {
-  color: var(--theme-highlight-blue);
-  border: 1px solid var(--theme-body-color-inactive);
-  border-radius: 2px;
-}
-
-.source-footer > .commands > .blackboxed > img.blackBox {
+.source-footer > .commands > .blackboxed > .img.blackBox {
   background: var(--theme-highlight-blue);
 }
 
 .source-footer .blackbox-summary,
-.source-footer .mapped-source {
+.source-footer .mapped-source,
+.source-footer .cursor-position {
   color: var(--theme-body-color);
-  padding-left: 2.5px;
+  padding-right: 2.5px;
 }
 
 .source-footer .mapped-source {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.source-footer .cursor-position {
+  padding: 5px;
+  white-space: nowrap;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -2298,6 +2620,7 @@ menuseparator {
 
 .search-bar .search-shadow {
   flex-grow: 1;
+  border-bottom: none;
 }
 
 .search-bar .search-shadow.focused {
@@ -2325,7 +2648,9 @@ menuseparator {
   flex-shrink: 0;
   justify-content: flex-end;
   background-color: var(--theme-toolbar-background);
-  padding: 0 13px;
+  padding: 0;
+  padding-inline-start: 1px;
+  padding-inline-end: 4px;
 }
 
 .search-bottom-bar .search-modifiers {
@@ -2343,6 +2668,23 @@ menuseparator {
   border-radius: 3px;
 }
 
+.search-bottom-bar .search-modifiers button.close-btn.big .img {
+  width: 12px;
+  height: 12px;
+}
+
+.search-bottom-bar .search-modifiers .pipe-divider {
+  height: 70%;
+  border: 1px solid var(--grey-20);
+  vertical-align: middle;
+  margin-inline-start: 0.8em;
+  margin-inline-end: 0.3em;
+}
+
+.theme-dark .search-bottom-bar .search-modifiers .pipe-divider {
+  border-color: var(--grey-70);
+}
+
 .search-bottom-bar .search-modifiers button i {
   display: flex;
   justify-content: center;
@@ -2350,22 +2692,26 @@ menuseparator {
   padding: 0;
   width: 16px;
 }
-
-.search-bottom-bar .search-modifiers button svg {
-  fill: var(--theme-comment);
-  height: 16px;
+.search-bottom-bar .search-modifiers .img {
   width: 16px;
+  height: 16px;
+  vertical-align: bottom;
+  background-color: var(--theme-comment);
 }
 
 .search-bottom-bar .search-modifiers button:hover {
   background: var(--theme-toolbar-background-hover);
 }
 
-.search-bottom-bar .search-modifiers button.active svg {
-  fill: var(--theme-selection-background);
+.search-bottom-bar .search-modifiers button.close-btn:hover {
+  background: var(--theme-selection-background);
 }
 
-.theme-dark .search-bottom-bar .search-modifiers button.active svg {
+.search-bottom-bar .search-modifiers button.active .img {
+  background-color: var(--theme-selection-background);
+}
+
+.theme-dark .search-bottom-bar .search-modifiers button.active .img {
   fill: white;
 }
 
@@ -2614,50 +2960,48 @@ menuseparator {
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-.call-site {
-  background: #f0f9ff;
-  position: relative;
+.column-breakpoint {
+  display: inline;
 }
 
-.call-site::before {
-  content: "";
-  position: absolute;
-  width: 100%;
-  height: calc(100% - 2px);
-  border-bottom: 2px solid #aed3ef;
+.column-breakpoint svg {
+  display: inline;
+  cursor: pointer;
+  height: 12px;
+  width: 9px;
+  vertical-align: top;
 }
 
-.call-site-bp {
-  position: relative;
+.column-breakpoint.active svg {
+  fill: var(--blue-50);
+  stroke: var(--blue-60);
 }
 
-.debug-expression.call-site-bp,
-.call-site-bp {
-  background-color: #fce7e7;
+.column-breakpoint.disabled svg {
+  fill: var(--blue-50);
+  stroke: var(--blue-40);
+  fill-opacity: 0.5;
 }
 
-.call-site-bp::before {
-  content: "";
-  position: absolute;
-  width: 100%;
-  height: calc(100% - 2px);
-  border-bottom: 2px solid red;
+.column-breakpoint.has-condition svg {
+  fill: var(--theme-graphs-yellow);
+  stroke: var(--theme-graphs-orange);
 }
 
-.theme-dark .call-site {
-  background-color: #4b5462;
+.column-breakpoint.has-condition.log svg {
+  fill: var(--theme-graphs-orange);
+  stroke: var(--theme-graphs-yellow);
 }
 
-.theme-dark .call-site::before {
-  border-bottom-color: #5f78a4;
+.theme-dark .column-breakpoint.active svg {
+  fill: var(--blue-55);
+  stroke: var(--blue-40);
 }
 
-.theme-dark .call-site-bp {
-  background-color: #4b3f3f;
-}
-
-.theme-dark .call-site-bp::before {
-  border-bottom-color: #dd4d4d;
+.theme-dark .column-breakpoint.disabled svg {
+  fill: var(--blue-50);
+  stroke: var(--blue-60);
+  fill-opacity: 0.5;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -2724,6 +3068,10 @@ menuseparator {
   min-width: 0 !important;
 }
 
+.CodeMirror.cm-s-mozilla, .CodeMirror-scroll, .CodeMirror-sizer {
+  overflow-anchor: none;
+}
+
 .theme-dark {
   --theme-conditional-breakpoint-color: #9fa4a9;
 }
@@ -2751,10 +3099,26 @@ html[dir="rtl"] .editor-mount {
 
 .theme-light {
   --gutter-hover-background-color: #dde1e4;
+  --breakpoint-fill: var(--blue-50);
+  --breakpoint-stroke: var(--blue-60);
+  --breakpoint-fill-disabled: var(--blue-50);
+  --breakpoint-stroke-disabled: var(--blue-40);
 }
 
 .theme-dark {
   --gutter-hover-background-color: #414141;
+  --breakpoint-fill: var(--blue-55);
+  --breakpoint-stroke: var(--blue-40);
+  --breakpoint-fill-disabled: var(--blue-50);
+  --breakpoint-stroke-disabled: var(--blue-60);
+}
+
+.theme-light .cm-s-mozilla .empty-line .CodeMirror-linenumber {
+  color: var(--grey-40);
+}
+
+.theme-dark .cm-s-mozilla .empty-line .CodeMirror-linenumber {
+  color: var(--grey-50);
 }
 
 :not(.empty-line):not(.new-breakpoint)
@@ -2780,7 +3144,7 @@ html[dir="rtl"] .editor-mount {
   height: 12px;
   width: 9px;
   background-color: var(--gutter-hover-background-color);
-  mask: url("chrome://devtools/skin/images/debugger/breakpoint.svg") no-repeat;
+  mask: url("resource://devtools/client/debugger/new/images/breakpoint.svg") no-repeat;
   mask-size: auto 12px;
   mask-position: right;
 }
@@ -2808,13 +3172,9 @@ html[dir="rtl"] .editor-mount {
   background: var(--theme-selection-background-hover);
 }
 
-.coverage-on .CodeMirror-code :not(.hit-marker) .CodeMirror-line,
-.coverage-on .CodeMirror-code :not(.hit-marker) .CodeMirror-gutter-wrapper {
-  opacity: 0.5;
-}
-
 .editor.new-breakpoint svg {
-  fill: var(--theme-selection-background);
+  fill: var(--breakpoint-fill);
+  stroke: var(--breakpoint-stroke);
   width: 60px;
   height: 14px;
   position: absolute;
@@ -2841,12 +3201,20 @@ html[dir="rtl"] .editor-mount {
   right: -16px;
 }
 
-.new-breakpoint.has-condition svg {
+.new-breakpoint.has-condition .CodeMirror-gutter-wrapper svg {
   fill: var(--theme-graphs-yellow);
+  stroke: var(--theme-graphs-orange);
+}
+
+.new-breakpoint.has-condition.log .CodeMirror-gutter-wrapper svg {
+  fill: var(--theme-graphs-orange);
+  stroke: var(--theme-graphs-yellow);
 }
 
 .editor.new-breakpoint.breakpoint-disabled svg {
-  opacity: 0.3;
+  fill: var(--breakpoint-fill-disabled);
+  stroke: var(--breakpoint-stroke-disabled);
+  fill-opacity: 0.5;
 }
 
 .editor.column-breakpoint svg {
@@ -2901,7 +3269,8 @@ html[dir="rtl"] .editor-mount {
   color: var(--theme-comment);
 }
 
-.debug-expression {
+.debug-expression,
+.new-debug-line .column-breakpoint {
   background-color: var(--debug-expression-background);
 }
 
@@ -2930,7 +3299,6 @@ debug-expression-error {
 .new-debug-line-error .CodeMirror-activeline-background {
   display: none;
 }
-
 .highlight-line .CodeMirror-line {
   animation: fade-highlight-out 1.5s normal forwards;
 }
@@ -2945,7 +3313,7 @@ debug-expression-error {
 }
 
 .theme-dark .highlight-line .CodeMirror-line {
-  animation: fade-highlight-out-dark 1.5s normal forwards;
+  animation: fade-highlight-out-dark 1s normal forwards;
 }
 
 @keyframes fade-highlight-out-dark {
@@ -2963,6 +3331,10 @@ debug-expression-error {
 
 .visible {
   visibility: visible;
+}
+
+.download-anchor {
+  display: none;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -3017,6 +3389,11 @@ debug-expression-error {
   align-items: center;
 }
 
+.breakpoints-list .breakpoint-heading .filename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .breakpoints-list .breakpoint-heading .filename span {
   opacity: 0.7;
   padding-left: 4px;
@@ -3046,6 +3423,7 @@ debug-expression-error {
 .breakpoints-exceptions {
   padding-bottom: 0.5em;
   padding-top: 0.5em;
+  user-select: none;
 }
 
 .breakpoints-list .breakpoint {
@@ -3107,6 +3485,14 @@ html[dir="rtl"] .breakpoints-list .breakpoint.is-conditional {
   border-right-color: var(--theme-graphs-yellow);
 }
 
+html:not([dir="rtl"]) .breakpoints-list .breakpoint.is-conditional.log {
+  border-left-color: var(--theme-graphs-orange);
+}
+
+html[dir="rtl"] .breakpoints-list .breakpoint.is-conditional.log {
+  border-right-color: var(--theme-graphs-orange);
+}
+
 html .breakpoints-list .breakpoint.paused {
   background-color: var(--theme-toolbar-background-alt);
   border-color: var(--breakpoint-active-color);
@@ -3138,7 +3524,7 @@ html[dir="rtl"] .breakpoints-list .breakpoint .breakpoint-line {
 }
 
 .breakpoints-list .breakpoint:hover .breakpoint-line {
-  display: none;
+  color: transparent;
 }
 
 .breakpoints-list .breakpoint.paused:hover {
@@ -3363,33 +3749,49 @@ html[dir="rtl"] .breakpoints-list .breakpoint .breakpoint-line {
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-.frames ul .frames-group .group,
-.frames ul .frames-group .group .location {
+.frames [role="list"] .frames-group .group,
+.frames [role="list"] .frames-group .group .location {
   font-weight: 500;
   cursor: default;
+  /*
+   * direction:rtl is set in Frames.css to overflow the location text from the
+   * start. Here we need to reset it in order to display the framework icon
+   * after the framework name.
+   */
+  direction: ltr;
 }
 
-.frames ul .frames-group.expanded .group,
-.frames ul .frames-group.expanded .group .location {
+.frames [role="list"] .frames-group.expanded .group,
+.frames [role="list"] .frames-group.expanded .group .location {
   color: var(--theme-highlight-blue);
 }
 
-.frames ul .frames-group.expanded .react path {
+.frames [role="list"] .frames-group.expanded .react path {
   fill: var(--theme-highlight-blue);
 }
 
-.frames ul .frames-group .frames-list li {
+.frames [role="list"] .frames-group .frames-list [role="listitem"] {
   padding-left: 30px;
 }
 
-.frames ul .frames-group .frames-list {
+.frames [role="list"] .frames-group .frames-list {
   border-top: 1px solid var(--theme-splitter-color);
   border-bottom: 1px solid var(--theme-splitter-color);
 }
 
-.frames ul .frames-group.expanded .badge {
+/* We don't want to display those as flex since only the name is displayed */
+.frames [role="list"] .frames-group .frames-list [role="listitem"] {
+  display: block;
+}
+
+.frames [role="list"] .frames-group.expanded .badge {
   color: var(--theme-highlight-blue);
 }
+
+.group-description-name {
+  padding-left: 5px;
+}
+
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
@@ -3411,17 +3813,21 @@ html[dir="rtl"] .breakpoints-list .breakpoint .breakpoint-line {
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 .why-paused {
+  display: flex;
   background-color: var(--theme-body-background);
   color: var(--theme-body-color);
-  padding: 10px 10px 10px 20px;
-  white-space: normal;
   opacity: 0.6;
   font-size: 12px;
-  flex: 0 1 auto;
   text-align: center;
   font-style: italic;
   font-weight: 300;
   cursor: default;
+  min-height: 24px;
+  white-space: normal;
+}
+
+.why-paused > div {
+  margin: auto;
 }
 
 .theme-dark .secondary-panes .why-paused {
@@ -3429,6 +3835,7 @@ html[dir="rtl"] .breakpoints-list .breakpoint .breakpoint-line {
 }
 
 .why-paused .message {
+  padding: 4px;
   font-size: 10px;
 }
 
@@ -3442,23 +3849,26 @@ html[dir="rtl"] .breakpoints-list .breakpoint .breakpoint-line {
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-.frames ul {
+.frames [role="list"] {
   list-style: none;
-  margin: 0;
+  margin-top: 4px;
   padding: 0;
 }
 
-.frames ul li {
-  padding: 0 10px 0 21px;
+.frames [role="list"] [role="listitem"] {
+  padding: 2px 10px 2px 20px;
   overflow: hidden;
   display: flex;
   justify-content: space-between;
+  column-gap: 0.5em;
   flex-direction: row;
   align-items: center;
   margin: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
 }
 
-.frames ul li * {
+.frames [role="list"] [role="listitem"] * {
   -moz-user-select: none;
   user-select: none;
 }
@@ -3470,12 +3880,15 @@ html[dir="rtl"] .breakpoints-list .breakpoint .breakpoint-line {
 
 .frames .location {
   font-weight: normal;
-  display: flex;
-  justify-content: space-between;
-  flex-direction: row;
-  align-items: center;
   margin: 0;
-  flex-shrink: 0;
+  flex-grow: 1;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  /* Trick to get the ellipsis at the start of the string */
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: right;
 }
 
 .theme-light .frames .location {
@@ -3490,34 +3903,35 @@ html[dir="rtl"] .breakpoints-list .breakpoint .breakpoint-line {
 .frames .title {
   text-overflow: ellipsis;
   overflow: hidden;
-  margin: 7px 0.5em 7px 0;
 }
 
-.frames ul li:hover,
-.frames ul li:focus {
+.frames [role="list"] [role="listitem"]hover,
+.frames [role="list"] [role="listitem"]focus {
   background-color: var(--theme-toolbar-background-alt);
 }
 
-.theme-dark .frames ul li:focus {
+.theme-dark .frames [role="list"] [role="listitem"]focus {
   background-color: var(--theme-tab-toolbar-background);
 }
 
-.frames ul li.selected {
+.frames [role="list"] [role="listitem"].selected {
   background-color: var(--theme-selection-background);
   color: white;
 }
 
-.frames ul li.selected i.annotation-logo svg path {
+.frames [role="list"] [role="listitem"].selected i.annotation-logo svg path {
   fill: white;
 }
 
-:root.theme-light .frames ul li.selected .location,
-:root.theme-dark .frames ul li.selected .location {
+:root.theme-light .frames [role="list"] [role="listitem"].selected .location,
+:root.theme-dark .frames [role="list"] [role="listitem"].selected .location {
   color: white;
 }
 
 .show-more-container {
   display: flex;
+  min-height: 24px;
+  padding: 4px 0;
 }
 
 .show-more {
@@ -3536,62 +3950,22 @@ html[dir="rtl"] .breakpoints-list .breakpoint .breakpoint-line {
 }
 
 .annotation-logo {
+  mask-size: 100%;
+  display: inline-block;
   width: 12px;
-  margin-left: 3px;
-  line-height: 8px;
 }
 
-:root.theme-dark .annotation-logo svg path {
+:root.theme-dark .annotation-logo:not(.angular) svg path {
   fill: var(--theme-highlight-blue);
 }
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-.event-listeners {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.event-listeners .listener {
-  padding: 7px 10px 7px 21px;
-  clear: both;
-  overflow: hidden;
-}
-
-.event-listeners .listener * {
-  -moz-user-select: none;
-  user-select: none;
-}
-
-.event-listeners .listener:nth-of-type(2n) {
-  background-color: var(--theme-tab-toolbar-background);
-}
-
-.event-listeners .listener .type {
-  color: var(--theme-highlight-bluegrey);
-  padding-right: 5px;
-}
-
-.event-listeners .listener .selector {
-  color: var(--theme-content-color2);
-}
-
-.event-listeners .listener-checkbox {
-  margin-left: 0;
-}
-
-.event-listeners .listener .close-btn {
-  float: right;
-}
-
-.event-listeners .listener .close {
-  display: none;
-}
-
-.event-listeners .listener:hover .close {
-  display: block;
+/* Some elements are added to the DOM only to be printed into the clipboard
+   when the user copy some elements. We don't want those elements to mess with
+   the layout so we put them outside of the screen
+*/
+.clipboard-only {
+  position: absolute;
+  left: -9999px;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -3601,18 +3975,47 @@ html[dir="rtl"] .breakpoints-list .breakpoint .breakpoint-line {
   user-select: none;
 }
 
-.workers-list .worker {
+.workers-list > .worker {
   font-size: 1rem;
   color: var(--theme-content-color1);
-  padding: 0 1em;
-  line-height: 31px;
+  padding: 0 0.5em;
+  line-height: 25px;
   position: relative;
   transition: all 0.25s ease;
   cursor: pointer;
+  display: flex;
 }
 
-.worker-list .worker:hover {
+.workers-list .worker:hover {
   background-color: var(--search-overlays-semitransparent);
+}
+
+.workers-list .worker.selected {
+  background-color: var(--tab-line-selected-color);
+}
+
+.workers-list .icon {
+  align-self: center;
+}
+
+.workers-list .label {
+  display: inline-block;
+  flex-grow: 1;
+}
+
+.workers-list .pause-badge {
+  align-self: center;
+}
+
+.workers-list .worker.selected {
+  background: var(--theme-selection-background);
+  color: white;
+}
+
+.workers-list .selected .img.file,
+.workers-list .selected .img.worker,
+.workers-list .selected .pause-badge .img.pause {
+  background: white;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -3725,60 +4128,60 @@ html[dir="rtl"] .command-bar {
   background-color: var(--theme-toolbar-background);
 }
 
-img.pause,
-img.stepOver,
-img.stepIn,
-img.stepOut,
-img.resume,
-img.rewind,
-img.reverseStepOver,
-img.reverseStepIn,
-img.reverseStepOut,
-img.replay-previous,
-img.replay-next,
-img.resume,
-img.shortcuts,
-img.skipPausing {
+.img.pause,
+.img.stepOver,
+.img.stepIn,
+.img.stepOut,
+.img.resume,
+.img.rewind,
+.img.reverseStepOver,
+.img.reverseStepIn,
+.img.reverseStepOut,
+.img.replay-previous,
+.img.replay-next,
+.img.resume,
+.img.shortcuts,
+.img.skipPausing {
   background-color: var(--theme-body-color);
 }
 
-.command-bar img.pause {
-  mask: url("chrome://devtools/skin/images/debugger/pause.svg") no-repeat;
+.img.pause {
+  mask: url("resource://devtools/client/debugger/new/images/pause.svg") no-repeat;
 }
 
-.command-bar img.stepOver {
-  mask: url("chrome://devtools/skin/images/debugger/stepOver.svg") no-repeat;
+.img.stepOver {
+  mask: url("resource://devtools/client/debugger/new/images/stepOver.svg") no-repeat;
 }
 
-.command-bar img.stepIn {
-  mask: url("chrome://devtools/skin/images/debugger/stepIn.svg") no-repeat;
+.img.stepIn {
+  mask: url("resource://devtools/client/debugger/new/images/stepIn.svg") no-repeat;
 }
 
-.command-bar img.stepOut {
-  mask: url("chrome://devtools/skin/images/debugger/stepOut.svg") no-repeat;
+.img.stepOut {
+  mask: url("resource://devtools/client/debugger/new/images/stepOut.svg") no-repeat;
 }
 
-.command-bar img.resume {
-  mask: url("chrome://devtools/skin/images/debugger/resume.svg") no-repeat;
+.img.resume {
+  mask: url("resource://devtools/client/debugger/new/images/resume.svg") no-repeat;
 }
 
-.command-bar img.rewind {
-  mask: url("chrome://devtools/skin/images/debugger/resume.svg") no-repeat;
+.img.rewind {
+  mask: url("resource://devtools/client/debugger/new/images/resume.svg") no-repeat;
   transform: scaleX(-1);
 }
 
-.command-bar img.reverseStepOver {
-  mask: url("chrome://devtools/skin/images/debugger/stepOver.svg") no-repeat;
+.img.reverseStepOver {
+  mask: url("resource://devtools/client/debugger/new/images/stepOver.svg") no-repeat;
   transform: scaleX(-1);
 }
 
-.command-bar img.reverseStepIn {
-  mask: url("chrome://devtools/skin/images/debugger/stepIn.svg") no-repeat;
+.img.reverseStepIn {
+  mask: url("resource://devtools/client/debugger/new/images/stepIn.svg") no-repeat;
   transform: scaleX(-1);
 }
 
-.command-bar img.reverseStepOut {
-  mask: url("chrome://devtools/skin/images/debugger/stepOut.svg") no-repeat;
+.img.reverseStepOut {
+  mask: url("resource://devtools/client/debugger/new/images/stepOut.svg") no-repeat;
   transform: scaleX(-1);
 }
 
@@ -3786,8 +4189,8 @@ img.skipPausing {
   flex-grow: 1;
 }
 
-.command-bar img.shortcuts {
-  mask: url("chrome://devtools/skin/images/help.svg") no-repeat;
+.command-bar .img.shortcuts {
+  mask: url("resource://devtools/client/debugger/new/images/help.svg") no-repeat;
   mask-size: contain;
 }
 
@@ -3810,7 +4213,7 @@ img.skipPausing {
 }
 
 .command-bar .skipPausing {
-  mask: url("chrome://devtools/skin/images/debugger/disable-pausing.svg") no-repeat;
+  mask: url("resource://devtools/client/debugger/new/images/disable-pausing.svg") no-repeat;
   mask-size: 100%;
 }
 
@@ -3842,6 +4245,134 @@ img.skipPausing {
   background: var(--theme-splitter-color);
   height: 10px;
   margin: 11px 6px 0 6px;
+}
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+.xhr-input-form {
+  width: 100%;
+}
+
+.xhr-input {
+  width: 100%;
+  margin: 0;
+  border: 1px;
+  background-color: var(--theme-sidebar-background);
+  font-size: 12px;
+  padding: 0.5em 1.6em;
+  color: var(--theme-body-color);
+  outline: 0;
+}
+
+.xhr-input::placeholder {
+  font-style: italic;
+  color: var(--theme-comment);
+}
+
+.xhr-input:focus {
+  cursor: text;
+}
+
+.xhr-input-container {
+  display: flex;
+  border: 1px solid transparent;
+}
+
+.xhr-input-container.focused {
+  border: 1px solid var(--theme-highlight-blue);
+}
+
+:root.theme-dark .xhr-input-container.focused {
+  border: 1px solid var(--blue-50);
+}
+
+.xhr-input-container.error {
+  border: 1px solid red;
+}
+
+.xhr-container {
+  border-left: 4px solid transparent;
+  width: 100%;
+  color: var(--theme-body-color);
+  padding: 0.25em 1em;
+  background-color: var(--theme-body-background);
+  display: flex;
+  align-items: center;
+  position: relative;
+  min-height: var(--breakpoint-expression-height);
+}
+
+:root.theme-light .xhr-container:hover {
+  background-color: var(--theme-selection-background-hover);
+}
+
+:root.theme-dark .xhr-container:hover {
+  background-color: var(--theme-selection-background-hover);
+}
+
+.xhr-checkbox {
+    margin-left: 0px;
+}
+
+.xhr-label {
+  max-width: calc(100% - var(--breakpoint-expression-right-clear-space));
+  display: inline-block;
+  cursor: text;
+  flex-grow: 1;
+  text-overflow: ellipsis;
+  padding-inline-end: 8px;
+  font-size: 11px;
+}
+
+.xhr-container .close-btn {
+  offset-inline-end: 12px;
+  inset-inline-end: 12px;
+  offset-inline-start: auto;
+  inset-inline-start: auto;
+  position: absolute;
+  top: 8px;
+}
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+.event-listeners-content {
+	padding: 4px 20px;
+}
+
+.event-listeners-content ul {
+	padding: 0;
+	list-style-type: none;
+}
+
+.event-listener-group {
+	user-select: none;
+}
+
+.event-listeners-content .arrow {
+	margin-inline-end: 0;
+	position: relative;
+	top: 1px;
+}
+
+html[dir="ltr"] .event-listeners-content .arrow.expanded {
+  transform: rotate(0deg);
+}
+
+html[dir="rtl"] .event-listeners-content .arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.event-listener-event {
+	display: flex;
+	align-items: center;
+	margin-inline-start: 30px;
+}
+
+.event-listener-event input {
+	margin-inline-end: 4px;
+	margin-inline-start: 0px;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -3892,9 +4423,16 @@ html[dir="rtl"] .object-node {
   padding-bottom: 10px;
 }
 
-.scopes-list .scope-type-toggle a {
+.scopes-list .scope-type-toggle button {
   /* Override color so that the link doesn't turn purple */
   color: var(--theme-body-color);
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.scopes-list .scope-type-toggle button:hover {
+  background: transparent;
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -3949,10 +4487,6 @@ html[dir="rtl"] .object-node {
 
 .secondary-panes .breakpoints-buttons {
   display: flex;
-}
-
-.secondary-panes .accordion .plus {
-  margin-top: -2px;
 }
 
 .secondary-panes .accordion .plus svg {
@@ -4030,12 +4564,17 @@ html[dir="rtl"] .object-node {
 .shortcutKey {
   text-align: right;
   padding-right: 10px;
-  font-family: Courier;
+  font-family: var(--monospace-font-family);
+  font-size: 14px;
+  line-height: 18px;
+  color: var(--theme-body-color);
 }
 
 .shortcutLabel {
   text-align: left;
   padding-left: 10px;
+  font-size: 14px;
+  line-height: 18px;
 }
 
 .shortcutFunction {
@@ -4097,37 +4636,59 @@ html .welcomebox .toggle-button-end.collapsed {
 }
 
 .source-tab {
-  border: 1px solid transparent;
-  border-top-left-radius: 2px;
-  border-top-right-radius: 2px;
   display: inline-flex;
   align-items: center;
   position: relative;
-  transition: all 0.15s ease;
   min-width: 40px;
   max-width: 100%;
   overflow: hidden;
   padding: 5px;
-  margin-inline-start: 3px;
-  margin-top: 3px;
   cursor: default;
-  height: 27px;
+  height: 30px;
+  font-size: 12px;
+  background-color: transparent;
+}
+
+.source-tab::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: transparent;
+  transition: transform 250ms var(--animation-curve), opacity 250ms var(--animation-curve);
+  opacity: 0;
+  transform: scaleX(0);
 }
 
 .source-tab:first-child {
   margin-inline-start: 0;
 }
 
-.source-tab:hover {
-  background-color: var(--theme-toolbar-background-alt);
-  border-color: var(--theme-splitter-color);
+.source-tab:not(.active):hover {
+  background: linear-gradient(var(--theme-toolbar-hover) 28px, transparent 1px);
+}
+
+.source-tab:not(.active):hover::before {
+  background: var(--tab-line-hover-color);
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 .source-tab.active {
-  color: var(--theme-body-color);
-  background-color: var(--theme-body-background);
-  border-color: var(--theme-splitter-color);
+  color: var(--theme-toolbar-selected-color);
   border-bottom-color: transparent;
+}
+
+.source-tab.active::before {
+  background: var(--tab-line-selected-color);
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.theme-dark .source-tab.active {
+  color: var(--theme-toolbar-selected-color);
 }
 
 .source-tab.active path,
@@ -4139,7 +4700,7 @@ html .welcomebox .toggle-button-end.collapsed {
   margin-inline-end: 0;
 }
 
-.source-tab img.prettyPrint,
+.source-tab .img.prettyPrint,
 .source-tab .source-icon.blackBox {
   height: 12px;
   width: 12px;
@@ -4150,8 +4711,8 @@ html .welcomebox .toggle-button-end.collapsed {
   fill: var(--theme-textbox-box-shadow);
 }
 
-.source-tab img.react {
-  mask: url("chrome://devtools/skin/images/debugger/react.svg") no-repeat;
+.source-tab .img.react {
+  mask: url("resource://devtools/client/debugger/new/images/react.svg") no-repeat;
   mask-size: 100%;
   height: 14px;
   width: 14px;
@@ -4167,28 +4728,13 @@ html .welcomebox .toggle-button-end.collapsed {
   fill: var(--theme-body-color);
 }
 
-img.moreTabs {
-  mask: url("chrome://devtools/skin/images/command-chevron.svg") no-repeat;
-  mask-size: 100%;
-  width: 12px;
-  height: 12px;
-  display: block;
-  background: var(--theme-body-color);
-  margin-left: 6px;
-}
-
-html[dir="rtl"] img.moreTabs {
-  transform: rotate(180deg);
-  margin-right: 6px;
-}
-
 .source-tab .filename {
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
   padding: 0 4px;
   align-self: center;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .source-tab .filename span {
@@ -4203,6 +4749,11 @@ html[dir="rtl"] img.moreTabs {
 
 .source-tab.active .close-btn {
   visibility: visible;
+}
+
+.source-tab.active .close {
+  visibility: visible;
+  background-color: var(--theme-toolbar-selected-color);
 }
 
 .source-tab:hover .close-btn {
@@ -4249,6 +4800,20 @@ html[dir="rtl"] .dropdown {
   width: 24px;
 }
 
+.more-tabs {
+  mask: url("resource://devtools/client/debugger/new/images/command-chevron.svg") no-repeat;
+  mask-size: 100%;
+  width: 12px;
+  display: block;
+  background: var(--theme-body-color);
+  margin-left: 6px;
+}
+
+html[dir="rtl"] .img.more-tabs {
+  transform: rotate(180deg);
+  margin-right: 6px;
+}
+
 .dropdown li {
   transition: all 0.25s ease;
   padding: 2px 10px 10px 5px;
@@ -4272,19 +4837,19 @@ html[dir="rtl"] .dropdown {
 }
 
 .dropdown-icon.prettyPrint {
-  mask: url("chrome://devtools/skin/images/debugger/prettyPrint.svg") no-repeat;
+  mask: url("resource://devtools/client/debugger/new/images/prettyPrint.svg") no-repeat;
   mask-size: 100%;
   background: var(--theme-highlight-blue);
 }
 
 .dropdown-icon.blackBox {
-  mask: url("chrome://devtools/skin/images/debugger/blackBox.svg") no-repeat;
+  mask: url("resource://devtools/client/debugger/new/images/blackBox.svg") no-repeat;
   mask-size: 100%;
   background: var(--theme-highlight-blue);
 }
 
 .dropdown-icon.file {
-  mask: url("chrome://devtools/skin/images/debugger/file.svg") no-repeat;
+  mask: url("resource://devtools/client/debugger/new/images/file.svg") no-repeat;
   mask-size: 100%;
   margin-bottom: 7px;
 }
@@ -4378,7 +4943,7 @@ html[dir="rtl"] .dropdown {
   mask-position: 2px 4px;
 }
 
-.result-list li img.result-item-icon {
+.result-list li .img.result-item-icon {
   width: 16px;
   height: 16px;
 }

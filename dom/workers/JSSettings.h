@@ -7,7 +7,11 @@
 #ifndef mozilla_dom_workerinternals_JSSettings_h
 #define mozilla_dom_workerinternals_JSSettings_h
 
+#include <stdint.h>
+
 #include "jsapi.h"
+#include "js/ContextOptions.h"
+#include "js/GCAPI.h"
 #include "mozilla/Maybe.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -19,8 +23,7 @@ namespace workerinternals {
 // Random unique constant to facilitate JSPrincipal debugging
 const uint32_t kJSPrincipalsDebugToken = 0x7e2df9d2;
 
-struct JSSettings
-{
+struct JSSettings {
   enum {
     // All the GC parameters that we support.
     JSSettings_JSGC_MAX_BYTES = 0,
@@ -41,14 +44,11 @@ struct JSSettings
     kGCSettingsArraySize
   };
 
-  struct JSGCSetting
-  {
+  struct JSGCSetting {
     mozilla::Maybe<JSGCParamKey> key;
     uint32_t value;
 
-    JSGCSetting()
-    : key(), value(0)
-    { }
+    JSGCSetting() : key(), value(0) {}
   };
 
   // There are several settings that we know we need so it makes sense to
@@ -56,14 +56,11 @@ struct JSSettings
   typedef JSGCSetting JSGCSettingsArray[kGCSettingsArraySize];
 
   // Settings that change based on chrome/content context.
-  struct JSContentChromeSettings
-  {
+  struct JSContentChromeSettings {
     JS::RealmOptions realmOptions;
     int32_t maxScriptRuntime;
 
-    JSContentChromeSettings()
-    : realmOptions(), maxScriptRuntime(0)
-    { }
+    JSContentChromeSettings() : realmOptions(), maxScriptRuntime(0) {}
   };
 
   JSContentChromeSettings chrome;
@@ -78,7 +75,8 @@ struct JSSettings
 
   JSSettings()
 #ifdef JS_GC_ZEAL
-  : gcZeal(0), gcZealFrequency(0)
+      : gcZeal(0),
+        gcZealFrequency(0)
 #endif
   {
     for (uint32_t index = 0; index < ArrayLength(gcSettings); index++) {
@@ -86,9 +84,7 @@ struct JSSettings
     }
   }
 
-  bool
-  ApplyGCSetting(JSGCParamKey aKey, uint32_t aValue)
-  {
+  bool ApplyGCSetting(JSGCParamKey aKey, uint32_t aValue) {
     JSSettings::JSGCSetting* firstEmptySetting = nullptr;
     JSSettings::JSGCSetting* foundSetting = nullptr;
 
@@ -125,8 +121,8 @@ struct JSSettings
   }
 };
 
-} // workerinternals namespace
-} // dom namespace
-} // mozilla namespace
+}  // namespace workerinternals
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_workerinternals_JSSettings_h
+#endif  // mozilla_dom_workerinternals_JSSettings_h

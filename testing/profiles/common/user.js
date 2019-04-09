@@ -1,14 +1,20 @@
-// Base preferences file used by both unittest and perf harnesses.
+// Common preferences file used by both unittest and perf harnesses.
 /* globals user_pref */
+user_pref("app.update.checkInstallTime", false);
 user_pref("app.update.disabledForTesting", true);
 user_pref("browser.chrome.guess_favicon", false);
 user_pref("browser.dom.window.dump.enabled", true);
-// Use an empty list of sites to avoid fetching
+user_pref("devtools.console.stdout.chrome", true);
+// Use a python-eval-able empty JSON array even though asrouter expects plain object
+user_pref("browser.newtabpage.activity-stream.asrouter.providers.snippets", "[]");
 user_pref("browser.newtabpage.activity-stream.feeds.section.topstories", false);
 user_pref("browser.newtabpage.activity-stream.feeds.snippets", false);
 user_pref("browser.newtabpage.activity-stream.tippyTop.service.endpoint", "");
 // For Activity Stream firstrun page, use an empty string to avoid fetching.
 user_pref("browser.newtabpage.activity-stream.fxaccounts.endpoint", "");
+// Background thumbnails in particular cause grief, and disabling thumbnails
+// in general can't hurt - we re-enable them when tests need them.
+user_pref("browser.pagethumbnails.capturing_disabled", true);
 // Tell the search service we are running in the US.  This also has the desired
 // side-effect of preventing our geoip lookup.
 user_pref("browser.search.region", "US");

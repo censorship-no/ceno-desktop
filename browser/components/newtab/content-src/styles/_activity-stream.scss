@@ -2,6 +2,7 @@
 @import './variables';
 @import './theme';
 @import './icons';
+@import './mixins';
 
 html {
   height: 100%;
@@ -133,7 +134,6 @@ input {
 @import '../components/ErrorBoundary/ErrorBoundary';
 @import '../components/TopSites/TopSites';
 @import '../components/Sections/Sections';
-@import '../components/StartupOverlay/StartupOverlay';
 @import '../components/Topics/Topics';
 @import '../components/Search/Search';
 @import '../components/ContextMenu/ContextMenu';
@@ -144,12 +144,27 @@ input {
 @import '../components/ASRouterAdmin/ASRouterAdmin';
 @import '../components/PocketLoggedInCta/PocketLoggedInCta';
 @import '../components/MoreRecommendations/MoreRecommendations';
+@import '../components/DiscoveryStreamBase/DiscoveryStreamBase';
+
+// Discovery Stream Components
+@import '../components/DiscoveryStreamComponents/CardGrid/CardGrid';
+@import '../components/DiscoveryStreamComponents/Hero/Hero';
+@import '../components/DiscoveryStreamComponents/HorizontalRule/HorizontalRule';
+@import '../components/DiscoveryStreamComponents/List/List';
+@import '../components/DiscoveryStreamComponents/Navigation/Navigation';
+@import '../components/DiscoveryStreamComponents/SectionTitle/SectionTitle';
+@import '../components/DiscoveryStreamComponents/TopSites/TopSites';
+@import '../components/DiscoveryStreamComponents/DSCard/DSCard';
+@import '../components/DiscoveryStreamComponents/DSMessage/DSMessage';
+@import '../components/DiscoveryStreamImpressionStats/ImpressionStats';
 
 // AS Router
 @import '../asrouter/components/Button/Button';
 @import '../asrouter/components/SnippetBase/SnippetBase';
 @import '../asrouter/components/ModalOverlay/ModalOverlay';
+@import '../asrouter/templates/ReturnToAMO/ReturnToAMO';
 @import '../asrouter/templates/SimpleSnippet/SimpleSnippet';
 @import '../asrouter/templates/SubmitFormSnippet/SubmitFormSnippet';
 @import '../asrouter/templates/OnboardingMessage/OnboardingMessage';
 @import '../asrouter/templates/EOYSnippet/EOYSnippet';
+@import '../asrouter/templates/StartupOverlay/StartupOverlay';

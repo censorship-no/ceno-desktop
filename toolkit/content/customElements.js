@@ -4,7 +4,7 @@
 
  // This file defines these globals on the window object.
  // Define them here so that ESLint can find them:
-/* globals MozElementMixin, MozXULElement, MozBaseControl */
+/* globals MozElementMixin, MozXULElement, MozElements */
 
 "use strict";
 
@@ -33,9 +33,11 @@ window.addEventListener("DOMContentLoaded", () => {
   for (let element of gElementsPendingConnection) {
     try {
       if (element.isConnected) {
+        element.isRunningDelayedConnectedCallback = true;
         element.connectedCallback();
       }
     } catch (ex) { console.error(ex); }
+    element.isRunningDelayedConnectedCallback = false;
   }
   gElementsPendingConnection.clear();
 }, { once: true, capture: true });
@@ -43,7 +45,42 @@ window.addEventListener("DOMContentLoaded", () => {
 const gXULDOMParser = new DOMParser();
 gXULDOMParser.forceEnableXULXBL();
 
+const MozElements = {};
+
 const MozElementMixin = Base => class MozElement extends Base {
+
+  /*
+   * Implements attribute inheritance by a child element. Uses XBL @inherit
+   * syntax of |to=from|.
+   *
+   * @param {element} child
+   *        A child element that inherits an attribute.
+   * @param {string} attr
+   *        An attribute to inherit. Optionally in the form of |to=from|, where
+   *        |to| is an attribute defined on custom element, whose value will be
+   *        inherited to |from| attribute, defined a child element. Note |from| may
+   *        take a special value of "text" to propogate attribute value as
+   *        a child's text.
+   */
+  inheritAttribute(child, attr) {
+    let attrName = attr;
+    let attrNewName = attr;
+    let split = attrName.split("=");
+    if (split.length == 2) {
+      attrName = split[1];
+      attrNewName = split[0];
+    }
+
+    if (attrNewName === "text") {
+      child.textContent =
+        this.hasAttribute(attrName) ? this.getAttribute(attrName) : "";
+    } else if (this.hasAttribute(attrName)) {
+      child.setAttribute(attrNewName, this.getAttribute(attrName));
+    } else {
+      child.removeAttribute(attrNewName);
+    }
+  }
+
   /**
    * Sometimes an element may not want to run connectedCallback logic during
    * parse. This could be because we don't want to initialize the element before
@@ -104,7 +141,8 @@ const MozElementMixin = Base => class MozElement extends Base {
             `;
         }, "")}
       ]>` : ""}
-      <box xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+      <box xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+           xmlns:html="http://www.w3.org/1999/xhtml">
         ${str}
       </box>
     `, "application/xml");
@@ -163,7 +201,8 @@ const MozElementMixin = Base => class MozElement extends Base {
 
   /**
    * Indicate that a class defining a XUL element implements one or more
-   * XPCOM interfaces by adding a getCustomInterface implementation to it.
+   * XPCOM interfaces by adding a getCustomInterface implementation to it,
+   * as well as an implementation of QueryInterface.
    *
    * The supplied class should implement the properties and methods of
    * all of the interfaces that are specified.
@@ -174,15 +213,14 @@ const MozElementMixin = Base => class MozElement extends Base {
    *        Array of interface names.
    */
   static implementCustomInterface(cls, ifaces) {
-    const numbers = new Set(ifaces.map(i => i.number));
-    if (cls.prototype.customInterfaceNumbers) {
-      // Base class already implemented some interfaces. Inherit:
-      cls.prototype.customInterfaceNumbers.forEach(number => numbers.add(number));
+    if (cls.prototype.customInterfaces) {
+      ifaces.push(...cls.prototype.customInterfaces);
     }
+    cls.prototype.customInterfaces = ifaces;
 
-    cls.prototype.customInterfaceNumbers = numbers;
-    cls.prototype.getCustomInterfaceCallback = function getCustomInterfaceCallback(iface) {
-      if (numbers.has(iface.number)) {
+    cls.prototype.QueryInterface = ChromeUtils.generateQI(ifaces);
+    cls.prototype.getCustomInterfaceCallback = function getCustomInterfaceCallback(ifaceToCheck) {
+      if (cls.prototype.customInterfaces.some(iface => iface.equals(ifaceToCheck))) {
         return getInterfaceProxy(this);
       }
       return null;
@@ -218,7 +256,7 @@ function getInterfaceProxy(obj) {
   return obj._customInterfaceProxy;
 }
 
-class MozBaseControl extends MozXULElement {
+MozElements.BaseControl = class BaseControl extends MozXULElement {
   get disabled() {
     return this.getAttribute("disabled") == "true";
   }
@@ -242,14 +280,19 @@ class MozBaseControl extends MozXULElement {
       this.removeAttribute("tabindex");
     }
   }
-}
+};
 
-MozXULElement.implementCustomInterface(MozBaseControl, [Ci.nsIDOMXULControlElement]);
+MozXULElement.implementCustomInterface(MozElements.BaseControl,
+                                       [Ci.nsIDOMXULControlElement]);
 
 // Attach the base class to the window so other scripts can use it:
 window.MozElementMixin = MozElementMixin;
 window.MozXULElement = MozXULElement;
-window.MozBaseControl = MozBaseControl;
+window.MozElements = MozElements;
+
+customElements.setElementCreationCallback("browser", () => {
+  Services.scriptloader.loadSubScript("chrome://global/content/elements/browser-custom-element.js", window);
+});
 
 // For now, don't load any elements in the extension dummy document.
 // We will want to load <browser> when that's migrated (bug 1441935).
@@ -257,16 +300,18 @@ const isDummyDocument = document.documentURI == "chrome://extensions/content/dum
 if (!isDummyDocument) {
   for (let script of [
     "chrome://global/content/elements/general.js",
-    "chrome://global/content/elements/progressmeter.js",
+    "chrome://global/content/elements/notificationbox.js",
     "chrome://global/content/elements/radio.js",
     "chrome://global/content/elements/textbox.js",
     "chrome://global/content/elements/tabbox.js",
+    "chrome://global/content/elements/tree.js",
   ]) {
     Services.scriptloader.loadSubScript(script, window);
   }
 
   for (let [tag, script] of [
     ["findbar", "chrome://global/content/elements/findbar.js"],
+    ["richlistbox", "chrome://global/content/elements/richlistbox.js"],
     ["stringbundle", "chrome://global/content/elements/stringbundle.js"],
     ["printpreview-toolbar", "chrome://global/content/printPreviewToolbar.js"],
     ["editor", "chrome://global/content/elements/editor.js"],

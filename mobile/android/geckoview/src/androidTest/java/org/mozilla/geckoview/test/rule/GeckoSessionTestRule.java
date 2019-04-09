@@ -6,17 +6,14 @@
 package org.mozilla.geckoview.test.rule;
 
 import org.mozilla.geckoview.GeckoDisplay;
-import org.mozilla.geckoview.BuildConfig;
 import org.mozilla.geckoview.GeckoResult;
-import org.mozilla.geckoview.GeckoResult.OnExceptionListener;
 import org.mozilla.geckoview.GeckoResult.OnValueListener;
 import org.mozilla.geckoview.GeckoRuntime;
-import org.mozilla.geckoview.GeckoRuntimeSettings;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
 import org.mozilla.geckoview.SessionTextInput;
+import org.mozilla.geckoview.test.util.RuntimeCreator;
 import org.mozilla.geckoview.test.util.Environment;
-import org.mozilla.geckoview.test.TestCrashHandler;
 import org.mozilla.geckoview.test.util.UiThreadUtils;
 import org.mozilla.geckoview.test.rdp.Actor;
 import org.mozilla.geckoview.test.rdp.Promise;
@@ -41,11 +38,7 @@ import android.app.Instrumentation;
 import android.graphics.Point;
 import android.graphics.SurfaceTexture;
 import android.net.LocalSocketAddress;
-import android.os.Build;
-import android.os.Bundle;
-import android.os.Debug;
 import android.os.Looper;
-import android.os.Process;
 import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -89,13 +82,6 @@ import kotlin.reflect.KClass;
 public class GeckoSessionTestRule implements TestRule {
     private static final String LOGTAG = "GeckoSessionTestRule";
 
-    private static final long DEFAULT_TIMEOUT_MILLIS = 10000;
-    private static final long DEFAULT_ARM_DEVICE_TIMEOUT_MILLIS = 30000;
-    private static final long DEFAULT_ARM_EMULATOR_TIMEOUT_MILLIS = 120000;
-    private static final long DEFAULT_X86_DEVICE_TIMEOUT_MILLIS = 30000;
-    private static final long DEFAULT_X86_EMULATOR_TIMEOUT_MILLIS = 5000;
-    private static final long DEFAULT_IDE_DEBUG_TIMEOUT_MILLIS = 86400000;
-
     public static final String APK_URI_PREFIX = "resource://android/";
 
     private static final Method sOnPageStart;
@@ -120,7 +106,7 @@ public class GeckoSessionTestRule implements TestRule {
 
     /**
      * Specify the timeout for any of the wait methods, in milliseconds, relative to
-     * {@link #DEFAULT_TIMEOUT_MILLIS}. When the default timeout scales to account
+     * {@link Environment#DEFAULT_TIMEOUT_MILLIS}. When the default timeout scales to account
      * for differences in the device under test, the timeout value here will be
      * scaled as well. Can be used on classes or methods.
      */
@@ -201,6 +187,7 @@ public class GeckoSessionTestRule implements TestRule {
         enum Key {
             CHROME_URI,
             DISPLAY_MODE,
+            ALLOW_JAVASCRIPT,
             SCREEN_ID,
             USE_MULTIPROCESS,
             USE_PRIVATE_MODE,
@@ -213,7 +200,8 @@ public class GeckoSessionTestRule implements TestRule {
             Key() {
                 final Field field;
                 try {
-                    field = GeckoSessionSettings.class.getField(name());
+                    field = GeckoSessionSettings.class.getDeclaredField(name());
+                    field.setAccessible(true);
                     mKey = (GeckoSessionSettings.Key<?>) field.get(null);
                 } catch (final NoSuchFieldException | IllegalAccessException e) {
                     throw new RuntimeException(e);
@@ -225,24 +213,45 @@ public class GeckoSessionTestRule implements TestRule {
 
             @SuppressWarnings("unchecked")
             public void set(final GeckoSessionSettings settings, final String value) {
-                if (boolean.class.equals(mType) || Boolean.class.equals(mType)) {
-                    settings.setBoolean((GeckoSessionSettings.Key<Boolean>) mKey,
-                            Boolean.valueOf(value));
-                } else if (int.class.equals(mType) || Integer.class.equals(mType)) {
-                    try {
-                        settings.setInt((GeckoSessionSettings.Key<Integer>) mKey,
-                                (Integer) GeckoSessionSettings.class.getField(value)
-                                        .get(null));
-                    } catch (final NoSuchFieldException | IllegalAccessException |
-                            ClassCastException e) {
-                        settings.setInt((GeckoSessionSettings.Key<Integer>) mKey,
-                                        Integer.valueOf(value));
+                try {
+                    if (boolean.class.equals(mType) || Boolean.class.equals(mType)) {
+                        Method method = GeckoSessionSettings.class
+                                .getDeclaredMethod("setBoolean",
+                                        GeckoSessionSettings.Key.class,
+                                        boolean.class);
+                        method.setAccessible(true);
+                        method.invoke(settings, mKey, Boolean.valueOf(value));
+                    } else if (int.class.equals(mType) || Integer.class.equals(mType)) {
+                        Method method = GeckoSessionSettings.class
+                                .getDeclaredMethod("setInt",
+                                        GeckoSessionSettings.Key.class,
+                                        int.class);
+                        method.setAccessible(true);
+                        try {
+                            method.invoke(settings, mKey,
+                                    (Integer)GeckoSessionSettings.class.getField(value)
+                                            .get(null));
+                        }
+                        catch (final NoSuchFieldException | IllegalAccessException |
+                                ClassCastException e) {
+                            method.invoke(settings, mKey,
+                                    Integer.valueOf(value));
+                        }
+                    } else if (String.class.equals(mType)) {
+                        Method method = GeckoSessionSettings.class
+                                .getDeclaredMethod("setString",
+                                        GeckoSessionSettings.Key.class,
+                                        String.class);
+                        method.setAccessible(true);
+                        method.invoke(settings, mKey, value);
+                    } else {
+                        throw new IllegalArgumentException("Unsupported type: " +
+                                mType.getSimpleName());
                     }
-                } else if (String.class.equals(mType)) {
-                    settings.setString((GeckoSessionSettings.Key<String>) mKey, value);
-                } else {
-                    throw new IllegalArgumentException("Unsupported type: " +
-                            mType.getSimpleName());
+                } catch (NoSuchMethodException
+                        | IllegalAccessException
+                        | InvocationTargetException e) {
+                    throw new RuntimeException(e);
                 }
             }
         }
@@ -814,7 +823,6 @@ public class GeckoSessionTestRule implements TestRule {
 
     private static final Set<Class<?>> DEFAULT_DELEGATES = getDefaultDelegates();
 
-    private static GeckoRuntime sRuntime;
     private static RDPConnection sRDPConnection;
     protected static GeckoSession sCachedSession;
     protected static Tab sCachedRDPTab;
@@ -851,8 +859,9 @@ public class GeckoSessionTestRule implements TestRule {
     protected boolean mIgnoreCrash;
 
     public GeckoSessionTestRule() {
-        mDefaultSettings = new GeckoSessionSettings();
-        mDefaultSettings.setBoolean(GeckoSessionSettings.USE_MULTIPROCESS, env.isMultiprocess());
+        mDefaultSettings = new GeckoSessionSettings.Builder()
+                .useMultiprocess(env.isMultiprocess())
+                .build();
     }
 
     /**
@@ -945,7 +954,7 @@ public class GeckoSessionTestRule implements TestRule {
      * @return GeckoRuntime object.
      */
     public @NonNull GeckoRuntime getRuntime() {
-        return sRuntime;
+        return RuntimeCreator.getRuntime();
     }
 
     protected static Object setDelegate(final @NonNull Class<?> cls,
@@ -1007,7 +1016,7 @@ public class GeckoSessionTestRule implements TestRule {
             if (TimeoutMillis.class.equals(annotation.annotationType())) {
                 // Scale timeout based on the default timeout to account for the device under test.
                 final long value = ((TimeoutMillis) annotation).value();
-                final long timeout = value * getScaledTimeoutMillis() / DEFAULT_TIMEOUT_MILLIS;
+                final long timeout = value * env.getScaledTimeoutMillis() / Environment.DEFAULT_TIMEOUT_MILLIS;
                 mTimeoutMillis = Math.max(timeout, 1000);
             } else if (Setting.class.equals(annotation.annotationType())) {
                 ((Setting) annotation).key().set(settings, ((Setting) annotation).value());
@@ -1047,23 +1056,9 @@ public class GeckoSessionTestRule implements TestRule {
         return new RuntimeException(cause != null ? cause : e);
     }
 
-    private long getScaledTimeoutMillis() {
-        if ("x86".equals(env.getCPUArch())) {
-            return env.isEmulator() ? DEFAULT_X86_EMULATOR_TIMEOUT_MILLIS
-                                    : DEFAULT_X86_DEVICE_TIMEOUT_MILLIS;
-        }
-        return env.isEmulator() ? DEFAULT_ARM_EMULATOR_TIMEOUT_MILLIS
-                                : DEFAULT_ARM_DEVICE_TIMEOUT_MILLIS;
-    }
-
-    private long getDefaultTimeoutMillis() {
-        return env.isDebugging() ? DEFAULT_IDE_DEBUG_TIMEOUT_MILLIS
-                                 : getScaledTimeoutMillis();
-    }
-
     protected void prepareStatement(final Description description) throws Throwable {
         final GeckoSessionSettings settings = new GeckoSessionSettings(mDefaultSettings);
-        mTimeoutMillis = getDefaultTimeoutMillis();
+        mTimeoutMillis = env.getDefaultTimeoutMillis();
         mNullDelegates = new HashSet<>();
         mClosedSession = false;
         mWithDevTools = false;
@@ -1121,7 +1116,7 @@ public class GeckoSessionTestRule implements TestRule {
 
                     if (sOnCrash.equals(method) && !mIgnoreCrash && isUsingSession(session)) {
                         if (env.shouldShutdownOnCrash()) {
-                            sRuntime.shutdown();
+                            getRuntime().shutdown();
                         }
 
                         throw new ChildCrashedException("Child process crashed");
@@ -1193,30 +1188,6 @@ public class GeckoSessionTestRule implements TestRule {
                                                 classes, recorder);
         mAllDelegates = new HashSet<>(DEFAULT_DELEGATES);
 
-        if (sRuntime == null) {
-            final GeckoRuntimeSettings.Builder runtimeSettingsBuilder =
-                new GeckoRuntimeSettings.Builder();
-            runtimeSettingsBuilder.arguments(new String[] { "-purgecaches" })
-                    .extras(InstrumentationRegistry.getArguments())
-                    .remoteDebuggingEnabled(true)
-                    .consoleOutput(true);
-
-            if (env.isAutomation()) {
-                runtimeSettingsBuilder.crashHandler(TestCrashHandler.class);
-            }
-
-            sRuntime = GeckoRuntime.create(
-                InstrumentationRegistry.getTargetContext(),
-                runtimeSettingsBuilder.build());
-
-            sRuntime.setDelegate(new GeckoRuntime.Delegate() {
-                @Override
-                public void onShutdown() {
-                    Process.killProcess(Process.myPid());
-                }
-            });
-        }
-
         if (sCachedSession != null && !sCachedSession.isOpen()) {
             sCachedSession = null;
         }
@@ -1268,7 +1239,7 @@ public class GeckoSessionTestRule implements TestRule {
      * @param session Session to open.
      */
     public void openSession(final GeckoSession session) {
-        session.open(sRuntime);
+        session.open(getRuntime());
         waitForOpenSession(session);
     }
 
@@ -1325,7 +1296,7 @@ public class GeckoSessionTestRule implements TestRule {
             };
 
             do {
-                UiThreadUtils.loopUntilIdle(getDefaultTimeoutMillis());
+                UiThreadUtils.loopUntilIdle(env.getDefaultTimeoutMillis());
             } while (mCallRecordHandler != null);
 
         } finally {
@@ -1372,8 +1343,8 @@ public class GeckoSessionTestRule implements TestRule {
         return session.equals(mMainSession) || mSubSessions.contains(session);
     }
 
-    protected static void deleteCrashDumps() {
-        File dumpDir = new File(sRuntime.getProfileDir(), "minidumps");
+    protected void deleteCrashDumps() {
+        File dumpDir = new File(getRuntime().getProfileDir(), "minidumps");
         for (final File dump : dumpDir.listFiles()) {
             dump.delete();
         }
@@ -1686,11 +1657,23 @@ public class GeckoSessionTestRule implements TestRule {
 
         boolean calledAny = false;
         int index = mLastWaitEnd;
+        long startTime = SystemClock.uptimeMillis();
+
         beforeWait();
 
         while (!calledAny || !methodCalls.isEmpty()) {
             while (index >= mCallRecords.size()) {
                 UiThreadUtils.loopUntilIdle(mTimeoutMillis);
+                // We could loop forever here if the UI thread keeps receiving
+                // messages that don't result in any methods being called.
+                // Check whether we've exceeded our allotted time and bail out.
+                if (SystemClock.uptimeMillis() - startTime > mTimeoutMillis) {
+                    break;
+                }
+            }
+
+            if (SystemClock.uptimeMillis() - startTime > mTimeoutMillis) {
+                throw new UiThreadUtils.TimeoutException("Timed out after " + mTimeoutMillis + "ms");
             }
 
             final MethodCall recorded = mCallRecords.get(index).methodCall;
@@ -2276,46 +2259,14 @@ public class GeckoSessionTestRule implements TestRule {
      * @param <T> The type of the value held by the {@link GeckoResult}
      * @return The value of the completed {@link GeckoResult}.
      */
-    public <T> T waitForResult(@NonNull GeckoResult<T> result) {
-        final ResultHolder<T> holder = new ResultHolder<>(result);
-
+    public <T> T waitForResult(@NonNull GeckoResult<T> result) throws Throwable {
+        beforeWait();
         try {
-            beforeWait();
-            while (!holder.isComplete) {
-                UiThreadUtils.loopUntilIdle(mTimeoutMillis);
-            }
+            return UiThreadUtils.waitForResult(result, mTimeoutMillis);
+        } catch (final Throwable e) {
+            throw unwrapRuntimeException(e);
         } finally {
             afterWait(mCallRecords.size());
-        }
-
-        if (holder.error != null) {
-            throw unwrapRuntimeException(holder.error);
-        }
-
-        return holder.value;
-    }
-
-    private static class ResultHolder<T> {
-        public T value;
-        public Throwable error;
-        public boolean isComplete;
-
-        public ResultHolder(GeckoResult<T> result) {
-            result.then(new OnValueListener<T, Void>() {
-                @Override
-                public GeckoResult<Void> onValue(T value) {
-                    ResultHolder.this.value = value;
-                    isComplete = true;
-                    return null;
-                }
-            }, new OnExceptionListener<Void>() {
-                @Override
-                public GeckoResult<Void> onException(Throwable error) {
-                    ResultHolder.this.error = error;
-                    isComplete = true;
-                    return null;
-                }
-            });
         }
     }
 }

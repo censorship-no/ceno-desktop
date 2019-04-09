@@ -1,10 +1,17 @@
-// |jit-test| skip-if: !wasmGcEnabled()
+// |jit-test| skip-if: !wasmReftypesEnabled()
+
+// Do not run the test if we're jit-compiling JS, since it's the wasm frames
+// we're interested in and eager JS compilation can upset the test.
+
+opts = getJitCompilerOptions();
+if (opts['ion.enable'] || opts['baseline.enable'])
+  quit();
 
 const { startProfiling, endProfiling, assertEqPreciseStacks, isSingleStepProfilingEnabled } = WasmHelpers;
 
 let e = wasmEvalText(`(module
-    (gc_feature_opt_in 1)
-    (global $g (mut anyref) (ref.null anyref))
+    (gc_feature_opt_in 2)
+    (global $g (mut anyref) (ref.null))
     (func (export "set") (param anyref) get_local 0 set_global $g)
 )`).exports;
 

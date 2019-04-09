@@ -42,6 +42,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.jsm",
+  ExtensionProcessScript: "resource://gre/modules/ExtensionProcessScript.jsm",
   ExtensionStorage: "resource://gre/modules/ExtensionStorage.jsm",
   ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.jsm",
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.jsm",
@@ -56,11 +57,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Schemas: "resource://gre/modules/Schemas.jsm",
   XPIProvider: "resource://gre/modules/addons/XPIProvider.jsm",
 });
-
-XPCOMUtils.defineLazyGetter(
-  this, "processScript",
-  () => Cc["@mozilla.org/webextensions/extension-process-script;1"]
-          .getService().wrappedJSObject);
 
 // This is used for manipulating jar entry paths, which always use Unix
 // separators.
@@ -131,6 +127,7 @@ const CHILD_SHUTDOWN_TIMEOUT_MS = 8000;
  *          "api" to indicate this is an api permission
  *                (as used for webextensions experiments).
  *          "permission" to indicate this is a regular permission.
+ *          "invalid" to indicate that the given permission cannot be used.
  */
 function classifyPermission(perm, restrictSchemes) {
   let match = /^(\w+)(?:\.(\w+)(?:\.\w+)*)?$/.exec(perm);
@@ -139,10 +136,12 @@ function classifyPermission(perm, restrictSchemes) {
       let {pattern} = new MatchPattern(perm, {restrictSchemes, ignorePath: true});
       return {origin: pattern};
     } catch (e) {
-      return {originInvalid: perm};
+      return {invalid: perm};
     }
   } else if (match[1] == "experiments" && match[2]) {
     return {api: match[2]};
+  } else if (perm === "mozillaAddons" && restrictSchemes) {
+    return {invalid: perm};
   }
   return {permission: perm};
 }
@@ -244,6 +243,7 @@ var UninstallObserver = {
         ExtensionStorage.clear(addon.id, {shouldNotifyListeners: false}));
 
       // Clear any IndexedDB storage created by the extension
+      // If LSNG is enabled, this also clears localStorage.
       let baseURI = Services.io.newURI(`moz-extension://${uuid}/`);
       let principal = Services.scriptSecurityManager.createCodebasePrincipal(
         baseURI, {});
@@ -257,10 +257,14 @@ var UninstallObserver = {
 
       ExtensionStorageIDB.clearMigratedExtensionPref(addon.id);
 
-      // Clear localStorage created by the extension
-      let storage = Services.domStorageManager.getStorage(null, principal);
-      if (storage) {
-        storage.clear();
+      // If LSNG is not enabled, we need to clear localStorage explicitly using
+      // the old API.
+      if (!Services.lsm.nextGenLocalStorageEnabled) {
+        // Clear localStorage created by the extension
+        let storage = Services.domStorageManager.getStorage(null, principal);
+        if (storage) {
+          storage.clear();
+        }
       }
 
       // Remove any permissions related to the unlimitedStorage permission
@@ -462,6 +466,13 @@ class ExtensionData {
     });
   }
 
+  get restrictSchemes() {
+    // ExtensionData can't check the signature (as it is not yet passed to its constructor
+    // as it is for the Extension class, where this getter is overridden to check both the
+    // signature and the permissions).
+    return !this.hasPermission("mozillaAddons");
+  }
+
   /**
    * Returns an object representing any capabilities that the extension
    * has access to based on fixed properties in the manifest.  The result
@@ -476,7 +487,7 @@ class ExtensionData {
 
     let permissions = new Set();
     let origins = new Set();
-    let restrictSchemes = !this.hasPermission("mozillaAddons");
+    let {restrictSchemes} = this;
     for (let perm of this.manifest.permissions || []) {
       let type = classifyPermission(perm, restrictSchemes);
       if (type.origin) {
@@ -529,9 +540,10 @@ class ExtensionData {
   // Compute the difference between two sets of permissions, suitable
   // for presenting to the user.
   static comparePermissions(oldPermissions, newPermissions) {
-    let oldMatcher = new MatchPatternSet(oldPermissions.origins);
+    let oldMatcher = new MatchPatternSet(oldPermissions.origins, {restrictSchemes: false});
     return {
-      origins: newPermissions.origins.filter(perm => !oldMatcher.subsumes(new MatchPattern(perm))),
+      // formatPermissionStrings ignores any scheme, so only look at the domain.
+      origins: newPermissions.origins.filter(perm => !oldMatcher.subsumesDomain(new MatchPattern(perm, {restrictSchemes: false}))),
       permissions: newPermissions.permissions.filter(perm => !oldPermissions.permissions.includes(perm)),
     };
   }
@@ -624,6 +636,7 @@ class ExtensionData {
       schemaURLs: null,
       type: this.type,
       webAccessibleResources,
+      privateBrowsingAllowed: manifest.incognito !== "not_allowed",
     };
 
     if (this.type === "extension") {
@@ -644,8 +657,8 @@ class ExtensionData {
           originPermissions.add(perm);
         } else if (type.api) {
           apiNames.add(type.api);
-        } else if (type.originInvalid) {
-          this.manifestWarning(`Invalid host permission: ${perm}`);
+        } else if (type.invalid) {
+          this.manifestWarning(`Invalid extension permission: ${perm}`);
           continue;
         }
 
@@ -853,7 +866,9 @@ class ExtensionData {
     await this.apiManager.lazyInit();
 
     this.webAccessibleResources = manifestData.webAccessibleResources.map(res => new MatchGlob(res));
-    this.whiteListedHosts = new MatchPatternSet(manifestData.originPermissions, {restrictSchemes: !this.hasPermission("mozillaAddons")});
+    this.whiteListedHosts = new MatchPatternSet(manifestData.originPermissions, {
+      restrictSchemes: this.restrictSchemes,
+    });
 
     return this.manifest;
   }
@@ -892,7 +907,11 @@ class ExtensionData {
     for (let id of this.dependencies) {
       let policy = WebExtensionPolicy.getByID(id);
       if (policy) {
-        apiManagers.push(policy.extension.experimentAPIManager);
+        if (policy.extension.experimentAPIManager) {
+          apiManagers.push(policy.extension.experimentAPIManager);
+        } else if (AppConstants.DEBUG) {
+          Cu.reportError(`Cannot find experimental API exported from ${id}`);
+        }
       }
     }
 
@@ -1086,10 +1105,15 @@ class ExtensionData {
         allUrls = true;
         break;
       }
-      let match = /^[a-z*]+:\/\/([^/]*)\//.exec(permission);
+
+      // Privileged extensions may request access to "about:"-URLs, such as
+      // about:reader.
+      let match = /^[a-z*]+:\/\/([^/]*)\/|^about:/.exec(permission);
       if (!match) {
         throw new Error(`Unparseable host permission ${permission}`);
       }
+      // Note: the scheme is ignored in the permission warnings. If this ever
+      // changes, update the comparePermissions method as needed.
       if (!match[1] || match[1] == "*") {
         allUrls = true;
       } else if (match[1].startsWith("*.")) {
@@ -1288,6 +1312,8 @@ class LangpackBootstrapScope {
 
 let activeExtensionIDs = new Set();
 
+let pendingExtensions = new Map();
+
 /**
  * This class is the main representation of an active WebExtension
  * in the main process.
@@ -1367,8 +1393,10 @@ class Extension extends ExtensionData {
       if (permissions.origins.length > 0) {
         let patterns = this.whiteListedHosts.patterns.map(host => host.pattern);
 
-        this.whiteListedHosts = new MatchPatternSet(new Set([...patterns, ...permissions.origins]),
-                                                    {restrictSchemes: !this.hasPermission("mozillaAddons"), ignorePath: true});
+        this.whiteListedHosts = new MatchPatternSet(new Set([...patterns, ...permissions.origins]), {
+          restrictSchemes: this.restrictSchemes,
+          ignorePath: true,
+        });
       }
 
       this.policy.permissions = Array.from(this.permissions);
@@ -1395,6 +1423,10 @@ class Extension extends ExtensionData {
       this.cachePermissions();
     });
     /* eslint-enable mozilla/balanced-listeners */
+  }
+
+  get restrictSchemes() {
+    return !(this.isPrivileged && this.hasPermission("mozillaAddons"));
   }
 
   // Some helpful properties added elsewhere:
@@ -1524,24 +1556,8 @@ class Extension extends ExtensionData {
     XPIProvider.setStartupData(this.id, this.startupData);
   }
 
-  async _parseManifest() {
-    let manifest = await super.parseManifest();
-    if (manifest && manifest.permissions.has("mozillaAddons") &&
-        !this.isPrivileged) {
-      Cu.reportError(`Stripping mozillaAddons permission from ${this.id}`);
-      manifest.permissions.delete("mozillaAddons");
-      let i = manifest.manifest.permissions.indexOf("mozillaAddons");
-      if (i >= 0) {
-        manifest.manifest.permissions.splice(i, 1);
-      } else {
-        throw new Error("Could not find mozilaAddons in original permissions array");
-      }
-    }
-    return manifest;
-  }
-
   parseManifest() {
-    return StartupCache.manifests.get(this.manifestCacheKey, () => this._parseManifest());
+    return StartupCache.manifests.get(this.manifestCacheKey, () => super.parseManifest());
   }
 
   async cachePermissions() {
@@ -1575,6 +1591,14 @@ class Extension extends ExtensionData {
     return this.manifest.optional_permissions;
   }
 
+  get privateBrowsingAllowed() {
+    return this.policy.privateBrowsingAllowed;
+  }
+
+  canAccessWindow(window) {
+    return this.policy.canAccessWindow(window);
+  }
+
   // Representation of the extension to send to content
   // processes. This should include anything the content process might
   // need.
@@ -1591,6 +1615,7 @@ class Extension extends ExtensionData {
       whiteListedHosts: this.whiteListedHosts.patterns.map(pat => pat.pattern),
       permissions: this.permissions,
       optionalPermissions: this.optionalPermissions,
+      privateBrowsingAllowed: this.privateBrowsingAllowed,
     };
   }
 
@@ -1696,6 +1721,9 @@ class Extension extends ExtensionData {
     activeExtensionIDs.add(this.id);
     sharedData.set("extensions/activeIDs", activeExtensionIDs);
 
+    pendingExtensions.delete(this.id);
+    sharedData.set("extensions/pending", pendingExtensions);
+
     Services.ppmm.sharedData.flush();
     this.broadcast("Extension:Startup", this.id);
 
@@ -1787,24 +1815,32 @@ class Extension extends ExtensionData {
   async startup() {
     this.state = "Startup";
 
+    let resolveReadyPromise;
+    let readyPromise = new Promise(resolve => {
+      resolveReadyPromise = resolve;
+    });
+
     // Create a temporary policy object for the devtools and add-on
     // manager callers that depend on it being available early.
     this.policy = new WebExtensionPolicy({
       id: this.id,
       mozExtensionHostname: this.uuid,
-      baseURL: this.baseURI.spec,
+      baseURL: this.resourceURL,
       allowedOrigins: new MatchPatternSet([]),
       localizeCallback() {},
+      readyPromise,
     });
+
+    this.policy.extension = this;
     if (!WebExtensionPolicy.getByID(this.id)) {
-      // The add-on manager doesn't handle async startup and shutdown,
-      // so during upgrades and add-on restarts, startup() gets called
-      // before the last shutdown has completed, and this fails when
-      // there's another active add-on with the same ID.
       this.policy.active = true;
     }
 
-    this.policy.extension = this;
+    pendingExtensions.set(this.id, {
+      mozExtensionHostname: this.uuid,
+      baseURL: this.resourceURL,
+    });
+    sharedData.set("extensions/pending", pendingExtensions);
 
     ExtensionTelemetry.extensionStartup.stopwatchStart(this);
     try {
@@ -1826,12 +1862,18 @@ class Extension extends ExtensionData {
         return;
       }
 
+      if (this.addonData && this.addonData.incognitoOverride !== undefined) {
+        this.policy.privateBrowsingAllowed = this.addonData.incognitoOverride !== "not_allowed";
+      } else {
+        this.policy.privateBrowsingAllowed = this.manifest.incognito !== "not_allowed";
+      }
+
       GlobalManager.init(this);
 
       this.initSharedData();
 
       this.policy.active = false;
-      this.policy = processScript.initExtension(this);
+      this.policy = ExtensionProcessScript.initExtension(this);
       this.policy.extension = this;
 
       this.updatePermissions(this.startupReason);
@@ -1846,6 +1888,8 @@ class Extension extends ExtensionData {
           this.setSharedData("storageIDBPrincipal", ExtensionStorageIDB.getStoragePrincipal(this));
         }
       }
+
+      resolveReadyPromise(this.policy);
 
       // The "startup" Management event sent on the extension instance itself
       // is emitted just before the Management "startup" event,
@@ -2006,7 +2050,7 @@ class Extension extends ExtensionData {
 
   get optionalOrigins() {
     if (this._optionalOrigins == null) {
-      let restrictSchemes = !this.hasPermission("mozillaAddons");
+      let {restrictSchemes} = this;
       let origins = this.manifest.optional_permissions.filter(perm => classifyPermission(perm, restrictSchemes).origin);
       this._optionalOrigins = new MatchPatternSet(origins, {restrictSchemes, ignorePath: true});
     }

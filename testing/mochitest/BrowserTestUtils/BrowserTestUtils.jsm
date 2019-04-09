@@ -434,6 +434,7 @@ var BrowserTestUtils = {
         onSecurityChange() {},
         onStatusChange() {},
         onLocationChange() {},
+        onContentBlockingEvent() {},
         QueryInterface: ChromeUtils.generateQI([
           Ci.nsIWebProgressListener,
           Ci.nsIWebProgressListener2,
@@ -578,6 +579,13 @@ var BrowserTestUtils = {
           Services.ww.unregisterNotification(observe);
         }
 
+        // Add these event listeners now since they may fire before the
+        // DOMContentLoaded event down below.
+        let promises = [
+          this.waitForEvent(win, "focus", true),
+          this.waitForEvent(win, "activate"),
+        ];
+
         if (url) {
           await this.waitForEvent(win, "DOMContentLoaded");
 
@@ -586,20 +594,14 @@ var BrowserTestUtils = {
           }
         }
 
-        let promises = [
-          TestUtils.topicObserved("browser-delayed-startup-finished",
-                                  subject => subject == win),
-        ];
+        promises.push(TestUtils.topicObserved("browser-delayed-startup-finished",
+                                              subject => subject == win));
 
         if (url) {
           let browser = win.gBrowser.selectedBrowser;
 
-          // Retrieve the given browser's current process type.
-          let process =
-              browser.isRemoteBrowser ? Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT
-              : Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
           if (win.gMultiProcessBrowser &&
-              !E10SUtils.canLoadURIInProcess(url, process)) {
+              !E10SUtils.canLoadURIInRemoteType(url, browser.remoteType)) {
             await this.waitForEvent(browser, "XULFrameLoaderCreated");
           }
 
@@ -642,14 +644,10 @@ var BrowserTestUtils = {
       return;
     }
 
-    // Retrieve the given browser's current process type.
-    let process = browser.isRemoteBrowser ? Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT
-                                          : Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
-
     // If the new URI can't load in the browser's current process then we
     // should wait for the new frameLoader to be created. This will happen
     // asynchronously when the browser's remoteness changes.
-    if (!E10SUtils.canLoadURIInProcess(uri, process)) {
+    if (!E10SUtils.canLoadURIInRemoteType(uri, browser.remoteType)) {
       await this.waitForEvent(browser, "XULFrameLoaderCreated");
     }
   },
@@ -726,7 +724,7 @@ var BrowserTestUtils = {
     }
     let win = currentWin.OpenBrowserWindow(options);
 
-    let promises = [this.waitForEvent(win, "focus"), this.waitForEvent(win, "activate")];
+    let promises = [this.waitForEvent(win, "focus", true), this.waitForEvent(win, "activate")];
 
     // Wait for browser-delayed-startup-finished notification, it indicates
     // that the window has loaded completely and is ready to be used for
@@ -959,6 +957,25 @@ var BrowserTestUtils = {
   },
 
   /**
+   * Like waitForEvent, but acts on a popup. It ensures the popup is not already
+   * in the expected state.
+   *
+   * @param {Element} popup
+   *        The popup element that should receive the event.
+   * @param {string} eventSuffix
+   *        The event suffix expected to be received, one of "shown" or "hidden".
+   * @returns {Promise}
+   */
+  waitForPopupEvent(popup, eventSuffix) {
+    let endState = {shown: "open", hidden: "closed"}[eventSuffix];
+
+    if (popup.state == endState) {
+      return Promise.resolve();
+    }
+    return this.waitForEvent(popup, "popup" + eventSuffix);
+  },
+
+  /**
    * Adds a content event listener on the given browser
    * element. Similar to waitForContentEvent, but the listener will
    * fire until it is removed. A callable object is returned that,
@@ -1102,6 +1119,103 @@ var BrowserTestUtils = {
   },
 
   /**
+   * Waits for the next top-level document load in the current browser.  The URI
+   * of the document is compared against aExpectedURL.  The load is then stopped
+   * before it actually starts.
+   *
+   * @param {string} expectedURL
+   *        The URL of the document that is expected to load.
+   * @param {object} browser
+   *        The browser to wait for.
+   * @param {boolean} [stopFromProgressListener]
+   *        Whether to cancel the load directly from the progress listener. Defaults to true.
+   *        If you're using this method to avoid hitting the network, you want the default (true).
+   *        However, the browser UI will behave differently for loads stopped directly from
+   *        the progress listener (effectively in the middle of a call to loadURI) and so there
+   *        are cases where you may want to avoid stopping the load directly from within the
+   *        progress listener callback.
+   * @returns {Promise}
+   */
+  waitForDocLoadAndStopIt(expectedURL, browser, stopFromProgressListener = true) {
+    function content_script(contentStopFromProgressListener) {
+      /* eslint-env mozilla/frame-script */
+      let wp = docShell.QueryInterface(Ci.nsIWebProgress);
+
+      function stopContent(now, uri) {
+        if (now) {
+          /* Hammer time. */
+          content.stop();
+
+          /* Let the parent know we're done. */
+          sendAsyncMessage("Test:WaitForDocLoadAndStopIt", { uri });
+        } else {
+          /* eslint-disable-next-line no-undef */
+          setTimeout(stopContent.bind(null, true, uri), 0);
+        }
+      }
+
+      let progressListener = {
+        onStateChange(webProgress, req, flags, status) {
+          dump(`waitForDocLoadAndStopIt: onStateChange ${flags.toString(16)}:${req.name}\n`);
+
+          if (webProgress.isTopLevel &&
+              flags & Ci.nsIWebProgressListener.STATE_START) {
+            wp.removeProgressListener(progressListener);
+            let chan = req.QueryInterface(Ci.nsIChannel);
+            dump(`waitForDocLoadAndStopIt: Document start: ${chan.URI.spec}\n`);
+            stopContent(contentStopFromProgressListener, chan.originalURI.spec);
+          }
+        },
+        QueryInterface: ChromeUtils.generateQI(["nsISupportsWeakReference"]),
+      };
+      wp.addProgressListener(progressListener, wp.NOTIFY_STATE_WINDOW);
+
+      /**
+       * As |this| is undefined and we can't extend |docShell|, adding an unload
+       * event handler is the easiest way to ensure the weakly referenced
+       * progress listener is kept alive as long as necessary.
+       */
+      addEventListener("unload", function() {
+        try {
+          wp.removeProgressListener(progressListener);
+        } catch (e) { /* Will most likely fail. */ }
+      });
+    }
+
+    let stoppedDocLoadPromise = () => {
+      return new Promise((resolve, reject) => {
+        function complete({ data }) {
+          if (data.uri != expectedURL) {
+            reject(new Error(`An expected URL was loaded: ${data.uri}`));
+          }
+          mm.removeMessageListener("Test:WaitForDocLoadAndStopIt", complete);
+          resolve();
+        }
+
+        let mm = browser.messageManager;
+        mm.loadFrameScript(`data:,(${content_script.toString()})(${stopFromProgressListener});`, true);
+        mm.addMessageListener("Test:WaitForDocLoadAndStopIt", complete);
+        dump(`waitForDocLoadAndStopIt: Waiting for URL: ${expectedURL}\n`);
+      });
+    };
+
+    let win = browser.ownerGlobal;
+    let tab = win.gBrowser.getTabForBrowser(browser);
+    let { mustChangeProcess } = E10SUtils.shouldLoadURIInBrowser(browser, expectedURL);
+    if (!tab ||
+        !win.gMultiProcessBrowser ||
+        !mustChangeProcess) {
+      return stoppedDocLoadPromise();
+    }
+
+    return new Promise((resolve, reject) => {
+      tab.addEventListener("TabRemotenessChange", function() {
+        stoppedDocLoadPromise().then(resolve, reject);
+      }, {once: true});
+    });
+  },
+
+  /**
    *  Versions of EventUtils.jsm synthesizeMouse functions that synthesize a
    *  mouse event in a child process and return promises that resolve when the
    *  event has fired and completed. Instead of a window, a browser is required
@@ -1153,6 +1267,63 @@ var BrowserTestUtils = {
       }
 
       mm.sendAsyncMessage("Test:SynthesizeMouse",
+                          {target, targetFn, x: offsetX, y: offsetY, event},
+                          {object: cpowObject});
+    });
+  },
+
+  /**
+   *  Versions of EventUtils.jsm synthesizeTouch functions that synthesize a
+   *  touch event in a child process and return promises that resolve when the
+   *  event has fired and completed. Instead of a window, a browser is required
+   *  to be passed to this function.
+   *
+   * @param target
+   *        One of the following:
+   *        - a selector string that identifies the element to target. The syntax is as
+   *          for querySelector.
+   *        - An array of selector strings. Each selector after the first
+   *          selects for an element in the iframe specified by the previous
+   *          selector.
+   *        - a CPOW element (for easier test-conversion).
+   *        - a function to be run in the content process that returns the element to
+   *        target
+   *        - null, in which case the offset is from the content document's edge.
+   * @param {integer} offsetX
+   *        x offset from target's left bounding edge
+   * @param {integer} offsetY
+   *        y offset from target's top bounding edge
+   * @param {Object} event object
+   *        Additional arguments, similar to the EventUtils.jsm version
+   * @param {Browser} browser
+   *        Browser element, must not be null
+   *
+   * @returns {Promise}
+   * @resolves True if the touch event was cancelled.
+   */
+  synthesizeTouch(target, offsetX, offsetY, event, browser) {
+    return new Promise((resolve, reject) => {
+      let mm = browser.messageManager;
+      mm.addMessageListener("Test:SynthesizeTouchDone", function touchMsg(message) {
+        mm.removeMessageListener("Test:SynthesizeTouchDone", touchMsg);
+        if (message.data.hasOwnProperty("defaultPrevented")) {
+          resolve(message.data.defaultPrevented);
+        } else {
+          reject(new Error(message.data.error));
+        }
+      });
+
+      let cpowObject = null;
+      let targetFn = null;
+      if (typeof target == "function") {
+        targetFn = target.toString();
+        target = null;
+      } else if (typeof target != "string" && !Array.isArray(target)) {
+        cpowObject = target;
+        target = null;
+      }
+
+      mm.sendAsyncMessage("Test:SynthesizeTouch",
                           {target, targetFn, x: offsetX, y: offsetY, event},
                           {object: cpowObject});
     });
@@ -1587,19 +1758,17 @@ var BrowserTestUtils = {
    *        Resolves to the <xul:notification> that is being shown.
    */
   waitForGlobalNotificationBar(win, notificationValue) {
-    let notificationBox =
-      win.document.getElementById("high-priority-global-notificationbox");
-    return this.waitForNotificationInNotificationBox(notificationBox,
-                                                     notificationValue);
+    return this.waitForNotificationInNotificationBox(
+                       win.gHighPriorityNotificationBox, notificationValue);
   },
 
   waitForNotificationInNotificationBox(notificationBox, notificationValue) {
     return new Promise((resolve) => {
       let check = (event) => {
-        return event.target.value == notificationValue;
+        return event.target.getAttribute("value") == notificationValue;
       };
 
-      BrowserTestUtils.waitForEvent(notificationBox, "AlertActive",
+      BrowserTestUtils.waitForEvent(notificationBox.stack, "AlertActive",
                                     false, check).then((event) => {
         // The originalTarget of the AlertActive on a notificationbox
         // will be the notification itself.

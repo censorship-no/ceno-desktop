@@ -64,11 +64,29 @@ def support_vcs_checkout(config, job, taskdesc, sparse=False):
     This can only be used with ``run-task`` tasks, as the cache name is
     reserved for ``run-task`` tasks.
     """
-    level = config.params['level']
+    worker = job['worker']
+    is_mac = worker['os'] == 'macosx'
+    is_win = worker['os'] == 'windows'
+    is_linux = worker['os'] == 'linux'
+    assert is_mac or is_win or is_linux
 
-    # native-engine does not support caches (yet), so we just do a full clone
-    # every time :(
-    if job['worker']['implementation'] in ('docker-worker', 'docker-engine'):
+    if is_win:
+        checkoutdir = './build'
+        geckodir = '{}/src'.format(checkoutdir)
+        hgstore = 'y:/hg-shared'
+    elif is_mac:
+        checkoutdir = './checkouts'
+        geckodir = '{}/gecko'.format(checkoutdir)
+        hgstore = '{}/hg-shared'.format(checkoutdir)
+    else:
+        checkoutdir = '{workdir}/checkouts'.format(**job['run'])
+        geckodir = '{}/gecko'.format(checkoutdir)
+        hgstore = '{}/hg-store'.format(checkoutdir)
+
+    level = config.params['level']
+    # native-engine and generic-worker do not support caches (yet), so we just
+    # do a full clone every time :(
+    if worker['implementation'] in ('docker-worker', 'docker-engine'):
         name = 'level-%s-checkouts' % level
 
         # comm-central checkouts need their own cache, because clobber won't
@@ -84,15 +102,15 @@ def support_vcs_checkout(config, job, taskdesc, sparse=False):
         taskdesc['worker'].setdefault('caches', []).append({
             'type': 'persistent',
             'name': name,
-            'mount-point': '{workdir}/checkouts'.format(**job['run']),
+            'mount-point': checkoutdir,
         })
 
     taskdesc['worker'].setdefault('env', {}).update({
         'GECKO_BASE_REPOSITORY': config.params['base_repository'],
         'GECKO_HEAD_REPOSITORY': config.params['head_repository'],
         'GECKO_HEAD_REV': config.params['head_rev'],
-        'GECKO_PATH': '{workdir}/checkouts/gecko'.format(**job['run']),
-        'HG_STORE_PATH': '{workdir}/checkouts/hg-store'.format(**job['run']),
+        'GECKO_PATH': geckodir,
+        'HG_STORE_PATH': hgstore,
     })
 
     if 'comm_base_repository' in config.params:
@@ -141,7 +159,7 @@ def generic_worker_hg_commands(base_repo, head_repo, head_rev, path):
     return [' '.join(args), ' '.join(logging_args)]
 
 
-def docker_worker_setup_secrets(config, job, taskdesc):
+def setup_secrets(config, job, taskdesc):
     """Set up access to secrets via taskcluster-proxy.  The value of
     run['secrets'] should be a boolean or a list of secret names that
     can be accessed."""

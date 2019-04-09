@@ -10,11 +10,16 @@ async function setup() {
   let billingAddressGUID = await addAddressRecord(PTU.Addresses.TimBL);
   let card = Object.assign({}, PTU.BasicCards.JohnDoe,
                            { billingAddressGUID });
-  await addCardRecord(card);
+  let card1GUID = await addCardRecord(card);
+  return {address1GUID: billingAddressGUID, card1GUID};
 }
 
 add_task(async function test_retry_with_genericError() {
-  await setup();
+  if (!OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
+    todo(false, "Cannot test OS key store login on official builds.");
+    return;
+  }
+  let prefilledGuids = await setup();
   await BrowserTestUtils.withNewTab({
     gBrowser,
     url: BLANK_PAGE_URL,
@@ -25,12 +30,18 @@ add_task(async function test_retry_with_genericError() {
       merchantTaskFn: PTU.ContentTasks.createAndShowRequest,
     });
 
+    await spawnPaymentDialogTask(frame, async ({prefilledGuids: guids}) => {
+      let paymentMethodPicker = content.document.querySelector("payment-method-picker");
+      content.fillField(Cu.waiveXrays(paymentMethodPicker).dropdown.popupBox,
+                        guids.card1GUID);
+    }, {prefilledGuids});
+
     await spawnPaymentDialogTask(frame, PTU.DialogContentTasks.setSecurityCode, {
       securityCode: "123",
     });
 
     info("clicking the button to try pay the 1st time");
-    await spawnPaymentDialogTask(frame, PTU.DialogContentTasks.completePayment);
+    await loginAndCompletePayment(frame);
 
     let retryUpdatePromise = spawnPaymentDialogTask(frame, async function checkDialog() {
       let {
@@ -71,8 +82,7 @@ add_task(async function test_retry_with_genericError() {
                                          PTU.ContentTasks.addRetryHandler);
 
     await retryUpdatePromise;
-
-    spawnPaymentDialogTask(frame, PTU.DialogContentTasks.completePayment);
+    await loginAndCompletePayment(frame);
 
     // We can only check the retry response after the closing as it only resolves upon complete.
     let {retryException} = await retryPromise;

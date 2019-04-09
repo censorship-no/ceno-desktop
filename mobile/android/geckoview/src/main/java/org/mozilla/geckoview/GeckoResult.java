@@ -1,10 +1,12 @@
 package org.mozilla.geckoview;
 
+import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.util.ThreadUtils;
 
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.support.annotation.AnyThread;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 
@@ -150,6 +152,7 @@ import java.util.concurrent.TimeoutException;
  *
  * @param <T> The type of the value delivered via the GeckoResult.
  */
+@AnyThread
 public class GeckoResult<T> {
     private static final String LOGTAG = "GeckoResult";
 
@@ -180,6 +183,7 @@ public class GeckoResult<T> {
      * Construct an incomplete GeckoResult. Call {@link #complete(Object)} or
      * {@link #completeExceptionally(Throwable)} in order to fulfill the result.
      */
+    @WrapForJNI
     public GeckoResult() {
         if (ThreadUtils.isOnUiThread()) {
             mHandler = ThreadUtils.getUiHandler();
@@ -218,6 +222,7 @@ public class GeckoResult<T> {
      * @param <U> Type for the result.
      * @return The completed {@link GeckoResult}
      */
+    @WrapForJNI
     public static @NonNull <U> GeckoResult<U> fromValue(@Nullable final U value) {
         final GeckoResult<U> result = new GeckoResult<>();
         result.complete(value);
@@ -232,6 +237,7 @@ public class GeckoResult<T> {
      * @param <T> Type for the result if the result had been completed without exception.
      * @return The completed {@link GeckoResult}
      */
+    @WrapForJNI
     public static @NonNull <T> GeckoResult<T> fromException(@NonNull final Throwable error) {
         final GeckoResult<T> result = new GeckoResult<>();
         result.completeExceptionally(error);
@@ -446,7 +452,7 @@ public class GeckoResult<T> {
      * @throws Throwable The {@link Throwable} contained in this result, if any.
      * @throws IllegalThreadStateException if this method is called on a thread that has a {@link Looper}.
      */
-    public synchronized T poll() throws Throwable {
+    public synchronized @Nullable T poll() throws Throwable {
         if (Looper.myLooper() != null) {
             throw new IllegalThreadStateException("Cannot poll indefinitely from thread with Looper");
         }
@@ -471,7 +477,7 @@ public class GeckoResult<T> {
      * @throws TimeoutException if we wait more than timeoutMillis before the result
      *                          is completed.
      */
-    public synchronized T poll(long timeoutMillis) throws Throwable {
+    public synchronized @Nullable T poll(long timeoutMillis) throws Throwable {
         final long start = SystemClock.uptimeMillis();
         long remaining = timeoutMillis;
         while (!mComplete && remaining > 0) {
@@ -501,7 +507,8 @@ public class GeckoResult<T> {
      * @param value The value used to complete the result.
      * @throws IllegalStateException If the result is already completed.
      */
-    public synchronized void complete(final T value) {
+    @WrapForJNI
+    public synchronized void complete(final @Nullable T value) {
         if (mComplete) {
             throw new IllegalStateException("result is already complete");
         }
@@ -520,6 +527,7 @@ public class GeckoResult<T> {
      * @param exception The {@link Throwable} used to complete the result.
      * @throws IllegalStateException If the result is already completed.
      */
+    @WrapForJNI
     public synchronized void completeExceptionally(@NonNull final Throwable exception) {
         if (mComplete) {
             throw new IllegalStateException("result is already complete");
@@ -544,12 +552,14 @@ public class GeckoResult<T> {
     public interface OnValueListener<T, U> {
         /**
          * Called when a {@link GeckoResult} is completed with a value. Will be
-         * called on the main thread.
+         * called on the same thread where the GeckoResult was created or on
+         * the {@link Handler} provided via {@link #withHandler(Handler)}.
          *
          * @param value The value of the {@link GeckoResult}
          * @return Result used to complete the next result in the chain. May be null.
          * @throws Throwable Exception used to complete next result in the chain.
          */
+        @AnyThread
         @Nullable GeckoResult<U> onValue(@Nullable T value) throws Throwable;
     }
 
@@ -560,13 +570,15 @@ public class GeckoResult<T> {
      */
     public interface OnExceptionListener<V> {
         /**
-         * Called when a {@link GeckoResult} is completed with an exception. Will be
-         * called on the main thread.
+         * Called when a {@link GeckoResult} is completed with an exception.
+         * Will be called on the same thread where the GeckoResult was created
+         * or on the {@link Handler} provided via {@link #withHandler(Handler)}.
          *
          * @param exception Exception that completed the result.
          * @return Result used to complete the next result in the chain. May be null.
          * @throws Throwable Exception used to complete next result in the chain.
          */
+        @AnyThread
         @Nullable GeckoResult<V> onException(@NonNull Throwable exception) throws Throwable;
     }
 

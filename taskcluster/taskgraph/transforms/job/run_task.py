@@ -7,6 +7,7 @@ Support for running jobs that are invoked via the `run-task` script.
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+from taskgraph.transforms.task import taskref_or_string
 from taskgraph.transforms.job import run_job_using
 from taskgraph.util.schema import Schema
 from taskgraph.transforms.job.common import support_vcs_checkout
@@ -19,7 +20,7 @@ run_task_schema = Schema({
     # tend to hide their caches.  This cache is never added for level-1 jobs.
     Required('cache-dotcache'): bool,
 
-    # if true (the default), perform a checkout in {workdir}/checkouts/gecko
+    # if true (the default), perform a checkout of gecko on the worker
     Required('checkout'): bool,
 
     # The sparse checkout profile to use. Value is the filename relative to the
@@ -33,22 +34,22 @@ run_task_schema = Schema({
     # The command arguments to pass to the `run-task` script, after the
     # checkout arguments.  If a list, it will be passed directly; otherwise
     # it will be included in a single argument to `bash -cx`.
-    Required('command'): Any([basestring], basestring),
+    Required('command'): Any([taskref_or_string], taskref_or_string),
 
     # Base work directory used to set up the task.
     Required('workdir'): basestring,
 })
 
 
-def common_setup(config, job, taskdesc, command, checkoutdir):
+def common_setup(config, job, taskdesc, command):
     run = job['run']
     if run['checkout']:
         support_vcs_checkout(config, job, taskdesc,
                              sparse=bool(run['sparse-profile']))
-        command.append('--vcs-checkout={}/gecko'.format(checkoutdir))
+        command.append('--gecko-checkout={}'.format(taskdesc['worker']['env']['GECKO_PATH']))
 
     if run['sparse-profile']:
-        command.append('--sparse-profile=build/sparse-profiles/%s' %
+        command.append('--gecko-sparse-profile=build/sparse-profiles/%s' %
                        run['sparse-profile'])
 
     taskdesc['worker'].setdefault('env', {})['MOZ_SCM_LEVEL'] = config.params['level']
@@ -72,7 +73,7 @@ def docker_worker_run_task(config, job, taskdesc):
     run = job['run']
     worker = taskdesc['worker'] = job['worker']
     command = ['/builds/worker/bin/run-task']
-    common_setup(config, job, taskdesc, command, checkoutdir='{workdir}/checkouts'.format(**run))
+    common_setup(config, job, taskdesc, command)
 
     if run.get('cache-dotcache'):
         worker['caches'].append({
@@ -83,7 +84,8 @@ def docker_worker_run_task(config, job, taskdesc):
         })
 
     run_command = run['command']
-    if isinstance(run_command, basestring):
+    # dict is for the case of `{'task-reference': basestring}`.
+    if isinstance(run_command, (basestring, dict)):
         run_command = ['bash', '-cx', run_command]
     if run['comm-checkout']:
         command.append('--comm-checkout={workdir}/checkouts/gecko/comm'.format(**run))
@@ -98,7 +100,7 @@ def native_engine_run_task(config, job, taskdesc):
     run = job['run']
     worker = taskdesc['worker'] = job['worker']
     command = ['./run-task']
-    common_setup(config, job, taskdesc, command, checkoutdir='{workdir}/checkouts'.format(**run))
+    common_setup(config, job, taskdesc, command)
 
     worker['context'] = run_task_url(config)
 
@@ -117,8 +119,17 @@ def native_engine_run_task(config, job, taskdesc):
 def generic_worker_run_task(config, job, taskdesc):
     run = job['run']
     worker = taskdesc['worker'] = job['worker']
-    command = ['./run-task']
-    common_setup(config, job, taskdesc, command, checkoutdir='{workdir}/checkouts'.format(**run))
+    is_win = worker['os'] == 'windows'
+    is_mac = worker['os'] == 'macosx'
+
+    if is_win:
+        command = ['C:/mozilla-build/python3/python3.exe', 'run-task']
+    elif is_mac:
+        command = ['/tools/python36/bin/python3.6', 'run-task']
+    else:
+        command = ['./run-task']
+
+    common_setup(config, job, taskdesc, command)
 
     worker.setdefault('mounts', [])
     if run.get('cache-dotcache'):
@@ -135,7 +146,17 @@ def generic_worker_run_task(config, job, taskdesc):
 
     run_command = run['command']
     if isinstance(run_command, basestring):
+        if is_win:
+            run_command = '"{}"'.format(run_command)
         run_command = ['bash', '-cx', run_command]
+
     command.append('--')
     command.extend(run_command)
-    worker['command'] = [['chmod', '+x', 'run-task'], command]
+
+    if is_win:
+        worker['command'] = [' '.join(command)]
+    else:
+        worker['command'] = [
+            ['chmod', '+x', 'run-task'],
+            command,
+        ]

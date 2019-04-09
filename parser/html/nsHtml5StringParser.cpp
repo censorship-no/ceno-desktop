@@ -8,37 +8,36 @@
 #include "nsHtml5TreeBuilder.h"
 #include "nsHtml5TreeOpExecutor.h"
 #include "nsIContent.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentFragment.h"
+
+using mozilla::dom::Document;
 
 NS_IMPL_ISUPPORTS0(nsHtml5StringParser)
 
 nsHtml5StringParser::nsHtml5StringParser()
-  : mBuilder(new nsHtml5OplessBuilder())
-  , mTreeBuilder(new nsHtml5TreeBuilder(mBuilder))
-  , mTokenizer(new nsHtml5Tokenizer(mTreeBuilder, false))
-{
+    : mBuilder(new nsHtml5OplessBuilder()),
+      mTreeBuilder(new nsHtml5TreeBuilder(mBuilder)),
+      mTokenizer(new nsHtml5Tokenizer(mTreeBuilder, false)) {
   mTokenizer->setInterner(&mAtomTable);
 }
 
 nsHtml5StringParser::~nsHtml5StringParser() {}
 
-nsresult
-nsHtml5StringParser::ParseFragment(const nsAString& aSourceBuffer,
-                                   nsIContent* aTargetNode,
-                                   nsAtom* aContextLocalName,
-                                   int32_t aContextNamespace,
-                                   bool aQuirks,
-                                   bool aPreventScriptExecution)
-{
+nsresult nsHtml5StringParser::ParseFragment(const nsAString& aSourceBuffer,
+                                            nsIContent* aTargetNode,
+                                            nsAtom* aContextLocalName,
+                                            int32_t aContextNamespace,
+                                            bool aQuirks,
+                                            bool aPreventScriptExecution) {
   NS_ENSURE_TRUE(aSourceBuffer.Length() <= INT32_MAX, NS_ERROR_OUT_OF_MEMORY);
 
-  nsIDocument* doc = aTargetNode->OwnerDoc();
+  Document* doc = aTargetNode->OwnerDoc();
   nsIURI* uri = doc->GetDocumentURI();
   NS_ENSURE_TRUE(uri, NS_ERROR_NOT_AVAILABLE);
 
-  mTreeBuilder->setFragmentContext(
-    aContextLocalName, aContextNamespace, aTargetNode, aQuirks);
+  mTreeBuilder->setFragmentContext(aContextLocalName, aContextNamespace,
+                                   aTargetNode, aQuirks);
 
 #ifdef DEBUG
   if (!aPreventScriptExecution) {
@@ -46,8 +45,8 @@ nsHtml5StringParser::ParseFragment(const nsAString& aSourceBuffer,
                  "If script execution isn't prevented, "
                  "the target node must not be in doc.");
     NS_ASSERTION(
-      aTargetNode->NodeType() == nsINode::DOCUMENT_FRAGMENT_NODE,
-      "If script execution isn't prevented, must parse to DOM fragment.");
+        aTargetNode->NodeType() == nsINode::DOCUMENT_FRAGMENT_NODE,
+        "If script execution isn't prevented, must parse to DOM fragment.");
   }
 #endif
 
@@ -56,11 +55,9 @@ nsHtml5StringParser::ParseFragment(const nsAString& aSourceBuffer,
   return Tokenize(aSourceBuffer, doc, true);
 }
 
-nsresult
-nsHtml5StringParser::ParseDocument(const nsAString& aSourceBuffer,
-                                   nsIDocument* aTargetDoc,
-                                   bool aScriptingEnabledForNoscriptParsing)
-{
+nsresult nsHtml5StringParser::ParseDocument(
+    const nsAString& aSourceBuffer, Document* aTargetDoc,
+    bool aScriptingEnabledForNoscriptParsing) {
   MOZ_ASSERT(!aTargetDoc->GetFirstChild());
 
   NS_ENSURE_TRUE(aSourceBuffer.Length() <= INT32_MAX, NS_ERROR_OUT_OF_MEMORY);
@@ -69,16 +66,13 @@ nsHtml5StringParser::ParseDocument(const nsAString& aSourceBuffer,
 
   mTreeBuilder->SetPreventScriptExecution(true);
 
-  return Tokenize(
-    aSourceBuffer, aTargetDoc, aScriptingEnabledForNoscriptParsing);
+  return Tokenize(aSourceBuffer, aTargetDoc,
+                  aScriptingEnabledForNoscriptParsing);
 }
 
-nsresult
-nsHtml5StringParser::Tokenize(const nsAString& aSourceBuffer,
-                              nsIDocument* aDocument,
-                              bool aScriptingEnabledForNoscriptParsing)
-{
-
+nsresult nsHtml5StringParser::Tokenize(
+    const nsAString& aSourceBuffer, Document* aDocument,
+    bool aScriptingEnabledForNoscriptParsing) {
   nsIURI* uri = aDocument->GetDocumentURI();
 
   mBuilder->Init(aDocument, uri, nullptr, nullptr);

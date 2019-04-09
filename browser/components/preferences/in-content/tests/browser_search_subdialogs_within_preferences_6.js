@@ -15,18 +15,9 @@ add_task(async function() {
 add_task(async function() {
   async function doTest() {
     await openPreferencesViaOpenPreferencesAPI("paneGeneral", {leaveOpen: true});
-    await evaluateSearchResults("block Web elements", "trackingGroup");
+    await evaluateSearchResults("block online trackers", "trackingGroup");
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
   }
-  await SpecialPowers.pushPrefEnv({"set": [
-    ["browser.contentblocking.ui.enabled", true],
-  ]});
-  info("Run the test with Content Blocking UI enabled");
-  await doTest();
-  await SpecialPowers.pushPrefEnv({"set": [
-    ["browser.contentblocking.ui.enabled", false],
-  ]});
-  info("Run the test with Content Blocking UI disabled");
   await doTest();
 });
 

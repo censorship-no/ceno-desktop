@@ -32,7 +32,7 @@ const DOCS_GA_PARAMS = `?${new URLSearchParams({
   "utm_medium": "firefox-console-errors",
   "utm_campaign": "default",
 })}`;
-const STATUS_CODES_GA_PARAMS = `?${new URLSearchParams({
+const GA_PARAMS = `?${new URLSearchParams({
   "utm_source": "mozilla",
   "utm_medium": "devtools-webconsole",
   "utm_campaign": "default",
@@ -419,6 +419,22 @@ async function setInputValueForAutocompletion(
 }
 
 /**
+ * Set the value of the JsTerm and wait for the confirm dialog to be displayed.
+ *
+ * @param {Toolbox} toolbox
+ * @param {JsTerm} jsterm
+ * @param {String} value : The value to set the jsterm to.
+ *                  Default to value.length (caret set at the end).
+ * @returns {Promise<HTMLElement>} resolves with dialog element when it is opened.
+ */
+async function setInputValueForGetterConfirmDialog(toolbox, jsterm, value) {
+  await setInputValueForAutocompletion(jsterm, value);
+  await waitFor(() => isConfirmDialogOpened(toolbox));
+  ok(true, "The confirm dialog is displayed");
+  return getConfirmDialog(toolbox);
+}
+
+/**
  * Checks if the jsterm has the expected completion value.
  *
  * @param {JsTerm} jsterm
@@ -644,6 +660,29 @@ async function closeConsole(tab = gBrowser.selectedTab) {
  *            or null(if event not fired)
  */
 function simulateLinkClick(element, clickEventProps) {
+  return overrideOpenLink(() => {
+    if (clickEventProps) {
+      // Click on the link using the event properties.
+      element.dispatchEvent(clickEventProps);
+    } else {
+      // Click on the link.
+      element.click();
+    }
+  });
+}
+
+/**
+ * Override the browserWindow open*Link function, executes the passed function and either
+ * wait for:
+ * - the link to be "opened"
+ * - 1s before timing out
+ * Then it puts back the original open*Link functions in browserWindow.
+ *
+ * @returns {Promise<Object>}: A promise resolving with an object of the following shape:
+ * - link: The link that was "opened"
+ * - where: If the link was opened in the background (null) or not ("tab").
+ */
+function overrideOpenLink(fn) {
   const browserWindow = Services.wm.getMostRecentWindow(gDevTools.chromeWindowType);
 
   // Override LinkIn methods to prevent navigating.
@@ -657,13 +696,7 @@ function simulateLinkClick(element, clickEventProps) {
       resolve({link: link, where});
     };
     browserWindow.openWebLinkIn = browserWindow.openTrustedLinkIn = openLinkIn;
-    if (clickEventProps) {
-      // Click on the link using the event properties.
-      element.dispatchEvent(clickEventProps);
-    } else {
-      // Click on the link.
-      element.click();
-    }
+    fn();
   });
 
   // Declare a timeout Promise that we can use to make sure openTrustedLinkIn or
@@ -952,3 +985,163 @@ function isReverseSearchInputFocused(hud) {
 
   return document.activeElement == reverseSearchInput && documentIsFocused;
 }
+
+/**
+ * Selects a node in the inspector.
+ *
+ * @param {Object} toolbox
+ * @param {Object} testActor: A test actor registered on the target. Needed to click on
+ *                            the content element.
+ * @param {String} selector: The selector for the node we want to select.
+ */
+async function selectNodeWithPicker(toolbox, testActor, selector) {
+  const inspector = toolbox.getPanel("inspector");
+  const inspectorFront = inspector.inspector;
+
+  const onPickerStarted = inspectorFront.nodePicker.once("picker-started");
+  inspectorFront.nodePicker.start();
+  await onPickerStarted;
+
+  info(`Picker mode started, now clicking on "${selector}" to select that node`);
+  const onPickerStopped = inspectorFront.nodePicker.once("picker-stopped");
+  const onInspectorUpdated = inspector.once("inspector-updated");
+
+  testActor.synthesizeMouse({
+    selector,
+    center: true,
+    options: {},
+  });
+
+  await onPickerStopped;
+  await onInspectorUpdated;
+}
+
+/**
+ * Clicks on the arrow of a single object inspector node if it exists.
+ *
+ * @param {HTMLElement} node: Object inspector node (.tree-node)
+ */
+function expandObjectInspectorNode(node) {
+  const arrow = getObjectInspectorNodeArrow(node);
+  if (!arrow) {
+    ok(false, "Node can't be expanded");
+    return;
+  }
+  arrow.click();
+}
+
+/**
+ * Retrieve the arrow of a single object inspector node.
+ *
+ * @param {HTMLElement} node: Object inspector node (.tree-node)
+ * @return {HTMLElement|null} the arrow element
+ */
+function getObjectInspectorNodeArrow(node) {
+  return node.querySelector(".arrow");
+}
+
+/**
+ * Check if a single object inspector node is expandable.
+ *
+ * @param {HTMLElement} node: Object inspector node (.tree-node)
+ * @return {Boolean} true if the node can be expanded
+ */
+function isObjectInspectorNodeExpandable(node) {
+  return !!getObjectInspectorNodeArrow(node);
+}
+
+/**
+ * Retrieve the nodes for a given object inspector element.
+ *
+ * @param {HTMLElement} oi: Object inspector element
+ * @return {NodeList} the object inspector nodes
+ */
+function getObjectInspectorNodes(oi) {
+  return oi.querySelectorAll(".tree-node");
+}
+
+/**
+ * Retrieve the "children" nodes for a given object inspector node.
+ *
+ * @param {HTMLElement} node: Object inspector node (.tree-node)
+ * @return {Array<HTMLElement>} the direct children (i.e. the ones that are one level
+ *                              deeper than the passed node)
+ */
+function getObjectInspectorChildrenNodes(node) {
+  const getLevel = n => parseInt(n.getAttribute("aria-level"), 10);
+  const level = getLevel(node);
+  const childLevel = level + 1;
+  const children = [];
+
+  let currentNode = node;
+  while (currentNode.nextSibling && getLevel(currentNode.nextSibling) === childLevel) {
+    currentNode = currentNode.nextSibling;
+    children.push(currentNode);
+  }
+
+  return children;
+}
+
+/**
+ * Retrieve the invoke getter button for a given object inspector node.
+ *
+ * @param {HTMLElement} node: Object inspector node (.tree-node)
+ * @return {HTMLElement|null} the invoke button element
+ */
+function getObjectInspectorInvokeGetterButton(node) {
+  return node.querySelector(".invoke-getter");
+}
+
+/**
+ * Retrieve the first node that match the passed node label, for a given object inspector
+ * element.
+ *
+ * @param {HTMLElement} oi: Object inspector element
+ * @param {String} nodeLabel: label of the searched node
+ * @return {HTMLElement|null} the Object inspector node with the matching label
+ */
+function findObjectInspectorNode(oi, nodeLabel) {
+  return [...oi.querySelectorAll(".tree-node")].find(node => {
+    const label = node.querySelector(".object-label");
+    if (!label) {
+      return false;
+    }
+    return label.textContent === nodeLabel;
+  });
+}
+
+/**
+ * Return an array of the label of the autocomplete popup items.
+ *
+ * @param {AutocompletPopup} popup
+ * @returns {Array<String>}
+ */
+function getAutocompletePopupLabels(popup) {
+  return popup.getItems().map(item => item.label);
+}
+
+/**
+ * Return the "Confirm Dialog" element.
+ *
+ * @param toolbox
+ * @returns {HTMLElement|null}
+ */
+function getConfirmDialog(toolbox) {
+  const {doc} = toolbox;
+  return doc.querySelector(".invoke-confirm");
+}
+
+/**
+ * Returns true if the Confirm Dialog is opened.
+ * @param toolbox
+ * @returns {Boolean}
+ */
+function isConfirmDialogOpened(toolbox) {
+  const tooltip = getConfirmDialog(toolbox);
+  if (!tooltip) {
+    return false;
+  }
+
+  return tooltip.classList.contains("tooltip-visible");
+}
+

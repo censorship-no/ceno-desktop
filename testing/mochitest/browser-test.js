@@ -17,7 +17,7 @@ ChromeUtils.defineModuleGetter(this, "ContentSearch",
   "resource:///modules/ContentSearch.jsm");
 
 const SIMPLETEST_OVERRIDES =
-  ["ok", "is", "isnot", "todo", "todo_is", "todo_isnot", "info", "expectAssertions", "requestCompleteLog"];
+  ["ok", "record", "is", "isnot", "todo", "todo_is", "todo_isnot", "info", "expectAssertions", "requestCompleteLog"];
 
 setTimeout(testInit, 0);
 
@@ -88,7 +88,10 @@ function testInit() {
       // eslint-disable-next-line no-undef
       var webNav = content.window.docShell
                           .QueryInterface(Ci.nsIWebNavigation);
-      webNav.loadURI(url, null, null, null, null);
+      let loadURIOptions = {
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      };
+      webNav.loadURI(url, loadURIOptions);
     };
 
     var listener = 'data:,function doLoad(e) { var data=e.detail&&e.detail.data;removeEventListener("contentEvent", function (e) { doLoad(e); }, false, true);sendAsyncMessage("chromeEvent", {"data":data}); };addEventListener("contentEvent", function (e) { doLoad(e); }, false, true);';
@@ -381,8 +384,12 @@ function Tester(aTests, structuredLogger, aCallback) {
 
   // In order to allow existing tests to continue using unsafe CPOWs
   // with EventUtils, we need to load a separate copy into a sandbox
-  // which has unsafe CPOW usage whitelisted.
-  this.cpowSandbox = Cu.Sandbox(window, {sandboxPrototype: window});
+  // which has unsafe CPOW usage whitelisted. We need to create a new
+  // compartment for Cu.permitCPOWsInScope.
+  this.cpowSandbox = Cu.Sandbox(window, {
+    freshCompartment: true,
+    sandboxPrototype: window,
+  });
   Cu.permitCPOWsInScope(this.cpowSandbox);
 
   this.cpowEventUtils = new this.cpowSandbox.Object();
@@ -434,10 +441,10 @@ function Tester(aTests, structuredLogger, aCallback) {
       configurable: true,
       writable: true,
       value: {
-        loadSubScript: (url, obj, charset) => {
+        loadSubScript: (url, obj) => {
           let before = Object.keys(window);
           try {
-            return this._scriptLoader.loadSubScript(url, obj, charset);
+            return this._scriptLoader.loadSubScript(url, obj);
           } finally {
             for (let property of Object.keys(window)) {
               if (!before.includes(property) && !this._globalProperties.includes(property)) {
@@ -502,6 +509,8 @@ Tester.prototype = {
       "Application",
       "__SS_tabsToRestore", "__SSi",
       "webConsoleCommandController",
+      // Thunderbird
+      "MailMigrator", "SearchIntegration",
     ];
 
     this.PerTestCoverageUtils.beforeTestSync();
@@ -521,7 +530,7 @@ Tester.prototype = {
   },
 
   async promiseMainWindowReady() {
-    if (!gBrowserInit.idleTasksFinished) {
+    if (window.gBrowserInit && !gBrowserInit.idleTasksFinished) {
       await this.TestUtils.topicObserved("browser-idle-startup-tasks-finished",
                                          subject => subject === window);
     }
@@ -583,6 +592,9 @@ Tester.prototype = {
         case "navigator:browser":
           type = "browser window";
           break;
+        case "mail:3pane":
+          type = "mail window";
+          break;
         case null:
           type = "unknown window with document URI: " + win.document.documentURI +
                  " and title: " + win.document.title;
@@ -628,7 +640,7 @@ Tester.prototype = {
     this.structuredLogger.info("TEST-START | Shutdown");
 
     if (this.tests.length) {
-      let e10sMode = gMultiProcessBrowser ? "e10s" : "non-e10s";
+      let e10sMode = window.gMultiProcessBrowser ? "e10s" : "non-e10s";
       this.structuredLogger.info("Browser Chrome Test Summary");
       this.structuredLogger.info("Passed:  " + passCount);
       this.structuredLogger.info("Failed:  " + failCount);
@@ -906,9 +918,11 @@ Tester.prototype = {
             // to touch the sidebar. They will thus not be blamed for leaking
             // a document.
             let sidebar = document.getElementById("sidebar");
-            sidebar.setAttribute("src", "data:text/html;charset=utf-8,");
-            sidebar.docShell.createAboutBlankContentViewer(null);
-            sidebar.setAttribute("src", "about:blank");
+            if (sidebar) {
+              sidebar.setAttribute("src", "data:text/html;charset=utf-8,");
+              sidebar.docShell.createAboutBlankContentViewer(null);
+              sidebar.setAttribute("src", "about:blank");
+            }
           }
 
           // Destroy BackgroundPageThumbs resources.
@@ -916,11 +930,8 @@ Tester.prototype = {
             ChromeUtils.import("resource://gre/modules/BackgroundPageThumbs.jsm", {});
           BackgroundPageThumbs._destroy();
 
-          // Destroy preloaded browsers.
-          if (gBrowser._preloadedBrowser) {
-            let browser = gBrowser._preloadedBrowser;
-            gBrowser._preloadedBrowser = null;
-            gBrowser.getNotificationBox(browser).remove();
+          if (window.gBrowser) {
+            gBrowser.removePreloadedBrowser();
           }
         }
 
@@ -1047,10 +1058,14 @@ Tester.prototype = {
     try {
       this._scriptLoader.loadSubScript(headPath, scope);
     } catch (ex) {
-      // Ignore if no head.js exists, but report all other errors.  Note this
-      // will also ignore an existing head.js attempting to import a missing
-      // module - see bug 755558 for why this strategy is preferred anyway.
-      if (!/^Error opening input stream/.test(ex.toString())) {
+      // Bug 755558 - Ignore loadSubScript errors due to a missing head.js.
+      const isImportError = /^Error opening input stream/.test(ex.toString());
+
+      // Bug 1503169 - head.js may call loadSubScript, and generate similar errors.
+      // Only swallow errors that are strictly related to loading head.js.
+      const containsHeadPath = ex.toString().includes(headPath);
+
+      if (!isImportError || !containsHeadPath) {
        this.currentTest.addResult(new testResult({
          name: "head.js import threw an exception",
          ex,
@@ -1284,7 +1299,15 @@ function testScope(aTester, aTest, expected) {
   aTest.allowFailure = expected == "fail";
 
   var self = this;
-  this.ok = function test_ok(condition, name, ex, stack) {
+  this.ok = function test_ok(condition, name) {
+    if (arguments.length > 2) {
+      const ex = "Too many arguments passed to ok(condition, name)`.";
+      self.record(false, name, ex);
+    } else {
+      self.record(condition, name);
+    }
+  };
+  this.record = function test_record(condition, name, ex, stack) {
     aTest.addResult(new testResult({
       name, pass: condition, ex,
       stack: stack || Components.stack.caller,
@@ -1292,11 +1315,11 @@ function testScope(aTester, aTest, expected) {
     }));
   };
   this.is = function test_is(a, b, name) {
-    self.ok(a == b, name, "Got " + a + ", expected " + b, false,
+    self.record(a == b, name, "Got " + a + ", expected " + b, false,
             Components.stack.caller);
   };
   this.isnot = function test_isnot(a, b, name) {
-    self.ok(a != b, name, "Didn't expect " + a + ", but got it", false,
+    self.record(a != b, name, "Didn't expect " + a + ", but got it", false,
             Components.stack.caller);
   };
   this.todo = function test_todo(condition, name, ex, stack) {
@@ -1437,7 +1460,13 @@ testScope.prototype = {
   Assert: null,
 
   _createSandbox() {
-    let sandbox = Cu.Sandbox(window, {sandboxPrototype: window});
+    // Force this sandbox to be in its own compartment because we call
+    // Cu.permitCPOWsInScope on it and we can't call that on objects in the
+    // shared system compartment.
+    let sandbox = Cu.Sandbox(window, {
+      freshCompartment: true,
+      sandboxPrototype: window,
+    });
 
     for (let prop in this) {
       if (typeof this[prop] == "function") {

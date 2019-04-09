@@ -12,32 +12,30 @@
 namespace mozilla {
 namespace layers {
 
-class WebRenderLayerManager;
+class RenderRootStateManager;
 
-class WebRenderCanvasRenderer : public ShareableCanvasRenderer
-{
-public:
-  explicit WebRenderCanvasRenderer(WebRenderLayerManager* aManager)
-    : mManager(aManager)
-  { }
+class WebRenderCanvasRenderer : public ShareableCanvasRenderer {
+ public:
+  explicit WebRenderCanvasRenderer(RenderRootStateManager* aManager)
+      : mManager(aManager) {}
 
   void Initialize(const CanvasInitializeData& aData) override;
 
   CompositableForwarder* GetForwarder() override;
 
-protected:
-  WebRenderLayerManager* mManager;
+ protected:
+  RenderRootStateManager* mManager;
 };
 
-class WebRenderCanvasRendererAsync : public WebRenderCanvasRenderer
-{
-public:
-  explicit WebRenderCanvasRendererAsync(WebRenderLayerManager* aManager)
-    : WebRenderCanvasRenderer(aManager)
-  { }
+class WebRenderCanvasRendererAsync : public WebRenderCanvasRenderer {
+ public:
+  explicit WebRenderCanvasRendererAsync(RenderRootStateManager* aManager)
+      : WebRenderCanvasRenderer(aManager) {}
   virtual ~WebRenderCanvasRendererAsync();
 
-  WebRenderCanvasRendererAsync* AsWebRenderCanvasRendererAsync() override { return this; }
+  WebRenderCanvasRendererAsync* AsWebRenderCanvasRendererAsync() override {
+    return this;
+  }
 
   void Initialize(const CanvasInitializeData& aData) override;
   bool CreateCompositable() override;
@@ -48,11 +46,12 @@ public:
   void UpdateCompositableClientForEmptyTransaction();
 
   Maybe<wr::PipelineId> GetPipelineId() { return mPipelineId; }
-protected:
+
+ protected:
   Maybe<wr::PipelineId> mPipelineId;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif

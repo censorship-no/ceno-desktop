@@ -34,7 +34,10 @@ add_task(async function() {
   equal(loadContext.usePrivateBrowsing, false,
         "Should be able to change origin attributes prior to a document load");
 
-  webNav.loadURI("data:text/html,", webNav.LOAD_FLAGS_NONE, null, null, null);
+  let loadURIOptions = {
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  };
+  webNav.loadURI("data:text/html,", loadURIOptions);
 
   // Return to the event loop so the load can begin.
   await new Promise(executeSoon);

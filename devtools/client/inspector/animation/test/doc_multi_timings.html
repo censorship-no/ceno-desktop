@@ -124,12 +124,12 @@
         {
           opacity: 1,
           offset: 0.1,
-          easing: "steps(1)"
+          easing: "steps(1)",
         },
         {
           opacity: 0,
           offset: 0.13,
-        }
+        },
       ],
       {},
       "narrow-keyframes");
@@ -152,10 +152,18 @@
         {
           offset: 1,
           opacity: 1,
-        }
+        },
       ],
       {},
       "duplicate-offsets");
+
+    createAnimation({ opacity: [0, 1] },
+                    { delay: -250000 },
+                    "delay-negative-25");
+
+    createAnimation({ opacity: [0, 1] },
+                    { delay: -750000 },
+                    "delay-negative-75");
     </script>
   </body>
 </html>

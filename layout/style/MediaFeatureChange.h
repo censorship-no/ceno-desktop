@@ -15,8 +15,7 @@
 
 namespace mozilla {
 
-enum class MediaFeatureChangeReason
-{
+enum class MediaFeatureChangeReason {
   // The viewport size the document has used has changed.
   //
   // This affects size media queries like min-width.
@@ -24,51 +23,41 @@ enum class MediaFeatureChangeReason
   // The effective text zoom has changed. This affects the meaning of em units,
   // and thus affects any media query that uses a Length.
   ZoomChange = 1 << 1,
-  // The base min font size has changed. This can affect the meaning of em
-  // units, if the previous default font-size has changed, and also zoom.
-  MinFontSizeChange = 1 << 2,
   // The resolution has changed. This can affect device-pixel-ratio media
   // queries, for example.
-  ResolutionChange = 1 << 3,
+  ResolutionChange = 1 << 2,
   // The medium has changed.
-  MediumChange = 1 << 4,
+  MediumChange = 1 << 3,
   // The size-mode has changed.
-  SizeModeChange = 1 << 5,
+  SizeModeChange = 1 << 4,
   // A system metric or multiple have changed. This affects all the media
   // features that expose the presence of a system metric directly.
-  SystemMetricsChange = 1 << 6,
+  SystemMetricsChange = 1 << 5,
   // The fact of whether the device size is the page size has changed, thus
   // resolution media queries can change.
-  DeviceSizeIsPageSizeChange = 1 << 7,
+  DeviceSizeIsPageSizeChange = 1 << 6,
   // display-mode changed on the document, thus the display-mode media queries
   // may have changed.
-  DisplayModeChange = 1 << 8,
+  DisplayModeChange = 1 << 7,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(MediaFeatureChangeReason)
 
-struct MediaFeatureChange
-{
+struct MediaFeatureChange {
   nsRestyleHint mRestyleHint;
   nsChangeHint mChangeHint;
   MediaFeatureChangeReason mReason;
 
   MOZ_IMPLICIT MediaFeatureChange(MediaFeatureChangeReason aReason)
-    : MediaFeatureChange(nsRestyleHint(0), nsChangeHint(0), aReason)
-  {
-  }
+      : MediaFeatureChange(nsRestyleHint(0), nsChangeHint(0), aReason) {}
 
-  MediaFeatureChange(nsRestyleHint aRestyleHint,
-                     nsChangeHint aChangeHint,
+  MediaFeatureChange(nsRestyleHint aRestyleHint, nsChangeHint aChangeHint,
                      MediaFeatureChangeReason aReason)
-    : mRestyleHint(aRestyleHint)
-    , mChangeHint(aChangeHint)
-    , mReason(aReason)
-  {
-  }
+      : mRestyleHint(aRestyleHint),
+        mChangeHint(aChangeHint),
+        mReason(aReason) {}
 
-  inline MediaFeatureChange& operator|=(const MediaFeatureChange& aOther)
-  {
+  inline MediaFeatureChange& operator|=(const MediaFeatureChange& aOther) {
     mRestyleHint |= aOther.mRestyleHint;
     mChangeHint |= aOther.mChangeHint;
     mReason |= aOther.mReason;
@@ -76,6 +65,6 @@ struct MediaFeatureChange
   }
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

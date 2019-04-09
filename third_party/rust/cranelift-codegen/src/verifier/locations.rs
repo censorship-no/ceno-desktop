@@ -1,11 +1,11 @@
 //! Verify value locations.
 
-use ir;
-use isa;
-use regalloc::liveness::Liveness;
-use regalloc::RegDiversions;
-use timing;
-use verifier::{VerifierErrors, VerifierStepResult};
+use crate::ir;
+use crate::isa;
+use crate::regalloc::liveness::Liveness;
+use crate::regalloc::RegDiversions;
+use crate::timing;
+use crate::verifier::{VerifierErrors, VerifierStepResult};
 
 /// Verify value locations for `func`.
 ///
@@ -303,7 +303,7 @@ impl<'a> LocationVerifier<'a> {
         divert: &RegDiversions,
         errors: &mut VerifierErrors,
     ) -> VerifierStepResult<()> {
-        use ir::instructions::BranchInfo::*;
+        use crate::ir::instructions::BranchInfo::*;
 
         // We can only check CFG edges if we have a liveness analysis.
         let liveness = match self.liveness {
@@ -318,30 +318,42 @@ impl<'a> LocationVerifier<'a> {
                 dfg.display_inst(inst, self.isa)
             ),
             SingleDest(ebb, _) => {
-                for d in divert.all() {
-                    let lr = &liveness[d.value];
+                for (&value, d) in divert.iter() {
+                    let lr = &liveness[value];
                     if lr.is_livein(ebb, liveness.context(&self.func.layout)) {
                         return fatal!(
                             errors,
                             inst,
                             "{} is diverted to {} and live in to {}",
-                            d.value,
+                            value,
                             d.to.display(&self.reginfo),
                             ebb
                         );
                     }
                 }
             }
-            Table(jt) => {
-                for d in divert.all() {
-                    let lr = &liveness[d.value];
-                    for (_, ebb) in self.func.jump_tables[jt].entries() {
+            Table(jt, ebb) => {
+                for (&value, d) in divert.iter() {
+                    let lr = &liveness[value];
+                    if let Some(ebb) = ebb {
                         if lr.is_livein(ebb, liveness.context(&self.func.layout)) {
                             return fatal!(
                                 errors,
                                 inst,
                                 "{} is diverted to {} and live in to {}",
-                                d.value,
+                                value,
+                                d.to.display(&self.reginfo),
+                                ebb
+                            );
+                        }
+                    }
+                    for ebb in self.func.jump_tables[jt].iter() {
+                        if lr.is_livein(*ebb, liveness.context(&self.func.layout)) {
+                            return fatal!(
+                                errors,
+                                inst,
+                                "{} is diverted to {} and live in to {}",
+                                value,
                                 d.to.display(&self.reginfo),
                                 ebb
                             );

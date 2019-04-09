@@ -9,6 +9,7 @@
 #include "nsFrameLoader.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/dom/HTMLIFrameElement.h"
+#include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/dom/XULFrameElement.h"
 #include "mozilla/dom/XULFrameElementBinding.h"
 
@@ -17,80 +18,71 @@ namespace dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(XULFrameElement)
 
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(XULFrameElement,
-                                                  nsXULElement)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(XULFrameElement, nsXULElement)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFrameLoader);
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOpener);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(XULFrameElement,
-                                                nsXULElement)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(XULFrameElement, nsXULElement)
   if (tmp->mFrameLoader) {
     tmp->mFrameLoader->Destroy();
   }
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFrameLoader, mOpener)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(XULFrameElement,
-                                             nsXULElement,
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(XULFrameElement, nsXULElement,
                                              nsIFrameLoaderOwner)
 
-JSObject*
-XULFrameElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
+JSObject* XULFrameElement::WrapNode(JSContext* aCx,
+                                    JS::Handle<JSObject*> aGivenProto) {
   return XULFrameElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsIDocShell*
-XULFrameElement::GetDocShell()
-{
+nsDocShell* XULFrameElement::GetDocShell() {
   RefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
   return frameLoader ? frameLoader->GetDocShell(IgnoreErrors()) : nullptr;
 }
 
-already_AddRefed<nsIWebNavigation>
-XULFrameElement::GetWebNavigation()
-{
+already_AddRefed<nsIWebNavigation> XULFrameElement::GetWebNavigation() {
   nsCOMPtr<nsIDocShell> docShell = GetDocShell();
   nsCOMPtr<nsIWebNavigation> webnav = do_QueryInterface(docShell);
   return webnav.forget();
 }
 
-already_AddRefed<nsPIDOMWindowOuter>
-XULFrameElement::GetContentWindow()
-{
-  nsCOMPtr<nsIDocShell> docShell = GetDocShell();
+Nullable<WindowProxyHolder> XULFrameElement::GetContentWindow() {
+  RefPtr<nsDocShell> docShell = GetDocShell();
   if (docShell) {
-    nsCOMPtr<nsPIDOMWindowOuter> win = docShell->GetWindow();
-    return win.forget();
+    return WindowProxyHolder(docShell->GetWindowProxy());
   }
 
   return nullptr;
 }
 
-nsIDocument*
-XULFrameElement::GetContentDocument()
-{
-  nsCOMPtr<nsPIDOMWindowOuter> win = GetContentWindow();
-  return win ? win->GetDoc() : nullptr;
+Document* XULFrameElement::GetContentDocument() {
+  nsCOMPtr<nsIDocShell> docShell = GetDocShell();
+  if (docShell) {
+    nsCOMPtr<nsPIDOMWindowOuter> win = docShell->GetWindow();
+    if (win) {
+      return win->GetDoc();
+    }
+  }
+  return nullptr;
 }
 
-void
-XULFrameElement::LoadSrc()
-{
-  if (!IsInUncomposedDoc() ||
-      !OwnerDoc()->GetRootElement()) {
-      return;
+void XULFrameElement::LoadSrc() {
+  if (!IsInUncomposedDoc() || !OwnerDoc()->GetRootElement()) {
+    return;
   }
   RefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
   if (!frameLoader) {
     // Check if we have an opener we need to be setting
-    nsCOMPtr<nsPIDOMWindowOuter> opener = mOpener;
+    RefPtr<BrowsingContext> opener = mOpener;
     if (!opener) {
       // If we are a primary xul-browser, we want to take the opener property!
       nsCOMPtr<nsPIDOMWindowOuter> window = OwnerDoc()->GetWindow();
-      if (AttrValueIs(kNameSpaceID_None, nsGkAtoms::primary,
-                      nsGkAtoms::_true, eIgnoreCase) && window) {
+      if (AttrValueIs(kNameSpaceID_None, nsGkAtoms::primary, nsGkAtoms::_true,
+                      eIgnoreCase) &&
+          window) {
         opener = window->TakeOpenerForInitialContentBrowser();
       }
     }
@@ -100,30 +92,27 @@ XULFrameElement::LoadSrc()
     // session history handling works like dynamic html:iframes.
     // Usually xul elements are used in chrome, which doesn't have
     // session history at all.
-    mFrameLoader = nsFrameLoader::Create(this, opener, false);
+    mFrameLoader = nsFrameLoader::Create(
+        this, opener ? opener->GetDOMWindow() : nullptr, false);
     if (NS_WARN_IF(!mFrameLoader)) {
       return;
     }
 
-    (new AsyncEventDispatcher(this,
-                              NS_LITERAL_STRING("XULFrameLoaderCreated"),
-                              CanBubble::eYes))->RunDOMEventWhenSafe();
+    (new AsyncEventDispatcher(this, NS_LITERAL_STRING("XULFrameLoaderCreated"),
+                              CanBubble::eYes))
+        ->RunDOMEventWhenSafe();
   }
 
   mFrameLoader->LoadFrame(false);
 }
 
-void
-XULFrameElement::SwapFrameLoaders(HTMLIFrameElement& aOtherLoaderOwner,
-                                  ErrorResult& rv)
-{
+void XULFrameElement::SwapFrameLoaders(HTMLIFrameElement& aOtherLoaderOwner,
+                                       ErrorResult& rv) {
   aOtherLoaderOwner.SwapFrameLoaders(this, rv);
 }
 
-void
-XULFrameElement::SwapFrameLoaders(XULFrameElement& aOtherLoaderOwner,
-                                  ErrorResult& rv)
-{
+void XULFrameElement::SwapFrameLoaders(XULFrameElement& aOtherLoaderOwner,
+                                       ErrorResult& rv) {
   if (&aOtherLoaderOwner == this) {
     // nothing to do
     return;
@@ -132,10 +121,8 @@ XULFrameElement::SwapFrameLoaders(XULFrameElement& aOtherLoaderOwner,
   aOtherLoaderOwner.SwapFrameLoaders(this, rv);
 }
 
-void
-XULFrameElement::SwapFrameLoaders(nsIFrameLoaderOwner* aOtherLoaderOwner,
-                                  mozilla::ErrorResult& rv)
-{
+void XULFrameElement::SwapFrameLoaders(nsIFrameLoaderOwner* aOtherLoaderOwner,
+                                       mozilla::ErrorResult& rv) {
   RefPtr<nsFrameLoader> loader = GetFrameLoader();
   RefPtr<nsFrameLoader> otherLoader = aOtherLoaderOwner->GetFrameLoader();
   if (!loader || !otherLoader) {
@@ -146,11 +133,8 @@ XULFrameElement::SwapFrameLoaders(nsIFrameLoaderOwner* aOtherLoaderOwner,
   rv = loader->SwapWithOtherLoader(otherLoader, this, aOtherLoaderOwner);
 }
 
-nsresult
-XULFrameElement::BindToTree(nsIDocument* aDocument,
-                            nsIContent* aParent,
-                            nsIContent* aBindingParent)
-{
+nsresult XULFrameElement::BindToTree(Document* aDocument, nsIContent* aParent,
+                                     nsIContent* aBindingParent) {
   nsresult rv = nsXULElement::BindToTree(aDocument, aParent, aBindingParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -164,9 +148,7 @@ XULFrameElement::BindToTree(nsIDocument* aDocument,
   return NS_OK;
 }
 
-void
-XULFrameElement::UnbindFromTree(bool aDeep, bool aNullParent)
-{
+void XULFrameElement::UnbindFromTree(bool aDeep, bool aNullParent) {
   RefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
   if (frameLoader) {
     frameLoader->Destroy();
@@ -176,9 +158,7 @@ XULFrameElement::UnbindFromTree(bool aDeep, bool aNullParent)
   nsXULElement::UnbindFromTree(aDeep, aNullParent);
 }
 
-void
-XULFrameElement::DestroyContent()
-{
+void XULFrameElement::DestroyContent() {
   RefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
   if (frameLoader) {
     frameLoader->Destroy();
@@ -188,20 +168,18 @@ XULFrameElement::DestroyContent()
   nsXULElement::DestroyContent();
 }
 
-nsresult
-XULFrameElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                              const nsAttrValue* aValue,
-                              const nsAttrValue* aOldValue,
-                              nsIPrincipal* aSubjectPrincipal,
-                              bool aNotify)
-{
+nsresult XULFrameElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                       const nsAttrValue* aValue,
+                                       const nsAttrValue* aOldValue,
+                                       nsIPrincipal* aSubjectPrincipal,
+                                       bool aNotify) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src && aValue) {
     LoadSrc();
   }
 
-  return nsXULElement::AfterSetAttr(aNamespaceID, aName,
-                                    aValue, aOldValue, aSubjectPrincipal, aNotify);
+  return nsXULElement::AfterSetAttr(aNamespaceID, aName, aValue, aOldValue,
+                                    aSubjectPrincipal, aNotify);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

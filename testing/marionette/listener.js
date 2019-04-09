@@ -4,6 +4,7 @@
 
 /* eslint-env mozilla/frame-script */
 /* global XPCNativeWrapper */
+/* eslint-disable no-restricted-globals */
 
 "use strict";
 
@@ -154,7 +155,7 @@ const loadListener = {
       // command can return immediately if the page load is already done.
       let readyState = content.document.readyState;
       let documentURI = content.document.documentURI;
-      logger.debug(truncate`Check readyState ${readyState} for ${documentURI}`);
+      logger.trace(truncate`Check readyState ${readyState} for ${documentURI}`);
       // If the page load has already finished, don't setup listeners and
       // timers but return immediatelly.
       if (this.handleReadyState(readyState, documentURI)) {
@@ -209,7 +210,7 @@ const loadListener = {
     }
 
     let location = event.target.documentURI || event.target.location.href;
-    logger.debug(truncate`Received DOM event ${event.type} for ${location}`);
+    logger.trace(truncate`Received DOM event ${event.type} for ${location}`);
 
     switch (event.type) {
       case "beforeunload":
@@ -346,7 +347,7 @@ const loadListener = {
     const winID = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
     const curWinID = win.windowUtils.outerWindowID;
 
-    logger.debug(`Received observer notification ${topic}`);
+    logger.trace(`Received observer notification ${topic}`);
 
     switch (topic) {
       // In the case when the currently selected frame is closed,
@@ -439,7 +440,7 @@ const loadListener = {
  * an ID, we start the listeners. Otherwise, nothing happens.
  */
 function registerSelf() {
-  logger.debug("Frame script loaded");
+  logger.trace("Frame script loaded");
 
   sandboxes.clear();
   curContainer = {
@@ -456,7 +457,7 @@ function registerSelf() {
   }
 
   if (reply[0].outerWindowID === outerWindowID) {
-    logger.debug("Frame script registered");
+    logger.trace("Frame script registered");
     startListeners();
     sendAsyncMessage("Marionette:ListenersAttached", {outerWindowID});
   }
@@ -1306,11 +1307,12 @@ function isElementSelected(el) {
 }
 
 async function sendKeysToElement(el, val) {
-  await interaction.sendKeysToElement(
-      el, val,
-      capabilities.get("moz:accessibilityChecks"),
-      capabilities.get("moz:webdriverClick"),
-  );
+  let opts = {
+    strictFileInteractability: capabilities.get("strictFileInteractability"),
+    accessibilityChecks: capabilities.get("moz:accessibilityChecks"),
+    webdriverClick: capabilities.get("moz:webdriverClick"),
+  };
+  await interaction.sendKeysToElement(el, val, opts);
 }
 
 /** Clear the text of an element. */
@@ -1398,7 +1400,14 @@ function switchToFrame(msg) {
   if (typeof msg.json.element != "undefined") {
     webEl = WebElement.fromUUID(msg.json.element, "content");
   }
-  if (webEl && seenEls.has(webEl)) {
+
+  if (webEl) {
+    if (!seenEls.has(webEl)) {
+      let err = new NoSuchElementError(`Unable to locate element: ${webEl}`);
+      sendError(err, commandID);
+      return;
+    }
+
     let wantedFrame;
     try {
       wantedFrame = seenEls.get(webEl, curContainer.frame);
@@ -1629,6 +1638,7 @@ async function reftestWait(url, remote) {
   } else {
     // Ensure that the event loop has spun at least once since load,
     // so that setTimeout(fn, 0) in the load event has run
+    logger.debug("Waiting for event loop to spin");
     reftestWait = document.documentElement.classList.contains("reftest-wait");
     await new Promise(resolve => win.setTimeout(resolve, 0));
   }

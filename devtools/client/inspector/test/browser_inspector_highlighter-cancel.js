@@ -31,7 +31,7 @@ add_task(async function() {
   function cancelPickerByShortcut() {
     info("Key pressed. Waiting for picker to be canceled.");
     testActor.synthesizeKey({key: "VK_ESCAPE", options: {}});
-    return inspector.toolbox.once("picker-canceled");
+    return inspector.inspector.nodePicker.once("picker-node-canceled");
   }
 
   function moveMouseOver(selector) {
@@ -39,7 +39,7 @@ add_task(async function() {
     testActor.synthesizeMouse({
       options: {type: "mousemove"},
       center: true,
-      selector: selector
+      selector: selector,
     });
     return inspector.markup.once("showcontainerhovered");
   }

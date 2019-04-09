@@ -602,12 +602,14 @@ class RustTests(ContextDerived):
     __slots__ = (
         'names',
         'features',
+        'output_category',
     )
 
     def __init__(self, context, names, features):
         ContextDerived.__init__(self, context)
         self.names = names
         self.features = features
+        self.output_category = 'rusttests'
 
 
 class BaseLibrary(Linkable):
@@ -1164,6 +1166,7 @@ class GeneratedFile(ContextDerived):
         self.force = force
 
         suffixes = (
+            '.asm',
             '.c',
             '.cpp',
             '.h',
@@ -1171,6 +1174,8 @@ class GeneratedFile(ContextDerived):
             '.py',
             '.rs',
             'node.stub', # To avoid VPATH issues with installing node files: https://bugzilla.mozilla.org/show_bug.cgi?id=1461714#c55
+            'android_apks', # We need to compile Java to generate JNI wrappers for native code compilation to consume.
+            '.profdata',
         )
         self.required_for_compile = [f for f in self.outputs if f.endswith(suffixes) or 'stl_wrappers/' in f]
 
@@ -1202,3 +1207,4 @@ class GnProjectData(ContextDerived):
         self.gn_input_variables = gn_dir_attrs.variables
         self.gn_sandbox_variables = gn_dir_attrs.sandbox_vars
         self.mozilla_flags = gn_dir_attrs.mozilla_flags
+        self.gn_target = gn_dir_attrs.gn_target

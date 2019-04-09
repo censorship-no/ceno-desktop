@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Animated values.
 //!
@@ -8,18 +8,96 @@
 //! computed values and need yet another intermediate representation. This
 //! module's raison d'être is to ultimately contain all these types.
 
+use crate::properties::PropertyId;
+use crate::values::computed::length::LengthPercentage;
+use crate::values::computed::url::ComputedUrl;
+use crate::values::computed::Angle as ComputedAngle;
+use crate::values::computed::Image;
+use crate::values::specified::SVGPathData;
+use crate::values::CSSFloat;
 use app_units::Au;
 use euclid::{Point2D, Size2D};
 use smallvec::SmallVec;
-use values::computed::Angle as ComputedAngle;
-use values::computed::BorderCornerRadius as ComputedBorderCornerRadius;
-use values::computed::MaxLength as ComputedMaxLength;
-use values::computed::MozLength as ComputedMozLength;
-use values::computed::length::CalcLengthOrPercentage;
-use values::computed::url::ComputedUrl;
+use std::cmp;
 
 pub mod color;
 pub mod effects;
+mod font;
+mod grid;
+mod length;
+mod svg;
+pub mod transform;
+
+/// The category a property falls into for ordering purposes.
+///
+/// https://drafts.csswg.org/web-animations/#calculating-computed-keyframes
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+enum PropertyCategory {
+    Custom,
+    PhysicalLonghand,
+    LogicalLonghand,
+    Shorthand,
+}
+
+impl PropertyCategory {
+    fn of(id: &PropertyId) -> Self {
+        match *id {
+            PropertyId::Shorthand(..) | PropertyId::ShorthandAlias(..) => {
+                PropertyCategory::Shorthand
+            },
+            PropertyId::Longhand(id) | PropertyId::LonghandAlias(id, ..) => {
+                if id.is_logical() {
+                    PropertyCategory::LogicalLonghand
+                } else {
+                    PropertyCategory::PhysicalLonghand
+                }
+            },
+            PropertyId::Custom(..) => PropertyCategory::Custom,
+        }
+    }
+}
+
+/// A comparator to sort PropertyIds such that physical longhands are sorted
+/// before logical longhands and shorthands, shorthands with fewer components
+/// are sorted before shorthands with more components, and otherwise shorthands
+/// are sorted by IDL name as defined by [Web Animations][property-order].
+///
+/// Using this allows us to prioritize values specified by longhands (or smaller
+/// shorthand subsets) when longhands and shorthands are both specified on the
+/// one keyframe.
+///
+/// [property-order] https://drafts.csswg.org/web-animations/#calculating-computed-keyframes
+pub fn compare_property_priority(a: &PropertyId, b: &PropertyId) -> cmp::Ordering {
+    let a_category = PropertyCategory::of(a);
+    let b_category = PropertyCategory::of(b);
+
+    if a_category != b_category {
+        return a_category.cmp(&b_category);
+    }
+
+    if a_category != PropertyCategory::Shorthand {
+        return cmp::Ordering::Equal;
+    }
+
+    let a = a.as_shorthand().unwrap();
+    let b = b.as_shorthand().unwrap();
+    // Within shorthands, sort by the number of subproperties, then by IDL
+    // name.
+    let subprop_count_a = a.longhands().count();
+    let subprop_count_b = b.longhands().count();
+    subprop_count_a
+        .cmp(&subprop_count_b)
+        .then_with(|| a.idl_name_sort_order().cmp(&b.idl_name_sort_order()))
+}
+
+/// A helper function to animate two multiplicative factor.
+pub fn animate_multiplicative_factor(
+    this: CSSFloat,
+    other: CSSFloat,
+    procedure: Procedure,
+) -> Result<CSSFloat, ()> {
+    Ok((this - 1.).animate(&(other - 1.), procedure)? + 1.)
+}
 
 /// Animate from one value to another.
 ///
@@ -36,7 +114,8 @@ pub mod effects;
 /// function has been specified through `#[animate(fallback)]`.
 ///
 /// Trait bounds for type parameter `Foo` can be opted out of with
-/// `#[animation(no_bound(Foo))]` on the type definition.
+/// `#[animation(no_bound(Foo))]` on the type definition, trait bounds for
+/// fields can be opted into with `#[animation(field_bound)]` on the field.
 pub trait Animate: Sized {
     /// Animate a value towards another one, given an animation procedure.
     fn animate(&self, other: &Self, procedure: Procedure) -> Result<Self, ()>;
@@ -258,88 +337,24 @@ macro_rules! trivial_to_animated_value {
 }
 
 trivial_to_animated_value!(Au);
-trivial_to_animated_value!(CalcLengthOrPercentage);
+trivial_to_animated_value!(LengthPercentage);
 trivial_to_animated_value!(ComputedAngle);
 trivial_to_animated_value!(ComputedUrl);
 trivial_to_animated_value!(bool);
 trivial_to_animated_value!(f32);
-
-impl ToAnimatedValue for ComputedBorderCornerRadius {
-    type AnimatedValue = Self;
-
-    #[inline]
-    fn to_animated_value(self) -> Self {
-        self
-    }
-
-    #[inline]
-    fn from_animated_value(animated: Self::AnimatedValue) -> Self {
-        ComputedBorderCornerRadius::new(
-            (animated.0).0.width.clamp_to_non_negative(),
-            (animated.0).0.height.clamp_to_non_negative(),
-        )
-    }
-}
-
-impl ToAnimatedValue for ComputedMaxLength {
-    type AnimatedValue = Self;
-
-    #[inline]
-    fn to_animated_value(self) -> Self {
-        self
-    }
-
-    #[inline]
-    fn from_animated_value(animated: Self::AnimatedValue) -> Self {
-        use values::computed::{Length, LengthOrPercentageOrNone, Percentage};
-        use values::generics::length::MaxLength as GenericMaxLength;
-        match animated {
-            GenericMaxLength::LengthOrPercentageOrNone(lopn) => {
-                let result = match lopn {
-                    LengthOrPercentageOrNone::Length(px) => {
-                        LengthOrPercentageOrNone::Length(Length::new(px.px().max(0.)))
-                    },
-                    LengthOrPercentageOrNone::Percentage(percentage) => {
-                        LengthOrPercentageOrNone::Percentage(Percentage(percentage.0.max(0.)))
-                    },
-                    _ => lopn,
-                };
-                GenericMaxLength::LengthOrPercentageOrNone(result)
-            },
-            _ => animated,
-        }
-    }
-}
-
-impl ToAnimatedValue for ComputedMozLength {
-    type AnimatedValue = Self;
-
-    #[inline]
-    fn to_animated_value(self) -> Self {
-        self
-    }
-
-    #[inline]
-    fn from_animated_value(animated: Self::AnimatedValue) -> Self {
-        use values::computed::{Length, LengthOrPercentageOrAuto, Percentage};
-        use values::generics::length::MozLength as GenericMozLength;
-        match animated {
-            GenericMozLength::LengthOrPercentageOrAuto(lopa) => {
-                let result = match lopa {
-                    LengthOrPercentageOrAuto::Length(px) => {
-                        LengthOrPercentageOrAuto::Length(Length::new(px.px().max(0.)))
-                    },
-                    LengthOrPercentageOrAuto::Percentage(percentage) => {
-                        LengthOrPercentageOrAuto::Percentage(Percentage(percentage.0.max(0.)))
-                    },
-                    _ => lopa,
-                };
-                GenericMozLength::LengthOrPercentageOrAuto(result)
-            },
-            _ => animated,
-        }
-    }
-}
+// Note: This implementation is for ToAnimatedValue of ShapeSource.
+//
+// SVGPathData uses Box<[T]>. If we want to derive ToAnimatedValue for all the
+// types, we have to do "impl ToAnimatedValue for Box<[T]>" first.
+// However, the general version of "impl ToAnimatedValue for Box<[T]>" needs to
+// clone |T| and convert it into |T::AnimatedValue|. However, for SVGPathData
+// that is unnecessary--moving |T| is sufficient. So here, we implement this
+// trait manually.
+trivial_to_animated_value!(SVGPathData);
+// FIXME: Bug 1514342, Image is not animatable, but we still need to implement
+// this to avoid adding this derive to generic::Image and all its arms. We can
+// drop this after landing Bug 1514342.
+trivial_to_animated_value!(Image);
 
 impl ToAnimatedZero for Au {
     #[inline]

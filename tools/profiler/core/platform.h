@@ -45,44 +45,36 @@
 // We need a definition of gettid(), but glibc doesn't provide a
 // wrapper for it.
 #if defined(__GLIBC__)
-#include <unistd.h>
-#include <sys/syscall.h>
-static inline pid_t gettid()
-{
-  return (pid_t) syscall(SYS_gettid);
-}
+#  include <unistd.h>
+#  include <sys/syscall.h>
+static inline pid_t gettid() { return (pid_t)syscall(SYS_gettid); }
 #elif defined(GP_OS_darwin)
-#include <unistd.h>
-#include <sys/syscall.h>
-static inline pid_t gettid()
-{
-  return (pid_t) syscall(SYS_thread_selfid);
-}
+#  include <unistd.h>
+#  include <sys/syscall.h>
+static inline pid_t gettid() { return (pid_t)syscall(SYS_thread_selfid); }
 #elif defined(GP_OS_android)
-#include <unistd.h>
+#  include <unistd.h>
 #elif defined(GP_OS_windows)
-#include <windows.h>
-#include <process.h>
-#ifndef getpid
-#define getpid _getpid
-#endif
+#  include <windows.h>
+#  include <process.h>
+#  ifndef getpid
+#    define getpid _getpid
+#  endif
 #endif
 
 extern mozilla::LazyLogModule gProfilerLog;
 
 // These are for MOZ_LOG="prof:3" or higher. It's the default logging level for
 // the profiler, and should be used sparingly.
-#define LOG_TEST \
-  MOZ_LOG_TEST(gProfilerLog, mozilla::LogLevel::Info)
-#define LOG(arg, ...) \
+#define LOG_TEST MOZ_LOG_TEST(gProfilerLog, mozilla::LogLevel::Info)
+#define LOG(arg, ...)                            \
   MOZ_LOG(gProfilerLog, mozilla::LogLevel::Info, \
           ("[%d] " arg, getpid(), ##__VA_ARGS__))
 
 // These are for MOZ_LOG="prof:4" or higher. It should be used for logging that
 // is somewhat more verbose than LOG.
-#define DEBUG_LOG_TEST \
-  MOZ_LOG_TEST(gProfilerLog, mozilla::LogLevel::Debug)
-#define DEBUG_LOG(arg, ...) \
+#define DEBUG_LOG_TEST MOZ_LOG_TEST(gProfilerLog, mozilla::LogLevel::Debug)
+#define DEBUG_LOG(arg, ...)                       \
   MOZ_LOG(gProfilerLog, mozilla::LogLevel::Debug, \
           ("[%d] " arg, getpid(), ##__VA_ARGS__))
 
@@ -96,7 +88,7 @@ typedef uint8_t* Address;
 // supported platforms.
 
 class Thread {
-public:
+ public:
   static int GetCurrentId();
 };
 
@@ -112,7 +104,7 @@ struct PlatformDataDestructor {
 };
 
 typedef mozilla::UniquePtr<PlatformData, PlatformDataDestructor>
-  UniquePlatformData;
+    UniquePlatformData;
 UniquePlatformData AllocPlatformData(int aThreadId);
 
 namespace mozilla {
@@ -123,5 +115,12 @@ void AppendSharedLibraries(mozilla::JSONWriter& aWriter);
 // Convert the array of strings to a bitfield.
 uint32_t ParseFeaturesFromStringArray(const char** aFeatures,
                                       uint32_t aFeatureCount);
+
+// Flags to conveniently track various JS features.
+enum class JSSamplingFlags {
+  StackSampling = 0x1,
+  TrackOptimizations = 0x2,
+  TraceLogging = 0x4
+};
 
 #endif /* ndef TOOLS_PLATFORM_H_ */

@@ -9,8 +9,8 @@ from mozunit import main
 from taskgraph.util.schema import (
     validate_schema,
     resolve_keyed_by,
+    Schema,
 )
-from voluptuous import Schema
 
 schema = Schema({
     'x': int,
@@ -28,7 +28,25 @@ class TestValidateSchema(unittest.TestCase):
             validate_schema(schema, {'x': 'not-int'}, "pfx")
             self.fail("no exception raised")
         except Exception as e:
-            self.failUnless(str(e).startswith("pfx\n"))
+            self.assertTrue(str(e).startswith("pfx\n"))
+
+
+class TestCheckSchema(unittest.TestCase):
+
+    def test_schema(self):
+        "Creating a schema applies taskgraph checks."
+        with self.assertRaises(Exception):
+            Schema({"camelCase": int})
+
+    def test_extend_schema(self):
+        "Extending a schema applies taskgraph checks."
+        with self.assertRaises(Exception):
+            Schema({"kebab-case": int}).extend({"camelCase": int})
+
+    def test_extend_schema_twice(self):
+        "Extending a schema twice applies taskgraph checks."
+        with self.assertRaises(Exception):
+            Schema({"kebab-case": int}).extend({'more-kebab': int}).extend({"camelCase": int})
 
 
 class TestResolveKeyedBy(unittest.TestCase):

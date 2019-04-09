@@ -259,8 +259,7 @@ const SYNC_BOOKMARK_VALIDATORS = Object.freeze({
   recordId: simpleValidateFunc(v => typeof v == "string" && (
                                 (PlacesSyncUtils.bookmarks.ROOTS.includes(v) || PlacesUtils.isValidGuid(v)))),
   parentRecordId: v => SYNC_BOOKMARK_VALIDATORS.recordId(v),
-  // Sync uses kinds instead of types, which distinguish between livemarks and
-  // queries.
+  // Sync uses kinds instead of types.
   kind: simpleValidateFunc(v => typeof v == "string" &&
                                 Object.values(PlacesSyncUtils.bookmarks.KINDS).includes(v)),
   query: simpleValidateFunc(v => v === null || (typeof v == "string" && v)),
@@ -400,6 +399,7 @@ var PlacesUtils = {
   // Used to track the action that populated the clipboard.
   TYPE_X_MOZ_PLACE_ACTION: "text/x-moz-place-action",
 
+  // Deprecated: Remaining only for supporting migration of old livemarks.
   LMANNO_FEEDURI: "livemark/feedURI",
   LMANNO_SITEURI: "livemark/siteURI",
   CHARSET_ANNO: "URIProperties/characterSet",
@@ -469,6 +469,18 @@ var PlacesUtils = {
      return typeof guidPrefix == "string" && guidPrefix &&
             (/^[a-zA-Z0-9\-_]{1,11}$/.test(guidPrefix));
    },
+
+  /**
+   * Generates a random GUID and replace its beginning with the given
+   * prefix. We do this instead of just prepending the prefix to keep
+   * the correct character length.
+   *
+   * @param prefix: (String)
+   * @return (String)
+   */
+  generateGuidWithPrefix(prefix) {
+    return prefix + this.history.makeGuid().substring(prefix.length);
+  },
 
   /**
    * Converts a string or n URL object to an nsIURI.
@@ -1105,8 +1117,8 @@ var PlacesUtils = {
    */
   validatePageInfo(pageInfo, validateVisits = true) {
     return this.validateItemProperties("PageInfo", PAGEINFO_VALIDATORS, pageInfo,
-      { url: { requiredIf: b => { typeof b.guid != "string"; } },
-        guid: { requiredIf: b => { typeof b.url != "string"; } },
+      { url: { requiredIf: b => !b.guid },
+        guid: { requiredIf: b => !b.url },
         visits: { requiredIf: b => validateVisits  },
       });
   },
@@ -1826,10 +1838,6 @@ XPCOMUtils.defineLazyServiceGetter(PlacesUtils, "annotations",
 XPCOMUtils.defineLazyServiceGetter(PlacesUtils, "tagging",
                                    "@mozilla.org/browser/tagging-service;1",
                                    "nsITaggingService");
-
-XPCOMUtils.defineLazyServiceGetter(PlacesUtils, "livemarks",
-                                   "@mozilla.org/browser/livemark-service;2",
-                                   "mozIAsyncLivemarks");
 
 XPCOMUtils.defineLazyGetter(this, "bundle", function() {
   const PLACES_STRING_BUNDLE_URI = "chrome://places/locale/places.properties";

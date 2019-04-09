@@ -9,45 +9,41 @@
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/ipc/IOThreadChild.h"
 
-
 using namespace mozilla;
 using namespace mozilla::gfx;
 using mozilla::ipc::IOThreadChild;
 
+StaticRefPtr<VRParent> sVRParent;
 
 VRProcessChild::VRProcessChild(ProcessId aParentPid)
-  : ProcessChild(aParentPid)
-#if defined(aParentPid)
-  , mVR(nullptr)
-#endif
-{
+    : ProcessChild(aParentPid) {}
+
+VRProcessChild::~VRProcessChild() { sVRParent = nullptr; }
+
+/*static*/ VRParent* VRProcessChild::GetVRParent() {
+  MOZ_ASSERT(sVRParent);
+  return sVRParent;
 }
 
-VRProcessChild::~VRProcessChild()
-{
-}
-
-bool
-VRProcessChild::Init(int aArgc, char* aArgv[])
-{
-  BackgroundHangMonitor::Startup();
-
+bool VRProcessChild::Init(int aArgc, char* aArgv[]) {
   char* parentBuildID = nullptr;
   for (int i = 1; i < aArgc; i++) {
+    if (!aArgv[i]) {
+      continue;
+    }
     if (strcmp(aArgv[i], "-parentBuildID") == 0) {
       parentBuildID = aArgv[i + 1];
     }
   }
 
-  mVR.Init(ParentPid(), parentBuildID,
-           IOThreadChild::message_loop(),
-           IOThreadChild::channel());
+  sVRParent = new VRParent();
+  sVRParent->Init(ParentPid(), parentBuildID, IOThreadChild::message_loop(),
+                  IOThreadChild::channel());
 
   return true;
 }
 
-void
-VRProcessChild::CleanUp()
-{
+void VRProcessChild::CleanUp() {
+  sVRParent = nullptr;
   NS_ShutdownXPCOM(nullptr);
 }

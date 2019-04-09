@@ -7,19 +7,20 @@ Transform the beetmover task into an actual task description.
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+from taskgraph.loader.multi_dep import schema
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.transforms.beetmover import craft_release_properties
 from taskgraph.util.attributes import copy_attributes_from_dependent_job
 from taskgraph.util.partials import (get_balrog_platform_name,
                                      get_partials_artifacts,
                                      get_partials_artifact_map)
-from taskgraph.util.schema import validate_schema, Schema
 from taskgraph.util.scriptworker import (get_beetmover_bucket_scope,
                                          get_beetmover_action_scope,
                                          get_worker_type_for_scope)
 from taskgraph.util.taskcluster import get_artifact_prefix
+from taskgraph.util.treeherder import replace_group
 from taskgraph.transforms.task import task_description_schema
-from voluptuous import Any, Required, Optional
+from voluptuous import Required, Optional
 
 import logging
 import re
@@ -27,12 +28,9 @@ import re
 logger = logging.getLogger(__name__)
 
 
-_WINDOWS_BUILD_PLATFORMS = [
-    'win64-nightly',
-    'win32-nightly',
-    'win64-devedition-nightly',
-    'win32-devedition-nightly',
-]
+def _compile_regex_mapping(mapping):
+    return {re.compile(regex): value for regex, value in mapping.iteritems()}
+
 
 # Until bug 1331141 is fixed, if you are adding any new artifacts here that
 # need to be transfered to S3, please be aware you also need to follow-up
@@ -76,7 +74,7 @@ _DESKTOP_UPSTREAM_ARTIFACTS_UNSIGNED_L10N = [
 # need to be transfered to S3, please be aware you also need to follow-up
 # with a beetmover patch in https://github.com/mozilla-releng/beetmoverscript/.
 # See example in bug 1348286
-UPSTREAM_ARTIFACT_UNSIGNED_PATHS = {
+UPSTREAM_ARTIFACT_UNSIGNED_PATHS = _compile_regex_mapping({
     r'^(linux(|64)|macosx64)(|-devedition)-nightly$':
         _DESKTOP_UPSTREAM_ARTIFACTS_UNSIGNED_EN_US + [
             'host/bin/mar',
@@ -94,24 +92,24 @@ UPSTREAM_ARTIFACT_UNSIGNED_PATHS = {
                     "host/bin/mar.exe",
                     "host/bin/mbsdiff.exe",
                 ]),
-    r'^win(32|64)(|-devedition)-nightly$':
+    r'^win(32|64(|-aarch64))(|-devedition)-nightly$':
         _DESKTOP_UPSTREAM_ARTIFACTS_UNSIGNED_EN_US + [
             'host/bin/mar.exe',
             'host/bin/mbsdiff.exe',
         ],
     r'^(linux(|64)|macosx64|win(32|64))(|-devedition)-nightly-l10n$':
         _DESKTOP_UPSTREAM_ARTIFACTS_UNSIGNED_L10N,
-}
+})
 
 # Until bug 1331141 is fixed, if you are adding any new artifacts here that
 # need to be transfered to S3, please be aware you also need to follow-up
 # with a beetmover patch in https://github.com/mozilla-releng/beetmoverscript/.
 # See example in bug 1348286
-UPSTREAM_ARTIFACT_SIGNED_PATHS = {
+UPSTREAM_ARTIFACT_SIGNED_PATHS = _compile_regex_mapping({
     r'^linux(|64)(|-devedition|-asan-reporter)-nightly(|-l10n)$':
         ['target.tar.bz2', 'target.tar.bz2.asc'],
-    r'^win(32|64)(|-devedition|-asan-reporter)-nightly(|-l10n)$': ['target.zip'],
-}
+    r'^win(32|64)(|-aarch64)(|-devedition|-asan-reporter)-nightly(|-l10n)$': ['target.zip'],
+})
 
 # Until bug 1331141 is fixed, if you are adding any new artifacts here that
 # need to be transfered to S3, please be aware you also need to follow-up
@@ -125,74 +123,62 @@ UPSTREAM_ARTIFACT_REPACKAGE_PATHS = [
 # with a beetmover patch in https://github.com/mozilla-releng/beetmoverscript/.
 # See example in bug 1348286
 UPSTREAM_ARTIFACT_SIGNED_REPACKAGE_PATHS = [
-    'target.complete.mar',
-    'target.bz2.complete.mar',
     'target.installer.exe',
     'target.stub-installer.exe',
 ]
 
-# Compile every regex once at import time
-for dict_ in (
-    UPSTREAM_ARTIFACT_UNSIGNED_PATHS, UPSTREAM_ARTIFACT_SIGNED_PATHS,
-):
-    for uncompiled_regex, value in dict_.iteritems():
-        compiled_regex = re.compile(uncompiled_regex)
-        del dict_[uncompiled_regex]
-        dict_[compiled_regex] = value
+UPSTREAM_ARTIFACT_SIGNED_MSI_PATHS = [
+    'target.installer.msi',
+]
+
+UPSTREAM_ARTIFACT_SIGNED_MAR_PATHS = [
+    'target.complete.mar',
+    'target.bz2.complete.mar',
+]
 
 # Voluptuous uses marker objects as dictionary *keys*, but they are not
 # comparable, so we cast all of the keys back to regular strings
 task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
 
-transforms = TransformSequence()
-
-# shortcut for a string where task references are allowed
-taskref_or_string = Any(
-    basestring,
-    {Required('task-reference'): basestring})
-
-beetmover_description_schema = Schema({
-    # the dependent task (object) for this beetmover job, used to inform beetmover.
-    Required('dependent-task'): object,
-
-    Required('grandparent-tasks'): object,
-
+beetmover_description_schema = schema.extend({
     # depname is used in taskref's to identify the taskID of the unsigned things
     Required('depname', default='build'): basestring,
 
     # unique label to describe this beetmover task, defaults to {dep.label}-beetmover
-    Optional('label'): basestring,
+    Required('label'): basestring,
 
     # treeherder is allowed here to override any defaults we use for beetmover.  See
     # taskcluster/taskgraph/transforms/task.py for the schema details, and the
     # below transforms for defaults of various values.
     Optional('treeherder'): task_description_schema['treeherder'],
 
+    Optional('attributes'): task_description_schema['attributes'],
+
     # locale is passed only for l10n beetmoving
     Optional('locale'): basestring,
     Required('shipping-phase'): task_description_schema['shipping-phase'],
+    # Optional until we fix asan (run_on_projects?)
     Optional('shipping-product'): task_description_schema['shipping-product'],
 })
 
-
-@transforms.add
-def validate(config, jobs):
-    for job in jobs:
-        label = job.get('dependent-task', object).__dict__.get('label', '?no-label?')
-        validate_schema(
-            beetmover_description_schema, job,
-            "In beetmover ({!r} kind) task for {!r}:".format(config.kind, label))
-        yield job
+transforms = TransformSequence()
+transforms.add_validate(beetmover_description_schema)
 
 
 @transforms.add
 def make_task_description(config, jobs):
     for job in jobs:
-        dep_job = job['dependent-task']
+        dep_job = job['primary-dependency']
         attributes = dep_job.attributes
 
         treeherder = job.get('treeherder', {})
-        treeherder.setdefault('symbol', 'BM-R')
+        upstream_symbol = dep_job.task['extra']['treeherder']['symbol']
+        if 'build' in job['dependent-tasks']:
+            upstream_symbol = job['dependent-tasks']['build'].task['extra']['treeherder']['symbol']
+        treeherder.setdefault(
+            'symbol',
+            replace_group(upstream_symbol, 'BMR')
+        )
         dep_th_platform = dep_job.task.get('extra', {}).get(
             'treeherder', {}).get('machine', {}).get('platform', '')
         treeherder.setdefault('platform',
@@ -209,32 +195,35 @@ def make_task_description(config, jobs):
             )
         )
 
-        dependent_kind = dep_job.kind
-        if dependent_kind == 'repackage-signing-l10n':
-            dependent_kind = "repackage-signing"
-        dependencies = {dependent_kind: dep_job}
+        upstream_deps = job['dependent-tasks']
 
         signing_name = "build-signing"
+        build_name = "build"
+        repackage_name = "repackage"
+        repackage_signing_name = "repackage-signing"
+        msi_signing_name = "repackage-signing-msi"
+        mar_signing_name = "mar-signing"
         if job.get('locale'):
             signing_name = "nightly-l10n-signing"
-        dependencies['signing'] = job['grandparent-tasks'][signing_name]
-
-        build_name = "build"
-        if job.get('locale'):
-            build_name = "unsigned-repack"
-        dependencies["build"] = job['grandparent-tasks'][build_name]
-
-        # repackage-l10n actually uses the repackage depname here
-        dependencies["repackage"] = job['grandparent-tasks']["repackage"]
-
-        # If this isn't a direct dependency, it won't be in there.
-        if 'repackage-signing' not in dependencies:
-            repackage_signing_name = "repackage-signing"
-            if job.get('locale'):
-                repackage_signing_name = "repackage-signing-l10n"
-            dependencies["repackage-signing"] = job['grandparent-tasks'][repackage_signing_name]
+            build_name = "nightly-l10n"
+            repackage_name = "repackage-l10n"
+            repackage_signing_name = "repackage-signing-l10n"
+            mar_signing_name = "mar-signing-l10n"
+        dependencies = {
+            "build": upstream_deps[build_name],
+            "repackage": upstream_deps[repackage_name],
+            "signing": upstream_deps[signing_name],
+            "mar-signing": upstream_deps[mar_signing_name],
+        }
+        if 'partials-signing' in upstream_deps:
+            dependencies['partials-signing'] = upstream_deps['partials-signing']
+        if msi_signing_name in upstream_deps:
+            dependencies[msi_signing_name] = upstream_deps[msi_signing_name]
+        if repackage_signing_name in upstream_deps:
+            dependencies["repackage-signing"] = upstream_deps[repackage_signing_name]
 
         attributes = copy_attributes_from_dependent_job(dep_job)
+        attributes.update(job.get('attributes', {}))
         if job.get('locale'):
             attributes['locale'] = job['locale']
 
@@ -257,12 +246,16 @@ def make_task_description(config, jobs):
         yield task
 
 
-def generate_upstream_artifacts(job, dependencies, platform, locale=None, project=None):
+def generate_upstream_artifacts(
+    config, job, dependencies, platform, locale=None, project=None
+):
 
     build_mapping = UPSTREAM_ARTIFACT_UNSIGNED_PATHS
     build_signing_mapping = UPSTREAM_ARTIFACT_SIGNED_PATHS
     repackage_mapping = UPSTREAM_ARTIFACT_REPACKAGE_PATHS
     repackage_signing_mapping = UPSTREAM_ARTIFACT_SIGNED_REPACKAGE_PATHS
+    msi_signing_mapping = UPSTREAM_ARTIFACT_SIGNED_MSI_PATHS
+    mar_signing_mapping = UPSTREAM_ARTIFACT_SIGNED_MAR_PATHS
 
     artifact_prefix = get_artifact_prefix(job)
     if locale:
@@ -275,6 +268,12 @@ def generate_upstream_artifacts(job, dependencies, platform, locale=None, projec
         ("build", build_mapping),
         ("signing", build_signing_mapping),
     ]:
+        # Bug 1522380: We want to build but not publish win64-aarch64 builds on release branches
+        if (
+            platform.startswith("win64-aarch64-nightly")
+            and config.params["release_type"] != "nightly"
+        ):
+            continue
         platform_was_previously_matched_by_regex = None
         for platform_regex, paths in mapping.iteritems():
             if platform_regex.match(platform) is not None:
@@ -305,7 +304,20 @@ def generate_upstream_artifacts(job, dependencies, platform, locale=None, projec
     for task_type, cot_type, paths in [
         ('repackage', 'repackage', repackage_mapping),
         ('repackage-signing', 'repackage', repackage_signing_mapping),
+        ('repackage-signing-msi', 'repackage', msi_signing_mapping),
+        ('mar-signing', 'signing', mar_signing_mapping),
     ]:
+        if task_type not in dependencies:
+            continue
+
+        # Bug 1522380: We want to build but not publish win64-aarch64 builds on release branches
+        if (
+            platform.startswith("win64-aarch64-nightly")
+            and config.params["release_type"] != "nightly"
+            and task_type != "mar-signing"
+        ):
+            continue
+
         paths = ["{}/{}".format(artifact_prefix, path) for path in paths]
         paths = [
             path for path in paths
@@ -353,32 +365,14 @@ least 2 regular expressions. First matched: "{first_matched}". Second matched: \
         ))
 
 
-def is_valid_beetmover_job(job):
-    # beetmover after partials-signing should have six dependencies.
-    # windows builds w/o partials don't have docker-image, so fewer
-    # dependencies
-    if 'partials-signing' in job['dependencies'].keys():
-        expected_dep_count = 5
-    else:
-        expected_dep_count = 4
-
-    return (len(job["dependencies"]) == expected_dep_count and
-            any(['repackage' in j for j in job['dependencies']]))
-
-
 @transforms.add
 def make_task_worker(config, jobs):
     for job in jobs:
-        if not is_valid_beetmover_job(job):
-            raise NotImplementedError(
-                "{}: Beetmover_repackage must have five dependencies.".format(job['label'])
-            )
-
         locale = job["attributes"].get("locale")
         platform = job["attributes"]["build_platform"]
 
         upstream_artifacts = generate_upstream_artifacts(
-            job, job['dependencies'], platform, locale,
+            config, job, job['dependencies'], platform, locale,
             project=config.params['project']
         )
 
@@ -406,23 +400,14 @@ def make_partials_artifacts(config, jobs):
 
         platform = job["attributes"]["build_platform"]
 
-        balrog_platform = get_balrog_platform_name(platform)
+        if 'partials-signing' not in job['dependencies']:
+            logger.debug("beetmover-repackage partials finished, no partials")
+            yield job
+            continue
 
+        balrog_platform = get_balrog_platform_name(platform)
         artifacts = get_partials_artifacts(config.params.get('release_history'),
                                            balrog_platform, locale)
-
-        # Dependency:        | repackage-signing | partials-signing
-        # Partials artifacts |              Skip | Populate & yield
-        # No partials        |             Yield |         continue
-        if len(artifacts) == 0:
-            if 'partials-signing' in job['dependencies']:
-                continue
-            else:
-                yield job
-                continue
-        else:
-            if 'partials-signing' not in job['dependencies']:
-                continue
 
         upstream_artifacts = generate_partials_upstream_artifacts(
             job, artifacts, balrog_platform, locale

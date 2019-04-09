@@ -332,6 +332,13 @@ function getContentSize(ui) {
   }));
 }
 
+function getViewportScroll(ui) {
+  return spawnViewportTask(ui, {}, () => ({
+    x: content.scrollX,
+    y: content.scrollY,
+  }));
+}
+
 async function waitForPageShow(browser) {
   const tab = gBrowser.getTabForBrowser(browser);
   const ui = ResponsiveUIManager.getResponsiveUIForTab(tab);
@@ -347,6 +354,10 @@ async function waitForPageShow(browser) {
 
 function waitForViewportLoad(ui) {
   return BrowserTestUtils.waitForContentEvent(ui.getViewportBrowser(), "load", true);
+}
+
+function waitForViewportScroll(ui) {
+  return BrowserTestUtils.waitForContentEvent(ui.getViewportBrowser(), "scroll", true);
 }
 
 function load(browser, url) {
@@ -508,4 +519,10 @@ function reloadOnUAChange(enabled) {
 function reloadOnTouchChange(enabled) {
   const pref = RELOAD_CONDITION_PREF_PREFIX + "touchSimulation";
   Services.prefs.setBoolPref(pref, enabled);
+}
+
+function rotateViewport(ui) {
+  const { document } = ui.toolWindow;
+  const rotateButton = document.getElementById("rotate-button");
+  rotateButton.click();
 }

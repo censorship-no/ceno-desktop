@@ -11,9 +11,12 @@ const { ActorRegistry } = require("devtools/server/actors/utils/actor-registry")
 const { TabSources } = require("devtools/server/actors/utils/TabSources");
 const makeDebugger = require("devtools/server/actors/utils/make-debugger");
 
-var gTestGlobals = [];
+var gTestGlobals = new Set();
 DebuggerServer.addTestGlobal = function(global) {
-  gTestGlobals.push(global);
+  gTestGlobals.add(global);
+};
+DebuggerServer.removeTestGlobal = function(global) {
+  gTestGlobals.delete(global);
 };
 
 DebuggerServer.getTestGlobal = function(name) {
@@ -24,6 +27,14 @@ DebuggerServer.getTestGlobal = function(name) {
   }
 
   return null;
+};
+
+var gAllowNewThreadGlobals = false;
+DebuggerServer.allowNewThreadGlobals = function() {
+  gAllowNewThreadGlobals = true;
+};
+DebuggerServer.disallowNewThreadGlobals = function() {
+  gAllowNewThreadGlobals = false;
 };
 
 // A mock tab list, for use by tests. This simply presents each global in
@@ -81,10 +92,15 @@ function TestTargetActor(connection, global) {
   this._extraActors = {};
   this.makeDebugger = makeDebugger.bind(null, {
     findDebuggees: () => [this._global],
-    shouldAddNewGlobalAsDebuggee: g => g.hostAnnotations &&
-                                       g.hostAnnotations.type == "document" &&
-                                       g.hostAnnotations.element === this._global,
+    shouldAddNewGlobalAsDebuggee: g => {
+      if (gAllowNewThreadGlobals) {
+        return true;
+      }
 
+      return g.hostAnnotations &&
+        g.hostAnnotations.type == "document" &&
+        g.hostAnnotations.element === this._global;
+    },
   });
 }
 
@@ -139,7 +155,7 @@ TestTargetActor.prototype = {
   },
 
   onReload: function(request) {
-    this.sources.reset({ sourceMaps: true });
+    this.sources.reset();
     this.threadActor.clearDebuggees();
     this.threadActor.dbg.addDebuggees();
     return {};

@@ -1,6 +1,7 @@
 /* eslint-env mozilla/frame-script */
 
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const gfxFrameScript = {
   domUtils: null,
@@ -13,10 +14,10 @@ const gfxFrameScript = {
 
     this.domUtils = content.windowUtils;
 
-    webNav.loadURI("chrome://gfxsanity/content/sanitytest.html",
-                   Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
-                   null, null, null);
-
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    };
+    webNav.loadURI("chrome://gfxsanity/content/sanitytest.html", loadURIOptions);
   },
 
   handleEvent(aEvent) {

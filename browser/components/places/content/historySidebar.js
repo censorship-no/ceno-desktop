@@ -20,8 +20,6 @@ XPCOMUtils.defineLazyScriptGetter(this, ["PlacesInsertionPoint", "PlacesControll
                                   "chrome://browser/content/places/controller.js");
 /* End Shared Places Import */
 
-ChromeUtils.import("resource://gre/modules/TelemetryStopwatch.jsm");
-
 var gHistoryTree;
 var gSearchBox;
 var gHistoryGrouping = "";
@@ -112,7 +110,7 @@ function searchHistory(aInput) {
   options.includeHidden = !!aInput;
 
   if (gHistoryGrouping == "lastvisited")
-    this.TelemetryStopwatch.start("HISTORY_LASTVISITED_TREE_QUERY_TIME_MS");
+    TelemetryStopwatch.start("HISTORY_LASTVISITED_TREE_QUERY_TIME_MS");
 
   // call load() on the tree manually
   // instead of setting the place attribute in historySidebar.xul
@@ -120,7 +118,7 @@ function searchHistory(aInput) {
   gHistoryTree.load(query, options);
 
   if (gHistoryGrouping == "lastvisited")
-    this.TelemetryStopwatch.finish("HISTORY_LASTVISITED_TREE_QUERY_TIME_MS");
+    TelemetryStopwatch.finish("HISTORY_LASTVISITED_TREE_QUERY_TIME_MS");
 }
 
 window.addEventListener("SidebarFocused",

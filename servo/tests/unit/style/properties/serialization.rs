@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use properties::{parse, parse_input};
 use style::computed_values::display::T as Display;
@@ -9,7 +9,7 @@ use style::properties::declaration_block::PropertyDeclarationBlock;
 use style::properties::parse_property_declaration_list;
 use style::values::RGBA;
 use style::values::specified::{BorderStyle, BorderSideWidth, Color};
-use style::values::specified::{Length, LengthOrPercentage, LengthOrPercentageOrAuto};
+use style::values::specified::{Length, LengthPercentage, LengthPercentageOrAuto};
 use style::values::specified::NoCalcLength;
 use style::values::specified::url::SpecifiedUrl;
 use style_traits::ToCss;
@@ -33,15 +33,15 @@ fn property_declaration_block_should_serialize_correctly() {
 
     let declarations = vec![
         (PropertyDeclaration::Width(
-            LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(70f32))),
+            LengthPercentageOrAuto::Length(NoCalcLength::from_px(70f32))),
          Importance::Normal),
 
         (PropertyDeclaration::MinHeight(
-            LengthOrPercentage::Length(NoCalcLength::from_px(20f32))),
+            LengthPercentage::Length(NoCalcLength::from_px(20f32))),
          Importance::Normal),
 
         (PropertyDeclaration::Height(
-            LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(20f32))),
+            LengthPercentageOrAuto::Length(NoCalcLength::from_px(20f32))),
          Importance::Important),
 
         (PropertyDeclaration::Display(Display::InlineBlock),
@@ -84,7 +84,7 @@ mod shorthand_serialization {
         fn all_equal_properties_should_serialize_to_one_value() {
             let mut properties = Vec::new();
 
-            let px_70 = LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(70f32));
+            let px_70 = LengthPercentageOrAuto::Length(NoCalcLength::from_px(70f32));
             properties.push(PropertyDeclaration::MarginTop(px_70.clone()));
             properties.push(PropertyDeclaration::MarginRight(px_70.clone()));
             properties.push(PropertyDeclaration::MarginBottom(px_70.clone()));
@@ -98,8 +98,8 @@ mod shorthand_serialization {
         fn equal_vertical_and_equal_horizontal_properties_should_serialize_to_two_value() {
             let mut properties = Vec::new();
 
-            let vertical_px = LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(10f32));
-            let horizontal_px = LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(5f32));
+            let vertical_px = LengthPercentageOrAuto::Length(NoCalcLength::from_px(10f32));
+            let horizontal_px = LengthPercentageOrAuto::Length(NoCalcLength::from_px(5f32));
 
             properties.push(PropertyDeclaration::MarginTop(vertical_px.clone()));
             properties.push(PropertyDeclaration::MarginRight(horizontal_px.clone()));
@@ -114,9 +114,9 @@ mod shorthand_serialization {
         fn different_vertical_and_equal_horizontal_properties_should_serialize_to_three_values() {
             let mut properties = Vec::new();
 
-            let top_px = LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(8f32));
-            let bottom_px = LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(10f32));
-            let horizontal_px = LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(5f32));
+            let top_px = LengthPercentageOrAuto::Length(NoCalcLength::from_px(8f32));
+            let bottom_px = LengthPercentageOrAuto::Length(NoCalcLength::from_px(10f32));
+            let horizontal_px = LengthPercentageOrAuto::Length(NoCalcLength::from_px(5f32));
 
             properties.push(PropertyDeclaration::MarginTop(top_px));
             properties.push(PropertyDeclaration::MarginRight(horizontal_px.clone()));
@@ -131,10 +131,10 @@ mod shorthand_serialization {
         fn different_properties_should_serialize_to_four_values() {
             let mut properties = Vec::new();
 
-            let top_px = LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(8f32));
-            let right_px = LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(12f32));
-            let bottom_px = LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(10f32));
-            let left_px = LengthOrPercentageOrAuto::Length(NoCalcLength::from_px(14f32));
+            let top_px = LengthPercentageOrAuto::Length(NoCalcLength::from_px(8f32));
+            let right_px = LengthPercentageOrAuto::Length(NoCalcLength::from_px(12f32));
+            let bottom_px = LengthPercentageOrAuto::Length(NoCalcLength::from_px(10f32));
+            let left_px = LengthPercentageOrAuto::Length(NoCalcLength::from_px(14f32));
 
             properties.push(PropertyDeclaration::MarginTop(top_px));
             properties.push(PropertyDeclaration::MarginRight(right_px));
@@ -207,12 +207,12 @@ mod shorthand_serialization {
 
         #[test]
         fn padding_should_serialize_correctly() {
-            use style::values::specified::NonNegativeLengthOrPercentage;
+            use style::values::specified::NonNegativeLengthPercentage;
 
             let mut properties = Vec::new();
 
-            let px_10: NonNegativeLengthOrPercentage = NoCalcLength::from_px(10f32).into();
-            let px_15: NonNegativeLengthOrPercentage = NoCalcLength::from_px(15f32).into();
+            let px_10: NonNegativeLengthPercentage = NoCalcLength::from_px(10f32).into();
+            let px_15: NonNegativeLengthPercentage = NoCalcLength::from_px(15f32).into();
             properties.push(PropertyDeclaration::PaddingTop(px_10.clone()));
             properties.push(PropertyDeclaration::PaddingRight(px_15.clone()));
             properties.push(PropertyDeclaration::PaddingBottom(px_10));
@@ -704,86 +704,6 @@ mod shorthand_serialization {
             let serialization = block.to_css_string();
 
             assert_eq!(serialization, block_text);
-        }
-    }
-
-    mod transition {
-        pub use super::*;
-
-        #[test]
-        fn transition_should_serialize_all_available_properties() {
-            let block_text = "transition-property: margin-left; \
-                              transition-duration: 3s; \
-                              transition-delay: 4s; \
-                              transition-timing-function: cubic-bezier(0.2, 5, 0.5, 2);";
-
-            let block = parse(|c, i| Ok(parse_property_declaration_list(c, i)), block_text).unwrap();
-
-            let serialization = block.to_css_string();
-
-            assert_eq!(serialization, "transition: margin-left 3s cubic-bezier(0.2, 5, 0.5, 2) 4s;");
-        }
-
-        #[test]
-        fn serialize_multiple_transitions() {
-            let block_text = "transition-property: margin-left, width; \
-                              transition-duration: 3s, 2s; \
-                              transition-delay: 4s, 5s; \
-                              transition-timing-function: cubic-bezier(0.2, 5, 0.5, 2), ease;";
-
-            let block = parse(|c, i| Ok(parse_property_declaration_list(c, i)), block_text).unwrap();
-
-            let serialization = block.to_css_string();
-
-            assert_eq!(serialization, "transition: \
-                margin-left 3s cubic-bezier(0.2, 5, 0.5, 2) 4s, \
-                width 2s ease 5s;");
-        }
-
-        #[test]
-        fn serialize_multiple_transitions_unequal_property_lists() {
-            // When the lengths of property values are different, the shorthand serialization
-            // should not be used. Previously the implementation cycled values if the lists were
-            // uneven. This is incorrect, in that we should serialize to a shorthand only when the
-            // lists have the same length (this affects background, transition and animation).
-            // https://github.com/servo/servo/issues/15398 )
-            // The duration below has 1 extra value.
-            let block_text = "transition-property: margin-left, width; \
-                              transition-duration: 3s, 2s, 4s; \
-                              transition-delay: 4s, 5s; \
-                              transition-timing-function: cubic-bezier(0.2, 5, 0.5, 2), ease;";
-
-            let block = parse(|c, i| Ok(parse_property_declaration_list(c, i)), block_text).unwrap();
-
-            let serialization = block.to_css_string();
-
-            assert_eq!(serialization, block_text);
-        }
-
-        #[test]
-        fn transition_should_serialize_acceptable_step_timing_function() {
-            let block_text = "transition-property: margin-left; \
-                              transition-duration: 3s; \
-                              transition-delay: 4s; \
-                              transition-timing-function: steps(2, start);";
-            let block = parse(|c, i| Ok(parse_property_declaration_list(c, i)), block_text).unwrap();
-
-            let serialization = block.to_css_string();
-
-            assert_eq!(serialization, "transition: margin-left 3s steps(2, start) 4s;");
-        }
-
-        #[test]
-        fn transition_should_serialize_acceptable_frames_timing_function() {
-            let block_text = "transition-property: margin-left; \
-                              transition-duration: 3s; \
-                              transition-delay: 4s; \
-                              transition-timing-function: frames(2);";
-            let block = parse(|c, i| Ok(parse_property_declaration_list(c, i)), block_text).unwrap();
-
-            let serialization = block.to_css_string();
-
-            assert_eq!(serialization, "transition: margin-left 3s frames(2) 4s;");
         }
     }
 

@@ -1,17 +1,17 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use attr::{AttrSelectorOperation, NamespaceConstraint, ParsedAttrSelectorOperation};
-use bloom::{BloomFilter, BLOOM_HASH_MASK};
-use nth_index_cache::NthIndexCacheInner;
-use parser::{AncestorHashes, Combinator, Component, LocalName};
-use parser::{NonTSPseudoClass, Selector, SelectorImpl, SelectorIter, SelectorList};
+use crate::attr::{AttrSelectorOperation, NamespaceConstraint, ParsedAttrSelectorOperation};
+use crate::bloom::{BloomFilter, BLOOM_HASH_MASK};
+use crate::nth_index_cache::NthIndexCacheInner;
+use crate::parser::{AncestorHashes, Combinator, Component, LocalName};
+use crate::parser::{NonTSPseudoClass, Selector, SelectorImpl, SelectorIter, SelectorList};
+use crate::tree::Element;
 use std::borrow::Borrow;
 use std::iter;
-use tree::Element;
 
-pub use context::*;
+pub use crate::context::*;
 
 // The bloom filter for descendant CSS selectors will have a <1% false
 // positive rate until it has this many selectors in it, then it will
@@ -261,10 +261,11 @@ where
     let iter = selector.iter_from(selector.len() - from_offset);
     debug_assert!(
         iter.clone().next().is_some() ||
-            (from_offset != selector.len() && matches!(
-                selector.combinator_at_parse_order(from_offset),
-                Combinator::SlotAssignment | Combinator::PseudoElement
-            )),
+            (from_offset != selector.len() &&
+                matches!(
+                    selector.combinator_at_parse_order(from_offset),
+                    Combinator::SlotAssignment | Combinator::PseudoElement
+                )),
         "Got the math wrong: {:?} | {:?} | {} {}",
         selector,
         selector.iter_raw_match_order().as_slice(),
@@ -410,6 +411,7 @@ fn next_element_for_combinator<E>(
     element: &E,
     combinator: Combinator,
     selector: &SelectorIter<E::Impl>,
+    context: &MatchingContext<E::Impl>,
 ) -> Option<E>
 where
     E: Element,
@@ -450,11 +452,18 @@ where
         },
         Combinator::SlotAssignment => {
             debug_assert!(
-                element
-                    .assigned_slot()
-                    .map_or(true, |s| s.is_html_slot_element())
+                context.current_host.is_some(),
+                "Should not be trying to match slotted rules in a non-shadow-tree context"
             );
-            element.assigned_slot()
+            debug_assert!(element
+                .assigned_slot()
+                .map_or(true, |s| s.is_html_slot_element()));
+            let scope = context.current_host?;
+            let mut current_slot = element.assigned_slot()?;
+            while current_slot.containing_shadow_host().unwrap().opaque() != scope {
+                current_slot = current_slot.assigned_slot()?;
+            }
+            Some(current_slot)
         },
         Combinator::PseudoElement => element.pseudo_element_originating_element(),
     }
@@ -511,7 +520,8 @@ where
         Combinator::PseudoElement => SelectorMatchingResult::NotMatchedGlobally,
     };
 
-    let mut next_element = next_element_for_combinator(element, combinator, &selector_iter);
+    let mut next_element =
+        next_element_for_combinator(element, combinator, &selector_iter, &context);
 
     // Stop matching :visited as soon as we find a link, or a combinator for
     // something that isn't an ancestor.
@@ -575,7 +585,7 @@ where
             visited_handling = VisitedHandlingMode::AllLinksUnvisited;
         }
 
-        next_element = next_element_for_combinator(&element, combinator, &selector_iter);
+        next_element = next_element_for_combinator(&element, combinator, &selector_iter, &context);
     }
 }
 
@@ -588,7 +598,8 @@ where
         element.is_html_element_in_html_document(),
         &local_name.name,
         &local_name.lower_name,
-    ).borrow();
+    )
+    .borrow();
     element.local_name() == name
 }
 
@@ -662,9 +673,9 @@ where
         Component::Combinator(_) => unreachable!(),
         Component::Slotted(ref selector) => {
             // <slots> are never flattened tree slottables.
-            !element.is_html_slot_element() && element.assigned_slot().is_some() && context
-                .shared
-                .nest(|context| {
+            !element.is_html_slot_element() &&
+                element.assigned_slot().is_some() &&
+                context.shared.nest(|context| {
                     matches_complex_selector(selector.iter(), element, context, flags_setter)
                 })
         },
@@ -677,7 +688,7 @@ where
             element.namespace() == url.borrow()
         },
         Component::ExplicitNoNamespace => {
-            let ns = ::parser::namespace_empty_string::<E::Impl>();
+            let ns = crate::parser::namespace_empty_string::<E::Impl>();
             element.namespace() == ns.borrow()
         },
         Component::ID(ref id) => {
@@ -692,7 +703,7 @@ where
         } => {
             let is_html = element.is_html_element_in_html_document();
             element.attr_matches(
-                &NamespaceConstraint::Specific(&::parser::namespace_empty_string::<E::Impl>()),
+                &NamespaceConstraint::Specific(&crate::parser::namespace_empty_string::<E::Impl>()),
                 select_name(is_html, local_name, local_name_lower),
                 &AttrSelectorOperation::Exists,
             )
@@ -709,7 +720,7 @@ where
             }
             let is_html = element.is_html_element_in_html_document();
             element.attr_matches(
-                &NamespaceConstraint::Specific(&::parser::namespace_empty_string::<E::Impl>()),
+                &NamespaceConstraint::Specific(&crate::parser::namespace_empty_string::<E::Impl>()),
                 local_name,
                 &AttrSelectorOperation::WithValue {
                     operator: operator,
@@ -727,7 +738,7 @@ where
             let namespace = match attr_sel.namespace() {
                 Some(ns) => ns,
                 None => {
-                    empty_string = ::parser::namespace_empty_string::<E::Impl>();
+                    empty_string = crate::parser::namespace_empty_string::<E::Impl>();
                     NamespaceConstraint::Specific(&empty_string)
                 },
             };

@@ -156,37 +156,47 @@ var Policies = {
               Services.dirsvc.get("XRESysNativeManifests", Ci.nsIFile),
             ];
           }
-          for (let dir of dirs) {
-            dir.append(platform == "linux" ? "certificates" : "Certificates");
-            for (let certfilename of param.Install) {
-              let certfile = dir.clone();
-              certfile.append(certfilename);
-              let file;
-              try {
-                file = await File.createFromNsIFile(certfile);
-              } catch (e) {
-                log.info(`Unable to open certificate - ${certfile.path}`);
-                continue;
+          dirs.unshift(Services.dirsvc.get("XREAppDist", Ci.nsIFile));
+          for (let certfilename of param.Install) {
+            let certfile;
+            try {
+              certfile = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+              certfile.initWithPath(certfilename);
+            } catch (e) {
+              for (let dir of dirs) {
+                certfile = dir.clone();
+                certfile.append(platform == "linux" ? "certificates" : "Certificates");
+                certfile.append(certfilename);
+                if (certfile.exists()) {
+                  break;
+                }
               }
-              let reader = new FileReader();
-              reader.onloadend = function() {
-                if (reader.readyState != reader.DONE) {
-                  log.error(`Unable to read certificate - ${certfile.path}`);
-                  return;
-                }
-                let cert = reader.result;
-                try {
-                  if (/-----BEGIN CERTIFICATE-----/.test(cert)) {
-                    gCertDB.addCertFromBase64(pemToBase64(cert), "CTu,CTu,");
-                  } else {
-                    gCertDB.addCert(cert, "CTu,CTu,");
-                  }
-                } catch (e) {
-                  log.error(`Unable to add certificate - ${certfile.path}`);
-                }
-              };
-              reader.readAsBinaryString(file);
             }
+            let file;
+            try {
+              file = await File.createFromNsIFile(certfile);
+            } catch (e) {
+              log.error(`Unable to find certificate - ${certfilename}`);
+              continue;
+            }
+            let reader = new FileReader();
+            reader.onloadend = function() {
+              if (reader.readyState != reader.DONE) {
+                log.error(`Unable to read certificate - ${certfile.path}`);
+                return;
+              }
+              let cert = reader.result;
+              try {
+                if (/-----BEGIN CERTIFICATE-----/.test(cert)) {
+                  gCertDB.addCertFromBase64(pemToBase64(cert), "CTu,CTu,");
+                } else {
+                  gCertDB.addCert(cert, "CTu,CTu,");
+                }
+              } catch (e) {
+                log.error(`Unable to add certificate - ${certfile.path}`);
+              }
+            };
+            reader.readAsBinaryString(file);
           }
         })();
       }
@@ -254,26 +264,6 @@ var Policies = {
     },
   },
 
-  "DNSOverHTTPS": {
-    onBeforeAddons(manager, param) {
-      if ("Enabled" in param) {
-        let mode = param.Enabled ? 2 : 5;
-        if (param.Locked) {
-          setAndLockPref("network.trr.mode", mode);
-        } else {
-          setDefaultPref("network.trr.mode", mode);
-        }
-      }
-      if (param.ProviderURL) {
-        if (param.Locked) {
-          setAndLockPref("network.trr.uri", param.ProviderURL.href);
-        } else {
-          setDefaultPref("network.trr.uri", param.ProviderURL.href);
-        }
-      }
-    },
-  },
-
   "DisableAppUpdate": {
     onBeforeAddons(manager, param) {
       if (param) {
@@ -332,6 +322,7 @@ var Policies = {
     onBeforeAddons(manager, param) {
       if (param) {
         manager.disallowFeature("Shield");
+        setAndLockPref("browser.newtabpage.activity-stream.asrouter.userprefs.cfr", false);
       }
     },
   },
@@ -466,9 +457,29 @@ var Policies = {
     },
   },
 
+  "DNSOverHTTPS": {
+    onBeforeAddons(manager, param) {
+      if ("Enabled" in param) {
+        let mode = param.Enabled ? 2 : 5;
+        if (param.Locked) {
+          setAndLockPref("network.trr.mode", mode);
+        } else {
+          setDefaultPref("network.trr.mode", mode);
+        }
+      }
+      if (param.ProviderURL) {
+        if (param.Locked) {
+          setAndLockPref("network.trr.uri", param.ProviderURL.href);
+        } else {
+          setDefaultPref("network.trr.uri", param.ProviderURL.href);
+        }
+      }
+    },
+  },
+
   "DontCheckDefaultBrowser": {
     onBeforeUIStartup(manager, param) {
-      setAndLockPref("browser.shell.checkDefaultBrowser", false);
+      setAndLockPref("browser.shell.checkDefaultBrowser", !param);
     },
   },
 
@@ -657,6 +668,8 @@ var Policies = {
         setAndLockPref("xpinstall.enabled", param.Default);
         if (!param.Default) {
           blockAboutPage(manager, "about:debugging");
+          setAndLockPref("browser.newtabpage.activity-stream.asrouter.userprefs.cfr", false);
+          manager.disallowFeature("xpinstall");
         }
       }
     },
@@ -849,7 +862,7 @@ var Policies = {
             }
             if (defaultEngine) {
               try {
-                Services.search.currentEngine = defaultEngine;
+                Services.search.defaultEngine = defaultEngine;
               } catch (ex) {
                 log.error("Unable to set the default search engine", ex);
               }
@@ -883,6 +896,48 @@ var Policies = {
           log.debug(ex);
         }
       }
+    },
+  },
+
+  "SSLVersionMax": {
+    onBeforeAddons(manager, param) {
+      let tlsVersion;
+      switch (param) {
+        case "tls1":
+          tlsVersion = 1;
+          break;
+        case "tls1.1":
+          tlsVersion = 2;
+          break;
+        case "tls1.2":
+          tlsVersion = 3;
+          break;
+        case "tls1.3":
+          tlsVersion = 4;
+          break;
+      }
+      setAndLockPref("security.tls.version.max", tlsVersion);
+    },
+  },
+
+  "SSLVersionMin": {
+    onBeforeAddons(manager, param) {
+      let tlsVersion;
+      switch (param) {
+        case "tls1":
+          tlsVersion = 1;
+          break;
+        case "tls1.1":
+          tlsVersion = 2;
+          break;
+        case "tls1.2":
+          tlsVersion = 3;
+          break;
+        case "tls1.3":
+          tlsVersion = 4;
+          break;
+      }
+      setAndLockPref("security.tls.version.min", tlsVersion);
     },
   },
 

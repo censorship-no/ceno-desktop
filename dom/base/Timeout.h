@@ -7,16 +7,17 @@
 #ifndef mozilla_dom_timeout_h
 #define mozilla_dom_timeout_h
 
+#include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsGlobalWindow.h"
 #include "nsITimeoutHandler.h"
 
 class nsIEventTarget;
 class nsIPrincipal;
 class nsIEventTarget;
+class nsGlobalWindowInner;
 
 namespace mozilla {
 namespace dom {
@@ -26,17 +27,14 @@ namespace dom {
  * timeout.  Holds a strong reference to an nsITimeoutHandler, which
  * abstracts the language specific cruft.
  */
-class Timeout final
-  : public LinkedListElement<RefPtr<Timeout>>
-{
-public:
+class Timeout final : public LinkedListElement<RefPtr<Timeout>> {
+ public:
   Timeout();
 
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(Timeout)
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(Timeout)
 
-  enum class Reason : uint8_t
-  {
+  enum class Reason : uint8_t {
     eTimeoutOrInterval,
     eIdleCallbackTimeout,
   };
@@ -47,10 +45,12 @@ public:
   // Can only be called when not frozen.
   const TimeStamp& When() const;
 
+  const TimeStamp& SubmitTime() const;
+
   // Can only be called when frozen.
   const TimeDuration& TimeRemaining() const;
 
-private:
+ private:
   // mWhen and mTimeRemaining can't be in a union, sadly, because they
   // have constructors.
   // Nominal time to run this timeout.  Use only when timeouts are not
@@ -60,9 +60,14 @@ private:
   // Remaining time to wait.  Used only when timeouts are frozen.
   TimeDuration mTimeRemaining;
 
+  // Time that the timeout started, restarted, or was frozen.  Useful for
+  // logging time from (virtual) start of a timer until the time it fires
+  // (or is cancelled, etc)
+  TimeStamp mSubmitTime;
+
   ~Timeout() = default;
 
-public:
+ public:
   // Public member variables in this section.  Please don't add to this list
   // or mix methods with these.  The interleaving public/private sections
   // is necessary as we migrate members to private while still trying to
@@ -86,7 +91,7 @@ public:
 
   // The popup state at timeout creation time if not created from
   // another timeout
-  PopupControlState mPopupState;
+  PopupBlocker::PopupControlState mPopupState;
 
   // Used to allow several reasons for setting a timeout, where each
   // 'Reason' value is using a possibly overlapping set of id:s.
@@ -106,7 +111,7 @@ public:
   bool mIsInterval;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_timeout_h
+#endif  // mozilla_dom_timeout_h

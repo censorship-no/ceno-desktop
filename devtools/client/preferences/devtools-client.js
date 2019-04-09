@@ -46,25 +46,29 @@ pref("devtools.inspector.show_pseudo_elements", false);
 pref("devtools.inspector.imagePreviewTooltipSize", 300);
 // Enable user agent style inspection in rule-view
 pref("devtools.inspector.showUserAgentStyles", false);
-// Show all native anonymous content (like controls in <video> tags)
+// Show all native anonymous content
 pref("devtools.inspector.showAllAnonymousContent", false);
+// Show user agent shadow roots
+pref("devtools.inspector.showUserAgentShadowRoots", false);
 // Enable the CSS shapes highlighter
 pref("devtools.inspector.shapesHighlighter.enabled", true);
-// Enable the Font Editor
-pref("devtools.inspector.fonteditor.enabled", true);
 // Enable the font highlight-on-hover feature
 pref("devtools.inspector.fonthighlighter.enabled", true);
 // Enable tracking of style changes and the Changes panel in the Inspector
-pref("devtools.inspector.changes.enabled", false);
+pref("devtools.inspector.changes.enabled", true);
+// Enable the new Rules View
+pref("devtools.inspector.new-rulesview.enabled", false);
+// Hide the 'scrollable' markup-badges for now
+pref("devtools.inspector.scrollable-badges.enabled", false);
 
 // Flexbox preferences
-// Enable the Flexbox highlighter and inspector panel in Nightly and DevEdition
-#if defined(NIGHTLY_BUILD) || defined(MOZ_DEV_EDITION)
 pref("devtools.inspector.flexboxHighlighter.enabled", true);
 pref("devtools.flexboxinspector.enabled", true);
+
+#if defined(NIGHTLY_BUILD) || defined(MOZ_DEV_EDITION)
+pref("devtools.inspector.flexboxHighlighter.combine", true);
 #else
-pref("devtools.inspector.flexboxHighlighter.enabled", false);
-pref("devtools.flexboxinspector.enabled", false);
+pref("devtools.inspector.flexboxHighlighter.combine", false);
 #endif
 
 // Grid highlighter preferences
@@ -116,7 +120,7 @@ pref("devtools.performance.memory.max-log-length", 125000);
 pref("devtools.performance.timeline.hidden-markers",
   "[\"Composite\",\"CompositeForwardTransaction\"]");
 pref("devtools.performance.profiler.buffer-size", 10000000);
-pref("devtools.performance.profiler.sample-frequency-khz", 1);
+pref("devtools.performance.profiler.sample-frequency-hz", 1000);
 pref("devtools.performance.ui.invert-call-tree", true);
 pref("devtools.performance.ui.invert-flame-graph", false);
 pref("devtools.performance.ui.flatten-tree-recursion", true);
@@ -164,7 +168,7 @@ pref("devtools.netmonitor.panes-network-details-width", 550);
 pref("devtools.netmonitor.panes-network-details-height", 450);
 pref("devtools.netmonitor.filters", "[\"all\"]");
 pref("devtools.netmonitor.visibleColumns",
-  "[\"status\",\"method\",\"file\",\"domain\",\"cause\",\"type\",\"transferred\",\"contentSize\",\"waterfall\"]"
+  "[\"status\",\"method\",\"domain\",\"file\",\"cause\",\"type\",\"transferred\",\"contentSize\",\"waterfall\"]"
 );
 
 // Save request/response bodies yes/no.
@@ -283,12 +287,8 @@ pref("devtools.webconsole.sidebarToggle", false);
 // Enable CodeMirror in the JsTerm
 pref("devtools.webconsole.jsterm.codeMirror", true);
 
-// Enable console input reverse-search in Nightly builds
-#if defined(NIGHTLY_BUILD)
-pref("devtools.webconsole.jsterm.reverse-search", true);
-#else
-pref("devtools.webconsole.jsterm.reverse-search", false);
-#endif
+// Enable editor mode in the console.
+pref("devtools.webconsole.input.editor", false);
 
 // Disable the new performance recording panel by default
 pref("devtools.performance.new-panel-enabled", false);
@@ -330,6 +330,9 @@ pref("devtools.responsive.reloadConditions.userAgent", false);
 pref("devtools.responsive.reloadNotification.enabled", true);
 // Whether or not touch simulation is enabled.
 pref("devtools.responsive.touchSimulation.enabled", false);
+// Whether or not meta viewport is enabled, if and only if touchSimulation
+// is also enabled.
+pref("devtools.responsive.metaViewport.enabled", false);
 // The user agent of the viewport.
 pref("devtools.responsive.userAgent", "");
 
@@ -348,6 +351,11 @@ pref("devtools.responsive.showUserAgentInput", false);
 
 // Enable new about:debugging.
 pref("devtools.aboutdebugging.new-enabled", false);
+// Enable the network location feature.
+pref("devtools.aboutdebugging.network", false);
+// Enable the wifi feature.
+pref("devtools.aboutdebugging.wifi", false);
+// Stringified array of network locations that users can connect to.
 pref("devtools.aboutdebugging.network-locations", "[]");
 // Debug target pane collapse/expand settings.
 pref("devtools.aboutdebugging.collapsibilities.installedExtension", false);

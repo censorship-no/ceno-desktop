@@ -12,6 +12,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   NetUtil: "resource://gre/modules/NetUtil.jsm",
   Services: "resource://gre/modules/Services.jsm",
   PerTestCoverageUtils: "resource://testing-common/PerTestCoverageUtils.jsm",
+  ServiceWorkerCleanUp: "resource://gre/modules/ServiceWorkerCleanUp.jsm",
 });
 
 this.SpecialPowersError = function(aMsg) {
@@ -558,6 +559,12 @@ SpecialPowersObserverAPI.prototype = {
         return undefined; // See comment at the beginning of this function.
       }
 
+      case "SPCheckServiceWorkers": {
+        let swm = Cc["@mozilla.org/serviceworkers/manager;1"]
+                    .getService(Ci.nsIServiceWorkerManager);
+        return { hasWorkers: swm.getAllRegistrations().length != 0 };
+      }
+
       case "SPLoadExtension": {
         let id = aMessage.data.id;
         let ext = aMessage.data.ext;
@@ -639,8 +646,22 @@ SpecialPowersObserverAPI.prototype = {
         return undefined;
       }
 
+      case "SPRemoveAllServiceWorkers": {
+        ServiceWorkerCleanUp.removeAll().then(() => {
+          this._sendReply(aMessage, "SPServiceWorkerCleanupComplete", { id: aMessage.data.id });
+        });
+        return undefined;
+      }
+
+      case "SPRemoveServiceWorkerDataForExampleDomain": {
+        ServiceWorkerCleanUp.removeFromHost("example.com").then(() => {
+          this._sendReply(aMessage, "SPServiceWorkerCleanupComplete", { id: aMessage.data.id });
+        });
+        return undefined;
+      }
+
       default:
-        throw new SpecialPowersError("Unrecognized Special Powers API");
+        throw new SpecialPowersError(`Unrecognized Special Powers API: ${aMessage.name}`);
     }
 
     // We throw an exception before reaching this explicit return because

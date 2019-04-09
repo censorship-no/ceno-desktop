@@ -5,11 +5,9 @@
 
 "use strict";
 
-/* eslint-disable mozilla/use-chromeutils-import */
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Messaging.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 
 function promiseLoadEvent(browser, url, eventType = "load", runBeforeLoad) {
   return new Promise((resolve, reject) => {
@@ -38,7 +36,7 @@ function promiseLoadEvent(browser, url, eventType = "load", runBeforeLoad) {
 }
 
 // Test that the Tracking Protection is active and has the correct state when
-// tracking content is blocked (Bug 1063831)
+// tracking content is blocked (Bug 1063831 + Bug 1520520)
 
 // Code is mostly stolen from:
 // http://dxr.mozilla.org/mozilla-central/source/browser/base/content/test/general/browser_trackingUI.js
@@ -58,12 +56,7 @@ function doUpdate() {
 
   return new Promise((resolve, reject) => {
     let listener = {
-      QueryInterface: function(iid) {
-        if (iid.equals(Ci.nsISupports) || iid.equals(Ci.nsIUrlClassifierUpdateObserver))
-          return this;
-
-        throw Cr.NS_ERROR_NO_INTERFACE;
-      },
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIUrlClassifierUpdateObserver]),
       updateUrlRequested: function(url) { },
       streamFinished: function(status) { },
       updateError: function(errorCode) {

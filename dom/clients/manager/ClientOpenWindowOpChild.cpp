@@ -11,33 +11,28 @@
 namespace mozilla {
 namespace dom {
 
-already_AddRefed<ClientOpPromise>
-ClientOpenWindowOpChild::DoOpenWindow(const ClientOpenWindowArgs& aArgs)
-{
-  RefPtr<ClientOpPromise> ref =
-    ClientOpenWindowInCurrentProcess(aArgs);
-  return ref.forget();
+RefPtr<ClientOpPromise> ClientOpenWindowOpChild::DoOpenWindow(
+    const ClientOpenWindowArgs& aArgs) {
+  return ClientOpenWindowInCurrentProcess(aArgs);
 }
 
-void
-ClientOpenWindowOpChild::ActorDestroy(ActorDestroyReason aReason)
-{
+void ClientOpenWindowOpChild::ActorDestroy(ActorDestroyReason aReason) {
   mPromiseRequestHolder.DisconnectIfExists();
 }
 
-void
-ClientOpenWindowOpChild::Init(const ClientOpenWindowArgs& aArgs)
-{
-  RefPtr<ClientOpPromise> promise = DoOpenWindow(aArgs);
-  promise->Then(SystemGroup::EventTargetFor(TaskCategory::Other), __func__,
-    [this] (const ClientOpResult& aResult) {
-      mPromiseRequestHolder.Complete();
-      PClientOpenWindowOpChild::Send__delete__(this, aResult);
-    }, [this] (nsresult aResult) {
-      mPromiseRequestHolder.Complete();
-      PClientOpenWindowOpChild::Send__delete__(this, aResult);
-  })->Track(mPromiseRequestHolder);
+void ClientOpenWindowOpChild::Init(const ClientOpenWindowArgs& aArgs) {
+  DoOpenWindow(aArgs)
+      ->Then(SystemGroup::EventTargetFor(TaskCategory::Other), __func__,
+             [this](const ClientOpResult& aResult) {
+               mPromiseRequestHolder.Complete();
+               PClientOpenWindowOpChild::Send__delete__(this, aResult);
+             },
+             [this](nsresult aResult) {
+               mPromiseRequestHolder.Complete();
+               PClientOpenWindowOpChild::Send__delete__(this, aResult);
+             })
+      ->Track(mPromiseRequestHolder);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

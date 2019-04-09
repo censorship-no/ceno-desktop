@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  *
  * Copyright 2018 Mozilla Foundation
  *
@@ -26,15 +26,19 @@
 namespace js {
 namespace wasm {
 
+#ifdef ENABLE_WASM_CRANELIFT
+MOZ_MUST_USE bool CraneliftCanCompile();
+#else
+MOZ_MUST_USE inline bool CraneliftCanCompile() { return false; }
+#endif
+
 // Generates code with Cranelift.
-MOZ_MUST_USE bool
-CraneliftCompileFunctions(const ModuleEnvironment& env,
-                         LifoAlloc& lifo,
-                         const FuncCompileInputVector& inputs,
-                         CompiledCode* code,
-                         UniqueChars* error);
+MOZ_MUST_USE bool CraneliftCompileFunctions(
+    const ModuleEnvironment& env, LifoAlloc& lifo,
+    const FuncCompileInputVector& inputs, CompiledCode* code,
+    UniqueChars* error);
 
-} // namespace wasm
-} // namespace js
+}  // namespace wasm
+}  // namespace js
 
-#endif // wasm_cranelift_compile_h
+#endif  // wasm_cranelift_compile_h

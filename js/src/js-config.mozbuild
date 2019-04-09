@@ -6,10 +6,20 @@
 
 # Nightly-only features
 if CONFIG['NIGHTLY_BUILD']:
+    # TypedObject
     DEFINES['ENABLE_BINARYDATA'] = True
+    # The evolving bulk-copy proposal - mem.fill, mem.copy,
+    # table.copy, etc
     DEFINES['ENABLE_WASM_BULKMEM_OPS'] = True
-    DEFINES['ENABLE_WASM_THREAD_OPS'] = True
+    # Support the evolving reftypes proposal - anyref, funcref, null,
+    # and a few other things
+    DEFINES['ENABLE_WASM_REFTYPES'] = True
+    # Support table of anyref, multiple tables - requires reftypes
+    DEFINES['ENABLE_WASM_GENERALIZED_TABLES'] = True
+    # Support the evolving gc types proposal (struct types, etc)
     DEFINES['ENABLE_WASM_GC'] = True
+    # Prevent (ref T) types from being exposed to JS content so that
+    # wasm need do no typechecking at the JS/wasm boundary
     DEFINES['WASM_PRIVATE_REFTYPES'] = True
 
 # Some huge-mapping optimization instead of bounds checks on supported
@@ -17,13 +27,11 @@ if CONFIG['NIGHTLY_BUILD']:
 if CONFIG['JS_CODEGEN_X64'] or CONFIG['JS_CODEGEN_ARM64']:
     DEFINES['WASM_HUGE_MEMORY'] = True
 
-# Enables CACHEIR_LOGS to diagnose IC coverage.
+# Enables CACHEIR_LOGS to diagnose IC coverage, and
+# Structured spewer for diagnostics
 if CONFIG['MOZ_DEBUG'] or CONFIG['NIGHTLY_BUILD']:
     DEFINES['JS_CACHEIR_SPEW'] = True
-
-# Build with SharedArrayBuffer code.
-# NOTE: This Realm creation options decide if this is exposed to script.
-DEFINES['ENABLE_SHARED_ARRAY_BUFFER'] = True
+    DEFINES['JS_STRUCTURED_SPEW'] = True
 
 # CTypes
 if CONFIG['JS_HAS_CTYPES']:

@@ -15,31 +15,26 @@
 
 using namespace mozilla::media;
 
-namespace mozilla
-{
+namespace mozilla {
 
-class MOZ_STACK_CLASS RangeFinder
-{
-public:
+class MOZ_STACK_CLASS RangeFinder {
+ public:
   // Given that we're processing this in order we don't use a binary search
   // to find the apropriate time range. Instead we search linearly from the
   // last used point.
   explicit RangeFinder(const MediaByteRangeSet& ranges)
-    : mRanges(ranges), mIndex(0)
-  {
+      : mRanges(ranges), mIndex(0) {
     // Ranges must be normalised for this to work
   }
 
   bool Contains(MediaByteRange aByteRange);
 
-private:
+ private:
   const MediaByteRangeSet& mRanges;
   size_t mIndex;
 };
 
-bool
-RangeFinder::Contains(MediaByteRange aByteRange)
-{
+bool RangeFinder::Contains(MediaByteRange aByteRange) {
   if (!mRanges.Length()) {
     return false;
   }
@@ -77,20 +72,13 @@ RangeFinder::Contains(MediaByteRange aByteRange)
 }
 
 SampleIterator::SampleIterator(Index* aIndex)
-  : mIndex(aIndex)
-  , mCurrentMoof(0)
-  , mCurrentSample(0)
-{
+    : mIndex(aIndex), mCurrentMoof(0), mCurrentSample(0) {
   mIndex->RegisterIterator(this);
 }
 
-SampleIterator::~SampleIterator()
-{
-  mIndex->UnregisterIterator(this);
-}
+SampleIterator::~SampleIterator() { mIndex->UnregisterIterator(this); }
 
-already_AddRefed<MediaRawData> SampleIterator::GetNext()
-{
+already_AddRefed<MediaRawData> SampleIterator::GetNext() {
   Sample* s(Get());
   if (!s) {
     return nullptr;
@@ -104,7 +92,7 @@ already_AddRefed<MediaRawData> SampleIterator::GetNext()
   }
 
   RefPtr<MediaRawData> sample = new MediaRawData();
-  sample->mTimecode= TimeUnit::FromMicroseconds(s->mDecodeTime);
+  sample->mTimecode = TimeUnit::FromMicroseconds(s->mDecodeTime);
   sample->mTime = TimeUnit::FromMicroseconds(s->mCompositionRange.start);
   sample->mDuration = TimeUnit::FromMicroseconds(s->mCompositionRange.Length());
   sample->mOffset = s->mByteRange.mStart;
@@ -118,74 +106,137 @@ already_AddRefed<MediaRawData> SampleIterator::GetNext()
 
   size_t bytesRead;
   if (!mIndex->mSource->ReadAt(sample->mOffset, writer->Data(), sample->Size(),
-                               &bytesRead) || bytesRead != sample->Size()) {
+                               &bytesRead) ||
+      bytesRead != sample->Size()) {
     return nullptr;
   }
 
-  if (mCurrentSample == 0 && mIndex->mMoofParser) {
-    const nsTArray<Moof>& moofs = mIndex->mMoofParser->Moofs();
-    MOZ_ASSERT(mCurrentMoof < moofs.Length());
-    const Moof* currentMoof = &moofs[mCurrentMoof];
-    if (!currentMoof->mPsshes.IsEmpty()) {
-      // This Moof contained crypto init data. Report that. We only report
-      // the init data on the Moof's first sample, to avoid reporting it more
-      // than once per Moof.
-      writer->mCrypto.mValid = true;
-      writer->mCrypto.mInitDatas.AppendElements(currentMoof->mPsshes);
+  MoofParser* moofParser = mIndex->mMoofParser.get();
+  if (!moofParser) {
+    // File is not fragmented, we can't have crypto, just early return.
+    Next();
+    return sample.forget();
+  }
+
+  SampleDescriptionEntry* sampleDescriptionEntry = GetSampleDescriptionEntry();
+  if (!sampleDescriptionEntry) {
+    // For the file to be valid the tfhd must reference a sample description
+    // entry.
+    return nullptr;
+  }
+
+  // Match scheme type box to enum representation.
+  CryptoScheme cryptoScheme = CryptoScheme::None;
+  // If a fragment references a sample description without crypto info them we
+  // treat it as unencrypted, even if other fragments may be encrypted.
+  if (sampleDescriptionEntry->mIsEncryptedEntry) {
+    if (!moofParser->mSinf.IsValid()) {
+      MOZ_ASSERT_UNREACHABLE(
+          "Sample description entry reports sample is encrypted, but no "
+          "sinf was parsed!");
+      return nullptr;
+    }
+    if (moofParser->mSinf.mDefaultEncryptionType == AtomType("cenc")) {
+      cryptoScheme = CryptoScheme::Cenc;
+      writer->mCrypto.mCryptoScheme = CryptoScheme::Cenc;
       writer->mCrypto.mInitDataType = NS_LITERAL_STRING("cenc");
+    } else if (moofParser->mSinf.mDefaultEncryptionType == AtomType("cbcs")) {
+      cryptoScheme = CryptoScheme::Cbcs;
+      writer->mCrypto.mCryptoScheme = CryptoScheme::Cbcs;
+      writer->mCrypto.mInitDataType = NS_LITERAL_STRING("cbcs");
+    } else {
+      MOZ_ASSERT_UNREACHABLE(
+          "Sample description entry reports sample is encrypted, but no "
+          "scheme, or an unsupported shceme is in use!");
+      return nullptr;
     }
   }
 
-  if (!s->mCencRange.IsEmpty()) {
-    MoofParser* parser = mIndex->mMoofParser.get();
-
-    if (!parser || !parser->mSinf.IsValid()) {
-      return nullptr;
+  if (mCurrentSample == 0) {
+    const nsTArray<Moof>& moofs = moofParser->Moofs();
+    const Moof* currentMoof = &moofs[mCurrentMoof];
+    if (!currentMoof->mPsshes.IsEmpty()) {
+      MOZ_ASSERT(sampleDescriptionEntry->mIsEncryptedEntry,
+                 "Unencrypted fragments should not contain pssh boxes");
+      MOZ_ASSERT(cryptoScheme != CryptoScheme::None);
+      // This Moof contained crypto init data. Report that. We only report
+      // the init data on the Moof's first sample, to avoid reporting it more
+      // than once per Moof.
+      writer->mCrypto.mInitDatas.AppendElements(currentMoof->mPsshes);
     }
+  }
 
-    uint8_t ivSize = parser->mSinf.mDefaultIVSize;
+  if (sampleDescriptionEntry->mIsEncryptedEntry) {
+    writer->mCrypto.mCryptoScheme = cryptoScheme;
 
-    // The size comes from an 8 bit field
-    AutoTArray<uint8_t, 256> cenc;
-    cenc.SetLength(s->mCencRange.Length());
-    if (!mIndex->mSource->ReadAt(s->mCencRange.mStart, cenc.Elements(), cenc.Length(),
-                                 &bytesRead) || bytesRead != cenc.Length()) {
-      return nullptr;
-    }
-    BufferReader reader(cenc);
-    writer->mCrypto.mValid = true;
-    writer->mCrypto.mIVSize = ivSize;
-
+    MOZ_ASSERT(writer->mCrypto.mKeyId.IsEmpty(),
+               "Sample should not already have a key ID");
+    MOZ_ASSERT(writer->mCrypto.mConstantIV.IsEmpty(),
+               "Sample should not already have a constant IV");
     CencSampleEncryptionInfoEntry* sampleInfo = GetSampleEncryptionEntry();
     if (sampleInfo) {
+      // Use sample group information if present, this supersedes track level
+      // information.
       writer->mCrypto.mKeyId.AppendElements(sampleInfo->mKeyId);
+      writer->mCrypto.mIVSize = sampleInfo->mIVSize;
+      writer->mCrypto.mCryptByteBlock = sampleInfo->mCryptByteBlock;
+      writer->mCrypto.mSkipByteBlock = sampleInfo->mSkipByteBlock;
+      writer->mCrypto.mConstantIV.AppendElements(sampleInfo->mConsantIV);
+    } else {
+      // Use the crypto info from track metadata
+      writer->mCrypto.mKeyId.AppendElements(moofParser->mSinf.mDefaultKeyID,
+                                            16);
+      writer->mCrypto.mIVSize = moofParser->mSinf.mDefaultIVSize;
+      writer->mCrypto.mCryptByteBlock =
+          moofParser->mSinf.mDefaultCryptByteBlock;
+      writer->mCrypto.mSkipByteBlock = moofParser->mSinf.mDefaultSkipByteBlock;
+      writer->mCrypto.mConstantIV.AppendElements(
+          moofParser->mSinf.mDefaultConstantIV);
     }
 
-    if (!reader.ReadArray(writer->mCrypto.mIV, ivSize)) {
-      return nullptr;
-    }
-
-    auto res = reader.ReadU16();
-    if (res.isOk() && res.unwrap() > 0) {
-      uint16_t count = res.unwrap();
-
-      if (reader.Remaining() < count * 6) {
+    MOZ_ASSERT((writer->mCrypto.mIVSize == 0 &&
+                !writer->mCrypto.mConstantIV.IsEmpty()) ||
+                   !s->mCencRange.IsEmpty(),
+               "Crypto information should contain either a constant IV, or "
+               "have auxiliary information that will contain an IV");
+    // Parse auxiliary information if present
+    if (!s->mCencRange.IsEmpty()) {
+      // The size comes from an 8 bit field
+      AutoTArray<uint8_t, 256> cencAuxInfo;
+      cencAuxInfo.SetLength(s->mCencRange.Length());
+      if (!mIndex->mSource->ReadAt(s->mCencRange.mStart, cencAuxInfo.Elements(),
+                                   cencAuxInfo.Length(), &bytesRead) ||
+          bytesRead != cencAuxInfo.Length()) {
+        return nullptr;
+      }
+      BufferReader reader(cencAuxInfo);
+      if (!reader.ReadArray(writer->mCrypto.mIV, writer->mCrypto.mIVSize)) {
         return nullptr;
       }
 
-      for (size_t i = 0; i < count; i++) {
-        auto res_16 = reader.ReadU16();
-        auto res_32 = reader.ReadU32();
-        if (res_16.isErr() || res_32.isErr()) {
+      // Parse the auxiliary information for subsample information
+      auto res = reader.ReadU16();
+      if (res.isOk() && res.unwrap() > 0) {
+        uint16_t count = res.unwrap();
+
+        if (reader.Remaining() < count * 6) {
           return nullptr;
         }
-        writer->mCrypto.mPlainSizes.AppendElement(res_16.unwrap());
-        writer->mCrypto.mEncryptedSizes.AppendElement(res_32.unwrap());
+
+        for (size_t i = 0; i < count; i++) {
+          auto res_16 = reader.ReadU16();
+          auto res_32 = reader.ReadU32();
+          if (res_16.isErr() || res_32.isErr()) {
+            return nullptr;
+          }
+          writer->mCrypto.mPlainSizes.AppendElement(res_16.unwrap());
+          writer->mCrypto.mEncryptedSizes.AppendElement(res_32.unwrap());
+        }
+      } else {
+        // No subsample information means the entire sample is encrypted.
+        writer->mCrypto.mPlainSizes.AppendElement(0);
+        writer->mCrypto.mEncryptedSizes.AppendElement(sample->Size());
       }
-    } else {
-      // No subsample information means the entire sample is encrypted.
-      writer->mCrypto.mPlainSizes.AppendElement(0);
-      writer->mCrypto.mEncryptedSizes.AppendElement(sample->Size());
     }
   }
 
@@ -194,8 +245,25 @@ already_AddRefed<MediaRawData> SampleIterator::GetNext()
   return sample.forget();
 }
 
-CencSampleEncryptionInfoEntry* SampleIterator::GetSampleEncryptionEntry()
-{
+SampleDescriptionEntry* SampleIterator::GetSampleDescriptionEntry() {
+  nsTArray<Moof>& moofs = mIndex->mMoofParser->Moofs();
+  Moof& currentMoof = moofs[mCurrentMoof];
+  uint32_t sampleDescriptionIndex =
+      currentMoof.mTfhd.mDefaultSampleDescriptionIndex;
+  // Mp4 indices start at 1, shift down 1 so we index our array correctly.
+  sampleDescriptionIndex--;
+  FallibleTArray<SampleDescriptionEntry>& sampleDescriptions =
+      mIndex->mMoofParser->mSampleDescriptions;
+  if (sampleDescriptionIndex >= sampleDescriptions.Length()) {
+    MOZ_ASSERT_UNREACHABLE(
+        "Should always be able to find the appropriate sample description! "
+        "Malformed mp4?");
+    return nullptr;
+  }
+  return &sampleDescriptions[sampleDescriptionIndex];
+}
+
+CencSampleEncryptionInfoEntry* SampleIterator::GetSampleEncryptionEntry() {
   nsTArray<Moof>& moofs = mIndex->mMoofParser->Moofs();
   Moof* currentMoof = &moofs[mCurrentMoof];
   SampleToGroupEntry* sampleToGroupEntry = nullptr;
@@ -203,9 +271,9 @@ CencSampleEncryptionInfoEntry* SampleIterator::GetSampleEncryptionEntry()
   // Default to using the sample to group entries for the fragment, otherwise
   // fall back to the sample to group entries for the track.
   FallibleTArray<SampleToGroupEntry>* sampleToGroupEntries =
-    currentMoof->mFragmentSampleToGroupEntries.Length() != 0
-    ? &currentMoof->mFragmentSampleToGroupEntries
-    : &mIndex->mMoofParser->mTrackSampleToGroupEntries;
+      currentMoof->mFragmentSampleToGroupEntries.Length() != 0
+          ? &currentMoof->mFragmentSampleToGroupEntries
+          : &mIndex->mMoofParser->mTrackSampleToGroupEntries;
 
   uint32_t seen = 0;
 
@@ -236,7 +304,7 @@ CencSampleEncryptionInfoEntry* SampleIterator::GetSampleEncryptionEntry()
   }
 
   FallibleTArray<CencSampleEncryptionInfoEntry>* entries =
-                      &mIndex->mMoofParser->mTrackSampleEncryptionInfoEntries;
+      &mIndex->mMoofParser->mTrackSampleEncryptionInfoEntries;
 
   uint32_t groupIndex = sampleToGroupEntry->mGroupDescriptionIndex;
 
@@ -248,18 +316,16 @@ CencSampleEncryptionInfoEntry* SampleIterator::GetSampleEncryptionEntry()
   }
 
   // The group_index is one based.
-  return groupIndex > entries->Length()
-         ? nullptr
-         : &entries->ElementAt(groupIndex - 1);
+  return groupIndex > entries->Length() ? nullptr
+                                        : &entries->ElementAt(groupIndex - 1);
 }
 
-Sample* SampleIterator::Get()
-{
+Sample* SampleIterator::Get() {
   if (!mIndex->mMoofParser) {
     MOZ_ASSERT(!mCurrentMoof);
     return mCurrentSample < mIndex->mIndex.Length()
-      ? &mIndex->mIndex[mCurrentSample]
-      : nullptr;
+               ? &mIndex->mIndex[mCurrentSample]
+               : nullptr;
   }
 
   nsTArray<Moof>& moofs = mIndex->mMoofParser->Moofs();
@@ -279,13 +345,9 @@ Sample* SampleIterator::Get()
   return &moofs[mCurrentMoof].mIndex[mCurrentSample];
 }
 
-void SampleIterator::Next()
-{
-  ++mCurrentSample;
-}
+void SampleIterator::Next() { ++mCurrentSample; }
 
-void SampleIterator::Seek(Microseconds aTime)
-{
+void SampleIterator::Seek(Microseconds aTime) {
   size_t syncMoof = 0;
   size_t syncSample = 0;
   mCurrentMoof = 0;
@@ -308,9 +370,7 @@ void SampleIterator::Seek(Microseconds aTime)
   mCurrentSample = syncSample;
 }
 
-Microseconds
-SampleIterator::GetNextKeyframeTime()
-{
+Microseconds SampleIterator::GetNextKeyframeTime() {
   SampleIterator itr(*this);
   Sample* sample;
   while (!!(sample = itr.Get())) {
@@ -322,13 +382,9 @@ SampleIterator::GetNextKeyframeTime()
   return -1;
 }
 
-Index::Index(const IndiceWrapper& aIndices,
-             ByteStream* aSource,
-             uint32_t aTrackId,
-             bool aIsAudio)
-  : mSource(aSource)
-  , mIsAudio(aIsAudio)
-{
+Index::Index(const IndiceWrapper& aIndices, ByteStream* aSource,
+             uint32_t aTrackId, bool aIsAudio)
+    : mSource(aSource), mIsAudio(aIsAudio) {
   if (!aIndices.Length()) {
     mMoofParser = new MoofParser(aSource, aTrackId, aIsAudio);
   } else {
@@ -355,10 +411,10 @@ Index::Index(const IndiceWrapper& aIndices,
       }
 
       Sample sample;
-      sample.mByteRange = MediaByteRange(indice.start_offset,
-                                         indice.end_offset);
-      sample.mCompositionRange = MP4Interval<Microseconds>(indice.start_composition,
-                                                           indice.end_composition);
+      sample.mByteRange =
+          MediaByteRange(indice.start_offset, indice.end_offset);
+      sample.mCompositionRange = MP4Interval<Microseconds>(
+          indice.start_composition, indice.end_composition);
       sample.mDecodeTime = indice.start_decode;
       sample.mSync = indice.sync || mIsAudio;
       // FIXME: Make this infallible after bug 968520 is done.
@@ -374,13 +430,14 @@ Index::Index(const IndiceWrapper& aIndices,
         if (mDataOffset.Length()) {
           auto& last = mDataOffset.LastElement();
           last.mEndOffset = intervalRange.mEnd;
-          NS_ASSERTION(intervalTime.Length() == 1, "Discontinuous samples between keyframes");
+          NS_ASSERTION(intervalTime.Length() == 1,
+                       "Discontinuous samples between keyframes");
           last.mTime.start = intervalTime.GetStart();
           last.mTime.end = intervalTime.GetEnd();
         }
-        if (!mDataOffset.AppendElement(MP4DataOffset(mIndex.Length() - 1,
-                                                     indice.start_offset),
-                                       fallible)) {
+        if (!mDataOffset.AppendElement(
+                MP4DataOffset(mIndex.Length() - 1, indice.start_offset),
+                fallible)) {
           // OOM.
           return;
         }
@@ -399,7 +456,8 @@ Index::Index(const IndiceWrapper& aIndices,
       }
       auto& last = mDataOffset.LastElement();
       last.mEndOffset = indice.end_offset;
-      last.mTime = MP4Interval<int64_t>(intervalTime.GetStart(), intervalTime.GetEnd());
+      last.mTime =
+          MP4Interval<int64_t>(intervalTime.GetStart(), intervalTime.GetEnd());
     } else {
       mDataOffset.Clear();
     }
@@ -408,15 +466,12 @@ Index::Index(const IndiceWrapper& aIndices,
 
 Index::~Index() {}
 
-void
-Index::UpdateMoofIndex(const MediaByteRangeSet& aByteRanges)
-{
+void Index::UpdateMoofIndex(const MediaByteRangeSet& aByteRanges) {
   UpdateMoofIndex(aByteRanges, false);
 }
 
-void
-Index::UpdateMoofIndex(const MediaByteRangeSet& aByteRanges, bool aCanEvict)
-{
+void Index::UpdateMoofIndex(const MediaByteRangeSet& aByteRanges,
+                            bool aCanEvict) {
   if (!mMoofParser) {
     return;
   }
@@ -443,9 +498,8 @@ Index::UpdateMoofIndex(const MediaByteRangeSet& aByteRanges, bool aCanEvict)
   }
 }
 
-Microseconds
-Index::GetEndCompositionIfBuffered(const MediaByteRangeSet& aByteRanges)
-{
+Microseconds Index::GetEndCompositionIfBuffered(
+    const MediaByteRangeSet& aByteRanges) {
   FallibleTArray<Sample>* index;
   if (mMoofParser) {
     if (!mMoofParser->ReachedEnd() || mMoofParser->Moofs().IsEmpty()) {
@@ -471,9 +525,8 @@ Index::GetEndCompositionIfBuffered(const MediaByteRangeSet& aByteRanges)
   return 0;
 }
 
-TimeIntervals
-Index::ConvertByteRangesToTimeRanges(const MediaByteRangeSet& aByteRanges)
-{
+TimeIntervals Index::ConvertByteRangesToTimeRanges(
+    const MediaByteRangeSet& aByteRanges) {
   if (aByteRanges == mLastCachedRanges) {
     return mLastBufferedRanges;
   }
@@ -486,35 +539,37 @@ Index::ConvertByteRangesToTimeRanges(const MediaByteRangeSet& aByteRanges)
       if (!mIsAudio && start == mDataOffset.Length()) {
         continue;
       }
-      uint32_t end = mDataOffset.IndexOfFirstElementGt(range.mEnd, MP4DataOffset::EndOffsetComparator());
+      uint32_t end = mDataOffset.IndexOfFirstElementGt(
+          range.mEnd, MP4DataOffset::EndOffsetComparator());
       if (!mIsAudio && end < start) {
         continue;
       }
       if (mIsAudio && start &&
-          range.Intersects(MediaByteRange(mDataOffset[start-1].mStartOffset,
-                                          mDataOffset[start-1].mEndOffset))) {
+          range.Intersects(MediaByteRange(mDataOffset[start - 1].mStartOffset,
+                                          mDataOffset[start - 1].mEndOffset))) {
         // Check if previous audio data block contains some available samples.
-        for (size_t i = mDataOffset[start-1].mIndex; i < mIndex.Length(); i++) {
+        for (size_t i = mDataOffset[start - 1].mIndex; i < mIndex.Length();
+             i++) {
           if (range.ContainsStrict(mIndex[i].mByteRange)) {
-            timeRanges +=
-              TimeInterval(TimeUnit::FromMicroseconds(mIndex[i].mCompositionRange.start),
-                           TimeUnit::FromMicroseconds(mIndex[i].mCompositionRange.end));
+            timeRanges += TimeInterval(
+                TimeUnit::FromMicroseconds(mIndex[i].mCompositionRange.start),
+                TimeUnit::FromMicroseconds(mIndex[i].mCompositionRange.end));
           }
         }
       }
       if (end > start) {
-        timeRanges +=
-          TimeInterval(TimeUnit::FromMicroseconds(mDataOffset[start].mTime.start),
-                       TimeUnit::FromMicroseconds(mDataOffset[end-1].mTime.end));
+        timeRanges += TimeInterval(
+            TimeUnit::FromMicroseconds(mDataOffset[start].mTime.start),
+            TimeUnit::FromMicroseconds(mDataOffset[end - 1].mTime.end));
       }
       if (end < mDataOffset.Length()) {
         // Find samples in partial block contained in the byte range.
         for (size_t i = mDataOffset[end].mIndex;
              i < mIndex.Length() && range.ContainsStrict(mIndex[i].mByteRange);
              i++) {
-          timeRanges +=
-            TimeInterval(TimeUnit::FromMicroseconds(mIndex[i].mCompositionRange.start),
-                         TimeUnit::FromMicroseconds(mIndex[i].mCompositionRange.end));
+          timeRanges += TimeInterval(
+              TimeUnit::FromMicroseconds(mIndex[i].mCompositionRange.start),
+              TimeUnit::FromMicroseconds(mIndex[i].mCompositionRange.end));
         }
       }
     }
@@ -535,7 +590,8 @@ Index::ConvertByteRangesToTimeRanges(const MediaByteRangeSet& aByteRanges)
       // We need the entire moof in order to play anything
       if (rangeFinder.Contains(moof.mRange)) {
         if (rangeFinder.Contains(moof.mMdatRange)) {
-          MP4Interval<Microseconds>::SemiNormalAppend(timeRanges, moof.mTimeRange);
+          MP4Interval<Microseconds>::SemiNormalAppend(timeRanges,
+                                                      moof.mTimeRange);
         } else {
           indexes.AppendElement(&moof.mIndex);
         }
@@ -563,7 +619,7 @@ Index::ConvertByteRangesToTimeRanges(const MediaByteRangeSet& aByteRanges)
       }
 
       MP4Interval<Microseconds>::SemiNormalAppend(timeRanges,
-                                               sample.mCompositionRange);
+                                                  sample.mCompositionRange);
     }
   }
 
@@ -573,17 +629,15 @@ Index::ConvertByteRangesToTimeRanges(const MediaByteRangeSet& aByteRanges)
   // convert timeRanges.
   media::TimeIntervals ranges;
   for (size_t i = 0; i < timeRangesNormalized.Length(); i++) {
-    ranges +=
-      media::TimeInterval(media::TimeUnit::FromMicroseconds(timeRangesNormalized[i].start),
-                          media::TimeUnit::FromMicroseconds(timeRangesNormalized[i].end));
+    ranges += media::TimeInterval(
+        media::TimeUnit::FromMicroseconds(timeRangesNormalized[i].start),
+        media::TimeUnit::FromMicroseconds(timeRangesNormalized[i].end));
   }
   mLastBufferedRanges = ranges;
   return ranges;
 }
 
-uint64_t
-Index::GetEvictionOffset(Microseconds aTime)
-{
+uint64_t Index::GetEvictionOffset(Microseconds aTime) {
   uint64_t offset = std::numeric_limits<uint64_t>::max();
   if (mMoofParser) {
     // We need to keep the whole moof if we're keeping any of it because the
@@ -609,16 +663,12 @@ Index::GetEvictionOffset(Microseconds aTime)
   return offset;
 }
 
-void
-Index::RegisterIterator(SampleIterator* aIterator)
-{
+void Index::RegisterIterator(SampleIterator* aIterator) {
   mIterators.AppendElement(aIterator);
 }
 
-void
-Index::UnregisterIterator(SampleIterator* aIterator)
-{
+void Index::UnregisterIterator(SampleIterator* aIterator) {
   mIterators.RemoveElement(aIterator);
 }
 
-}
+}  // namespace mozilla

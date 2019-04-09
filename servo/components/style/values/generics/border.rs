@@ -1,21 +1,21 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Generic types for CSS values related to borders.
 
+use crate::values::generics::rect::Rect;
+use crate::values::generics::size::Size;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
-use values::generics::rect::Rect;
-use values::generics::size::Size;
 
 /// A generic value for a single side of a `border-image-width` property.
 #[derive(
     Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss,
 )]
-pub enum BorderImageSideWidth<LengthOrPercentage, Number> {
+pub enum BorderImageSideWidth<LengthPercentage, Number> {
     /// `<length-or-percentage>`
-    Length(LengthOrPercentage),
+    Length(LengthPercentage),
     /// `<number>`
     Number(Number),
     /// `auto`
@@ -45,6 +45,8 @@ pub struct BorderImageSlice<NumberOrPercentage> {
     MallocSizeOf,
     PartialEq,
     SpecifiedValueInfo,
+    ToAnimatedValue,
+    ToAnimatedZero,
     ToComputedValue,
     ToCss,
 )]
@@ -93,30 +95,18 @@ impl<L> BorderSpacing<L> {
     MallocSizeOf,
     PartialEq,
     SpecifiedValueInfo,
+    ToAnimatedValue,
     ToComputedValue,
 )]
-pub struct BorderRadius<LengthOrPercentage> {
+pub struct BorderRadius<LengthPercentage> {
     /// The top left radius.
-    pub top_left: BorderCornerRadius<LengthOrPercentage>,
+    pub top_left: BorderCornerRadius<LengthPercentage>,
     /// The top right radius.
-    pub top_right: BorderCornerRadius<LengthOrPercentage>,
+    pub top_right: BorderCornerRadius<LengthPercentage>,
     /// The bottom right radius.
-    pub bottom_right: BorderCornerRadius<LengthOrPercentage>,
+    pub bottom_right: BorderCornerRadius<LengthPercentage>,
     /// The bottom left radius.
-    pub bottom_left: BorderCornerRadius<LengthOrPercentage>,
-}
-
-impl<N> From<N> for BorderImageSlice<N>
-where
-    N: Clone,
-{
-    #[inline]
-    fn from(value: N) -> Self {
-        Self {
-            offsets: Rect::all(value),
-            fill: false,
-        }
-    }
+    pub bottom_left: BorderCornerRadius<LengthPercentage>,
 }
 
 impl<L> BorderRadius<L> {

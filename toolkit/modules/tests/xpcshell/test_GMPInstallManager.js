@@ -15,9 +15,15 @@ ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
 ChromeUtils.import("resource://testing-common/httpd.js");
 ChromeUtils.import("resource://gre/modules/Preferences.jsm");
 ChromeUtils.import("resource://gre/modules/UpdateUtils.jsm");
-Cu.importGlobalProperties(["DOMParser"]);
 
 var ProductAddonCheckerScope = ChromeUtils.import("resource://gre/modules/addons/ProductAddonChecker.jsm", {});
+
+Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+Services.prefs.setBoolPref("media.gmp-manager.updateEnabled", true);
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+  Services.prefs.clearUserPref("media.gmp-manager.updateEnabled");
+});
 
 do_get_profile();
 

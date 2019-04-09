@@ -1,27 +1,27 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef include_dom_ipc_VideoDecoderManagerParent_h
-#define include_dom_ipc_VideoDecoderManagerParent_h
+#ifndef include_ipc_VideoDecoderManagerParent_h
+#define include_ipc_VideoDecoderManagerParent_h
 
-#include "mozilla/dom/PVideoDecoderManagerParent.h"
+#include "mozilla/PVideoDecoderManagerParent.h"
 
 namespace mozilla {
-namespace dom {
 
 class VideoDecoderManagerThreadHolder;
 
-class VideoDecoderManagerParent final : public PVideoDecoderManagerParent
-{
-public:
+class VideoDecoderManagerParent final : public PVideoDecoderManagerParent {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VideoDecoderManagerParent)
 
-  static bool CreateForContent(Endpoint<PVideoDecoderManagerParent>&& aEndpoint);
+  static bool CreateForContent(
+      Endpoint<PVideoDecoderManagerParent>&& aEndpoint);
 
   // Can be called from any thread
-  SurfaceDescriptorGPUVideo StoreImage(layers::Image* aImage, layers::TextureClient* aTexture);
+  SurfaceDescriptorGPUVideo StoreImage(layers::Image* aImage,
+                                       layers::TextureClient* aTexture);
 
   static void StartupThreads();
   static void ShutdownThreads();
@@ -30,27 +30,27 @@ public:
 
   bool OnManagerThread();
 
-protected:
+ protected:
   PVideoDecoderParent* AllocPVideoDecoderParent(
-    const VideoInfo& aVideoInfo,
-    const float& aFramerate,
-    const CreateDecoderParams::OptionSet& aOptions,
-    const layers::TextureFactoryIdentifier& aIdentifier,
-    bool* aSuccess,
-    nsCString* aBlacklistedD3D11Driver,
-    nsCString* aBlacklistedD3D9Driver,
-    nsCString* aErrorDescription) override;
+      const VideoInfo& aVideoInfo, const float& aFramerate,
+      const CreateDecoderParams::OptionSet& aOptions,
+      const layers::TextureFactoryIdentifier& aIdentifier, bool* aSuccess,
+      nsCString* aBlacklistedD3D11Driver, nsCString* aBlacklistedD3D9Driver,
+      nsCString* aErrorDescription) override;
   bool DeallocPVideoDecoderParent(PVideoDecoderParent* actor) override;
 
-  mozilla::ipc::IPCResult RecvReadback(const SurfaceDescriptorGPUVideo& aSD, SurfaceDescriptor* aResult) override;
-  mozilla::ipc::IPCResult RecvDeallocateSurfaceDescriptorGPUVideo(const SurfaceDescriptorGPUVideo& aSD) override;
+  mozilla::ipc::IPCResult RecvReadback(const SurfaceDescriptorGPUVideo& aSD,
+                                       SurfaceDescriptor* aResult) override;
+  mozilla::ipc::IPCResult RecvDeallocateSurfaceDescriptorGPUVideo(
+      const SurfaceDescriptorGPUVideo& aSD) override;
 
   void ActorDestroy(mozilla::ipc::IProtocol::ActorDestroyReason) override;
 
   void DeallocPVideoDecoderManagerParent() override;
 
-private:
-  explicit VideoDecoderManagerParent(VideoDecoderManagerThreadHolder* aThreadHolder);
+ private:
+  explicit VideoDecoderManagerParent(
+      VideoDecoderManagerThreadHolder* aThreadHolder);
   ~VideoDecoderManagerParent();
 
   void Open(Endpoint<PVideoDecoderManagerParent>&& aEndpoint);
@@ -61,7 +61,6 @@ private:
   RefPtr<VideoDecoderManagerThreadHolder> mThreadHolder;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // include_dom_ipc_VideoDecoderManagerParent_h
+#endif  // include_dom_ipc_VideoDecoderManagerParent_h

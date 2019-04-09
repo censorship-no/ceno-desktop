@@ -7,44 +7,43 @@
 #ifndef ZoomConstraintsClient_h_
 #define ZoomConstraintsClient_h_
 
-#include "FrameMetrics.h"
+#include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/Maybe.h"
+#include "nsCOMPtr.h"
 #include "nsIDOMEventListener.h"
 #include "nsIObserver.h"
-#include "nsWeakPtr.h"
 
-class nsIDocument;
 class nsIPresShell;
 
 namespace mozilla {
 namespace dom {
 class EventTarget;
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 class ZoomConstraintsClient final : public nsIDOMEventListener,
-                                    public nsIObserver
-{
-public:
+                                    public nsIObserver {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDOMEVENTLISTENER
   NS_DECL_NSIOBSERVER
 
   ZoomConstraintsClient();
 
-private:
+ private:
   ~ZoomConstraintsClient();
 
-public:
-  void Init(nsIPresShell* aPresShell, nsIDocument *aDocument);
+ public:
+  void Init(nsIPresShell* aPresShell, mozilla::dom::Document* aDocument);
   void Destroy();
   void ScreenSizeChanged();
 
-private:
+ private:
   void RefreshZoomConstraints();
 
-  nsCOMPtr<nsIDocument> mDocument;
-  nsIPresShell* MOZ_NON_OWNING_REF mPresShell; // raw ref since the presShell owns this
+  RefPtr<mozilla::dom::Document> mDocument;
+  // raw ref since the presShell owns this
+  nsIPresShell* MOZ_NON_OWNING_REF mPresShell;
   nsCOMPtr<mozilla::dom::EventTarget> mEventTarget;
   mozilla::Maybe<mozilla::layers::ScrollableLayerGuid> mGuid;
 };

@@ -72,6 +72,8 @@ static const int DT_ANDROID_RELA = DT_LOOS + 4;
 static const char kMappedFileUnsafePrefix[] = "/dev/";
 static const char kDeletedSuffix[] = " (deleted)";
 static const char kReservedFlags[] = " ---p";
+static const char kMozillaIpcPrefix[] = "org.mozilla.ipc.";
+static const char kChromiumPrefix[] = "org.chromium.";
 
 inline static bool IsMappedFileOpenUnsafe(
     const google_breakpad::MappingInfo& mapping) {
@@ -572,6 +574,16 @@ bool LinuxDumper::ReadAuxv() {
   return res;
 }
 
+bool LinuxDumper::IsIPCSharedMemorySegment(const char* name) {
+  if ((my_strstr(name, kMozillaIpcPrefix) ||
+       my_strstr(name, kChromiumPrefix)) &&
+      my_strstr(name, kDeletedSuffix)) {
+    return true;
+  }
+
+  return false;
+}
+
 bool LinuxDumper::EnumerateMappings() {
   char maps_path[NAME_MAX];
   if (!BuildProcPath(maps_path, pid_, "maps"))
@@ -617,14 +629,21 @@ bool LinuxDumper::EnumerateMappings() {
             name = kLinuxGateLibraryName;
             offset = 0;
           }
-          // Merge adjacent mappings with the same name into one module,
-          // assuming they're a single library mapped by the dynamic linker
+          // Skip shared memory segments used for IPC
+          if (name && IsIPCSharedMemorySegment(name)) {
+            line_reader->PopLine(line_len);
+            continue;
+          }
+          // Merge adjacent mappings into one module, assuming they're a single
+          // library mapped by the dynamic linker.
           if (name && !mappings_.empty()) {
             MappingInfo* module = mappings_.back();
             if ((start_addr == module->start_addr + module->size) &&
                 (my_strlen(name) == my_strlen(module->name)) &&
                 (my_strncmp(name, module->name, my_strlen(name)) == 0)) {
+              module->system_mapping_info.end_addr = end_addr;
               module->size = end_addr - module->start_addr;
+              module->exec |= exec;
               line_reader->PopLine(line_len);
               continue;
             }
@@ -635,12 +654,13 @@ bool LinuxDumper::EnumerateMappings() {
           // and which directly follow an executable mapping.
           if (!name && !mappings_.empty()) {
             MappingInfo* module = mappings_.back();
-            if ((start_addr == module->start_addr + module->size) &&
+            uintptr_t module_end_addr = module->start_addr + module->size;
+            if ((start_addr == module_end_addr) &&
                 module->exec &&
                 module->name[0] == '/' &&
-                offset == 0 && my_strncmp(i2,
-                                          kReservedFlags,
-                                          sizeof(kReservedFlags) - 1) == 0) {
+                ((offset == 0) || (offset == module_end_addr)) &&
+                my_strncmp(i2, kReservedFlags,
+                           sizeof(kReservedFlags) - 1) == 0) {
               module->size = end_addr - module->start_addr;
               line_reader->PopLine(line_len);
               continue;

@@ -304,7 +304,7 @@ var SiteDataManager = {
         // We are clearing *All* across OAs so need to ensure a principal without suffix here,
         // or the call of `clearStoragesForPrincipal` would fail.
         principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(originNoSuffix);
-        let request = this._qms.clearStoragesForPrincipal(principal, null, true);
+        let request = this._qms.clearStoragesForPrincipal(principal, null, null, true);
         request.callback = resolve;
       }));
     }
@@ -342,8 +342,9 @@ var SiteDataManager = {
     for (let host of hosts) {
       let site = this._sites.get(host);
       if (site) {
-        // Clear localstorage.
-        Services.obs.notifyObservers(null, "browser:purge-domain-data", host);
+        // Clear localStorage & sessionStorage
+        Services.obs.notifyObservers(null, "extension:purge-localStorage", host);
+        Services.obs.notifyObservers(null, "browser:purge-sessionStorage", host);
         this._removePermission(site);
         this._removeAppCache(site);
         this._removeCookies(site);

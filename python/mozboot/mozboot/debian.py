@@ -5,7 +5,7 @@
 from __future__ import absolute_import, print_function
 
 from mozboot.base import BaseBootstrapper
-from mozboot.linux_common import NodeInstall, StyloInstall
+from mozboot.linux_common import NodeInstall, StyloInstall, ClangStaticAnalysisInstall
 
 
 MERCURIAL_INSTALL_PROMPT = '''
@@ -28,7 +28,8 @@ Choice:
 '''.strip()
 
 
-class DebianBootstrapper(NodeInstall, StyloInstall, BaseBootstrapper):
+class DebianBootstrapper(NodeInstall, StyloInstall, ClangStaticAnalysisInstall,
+                         BaseBootstrapper):
     # These are common packages for all Debian-derived distros (such as
     # Ubuntu).
     COMMON_PACKAGES = [
@@ -65,6 +66,7 @@ class DebianBootstrapper(NodeInstall, StyloInstall, BaseBootstrapper):
         'libpulse-dev',
         'libx11-xcb-dev',
         'libxt-dev',
+        'nasm',
         'python-dbus',
         'xvfb',
         'yasm',
@@ -76,10 +78,8 @@ class DebianBootstrapper(NodeInstall, StyloInstall, BaseBootstrapper):
     # These are common packages for building Firefox for Android
     # (mobile/android) for all Debian-derived distros (such as Ubuntu).
     MOBILE_ANDROID_COMMON_PACKAGES = [
-        'default-jdk',
+        'openjdk-8-jdk-headless',  # Android's `sdkmanager` requires Java 1.8 exactly.
         'wget',  # For downloading the Android SDK and NDK.
-        'libncurses5:i386',  # See comments about i386 below.
-        'libstdc++6:i386',
     ]
 
     # Subclasses can add packages to this variable to have them installed.
@@ -137,18 +137,10 @@ class DebianBootstrapper(NodeInstall, StyloInstall, BaseBootstrapper):
         # Multi-part process:
         # 1. System packages.
         # 2. Android SDK. Android NDK only if we are not in artifact mode. Android packages.
-
-        # 1. This is hard to believe, but the Android SDK binaries are 32-bit
-        # and that conflicts with 64-bit Debian and Ubuntu installations out of
-        # the box.  The solution is to add the i386 architecture.  See
-        # "Troubleshooting Ubuntu" at
-        # http://developer.android.com/sdk/installing/index.html?pkg=tools.
-        self.run_as_root(['dpkg', '--add-architecture', 'i386'])
-        # After adding a new arch, the list of packages has to be updated
-        self.apt_update()
         self.apt_install(*self.mobile_android_packages)
 
         # 2. Android pieces.
+        self.ensure_java()
         from mozboot import android
         android.ensure_android('linux', artifact_mode=artifact_mode,
                                no_interactive=self.no_interactive)

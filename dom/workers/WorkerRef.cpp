@@ -18,56 +18,40 @@ namespace {
 
 // This runnable is used to release the StrongWorkerRef on the worker thread
 // when a ThreadSafeWorkerRef is released.
-class ReleaseRefControlRunnable final : public WorkerControlRunnable
-{
-public:
+class ReleaseRefControlRunnable final : public WorkerControlRunnable {
+ public:
   ReleaseRefControlRunnable(WorkerPrivate* aWorkerPrivate,
                             already_AddRefed<StrongWorkerRef> aRef)
-    : WorkerControlRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount)
-    , mRef(std::move(aRef))
-  {
+      : WorkerControlRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount),
+        mRef(std::move(aRef)) {
     MOZ_ASSERT(mRef);
   }
 
-  bool
-  PreDispatch(WorkerPrivate* aWorkerPrivate) override
-  {
-    return true;
-  }
+  bool PreDispatch(WorkerPrivate* aWorkerPrivate) override { return true; }
 
-  void
-  PostDispatch(WorkerPrivate* aWorkerPrivate,
-               bool aDispatchResult) override
-  {
-  }
+  void PostDispatch(WorkerPrivate* aWorkerPrivate,
+                    bool aDispatchResult) override {}
 
-  bool
-  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override
-  {
+  bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
     mRef = nullptr;
     return true;
   }
 
-private:
+ private:
   RefPtr<StrongWorkerRef> mRef;
 };
 
-} // anonymous
+}  // namespace
 
 // ----------------------------------------------------------------------------
 // WorkerRef::Holder
 
-class WorkerRef::Holder final : public mozilla::dom::WorkerHolder
-{
-public:
+class WorkerRef::Holder final : public mozilla::dom::WorkerHolder {
+ public:
   Holder(const char* aName, WorkerRef* aWorkerRef, Behavior aBehavior)
-    : mozilla::dom::WorkerHolder(aName, aBehavior)
-    , mWorkerRef(aWorkerRef)
-  {}
+      : mozilla::dom::WorkerHolder(aName, aBehavior), mWorkerRef(aWorkerRef) {}
 
-  bool
-  Notify(WorkerStatus aStatus) override
-  {
+  bool Notify(WorkerStatus aStatus) override {
     MOZ_ASSERT(mWorkerRef);
 
     if (aStatus < Canceling) {
@@ -82,7 +66,7 @@ public:
     return true;
   }
 
-public:
+ public:
   WorkerRef* mWorkerRef;
 };
 
@@ -90,20 +74,14 @@ public:
 // WorkerRef
 
 WorkerRef::WorkerRef(WorkerPrivate* aWorkerPrivate)
-  : mWorkerPrivate(aWorkerPrivate)
-{
+    : mWorkerPrivate(aWorkerPrivate) {
   MOZ_ASSERT(aWorkerPrivate);
   aWorkerPrivate->AssertIsOnWorkerThread();
 }
 
-WorkerRef::~WorkerRef()
-{
-  NS_ASSERT_OWNINGTHREAD(WorkerRef);
-}
+WorkerRef::~WorkerRef() { NS_ASSERT_OWNINGTHREAD(WorkerRef); }
 
-void
-WorkerRef::Notify()
-{
+void WorkerRef::Notify() {
   MOZ_ASSERT(mHolder);
   NS_ASSERT_OWNINGTHREAD(WorkerRef);
 
@@ -111,8 +89,8 @@ WorkerRef::Notify()
     return;
   }
 
-  std::function<void()> callback = mCallback;
-  mCallback = nullptr;
+  std::function<void()> callback = std::move(mCallback);
+  MOZ_ASSERT(!mCallback);
 
   callback();
 }
@@ -120,10 +98,8 @@ WorkerRef::Notify()
 // ----------------------------------------------------------------------------
 // WeakWorkerRef
 
-/* static */ already_AddRefed<WeakWorkerRef>
-WeakWorkerRef::Create(WorkerPrivate* aWorkerPrivate,
-                      const std::function<void()>& aCallback)
-{
+/* static */ already_AddRefed<WeakWorkerRef> WeakWorkerRef::Create(
+    WorkerPrivate* aWorkerPrivate, std::function<void()>&& aCallback) {
   MOZ_ASSERT(aWorkerPrivate);
   aWorkerPrivate->AssertIsOnWorkerThread();
 
@@ -137,77 +113,79 @@ WeakWorkerRef::Create(WorkerPrivate* aWorkerPrivate,
   }
 
   ref->mHolder = std::move(holder);
-  ref->mCallback = aCallback;
+  ref->mCallback = std::move(aCallback);
 
   return ref.forget();
 }
 
 WeakWorkerRef::WeakWorkerRef(WorkerPrivate* aWorkerPrivate)
-  : WorkerRef(aWorkerPrivate)
-{}
+    : WorkerRef(aWorkerPrivate) {}
 
 WeakWorkerRef::~WeakWorkerRef() = default;
 
-void
-WeakWorkerRef::Notify()
-{
+void WeakWorkerRef::Notify() {
   WorkerRef::Notify();
 
   mHolder = nullptr;
   mWorkerPrivate = nullptr;
 }
 
-WorkerPrivate*
-WeakWorkerRef::GetPrivate() const
-{
+WorkerPrivate* WeakWorkerRef::GetPrivate() const {
   NS_ASSERT_OWNINGTHREAD(WeakWorkerRef);
   return mWorkerPrivate;
 }
 
-WorkerPrivate*
-WeakWorkerRef::GetUnsafePrivate() const
-{
+WorkerPrivate* WeakWorkerRef::GetUnsafePrivate() const {
   return mWorkerPrivate;
 }
 
 // ----------------------------------------------------------------------------
 // StrongWorkerRef
 
-/* static */ already_AddRefed<StrongWorkerRef>
-StrongWorkerRef::Create(WorkerPrivate* aWorkerPrivate,
-                        const char* aName,
-                        const std::function<void()>& aCallback)
-{
+/* static */ already_AddRefed<StrongWorkerRef> StrongWorkerRef::Create(
+    WorkerPrivate* const aWorkerPrivate, const char* const aName,
+    std::function<void()>&& aCallback) {
+  if (RefPtr<StrongWorkerRef> ref =
+          CreateImpl(aWorkerPrivate, aName, Canceling)) {
+    ref->mCallback = std::move(aCallback);
+    return ref.forget();
+  }
+  return nullptr;
+}
+
+/* static */
+already_AddRefed<StrongWorkerRef> StrongWorkerRef::CreateForcibly(
+    WorkerPrivate* const aWorkerPrivate, const char* const aName) {
+  return CreateImpl(aWorkerPrivate, aName, Killing);
+}
+
+/* static */
+already_AddRefed<StrongWorkerRef> StrongWorkerRef::CreateImpl(
+    WorkerPrivate* const aWorkerPrivate, const char* const aName,
+    WorkerStatus const aFailStatus) {
   MOZ_ASSERT(aWorkerPrivate);
   MOZ_ASSERT(aName);
 
   RefPtr<StrongWorkerRef> ref = new StrongWorkerRef(aWorkerPrivate);
 
   // The worker is kept alive by this holder.
-  UniquePtr<Holder> holder(new Holder(aName, ref,
-                                      WorkerHolder::PreventIdleShutdownStart));
-  if (NS_WARN_IF(!holder->HoldWorker(aWorkerPrivate, Canceling))) {
+  UniquePtr<Holder> holder(
+      new Holder(aName, ref, WorkerHolder::PreventIdleShutdownStart));
+  if (NS_WARN_IF(!holder->HoldWorker(aWorkerPrivate, aFailStatus))) {
     return nullptr;
   }
 
   ref->mHolder = std::move(holder);
-  ref->mCallback = aCallback;
 
   return ref.forget();
 }
 
 StrongWorkerRef::StrongWorkerRef(WorkerPrivate* aWorkerPrivate)
-  : WorkerRef(aWorkerPrivate)
-{}
+    : WorkerRef(aWorkerPrivate) {}
 
-StrongWorkerRef::~StrongWorkerRef()
-{
-  NS_ASSERT_OWNINGTHREAD(StrongWorkerRef);
-}
+StrongWorkerRef::~StrongWorkerRef() { NS_ASSERT_OWNINGTHREAD(StrongWorkerRef); }
 
-WorkerPrivate*
-StrongWorkerRef::Private() const
-{
+WorkerPrivate* StrongWorkerRef::Private() const {
   MOZ_ASSERT(mHolder);
   NS_ASSERT_OWNINGTHREAD(StrongWorkerRef);
   return mWorkerPrivate;
@@ -216,30 +194,25 @@ StrongWorkerRef::Private() const
 // ----------------------------------------------------------------------------
 // ThreadSafeWorkerRef
 
-ThreadSafeWorkerRef::ThreadSafeWorkerRef(StrongWorkerRef* aRef)
-  : mRef(aRef)
-{
+ThreadSafeWorkerRef::ThreadSafeWorkerRef(StrongWorkerRef* aRef) : mRef(aRef) {
   MOZ_ASSERT(aRef);
   aRef->Private()->AssertIsOnWorkerThread();
 }
 
-ThreadSafeWorkerRef::~ThreadSafeWorkerRef()
-{
+ThreadSafeWorkerRef::~ThreadSafeWorkerRef() {
   // Let's release the StrongWorkerRef on the correct thread.
   if (!mRef->mWorkerPrivate->IsOnWorkerThread()) {
     WorkerPrivate* workerPrivate = mRef->mWorkerPrivate;
     RefPtr<ReleaseRefControlRunnable> r =
-      new ReleaseRefControlRunnable(workerPrivate, mRef.forget());
+        new ReleaseRefControlRunnable(workerPrivate, mRef.forget());
     r->Dispatch();
     return;
   }
 }
 
-WorkerPrivate*
-ThreadSafeWorkerRef::Private() const
-{
+WorkerPrivate* ThreadSafeWorkerRef::Private() const {
   return mRef->mWorkerPrivate;
 }
 
-} // dom namespace
-} // mozilla namespace
+}  // namespace dom
+}  // namespace mozilla

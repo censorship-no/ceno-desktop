@@ -6,69 +6,39 @@
 
 ChromeUtils.import("resource://gre/modules/addons/AddonRepository.jsm");
 
-var gServer = AddonTestUtils.createHttpServer({hosts: ["example.com"]});
+var gServer = createHttpServer({hosts: ["example.com"]});
 
 const PREF_GETADDONS_BROWSEADDONS        = "extensions.getAddons.browseAddons";
 const PREF_GETADDONS_BROWSESEARCHRESULTS = "extensions.getAddons.search.browseURL";
 
-const PORT          = gServer.identity.primaryPort;
 const BASE_URL      = "http://example.com";
 const DEFAULT_URL   = "about:blank";
 
 const ADDONS = [
   {
-    id: "test_AddonRepository_1@tests.mozilla.org",
-    version: "1.1",
-    bootstrap: true,
-
-    name: "XPI Add-on 1",
-    description: "XPI Add-on 1 - Description",
-    creator: "XPI Add-on 1 - Creator",
-    developer: ["XPI Add-on 1 - First Developer",
-                "XPI Add-on 1 - Second Developer"],
-    translator: ["XPI Add-on 1 - First Translator",
-                 "XPI Add-on 1 - Second Translator"],
-    contributor: ["XPI Add-on 1 - First Contributor",
-                  "XPI Add-on 1 - Second Contributor"],
-    homepageURL: "http://example.com/xpi/1/homepage.html",
-    optionsURL: "http://example.com/xpi/1/options.html",
-    aboutURL: "http://example.com/xpi/1/about.html",
-    iconURL: "http://example.com/xpi/1/icon.png",
-
-    targetApplications: [{
-      id: "xpcshell@tests.mozilla.org",
-      minVersion: "1",
-      maxVersion: "1"}],
+    manifest: {
+      name: "XPI Add-on 1",
+      version: "1.1",
+      applications: {gecko: {id: "test_AddonRepository_1@tests.mozilla.org" }},
+    },
   },
   {
-    id: "test_AddonRepository_2@tests.mozilla.org",
-    type: 4,
-    internalName: "test2/1.0",
-    version: "1.2",
-    bootstrap: true,
-    name: "XPI Add-on 2",
-
-    targetApplications: [{
-      id: "xpcshell@tests.mozilla.org",
-      minVersion: "1",
-      maxVersion: "1"}],
+    manifest: {
+      name: "XPI Add-on 2",
+      version: "1.2",
+      theme: { },
+      applications: {gecko: {id: "test_AddonRepository_2@tests.mozilla.org"}},
+    },
   },
   {
-    id: "test_AddonRepository_3@tests.mozilla.org",
-    type: "4",
-    internalName: "test3/1.0",
-    version: "1.3",
-    bootstrap: true,
-    name: "XPI Add-on 3",
-
-    targetApplications: [{
-      id: "xpcshell@tests.mozilla.org",
-      minVersion: "1",
-      maxVersion: "1"}],
+    manifest: {
+      name: "XPI Add-on 3",
+      version: "1.3",
+      theme: { },
+      applications: {gecko: {id: "test_AddonRepository_3@tests.mozilla.org"}},
+    },
   },
 ];
-
-gPort = PORT;
 
 // Path to source URI of installing add-on
 const INSTALL_URL2  = "/addons/test_AddonRepository_2.xpi";
@@ -150,6 +120,10 @@ var GET_TEST = {
                     "test2%40tests.mozilla.org%2C" +
                     "%7B00000000-1111-2222-3333-444444444444%7D%2C" +
                     "test_AddonRepository_1%40tests.mozilla.org",
+  successfulRTAURL: "/XPCShell/1/rta%3AdGVzdDFAdGVzdHMubW96aWxsYS5vcmc%2C" +
+                    "test2%40tests.mozilla.org%2C" +
+                    "%7B00000000-1111-2222-3333-444444444444%7D%2C" +
+                    "test_AddonRepository_1%40tests.mozilla.org",
 };
 
 // Test that actual results and expected results are equal
@@ -171,7 +145,7 @@ add_task(async function setup() {
   // Setup for test
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9");
 
-  let xpis = ADDONS.map(addon => createTempXPIFile(addon));
+  let xpis = ADDONS.map(addon => createTempWebExtensionFile(addon));
 
   // Register other add-on XPI files
   gServer.registerFile(INSTALL_URL2, xpis[1]);
@@ -183,6 +157,9 @@ add_task(async function setup() {
 
   // Register files used to test search success
   gServer.registerFile(GET_TEST.successfulURL,
+                       do_get_file("data/test_AddonRepository_getAddonsByIDs.json"));
+  // Register file for RTA test
+  gServer.registerFile(GET_TEST.successfulRTAURL,
                        do_get_file("data/test_AddonRepository_getAddonsByIDs.json"));
 
   await promiseStartupManager();
@@ -272,6 +249,15 @@ add_task(async function test_getAddonsByID_fails() {
 
 // Tests success of AddonRepository.getAddonsByIDs()
 add_task(async function test_getAddonsByID_succeeds() {
+  let result = await AddonRepository.getAddonsByIDs(GET_TEST.successfulIDs);
+
+  check_results(result, GET_RESULTS);
+});
+
+// Tests success of AddonRepository.getAddonsByIDs() with rta ID.
+add_task(async function test_getAddonsByID_rta() {
+  let id = `rta:${btoa(GET_TEST.successfulIDs[0])}`.slice(0, -1);
+  GET_TEST.successfulIDs[0] = id;
   let result = await AddonRepository.getAddonsByIDs(GET_TEST.successfulIDs);
 
   check_results(result, GET_RESULTS);

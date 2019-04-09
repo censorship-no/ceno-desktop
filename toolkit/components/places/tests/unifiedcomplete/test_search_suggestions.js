@@ -5,7 +5,6 @@ const ENGINE_NAME = "engine-suggestions.xml";
 const SERVER_PORT = 9000;
 const SUGGEST_PREF = "browser.urlbar.suggest.searches";
 const SUGGEST_ENABLED_PREF = "browser.search.suggest.enabled";
-const SUGGEST_RESTRICT_TOKEN = "?";
 
 var suggestionsFn;
 var previousSuggestionsFn;
@@ -36,9 +35,9 @@ add_task(async function setup() {
   });
 
   // Install the test engine.
-  let oldCurrentEngine = Services.search.currentEngine;
-  registerCleanupFunction(() => Services.search.currentEngine = oldCurrentEngine);
-  Services.search.currentEngine = engine;
+  let oldCurrentEngine = Services.search.defaultEngine;
+  registerCleanupFunction(() => Services.search.defaultEngine = oldCurrentEngine);
+  Services.search.defaultEngine = engine;
 
   // We must make sure the FormHistoryStartup component is initialized.
   Cc["@mozilla.org/satchel/form-history-startup;1"]
@@ -300,22 +299,11 @@ add_task(async function restrictToken() {
 
   // Now do a restricted search to make sure only suggestions appear.
   await check_autocomplete({
-    search: SUGGEST_RESTRICT_TOKEN + " hello",
+    search: `${UrlbarTokenizer.RESTRICT.SEARCH} hello`,
     searchParam: "enable-actions",
     matches: [
-      // TODO (bug 1177895) This is wrong.
-      makeSearchMatch(SUGGEST_RESTRICT_TOKEN + " hello", { engineName: ENGINE_NAME, heuristic: true }),
-      {
-        uri: makeActionURI(("searchengine"), {
-          engineName: ENGINE_NAME,
-          input: "hello",
-          searchQuery: "hello",
-          searchSuggestion: "hello",
-        }),
-        title: ENGINE_NAME,
-        style: ["action", "searchengine", "suggestion"],
-        icon: "",
-      },
+      makeSearchMatch(`${UrlbarTokenizer.RESTRICT.SEARCH} hello`,
+                      { searchQuery: "hello", engineName: ENGINE_NAME, heuristic: true }),
       {
         uri: makeActionURI(("searchengine"), {
           engineName: ENGINE_NAME,
@@ -338,6 +326,53 @@ add_task(async function restrictToken() {
         style: ["action", "searchengine", "suggestion"],
         icon: "",
       },
+    ],
+  });
+
+  // Typing the search restriction char shows only the Search Engine entry with
+  // no query.
+  await check_autocomplete({
+    search: UrlbarTokenizer.RESTRICT.SEARCH,
+    searchParam: "enable-actions",
+    matches: [
+      makeSearchMatch(UrlbarTokenizer.RESTRICT.SEARCH,
+                      { searchQuery: "", engineName: ENGINE_NAME, heuristic: true }),
+    ],
+  });
+  // Also if followed by multiple spaces.
+  await check_autocomplete({
+    search: UrlbarTokenizer.RESTRICT.SEARCH + "  ",
+    searchParam: "enable-actions",
+    matches: [
+      makeSearchMatch(UrlbarTokenizer.RESTRICT.SEARCH + "  ",
+                      { searchQuery: "", engineName: ENGINE_NAME, heuristic: true }),
+    ],
+  });
+  // Also if followed by a single char.
+  await check_autocomplete({
+    search: UrlbarTokenizer.RESTRICT.SEARCH + "a",
+    searchParam: "enable-actions",
+    matches: [
+      makeSearchMatch(UrlbarTokenizer.RESTRICT.SEARCH + "a",
+                      { searchQuery: "a", engineName: ENGINE_NAME, heuristic: true }),
+    ],
+  });
+  // Also if followed by a space and single char.
+  await check_autocomplete({
+    search: UrlbarTokenizer.RESTRICT.SEARCH + " a",
+    searchParam: "enable-actions",
+    matches: [
+      makeSearchMatch(UrlbarTokenizer.RESTRICT.SEARCH + " a",
+                      { searchQuery: "a", engineName: ENGINE_NAME, heuristic: true }),
+    ],
+  });
+  // Any other restriction char allows to search for it.
+  await check_autocomplete({
+    search: UrlbarTokenizer.RESTRICT.OPENPAGE,
+    searchParam: "enable-actions",
+    matches: [
+      makeSearchMatch(UrlbarTokenizer.RESTRICT.OPENPAGE,
+                      { engineName: ENGINE_NAME, heuristic: true }),
     ],
   });
 
@@ -886,11 +921,7 @@ add_task(async function avoid_http_url_suggestions() {
     search: "ftp:/",
     searchParam: "enable-actions",
     matches: [
-      {
-        uri: makeActionURI("visiturl", { url: "http://ftp/", input: "ftp:/" }),
-        style: [ "action", "visiturl", "heuristic" ],
-        title: "http://ftp/",
-      },
+      makeSearchMatch("ftp:/", { engineName: ENGINE_NAME, heuristic: true }),
     ],
   });
 
@@ -952,11 +983,7 @@ add_task(async function avoid_http_url_suggestions() {
     search: "http:/",
     searchParam: "enable-actions",
     matches: [
-      {
-        uri: makeActionURI("visiturl", { url: "http://http/", input: "http:/" }),
-        style: [ "action", "visiturl", "heuristic" ],
-        title: "http://http/",
-      },
+      makeSearchMatch("http:/", { engineName: ENGINE_NAME, heuristic: true }),
     ],
   });
 
@@ -964,11 +991,7 @@ add_task(async function avoid_http_url_suggestions() {
     search: "https:/",
     searchParam: "enable-actions",
     matches: [
-      {
-        uri: makeActionURI("visiturl", { url: "http://https/", input: "https:/" }),
-        style: [ "action", "visiturl", "heuristic" ],
-        title: "http://https/",
-      },
+      makeSearchMatch("https:/", { engineName: ENGINE_NAME, heuristic: true }),
     ],
   });
 

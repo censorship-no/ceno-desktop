@@ -12,8 +12,6 @@ import shlex
 
 logger = logging.getLogger(__name__)
 
-TRY_DELIMITER = 'try:'
-
 # The build type aliases are very cryptic and only used in try flags these are
 # mappings from the single char alias to a longer more recognizable form.
 BUILD_TYPE_ALIASES = {
@@ -551,6 +549,10 @@ class TryOptionSyntax(object):
 
         # Don't schedule code coverage when try option syntax is used
         if 'ccov' in attr('build_platform', []):
+            return False
+
+        # Don't schedule android-hw tests when try option syntax is used
+        if 'android-hw' in task.label:
             return False
 
         def match_test(try_spec, attr_name):

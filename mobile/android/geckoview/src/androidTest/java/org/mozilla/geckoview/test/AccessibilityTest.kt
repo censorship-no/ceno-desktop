@@ -31,9 +31,11 @@ import android.widget.EditText
 import android.widget.FrameLayout
 
 import org.hamcrest.Matchers.*
+import org.junit.Assume.assumeThat
 import org.junit.Test
 import org.junit.Before
 import org.junit.After
+import org.junit.Ignore
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.Setting
 
@@ -55,7 +57,8 @@ class AccessibilityTest : BaseSessionTest() {
         try {
             val getVirtualDescendantIdMethod =
                 AccessibilityNodeInfo::class.java.getMethod("getVirtualDescendantId", Long::class.java)
-            return getVirtualDescendantIdMethod.invoke(null, childId) as Int
+            val virtualDescendantId = getVirtualDescendantIdMethod.invoke(null, childId) as Int
+            return if (virtualDescendantId == Int.MAX_VALUE) -1 else virtualDescendantId
         } catch (ex: Exception) {
             return 0
         }
@@ -90,6 +93,7 @@ class AccessibilityTest : BaseSessionTest() {
 
     private interface EventDelegate {
         fun onAccessibilityFocused(event: AccessibilityEvent) { }
+        fun onAccessibilityFocusCleared(event: AccessibilityEvent) { }
         fun onClicked(event: AccessibilityEvent) { }
         fun onFocused(event: AccessibilityEvent) { }
         fun onSelected(event: AccessibilityEvent) { }
@@ -122,6 +126,7 @@ class AccessibilityTest : BaseSessionTest() {
                     AccessibilityEvent.TYPE_VIEW_FOCUSED -> newDelegate.onFocused(event)
                     AccessibilityEvent.TYPE_VIEW_CLICKED -> newDelegate.onClicked(event)
                     AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED -> newDelegate.onAccessibilityFocused(event)
+                    AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED -> newDelegate.onAccessibilityFocusCleared(event)
                     AccessibilityEvent.TYPE_VIEW_SELECTED -> newDelegate.onSelected(event)
                     AccessibilityEvent.TYPE_VIEW_SCROLLED -> newDelegate.onScrolled(event)
                     AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> newDelegate.onTextSelectionChanged(event)
@@ -189,6 +194,8 @@ class AccessibilityTest : BaseSessionTest() {
                 assertThat("Label accessibility focused", node.className.toString(),
                         equalTo("android.view.View"))
                 assertThat("Text node should not be focusable", node.isFocusable, equalTo(false))
+                assertThat("Text node should be a11y focused", node.isAccessibilityFocused, equalTo(true))
+                assertThat("Text node should not be clickable", node.isClickable, equalTo(false))
             }
         })
 
@@ -203,6 +210,20 @@ class AccessibilityTest : BaseSessionTest() {
                 assertThat("Editbox accessibility focused", node.className.toString(),
                         equalTo("android.widget.EditText"))
                 assertThat("Entry node should be focusable", node.isFocusable, equalTo(true))
+                assertThat("Entry node should be a11y focused", node.isAccessibilityFocused, equalTo(true))
+                assertThat("Entry node should be clickable", node.isClickable, equalTo(true))
+            }
+        })
+
+        provider.performAction(nodeId,
+                AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS, null)
+
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onAccessibilityFocusCleared(event: AccessibilityEvent) {
+                assertThat("Accessibility focused node is now cleared", getSourceId(event), equalTo(nodeId))
+                val node = createNodeInfo(nodeId)
+                assertThat("Entry node should node be a11y focused", node.isAccessibilityFocused, equalTo(false))
             }
         })
     }
@@ -433,6 +454,64 @@ class AccessibilityTest : BaseSessionTest() {
         waitUntilTextTraversed(0, 18) // "Lorem ipsum dolor "
     }
 
+    @Test fun testHeadings() {
+        var nodeId = AccessibilityNodeProvider.HOST_VIEW_ID;
+        sessionRule.session.loadString("""
+            <a href=\"%23\">preamble</a>
+            <h1>Fried cheese</h1><p>with club sauce.</p>
+            <h2>Popcorn shrimp</h2><button>with club sauce.</button>
+            <h3>Chicken fingers</h3><p>with spicy club sauce.</p>""".trimIndent(), "text/html")
+        waitForInitialFocus()
+
+        val bundle = Bundle()
+        bundle.putString(AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING, "HEADING")
+
+        provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT, bundle)
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onAccessibilityFocused(event: AccessibilityEvent) {
+                nodeId = getSourceId(event)
+                val node = createNodeInfo(nodeId)
+                assertThat("Accessibility focus on first heading", node.text as String, startsWith("Fried cheese"))
+                if (Build.VERSION.SDK_INT >= 19) {
+                    assertThat("First heading is level 1",
+                            node.extras.getCharSequence("AccessibilityNodeInfo.roleDescription").toString(),
+                            equalTo("heading level 1"))
+                }
+            }
+        })
+
+        provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT, bundle)
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onAccessibilityFocused(event: AccessibilityEvent) {
+                nodeId = getSourceId(event)
+                val node = createNodeInfo(nodeId)
+                assertThat("Accessibility focus on second heading", node.text as String, startsWith("Popcorn shrimp"))
+                if (Build.VERSION.SDK_INT >= 19) {
+                    assertThat("Second heading is level 2",
+                            node.extras.getCharSequence("AccessibilityNodeInfo.roleDescription").toString(),
+                            equalTo("heading level 2"))
+                }
+            }
+        })
+
+        provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT, bundle)
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onAccessibilityFocused(event: AccessibilityEvent) {
+                nodeId = getSourceId(event)
+                val node = createNodeInfo(nodeId)
+                assertThat("Accessibility focus on second heading", node.text as String, startsWith("Chicken fingers"))
+                if (Build.VERSION.SDK_INT >= 19) {
+                    assertThat("Third heading is level 3",
+                            node.extras.getCharSequence("AccessibilityNodeInfo.roleDescription").toString(),
+                            equalTo("heading level 3"))
+                }
+            }
+        })
+    }
+
     @Test fun testCheckbox() {
         var nodeId = AccessibilityNodeProvider.HOST_VIEW_ID;
         sessionRule.session.loadString("<label><input type='checkbox'>many option</label>", "text/html")
@@ -499,10 +578,12 @@ class AccessibilityTest : BaseSessionTest() {
         return screenRect.contains(nodeBounds)
     }
 
+    @Ignore // Bug 1506276 - We need to reliably wait for APZC here, and it's not trivial.
     @Test fun testScroll() {
         var nodeId = View.NO_ID
         sessionRule.session.loadString(
-                """<body style="margin: 0;">
+                """<meta name="viewport" content="width=device-width initial-scale=1">
+                <body style="margin: 0;">
                         <div style="height: 100vh;"></div>
                         <button>Hello</button>
                         <p style="margin: 0;">Lorem ipsum dolor sit amet, consectetur adipiscing elit,
@@ -612,8 +693,13 @@ class AccessibilityTest : BaseSessionTest() {
             arrayOf("document", "$('#iframe').contentDocument").map { doc ->
                 mainSession.evaluateJS("""new Promise(resolve =>
                     $doc.querySelector('${entry.key}').addEventListener(
-                        'input', event => resolve([event.target.value, '${entry.value}']),
-                        { once: true }))""").asJSPromise()
+                        'input', event => {
+                          let eventInterface =
+                            event instanceof InputEvent ? "InputEvent" :
+                            event instanceof UIEvent ? "UIEvent" :
+                            event instanceof Event ? "Event" : "Unknown";
+                          resolve([event.target.value, '${entry.value}', eventInterface]);
+                        }, { once: true }))""").asJSPromise()
             }
         }
 
@@ -662,13 +748,16 @@ class AccessibilityTest : BaseSessionTest() {
         autoFillChild(View.NO_ID, createNodeInfo(View.NO_ID))
 
         // Wait on the promises and check for correct values.
-        for ((actual, expected) in promises.map { it.value.asJSList<String>() }) {
+        for ((actual, expected, eventInterface) in promises.map { it.value.asJSList<String>() }) {
             assertThat("Auto-filled value must match", actual, equalTo(expected))
+            assertThat("input event should be dispatched with InputEvent interface", eventInterface, equalTo("InputEvent"))
         }
     }
 
     @Setting(key = Setting.Key.FULL_ACCESSIBILITY_TREE, value = "true")
     @Test fun autoFill_navigation() {
+        // disable test on debug for frequently failing #Bug 1505353
+        assumeThat(sessionRule.env.isDebugBuild, equalTo(false))
         fun countAutoFillNodes(cond: (AccessibilityNodeInfo) -> Boolean =
                                        { it.className == "android.widget.EditText" },
                                id: Int = View.NO_ID): Int {
@@ -737,6 +826,7 @@ class AccessibilityTest : BaseSessionTest() {
 
         val entryNode = createNodeInfo(rootNode.getChildId(1))
         assertThat("Second node is an entry", entryNode.className.toString(), equalTo("android.widget.EditText"))
+        assertThat("Entry has vieIdwResourceName of 'name'", entryNode.viewIdResourceName, equalTo("name"))
         assertThat("Entry value is text", entryNode.text.toString(), equalTo("Julie"))
         if (Build.VERSION.SDK_INT >= 19) {
             assertThat("Entry hint is label",
@@ -749,12 +839,9 @@ class AccessibilityTest : BaseSessionTest() {
 
         val buttonNode = createNodeInfo(rootNode.getChildId(2))
         assertThat("Last node is a button", buttonNode.className.toString(), equalTo("android.widget.Button"))
-        assertThat("Button has a single text leaf", buttonNode.childCount, equalTo(1))
+        // The child text leaf is pruned, so this button is childless.
+        assertThat("Button has a single text leaf", buttonNode.childCount, equalTo(0))
         assertThat("Button has correct text", buttonNode.text.toString(), equalTo("Submit"))
-
-        val textLeaf = createNodeInfo(buttonNode.getChildId(0))
-        assertThat("First node is a label", textLeaf.className.toString(), equalTo("android.view.View"))
-        assertThat("Text leaf has correct text", textLeaf.text.toString(), equalTo("Submit"))
     }
 
     @Setting(key = Setting.Key.FULL_ACCESSIBILITY_TREE, value = "true")

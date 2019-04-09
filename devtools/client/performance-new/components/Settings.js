@@ -143,6 +143,16 @@ const featureCheckboxes = [
     value: "tasktracer",
     title: "Enable TaskTracer (Experimental, requires custom build.)",
   },
+  {
+    name: "Screenshots",
+    value: "screenshots",
+    title: "Record screenshots of all browser windows.",
+  },
+  {
+    name: "JSTracer",
+    value: "jstracer",
+    title: "Trace JS engine (Experimental, requires custom build.)",
+  },
 ];
 
 /**

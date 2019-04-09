@@ -346,6 +346,17 @@ var gSitePermissionsManager = {
 
   onPermissionSelect() {
     this._setRemoveButtonState();
+
+    // If any item is selected, it should be the only item tabable
+    // in the richlistbox for accessibility reasons.
+    this._list.itemChildren.forEach((item) => {
+      let menulist = item.getElementsByTagName("menulist")[0];
+      if (!item.selected) {
+        menulist.setAttribute("tabindex", -1);
+      } else {
+        menulist.removeAttribute("tabindex");
+      }
+    });
   },
 
   onPermissionChange(perm, capability) {
@@ -455,7 +466,7 @@ var gSitePermissionsManager = {
     // Re-append items in the correct order:
     items.forEach(item => frag.appendChild(item));
 
-    let cols = list.querySelectorAll("treecol");
+    let cols = list.previousElementSibling.querySelectorAll("treecol");
     cols.forEach(c => {
       c.removeAttribute("data-isCurrentSortCol");
       c.removeAttribute("sortDirection");

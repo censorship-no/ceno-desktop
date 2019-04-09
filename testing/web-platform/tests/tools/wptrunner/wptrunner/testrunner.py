@@ -233,11 +233,8 @@ class BrowserManager(object):
         if self.init_timer is not None:
             self.init_timer.cancel()
 
-    def check_for_crashes(self):
-        return self.browser.check_for_crashes()
-
-    def log_crash(self, test_id):
-        return self.browser.log_crash(process=self.browser_pid, test=test_id)
+    def check_crash(self, test_id):
+        return self.browser.check_crash(process=self.browser_pid, test=test_id)
 
     def is_alive(self):
         return self.browser.is_alive()
@@ -504,8 +501,7 @@ class TestRunnerManager(threading.Thread):
 
     def init_failed(self):
         assert isinstance(self.state, RunnerManagerState.initializing)
-        if self.browser.check_for_crashes():
-            self.browser.log_crash(None)
+        self.browser.check_crash(None)
         self.browser.after_init()
         self.stop_runner(force=True)
         return RunnerManagerState.initializing(self.state.test,
@@ -580,16 +576,14 @@ class TestRunnerManager(threading.Thread):
         expected = test.expected()
         status = status_subns.get(file_result.status, file_result.status)
 
-        if self.browser.check_for_crashes():
-            status = "CRASH"
+        if self.browser.check_crash(test.id) and status != "CRASH":
+            self.logger.info("Found a crash dump; should change status from %s to CRASH but this causes instability" % (status,))
 
         self.test_count += 1
         is_unexpected = expected != status
         if is_unexpected:
             self.unexpected_count += 1
             self.logger.debug("Unexpected count in this thread %i" % self.unexpected_count)
-        if status == "CRASH":
-            self.browser.log_crash(test.id)
 
         if "assertion_count" in file_result.extra:
             assertion_count = file_result.extra.pop("assertion_count")
@@ -818,14 +812,10 @@ class ManagerGroup(object):
             self.pool.add(manager)
         self.wait()
 
-    def is_alive(self):
-        """Boolean indicating whether any manager in the group is still alive"""
-        return any(manager.is_alive() for manager in self.pool)
-
     def wait(self):
         """Wait for all the managers in the group to finish"""
-        for item in self.pool:
-            item.join()
+        for manager in self.pool:
+            manager.join()
 
     def stop(self):
         """Set the stop flag so that all managers in the group stop as soon
@@ -834,7 +824,7 @@ class ManagerGroup(object):
         self.logger.debug("Stop flag set in ManagerGroup")
 
     def test_count(self):
-        return sum(item.test_count for item in self.pool)
+        return sum(manager.test_count for manager in self.pool)
 
     def unexpected_count(self):
-        return sum(item.unexpected_count for item in self.pool)
+        return sum(manager.unexpected_count for manager in self.pool)

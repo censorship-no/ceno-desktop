@@ -226,8 +226,8 @@ public class SDKProcessor {
 
     public static void main(String[] args) throws Exception {
         // We expect a list of jars on the commandline. If missing, whinge about it.
-        if (args.length < 5 || args.length % 2 != 1) {
-            System.err.println("Usage: java SDKProcessor sdkjar max-sdk-version outdir [configfile fileprefix]+");
+        if (args.length < 3 || args.length % 2 != 1) {
+            System.err.println("Usage: java SDKProcessor sdkjar max-sdk-version outdir [configfile fileprefix]*");
             System.exit(1);
         }
 
@@ -322,7 +322,7 @@ public class SDKProcessor {
 
     private static int getAPIVersion(Class<?> cls, Member m) {
         if (m instanceof Method || m instanceof Constructor) {
-            return sApiLookup.getCallVersion(
+            return sApiLookup.getMethodVersion(
                     cls.getName().replace('.', '/'),
                     Utils.getMemberName(m),
                     Utils.getSignature(m));

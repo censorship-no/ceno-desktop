@@ -21,9 +21,8 @@ namespace net {
 
 class HttpChannelParent;
 
-class HttpBackgroundChannelParent final : public PHttpBackgroundChannelParent
-{
-public:
+class HttpBackgroundChannelParent final : public PHttpBackgroundChannelParent {
+ public:
   explicit HttpBackgroundChannelParent();
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(HttpBackgroundChannelParent)
@@ -46,8 +45,7 @@ public:
   // To send OnTransportAndData message over background channel.
   bool OnTransportAndData(const nsresult& aChannelStatus,
                           const nsresult& aTransportStatus,
-                          const uint64_t& aOffset,
-                          const uint32_t& aCount,
+                          const uint64_t& aOffset, const uint32_t& aCount,
                           const nsCString& aData);
 
   // To send OnStopRequest message over background channel.
@@ -56,8 +54,7 @@ public:
                      const nsHttpHeaderArray& aResponseTrailers);
 
   // To send OnProgress message over background channel.
-  bool OnProgress(const int64_t& aProgress,
-                  const int64_t& aProgressMax);
+  bool OnProgress(const int64_t& aProgress, const int64_t& aProgressMax);
 
   // To send OnStatus message over background channel.
   bool OnStatus(const nsresult& aStatus);
@@ -69,21 +66,27 @@ public:
   // To send NotifyTrackingProtectionDisabled message over background channel.
   bool OnNotifyTrackingProtectionDisabled();
 
+  // To send NotifyCookieAllowed message over background channel.
+  bool OnNotifyCookieAllowed();
+
   // To send NotifyTrackingCookieBlocked message over background channel.
   bool OnNotifyTrackingCookieBlocked(uint32_t aRejectedReason);
 
   // To send NotifyTrackingResource message over background channel.
   bool OnNotifyTrackingResource(bool aIsThirdParty);
 
+  // To send NotifyFlashPluginStateChanged message over background channel.
+  bool OnNotifyFlashPluginStateChanged(nsIHttpChannel::FlashPluginState aState);
+
   // To send SetClassifierMatchedInfo message over background channel.
   bool OnSetClassifierMatchedInfo(const nsACString& aList,
                                   const nsACString& aProvider,
                                   const nsACString& aFullHash);
 
-protected:
+ protected:
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
-private:
+ private:
   virtual ~HttpBackgroundChannelParent();
 
   Atomic<bool> mIPCOpened;
@@ -97,7 +100,7 @@ private:
   RefPtr<HttpChannelParent> mChannelParent;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
-#endif // mozilla_net_HttpBackgroundChannelParent_h
+#endif  // mozilla_net_HttpBackgroundChannelParent_h

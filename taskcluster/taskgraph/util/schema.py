@@ -199,14 +199,21 @@ def check_schema(schema):
     iter('schema', schema.schema)
 
 
-def Schema(*args, **kwargs):
+class Schema(voluptuous.Schema):
     """
     Operates identically to voluptuous.Schema, but applying some taskgraph-specific checks
     in the process.
     """
-    schema = voluptuous.Schema(*args, **kwargs)
-    check_schema(schema)
-    return schema
+    def __init__(self, *args, **kwargs):
+        super(Schema, self).__init__(*args, **kwargs)
+        check_schema(self)
+
+    def extend(self, *args, **kwargs):
+        schema = super(Schema, self).extend(*args, **kwargs)
+        check_schema(schema)
+        # We want twice extend schema to be checked too.
+        schema.__class__ = Schema
+        return schema
 
 
 OptimizationSchema = voluptuous.Any(
@@ -223,7 +230,11 @@ OptimizationSchema = voluptuous.Any(
     {'skip-unless-schedules': list(schedules.ALL_COMPONENTS)},
     # skip if SETA or skip-unless-schedules says to
     {'skip-unless-schedules-or-seta': list(schedules.ALL_COMPONENTS)},
-    # only run this task if its dependencies will run (useful for follow-on tasks that
-    # are unnecessary if the parent tasks are not run)
-    {'only-if-dependencies-run': None}
+)
+
+# shortcut for a string where task references are allowed
+taskref_or_string = voluptuous.Any(
+    basestring,
+    {voluptuous.Required('task-reference'): basestring},
+    {voluptuous.Required('artifact-reference'): basestring},
 )

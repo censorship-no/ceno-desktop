@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 /// Gecko's pseudo-element definition.
 #[derive(Clone, Debug, Eq, Hash, MallocSizeOf, PartialEq)]
@@ -156,8 +156,6 @@ impl PseudoElement {
     /// Construct a `CSSPseudoElementType` from a pseudo-element
     #[inline]
     fn pseudo_type(&self) -> CSSPseudoElementType {
-        use gecko_bindings::structs::CSSPseudoElementType_InheritingAnonBox;
-
         match *self {
             % for pseudo in PSEUDOS:
                 % if not pseudo.is_anon_box():
@@ -165,7 +163,7 @@ impl PseudoElement {
                 % elif pseudo.is_tree_pseudo_element():
                     PseudoElement::${pseudo.capitalized_pseudo()}(..) => CSSPseudoElementType::XULTree,
                 % elif pseudo.is_inheriting_anon_box():
-                    PseudoElement::${pseudo.capitalized_pseudo()} => CSSPseudoElementType_InheritingAnonBox,
+                    PseudoElement::${pseudo.capitalized_pseudo()} => CSSPseudoElementType::InheritingAnonBox,
                 % else:
                     PseudoElement::${pseudo.capitalized_pseudo()} => CSSPseudoElementType::NonInheritingAnonBox,
                 % endif

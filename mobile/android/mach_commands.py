@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import zipfile
+import json
 
 from zipfile import ZipFile
 
@@ -49,9 +50,13 @@ def REMOVED(cls):
 @CommandProvider
 class MachCommands(MachCommandBase):
     def _root_url(self, artifactdir=None, objdir=None):
+        """Generate a publicly-accessible URL for the tasks's artifacts, or an objdir path"""
         if 'TASK_ID' in os.environ and 'RUN_ID' in os.environ:
-            return 'https://queue.taskcluster.net/v1/task/{}/runs/{}/artifacts/{}'.format(
-                os.environ['TASK_ID'], os.environ['RUN_ID'], artifactdir)
+            import taskcluster_urls
+            from taskgraph.util.taskcluster import get_root_url
+            return taskcluster_urls.api(
+                get_root_url(), 'queue', 'v1', 'task/{}/runs/{}/artifacts/{}'.format(
+                    os.environ['TASK_ID'], os.environ['RUN_ID'], artifactdir))
         else:
             return os.path.join(self.topobjdir, objdir)
 
@@ -67,7 +72,7 @@ class MachCommands(MachCommandBase):
     @CommandArgument('args', nargs=argparse.REMAINDER)
     def android_assemble_app(self, args):
         ret = self.gradle(self.substs['GRADLE_ANDROID_APP_TASKS'] +
-                          ['-x', 'lint', '--continue'] + args, verbose=True)
+                          ['-x', 'lint'] + args, verbose=True)
 
         return ret
 
@@ -112,13 +117,34 @@ class MachCommands(MachCommandBase):
 
         return ret
 
+    @SubCommand('android', 'api-lint',
+                """Runs apilint against GeckoView.""")
+    @CommandArgument('args', nargs=argparse.REMAINDER)
+    def android_api_lint(self, args):
+        ret = self.gradle(self.substs['GRADLE_ANDROID_API_LINT_TASKS'] + args, verbose=True)
+        folder = self.substs['GRADLE_ANDROID_GECKOVIEW_APILINT_FOLDER']
+
+        with open(os.path.join(
+                self.topobjdir,
+                '{}/apilint-result.json'.format(folder))) as f:
+            result = json.load(f)
+
+            print('SUITE-START | android-api-lint')
+            for r in result['compat_failures'] + result['failures']:
+                print ('TEST-UNEXPECTED-FAIL | {} | {}'.format(r['detail'], r['msg']))
+            for r in result['api_changes']:
+                print ('TEST-UNEXPECTED-FAIL | {} | Unexpected api change'.format(r))
+            print('SUITE-END | android-api-lint')
+
+        return ret
+
     @SubCommand('android', 'test',
                 """Run Android local unit tests.
                 See https://developer.mozilla.org/en-US/docs/Mozilla/Android-specific_test_suites#android-test""")  # NOQA: E501
     @CommandArgument('args', nargs=argparse.REMAINDER)
     def android_test(self, args):
         ret = self.gradle(self.substs['GRADLE_ANDROID_TEST_TASKS'] +
-                          ["--continue"] + args, verbose=True)
+                          args, verbose=True)
 
         ret |= self._parse_android_test_results('public/app/unittest',
                                                 'gradle/build/mobile/android/app',
@@ -218,7 +244,7 @@ class MachCommands(MachCommandBase):
         self.android_test([enable_ccov])
 
         self.gradle(self.substs['GRADLE_ANDROID_TEST_CCOV_REPORT_TASKS'] +
-                    ['--continue', enable_ccov] + args, verbose=True)
+                    [enable_ccov] + args, verbose=True)
         self._process_jacoco_reports()
         return 0
 
@@ -246,7 +272,7 @@ class MachCommands(MachCommandBase):
     @CommandArgument('args', nargs=argparse.REMAINDER)
     def android_lint(self, args):
         ret = self.gradle(self.substs['GRADLE_ANDROID_LINT_TASKS'] +
-                          ["--continue"] + args, verbose=True)
+                          args, verbose=True)
 
         # Android Lint produces both HTML and XML reports.  Visit the
         # XML report(s) to report errors and link to the HTML
@@ -294,7 +320,7 @@ class MachCommands(MachCommandBase):
     @CommandArgument('args', nargs=argparse.REMAINDER)
     def android_checkstyle(self, args):
         ret = self.gradle(self.substs['GRADLE_ANDROID_CHECKSTYLE_TASKS'] +
-                          ["--continue"] + args, verbose=True)
+                          args, verbose=True)
 
         # Checkstyle produces both HTML and XML reports.  Visit the
         # XML report(s) to report errors and link to the HTML
@@ -350,7 +376,7 @@ class MachCommands(MachCommandBase):
     @CommandArgument('args', nargs=argparse.REMAINDER)
     def android_findbugs(self, dryrun=False, args=[]):
         ret = self.gradle(self.substs['GRADLE_ANDROID_FINDBUGS_TASKS'] +
-                          ["--continue"] + args, verbose=True)
+                          args, verbose=True)
 
         # Findbug produces both HTML and XML reports.  Visit the
         # XML report(s) to report errors and link to the HTML
@@ -421,7 +447,7 @@ class MachCommands(MachCommandBase):
     @CommandArgument('args', nargs=argparse.REMAINDER)
     def android_archive_classfiles(self, args):
         self.gradle(self.substs['GRADLE_ANDROID_ARCHIVE_COVERAGE_ARTIFACTS_TASKS'] +
-                    ["--continue"] + args, verbose=True)
+                    args, verbose=True)
 
         return 0
 
@@ -431,7 +457,7 @@ class MachCommands(MachCommandBase):
     @CommandArgument('args', nargs=argparse.REMAINDER)
     def android_archive_geckoview(self, args):
         ret = self.gradle(
-            self.substs['GRADLE_ANDROID_ARCHIVE_GECKOVIEW_TASKS'] + ["--continue"] + args,
+            self.substs['GRADLE_ANDROID_ARCHIVE_GECKOVIEW_TASKS'] + args,
             verbose=True)
 
         if ret != 0:
@@ -439,6 +465,30 @@ class MachCommands(MachCommandBase):
 
         # The zip archive is passed along in CI to ship geckoview onto a maven repo
         _craft_maven_zip_archive(self.topobjdir)
+
+        return 0
+
+    @SubCommand('android', 'build-geckoview_example',
+                """Build geckoview_example """)
+    @CommandArgument('args', nargs=argparse.REMAINDER)
+    def android_build_geckoview_example(self, args):
+        self.gradle(self.substs['GRADLE_ANDROID_BUILD_GECKOVIEW_EXAMPLE_TASKS'] + args,
+                    verbose=True)
+
+        print('Execute `mach android install-geckoview_example` '
+              'to push the geckoview_example and test APKs to a device.')
+
+        return 0
+
+    @SubCommand('android', 'install-geckoview_example',
+                """Install geckoview_example """)
+    @CommandArgument('args', nargs=argparse.REMAINDER)
+    def android_install_geckoview_example(self, args):
+        self.gradle(self.substs['GRADLE_ANDROID_INSTALL_GECKOVIEW_EXAMPLE_TASKS'] + args,
+                    verbose=True)
+
+        print('Execute `mach android build-geckoview_example` '
+              'to just build the geckoview_example and test APKs.')
 
         return 0
 
@@ -455,17 +505,13 @@ class MachCommands(MachCommandBase):
     @CommandArgument('--upload-message', metavar='MSG',
                      default='GeckoView docs upload',
                      help='Use the specified message for commits.')
-    @CommandArgument('--variant', default='debug',
-                     help='Gradle variant used to generate javadoc.')
     def android_geckoview_docs(self, archive, upload, upload_branch,
-                               upload_message, variant):
+                               upload_message):
 
-        def capitalize(s):
-            # Can't use str.capitalize because it lower cases trailing letters.
-            return (s[0].upper() + s[1:]) if s else ''
+        tasks = (self.substs['GRADLE_ANDROID_GECKOVIEW_DOCS_ARCHIVE_TASKS'] if archive or upload
+                 else self.substs['GRADLE_ANDROID_GECKOVIEW_DOCS_TASKS'])
 
-        task = 'geckoview:javadoc' + ('Jar' if archive or upload else '') + capitalize(variant)
-        ret = self.gradle([task], verbose=True)
+        ret = self.gradle(tasks, verbose=True)
         if ret or not upload:
             return ret
 
@@ -571,8 +617,11 @@ class MachCommands(MachCommandBase):
         # https://discuss.gradle.org/t/unmappable-character-for-encoding-ascii-when-building-a-utf-8-project/10692/11  # NOQA: E501
         # and especially https://stackoverflow.com/a/21755671.
 
+        if self.substs.get('MOZ_AUTOMATION'):
+            gradle_flags += ['--console=plain']
+
         return self.run_process(
-            [self.substs['GRADLE']] + gradle_flags + ['--console=plain'] + args,
+            [self.substs['GRADLE']] + gradle_flags + args,
             append_env={
                 'GRADLE_OPTS': '-Dfile.encoding=utf-8',
                 'JAVA_HOME': java_home,

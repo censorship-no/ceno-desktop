@@ -16,82 +16,90 @@
 
 namespace IPC {
 
-template<>
-struct ParamTraits<mozilla::gfx::VRDeviceType> :
-  public ContiguousEnumSerializer<mozilla::gfx::VRDeviceType,
-                                  mozilla::gfx::VRDeviceType(0),
-                                  mozilla::gfx::VRDeviceType(mozilla::gfx::VRDeviceType::NumVRDeviceTypes)> {};
-
-template<>
-struct ParamTraits<mozilla::gfx::VRDisplayCapabilityFlags> :
-  public BitFlagsEnumSerializer<mozilla::gfx::VRDisplayCapabilityFlags,
-                                mozilla::gfx::VRDisplayCapabilityFlags::Cap_All> {};
+template <>
+struct ParamTraits<mozilla::gfx::VRDeviceType>
+    : public ContiguousEnumSerializer<
+          mozilla::gfx::VRDeviceType, mozilla::gfx::VRDeviceType(0),
+          mozilla::gfx::VRDeviceType(
+              mozilla::gfx::VRDeviceType::NumVRDeviceTypes)> {};
 
 template <>
-struct ParamTraits<mozilla::gfx::VRDisplayState>
-{
+struct ParamTraits<mozilla::gfx::VRDisplayCapabilityFlags>
+    : public BitFlagsEnumSerializer<
+          mozilla::gfx::VRDisplayCapabilityFlags,
+          mozilla::gfx::VRDisplayCapabilityFlags::Cap_All> {};
+
+template <>
+struct ParamTraits<mozilla::gfx::OpenVRControllerType>
+    : public ContiguousEnumSerializer<
+          mozilla::gfx::OpenVRControllerType,
+          mozilla::gfx::OpenVRControllerType::Vive,
+          mozilla::gfx::OpenVRControllerType::NumOpenVRControllerTypes> {};
+
+template <>
+struct ParamTraits<mozilla::gfx::VRDisplayState> {
   typedef mozilla::gfx::VRDisplayState paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     // TODO - VRDisplayState is asserted to be a POD type
     //        A simple memcpy may be sufficient here, or
     //        this code can be refactored out if we use
     //        shmem between the VR and content process.
     nsCString displayName;
-    displayName.Assign(aParam.mDisplayName);
+    displayName.Assign(aParam.displayName);
     WriteParam(aMsg, displayName);
-    WriteParam(aMsg, aParam.mCapabilityFlags);
-    WriteParam(aMsg, aParam.mEyeResolution.width);
-    WriteParam(aMsg, aParam.mEyeResolution.height);
-    WriteParam(aMsg, aParam.mSuppressFrames);
-    WriteParam(aMsg, aParam.mIsConnected);
-    WriteParam(aMsg, aParam.mIsMounted);
-    WriteParam(aMsg, aParam.mStageSize.width);
-    WriteParam(aMsg, aParam.mStageSize.height);
-    WriteParam(aMsg, aParam.mLastSubmittedFrameId);
-    WriteParam(aMsg, aParam.mPresentingGeneration);
+    WriteParam(aMsg, aParam.capabilityFlags);
+    WriteParam(aMsg, aParam.eyeResolution.width);
+    WriteParam(aMsg, aParam.eyeResolution.height);
+    WriteParam(aMsg, aParam.suppressFrames);
+    WriteParam(aMsg, aParam.isConnected);
+    WriteParam(aMsg, aParam.isMounted);
+    WriteParam(aMsg, aParam.stageSize.width);
+    WriteParam(aMsg, aParam.stageSize.height);
+    WriteParam(aMsg, aParam.lastSubmittedFrameId);
+    WriteParam(aMsg, aParam.presentingGeneration);
     for (int i = 0; i < 16; i++) {
       // TODO - Should probably memcpy the whole array or
       // convert Maxtrix4x4 to a POD type and use it
       // instead
-      WriteParam(aMsg, aParam.mSittingToStandingTransform[i]);
+      WriteParam(aMsg, aParam.sittingToStandingTransform[i]);
     }
     for (int i = 0; i < mozilla::gfx::VRDisplayState::NumEyes; i++) {
-      WriteParam(aMsg, aParam.mEyeFOV[i]);
-      WriteParam(aMsg, aParam.mEyeTranslation[i].x);
-      WriteParam(aMsg, aParam.mEyeTranslation[i].y);
-      WriteParam(aMsg, aParam.mEyeTranslation[i].z);
+      WriteParam(aMsg, aParam.eyeFOV[i]);
+      WriteParam(aMsg, aParam.eyeTranslation[i].x);
+      WriteParam(aMsg, aParam.eyeTranslation[i].y);
+      WriteParam(aMsg, aParam.eyeTranslation[i].z);
     }
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     nsCString displayName;
     if (!ReadParam(aMsg, aIter, &(displayName)) ||
-        !ReadParam(aMsg, aIter, &(aResult->mCapabilityFlags)) ||
-        !ReadParam(aMsg, aIter, &(aResult->mEyeResolution.width)) ||
-        !ReadParam(aMsg, aIter, &(aResult->mEyeResolution.height)) ||
-        !ReadParam(aMsg, aIter, &(aResult->mSuppressFrames)) ||
-        !ReadParam(aMsg, aIter, &(aResult->mIsConnected)) ||
-        !ReadParam(aMsg, aIter, &(aResult->mIsMounted)) ||
-        !ReadParam(aMsg, aIter, &(aResult->mStageSize.width)) ||
-        !ReadParam(aMsg, aIter, &(aResult->mStageSize.height)) ||
-        !ReadParam(aMsg, aIter, &(aResult->mLastSubmittedFrameId)) ||
-        !ReadParam(aMsg, aIter, &(aResult->mPresentingGeneration))) {
+        !ReadParam(aMsg, aIter, &(aResult->capabilityFlags)) ||
+        !ReadParam(aMsg, aIter, &(aResult->eyeResolution.width)) ||
+        !ReadParam(aMsg, aIter, &(aResult->eyeResolution.height)) ||
+        !ReadParam(aMsg, aIter, &(aResult->suppressFrames)) ||
+        !ReadParam(aMsg, aIter, &(aResult->isConnected)) ||
+        !ReadParam(aMsg, aIter, &(aResult->isMounted)) ||
+        !ReadParam(aMsg, aIter, &(aResult->stageSize.width)) ||
+        !ReadParam(aMsg, aIter, &(aResult->stageSize.height)) ||
+        !ReadParam(aMsg, aIter, &(aResult->lastSubmittedFrameId)) ||
+        !ReadParam(aMsg, aIter, &(aResult->presentingGeneration))) {
       return false;
     }
     for (int i = 0; i < 16; i++) {
-      if (!ReadParam(aMsg, aIter, &(aResult->mSittingToStandingTransform[i]))) {
+      if (!ReadParam(aMsg, aIter, &(aResult->sittingToStandingTransform[i]))) {
         return false;
       }
     }
-    strncpy(aResult->mDisplayName, displayName.BeginReading(), mozilla::gfx::kVRDisplayNameMaxLen);
+    strncpy(aResult->displayName, displayName.BeginReading(),
+            mozilla::gfx::kVRDisplayNameMaxLen);
     for (int i = 0; i < mozilla::gfx::VRDisplayState::NumEyes; i++) {
-      if (!ReadParam(aMsg, aIter, &(aResult->mEyeFOV[i])) ||
-          !ReadParam(aMsg, aIter, &(aResult->mEyeTranslation[i].x)) ||
-          !ReadParam(aMsg, aIter, &(aResult->mEyeTranslation[i].y)) ||
-          !ReadParam(aMsg, aIter, &(aResult->mEyeTranslation[i].z))) {
+      if (!ReadParam(aMsg, aIter, &(aResult->eyeFOV[i])) ||
+          !ReadParam(aMsg, aIter, &(aResult->eyeTranslation[i].x)) ||
+          !ReadParam(aMsg, aIter, &(aResult->eyeTranslation[i].y)) ||
+          !ReadParam(aMsg, aIter, &(aResult->eyeTranslation[i].z))) {
         return false;
       }
     }
@@ -100,12 +108,10 @@ struct ParamTraits<mozilla::gfx::VRDisplayState>
 };
 
 template <>
-struct ParamTraits<mozilla::gfx::VRDisplayInfo>
-{
+struct ParamTraits<mozilla::gfx::VRDisplayInfo> {
   typedef mozilla::gfx::VRDisplayInfo paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.mType);
     WriteParam(aMsg, aParam.mDisplayID);
     WriteParam(aMsg, aParam.mPresentingGroups);
@@ -123,8 +129,8 @@ struct ParamTraits<mozilla::gfx::VRDisplayInfo>
     }
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     if (!ReadParam(aMsg, aIter, &(aResult->mType)) ||
         !ReadParam(aMsg, aIter, &(aResult->mDisplayID)) ||
         !ReadParam(aMsg, aIter, &(aResult->mPresentingGroups)) ||
@@ -133,17 +139,20 @@ struct ParamTraits<mozilla::gfx::VRDisplayInfo>
         !ReadParam(aMsg, aIter, &(aResult->mDisplayState))) {
       return false;
     }
-    for (size_t i = 0; i < mozilla::ArrayLength(aResult->mLastSensorState); i++) {
+    for (size_t i = 0; i < mozilla::ArrayLength(aResult->mLastSensorState);
+         i++) {
       if (!ReadParam(aMsg, aIter, &(aResult->mLastSensorState[i]))) {
         return false;
       }
     }
-    for (size_t i = 0; i < mozilla::ArrayLength(aResult->mLastFrameStart); i++) {
+    for (size_t i = 0; i < mozilla::ArrayLength(aResult->mLastFrameStart);
+         i++) {
       if (!ReadParam(aMsg, aIter, &(aResult->mLastFrameStart[i]))) {
         return false;
       }
     }
-    for (size_t i = 0; i < mozilla::ArrayLength(aResult->mControllerState); i++) {
+    for (size_t i = 0; i < mozilla::ArrayLength(aResult->mControllerState);
+         i++) {
       if (!ReadParam(aMsg, aIter, &(aResult->mControllerState[i]))) {
         return false;
       }
@@ -152,14 +161,11 @@ struct ParamTraits<mozilla::gfx::VRDisplayInfo>
   }
 };
 
-
 template <>
-struct ParamTraits<mozilla::gfx::VRPose>
-{
+struct ParamTraits<mozilla::gfx::VRPose> {
   typedef mozilla::gfx::VRPose paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.orientation[0]);
     WriteParam(aMsg, aParam.orientation[1]);
     WriteParam(aMsg, aParam.orientation[2]);
@@ -181,8 +187,8 @@ struct ParamTraits<mozilla::gfx::VRPose>
     WriteParam(aMsg, aParam.linearAcceleration[2]);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     if (!ReadParam(aMsg, aIter, &(aResult->orientation[0])) ||
         !ReadParam(aMsg, aIter, &(aResult->orientation[1])) ||
         !ReadParam(aMsg, aIter, &(aResult->orientation[2])) ||
@@ -209,12 +215,10 @@ struct ParamTraits<mozilla::gfx::VRPose>
 };
 
 template <>
-struct ParamTraits<mozilla::gfx::VRHMDSensorState>
-{
+struct ParamTraits<mozilla::gfx::VRHMDSensorState> {
   typedef mozilla::gfx::VRHMDSensorState paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.timestamp);
     WriteParam(aMsg, aParam.inputFrameID);
     WriteParam(aMsg, aParam.flags);
@@ -227,8 +231,8 @@ struct ParamTraits<mozilla::gfx::VRHMDSensorState>
     }
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     if (!ReadParam(aMsg, aIter, &(aResult->timestamp)) ||
         !ReadParam(aMsg, aIter, &(aResult->inputFrameID)) ||
         !ReadParam(aMsg, aIter, &(aResult->flags)) ||
@@ -240,7 +244,8 @@ struct ParamTraits<mozilla::gfx::VRHMDSensorState>
         return false;
       }
     }
-    for (size_t i = 0; i < mozilla::ArrayLength(aResult->rightViewMatrix); i++) {
+    for (size_t i = 0; i < mozilla::ArrayLength(aResult->rightViewMatrix);
+         i++) {
       if (!ReadParam(aMsg, aIter, &(aResult->rightViewMatrix[i]))) {
         return false;
       }
@@ -250,20 +255,18 @@ struct ParamTraits<mozilla::gfx::VRHMDSensorState>
 };
 
 template <>
-struct ParamTraits<mozilla::gfx::VRFieldOfView>
-{
+struct ParamTraits<mozilla::gfx::VRFieldOfView> {
   typedef mozilla::gfx::VRFieldOfView paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.upDegrees);
     WriteParam(aMsg, aParam.rightDegrees);
     WriteParam(aMsg, aParam.downDegrees);
     WriteParam(aMsg, aParam.leftDegrees);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     if (!ReadParam(aMsg, aIter, &(aResult->upDegrees)) ||
         !ReadParam(aMsg, aIter, &(aResult->rightDegrees)) ||
         !ReadParam(aMsg, aIter, &(aResult->downDegrees)) ||
@@ -275,16 +278,14 @@ struct ParamTraits<mozilla::gfx::VRFieldOfView>
   }
 };
 
-
 template <>
-struct ParamTraits<mozilla::gfx::VRControllerState>
-{
+struct ParamTraits<mozilla::gfx::VRControllerState> {
   typedef mozilla::gfx::VRControllerState paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     nsCString controllerName;
-    controllerName.Assign(aParam.controllerName); // FINDME!! HACK! - Bounds checking?
+    controllerName.Assign(
+        aParam.controllerName);  // FINDME!! HACK! - Bounds checking?
     WriteParam(aMsg, controllerName);
     WriteParam(aMsg, aParam.hand);
     WriteParam(aMsg, aParam.numButtons);
@@ -304,8 +305,8 @@ struct ParamTraits<mozilla::gfx::VRControllerState>
     }
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     nsCString controllerName;
     if (!ReadParam(aMsg, aIter, &(controllerName)) ||
         !ReadParam(aMsg, aIter, &(aResult->hand)) ||
@@ -330,27 +331,27 @@ struct ParamTraits<mozilla::gfx::VRControllerState>
         return false;
       }
     }
-    strncpy(aResult->controllerName, controllerName.BeginReading(), mozilla::gfx::kVRControllerNameMaxLen); // FINDME! TODO! HACK!  Safe? Better way?
+    strncpy(aResult->controllerName, controllerName.BeginReading(),
+            mozilla::gfx::kVRControllerNameMaxLen);  // FINDME! TODO! HACK!
+                                                     // Safe? Better way?
 
     return true;
   }
 };
 
 template <>
-struct ParamTraits<mozilla::gfx::VRControllerInfo>
-{
+struct ParamTraits<mozilla::gfx::VRControllerInfo> {
   typedef mozilla::gfx::VRControllerInfo paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.mType);
     WriteParam(aMsg, aParam.mControllerID);
     WriteParam(aMsg, aParam.mMappingType);
     WriteParam(aMsg, aParam.mControllerState);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     if (!ReadParam(aMsg, aIter, &(aResult->mType)) ||
         !ReadParam(aMsg, aIter, &(aResult->mControllerID)) ||
         !ReadParam(aMsg, aIter, &(aResult->mMappingType)) ||
@@ -363,12 +364,10 @@ struct ParamTraits<mozilla::gfx::VRControllerInfo>
 };
 
 template <>
-struct ParamTraits<mozilla::gfx::VRSubmitFrameResultInfo>
-{
+struct ParamTraits<mozilla::gfx::VRSubmitFrameResultInfo> {
   typedef mozilla::gfx::VRSubmitFrameResultInfo paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.mBase64Image);
     WriteParam(aMsg, aParam.mFormat);
     WriteParam(aMsg, aParam.mWidth);
@@ -376,8 +375,8 @@ struct ParamTraits<mozilla::gfx::VRSubmitFrameResultInfo>
     WriteParam(aMsg, aParam.mFrameNum);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     if (!ReadParam(aMsg, aIter, &(aResult->mBase64Image)) ||
         !ReadParam(aMsg, aIter, &(aResult->mFormat)) ||
         !ReadParam(aMsg, aIter, &(aResult->mWidth)) ||
@@ -390,6 +389,6 @@ struct ParamTraits<mozilla::gfx::VRSubmitFrameResultInfo>
   }
 };
 
-} // namespace IPC
+}  // namespace IPC
 
-#endif // mozilla_gfx_vr_VRMessageUtils_h
+#endif  // mozilla_gfx_vr_VRMessageUtils_h

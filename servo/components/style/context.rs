@@ -1,41 +1,46 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! The context within which style is calculated.
 
 #[cfg(feature = "servo")]
-use animation::Animation;
-use app_units::Au;
-use bloom::StyleBloom;
-use data::{EagerPseudoStyles, ElementData};
-use dom::{SendElement, TElement};
+use crate::animation::Animation;
+use crate::bloom::StyleBloom;
+use crate::data::{EagerPseudoStyles, ElementData};
 #[cfg(feature = "servo")]
-use dom::OpaqueNode;
+use crate::dom::OpaqueNode;
+use crate::dom::{SendElement, TElement};
+use crate::font_metrics::FontMetricsProvider;
+#[cfg(feature = "gecko")]
+use crate::gecko_bindings::structs;
+use crate::parallel::{STACK_SAFETY_MARGIN_KB, STYLE_THREAD_STACK_SIZE_KB};
+use crate::properties::ComputedValues;
+#[cfg(feature = "servo")]
+use crate::properties::PropertyId;
+use crate::rule_cache::RuleCache;
+use crate::rule_tree::StrongRuleNode;
+use crate::selector_parser::{SnapshotMap, EAGER_PSEUDO_COUNT};
+use crate::shared_lock::StylesheetGuards;
+use crate::sharing::StyleSharingCache;
+use crate::stylist::Stylist;
+use crate::thread_state::{self, ThreadState};
+use crate::timer::Timer;
+use crate::traversal::DomTraversal;
+use crate::traversal_flags::TraversalFlags;
+use app_units::Au;
+#[cfg(feature = "servo")]
+use crossbeam_channel::Sender;
 use euclid::Size2D;
 use euclid::TypedScale;
-use font_metrics::FontMetricsProvider;
 use fxhash::FxHashMap;
-#[cfg(feature = "gecko")]
-use gecko_bindings::structs;
-use parallel::{STACK_SAFETY_MARGIN_KB, STYLE_THREAD_STACK_SIZE_KB};
 #[cfg(feature = "servo")]
 use parking_lot::RwLock;
-use properties::ComputedValues;
-#[cfg(feature = "servo")]
-use properties::PropertyId;
-use rule_cache::RuleCache;
-use rule_tree::StrongRuleNode;
-use selector_parser::{SnapshotMap, EAGER_PSEUDO_COUNT};
-use selectors::NthIndexCache;
 use selectors::matching::ElementSelectorFlags;
+use selectors::NthIndexCache;
 use servo_arc::Arc;
 #[cfg(feature = "servo")]
 use servo_atoms::Atom;
-#[cfg(feature = "servo")]
-use servo_channel::Sender;
-use shared_lock::StylesheetGuards;
-use sharing::StyleSharingCache;
 use std::fmt;
 use std::ops;
 #[cfg(feature = "servo")]
@@ -44,12 +49,7 @@ use style_traits::CSSPixel;
 use style_traits::DevicePixel;
 #[cfg(feature = "servo")]
 use style_traits::SpeculativePainter;
-use stylist::Stylist;
-use thread_state::{self, ThreadState};
 use time;
-use timer::Timer;
-use traversal::DomTraversal;
-use traversal_flags::TraversalFlags;
 use uluru::{Entry, LRUCache};
 
 pub use selectors::matching::QuirksMode;
@@ -304,7 +304,7 @@ impl ElementCascadeInputs {
 /// Statistics gathered during the traversal. We gather statistics on each
 /// thread and then combine them after the threads join via the Add
 /// implementation below.
-#[derive(Default)]
+#[derive(AddAssign, Clone, Default)]
 pub struct PerThreadTraversalStatistics {
     /// The total number of elements traversed.
     pub elements_traversed: u32,
@@ -317,20 +317,6 @@ pub struct PerThreadTraversalStatistics {
     /// The number of styles reused via rule node comparison from the
     /// StyleSharingCache.
     pub styles_reused: u32,
-}
-
-/// Implementation of Add to aggregate statistics across different threads.
-impl<'a> ops::Add for &'a PerThreadTraversalStatistics {
-    type Output = PerThreadTraversalStatistics;
-    fn add(self, other: Self) -> PerThreadTraversalStatistics {
-        PerThreadTraversalStatistics {
-            elements_traversed: self.elements_traversed + other.elements_traversed,
-            elements_styled: self.elements_styled + other.elements_styled,
-            elements_matched: self.elements_matched + other.elements_matched,
-            styles_shared: self.styles_shared + other.styles_shared,
-            styles_reused: self.styles_reused + other.styles_reused,
-        }
-    }
 }
 
 /// Statistics gathered during the traversal plus some information from

@@ -7,6 +7,7 @@
 
 import copy
 import datetime
+import json
 import os
 import re
 import sys
@@ -17,10 +18,14 @@ sys.path.insert(1, os.path.dirname(sys.path[0]))
 
 from mozharness.base.log import FATAL
 from mozharness.base.script import BaseScript, PreScriptAction
+from mozharness.mozilla.automation import TBPL_RETRY
 from mozharness.mozilla.mozbase import MozbaseMixin
 from mozharness.mozilla.testing.android import AndroidMixin
 from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 from mozharness.mozilla.testing.codecoverage import CodeCoverageMixin
+
+SUITE_DEFAULT_E10S = ['geckoview-junit', 'mochitest', 'reftest']
+SUITE_NO_E10S = ['cppunittest', 'xpcshell']
 
 
 class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
@@ -66,6 +71,13 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
          "default": "info",
          "help": "Set log level (debug|info|warning|error|critical|fatal)",
          }
+    ], [
+        ['--e10s', ],
+        {"action": "store_true",
+         "dest": "e10s",
+         "default": False,
+         "help": "Run tests with multiple processes.",
+         }
     ]] + copy.deepcopy(testing_config_options)
 
     def __init__(self, require_config_file=False):
@@ -110,6 +122,7 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
         self.xre_path = None
         self.log_raw_level = c.get('log_raw_level')
         self.log_tbpl_level = c.get('log_tbpl_level')
+        self.e10s = c.get('e10s')
 
     def query_abs_dirs(self):
         if self.abs_dirs:
@@ -201,7 +214,8 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
             ),
         }
 
-        user_paths = os.environ.get('MOZHARNESS_TEST_PATHS')
+        user_paths = json.loads(os.environ.get('MOZHARNESS_TEST_PATHS', '""'))
+
         for option in self.config["suite_definitions"][self.test_suite]["options"]:
             opt = option.split('=')[0]
             # override configured chunk options with script args, if specified
@@ -218,12 +232,25 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
                     cmd.extend([option])
 
         if user_paths:
-            cmd.extend(user_paths.split(':'))
+            if self.test_suite in user_paths:
+                cmd.extend(user_paths[self.test_suite])
         elif not self.verify_enabled:
             if self.this_chunk is not None:
                 cmd.extend(['--this-chunk', self.this_chunk])
             if self.total_chunks is not None:
                 cmd.extend(['--total-chunks', self.total_chunks])
+
+        if 'mochitest' in self.test_suite:
+            category = 'mochitest'
+        elif 'reftest' in self.test_suite or 'crashtest' in self.test_suite:
+            category = 'reftest'
+        else:
+            category = self.test_suite
+        if category not in SUITE_NO_E10S:
+            if category in SUITE_DEFAULT_E10S and not self.e10s:
+                cmd.extend(['--disable-e10s'])
+            elif category not in SUITE_DEFAULT_E10S and self.e10s:
+                cmd.extend(['--e10s'])
 
         try_options, try_tests = self.try_args(self.test_suite)
         cmd.extend(try_options)
@@ -351,7 +378,7 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
                               "Not all tests were executed.<br/>")
                     # Signal per-test time exceeded, to break out of suites and
                     # suite categories loops also.
-                    return False
+                    return
 
                 final_cmd = copy.copy(cmd)
                 if len(per_test_args) > 0:
@@ -380,6 +407,9 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
                 if len(per_test_args) > 0:
                     self.record_status(tbpl_status, level=log_level)
                     self.log_per_test_status(per_test_args[-1], tbpl_status, log_level)
+                    if tbpl_status == TBPL_RETRY:
+                        self.info("Per-test run abandoned due to RETRY status")
+                        return
                 else:
                     self.record_status(tbpl_status, level=log_level)
                     self.log("The %s suite: %s ran with return status: %s" %

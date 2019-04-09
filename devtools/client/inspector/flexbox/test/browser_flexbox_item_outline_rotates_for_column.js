@@ -6,7 +6,7 @@
 
 // Test that the flex item outline is rotated for flex items in a column flexbox layout.
 
-const TEST_URI = URL_ROOT + "doc_flexbox_simple.html";
+const TEST_URI = URL_ROOT + "doc_flexbox_specific_cases.html";
 
 add_task(async function() {
   await addTab(TEST_URI);
@@ -19,7 +19,8 @@ add_task(async function() {
   await selectNode(".container .item", inspector);
   let [flexOutline] = await onFlexItemOutlineRendered;
 
-  ok(flexOutline.classList.contains("row"), "The flex outline has the row class");
+  ok(flexOutline.classList.contains("horizontal-lr"),
+    "The flex outline has the horizontal-lr class");
 
   // Check that the outline is wider than it is tall in the configuration.
   let bounds = flexOutline.getBoxQuads()[0].getBounds();
@@ -29,9 +30,11 @@ add_task(async function() {
   onFlexItemOutlineRendered = waitForDOM(doc,
     ".flex-outline-container .flex-outline");
   await selectNode(".container.column .item", inspector);
-  ([flexOutline] = await onFlexItemOutlineRendered);
-
-  ok(flexOutline.classList.contains("column"), "The flex outline has the column class");
+  await waitUntil(() => {
+    flexOutline = doc.querySelector(".flex-outline-container .flex-outline.vertical-tb");
+    return flexOutline;
+  });
+  ok(true, "The flex outline has the vertical-tb class");
 
   // Check that the outline is taller than it is wide in the configuration.
   bounds = flexOutline.getBoxQuads()[0].getBounds();

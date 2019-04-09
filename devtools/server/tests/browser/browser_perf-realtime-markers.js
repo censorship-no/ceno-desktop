@@ -10,8 +10,7 @@
 add_task(async function() {
   const target = await addTabTarget(MAIN_DOMAIN + "doc_perf.html");
 
-  const front = target.getFront("performance");
-  await front.connect();
+  const front = await target.getFront("performance");
 
   let lastMemoryDelta = 0;
   let lastTickDelta = 0;
@@ -40,7 +39,6 @@ add_task(async function() {
   is(counters.memory.length, 3, "three memory events fired.");
   is(counters.ticks.length, 3, "three ticks events fired.");
 
-  await front.destroy();
   await target.destroy();
   gBrowser.removeCurrentTab();
 

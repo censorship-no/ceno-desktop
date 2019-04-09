@@ -3,12 +3,8 @@
 
 // Tests adding and removing tabs
 
-function countTabs(dbg) {
-  return findElement(dbg, "sourceTabs").children.length;
-}
-
 add_task(async function() {
-  const dbg = await initDebugger("doc-scripts.html");
+  const dbg = await initDebugger("doc-scripts.html", "simple1", "simple2");
 
   await selectSource(dbg, "simple1");
   await selectSource(dbg, "simple2");

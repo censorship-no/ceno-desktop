@@ -78,6 +78,40 @@ add_task(async function tabstrip_context() {
   BrowserTestUtils.removeTab(extraTab);
 });
 
+// Right-click on the title bar spacer before the tabstrip should show a
+// context menu without options to move it and no tab-specific options.
+add_task(async function titlebar_spacer_context() {
+  if (!TabsInTitlebar.enabled) {
+    info("Skipping test that requires tabs in the title bar.");
+    return;
+  }
+
+  let contextMenu = document.getElementById("toolbar-context-menu");
+  let shownPromise = popupShown(contextMenu);
+  let spacer = document.querySelector("#TabsToolbar .titlebar-spacer[type='pre-tabs']");
+  EventUtils.synthesizeMouseAtCenter(spacer, {type: "contextmenu", button: 2 });
+  await shownPromise;
+
+  let expectedEntries = [
+    [".customize-context-moveToPanel", false],
+    [".customize-context-removeFromToolbar", false],
+    ["---"],
+  ];
+  if (!isOSX) {
+    expectedEntries.push(["#toggle_toolbar-menubar", true]);
+  }
+  expectedEntries.push(
+    ["#toggle_PersonalToolbar", true],
+    ["---"],
+    [".viewCustomizeToolbar", true]
+  );
+  checkContextMenu(contextMenu, expectedEntries);
+
+  let hiddenPromise = popupHidden(contextMenu);
+  contextMenu.hidePopup();
+  await hiddenPromise;
+});
+
 // Right-click on an empty bit of extra toolbar should
 // show a context menu with moving options disabled,
 // and a toggle option for the extra toolbar
@@ -431,7 +465,7 @@ add_task(async function custom_context_menus() {
   is(widget.getAttribute("context"), "", "Should not have own context menu when in the panel.");
   is(widget.getAttribute("wrapped-context"), expectedContext, "Should keep own context menu wrapped now that we're in the panel.");
 
-  simulateItemDrag(widget, document.getElementById("nav-bar").customizationTarget);
+  simulateItemDrag(widget, CustomizableUI.getCustomizationTarget(document.getElementById("nav-bar")));
   is(widget.getAttribute("context"), "", "Should not have own context menu when back in toolbar because we're still customizing.");
   is(widget.getAttribute("wrapped-context"), expectedContext, "Should keep own context menu wrapped now that we're back in the toolbar.");
 

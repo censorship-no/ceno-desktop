@@ -545,11 +545,21 @@ JOB_DETAILS = {
                                              r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
     'android-x86_64-opt': (AndroidArtifactJob, (r'public/build/target\.apk',
                                                 r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
+    'android-x86_64-debug': (AndroidArtifactJob, (r'public/build/target\.apk',
+                                                  r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
+    'android-aarch64-opt': (AndroidArtifactJob, (r'public/build/target\.apk',
+                                                 r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
+    'android-aarch64-debug': (AndroidArtifactJob, (r'public/build/target\.apk',
+                                                   r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
     'linux-opt': (LinuxArtifactJob, (r'public/build/target\.tar\.bz2',
+                                     r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
+    'linux-pgo': (LinuxArtifactJob, (r'public/build/target\.tar\.bz2',
                                      r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
     'linux-debug': (LinuxArtifactJob, (r'public/build/target\.tar\.bz2',
                                        r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
     'linux64-opt': (LinuxArtifactJob, (r'public/build/target\.tar\.bz2',
+                                       r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
+    'linux64-pgo': (LinuxArtifactJob, (r'public/build/target\.tar\.bz2',
                                        r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
     'linux64-debug': (LinuxArtifactJob, (r'public/build/target\.tar\.bz2',
                                          r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
@@ -563,11 +573,19 @@ JOB_DETAILS = {
                                    r'public/build/target\.(zip|tar\.gz)',
                                    r'public/build/firefox-(.*)\.common\.tests\.(zip|tar\.gz)|'
                                    r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
+    'win32-pgo': (WinArtifactJob, (r'public/build/firefox-(.*)\.win32\.(zip|tar\.gz)|'
+                                   r'public/build/target\.(zip|tar\.gz)',
+                                   r'public/build/firefox-(.*)\.common\.tests\.(zip|tar\.gz)|'
+                                   r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
     'win32-debug': (WinArtifactJob, (r'public/build/firefox-(.*)\.win32\.(zip|tar\.gz)|'
                                      r'public/build/target\.(zip|tar\.gz)',
                                      r'public/build/firefox-(.*)\.common\.tests\.(zip|tar\.gz)|'
                                      r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
     'win64-opt': (WinArtifactJob, (r'public/build/firefox-(.*)\.win64\.(zip|tar\.gz)|'
+                                   r'public/build/target\.(zip|tar\.gz)',
+                                   r'public/build/firefox-(.*)\.common\.tests\.(zip|tar\.gz)|'
+                                   r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
+    'win64-pgo': (WinArtifactJob, (r'public/build/firefox-(.*)\.win64\.(zip|tar\.gz)|'
                                    r'public/build/target\.(zip|tar\.gz)',
                                    r'public/build/firefox-(.*)\.common\.tests\.(zip|tar\.gz)|'
                                    r'public/build/target\.common\.tests\.(zip|tar\.gz)')),
@@ -737,7 +755,7 @@ class TaskCache(CacheManager):
             product=artifact_job.product,
             job=job,
         )
-        self.log(logging.DEBUG, 'artifact',
+        self.log(logging.INFO, 'artifact',
                  {'namespace': namespace},
                  'Searching Taskcluster index with namespace: {namespace}')
         try:
@@ -984,12 +1002,18 @@ class Artifacts(object):
         # if MOZ_DEBUG is enabled.
         if self._substs.get('MOZ_DEBUG'):
             target_suffix = '-debug'
+        elif self._substs.get('MOZ_PGO'):
+            target_suffix = '-pgo'
         else:
             target_suffix = '-opt'
 
         if self._substs.get('MOZ_BUILD_APP', '') == 'mobile/android':
+            if self._substs['ANDROID_CPU_ARCH'] == 'x86_64':
+                return 'android-x86_64' + target_suffix
             if self._substs['ANDROID_CPU_ARCH'] == 'x86':
-                return 'android-x86-opt'
+                return 'android-x86' + target_suffix
+            if self._substs['ANDROID_CPU_ARCH'] == 'arm64-v8a':
+                return 'android-aarch64' + target_suffix
             return 'android-api-16' + target_suffix
 
         target_64bit = False
@@ -1247,18 +1271,34 @@ class Artifacts(object):
         return self._install_from_hg_pushheads(hg_pushheads, distdir)
 
     def install_from_revset(self, revset, distdir):
-        if self._hg:
-            revision = subprocess.check_output([self._hg, 'log', '--template', '{node}\n',
-                                                '-r', revset], cwd=self._topsrcdir).strip()
-            if len(revision.split('\n')) != 1:
-                raise ValueError('hg revision specification must resolve to exactly one commit')
-        else:
-            revision = subprocess.check_output([self._git, 'rev-parse', revset], cwd=self._topsrcdir).strip()
-            revision = subprocess.check_output([self._git, 'cinnabar', 'git2hg', revision], cwd=self._topsrcdir).strip()
-            if len(revision.split('\n')) != 1:
-                raise ValueError('hg revision specification must resolve to exactly one commit')
-            if revision == "0" * 40:
-                raise ValueError('git revision specification must resolve to a commit known to hg')
+        revision = None
+        try:
+            if self._hg:
+                revision = subprocess.check_output([self._hg, 'log', '--template', '{node}\n',
+                                                  '-r', revset], cwd=self._topsrcdir).strip()
+            elif self._git:
+                revset = subprocess.check_output([
+                    self._git, 'rev-parse', '%s^{commit}' % revset],
+                    stderr=open(os.devnull, 'w'), cwd=self._topsrcdir).strip()
+            else:
+                # Fallback to the exception handling case from both hg and git
+                raise subprocess.CalledProcessError()
+        except subprocess.CalledProcessError:
+            # If the mercurial of git commands above failed, it means the given
+            # revset is not known locally to the VCS. But if the revset looks
+            # like a complete sha1, assume it is a mercurial sha1 that hasn't
+            # been pulled, and use that.
+            if re.match(r'^[A-Fa-f0-9]{40}$', revset):
+                revision = revset
+
+        if revision is None and self._git:
+            revision = subprocess.check_output(
+                [self._git, 'cinnabar', 'git2hg', revset], cwd=self._topsrcdir).strip()
+
+        if revision == "0" * 40 or revision is None:
+            raise ValueError('revision specification must resolve to a commit known to hg')
+        if len(revision.split('\n')) != 1:
+            raise ValueError('revision specification must resolve to exactly one commit')
 
         self.log(logging.INFO, 'artifact',
                  {'revset': revset,

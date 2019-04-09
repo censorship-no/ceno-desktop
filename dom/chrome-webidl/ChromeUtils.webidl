@@ -14,10 +14,10 @@
  * C++ callers use a fast path, and never call the JSAPI or WebIDL methods of
  * this object.
  */
-[ChromeOnly, Exposed=(Window,System)]
+[ChromeOnly, Exposed=Window]
 interface MozQueryInterface {
   [Throws]
-  legacycaller any (IID aIID);
+  legacycaller any (any aIID);
 };
 
 /**
@@ -25,7 +25,7 @@ interface MozQueryInterface {
  * This is exposed in all the system globals where we can expose stuff by
  * default, so should only include methods that are **thread-safe**.
  */
-[ChromeOnly, Exposed=(Window,System,Worker)]
+[ChromeOnly, Exposed=(Window,Worker)]
 namespace ChromeUtils {
   /**
    * Serialize a snapshot of the heap graph, as seen by |JS::ubi::Node| and
@@ -105,6 +105,18 @@ namespace ChromeUtils {
   ArrayBuffer base64URLDecode(ByteString string,
                               Base64URLDecodeOptions options);
 
+  /**
+   * Cause the current process to fatally crash unless the given condition is
+   * true. This is similar to MOZ_RELEASE_ASSERT in C++ code.
+   *
+   * WARNING: This message is included publicly in the crash report, and must
+   * not contain private information.
+   *
+   * Crash report will be augmented with the current JS stack information.
+   */
+  void releaseAssert(boolean condition,
+                     optional DOMString message = "<no message>");
+
 #ifdef NIGHTLY_BUILD
 
   /**
@@ -148,7 +160,7 @@ namespace ChromeUtils {
  * Additional ChromeUtils methods that are _not_ thread-safe, and hence not
  * exposed in workers.
  */
-[Exposed=(Window,System)]
+[Exposed=Window]
 partial namespace ChromeUtils {
   /**
    * A helper that converts OriginAttributesDictionary to a opaque suffix string.
@@ -215,17 +227,14 @@ partial namespace ChromeUtils {
    * JavaScript, acts as an ordinary QueryInterface function call, and when
    * called from XPConnect, circumvents JSAPI entirely.
    *
-   * The list of interfaces may include a mix of nsIJSID objects and interface
-   * name strings. Strings for nonexistent interface names are silently
-   * ignored, as long as they don't refer to any non-IID property of the Ci
-   * global. Any non-IID value is implicitly coerced to a string, and treated
-   * as an interface name.
+   * The list of interfaces may include a mix of JS ID objects and interface
+   * name strings.
    *
    * nsISupports is implicitly supported, and must not be included in the
    * interface list.
    */
   [Affects=Nothing, NewObject, Throws]
-  MozQueryInterface generateQI(sequence<(DOMString or IID)> interfaces);
+  MozQueryInterface generateQI(sequence<any> interfaces);
 
   /**
    * Waive Xray on a given value. Identity op for primitives.
@@ -356,14 +365,56 @@ partial namespace ChromeUtils {
   [Throws]
   Promise<sequence<IOActivityDataDictionary>> requestIOActivity();
 
+  /**
+   * Returns the BrowsingContext referred by the given id.
+   */
+  [ChromeOnly]
+  BrowsingContext? getBrowsingContext(unsigned long long id);
+
+  /**
+   * Returns all the root BrowsingContexts.
+   */
   [ChromeOnly]
   sequence<BrowsingContext> getRootBrowsingContexts();
+
+  [ChromeOnly, Throws]
+  boolean hasReportingHeaderForOrigin(DOMString aOrigin);
+
+  [ChromeOnly]
+  PopupBlockerState getPopupControlState();
+
+  [ChromeOnly]
+  boolean isPopupTokenUnused();
+
+  /**
+   * Milliseconds from the last iframe loading an external protocol.
+   */
+  [ChromeOnly]
+  double lastExternalProtocolIframeAllowed();
+
+  [ChromeOnly, Throws]
+  void registerWindowActor(DOMString aName, WindowActorOptions aOptions);
 };
 
 /**
  * Dictionaries duplicating IPDL types in dom/ipc/DOMTypes.ipdlh
  * Used by requestPerformanceMetrics
  */
+
+dictionary MediaMemoryInfoDictionary {
+  unsigned long long audioSize = 0;
+  unsigned long long videoSize = 0;
+  unsigned long long resourcesSize = 0;
+};
+
+dictionary MemoryInfoDictionary {
+  unsigned long long domDom = 0;
+  unsigned long long domStyle = 0;
+  unsigned long long domOther = 0;
+  unsigned long long GCHeapUsage = 0;
+  required MediaMemoryInfoDictionary media;
+};
+
 dictionary CategoryDispatchDictionary
 {
   unsigned short category = 0;
@@ -378,6 +429,7 @@ dictionary PerformanceInfoDictionary {
   unsigned long long counterId = 0;
   boolean isWorker = false;
   boolean isTopLevel = false;
+  required MemoryInfoDictionary memoryInfo;
   sequence<CategoryDispatchDictionary> items = [];
 };
 
@@ -478,6 +530,17 @@ dictionary Base64URLEncodeOptions {
   required boolean pad;
 };
 
+dictionary WindowActorOptions {
+  /** This fields are used for configuring individual sides of the actor. */
+  required WindowActorSidedOptions parent;
+  required WindowActorSidedOptions child;
+};
+
+dictionary WindowActorSidedOptions {
+  /** The module path which should be loaded for the actor on this side. */
+  required DOMString moduleURI;
+};
+
 enum Base64URLDecodePadding {
   /**
    * Fails decoding if the input is unpadded. RFC 4648, section 3.2 requires
@@ -499,4 +562,13 @@ enum Base64URLDecodePadding {
 dictionary Base64URLDecodeOptions {
   /** Specifies the padding mode for decoding the input. */
   required Base64URLDecodePadding padding;
+};
+
+// Keep this in sync with PopupBlocker::PopupControlState!
+enum PopupBlockerState {
+  "openAllowed",
+  "openControlled",
+  "openBlocked",
+  "openAbused",
+  "openOverridden",
 };

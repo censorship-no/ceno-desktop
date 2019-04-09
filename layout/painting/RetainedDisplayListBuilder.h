@@ -13,30 +13,37 @@
 
 namespace mozilla {
 class DisplayListChecker;
-} // namespace mozilla
-
+}  // namespace mozilla
 
 /**
  * RetainedDisplayListData contains frame invalidation information. It is stored
  * in root frames, and used by RetainedDisplayListBuilder.
  * Currently this is implemented as a map of frame pointers to flags.
  */
-struct RetainedDisplayListData
-{
+struct RetainedDisplayListData {
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(DisplayListData, RetainedDisplayListData)
 
-  enum class FrameFlags : uint8_t
-  {
+  enum class FrameFlags : uint8_t {
     None = 0,
     Modified = 1 << 0,
     HasProps = 1 << 1,
     HadWillChange = 1 << 2
   };
 
+  RetainedDisplayListData() : mModifiedFramesCount(0) {}
+
+  /**
+   * Adds the frame to modified frames list.
+   */
+  void AddModifiedFrame(nsIFrame* aFrame);
+
   /**
    * Removes all the frames from this RetainedDisplayListData.
    */
-  void Clear() { mFrames.Clear(); }
+  void Clear() {
+    mFrames.Clear();
+    mModifiedFramesCount = 0;
+  }
 
   /**
    * Returns a mutable reference to flags set for the given |aFrame|. If the
@@ -57,12 +64,18 @@ struct RetainedDisplayListData
   auto Iterator() { return mFrames.Iter(); }
 
   /**
+   * Returns the count of modified frames in this RetainedDisplayListData.
+   */
+  uint32_t ModifiedFramesCount() const { return mModifiedFramesCount; }
+
+  /**
    * Removes the given |aFrame| from this RetainedDisplayListData.
    */
   bool Remove(nsIFrame* aFrame) { return mFrames.Remove(aFrame); }
 
-private:
+ private:
   nsDataHashtable<nsPtrHashKey<nsIFrame>, FrameFlags> mFrames;
+  uint32_t mModifiedFramesCount;
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(RetainedDisplayListData::FrameFlags)
@@ -71,40 +84,29 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(RetainedDisplayListData::FrameFlags)
  * Returns RetainedDisplayListData property for the given |aRootFrame|, or
  * nullptr if the property is not set.
  */
-RetainedDisplayListData*
-GetRetainedDisplayListData(nsIFrame* aRootFrame);
+RetainedDisplayListData* GetRetainedDisplayListData(nsIFrame* aRootFrame);
 
 /**
  * Returns RetainedDisplayListData property for the given |aRootFrame|. Creates
  * and sets a new RetainedDisplayListData property if it is not already set.
  */
-RetainedDisplayListData*
-GetOrSetRetainedDisplayListData(nsIFrame* aRootFrame);
+RetainedDisplayListData* GetOrSetRetainedDisplayListData(nsIFrame* aRootFrame);
 
-struct RetainedDisplayListBuilder
-{
+struct RetainedDisplayListBuilder {
   RetainedDisplayListBuilder(nsIFrame* aReferenceFrame,
-                             nsDisplayListBuilderMode aMode,
-                             bool aBuildCaret)
-    : mBuilder(aReferenceFrame, aMode, aBuildCaret, true)
-  {
-  }
+                             nsDisplayListBuilderMode aMode, bool aBuildCaret)
+      : mBuilder(aReferenceFrame, aMode, aBuildCaret, true),
+        mCurrentSubtreeIsForEventsAndPluginsOnly(false) {}
   ~RetainedDisplayListBuilder() { mList.DeleteAll(&mBuilder); }
 
   nsDisplayListBuilder* Builder() { return &mBuilder; }
 
   nsDisplayList* List() { return &mList; }
 
-  enum class PartialUpdateResult
-  {
-    Failed,
-    NoChange,
-    Updated
-  };
+  enum class PartialUpdateResult { Failed, NoChange, Updated };
 
   PartialUpdateResult AttemptPartialUpdate(
-    nscolor aBackstop,
-    mozilla::DisplayListChecker* aChecker);
+      nscolor aBackstop, mozilla::DisplayListChecker* aChecker);
 
   /**
    * Iterates through the display list builder reference frame document and
@@ -116,28 +118,34 @@ struct RetainedDisplayListBuilder
 
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(Cached, RetainedDisplayListBuilder)
 
-private:
+ private:
   bool PreProcessDisplayList(RetainedDisplayList* aList,
                              AnimatedGeometryRoot* aAGR,
                              uint32_t aCallerKey = 0,
                              uint32_t aNestingDepth = 0);
+
+  /**
+   * Merges items from aNewList into non-invalidated items from aOldList and
+   * stores the result in aOutList.
+   *
+   * aOuterItem is a pointer to an item that owns one of the lists, if
+   * available. If both lists are populated, then both outer items must not be
+   * invalidated, and identical, so either can be passed here.
+   */
   bool MergeDisplayLists(
-    nsDisplayList* aNewList,
-    RetainedDisplayList* aOldList,
-    RetainedDisplayList* aOutList,
-    mozilla::Maybe<const mozilla::ActiveScrolledRoot*>& aOutContainerASR,
-    uint32_t aOuterKey = 0);
+      nsDisplayList* aNewList, RetainedDisplayList* aOldList,
+      RetainedDisplayList* aOutList,
+      mozilla::Maybe<const mozilla::ActiveScrolledRoot*>& aOutContainerASR,
+      nsDisplayItem* aOuterItem = nullptr);
 
   bool ComputeRebuildRegion(nsTArray<nsIFrame*>& aModifiedFrames,
                             nsRect* aOutDirty,
                             AnimatedGeometryRoot** aOutModifiedAGR,
                             nsTArray<nsIFrame*>& aOutFramesWithProps);
-  bool ProcessFrame(nsIFrame* aFrame,
-                    nsDisplayListBuilder& aBuilder,
+  bool ProcessFrame(nsIFrame* aFrame, nsDisplayListBuilder& aBuilder,
                     nsIFrame* aStopAtFrame,
                     nsTArray<nsIFrame*>& aOutFramesWithProps,
-                    const bool aStopAtStackingContext,
-                    nsRect* aOutDirty,
+                    const bool aStopAtStackingContext, nsRect* aOutDirty,
                     AnimatedGeometryRoot** aOutModifiedAGR);
 
   void IncrementSubDocPresShellPaintCount(nsDisplayItem* aItem);
@@ -147,6 +155,10 @@ private:
   nsDisplayListBuilder mBuilder;
   RetainedDisplayList mList;
   WeakFrame mPreviousCaret;
+
+  // True if we're currently within an opacity:0 container, and only
+  // plugin and hit test items should be considered.
+  bool mCurrentSubtreeIsForEventsAndPluginsOnly;
 };
 
-#endif // RETAINEDDISPLAYLISTBUILDER_H_
+#endif  // RETAINEDDISPLAYLISTBUILDER_H_

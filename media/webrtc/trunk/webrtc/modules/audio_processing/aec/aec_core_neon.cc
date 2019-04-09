@@ -14,16 +14,20 @@
  * Based on aec_core_sse2.c.
  */
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <arm64_neon.h>
+#else
 #include <arm_neon.h>
+#endif
 #include <math.h>
 #include <string.h>  // memset
 
 extern "C" {
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
 }
-#include "webrtc/modules/audio_processing/aec/aec_common.h"
-#include "webrtc/modules/audio_processing/aec/aec_core_optimized_methods.h"
-#include "webrtc/modules/audio_processing/utility/ooura_fft.h"
+#include "modules/audio_processing/aec/aec_common.h"
+#include "modules/audio_processing/aec/aec_core_optimized_methods.h"
+#include "modules/audio_processing/utility/ooura_fft.h"
 
 namespace webrtc {
 
@@ -99,7 +103,8 @@ static float32x4_t vdivq_f32(float32x4_t a, float32x4_t b) {
   // a/b = a*(1/b)
   return vmulq_f32(a, x);
 }
-
+#endif
+#if !defined(WEBRTC_ARCH_ARM64) || (defined(_MSC_VER) && !defined(__clang__))
 static float32x4_t vsqrtq_f32(float32x4_t s) {
   int i;
   float32x4_t x = vrsqrteq_f32(s);

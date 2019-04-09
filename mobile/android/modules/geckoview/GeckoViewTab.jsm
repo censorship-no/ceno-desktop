@@ -30,6 +30,10 @@ class GeckoViewTab extends GeckoViewModule {
       tabs: [tab],
       selectedTab: tab,
 
+      closeTab: function(aTab) {
+        // not implemented
+      },
+
       getTabForId: function(aId) {
         return this.selectedTab;
       },
@@ -48,6 +52,10 @@ class GeckoViewTab extends GeckoViewModule {
 
       getBrowserForOuterWindowID: function(aID) {
         return this.browser;
+      },
+
+      getBrowserForDocument: function(aDocument) {
+        return this.selectedBrowser;
       },
     };
   }

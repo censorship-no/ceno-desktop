@@ -8,7 +8,7 @@
 #define _nsPROCESSWIN_H_
 
 #if defined(XP_WIN)
-#define PROCESSMODEL_WINAPI
+#  define PROCESSMODEL_WINAPI
 #endif
 
 #include "mozilla/Attributes.h"
@@ -21,32 +21,32 @@
 #include "nsIObserver.h"
 #include "nsString.h"
 #ifndef XP_UNIX
-#include "prproces.h"
+#  include "prproces.h"
 #endif
 #if defined(PROCESSMODEL_WINAPI)
-#include <windows.h>
-#include <shellapi.h>
+#  include <windows.h>
+#  include <shellapi.h>
 #endif
 
-#define NS_PROCESS_CID \
-{0x7b4eeb20, 0xd781, 0x11d4, \
-   {0x8A, 0x83, 0x00, 0x10, 0xa4, 0xe0, 0xc9, 0xca}}
+#define NS_PROCESS_CID                               \
+  {                                                  \
+    0x7b4eeb20, 0xd781, 0x11d4, {                    \
+      0x8A, 0x83, 0x00, 0x10, 0xa4, 0xe0, 0xc9, 0xca \
+    }                                                \
+  }
 
-class nsProcess final
-  : public nsIProcess
-  , public nsIObserver
-{
-public:
-
+class nsProcess final : public nsIProcess, public nsIObserver {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIPROCESS
   NS_DECL_NSIOBSERVER
 
   nsProcess();
 
-private:
+ private:
   ~nsProcess();
   static void Monitor(void* aArg);
+  static void RemoveExecutableCrashAnnotation();
   void ProcessComplete();
   nsresult CopyArgsAndRunProcess(bool aBlocking, const char** aArgs,
                                  uint32_t aCount, nsIObserver* aObserver,
@@ -57,6 +57,7 @@ private:
   // The 'args' array is null-terminated.
   nsresult RunProcess(bool aBlocking, char** aArgs, nsIObserver* aObserver,
                       bool aHoldWeak, bool aArgsUTF8);
+  void AddExecutableCrashAnnotation();
 
   PRThread* mThread;
   mozilla::Mutex mLock;

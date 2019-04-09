@@ -41,7 +41,6 @@ exports.CSS_PROPERTIES = {
       "ease-in-out",
       "ease-out",
       "forwards",
-      "frames",
       "infinite",
       "inherit",
       "initial",
@@ -167,7 +166,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -247,14 +245,15 @@ exports.CSS_PROPERTIES = {
       "menupopup",
       "menuradio",
       "menuseparator",
+      "meter",
       "meterbar",
       "meterchunk",
       "none",
       "number-input",
+      "progress-bar",
       "progressbar",
       "progressbar-vertical",
       "progresschunk",
-      "progresschunk-vertical",
       "radio",
       "radio-container",
       "radio-label",
@@ -297,6 +296,7 @@ exports.CSS_PROPERTIES = {
       "tab-scroll-arrow-forward",
       "tabpanel",
       "tabpanels",
+      "textarea",
       "textfield",
       "textfield-multiline",
       "toolbar",
@@ -1230,7 +1230,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -1293,7 +1292,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -1359,19 +1357,13 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
-      "-moz-all",
       "-moz-none",
-      "-moz-text",
       "all",
       "auto",
-      "element",
-      "elements",
       "inherit",
       "initial",
       "none",
       "text",
-      "toggle",
-      "tri-state",
       "unset"
     ]
   },
@@ -1496,7 +1488,6 @@ exports.CSS_PROPERTIES = {
       "ease-in-out",
       "ease-out",
       "forwards",
-      "frames",
       "infinite",
       "inherit",
       "initial",
@@ -1622,7 +1613,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -1702,14 +1692,15 @@ exports.CSS_PROPERTIES = {
       "menupopup",
       "menuradio",
       "menuseparator",
+      "meter",
       "meterbar",
       "meterchunk",
       "none",
       "number-input",
+      "progress-bar",
       "progressbar",
       "progressbar-vertical",
       "progresschunk",
-      "progresschunk-vertical",
       "radio",
       "radio-container",
       "radio-label",
@@ -1752,6 +1743,7 @@ exports.CSS_PROPERTIES = {
       "tab-scroll-arrow-forward",
       "tabpanel",
       "tabpanels",
+      "textarea",
       "textfield",
       "textfield-multiline",
       "toolbar",
@@ -2101,6 +2093,8 @@ exports.CSS_PROPERTIES = {
       "content",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "unset"
     ]
   },
@@ -2119,6 +2113,8 @@ exports.CSS_PROPERTIES = {
       "content",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "unset"
     ]
   },
@@ -2678,7 +2674,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -2741,7 +2736,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -2758,19 +2752,13 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
-      "-moz-all",
       "-moz-none",
-      "-moz-text",
       "all",
       "auto",
-      "element",
-      "elements",
       "inherit",
       "initial",
       "none",
       "text",
-      "toggle",
-      "tri-state",
       "unset"
     ]
   },
@@ -2869,6 +2857,10 @@ exports.CSS_PROPERTIES = {
       "border-inline-end-color",
       "border-inline-end-style",
       "border-inline-end-width",
+      "border-start-start-radius",
+      "border-start-end-radius",
+      "border-end-start-radius",
+      "border-end-end-radius",
       "margin-block-start",
       "margin-block-end",
       "margin-inline-start",
@@ -2929,6 +2921,7 @@ exports.CSS_PROPERTIES = {
       "overflow-clip-box-block",
       "overflow-x",
       "overflow-y",
+      "overflow-anchor",
       "transition-duration",
       "transition-timing-function",
       "transition-property",
@@ -2956,9 +2949,9 @@ exports.CSS_PROPERTIES = {
       "overscroll-behavior-x",
       "overscroll-behavior-y",
       "isolation",
-      "page-break-after",
-      "page-break-before",
-      "page-break-inside",
+      "break-after",
+      "break-before",
+      "break-inside",
       "resize",
       "perspective",
       "perspective-origin",
@@ -3203,7 +3196,6 @@ exports.CSS_PROPERTIES = {
       "ease-in-out",
       "ease-out",
       "forwards",
-      "frames",
       "infinite",
       "inherit",
       "initial",
@@ -3329,7 +3321,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -3642,6 +3633,8 @@ exports.CSS_PROPERTIES = {
       "auto",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "unset"
     ]
   },
@@ -3691,6 +3684,67 @@ exports.CSS_PROPERTIES = {
       "solid",
       "thick",
       "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-block": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-width",
+      "border-block-end-width",
+      "border-block-start-style",
+      "border-block-end-style",
+      "border-block-start-color",
+      "border-block-end-color"
+    ],
+    "supports": [
+      2
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-block-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-color",
+      "border-block-end-color"
+    ],
+    "supports": [
+      2
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "rgb",
+      "rgba",
       "transparent",
       "unset"
     ]
@@ -3883,6 +3937,45 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "border-block-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-style",
+      "border-block-end-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-block-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-width",
+      "border-block-end-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
   "border-bottom": {
     "isInherited": false,
     "subproperties": [
@@ -4039,6 +4132,30 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "border-end-end-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-end-end-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "unset"
+    ]
+  },
+  "border-end-start-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-end-start-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "unset"
+    ]
+  },
   "border-image": {
     "isInherited": false,
     "subproperties": [
@@ -4162,6 +4279,67 @@ exports.CSS_PROPERTIES = {
       "auto",
       "inherit",
       "initial",
+      "unset"
+    ]
+  },
+  "border-inline": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-width",
+      "border-inline-end-width",
+      "border-inline-start-style",
+      "border-inline-end-style",
+      "border-inline-start-color",
+      "border-inline-end-color"
+    ],
+    "supports": [
+      2
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-inline-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-color",
+      "border-inline-end-color"
+    ],
+    "supports": [
+      2
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "rgb",
+      "rgba",
+      "transparent",
       "unset"
     ]
   },
@@ -4342,6 +4520,45 @@ exports.CSS_PROPERTIES = {
     "isInherited": false,
     "subproperties": [
       "border-inline-start-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "border-inline-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-style",
+      "border-inline-end-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-inline-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-width",
+      "border-inline-end-width"
     ],
     "supports": [],
     "values": [
@@ -4560,6 +4777,30 @@ exports.CSS_PROPERTIES = {
     "isInherited": true,
     "subproperties": [
       "border-spacing"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "unset"
+    ]
+  },
+  "border-start-end-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-start-end-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "unset"
+    ]
+  },
+  "border-start-start-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-start-start-radius"
     ],
     "supports": [],
     "values": [
@@ -4788,6 +5029,56 @@ exports.CSS_PROPERTIES = {
     "values": [
       "border-box",
       "content-box",
+      "inherit",
+      "initial",
+      "unset"
+    ]
+  },
+  "break-after": {
+    "isInherited": false,
+    "subproperties": [
+      "break-after"
+    ],
+    "supports": [],
+    "values": [
+      "always",
+      "auto",
+      "avoid",
+      "inherit",
+      "initial",
+      "left",
+      "page",
+      "right",
+      "unset"
+    ]
+  },
+  "break-before": {
+    "isInherited": false,
+    "subproperties": [
+      "break-before"
+    ],
+    "supports": [],
+    "values": [
+      "always",
+      "auto",
+      "avoid",
+      "inherit",
+      "initial",
+      "left",
+      "page",
+      "right",
+      "unset"
+    ]
+  },
+  "break-inside": {
+    "isInherited": false,
+    "subproperties": [
+      "break-inside"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "avoid",
       "inherit",
       "initial",
       "unset"
@@ -5432,6 +5723,8 @@ exports.CSS_PROPERTIES = {
       "content",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "unset"
     ]
   },
@@ -5450,6 +5743,8 @@ exports.CSS_PROPERTIES = {
       "content",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "unset"
     ]
   },
@@ -6315,6 +6610,8 @@ exports.CSS_PROPERTIES = {
       "auto",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "unset"
     ]
   },
@@ -6356,6 +6653,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-crisp-edges",
       "auto",
+      "crisp-edges",
       "inherit",
       "initial",
       "optimizequality",
@@ -6394,6 +6692,38 @@ exports.CSS_PROPERTIES = {
       "auto",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
+      "unset"
+    ]
+  },
+  "inset": {
+    "isInherited": false,
+    "subproperties": [
+      "top",
+      "right",
+      "bottom",
+      "left"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "unset"
+    ]
+  },
+  "inset-block": {
+    "isInherited": false,
+    "subproperties": [
+      "inset-block-start",
+      "inset-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
       "unset"
     ]
   },
@@ -6414,6 +6744,20 @@ exports.CSS_PROPERTIES = {
     "isInherited": false,
     "subproperties": [
       "inset-block-start"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "unset"
+    ]
+  },
+  "inset-inline": {
+    "isInherited": false,
+    "subproperties": [
+      "inset-inline-start",
+      "inset-inline-end"
     ],
     "supports": [],
     "values": [
@@ -6795,6 +7139,20 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "margin-block": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-block-start",
+      "margin-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "unset"
+    ]
+  },
   "margin-block-end": {
     "isInherited": false,
     "subproperties": [
@@ -6825,6 +7183,20 @@ exports.CSS_PROPERTIES = {
     "isInherited": false,
     "subproperties": [
       "margin-bottom"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "unset"
+    ]
+  },
+  "margin-inline": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-inline-start",
+      "margin-inline-end"
     ],
     "supports": [],
     "values": [
@@ -7231,6 +7603,8 @@ exports.CSS_PROPERTIES = {
       "-moz-min-content",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "none",
       "unset"
     ]
@@ -7248,6 +7622,8 @@ exports.CSS_PROPERTIES = {
       "-moz-min-content",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "none",
       "unset"
     ]
@@ -7265,6 +7641,8 @@ exports.CSS_PROPERTIES = {
       "-moz-min-content",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "none",
       "unset"
     ]
@@ -7282,6 +7660,8 @@ exports.CSS_PROPERTIES = {
       "-moz-min-content",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "none",
       "unset"
     ]
@@ -7300,6 +7680,8 @@ exports.CSS_PROPERTIES = {
       "auto",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "unset"
     ]
   },
@@ -7317,6 +7699,8 @@ exports.CSS_PROPERTIES = {
       "auto",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "unset"
     ]
   },
@@ -7334,6 +7718,8 @@ exports.CSS_PROPERTIES = {
       "auto",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "unset"
     ]
   },
@@ -7351,6 +7737,8 @@ exports.CSS_PROPERTIES = {
       "auto",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "unset"
     ]
   },
@@ -7580,6 +7968,20 @@ exports.CSS_PROPERTIES = {
       "visible"
     ]
   },
+  "overflow-anchor": {
+    "isInherited": false,
+    "subproperties": [
+      "overflow-anchor"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "unset"
+    ]
+  },
   "overflow-wrap": {
     "isInherited": true,
     "subproperties": [
@@ -7587,6 +7989,7 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
+      "anywhere",
       "break-word",
       "inherit",
       "initial",
@@ -7689,6 +8092,19 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "padding-block": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-block-start",
+      "padding-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "unset"
+    ]
+  },
   "padding-block-end": {
     "isInherited": false,
     "subproperties": [
@@ -7717,6 +8133,19 @@ exports.CSS_PROPERTIES = {
     "isInherited": false,
     "subproperties": [
       "padding-bottom"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "unset"
+    ]
+  },
+  "padding-inline": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-inline-start",
+      "padding-inline-end"
     ],
     "supports": [],
     "values": [
@@ -7788,7 +8217,7 @@ exports.CSS_PROPERTIES = {
   "page-break-after": {
     "isInherited": false,
     "subproperties": [
-      "page-break-after"
+      "break-after"
     ],
     "supports": [],
     "values": [
@@ -7798,6 +8227,7 @@ exports.CSS_PROPERTIES = {
       "inherit",
       "initial",
       "left",
+      "page",
       "right",
       "unset"
     ]
@@ -7805,7 +8235,7 @@ exports.CSS_PROPERTIES = {
   "page-break-before": {
     "isInherited": false,
     "subproperties": [
-      "page-break-before"
+      "break-before"
     ],
     "supports": [],
     "values": [
@@ -7815,6 +8245,7 @@ exports.CSS_PROPERTIES = {
       "inherit",
       "initial",
       "left",
+      "page",
       "right",
       "unset"
     ]
@@ -7822,7 +8253,7 @@ exports.CSS_PROPERTIES = {
   "page-break-inside": {
     "isInherited": false,
     "subproperties": [
-      "page-break-inside"
+      "break-inside"
     ],
     "supports": [],
     "values": [
@@ -8991,7 +9422,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -9054,7 +9484,6 @@ exports.CSS_PROPERTIES = {
       "ease-in",
       "ease-in-out",
       "ease-out",
-      "frames",
       "inherit",
       "initial",
       "linear",
@@ -9164,6 +9593,8 @@ exports.CSS_PROPERTIES = {
       "auto",
       "inherit",
       "initial",
+      "max-content",
+      "min-content",
       "unset"
     ]
   },
@@ -9215,6 +9646,7 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
+      "anywhere",
       "break-word",
       "inherit",
       "initial",
@@ -9290,14 +9722,6 @@ exports.PSEUDO_ELEMENTS = [
  */
 exports.PREFERENCES = [
   [
-    "box-decoration-break",
-    "layout.css.box-decoration-break.enabled"
-  ],
-  [
-    "color-adjust",
-    "layout.css.color-adjust.enabled"
-  ],
-  [
     "column-span",
     "layout.css.column-span.enabled"
   ],
@@ -9310,28 +9734,16 @@ exports.PREFERENCES = [
     "layout.css.font-variations.enabled"
   ],
   [
-    "image-orientation",
-    "layout.css.image-orientation.enabled"
-  ],
-  [
     "initial-letter",
     "layout.css.initial-letter.enabled"
-  ],
-  [
-    "isolation",
-    "layout.css.isolation.enabled"
-  ],
-  [
-    "mix-blend-mode",
-    "layout.css.mix-blend-mode.enabled"
   ],
   [
     "-moz-osx-font-smoothing",
     "layout.css.osx-font-smoothing.enabled"
   ],
   [
-    "scroll-behavior",
-    "layout.css.scroll-behavior.property-enabled"
+    "overflow-anchor",
+    "layout.css.scroll-anchoring.enabled"
   ],
   [
     "scrollbar-width",
@@ -9374,14 +9786,6 @@ exports.PREFERENCES = [
     "layout.css.scroll-snap.enabled"
   ],
   [
-    "shape-image-threshold",
-    "layout.css.shape-outside.enabled"
-  ],
-  [
-    "background-blend-mode",
-    "layout.css.background-blend-mode.enabled"
-  ],
-  [
     "font-variation-settings",
     "layout.css.font-variations.enabled"
   ],
@@ -9406,10 +9810,6 @@ exports.PREFERENCES = [
     "layout.css.scrollbar-color.enabled"
   ],
   [
-    "shape-outside",
-    "layout.css.shape-outside.enabled"
-  ],
-  [
     "translate",
     "layout.css.individual-transform.enabled"
   ],
@@ -9424,10 +9824,6 @@ exports.PREFERENCES = [
   [
     "scroll-snap-destination",
     "layout.css.scroll-snap.enabled"
-  ],
-  [
-    "shape-margin",
-    "layout.css.shape-outside.enabled"
   ],
   [
     "-webkit-text-stroke-width",

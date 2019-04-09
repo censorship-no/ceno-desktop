@@ -61,6 +61,7 @@ import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
 import org.mozilla.geckoview.GeckoView;
+import org.mozilla.geckoview.WebRequestError;
 
 import java.util.List;
 
@@ -122,8 +123,9 @@ public class CustomTabsActivity extends AppCompatActivity
 
         mGeckoView = (GeckoView) findViewById(R.id.gecko_view);
 
-        final GeckoSessionSettings settings = new GeckoSessionSettings();
-        settings.setBoolean(GeckoSessionSettings.USE_MULTIPROCESS, false);
+        final GeckoSessionSettings settings = new GeckoSessionSettings.Builder()
+                .useMultiprocess(false)
+                .build();
         mGeckoSession = new GeckoSession(settings);
         mGeckoSession.setNavigationDelegate(this);
         mGeckoSession.setProgressDelegate(this);
@@ -630,7 +632,7 @@ public class CustomTabsActivity extends AppCompatActivity
 
     @Override
     public GeckoResult<String> onLoadError(final GeckoSession session, final String urlStr,
-                                           final int category, final int error) {
+                                           final WebRequestError error) {
         return null;
     }
 
@@ -694,11 +696,12 @@ public class CustomTabsActivity extends AppCompatActivity
     }
 
     @Override
-    public void onContextMenu(GeckoSession session, int screenX, int screenY,
-                              final String uri, int elementType,
-                              final String elementSrc) {
-
-        final String content = uri != null ? uri : elementSrc != null ? elementSrc : "";
+    public void onContextMenu(final GeckoSession session,
+                              int screenX, int screenY,
+                              final ContextElement element) {
+        final String content = element.linkUri != null
+                               ? element.linkUri
+                               : element.srcUri != null ? element.srcUri : "";
         final Uri validUri = WebApps.getValidURL(content);
         if (validUri == null) {
             return;
@@ -720,6 +723,10 @@ public class CustomTabsActivity extends AppCompatActivity
     @Override
     public void onCrash(final GeckoSession session) {
         // Won't happen, as we don't use e10s in Fennec
+    }
+
+    @Override
+    public void onFirstComposite(final GeckoSession session) {
     }
 
     @Override // ActionModePresenter

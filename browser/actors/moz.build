@@ -40,9 +40,9 @@ FINAL_TARGET_FILES.actors += [
     'NetErrorChild.jsm',
     'OfflineAppsChild.jsm',
     'PageInfoChild.jsm',
-    'PageMetadataChild.jsm',
     'PageStyleChild.jsm',
     'PluginChild.jsm',
+    'SearchTelemetryChild.jsm',
     'URIFixupChild.jsm',
     'WebRTCChild.jsm',
 ]

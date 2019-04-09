@@ -10,9 +10,11 @@ import android.content.Context;
 import android.database.ContentObserver;
 import android.hardware.input.InputManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.support.annotation.RequiresApi;
 import android.util.Log;
 import android.view.InputDevice;
 import org.mozilla.gecko.annotation.WrapForJNI;
@@ -81,9 +83,18 @@ public class GeckoSystemStateListener
         mContentObserver = null;
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
     @WrapForJNI(calledFrom = "gecko")
-    // For prefers-reduced-motion media queries feature.
+    /**
+     * For prefers-reduced-motion media queries feature.
+     *
+     * Uses `Settings.Global` which was introduced in API version 17.
+     */
     private static boolean prefersReducedMotion() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1) {
+          return false;
+        }
+
         ContentResolver contentResolver = sApplicationContext.getContentResolver();
 
         return Settings.Global.getFloat(contentResolver,
@@ -98,8 +109,18 @@ public class GeckoSystemStateListener
         contentResolver.notifyChange(animationSetting, null);
     }
 
-    @WrapForJNI(calledFrom = "ui", dispatchTo = "gecko")
-    private static native void onDeviceChanged();
+    @WrapForJNI(stubName = "OnDeviceChanged", calledFrom = "ui", dispatchTo = "gecko")
+    private static native void nativeOnDeviceChanged();
+
+    private static void onDeviceChanged() {
+        if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
+            nativeOnDeviceChanged();
+        } else {
+            GeckoThread.queueNativeCallUntil(
+                    GeckoThread.State.PROFILE_READY, GeckoSystemStateListener.class,
+                    "nativeOnDeviceChanged");
+        }
+    }
 
     private void notifyDeviceChanged(int deviceId) {
         InputDevice device = InputDevice.getDevice(deviceId);

@@ -20,7 +20,7 @@
 #include "Units.h"
 #include "FrameMetrics.h"
 
-#define NS_DEFAULT_VERTICAL_SCROLL_DISTANCE   3
+#define NS_DEFAULT_VERTICAL_SCROLL_DISTANCE 3
 #define NS_DEFAULT_HORIZONTAL_SCROLL_DISTANCE 5
 
 class gfxContext;
@@ -35,10 +35,14 @@ class nsDisplayListBuilder;
 namespace mozilla {
 struct ContainerLayerParameters;
 namespace layers {
+struct ScrollMetadata;
 class Layer;
 class LayerManager;
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+namespace layout {
+class ScrollAnchorContainer;
+}  // namespace layout
+}  // namespace mozilla
 
 /**
  * Interface for frames that are scrollable. This interface exposes
@@ -46,11 +50,11 @@ class LayerManager;
  * and triggering scrolling.
  */
 class nsIScrollableFrame : public nsIScrollbarMediator {
-public:
+ public:
   typedef mozilla::CSSIntPoint CSSIntPoint;
   typedef mozilla::ContainerLayerParameters ContainerLayerParameters;
-  typedef mozilla::layers::FrameMetrics FrameMetrics;
   typedef mozilla::layers::ScrollSnapInfo ScrollSnapInfo;
+  typedef mozilla::layout::ScrollAnchorContainer ScrollAnchorContainer;
 
   NS_DECL_QUERYFRAME_TARGET(nsIScrollableFrame)
 
@@ -61,8 +65,8 @@ public:
   virtual nsIFrame* GetScrolledFrame() const = 0;
 
   /**
-   * Get the styles (NS_STYLE_OVERFLOW_SCROLL, NS_STYLE_OVERFLOW_HIDDEN,
-   * or NS_STYLE_OVERFLOW_AUTO) governing the horizontal and vertical
+   * Get the styles (StyleOverflow::Scroll, StyleOverflow::Hidden,
+   * or StyleOverflow::Auto) governing the horizontal and vertical
    * scrollbars for this frame.
    */
   virtual mozilla::ScrollStyles GetScrollStyles() const = 0;
@@ -82,31 +86,39 @@ public:
   uint32_t GetPerceivedScrollingDirections() const;
   /**
    * Return the actual sizes of all possible scrollbars. Returns 0 for scrollbar
-   * positions that don't have a scrollbar or where the scrollbar is not visible.
-   * Do not call this while this frame's descendants are being reflowed, it won't be
-   * accurate.
+   * positions that don't have a scrollbar or where the scrollbar is not
+   * visible. Do not call this while this frame's descendants are being
+   * reflowed, it won't be accurate.
    */
   virtual nsMargin GetActualScrollbarSizes() const = 0;
   /**
    * Return the sizes of all scrollbars assuming that any scrollbars that could
-   * be visible due to overflowing content, are. This can be called during reflow
-   * of the scrolled contents.
+   * be visible due to overflowing content, are. This can be called during
+   * reflow of the scrolled contents.
    */
   virtual nsMargin GetDesiredScrollbarSizes(nsBoxLayoutState* aState) = 0;
   /**
    * Return the sizes of all scrollbars assuming that any scrollbars that could
-   * be visible due to overflowing content, are. This can be called during reflow
-   * of the scrolled contents.
+   * be visible due to overflowing content, are. This can be called during
+   * reflow of the scrolled contents.
    */
   virtual nsMargin GetDesiredScrollbarSizes(nsPresContext* aPresContext,
                                             gfxContext* aRC) = 0;
   /**
    * Return the width for non-disappearing scrollbars.
    */
-  virtual nscoord
-  GetNondisappearingScrollbarWidth(nsPresContext* aPresContext,
-                                   gfxContext* aRC,
-                                   mozilla::WritingMode aWM) = 0;
+  virtual nscoord GetNondisappearingScrollbarWidth(
+      nsPresContext* aPresContext, gfxContext* aRC,
+      mozilla::WritingMode aWM) = 0;
+  /**
+   * Get the layout size of this frame.
+   * Note that this is a value which is not expanded by the minimum scale size.
+   * For scroll frames other than the root content document's scroll frame, this
+   * value will be the same as GetScrollPortRect().Size().
+   *
+   * This value is used for Element.clientWidth and clientHeight.
+   */
+  virtual nsSize GetLayoutSize() const = 0;
   /**
    * GetScrolledRect is designed to encapsulate deciding which
    * directions of overflow should be reachable by scrolling and which
@@ -138,6 +150,12 @@ public:
    * As GetScrollPosition(), but uses the top-right as origin for RTL frames.
    */
   virtual nsPoint GetLogicalScrollPosition() const = 0;
+  /**
+   * Get the latest scroll position that the main thread has sent or received
+   * from APZ.
+   */
+  virtual nsPoint GetApzScrollPosition() const = 0;
+
   /**
    * Get the area that must contain the scroll position. Typically
    * (but not always, e.g. for RTL content) x and y will be 0, and
@@ -220,8 +238,8 @@ public:
    */
   virtual void ScrollTo(nsPoint aScrollPosition, ScrollMode aMode,
                         const nsRect* aRange = nullptr,
-                        nsIScrollbarMediator::ScrollSnapMode aSnap
-                          = nsIScrollbarMediator::DISABLE_SNAP) = 0;
+                        nsIScrollbarMediator::ScrollSnapMode aSnap =
+                            nsIScrollbarMediator::DISABLE_SNAP) = 0;
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    * Scrolls to a particular position in integer CSS pixels.
@@ -239,9 +257,10 @@ public:
    * exactly aScrollPosition at the end of the scroll animation unless the
    * SMOOTH_MSD animation is interrupted.
    */
-  virtual void ScrollToCSSPixels(const CSSIntPoint& aScrollPosition,
-                                 nsIScrollableFrame::ScrollMode aMode
-                                   = nsIScrollableFrame::INSTANT) = 0;
+  virtual void ScrollToCSSPixels(
+      const CSSIntPoint& aScrollPosition,
+      nsIScrollableFrame::ScrollMode aMode = nsIScrollableFrame::INSTANT,
+      nsAtom* aOrigin = nullptr) = 0;
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    * Scrolls to a particular position in float CSS pixels.
@@ -250,8 +269,8 @@ public:
    * aScrollPosition as possible while scrolling by an integer
    * number of layer pixels (so the operation is fast and looks clean).
    */
-  virtual void ScrollToCSSPixelsApproximate(const mozilla::CSSPoint& aScrollPosition,
-                                            nsAtom *aOrigin = nullptr) = 0;
+  virtual void ScrollToCSSPixelsApproximate(
+      const mozilla::CSSPoint& aScrollPosition, nsAtom* aOrigin = nullptr) = 0;
 
   /**
    * Returns the scroll position in integer CSS pixels, rounded to the nearest
@@ -276,8 +295,13 @@ public:
                         nsIntPoint* aOverflow = nullptr,
                         nsAtom* aOrigin = nullptr,
                         ScrollMomentum aMomentum = NOT_MOMENTUM,
-                        nsIScrollbarMediator::ScrollSnapMode aSnap
-                          = nsIScrollbarMediator::DISABLE_SNAP) = 0;
+                        nsIScrollbarMediator::ScrollSnapMode aSnap =
+                            nsIScrollbarMediator::DISABLE_SNAP) = 0;
+
+  virtual void ScrollByCSSPixels(
+      const CSSIntPoint& aDelta,
+      nsIScrollableFrame::ScrollMode aMode = nsIScrollableFrame::INSTANT,
+      nsAtom* aOrigin = nullptr) = 0;
 
   /**
    * Perform scroll snapping, possibly resulting in a smooth scroll to
@@ -302,11 +326,13 @@ public:
    * Add a scroll position listener. This listener must be removed
    * before it is destroyed.
    */
-  virtual void AddScrollPositionListener(nsIScrollPositionListener* aListener) = 0;
+  virtual void AddScrollPositionListener(
+      nsIScrollPositionListener* aListener) = 0;
   /**
    * Remove a scroll position listener.
    */
-  virtual void RemoveScrollPositionListener(nsIScrollPositionListener* aListener) = 0;
+  virtual void RemoveScrollPositionListener(
+      nsIScrollPositionListener* aListener) = 0;
 
   /**
    * Internal method used by scrollbars to notify their scrolling
@@ -359,14 +385,19 @@ public:
    */
   virtual void ClearDidHistoryRestore() = 0;
   /**
+   * Mark the frame as having been scrolled at least once, so that it remains
+   * active and we can also start storing its scroll position when saving state.
+   */
+  virtual void MarkEverScrolled() = 0;
+  /**
    * Determine if the passed in rect is nearly visible according to the frame
    * visibility heuristics for how close it is to the visible scrollport.
    */
   virtual bool IsRectNearlyVisible(const nsRect& aRect) = 0;
- /**
-  * Expand the given rect taking into account which directions we can scroll
-  * and how far we want to expand for frame visibility purposes.
-  */
+  /**
+   * Expand the given rect taking into account which directions we can scroll
+   * and how far we want to expand for frame visibility purposes.
+   */
   virtual nsRect ExpandRectToNearlyVisible(const nsRect& aRect) const = 0;
   /**
    * Returns the origin that triggered the last instant scroll. Will equal
@@ -374,15 +405,6 @@ public:
    * latest instant scroll.
    */
   virtual nsAtom* LastScrollOrigin() = 0;
-  /**
-   * Sets a flag on the scrollframe that indicates the current scroll origin
-   * has been sent over in a layers transaction, and subsequent changes to
-   * the scroll position by "weaker" origins are permitted to overwrite the
-   * the scroll origin. Scroll origins that nsLayoutUtils::CanScrollOriginClobberApz
-   * returns false for are considered "weaker" than scroll origins for which
-   * that function returns true.
-   */
-  virtual void AllowScrollOriginDowngrade() = 0;
   /**
    * Returns the origin that triggered the last smooth scroll.
    * Will equal nsGkAtoms::apz when the compositor's replica frame
@@ -423,21 +445,16 @@ public:
    * Returns the ScrollMetadata contributed by this frame, if there is one.
    */
   virtual mozilla::Maybe<mozilla::layers::ScrollMetadata> ComputeScrollMetadata(
-    mozilla::layers::LayerManager* aLayerManager,
-    const nsIFrame* aContainerReferenceFrame,
-    const mozilla::Maybe<ContainerLayerParameters>& aParameters,
-    const mozilla::DisplayItemClip* aClip) const = 0;
+      mozilla::layers::LayerManager* aLayerManager,
+      const nsIFrame* aContainerReferenceFrame,
+      const mozilla::Maybe<ContainerLayerParameters>& aParameters,
+      const mozilla::DisplayItemClip* aClip) const = 0;
   /**
    * Ensure's aLayer is clipped to the display port.
    */
-  virtual void ClipLayerToDisplayPort(mozilla::layers::Layer* aLayer,
-                                      const mozilla::DisplayItemClip* aClip,
-                                      const ContainerLayerParameters& aParameters) const = 0;
-
-  /**
-   * If this scroll frame is ignoring viewporting clipping
-   */
-  virtual bool IsIgnoringViewportClipping() const = 0;
+  virtual void ClipLayerToDisplayPort(
+      mozilla::layers::Layer* aLayer, const mozilla::DisplayItemClip* aClip,
+      const ContainerLayerParameters& aParameters) const = 0;
 
   /**
    * Mark the scrollbar frames for reflow.
@@ -484,23 +501,40 @@ public:
    * set to true before on the same paint.
    */
   virtual bool DecideScrollableLayer(nsDisplayListBuilder* aBuilder,
-                                     nsRect* aVisibleRect,
-                                     nsRect* aDirtyRect,
+                                     nsRect* aVisibleRect, nsRect* aDirtyRect,
                                      bool aSetBase) = 0;
 
   /**
-   * Notification that this scroll frame is getting its frame visibility updated.
-   * aIgnoreDisplayPort indicates that the display port was ignored (because
-   * there was no suitable base rect)
+   * Notify the scrollframe that the current scroll offset and origin have been
+   * sent over in a layers transaction.
+   *
+   * This sets a flag on the scrollframe that indicates subsequent changes
+   * to the scroll position by "weaker" origins are permitted to overwrite the
+   * the scroll origin. Scroll origins that
+   * nsLayoutUtils::CanScrollOriginClobberApz returns false for are considered
+   * "weaker" than scroll origins for which that function returns true.
+   *
+   * This function must be called for a scrollframe after all calls to
+   * ComputeScrollMetadata in a layers transaction have been completed.
+   *
    */
-  virtual void NotifyApproximateFrameVisibilityUpdate(bool aIgnoreDisplayPort) = 0;
+  virtual void NotifyApzTransaction() = 0;
+
+  /**
+   * Notification that this scroll frame is getting its frame visibility
+   * updated. aIgnoreDisplayPort indicates that the display port was ignored
+   * (because there was no suitable base rect)
+   */
+  virtual void NotifyApproximateFrameVisibilityUpdate(
+      bool aIgnoreDisplayPort) = 0;
 
   /**
    * Returns true if this scroll frame had a display port at the last frame
    * visibility update and fills in aDisplayPort with that displayport. Returns
    * false otherwise, and doesn't touch aDisplayPort.
    */
-  virtual bool GetDisplayPortAtLastApproximateFrameVisibilityUpdate(nsRect* aDisplayPort) = 0;
+  virtual bool GetDisplayPortAtLastApproximateFrameVisibilityUpdate(
+      nsRect* aDisplayPort) = 0;
 
   /**
    * This is called when a descendant scrollframe's has its displayport expired.
@@ -522,6 +556,8 @@ public:
    */
   virtual bool DragScroll(mozilla::WidgetEvent* aEvent) = 0;
 
+  virtual void AsyncScrollbarDragInitiated(
+      uint64_t aDragBlockId, mozilla::layers::ScrollDirection aDirection) = 0;
   virtual void AsyncScrollbarDragRejected() = 0;
 
   /**
@@ -530,6 +566,12 @@ public:
    * all (ie XUL documents) even though they may contain other scroll frames.
    */
   virtual bool IsRootScrollFrameOfDocument() const = 0;
+
+  /**
+   * Returns the scroll anchor associated with this scrollable frame.
+   */
+  virtual const ScrollAnchorContainer* GetAnchor() const = 0;
+  virtual ScrollAnchorContainer* GetAnchor() = 0;
 };
 
 #endif

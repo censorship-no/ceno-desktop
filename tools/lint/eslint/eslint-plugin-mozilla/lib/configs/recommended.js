@@ -11,6 +11,7 @@ module.exports = {
   "env": {
     "browser": true,
     "es6": true,
+    "mozilla/privileged": true,
   },
 
   "extends": [
@@ -18,60 +19,27 @@ module.exports = {
   ],
 
   "globals": {
-    "AddonManagerPermissions": false,
-    "BroadcastChannel": false,
-    "CSSAnimation": false,
-    "CSSPrimitiveValue": false,
-    "CSSValueList": false,
     "Cc": false,
-    "CheckerboardReportService": false,
     // Specific to Firefox (Chrome code only).
     "ChromeUtils": false,
-    "ChromeWorker": false,
     "Ci": false,
     "Components": false,
     "Cr": false,
     "Cu": false,
-    "DOMRequest": false,
     "Debugger": false,
-    "DedicatedWorkerGlobalScope": false,
-    "DominatorTree": false,
-    "HeapSnapshot": false,
-    "IDBFileRequest": false,
-    "IDBLocaleAwareKeyRange": false,
-    "IDBMutableFile": false,
-    "ImageDocument": false,
     "InstallTrigger": false,
     // Specific to Firefox
     // eslint-disable-next-line max-len
     // https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/InternalError
     "InternalError": true,
-    "KeyEvent": false,
-    "MatchGlob": false,
-    "MatchPattern": false,
-    "MatchPatternSet": false,
-    "MenuBoxObject": false,
-    // Specific to Firefox (Chrome code only).
-    "PlacesBookmarkAddition": false,
-    "PlacesEvent": false,
-    "PlacesObservers": false,
-    "PlacesWeakCallbackWrapper": false,
-    "PrioEncoder": false,
-    // Specific to Firefox (Chrome code only).
+    "Intl": false,
     "SharedArrayBuffer": false,
-    "SimpleGestureEvent": false,
-    // Note: StopIteration will likely be removed as part of removing legacy
-    // generators, see bug 968038.
     "StopIteration": false,
-    "StructuredCloneHolder": false,
-    "WebAssembly": false,
-    "WebExtensionContentScript": false,
-    "WebExtensionPolicy": false,
-    "WebrtcGlobalInformation": false,
-    // Non-standard, specific to Firefox.
-    "XULElement": false,
-    "console": true,
     "dump": true,
+    // Override the "browser" env definition of "location" to allow writing as it
+    // is a writeable property.
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=1509270#c1 for more information.
+    "location": true,
     "openDialog": false,
     "saveStack": false,
     "sizeToContent": false,
@@ -89,7 +57,8 @@ module.exports = {
       "mozilla/use-services": "off",
     },
   }, {
-    // Turn off browser env for all *.jsm files, and turn on the jsm environment.
+    // We don't have the general browser environment for jsm files, but we do
+    // have our own special environments for them.
     "env": {
       "browser": false,
       "mozilla/jsm": true,
@@ -97,6 +66,8 @@ module.exports = {
     "files": "**/*.jsm",
     "rules": {
       "mozilla/mark-exported-symbols-as-used": "error",
+      // JSM modules are far easier to check for no-unused-vars on a global scope,
+      // than our content files. Hence we turn that on here.
       "no-unused-vars": ["error", {
         "args": "none",
         "vars": "all",
@@ -204,6 +175,7 @@ module.exports = {
     "mozilla/no-import-into-var-and-global": "error",
     "mozilla/no-useless-parameters": "error",
     "mozilla/no-useless-removeEventListener": "error",
+    "mozilla/reject-importGlobalProperties": ["error", "allownonwebidl"],
     "mozilla/rejects-requires-await": "error",
     "mozilla/use-cc-etc": "error",
     "mozilla/use-chromeutils-generateqi": "error",
@@ -211,6 +183,7 @@ module.exports = {
     "mozilla/use-default-preference-values": "error",
     "mozilla/use-includes-instead-of-indexOf": "error",
     "mozilla/use-ownerGlobal": "error",
+    "mozilla/use-returnValue": "error",
     "mozilla/use-services": "error",
 
     // Always require parenthesis for new calls
@@ -291,6 +264,9 @@ module.exports = {
 
     // Dissallow use of new wrappers
     "no-new-wrappers": "error",
+
+    // Disallow use of event global.
+    "no-restricted-globals": ["error", "event"],
 
     // Disallows unnecessary `return await ...`.
     "no-return-await": "error",
@@ -396,6 +372,6 @@ module.exports = {
     }],
 
     // Requires or disallows a whitespace (space or tab) beginning a comment
-    "spaced-comment": "error",
+    "spaced-comment": ["error", "always", { "markers": ["#"] }],
   },
 };

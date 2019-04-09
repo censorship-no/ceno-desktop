@@ -8,78 +8,69 @@
 #define mozilla_dom_DOMParser_h_
 
 #include "nsCOMPtr.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsWrapperCache.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Span.h"
 #include "mozilla/dom/DOMParserBinding.h"
 #include "mozilla/dom/TypedArray.h"
 
-class nsIDocument;
 class nsIGlobalObject;
 
 namespace mozilla {
 namespace dom {
 
-class DOMParser final : public nsISupports,
-                        public nsWrapperCache
-{
+class DOMParser final : public nsISupports, public nsWrapperCache {
   typedef mozilla::dom::GlobalObject GlobalObject;
 
   virtual ~DOMParser();
 
-public:
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMParser)
 
   // WebIDL API
-  static already_AddRefed<DOMParser>
-  Constructor(const GlobalObject& aOwner,
-              mozilla::ErrorResult& rv);
+  static already_AddRefed<DOMParser> Constructor(const GlobalObject& aOwner,
+                                                 mozilla::ErrorResult& rv);
 
-  already_AddRefed<nsIDocument>
-  ParseFromString(const nsAString& aStr, SupportedType aType, ErrorResult& aRv);
+  already_AddRefed<Document> ParseFromString(const nsAString& aStr,
+                                             SupportedType aType,
+                                             ErrorResult& aRv);
 
   // Sequence converts to Span, so we can use this overload for both
   // the Sequence case and our internal uses.
-  already_AddRefed<nsIDocument>
-  ParseFromBuffer(Span<const uint8_t> aBuf, SupportedType aType,
-                  ErrorResult& aRv);
+  already_AddRefed<Document> ParseFromBuffer(Span<const uint8_t> aBuf,
+                                             SupportedType aType,
+                                             ErrorResult& aRv);
 
-  already_AddRefed<nsIDocument>
-  ParseFromBuffer(const Uint8Array& aBuf, SupportedType aType,
-                  ErrorResult& aRv);
+  already_AddRefed<Document> ParseFromBuffer(const Uint8Array& aBuf,
+                                             SupportedType aType,
+                                             ErrorResult& aRv);
 
-  already_AddRefed<nsIDocument>
-  ParseFromStream(nsIInputStream* aStream, const nsAString& aCharset,
-                  int32_t aContentLength, SupportedType aType,
-                  ErrorResult& aRv);
+  already_AddRefed<Document> ParseFromStream(nsIInputStream* aStream,
+                                             const nsAString& aCharset,
+                                             int32_t aContentLength,
+                                             SupportedType aType,
+                                             ErrorResult& aRv);
 
-  void
-  ForceEnableXULXBL()
-  {
-    mForceEnableXULXBL = true;
-  }
+  void ForceEnableXULXBL() { mForceEnableXULXBL = true; }
 
-  nsIGlobalObject* GetParentObject() const
-  {
-    return mOwner;
-  }
+  nsIGlobalObject* GetParentObject() const { return mOwner; }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
-  {
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override {
     return mozilla::dom::DOMParser_Binding::Wrap(aCx, this, aGivenProto);
   }
 
   // A way to create a non-global-associated DOMParser from C++.
   static already_AddRefed<DOMParser> CreateWithoutGlobal(ErrorResult& aRv);
 
-private:
+ private:
   DOMParser(nsIGlobalObject* aOwner, nsIPrincipal* aDocPrincipal,
             nsIURI* aDocumentURI, nsIURI* aBaseURI);
 
-  already_AddRefed<nsIDocument> SetUpDocument(DocumentFlavor aFlavor,
-                                              ErrorResult& aRv);
+  already_AddRefed<Document> SetUpDocument(DocumentFlavor aFlavor,
+                                           ErrorResult& aRv);
 
   nsCOMPtr<nsIGlobalObject> mOwner;
   nsCOMPtr<nsIPrincipal> mPrincipal;
@@ -89,7 +80,7 @@ private:
   bool mForceEnableXULXBL;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

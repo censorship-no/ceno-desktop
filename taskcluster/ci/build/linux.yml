@@ -13,7 +13,7 @@ linux64/opt:
         max-run-time: 7200
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -65,6 +65,8 @@ linux64-plain/opt:
 
 linux64/pgo:
     description: "Linux64 PGO"
+    # Disabled because bug 1516114 shows up much more often
+    # use-pgo: true
     index:
         product: firefox
         job-name: linux64-pgo
@@ -72,13 +74,15 @@ linux64/pgo:
         enable-full-crashsymbols: true
     treeherder:
         platform: linux64/pgo
+        # Bug 1516114
         symbol: B
+        # symbol: Bpgo(B)
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
-        max-run-time: 7200
+        max-run-time: 9000
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         options: [enable-pgo]
         config:
             - builds/releng_base_firefox.py
@@ -87,6 +91,8 @@ linux64/pgo:
         secrets: true
         tooltool-downloads: public
         need-xvfb: true
+        # Bug 1516114
+        # mozconfig-variant: profile-use
     toolchains:
         - linux64-binutils
         - linux64-clang
@@ -106,13 +112,13 @@ linux64-fuzzing/debug:
         symbol: Bf
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
-        max-run-time: 3600
+        max-run-time: 5400
         env:
             PERFHERDER_EXTRA_OPTIONS: fuzzing
             FORCE_GCC: '1'
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -143,10 +149,10 @@ linux64/debug:
         symbol: B
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
-        max-run-time: 3600
+        max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -217,7 +223,7 @@ linux64-devedition-nightly/opt:
         max-run-time: 7200
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -249,13 +255,14 @@ linux64-base-toolchains/opt:
         symbol: Bb
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
+        docker-image: {in-tree: debian7-amd64-build-base}
         max-run-time: 7200
         env:
             PERFHERDER_EXTRA_OPTIONS: base-toolchains
             FORCE_GCC: '1'
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -266,7 +273,7 @@ linux64-base-toolchains/opt:
     toolchains:
         - linux64-clang-3.9
         - linux64-gcc-6
-        - linux64-rust-1.29
+        - linux64-rust-1.31
         - linux64-cbindgen
         - linux64-sccache
         - linux64-node
@@ -281,13 +288,14 @@ linux64-base-toolchains/debug:
         symbol: Bb
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
+        docker-image: {in-tree: debian7-amd64-build-base}
         max-run-time: 3600
         env:
             PERFHERDER_EXTRA_OPTIONS: base-toolchains
             FORCE_GCC: '1'
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -300,7 +308,7 @@ linux64-base-toolchains/debug:
     toolchains:
         - linux64-clang-3.9
         - linux64-gcc-6
-        - linux64-rust-1.29
+        - linux64-rust-1.31
         - linux64-cbindgen
         - linux64-sccache
         - linux64-node
@@ -321,7 +329,7 @@ linux/opt:
         max-run-time: 7200
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -351,10 +359,10 @@ linux/debug:
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
         docker-image: {in-tree: debian7-i386-build}
-        max-run-time: 3600
+        max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -386,10 +394,10 @@ linux/pgo:
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
         docker-image: {in-tree: debian7-i386-build}
-        max-run-time: 7200
+        max-run-time: 9000
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         options: [enable-pgo]
         config:
             - builds/releng_base_firefox.py
@@ -408,23 +416,23 @@ linux/pgo:
         - linux64-node
 
 linux-rusttests/opt:
-    description: "Linux32 Rust tests Opt"
+    description: "Linux32 Rust Tests Opt"
     index:
         product: firefox
         job-name: linux-rusttests-opt
     treeherder:
         platform: linux32/opt
         symbol: BR
-        tier: 2
+        tier: 1
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
         docker-image: {in-tree: debian7-i386-build}
-        max-run-time: 5400
+        max-run-time: 2700
         env:
             PERFHERDER_EXTRA_OPTIONS: rusttests
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -445,23 +453,23 @@ linux-rusttests/opt:
         - linux64-node
 
 linux-rusttests/debug:
-    description: "Linux32 Rust tests Debug"
+    description: "Linux32 Rust Tests Debug"
     index:
         product: firefox
         job-name: linux-rusttests-debug
     treeherder:
         platform: linux32/debug
         symbol: BR
-        tier: 2
+        tier: 1
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
         docker-image: {in-tree: debian7-i386-build}
-        max-run-time: 5400
+        max-run-time: 2700
         env:
             PERFHERDER_EXTRA_OPTIONS: rusttests
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -501,7 +509,7 @@ linux-devedition-nightly/opt:
         max-run-time: 7200
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -543,7 +551,7 @@ linux-nightly/opt:
         max-run-time: 7200
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_32_builds.py
@@ -573,10 +581,10 @@ linux64-asan/opt:
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: "opt asan"
-        max-run-time: 3600
+        max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -607,10 +615,10 @@ linux64-asan-fuzzing/opt:
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: asan-fuzzing
-        max-run-time: 3600
+        max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -642,10 +650,10 @@ linux64-asan-fuzzing-ccov/opt:
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: asan-fuzzing-ccov
-        max-run-time: 3600
+        max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -674,13 +682,13 @@ linux64-fuzzing-ccov/opt:
     run-on-projects: ['mozilla-central', 'try']
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
-        max-run-time: 3600
+        max-run-time: 5400
         env:
             PERFHERDER_EXTRA_OPTIONS: fuzzing-ccov
             FORCE_GCC: '1'
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -693,7 +701,7 @@ linux64-fuzzing-ccov/opt:
         - linux64-clang
         - linux64-gcc
         - linux64-cbindgen
-        - linux64-rust
+        - linux64-rust-nightly
         - linux64-rust-size
         - linux64-sccache
         - linux64-node
@@ -709,6 +717,7 @@ linux64-asan-reporter-nightly/opt:
     treeherder:
         platform: linux64-asan-reporter/opt
         symbol: BoR
+    run-on-projects: ['mozilla-central']
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
         env:
@@ -716,7 +725,7 @@ linux64-asan-reporter-nightly/opt:
         max-run-time: 3600
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -748,10 +757,10 @@ linux64-asan/debug:
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: "debug asan"
-        max-run-time: 3600
+        max-run-time: 5400
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -789,7 +798,7 @@ linux64-nightly/opt:
         max-run-time: 7200
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -821,7 +830,7 @@ linux64-noopt/debug:
         max-run-time: 3600
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -843,22 +852,22 @@ linux64-noopt/debug:
         - linux64-node
 
 linux64-rusttests/opt:
-    description: "Linux64 Rust tests Opt"
+    description: "Linux64 Rust Tests Opt"
     index:
         product: firefox
         job-name: linux64-rusttests-opt
     treeherder:
         platform: linux64/opt
         symbol: BR
-        tier: 2
+        tier: 1
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
-        max-run-time: 5400
+        max-run-time: 2700
         env:
             PERFHERDER_EXTRA_OPTIONS: rusttests
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -879,22 +888,22 @@ linux64-rusttests/opt:
         - linux64-node
 
 linux64-rusttests/debug:
-    description: "Linux64 Rust tests Debug"
+    description: "Linux64 Rust Tests Debug"
     index:
         product: firefox
         job-name: linux64-rusttests-debug
     treeherder:
         platform: linux64/debug
         symbol: BR
-        tier: 2
+        tier: 1
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
-        max-run-time: 5400
+        max-run-time: 2700
         env:
             PERFHERDER_EXTRA_OPTIONS: rusttests
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -922,6 +931,7 @@ linux64-tup/opt:
     treeherder:
         platform: linux64/opt
         symbol: Btup
+        tier: 3
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
         max-run-time: 3600
@@ -929,7 +939,7 @@ linux64-tup/opt:
             PERFHERDER_EXTRA_OPTIONS: tup
     run:
         using: mozharness
-        actions: [get-secrets build]
+        actions: [get-secrets, build]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -960,12 +970,16 @@ linux64-ccov/debug:
     run-on-projects: ['mozilla-central', 'try']
     worker-type: aws-provisioner-v1/gecko-{level}-b-linux
     worker:
+        artifacts:
+            - name: public/code-coverage-grcov.zip
+              path: /builds/worker/workspace/build/src/obj-firefox/code-coverage-grcov.zip
+              type: file
         max-run-time: 7200
         env:
             FORCE_GCC: '1'
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -982,6 +996,9 @@ linux64-ccov/debug:
         - linux64-cbindgen
         - linux64-sccache
         - linux64-node
+    fetches:
+        toolchain:
+            - linux64-grcov
 
 linux64-ccov/opt:
     description: "Linux64-CCov Opt"
@@ -1000,7 +1017,7 @@ linux64-ccov/opt:
             FORCE_GCC: '1'
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
@@ -1032,7 +1049,7 @@ linux64-add-on-devel/opt:
         max-run-time: 3600
     run:
         using: mozharness
-        actions: [get-secrets build check-test]
+        actions: [get-secrets, build, check-test]
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py

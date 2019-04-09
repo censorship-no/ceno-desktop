@@ -145,7 +145,7 @@ BoxModel.prototype = {
 
       const styleEntries = await this.inspector.pageStyle.getApplied(node, {
         // We don't need styles applied to pseudo elements of the current node.
-        skipPseudo: true
+        skipPseudo: true,
       });
       this.elementRules = styleEntries.map(e => e.rule);
 
@@ -199,8 +199,7 @@ BoxModel.prototype = {
       return;
     }
 
-    const toolbox = this.inspector.toolbox;
-    toolbox.highlighterUtils.unhighlight();
+    this.inspector.highlighter.unhighlight();
   },
 
   /**
@@ -208,12 +207,12 @@ BoxModel.prototype = {
    * geometry editor enabled state.
    */
   onHideGeometryEditor() {
-    const { markup, selection, toolbox } = this.inspector;
+    const { markup, selection, inspector } = this.inspector;
 
     this.highlighters.hideGeometryEditor();
     this.store.dispatch(updateGeometryEditorEnabled(false));
 
-    toolbox.off("picker-started", this.onHideGeometryEditor);
+    inspector.nodePicker.off("picker-started", this.onHideGeometryEditor);
     selection.off("new-node-front", this.onHideGeometryEditor);
     markup.off("leave", this.onMarkupViewLeave);
     markup.off("node-hover", this.onMarkupViewNodeHover);
@@ -284,7 +283,7 @@ BoxModel.prototype = {
       initial: initialValue,
       contentType: InplaceEditor.CONTENT_TYPES.CSS_VALUE,
       property: {
-        name: property
+        name: property,
       },
       start: self => {
         self.elt.parentNode.classList.add("boxmodel-editing");
@@ -295,7 +294,7 @@ BoxModel.prototype = {
         }
 
         const properties = [
-          { name: property, value: value }
+          { name: property, value: value },
         ];
 
         if (property.substring(0, 7) == "border-") {
@@ -338,10 +337,8 @@ BoxModel.prototype = {
       return;
     }
 
-    const toolbox = this.inspector.toolbox;
     const nodeFront = this.inspector.selection.nodeFront;
-
-    toolbox.highlighterUtils.highlightNodeFront(nodeFront, options);
+    this.inspector.highlighter.highlight(nodeFront, options);
   },
 
   /**
@@ -368,7 +365,7 @@ BoxModel.prototype = {
    * toggle button is clicked.
    */
   onToggleGeometryEditor() {
-    const { markup, selection, toolbox } = this.inspector;
+    const { markup, selection, inspector } = this.inspector;
     const nodeFront = this.inspector.selection.nodeFront;
     const state = this.store.getState();
     const enabled = !state.boxModel.geometryEditorEnabled;
@@ -378,13 +375,13 @@ BoxModel.prototype = {
 
     if (enabled) {
       // Hide completely the geometry editor if the picker is clicked or a new node front
-      toolbox.on("picker-started", this.onHideGeometryEditor);
+      inspector.nodePicker.on("picker-started", this.onHideGeometryEditor);
       selection.on("new-node-front", this.onHideGeometryEditor);
       // Temporary hide the geometry editor
       markup.on("leave", this.onMarkupViewLeave);
       markup.on("node-hover", this.onMarkupViewNodeHover);
     } else {
-      toolbox.off("picker-started", this.onHideGeometryEditor);
+      inspector.nodePicker.off("picker-started", this.onHideGeometryEditor);
       selection.off("new-node-front", this.onHideGeometryEditor);
       markup.off("leave", this.onMarkupViewLeave);
       markup.off("node-hover", this.onMarkupViewNodeHover);

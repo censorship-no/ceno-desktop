@@ -5,36 +5,27 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMappedAttributeElement.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 
-
-bool
-nsMappedAttributeElement::SetAndSwapMappedAttribute(nsAtom* aName,
-                                                    nsAttrValue& aValue,
-                                                    bool* aValueWasSet,
-                                                    nsresult* aRetval)
-{
+bool nsMappedAttributeElement::SetAndSwapMappedAttribute(nsAtom* aName,
+                                                         nsAttrValue& aValue,
+                                                         bool* aValueWasSet,
+                                                         nsresult* aRetval) {
   nsHTMLStyleSheet* sheet = OwnerDoc()->GetAttributeStyleSheet();
-  *aRetval = mAttrs.SetAndSwapMappedAttr(aName, aValue,
-                                         this, sheet, aValueWasSet);
+  *aRetval =
+      mAttrs.SetAndSwapMappedAttr(aName, aValue, this, sheet, aValueWasSet);
   return true;
 }
 
 nsMapRuleToAttributesFunc
-nsMappedAttributeElement::GetAttributeMappingFunction() const
-{
+nsMappedAttributeElement::GetAttributeMappingFunction() const {
   return &MapNoAttributesInto;
 }
 
-void
-nsMappedAttributeElement::MapNoAttributesInto(const nsMappedAttributes*,
-                                              mozilla::MappedDeclarations&)
-{
-}
+void nsMappedAttributeElement::MapNoAttributesInto(
+    const nsMappedAttributes*, mozilla::MappedDeclarations&) {}
 
-void
-nsMappedAttributeElement::NodeInfoChanged(nsIDocument* aOldDoc)
-{
+void nsMappedAttributeElement::NodeInfoChanged(Document* aOldDoc) {
   nsHTMLStyleSheet* sheet = OwnerDoc()->GetAttributeStyleSheet();
   mAttrs.SetMappedAttrStyleSheet(sheet);
   nsMappedAttributeElementBase::NodeInfoChanged(aOldDoc);

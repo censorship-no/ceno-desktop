@@ -104,7 +104,7 @@ for (const src of ${JSON.stringify(scripts, null, 2)}) {
     <link rel="stylesheet" href="${options.baseUrl}css/activity-stream.css" />
   </head>
   <body class="activity-stream">
-    <div id="root">${isPrerendered ? html : ""}</div>
+    <div id="root">${isPrerendered ? html : "<!-- Regular React Rendering -->"}</div>
     <div id="snippets-container">
       <div id="snippets"></div>
     </div>${options.noscripts ? "" : scriptTag}
@@ -152,10 +152,8 @@ function writeFiles(name, destPath, filesMap, {html, state}, options) {
 
 const STATIC_FILES = new Map([
   ["activity-stream-debug.html", ({options}) => templateHTML(options)],
-  ["activity-stream-debug-noscripts.html", ({options}) => templateHTML(Object.assign({}, options, {noscripts: true}))],
   ["activity-stream-initial-state.js", ({state}) => templateJs("gActivityStreamPrerenderedState", "static", state)],
   ["activity-stream-prerendered-debug.html", ({html, options}) => templateHTML(options, html)],
-  ["activity-stream-prerendered-debug-noscripts.html", ({html, options}) => templateHTML(Object.assign({}, options, {noscripts: true}), html)],
 ]);
 
 const LOCALIZED_FILES = new Map([

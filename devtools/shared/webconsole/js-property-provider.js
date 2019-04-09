@@ -11,6 +11,7 @@ const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 if (!isWorker) {
   loader.lazyImporter(this, "Parser", "resource://devtools/shared/Parser.jsm");
 }
+loader.lazyRequireGetter(this, "Reflect", "resource://gre/modules/reflect.jsm", true);
 
 // Provide an easy way to bail out of even attempting an autocompletion
 // if an object has way too many properties. Protects against large objects
@@ -112,19 +113,24 @@ function analyzeInputString(str) {
           const nextNonSpaceCharIndex = after.indexOf(nextNonSpaceChar);
           const previousNonSpaceChar = trimmedBefore[trimmedBefore.length - 1];
 
+          // If the previous char isn't a dot or opening bracket, and the next one isn't
+          // one either, and the current computed statement is not a
+          // variable/function/class declaration, update the start position.
+          if (
+            previousNonSpaceChar !== "." && nextNonSpaceChar !== "." &&
+            previousNonSpaceChar !== "[" && nextNonSpaceChar !== "[" &&
+            !NO_AUTOCOMPLETE_PREFIXES.includes(currentLastStatement)
+          ) {
+            start = i + (
+              nextNonSpaceCharIndex >= 0
+                ? nextNonSpaceCharIndex
+                : (after.length + 1)
+            );
+          }
+
           // There's only spaces after that, so we can return.
           if (!nextNonSpaceChar) {
             return buildReturnObject();
-          }
-
-          // If the previous char in't a dot, and the next one isn't a dot either,
-          // and the current computed statement is not a variable/function/class
-          // declaration, update the start position.
-          if (
-            previousNonSpaceChar !== "." && nextNonSpaceChar !== "."
-            && !NO_AUTOCOMPLETE_PREFIXES.includes(currentLastStatement)
-          ) {
-            start = i + nextNonSpaceCharIndex;
           }
 
           // Let's jump to handle the next non-space char.
@@ -194,23 +200,45 @@ function analyzeInputString(str) {
  * Provides a list of properties, that are possible matches based on the passed
  * Debugger.Environment/Debugger.Object and inputValue.
  *
- * @param object dbgObject
+ * @param {Object} An object of the following shape:
+ * - {Object} dbgObject
  *        When the debugger is not paused this Debugger.Object wraps
  *        the scope for autocompletion.
  *        It is null if the debugger is paused.
- * @param object anEnvironment
+ * - {Object} environment
  *        When the debugger is paused this Debugger.Environment is the
  *        scope for autocompletion.
  *        It is null if the debugger is not paused.
- * @param string inputValue
+ * - {String} inputValue
  *        Value that should be completed.
- * @param number [cursor=inputValue.length]
+ * - {Number} cursor (defaults to inputValue.length).
  *        Optional offset in the input where the cursor is located. If this is
  *        omitted then the cursor is assumed to be at the end of the input
  *        value.
+ * - {Array} authorizedEvaluations (defaults to []).
+ *        Optional array containing all the different properties access that the engine
+ *        can execute in order to retrieve its result's properties.
+ *        ⚠️ This should be set to true *ONLY* on user action as it may cause side-effects
+ *        in the content page ⚠️
+ * - {WebconsoleActor} webconsoleActor
+ *        A reference to a webconsole actor which we can use to retrieve the last
+ *        evaluation result or create a debuggee value.
+ * - {String}: selectedNodeActor
+ *        The actor id of the selected node in the inspector.
  * @returns null or object
- *          If no completion valued could be computed, null is returned,
- *          otherwise a object with the following form is returned:
+ *          If the inputValue is an unsafe getter and invokeUnsafeGetter is false, the
+ *          following form is returned:
+ *
+ *          {
+ *            isUnsafeGetter: true,
+ *            getterPath: {Array<String>} An array of the property chain leading to the
+ *                        getter. Example: ["x", "myGetter"]
+ *          }
+ *
+ *          If no completion valued could be computed, and the input is not an unsafe
+ *          getter, null is returned.
+ *
+ *          Otherwise an object with the following form is returned:
  *            {
  *              matches: Set<string>
  *              matchProp: Last part of the inputValue that was used to find
@@ -219,7 +247,15 @@ function analyzeInputString(str) {
  *                               access (e.g. `window["addEvent`).
  *            }
  */
-function JSPropertyProvider(dbgObject, anEnvironment, inputValue, cursor) {
+function JSPropertyProvider({
+  dbgObject,
+  environment,
+  inputValue,
+  cursor,
+  authorizedEvaluations = [],
+  webconsoleActor,
+  selectedNodeActor,
+}) {
   if (cursor === undefined) {
     cursor = inputValue.length;
   }
@@ -255,11 +291,16 @@ function JSPropertyProvider(dbgObject, anEnvironment, inputValue, cursor) {
     return null;
   }
 
+  const env = environment || dbgObject.asEnvironment();
   const completionPart = lastStatement;
   const lastDotIndex = completionPart.lastIndexOf(".");
   const lastOpeningBracketIndex = isElementAccess ? completionPart.lastIndexOf("[") : -1;
   const lastCompletionCharIndex = Math.max(lastDotIndex, lastOpeningBracketIndex);
   const startQuoteRegex = /^('|"|`)/;
+
+  // AST representation of the expression before the last access char (`.` or `[`).
+  let astExpression;
+  let matchProp = completionPart.slice(lastCompletionCharIndex + 1).trimLeft();
 
   // Catch literals like [1,2,3] or "foo" and return the matches from
   // their prototypes.
@@ -268,61 +309,87 @@ function JSPropertyProvider(dbgObject, anEnvironment, inputValue, cursor) {
   if (!isWorker && lastCompletionCharIndex > 0) {
     const parser = new Parser();
     parser.logExceptions = false;
-    const syntaxTree = parser.get(completionPart.slice(0, lastCompletionCharIndex));
+    const parsedExpression = completionPart.slice(0, lastCompletionCharIndex);
+    const syntaxTree = parser.get(parsedExpression);
     const lastTree = syntaxTree.getLastSyntaxTree();
     const lastBody = lastTree && lastTree.AST.body[lastTree.AST.body.length - 1];
 
     // Finding the last expression since we've sliced up until the dot.
     // If there were parse errors this won't exist.
     if (lastBody) {
-      const expression = lastBody.expression;
-      const matchProp = completionPart.slice(lastCompletionCharIndex + 1).trimLeft();
-      let search = matchProp;
+      astExpression = lastBody.expression;
+      let matchingObject;
 
-      let elementAccessQuote;
-      if (isElementAccess && startQuoteRegex.test(matchProp)) {
-        elementAccessQuote = matchProp[0];
-        search = matchProp.replace(startQuoteRegex, "");
+      if (astExpression.type === "ArrayExpression") {
+        matchingObject = getContentPrototypeObject(env, "Array");
+      } else if (
+        astExpression.type === "Literal" &&
+        typeof astExpression.value === "string"
+      ) {
+        matchingObject = getContentPrototypeObject(env, "String");
+      } else if (
+        astExpression.type === "Literal" &&
+        Number.isFinite(astExpression.value)
+      ) {
+        // The parser rightfuly indicates that we have a number in some cases (e.g. `1.`),
+        // but we don't want to return Number proto properties in that case since
+        // the result would be invalid (i.e. `1.toFixed()` throws).
+        // So if the expression value is an integer, it should not end with `{Number}.`
+        // (but the following are fine: `1..`, `(1.).`).
+        if (
+          !Number.isInteger(astExpression.value) ||
+          /\d[^\.]{0}\.$/.test(completionPart) === false
+        ) {
+          matchingObject = getContentPrototypeObject(env, "Number");
+        } else {
+          return null;
+        }
       }
 
-      if (expression.type === "ArrayExpression") {
-        let arrayProtoProps = getMatchedProps(Array.prototype, search);
+      if (matchingObject) {
+        let search = matchProp;
+
+        let elementAccessQuote;
+        if (isElementAccess && startQuoteRegex.test(matchProp)) {
+          elementAccessQuote = matchProp[0];
+          search = matchProp.replace(startQuoteRegex, "");
+        }
+
+        let props = getMatchedPropsInDbgObject(matchingObject, search);
         if (isElementAccess) {
-          arrayProtoProps = wrapMatchesInQuotes(arrayProtoProps, elementAccessQuote);
+          props = wrapMatchesInQuotes(props, elementAccessQuote);
         }
 
         return {
           isElementAccess,
           matchProp,
-          matches: arrayProtoProps,
-        };
-      }
-
-      if (expression.type === "Literal" && typeof expression.value === "string") {
-        let stringProtoProps = getMatchedProps(String.prototype, search);
-        if (isElementAccess) {
-          stringProtoProps = wrapMatchesInQuotes(stringProtoProps, elementAccessQuote);
-        }
-
-        return {
-          isElementAccess,
-          matchProp,
-          matches: stringProtoProps,
+          matches: props,
         };
       }
     }
   }
 
   // We are completing a variable / a property lookup.
-  const properties = completionPart.split(".");
-  let matchProp;
-  if (isElementAccess) {
-    const lastPart = properties[properties.length - 1];
-    const openBracketIndex = lastPart.lastIndexOf("[");
-    matchProp = lastPart.substr(openBracketIndex + 1);
-    properties[properties.length - 1] = lastPart.substring(0, openBracketIndex);
+  let properties = [];
+
+  if (astExpression) {
+    if (lastCompletionCharIndex > -1) {
+      properties = getPropertiesFromAstExpression(astExpression);
+
+      if (properties === null) {
+        return null;
+      }
+    }
   } else {
-    matchProp = properties.pop().trimLeft();
+    properties = completionPart.split(".");
+    if (isElementAccess) {
+      const lastPart = properties[properties.length - 1];
+      const openBracketIndex = lastPart.lastIndexOf("[");
+      matchProp = lastPart.substr(openBracketIndex + 1);
+      properties[properties.length - 1] = lastPart.substring(0, openBracketIndex);
+    } else {
+      matchProp = properties.pop().trimLeft();
+    }
   }
 
   let search = matchProp;
@@ -333,11 +400,6 @@ function JSPropertyProvider(dbgObject, anEnvironment, inputValue, cursor) {
   }
 
   let obj = dbgObject;
-
-  // The first property must be found in the environment of the paused debugger
-  // or of the global lexical scope.
-  const env = anEnvironment || obj.asEnvironment();
-
   if (properties.length === 0) {
     return {
       isElementAccess,
@@ -355,6 +417,17 @@ function JSPropertyProvider(dbgObject, anEnvironment, inputValue, cursor) {
     } catch (e) {
       // Ignore.
     }
+  } else if (firstProp === "$_" && webconsoleActor) {
+    obj = webconsoleActor.getLastConsoleInputEvaluation();
+  } else if (firstProp === "$0" && selectedNodeActor && webconsoleActor) {
+    const actor = webconsoleActor.conn.getActor(selectedNodeActor);
+    if (actor) {
+      try {
+        obj = webconsoleActor.makeDebuggeeValue(actor.rawNode);
+      } catch (e) {
+        // Ignore.
+      }
+    }
   } else if (hasArrayIndex(firstProp)) {
     obj = getArrayMemberProperty(null, env, firstProp);
   } else {
@@ -367,10 +440,26 @@ function JSPropertyProvider(dbgObject, anEnvironment, inputValue, cursor) {
 
   // We get the rest of the properties recursively starting from the
   // Debugger.Object that wraps the first property
-  for (let prop of properties) {
-    prop = prop.trim();
-    if (!prop) {
+  for (let [index, prop] of properties.entries()) {
+    if (typeof prop === "string") {
+      prop = prop.trim();
+    }
+
+    if (prop === undefined || prop === null || prop === "") {
       return null;
+    }
+
+    const propPath = [firstProp].concat(properties.slice(0, index + 1));
+    const authorized = authorizedEvaluations.some(
+      x => JSON.stringify(x) === JSON.stringify(propPath));
+
+    if (!authorized && DevToolsUtils.isUnsafeGetter(obj, prop)) {
+      // If we try to access an unsafe getter, return its name so we can consume that
+      // on the frontend.
+      return {
+        isUnsafeGetter: true,
+        getterPath: propPath,
+      };
     }
 
     if (hasArrayIndex(prop)) {
@@ -378,7 +467,7 @@ function JSPropertyProvider(dbgObject, anEnvironment, inputValue, cursor) {
       // list[i][j]..[n]. Traverse the array to get the actual element.
       obj = getArrayMemberProperty(obj, null, prop);
     } else {
-      obj = DevToolsUtils.getProperty(obj, prop);
+      obj = DevToolsUtils.getProperty(obj, prop, authorized);
     }
 
     if (!isObjectUsable(obj)) {
@@ -386,22 +475,93 @@ function JSPropertyProvider(dbgObject, anEnvironment, inputValue, cursor) {
     }
   }
 
+  const prepareReturnedObject = matches => {
+    if (isElementAccess) {
+      // If it's an element access, we need to wrap properties in quotes (either the one
+      // the user already typed, or `"`).
+      matches = wrapMatchesInQuotes(matches, elementAccessQuote);
+    } else if (!isWorker) {
+      // If we're not performing an element access, we need to check that the property
+      // are suited for a dot access. (Reflect.jsm is not available in worker context yet,
+      // see Bug 1507181).
+      matches = new Set([...matches].filter(propertyName => {
+        let valid = true;
+        try {
+          // In order to know if the property is suited for dot notation, we use Reflect
+          // to parse an expression where we try to access the property with a dot. If it
+          // throws, this means that we need to do an element access instead.
+          Reflect.parse(`({${propertyName}: true})`);
+        } catch (e) {
+          valid = false;
+        }
+        return valid;
+      }));
+    }
+
+    return {isElementAccess, matchProp, matches};
+  };
+
   // If the final property is a primitive
   if (typeof obj != "object") {
-    return {
-      isElementAccess,
-      matchProp,
-      matches: getMatchedProps(obj, search),
-    };
+    return prepareReturnedObject(getMatchedProps(obj, search));
   }
 
-  let matches = getMatchedPropsInDbgObject(obj, search);
-  if (isElementAccess) {
-    // If it's an element access, we need to wrap properties in quotes (either the one
-    // the user already typed, or `"`).
-    matches = wrapMatchesInQuotes(matches, elementAccessQuote);
+  return prepareReturnedObject(getMatchedPropsInDbgObject(obj, search));
+}
+
+/**
+ * For a given environment and constructor name, returns its Debugger.Object wrapped
+ * prototype.
+ *
+ * @param {Environment} env
+ * @param {String} name: Name of the constructor object we want the prototype of.
+ * @returns {Debugger.Object|null} the prototype, or null if it not found.
+ */
+function getContentPrototypeObject(env, name) {
+  // Retrieve the outermost environment to get the global object.
+  let outermostEnv = env;
+  while (outermostEnv && outermostEnv.parent) {
+    outermostEnv = outermostEnv.parent;
   }
-  return {isElementAccess, matchProp, matches};
+
+  const constructorObj = DevToolsUtils.getProperty(outermostEnv.object, name);
+  if (!constructorObj) {
+    return null;
+  }
+
+  return DevToolsUtils.getProperty(constructorObj, "prototype");
+}
+
+/**
+ * @param {Object} ast: An AST representing a property access (e.g. `foo.bar["baz"].x`)
+ * @returns {Array|null} An array representing the property access
+ *                       (e.g. ["foo", "bar", "baz", "x"]).
+ */
+function getPropertiesFromAstExpression(ast) {
+  let result = [];
+  if (!ast) {
+    return result;
+  }
+  const {type, property, object, name} = ast;
+  if (type === "ThisExpression") {
+    result.unshift("this");
+  } else if (type === "Identifier" && name) {
+    result.unshift(name);
+  } else if (type === "MemberExpression") {
+    if (property) {
+      if (property.type === "Identifier" && property.name) {
+        result.unshift(property.name);
+      } else if (property.type === "Literal") {
+        result.unshift(property.value);
+      }
+    }
+    if (object) {
+      result = (getPropertiesFromAstExpression(object) || []).concat(result);
+    }
+  } else {
+    return null;
+  }
+  return result;
 }
 
 function wrapMatchesInQuotes(matches, quote = `"`) {
@@ -483,15 +643,15 @@ function isObjectUsable(object) {
 /**
  * @see getExactMatchImpl()
  */
-function getVariableInEnvironment(anEnvironment, name) {
-  return getExactMatchImpl(anEnvironment, name, DebuggerEnvironmentSupport);
+function getVariableInEnvironment(environment, name) {
+  return getExactMatchImpl(environment, name, DebuggerEnvironmentSupport);
 }
 
 /**
  * @see getMatchedPropsImpl()
  */
-function getMatchedPropsInEnvironment(anEnvironment, match) {
-  return getMatchedPropsImpl(anEnvironment, match, DebuggerEnvironmentSupport);
+function getMatchedPropsInEnvironment(environment, match) {
+  return getMatchedPropsImpl(environment, match, DebuggerEnvironmentSupport);
 }
 
 /**

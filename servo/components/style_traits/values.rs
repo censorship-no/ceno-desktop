@@ -1,12 +1,12 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Helper types and traits for the handling of CSS values.
 
 use app_units::Au;
-use cssparser::{ParseError, Parser, Token, UnicodeRange, serialize_string};
 use cssparser::ToCss as CssparserToCss;
+use cssparser::{serialize_string, ParseError, Parser, Token, UnicodeRange};
 use servo_arc::Arc;
 use std::fmt::{self, Write};
 
@@ -155,24 +155,6 @@ where
             }
         }
         self.inner.write_char(c)
-    }
-}
-
-#[macro_export]
-macro_rules! serialize_function {
-    ($dest: expr, $name: ident($( $arg: expr, )+)) => {
-        serialize_function!($dest, $name($($arg),+))
-    };
-    ($dest: expr, $name: ident($first_arg: expr $( , $arg: expr )*)) => {
-        {
-            $dest.write_str(concat!(stringify!($name), "("))?;
-            $first_arg.to_css($dest)?;
-            $(
-                $dest.write_str(", ")?;
-                $arg.to_css($dest)?;
-            )*
-            $dest.write_char(')')
-        }
     }
 }
 
@@ -450,7 +432,7 @@ impl_to_css_for_predefined_type!(::cssparser::RGBA);
 impl_to_css_for_predefined_type!(::cssparser::Color);
 impl_to_css_for_predefined_type!(::cssparser::UnicodeRange);
 
-#[macro_export]
+/// Define an enum type with unit variants that each correspond to a CSS keyword.
 macro_rules! define_css_keyword_enum {
     (pub enum $name:ident { $($variant:ident = $css:expr,)+ }) => {
         #[allow(missing_docs)]
@@ -507,7 +489,7 @@ macro_rules! define_css_keyword_enum {
 
 /// Helper types for the handling of specified values.
 pub mod specified {
-    use ParsingMode;
+    use crate::ParsingMode;
 
     /// Whether to allow negative lengths or not.
     #[repr(u8)]

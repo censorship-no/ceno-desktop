@@ -23,9 +23,7 @@
   --theme-tab-toolbar-background: var(--grey-10);
   --theme-toolbar-background: var(--grey-10);
   --theme-toolbar-color: var(--grey-90);
-  --theme-toolbar-photon-icon-color: var(--grey-90-a80);
   --theme-toolbar-selected-color: var(--blue-60);
-  --theme-toolbar-checked-color: var(--blue-60);
   --theme-toolbar-highlighted-color: var(--green-60);
   --theme-toolbar-background-hover: rgba(221, 225, 228, 0.66);
   --theme-toolbar-background-alt: #f5f5f5;
@@ -43,6 +41,11 @@
   --theme-splitter-color: var(--grey-25);
   --theme-emphasized-splitter-color: var(--grey-30);
   --theme-emphasized-splitter-color-hover: var(--grey-40);
+
+  /* Icon colors */
+  --theme-icon-color: rgba(12, 12, 13, 0.8);
+  --theme-icon-dimmed-color: rgba(135, 135, 137, 0.9);
+  --theme-icon-checked-color: var(--blue-60);
 
   /* Text color */
   --theme-comment: var(--grey-50);
@@ -83,16 +86,11 @@
   --theme-graphs-full-red: #f00;
   --theme-graphs-full-blue: #00f;
 
-  /* Icon filters */
-  --theme-icon-checked-filter: url(chrome://devtools/skin/images/filters.svg#icon-checked-light);
-
   /* Common popup styles(used by HTMLTooltip and autocomplete) */
   --theme-popup-background: -moz-field;
   --theme-popup-color: -moz-fieldText;
   --theme-popup-border-color: ThreeDShadow;
   --theme-popup-dimmed: hsla(0,0%,80%,.3);
-
-  --theme-messageCloseButtonFilter: invert(0);
 }
 
 /*
@@ -114,9 +112,7 @@
   --theme-tab-toolbar-background: var(--grey-90);
   --theme-toolbar-background: var(--grey-85);
   --theme-toolbar-color: var(--grey-40);
-  --theme-toolbar-photon-icon-color: var(--grey-40);
   --theme-toolbar-selected-color: white;
-  --theme-toolbar-checked-color: #75BFFF;
   --theme-toolbar-highlighted-color: var(--green-50);
   --theme-toolbar-background-hover: #20232B;
   --theme-toolbar-background-alt: var(--grey-85);
@@ -134,6 +130,11 @@
   --theme-splitter-color: #3c3c3d;
   --theme-emphasized-splitter-color: var(--grey-60);
   --theme-emphasized-splitter-color-hover: var(--grey-50);
+
+  /* Icon colors */
+  --theme-icon-color: rgba(249, 249, 250, 0.7);
+  --theme-icon-dimmed-color: rgba(147, 147, 149, 0.9);
+  --theme-icon-checked-color: var(--blue-30);
 
   /* Text color */
   --theme-comment: var(--grey-45);
@@ -174,16 +175,11 @@
   --theme-graphs-full-red: #f00;
   --theme-graphs-full-blue: #00f;
 
-  /* Icon filters */
-  --theme-icon-checked-filter: url(chrome://devtools/skin/images/filters.svg#icon-checked-dark);
-
   /* Common popup styles(used by HTMLTooltip and autocomplete) */
   --theme-popup-background: var(--grey-60);
   --theme-popup-color: rgb(249,249,250);
   --theme-popup-border-color: #27272b;
   --theme-popup-dimmed: rgba(249,249,250,.1);
-
-  --theme-messageCloseButtonFilter: invert(1);
 }
 
 :root {
@@ -200,29 +196,15 @@
   --theme-focus-box-shadow-textbox: 0 0 0 1px var(--theme-textbox-box-shadow);
 
   --toolbarbutton-background: var(--theme-toolbar-hover);
-  --toolbarbutton-border-color: transparent;
   --toolbarbutton-hover-background: var(--theme-toolbar-hover);
-  --toolbarbutton-hover-border-color: var(--toolbarbutton-border-color);
   --toolbarbutton-focus-background: var(--theme-selection-focus-background);
   --toolbarbutton-focus-color: var(--theme-selection-focus-color);
   --toolbarbutton-checked-background: var(--theme-selection-background);
   --toolbarbutton-checked-color: var(--theme-selection-color);
-  --toolbarbutton-checked-border-color: var(--toolbarbutton-border-color);
   --toolbarbutton-checked-focus-background: var(--blue-60);
 
   /* The photon animation curve */
   --animation-curve: cubic-bezier(.07,.95,0,1);
-
-  /* Images */
-  --select-arrow-image: url(chrome://devtools/skin/images/select-arrow.svg);
-  --theme-pane-collapse-image: url(chrome://devtools/skin/images/pane-collapse.svg);
-  --theme-pane-expand-image: url(chrome://devtools/skin/images/pane-expand.svg);
-  --theme-console-alert-image: url(chrome://devtools/skin/images/webconsole/alert.svg);
-  --theme-console-navigation-image: url(chrome://devtools/skin/images/webconsole/globe.svg);
-  --theme-console-info-image: url(chrome://devtools/skin/images/webconsole/info.svg);
-  --theme-console-input-image: url(chrome://devtools/skin/images/webconsole/input.svg);
-  --theme-console-return-image: url(chrome://devtools/skin/images/webconsole/return.svg);
-  --theme-console-jump-image: url(chrome://devtools/skin/images/webconsole/jump.svg);
 
   /* Firefox Colors CSS Variables v1.0.3
    * Colors are taken from: https://github.com/FirefoxUX/design-tokens
@@ -235,6 +217,7 @@
   --purple-50: #9400ff;
   --purple-60: #8000d7;
 
+  --blue-30: #75baff;
   --blue-40: #45a1ff;
   --blue-50: #0a84ff;
   --blue-55: #0074e8;
@@ -244,6 +227,10 @@
   --teal-60: #00c8d7;
   --teal-70: #008ea4;
 
+  --red-20: #ffb3d2;
+  --red-40: #ff3b6b;
+  --red-50: #ff0039;
+  --red-60: #d70022;
   --red-70: #a4000f;
 
   --green-50: #30e60b;
@@ -252,24 +239,20 @@
 
   --yellow-50: #ffe900;
   --yellow-60: #d7b600;
+  --yellow-65: #be9b00;
   --yellow-80: #715100;
 
   --grey-10: #f9f9fa;
   --grey-20: #ededf0;
   --grey-25: #e0e0e2;
   --grey-30: #d7d7db;
-  --grey-30-a40: rgba(215, 215, 219, 0.4);
-  --grey-30-a90: rgba(215, 215, 219, 0.9);
   --grey-40: #b1b1b3;
   --grey-45: #939395;
   --grey-50: #737373;
   --grey-55: #5c5c5f;
   --grey-60: #4a4a4f;
-  --grey-60-a50: rgba(74, 74, 79, 0.5);
   --grey-70: #38383d;
   --grey-80: #2a2a2e;
   --grey-85: #1b1b1d;
   --grey-90: #0c0c0d;
-  --grey-90-a10: rgba(12, 12, 13, 0.1);
-  --grey-90-a80: rgba(12, 12, 13, 0.8);
 }

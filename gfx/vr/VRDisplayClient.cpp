@@ -20,7 +20,7 @@
 #include "nsIScreenManager.h"
 
 #ifdef XP_WIN
-#include "../layers/d3d11/CompositorD3D11.h"
+#  include "../layers/d3d11/CompositorD3D11.h"
 #endif
 
 #include "VRDisplayClient.h"
@@ -32,77 +32,58 @@ using namespace mozilla;
 using namespace mozilla::gfx;
 
 VRDisplayClient::VRDisplayClient(const VRDisplayInfo& aDisplayInfo)
-  : mDisplayInfo(aDisplayInfo)
-  , bLastEventWasMounted(false)
-  , bLastEventWasPresenting(false)
-  , mPresentationCount(0)
-  , mLastEventFrameId(0)
-  , mLastPresentingGeneration(0)
-  , mLastEventControllerState{}
-{
+    : mDisplayInfo(aDisplayInfo),
+      bLastEventWasMounted(false),
+      bLastEventWasPresenting(false),
+      mPresentationCount(0),
+      mLastEventFrameId(0),
+      mLastPresentingGeneration(0),
+      mLastEventControllerState{} {
   MOZ_COUNT_CTOR(VRDisplayClient);
 }
 
-VRDisplayClient::~VRDisplayClient() {
-  MOZ_COUNT_DTOR(VRDisplayClient);
-}
+VRDisplayClient::~VRDisplayClient() { MOZ_COUNT_DTOR(VRDisplayClient); }
 
-void
-VRDisplayClient::UpdateDisplayInfo(const VRDisplayInfo& aDisplayInfo)
-{
+void VRDisplayClient::UpdateDisplayInfo(const VRDisplayInfo& aDisplayInfo) {
   mDisplayInfo = aDisplayInfo;
   FireEvents();
 }
 
-already_AddRefed<VRDisplayPresentation>
-VRDisplayClient::BeginPresentation(const nsTArray<mozilla::dom::VRLayer>& aLayers,
-                                   uint32_t aGroup)
-{
+already_AddRefed<VRDisplayPresentation> VRDisplayClient::BeginPresentation(
+    const nsTArray<mozilla::dom::VRLayer>& aLayers, uint32_t aGroup) {
   ++mPresentationCount;
-  RefPtr<VRDisplayPresentation> presentation = new VRDisplayPresentation(this, aLayers, aGroup);
+  RefPtr<VRDisplayPresentation> presentation =
+      new VRDisplayPresentation(this, aLayers, aGroup);
   return presentation.forget();
 }
 
-void
-VRDisplayClient::PresentationDestroyed()
-{
-  --mPresentationCount;
-}
+void VRDisplayClient::PresentationDestroyed() { --mPresentationCount; }
 
-void
-VRDisplayClient::ZeroSensor()
-{
-  VRManagerChild *vm = VRManagerChild::Get();
+void VRDisplayClient::ZeroSensor() {
+  VRManagerChild* vm = VRManagerChild::Get();
   vm->SendResetSensor(mDisplayInfo.mDisplayID);
 }
 
-void
-VRDisplayClient::SetGroupMask(uint32_t aGroupMask)
-{
-  VRManagerChild *vm = VRManagerChild::Get();
+void VRDisplayClient::SetGroupMask(uint32_t aGroupMask) {
+  VRManagerChild* vm = VRManagerChild::Get();
   vm->SendSetGroupMask(mDisplayInfo.mDisplayID, aGroupMask);
 }
 
-bool
-VRDisplayClient::IsPresentationGenerationCurrent() const
-{
-  if (mLastPresentingGeneration != mDisplayInfo.mDisplayState.mPresentingGeneration) {
+bool VRDisplayClient::IsPresentationGenerationCurrent() const {
+  if (mLastPresentingGeneration !=
+      mDisplayInfo.mDisplayState.presentingGeneration) {
     return false;
   }
 
   return true;
 }
 
-void
-VRDisplayClient::MakePresentationGenerationCurrent()
-{
-  mLastPresentingGeneration = mDisplayInfo.mDisplayState.mPresentingGeneration;
+void VRDisplayClient::MakePresentationGenerationCurrent() {
+  mLastPresentingGeneration = mDisplayInfo.mDisplayState.presentingGeneration;
 }
 
-void
-VRDisplayClient::FireEvents()
-{
-  VRManagerChild *vm = VRManagerChild::Get();
+void VRDisplayClient::FireEvents() {
+  VRManagerChild* vm = VRManagerChild::Get();
   // Only fire these events for non-chrome VR sessions
   bool isPresenting = (mDisplayInfo.mPresentingGroups & kVRGroupContent) != 0;
 
@@ -113,7 +94,7 @@ VRDisplayClient::FireEvents()
   }
 
   // Check if we need to trigger onvrdisplayactivate event
-  if (!bLastEventWasMounted && mDisplayInfo.mDisplayState.mIsMounted) {
+  if (!bLastEventWasMounted && mDisplayInfo.mDisplayState.isMounted) {
     bLastEventWasMounted = true;
     if (gfxPrefs::VRAutoActivateEnabled()) {
       vm->FireDOMVRDisplayMountedEvent(mDisplayInfo.mDisplayID);
@@ -121,15 +102,16 @@ VRDisplayClient::FireEvents()
   }
 
   // Check if we need to trigger onvrdisplaydeactivate event
-  if (bLastEventWasMounted && !mDisplayInfo.mDisplayState.mIsMounted) {
+  if (bLastEventWasMounted && !mDisplayInfo.mDisplayState.isMounted) {
     bLastEventWasMounted = false;
     if (gfxPrefs::VRAutoActivateEnabled()) {
       vm->FireDOMVRDisplayUnmountedEvent(mDisplayInfo.mDisplayID);
     }
   }
 
-  if (mLastPresentingGeneration != mDisplayInfo.mDisplayState.mPresentingGeneration) {
-    mLastPresentingGeneration = mDisplayInfo.mDisplayState.mPresentingGeneration;
+  if (mLastPresentingGeneration !=
+      mDisplayInfo.mDisplayState.presentingGeneration) {
+    mLastPresentingGeneration = mDisplayInfo.mDisplayState.presentingGeneration;
     vm->NotifyPresentationGenerationChanged(mDisplayInfo.mDisplayID);
   }
 
@@ -142,17 +124,16 @@ VRDisplayClient::FireEvents()
   FireGamepadEvents();
 }
 
-void
-VRDisplayClient::FireGamepadEvents()
-{
+void VRDisplayClient::FireGamepadEvents() {
   RefPtr<dom::GamepadManager> gamepadManager(dom::GamepadManager::GetService());
   if (!gamepadManager) {
     return;
   }
-  for (int stateIndex=0; stateIndex < kVRControllerMaxCount; stateIndex++) {
+  for (int stateIndex = 0; stateIndex < kVRControllerMaxCount; stateIndex++) {
     const VRControllerState& state = mDisplayInfo.mControllerState[stateIndex];
     const VRControllerState& lastState = mLastEventControllerState[stateIndex];
-    uint32_t gamepadId = mDisplayInfo.mDisplayID * kVRControllerMaxCount + stateIndex;
+    uint32_t gamepadId =
+        mDisplayInfo.mDisplayID * kVRControllerMaxCount + stateIndex;
     bool bIsNew = false;
 
     // Send events to notify that controllers are removed
@@ -162,7 +143,8 @@ VRDisplayClient::FireGamepadEvents()
         // Controller has been removed
         dom::GamepadRemoved info;
         dom::GamepadChangeEventBody body(info);
-        dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR, body);
+        dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR,
+                                      body);
         gamepadManager->Update(event);
       }
       // Do not process any further events for removed controllers
@@ -170,17 +152,19 @@ VRDisplayClient::FireGamepadEvents()
     }
 
     // Send events to notify that new controllers are added
-    RefPtr<dom::Gamepad> existing = gamepadManager->GetGamepad(gamepadId, dom::GamepadServiceType::VR);
-    if (lastState.controllerName[0] == '\0' || !existing) {
+    RefPtr<dom::Gamepad> existing =
+        gamepadManager->GetGamepad(gamepadId, dom::GamepadServiceType::VR);
+    // ControllerState in OpenVR action-based API gets delay to query btn and
+    // axis count. So, we need to check if they are more than zero.
+    if ((lastState.controllerName[0] == '\0' || !existing) &&
+        (state.numButtons > 0 || state.numAxes > 0)) {
       dom::GamepadAdded info(NS_ConvertUTF8toUTF16(state.controllerName),
-                             dom::GamepadMappingType::_empty,
-                             state.hand,
-                             mDisplayInfo.mDisplayID,
-                             state.numButtons,
-                             state.numAxes,
-                             state.numHaptics);
+                             dom::GamepadMappingType::_empty, state.hand,
+                             mDisplayInfo.mDisplayID, state.numButtons,
+                             state.numAxes, state.numHaptics);
       dom::GamepadChangeEventBody body(info);
-      dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR, body);
+      dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR,
+                                    body);
       gamepadManager->Update(event);
       bIsNew = true;
     }
@@ -189,7 +173,8 @@ VRDisplayClient::FireGamepadEvents()
     if (state.hand != lastState.hand) {
       dom::GamepadHandInformation info(state.hand);
       dom::GamepadChangeEventBody body(info);
-      dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR, body);
+      dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR,
+                                    body);
       gamepadManager->Update(event);
     }
 
@@ -198,7 +183,8 @@ VRDisplayClient::FireGamepadEvents()
       if (state.axisValue[axisIndex] != lastState.axisValue[axisIndex]) {
         dom::GamepadAxisInformation info(axisIndex, state.axisValue[axisIndex]);
         dom::GamepadChangeEventBody body(info);
-        dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR, body);
+        dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR,
+                                      body);
         gamepadManager->Update(event);
       }
     }
@@ -207,18 +193,23 @@ VRDisplayClient::FireGamepadEvents()
     if (!bIsNew) {
       // When a new controller is added, we do not emit button events for
       // the initial state of the inputs.
-      for (uint32_t buttonIndex = 0; buttonIndex < state.numButtons; buttonIndex++) {
+      for (uint32_t buttonIndex = 0; buttonIndex < state.numButtons;
+           buttonIndex++) {
         bool bPressed = (state.buttonPressed & (1ULL << buttonIndex)) != 0;
         bool bTouched = (state.buttonTouched & (1ULL << buttonIndex)) != 0;
-        bool bLastPressed = (lastState.buttonPressed & (1ULL << buttonIndex)) != 0;
-        bool bLastTouched = (lastState.buttonTouched & (1ULL << buttonIndex)) != 0;
+        bool bLastPressed =
+            (lastState.buttonPressed & (1ULL << buttonIndex)) != 0;
+        bool bLastTouched =
+            (lastState.buttonTouched & (1ULL << buttonIndex)) != 0;
 
-        if (state.triggerValue[buttonIndex] != lastState.triggerValue[buttonIndex] ||
-            bPressed != bLastPressed ||
-            bTouched != bLastTouched) {
-          dom::GamepadButtonInformation info(buttonIndex, state.triggerValue[buttonIndex], bPressed, bTouched);
+        if (state.triggerValue[buttonIndex] !=
+                lastState.triggerValue[buttonIndex] ||
+            bPressed != bLastPressed || bTouched != bLastTouched) {
+          dom::GamepadButtonInformation info(
+              buttonIndex, state.triggerValue[buttonIndex], bPressed, bTouched);
           dom::GamepadChangeEventBody body(info);
-          dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR, body);
+          dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR,
+                                        body);
           gamepadManager->Update(event);
         }
       }
@@ -230,7 +221,6 @@ VRDisplayClient::FireGamepadEvents()
         state.isPositionValid != lastState.isPositionValid ||
         state.isOrientationValid != lastState.isOrientationValid ||
         memcmp(&state.pose, &lastState.pose, sizeof(VRPose)) != 0) {
-
       // Convert pose to GamepadPoseState
       dom::GamepadPoseState poseState;
       poseState.Clear();
@@ -264,61 +254,49 @@ VRDisplayClient::FireGamepadEvents()
       // Send the event
       dom::GamepadPoseInformation info(poseState);
       dom::GamepadChangeEventBody body(info);
-      dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR, body);
+      dom::GamepadChangeEvent event(gamepadId, dom::GamepadServiceType::VR,
+                                    body);
       gamepadManager->Update(event);
     }
   }
 
-  // Note that VRControllerState is asserted to be a POD type and memcpy is safe.
-  memcpy(mLastEventControllerState,
-         mDisplayInfo.mControllerState,
+  // Note that VRControllerState is asserted to be a POD type and memcpy is
+  // safe.
+  memcpy(mLastEventControllerState, mDisplayInfo.mControllerState,
          sizeof(VRControllerState) * kVRControllerMaxCount);
 }
 
-VRHMDSensorState
-VRDisplayClient::GetSensorState()
-{
+const VRHMDSensorState& VRDisplayClient::GetSensorState() const {
   return mDisplayInfo.GetSensorState();
 }
 
-bool
-VRDisplayClient::GetIsConnected() const
-{
+bool VRDisplayClient::GetIsConnected() const {
   return mDisplayInfo.GetIsConnected();
 }
 
-void
-VRDisplayClient::NotifyDisconnected()
-{
-  mDisplayInfo.mDisplayState.mIsConnected = false;
+void VRDisplayClient::NotifyDisconnected() {
+  mDisplayInfo.mDisplayState.isConnected = false;
 }
 
-void
-VRDisplayClient::UpdateSubmitFrameResult(const VRSubmitFrameResultInfo& aResult)
-{
+void VRDisplayClient::UpdateSubmitFrameResult(
+    const VRSubmitFrameResultInfo& aResult) {
   mSubmitFrameResult = aResult;
 }
 
-void
-VRDisplayClient::GetSubmitFrameResult(VRSubmitFrameResultInfo& aResult)
-{
+void VRDisplayClient::GetSubmitFrameResult(VRSubmitFrameResultInfo& aResult) {
   aResult = mSubmitFrameResult;
 }
 
-void
-VRDisplayClient::StartVRNavigation()
-{
+void VRDisplayClient::StartVRNavigation() {
   /**
    * A VR-to-VR site navigation has started, notify VRManager
    * so we don't drop out of VR during the transition
    */
-  VRManagerChild *vm = VRManagerChild::Get();
+  VRManagerChild* vm = VRManagerChild::Get();
   vm->SendStartVRNavigation(mDisplayInfo.mDisplayID);
 }
 
-void
-VRDisplayClient::StopVRNavigation(const TimeDuration& aTimeout)
-{
+void VRDisplayClient::StopVRNavigation(const TimeDuration& aTimeout) {
   /**
    * A VR-to-VR site navigation has ended and the new site
    * has received a vrdisplayactivate event.
@@ -329,6 +307,6 @@ VRDisplayClient::StopVRNavigation(const TimeDuration& aTimeout)
    * When aTimeout is TimeDuration(0), we should consider the
    * transition immediately ended.
    */
-  VRManagerChild *vm = VRManagerChild::Get();
+  VRManagerChild* vm = VRManagerChild::Get();
   vm->SendStopVRNavigation(mDisplayInfo.mDisplayID, aTimeout);
 }

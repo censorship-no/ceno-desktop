@@ -47,7 +47,7 @@ const imports = [
   /^(?:Cu|Components\.utils|ChromeUtils)\.import\(".*\/((.*?)\.jsm?)"(?:, this)?\)/,
 ];
 
-const workerImportFilenameMatch = /(.*\/)*(.*?\.jsm?)/;
+const workerImportFilenameMatch = /(.*\/)*((.*?)\.jsm?)/;
 
 module.exports = {
   get modulesGlobalData() {
@@ -204,6 +204,8 @@ module.exports = {
             results = results.concat(globalModules[match[2]].map(name => {
               return { name, writable: true };
             }));
+          } else {
+            results.push({ name: match[3], writable: true, explicit: true });
           }
         }
       }
@@ -268,6 +270,7 @@ module.exports = {
         express.callee.property.name === "importGlobalProperties") {
       return express.arguments[0].elements.map(literal => {
         return {
+          explicit: true,
           name: literal.value,
           writable: false,
         };
@@ -731,13 +734,15 @@ module.exports = {
     return pathName.replace(/^"/, "").replace(/"$/, "");
   },
 
-  get globalScriptsPath() {
-    return path.join(this.rootDir, "browser",
-                     "base", "content", "global-scripts.inc");
+  get globalScriptPaths() {
+    return [
+      path.join(this.rootDir, "browser", "base", "content", "browser.xul"),
+      path.join(this.rootDir, "browser", "base", "content", "global-scripts.inc"),
+    ];
   },
 
   isMozillaCentralBased() {
-    return fs.existsSync(this.globalScriptsPath);
+    return fs.existsSync(this.globalScriptPaths[0]);
   },
 
   getSavedEnvironmentItems(environment) {

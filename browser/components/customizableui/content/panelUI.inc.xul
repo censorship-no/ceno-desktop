@@ -224,16 +224,14 @@
                          closemenu="none"/>
         </toolbaritem>
         <toolbarseparator class="sync-ui-item"/>
-        <toolbaritem closemenu="none">
-          <toolbarbutton id="appMenu-tp-label"
-                         tooltiptext="&trackingProtection.tooltip;"
-                         class="subviewbutton subviewbutton-iconic"
-                         oncommand="ContentBlocking.openPreferences('appMenu-trackingprotection'); PanelUI.hide();"
-                         label="&trackingProtection.title;"/>
-          <toolbarseparator id="appMenu-tp-vertical-separator" orient="vertical"/>
-          <toolbarbutton id="appMenu-tp-toggle"
-                         enabled="false"
-                         oncommand="ContentBlocking.onGlobalToggleCommand();" />
+        <toolbaritem>
+          <toolbarbutton id="appMenu-tp-button"
+               class="subviewbutton subviewbutton-iconic"
+               oncommand="ContentBlocking.openPreferences('appMenu-trackingprotection');">
+            <image id="appMenu-tp-icon" class="toolbarbutton-icon"/>
+            <label id="appMenu-tp-label" class="toolbarbutton-text"/>
+            <label id="appMenu-tp-category"/>
+          </toolbarbutton>
         </toolbaritem>
         <toolbarseparator id="appMenu-tp-separator"/>
         <toolbarbutton id="appMenu-new-window-button"
@@ -656,6 +654,10 @@
                        label="&bookmarksSubview.label;"
                        closemenu="none"
                        oncommand="BookmarkingUI.showSubView(this);"/>
+        <toolbarbutton id="appMenu-library-pocket-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       label="&pocketMenuitem.label;"
+                       oncommand="Pocket.openList(event)"/>
         <toolbarbutton id="appMenu-library-history-button"
                        class="subviewbutton subviewbutton-iconic subviewbutton-nav"
                        label="&historyMenu.label;"

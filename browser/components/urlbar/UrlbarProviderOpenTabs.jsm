@@ -15,8 +15,9 @@ ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
   Log: "resource://gre/modules/Log.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  UrlbarMatch: "resource:///modules/UrlbarMatch.jsm",
+  UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
+  UrlbarResult: "resource:///modules/UrlbarResult.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
@@ -26,8 +27,9 @@ XPCOMUtils.defineLazyGetter(this, "logger",
 /**
  * Class used to create the provider.
  */
-class ProviderOpenTabs {
+class ProviderOpenTabs extends UrlbarProvider {
   constructor() {
+    super();
     // Maps the open tabs by userContextId.
     this.openTabs = new Map();
     // Maps the running queries by queryContext.
@@ -86,10 +88,20 @@ class ProviderOpenTabs {
 
   /**
    * Returns the type of this provider.
-   * @returns {integer} one of the types from UrlbarProvidersManager.TYPE.*
+   * @returns {integer} one of the types from UrlbarUtils.PROVIDER_TYPE.*
    */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
+  }
+
+  /**
+   * Returns the sources returned by this provider.
+   * @returns {array} one or multiple types from UrlbarUtils.MATCH_SOURCE.*
+   */
+  get sources() {
+    return [
+      UrlbarUtils.MATCH_SOURCE.TABS,
+    ];
   }
 
   /**
@@ -133,10 +145,11 @@ class ProviderOpenTabs {
    * @returns {Promise} resolved when the query stops.
    */
   async startQuery(queryContext, addCallback) {
+    // Note: this is not actually expected to be used as an internal provider,
+    // because normal history search will already coalesce with the open tabs
+    // temp table to return proper frecency.
     // TODO:
     //  * properly search and handle tokens, this is just a mock for now.
-    //  * we won't search openTabs like this usually, the history search will
-    //  * coalesce the temp table with its data.
     logger.info(`Starting query for ${queryContext.searchString}`);
     let instance = {};
     this.queries.set(queryContext, instance);
@@ -149,7 +162,8 @@ class ProviderOpenTabs {
         cancel();
         return;
       }
-      addCallback(this, new UrlbarMatch(UrlbarUtils.MATCH_TYPE.TAB_SWITCH, {
+      addCallback(this, new UrlbarResult(UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+                                         UrlbarUtils.MATCH_SOURCE.TABS, {
         url: row.getResultByName("url"),
         userContextId: row.getResultByName("userContextId"),
       }));

@@ -134,6 +134,11 @@ function disallowCertOverridesIfNeeded() {
       let stsReturnButtonText = document.getElementById("stsReturnButtonText").textContent;
       document.getElementById("returnButton").textContent = stsReturnButtonText;
       document.getElementById("advancedPanelReturnButton").textContent = stsReturnButtonText;
+
+      let stsMitmWhatCanYouDoAboutIt3 =
+        document.getElementById("stsMitmWhatCanYouDoAboutIt3").innerHTML;
+      // eslint-disable-next-line no-unsanitized/property
+      document.getElementById("mitmWhatCanYouDoAboutIt3").innerHTML = stsMitmWhatCanYouDoAboutIt3;
     }
   }
 }
@@ -225,22 +230,6 @@ function initPage() {
   // remove undisplayed errors to avoid bug 39098
   var errContainer = document.getElementById("errorContainer");
   errContainer.remove();
-
-  if (className && className != "expertBadCert") {
-    // Associate a CSS class with the root of the page, if one was passed in,
-    // to allow custom styling.
-    // Not "expertBadCert" though, don't want to deal with the favicon
-    document.documentElement.className = className;
-
-    // Also, if they specified a CSS class, they must supply their own
-    // favicon.  In order to trigger the browser to repaint though, we
-    // need to remove/add the link element.
-    var favicon = document.getElementById("favicon");
-    var faviconParent = favicon.parentNode;
-    faviconParent.removeChild(favicon);
-    favicon.setAttribute("href", "chrome://global/skin/icons/" + className + "_favicon.png");
-    faviconParent.appendChild(favicon);
-  }
 
   if (err == "remoteXUL") {
     // Remove the "Try again" button for remote XUL errors given that

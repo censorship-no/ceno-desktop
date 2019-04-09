@@ -550,6 +550,10 @@ class Tab extends TabBase {
     return "complete";
   }
 
+  get successorTabId() {
+    return -1;
+  }
+
   get width() {
     return this.browser.clientWidth;
   }
@@ -726,6 +730,11 @@ class TabManager extends TabManagerBase {
 
   revokeActiveTabPermission(nativeTab = tabTracker.activeTab) {
     return super.revokeActiveTabPermission(nativeTab);
+  }
+
+  canAccessTab(nativeTab) {
+    return this.extension.privateBrowsingAllowed ||
+           !PrivateBrowsingUtils.isBrowserPrivate(nativeTab.browser);
   }
 
   wrapTab(nativeTab) {

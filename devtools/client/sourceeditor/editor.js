@@ -41,7 +41,6 @@ const L10N = new LocalizationHelper("devtools/client/locales/sourceeditor.proper
 
 const {
   getWasmText,
-  getWasmLineNumberFormatter,
   isWasm,
   lineToWasmOffset,
   wasmOffsetToLine,
@@ -297,7 +296,7 @@ Editor.prototype = {
 
         Services.scriptloader.loadSubScript(
           "chrome://devtools/content/shared/theme-switching.js",
-          win, "utf8"
+          win
         );
         this.container = env;
         this._setup(win.document.body, el.ownerDocument);
@@ -330,7 +329,7 @@ Editor.prototype = {
     const scriptsToInject = CM_SCRIPTS.concat(this.config.externalScripts);
     scriptsToInject.forEach(url => {
       if (url.startsWith("chrome://")) {
-        Services.scriptloader.loadSubScript(url, win, "utf8");
+        Services.scriptloader.loadSubScript(url, win);
       }
     });
 
@@ -425,15 +424,6 @@ Editor.prototype = {
 
     cm.on("gutterClick", (cmArg, line, gutter, ev) => {
       const lineOrOffset = !this.isWasm ? line : this.lineToWasmOffset(line);
-      const head = { line: line, ch: 0 };
-      const tail = { line: line, ch: this.getText(lineOrOffset).length };
-
-      // Shift-click on a gutter selects the whole line.
-      if (ev.shiftKey) {
-        cmArg.setSelection(head, tail);
-        return;
-      }
-
       this.emit("gutterClick", lineOrOffset, ev.button);
     });
 
@@ -443,6 +433,19 @@ Editor.prototype = {
 
     if (!this.config.disableSearchAddon) {
       this._initSearchShortcuts(win);
+    } else {
+      // Hotfix for Bug 1527898. We should remove those overrides as part of Bug 1527903.
+      Object.assign(win.CodeMirror.commands, {
+        find: null,
+        findPersistent: null,
+        findPersistentNext: null,
+        findPersistentPrev: null,
+        findNext: null,
+        findPrev: null,
+        clearSearch: null,
+        replace: null,
+        replaceAll: null,
+      });
     }
 
     editors.set(this, cm);
@@ -488,7 +491,7 @@ Editor.prototype = {
       throw new Error("Can't load a script until the editor is loaded.");
     }
     const win = this.container.contentWindow.wrappedJSObject;
-    Services.scriptloader.loadSubScript(url, win, "utf8");
+    Services.scriptloader.loadSubScript(url, win);
   },
 
   /**
@@ -505,9 +508,6 @@ Editor.prototype = {
   replaceDocument: function(doc) {
     const cm = editors.get(this);
     cm.swapDoc(doc);
-    if (!Services.prefs.getBoolPref("devtools.debugger.new-debugger-frontend")) {
-      this._updateLineNumberFormat();
-    }
   },
 
   /**
@@ -587,16 +587,6 @@ Editor.prototype = {
     return this.isWasm ? this.lineToWasmOffset(line) : line;
   },
 
-  _updateLineNumberFormat: function() {
-    const cm = editors.get(this);
-    if (this.isWasm) {
-      const formatter = getWasmLineNumberFormatter(this.getDoc());
-      cm.setOption("lineNumberFormatter", formatter);
-    } else {
-      cm.setOption("lineNumberFormatter", (number) => number);
-    }
-  },
-
   /**
    * Replaces whatever is in the text area with the contents of
    * the 'value' argument.
@@ -622,10 +612,6 @@ Editor.prototype = {
       }
       // cm will try to split into lines anyway, saving memory
       value = { split: () => lines };
-    }
-
-    if (!Services.prefs.getBoolPref("devtools.debugger.new-debugger-frontend")) {
-      this._updateLineNumberFormat();
     }
 
     cm.setValue(value);

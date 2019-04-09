@@ -9,11 +9,11 @@
 
 #include "mozilla/Atomics.h"
 #include "moz_external_vr.h"
-#include "base/process.h" // for base::ProcessHandle
+#include "base/process.h"  // for base::ProcessHandle
 
 namespace base {
 class Thread;
-} // namespace base
+}  // namespace base
 namespace mozilla {
 namespace gfx {
 
@@ -21,9 +21,8 @@ class VRSession;
 
 static const int kVRFrameTimingHistoryDepth = 100;
 
-class VRService
-{
-public:
+class VRService {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VRService)
   static already_AddRefed<VRService> Create();
 
@@ -32,10 +31,10 @@ public:
   void Stop();
   VRExternalShmem* GetAPIShmem();
 
-private:
+ private:
   VRService();
   ~VRService();
-  
+
   bool InitShmem();
   void PushState(const mozilla::gfx::VRSystemState& aState);
   void PullState(mozilla::gfx::VRBrowserState& aState);
@@ -64,6 +63,9 @@ private:
   base::ProcessHandle mTargetShmemFile;
   VRHapticState mLastHapticState[kVRHapticsMaxCount];
   TimeStamp mFrameStartTime[kVRFrameTimingHistoryDepth];
+#if defined(XP_WIN)
+  HANDLE mMutex;
+#endif
   // We store the value of gfxPrefs::VRProcessEnabled() in mVRProcessEnabled.
   // This allows us to read the value in the VRService destructor, after
   // gfxPrefs has been shut down.  We should investigate why gfxPrefs
@@ -83,10 +85,9 @@ private:
   void ServiceShutdown();
   void ServiceWaitForImmersive();
   void ServiceImmersiveMode();
-
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // GFX_VR_SERVICE_VRSERVICE_H
+#endif  // GFX_VR_SERVICE_VRSERVICE_H

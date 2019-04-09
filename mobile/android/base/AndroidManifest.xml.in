@@ -30,6 +30,7 @@
                  android:hardwareAccelerated="true"
                  android:supportsRtl="true"
                  android:allowBackup="false"
+                 android:usesCleartextTraffic="true"
                  >
 
         <meta-data android:name="com.sec.android.support.multiwindow" android:value="true"/>
@@ -99,6 +100,7 @@
                 <data android:scheme="file" />
                 <data android:scheme="http" />
                 <data android:scheme="https" />
+                <data android:scheme="content" />
                 <data android:mimeType="text/html"/>
                 <data android:mimeType="text/plain"/>
                 <data android:mimeType="application/xhtml+xml"/>
@@ -513,10 +515,10 @@
 
         <!-- New child services must also be added to the GeckoView AndroidManifest.xml -->
         <service
-            android:name="org.mozilla.gecko.process.GeckoServiceChildProcess$geckomediaplugin"
+            android:name="org.mozilla.gecko.process.GeckoServiceChildProcess$gmplugin"
             android:enabled="true"
             android:exported="false"
-            android:process=":geckomediaplugin"
+            android:process=":gmplugin"
             android:isolatedProcess="false">
         </service>
 

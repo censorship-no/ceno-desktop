@@ -16,7 +16,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
   TelemetryController: "resource://gre/modules/TelemetryController.jsm",
   TelemetryStorage: "resource://gre/modules/TelemetryStorage.jsm",
-  MemoryTelemetry: "resource://gre/modules/MemoryTelemetry.jsm",
   UITelemetry: "resource://gre/modules/UITelemetry.jsm",
   GCTelemetry: "resource://gre/modules/GCTelemetry.jsm",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
@@ -789,23 +788,12 @@ var Impl = {
     return ret;
   },
 
-  /**
-   * Get the type of the dataset that needs to be collected, based on the preferences.
-   * @return {Integer} A value from nsITelemetry.DATASET_*.
-   */
-  getDatasetType() {
-    return Telemetry.canRecordExtended ? Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN
-                                       : Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTOUT;
-  },
-
   getHistograms: function getHistograms(clearSubsession) {
-    let hls = Telemetry.snapshotHistograms(this.getDatasetType(), clearSubsession);
-    return TelemetryUtils.packHistograms(hls, this._testing);
+    return Telemetry.getSnapshotForHistograms("main", clearSubsession, !this._testing);
   },
 
   getKeyedHistograms(clearSubsession) {
-    let khs = Telemetry.snapshotKeyedHistograms(this.getDatasetType(), clearSubsession);
-    return TelemetryUtils.packKeyedHistograms(khs, this._testing);
+    return Telemetry.getSnapshotForKeyedHistograms("main", clearSubsession, !this._testing);
   },
 
   /**
@@ -825,25 +813,10 @@ var Impl = {
     }
 
     let scalarsSnapshot = keyed ?
-      Telemetry.snapshotKeyedScalars(this.getDatasetType(), clearSubsession) :
-      Telemetry.snapshotScalars(this.getDatasetType(), clearSubsession);
+      Telemetry.getSnapshotForKeyedScalars("main", clearSubsession, !this._testing) :
+      Telemetry.getSnapshotForScalars("main", clearSubsession, !this._testing);
 
-    // Don't return the test scalars.
-    let ret = {};
-    for (let processName in scalarsSnapshot) {
-      for (let name in scalarsSnapshot[processName]) {
-        if (name.startsWith("telemetry.test") && !this._testing) {
-          continue;
-        }
-        // Finally arrange the data in the returned object.
-        if (!(processName in ret)) {
-          ret[processName] = {};
-        }
-        ret[processName][name] = scalarsSnapshot[processName][name];
-      }
-    }
-
-    return ret;
+    return scalarsSnapshot;
   },
 
   /**
@@ -950,11 +923,18 @@ var Impl = {
       .keys(measurements)
       .some(key => "gpu" in measurements[key]);
 
+    let measurementsContainSocket = Object
+      .keys(measurements)
+      .some(key => "socket" in measurements[key]);
+
     payloadObj.processes = {};
     let processTypes = ["parent", "content", "extension", "dynamic"];
     // Only include the GPU process if we've accumulated data for it.
     if (measurementsContainGPU) {
       processTypes.push("gpu");
+    }
+    if (measurementsContainSocket) {
+      processTypes.push("socket");
     }
 
     // Collect per-process measurements.
@@ -1074,10 +1054,10 @@ var Impl = {
   /**
    * Send data to the server. Record success/send-time in histograms
    */
-  send: function send(reason) {
+  send: async function send(reason) {
     this._log.trace("send - Reason " + reason);
     // populate histograms one last time
-    MemoryTelemetry.gatherMemory();
+    await Services.telemetry.gatherMemory();
 
     const isSubsession = !this._isClassicReason(reason);
     let payload = this.getSessionPayload(reason, isSubsession);
@@ -1164,7 +1144,7 @@ var Impl = {
         await TelemetryStorage.saveSessionData(this._getSessionDataObject());
 
         this.addObserver("idle-daily");
-        MemoryTelemetry.gatherMemory();
+        await Services.telemetry.gatherMemory();
 
         Telemetry.asyncFetchTelemetryData(function() {});
 
@@ -1310,7 +1290,7 @@ var Impl = {
     if (Object.keys(this._slowSQLStartup).length == 0) {
       this._slowSQLStartup = Telemetry.slowSQL;
     }
-    MemoryTelemetry.gatherMemory();
+    Services.telemetry.gatherMemory();
     return this.getSessionPayload(reason, clearSubsession);
   },
 
@@ -1614,21 +1594,21 @@ var Impl = {
    */
   _prioEncode(payloadObj) {
     // First, map the Telemetry histogram names to the params PrioEncoder expects.
-    const prioEncodedHistograms = {
-      "BROWSER_IS_USER_DEFAULT": "browserIsUserDefault",
-      "NEWTAB_PAGE_ENABLED": "newTabPageEnabled",
-      "PDF_VIEWER_USED": "pdfViewerUsed",
-    };
+    const prioEncodedHistograms = [
+      "BROWSER_IS_USER_DEFAULT",
+      "NEWTAB_PAGE_ENABLED",
+      "PDF_VIEWER_USED",
+    ];
 
     // Build list of Prio parameters, using the first value recorded in each histogram.
-    let prioParams = {};
-    for (const [histogramName, prioName] of Object.entries(prioEncodedHistograms)) {
+    let prioParams = { booleans: [] };
+    for (const [i, histogramName] of prioEncodedHistograms.entries()) {
       try {
         if (histogramName in payloadObj.histograms) {
           const histogram = payloadObj.histograms[histogramName];
-          prioParams[prioName] = Boolean(histogram.sum);
+          prioParams.booleans[i] = Boolean(histogram.sum);
         } else {
-          prioParams[prioName] = false;
+          prioParams.booleans[i] = false;
         }
 
       } catch (ex) {

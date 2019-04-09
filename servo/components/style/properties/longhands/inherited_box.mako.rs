@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 <%namespace name="helpers" file="/helpers.mako.rs" />
 
@@ -54,21 +54,19 @@ ${helpers.single_keyword(
 ${helpers.single_keyword(
     "color-adjust",
     "economy exact", products="gecko",
-    gecko_pref="layout.css.color-adjust.enabled",
+    gecko_enum_prefix="StyleColorAdjust",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-color/#propdef-color-adjust",
 )}
 
-<% image_rendering_custom_consts = { "crisp-edges": "CRISPEDGES",
-                                     "-moz-crisp-edges": "CRISPEDGES" } %>
 // According to to CSS-IMAGES-3, `optimizespeed` and `optimizequality` are synonyms for `auto`
 // And, firefox doesn't support `pixelated` yet (https://bugzilla.mozilla.org/show_bug.cgi?id=856337)
 ${helpers.single_keyword(
     "image-rendering",
-    "auto",
-    extra_gecko_values="optimizespeed optimizequality -moz-crisp-edges",
-    extra_servo_values="pixelated crisp-edges",
-    custom_consts=image_rendering_custom_consts,
+    "auto crisp-edges",
+    extra_gecko_values="optimizespeed optimizequality",
+    extra_servo_values="pixelated",
+    extra_gecko_aliases="-moz-crisp-edges=crisp-edges",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-images/#propdef-image-rendering",
 )}
@@ -79,6 +77,5 @@ ${helpers.single_keyword(
     products="gecko",
     gecko_enum_prefix="StyleImageOrientation",
     animation_value_type="discrete",
-    gecko_pref="layout.css.image-orientation.enabled",
     spec="https://drafts.csswg.org/css-images/#propdef-image-orientation",
 )}

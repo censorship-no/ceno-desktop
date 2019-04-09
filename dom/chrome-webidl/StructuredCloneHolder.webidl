@@ -8,7 +8,7 @@
  * A holder for structured-clonable data which can itself be cloned with
  * little overhead, and deserialized into an arbitrary global.
  */
-[ChromeOnly, Exposed=(Window,System,Worker),
+[ChromeOnly, Exposed=(Window,Worker),
  /**
   * Serializes the given value to an opaque structured clone blob, and
   * returns the result.
@@ -21,7 +21,10 @@ interface StructuredCloneHolder {
   /**
    * Deserializes the structured clone data in the scope of the given global,
    * and returns the result.
+   *
+   * If `keepData` is true, the structured clone data is preserved, and can be
+   * deserialized repeatedly. Otherwise, it is immediately discarded.
    */
   [Throws]
-  any deserialize(object global);
+  any deserialize(object global, optional boolean keepData = false);
 };

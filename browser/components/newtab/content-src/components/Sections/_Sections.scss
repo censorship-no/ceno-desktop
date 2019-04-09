@@ -72,6 +72,8 @@
   font-size: 12px;
   line-height: 1.6;
   margin-top: $topic-margin-top;
+  display: flex;
+  justify-content: space-between;
 
   a {
     color: var(--newtab-link-secondary-color);
@@ -83,17 +85,41 @@
     }
   }
 
-  @media (min-width: $break-point-large) {
-    line-height: 16px;
-    height: 16px;
+  .wrapper-topics,
+  .wrapper-cta + .wrapper-more-recommendations {
+    @media (max-width: $break-point-large - 1) {
+      display: none;
+    }
   }
 
-  // This is a clearfix to for the more-recommendations link which is floating and causes
-  // some jank when we set overflow:hidden for the animation.
-  &::after {
-    clear: both;
-    content: '';
-    display: table;
+  @media (max-width: $break-point-medium - 1) {
+    .wrapper-cta {
+      text-align: center;
+
+      .pocket-logged-in-cta {
+        display: block;
+        margin-inline-end: 0;
+
+        .pocket-cta-button {
+          max-width: none;
+          display: block;
+          margin-inline-end: 0;
+          margin: 5px 0 10px;
+        }
+      }
+    }
+
+    .wrapper-more-recommendations {
+      width: 100%;
+
+      .more-recommendations {
+        justify-content: center;
+
+        &::after {
+          display: none;
+        }
+      }
+    }
   }
 }
 

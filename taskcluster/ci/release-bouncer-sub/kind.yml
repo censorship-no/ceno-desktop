@@ -36,7 +36,7 @@ job-defaults:
 jobs:
    devedition:
       bouncer-platforms: ['linux', 'linux64', 'osx', 'win', 'win64']
-      bouncer-products: ['complete-mar', 'installer', 'installer-ssl', 'partial-mar', 'stub-installer']
+      bouncer-products: ['complete-mar', 'installer', 'installer-ssl', 'partial-mar', 'stub-installer', 'msi']
       shipping-product: devedition
       treeherder:
          platform: devedition-release/opt
@@ -50,10 +50,10 @@ jobs:
          platform: fennec-release/opt
 
    firefox:
-      bouncer-platforms: ['linux', 'linux64', 'osx', 'win', 'win64']
+      bouncer-platforms: ['linux', 'linux64', 'osx', 'win', 'win64', 'win64-aarch64']
       bouncer-products:
          by-project:
-            default: ['complete-mar', 'installer', 'installer-ssl', 'partial-mar', 'stub-installer']
+            default: ['complete-mar', 'installer', 'installer-ssl', 'partial-mar', 'stub-installer', 'msi']
             # No stub installer in esr60
             mozilla-esr60: ['complete-mar', 'complete-mar-bz2', 'installer', 'installer-ssl', 'partial-mar']
             jamun: ['complete-mar', 'complete-mar-bz2', 'installer', 'installer-ssl', 'partial-mar']
@@ -62,7 +62,7 @@ jobs:
          platform: firefox-release/opt
 
    firefox-rc:
-      bouncer-platforms: ['linux', 'linux64', 'osx', 'win', 'win64']
+      bouncer-platforms: ['linux', 'linux64', 'osx', 'win', 'win64', 'win64-aarch64']
       bouncer-products: ['complete-mar-candidates', 'partial-mar-candidates']
       shipping-product: firefox
       run-on-releases: ['release-rc']

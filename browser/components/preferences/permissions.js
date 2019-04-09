@@ -51,7 +51,6 @@ var gPermissionManager = {
   _removeAllButton: null,
 
   onLoad() {
-    this._bundle = document.getElementById("bundlePreferences");
     let params = window.arguments[0];
     document.mozSubdialogReady = this.init(params);
   },
@@ -63,7 +62,6 @@ var gPermissionManager = {
     }
 
     this._type = params.permissionType;
-    this._manageCapability = params.manageCapability;
     this._list = document.getElementById("permissionsBox");
     this._removeButton = document.getElementById("removePermission");
     this._removeAllButton = document.getElementById("removeAllPermissions");
@@ -133,9 +131,13 @@ var gPermissionManager = {
       this.buildPermissionsList();
     } else if (data == "changed") {
       let p = this._permissions.get(permission.principal.origin);
-      p.capability = permission.capability;
-      p.l10nId = this._getCapabilityString(permission.capability);
-      this._handleCapabilityChange(p);
+      // Maybe this item has been excluded before because it had an invalid capability.
+      if (p) {
+        p.capability = permission.capability;
+        this._handleCapabilityChange(p);
+      } else {
+        this._addPermissionToList(permission);
+      }
       this.buildPermissionsList();
     } else if (data == "deleted") {
       this._removePermissionFromList(permission.principal.origin);
@@ -144,37 +146,40 @@ var gPermissionManager = {
 
   _handleCapabilityChange(perm) {
     let permissionlistitem = document.getElementsByAttribute("origin", perm.origin)[0];
-    permissionlistitem.querySelector(".website-capability-value").setAttribute("value", perm.capability);
+    document.l10n.setAttributes(permissionlistitem.querySelector(".website-capability-value"), this._getCapabilityL10nId(perm.capability));
   },
 
-  _getCapabilityString(capability) {
+  _isCapabilitySupported(capability) {
+     return capability == Ci.nsIPermissionManager.ALLOW_ACTION ||
+            capability == Ci.nsIPermissionManager.DENY_ACTION ||
+            capability == Ci.nsICookiePermission.ACCESS_SESSION;
+  },
+
+  _getCapabilityL10nId(capability) {
     let stringKey = null;
     switch (capability) {
     case Ci.nsIPermissionManager.ALLOW_ACTION:
-      stringKey = "can";
+      stringKey = "permissions-capabilities-listitem-allow";
       break;
     case Ci.nsIPermissionManager.DENY_ACTION:
-      stringKey = "cannot";
-      break;
-    case Ci.nsICookiePermission.ACCESS_ALLOW_FIRST_PARTY_ONLY:
-      stringKey = "canAccessFirstParty";
+      stringKey = "permissions-capabilities-listitem-block";
       break;
     case Ci.nsICookiePermission.ACCESS_SESSION:
-      stringKey = "canSession";
+      stringKey = "permissions-capabilities-listitem-allow-session";
       break;
     default:
       throw new Error(`Unknown capability: ${capability}`);
     }
-    return this._bundle.getString(stringKey);
+    return stringKey;
   },
 
   _addPermissionToList(perm) {
-    // Ignore unrelated permission types and excluded capabilities.
-    if (perm.type !== this._type ||
-        (this._manageCapability && perm.capability != this._manageCapability))
+    if (perm.type !== this._type)
       return;
-    let capabilityString = this._getCapabilityString(perm.capability);
-    let p = new Permission(perm.principal, perm.type, capabilityString);
+    if (!this._isCapabilitySupported(perm.capability))
+      return;
+
+    let p = new Permission(perm.principal, perm.type, perm.capability);
     this._permissions.set(p.origin, p);
   },
 
@@ -213,8 +218,6 @@ var gPermissionManager = {
       return;
     }
 
-    let capabilityString = this._getCapabilityString(capability);
-
     // check whether the permission already exists, if not, add it
     let permissionParams = {principal, type: this._type, capability};
     let existingPermission = this._permissions.get(principal.origin);
@@ -222,8 +225,8 @@ var gPermissionManager = {
       this._permissionsToAdd.set(principal.origin, permissionParams);
       this._addPermissionToList(permissionParams);
       this.buildPermissionsList();
-    } else if (existingPermission.capability != capabilityString) {
-      existingPermission.capability = capabilityString;
+    } else if (existingPermission.capability != capability) {
+      existingPermission.capability = capability;
       this._permissionsToAdd.set(principal.origin, permissionParams);
       this._handleCapabilityChange(existingPermission);
     }
@@ -284,7 +287,7 @@ var gPermissionManager = {
       hbox = document.createXULElement("hbox");
       let capability = document.createXULElement("label");
       capability.setAttribute("class", "website-capability-value");
-      capability.setAttribute("value", permission.capability);
+      document.l10n.setAttributes(capability, this._getCapabilityL10nId(permission.capability));
       hbox.setAttribute("width", "0");
       hbox.setAttribute("class", "website-name");
       hbox.setAttribute("flex", "1");
@@ -417,8 +420,11 @@ var gPermissionManager = {
 
       case "statusCol":
         sortFunc = (a, b) => {
-          return a.querySelector(".website-capability-value").getAttribute("value") >
-                 b.querySelector(".website-capability-value").getAttribute("value");
+          // The capabilities values ("Allow" and "Block") are localized asynchronously.
+          // Sort based on the guaranteed-present localization ID instead, note that the
+          // ascending/descending arrow may be pointing the wrong way.
+          return a.querySelector(".website-capability-value").getAttribute("data-l10n-id") >
+                 b.querySelector(".website-capability-value").getAttribute("data-l10n-id");
         };
         break;
     }
@@ -438,7 +444,7 @@ var gPermissionManager = {
     // Re-append items in the correct order:
     items.forEach(item => frag.appendChild(item));
 
-    let cols = list.querySelectorAll("treecol");
+    let cols = list.previousElementSibling.querySelectorAll("treecol");
     cols.forEach(c => {
       c.removeAttribute("data-isCurrentSortCol");
       c.removeAttribute("sortDirection");
@@ -448,7 +454,3 @@ var gPermissionManager = {
     column.setAttribute("data-last-sortDirection", sortDirection);
   },
 };
-
-function initWithParams(params) {
-  gPermissionManager.init(params);
-}

@@ -45,6 +45,10 @@ var FxAccountsConfig = {
     return this._buildURL("", {entrypoint, email});
   },
 
+  async promiseEmailFirstURI(entrypoint) {
+    return this._buildURL("", {entrypoint});
+  },
+
   async promiseForceSigninURI(entrypoint) {
     return this._buildURL("force_auth", {entrypoint}, true);
   },
@@ -118,7 +122,7 @@ var FxAccountsConfig = {
     }
     let rootURL = Services.urlFormatter.formatURL(pref);
     if (rootURL.endsWith("/")) {
-      rootURL.slice(0, -1);
+      rootURL = rootURL.slice(0, -1);
     }
     return rootURL;
   },

@@ -17,16 +17,16 @@ let controller;
 /**
  * Asserts that the query context has the expected values.
  *
- * @param {QueryContext} context
- * @param {object} expectedValues The expected values for the QueryContext.
+ * @param {UrlbarQueryContext} context
+ * @param {object} expectedValues The expected values for the UrlbarQueryContext.
  */
 function assertContextMatches(context, expectedValues) {
-  Assert.ok(context instanceof QueryContext,
-    "Should be a QueryContext");
+  Assert.ok(context instanceof UrlbarQueryContext,
+    "Should be a UrlbarQueryContext");
 
   for (let [key, value] of Object.entries(expectedValues)) {
     Assert.equal(context[key], value,
-      `Should have the expected value for ${key} in the QueryContext`);
+      `Should have the expected value for ${key} in the UrlbarQueryContext`);
   }
 }
 
@@ -46,9 +46,27 @@ add_task(function setup() {
 
   controller = new UrlbarController({
     manager: fPM,
-    window: {},
+    browserWindow: {
+      location: {
+        href: AppConstants.BROWSER_CHROME_URL,
+      },
+    },
   });
   controller.addQueryListener(generalListener);
+});
+
+add_task(function test_constructor_throws() {
+  Assert.throws(() => new UrlbarController(),
+    /Missing options: browserWindow/,
+    "Should throw if the browserWindow was not supplied");
+  Assert.throws(() => new UrlbarController({browserWindow: {}}),
+    /browserWindow should be an actual browser window/,
+    "Should throw if the browserWindow is not a window");
+  Assert.throws(() => new UrlbarController({browserWindow: {
+    location: "about:fake",
+  }}),
+    /browserWindow should be an actual browser window/,
+    "Should throw if the browserWindow does not have the correct location");
 });
 
 add_task(function test_add_and_remove_listeners() {
@@ -119,12 +137,9 @@ add_task(function test_handle_query_starts_search() {
   Assert.equal(fPM.startQuery.args[0].length, 2,
     "Should have called startQuery with two arguments");
 
-  assertContextMatches(fPM.startQuery.args[0][0], {
-    autoFill: true,
-  });
+  assertContextMatches(fPM.startQuery.args[0][0], {});
   Assert.equal(fPM.startQuery.args[0][1], controller,
     "Should have passed the controller as the second argument");
-
 
   Assert.equal(generalListener.onQueryStarted.callCount, 1,
     "Should have called onQueryStarted for the listener");
@@ -134,8 +149,9 @@ add_task(function test_handle_query_starts_search() {
   sandbox.resetHistory();
 });
 
-add_task(function test_handle_query_starts_search_sets_autoFill() {
-  Services.prefs.setBoolPref("browser.urlbar.autoFill", false);
+add_task(function test_handle_query_starts_search_sets_enableAutofill() {
+  let originalValue = Services.prefs.getBoolPref("browser.urlbar.autoFill");
+  Services.prefs.setBoolPref("browser.urlbar.autoFill", !originalValue);
 
   controller.startQuery(createContext());
 
@@ -145,7 +161,7 @@ add_task(function test_handle_query_starts_search_sets_autoFill() {
     "Should have called startQuery with two arguments");
 
   assertContextMatches(fPM.startQuery.args[0][0], {
-    autoFill: false,
+    enableAutofill: !originalValue,
   });
   Assert.equal(fPM.startQuery.args[0][1], controller,
     "Should have passed the controller as the second argument");
@@ -156,8 +172,13 @@ add_task(function test_handle_query_starts_search_sets_autoFill() {
 });
 
 add_task(function test_cancel_query() {
+  // Ensure the controller doesn't have any previous queries.
+  delete controller._lastQueryContext;
+
   const context = createContext();
-  controller.cancelQuery(context);
+  controller.startQuery(context);
+
+  controller.cancelQuery();
 
   Assert.equal(fPM.cancelQuery.callCount, 1,
     "Should have called cancelQuery once");
@@ -174,6 +195,20 @@ add_task(function test_cancel_query() {
 
 add_task(function test_receiveResults() {
   const context = createContext();
+  context.results = [];
+  controller.receiveResults(context);
+
+  Assert.equal(generalListener.onQueryResults.callCount, 1,
+    "Should have called onQueryResults for the listener");
+  Assert.deepEqual(generalListener.onQueryResults.args[0], [context],
+    "Should have called onQueryResults with the context");
+
+  sandbox.resetHistory();
+});
+
+add_task(function test_autocomplete_enabled() {
+  const context = createContext();
+  context.results = [];
   controller.receiveResults(context);
 
   Assert.equal(generalListener.onQueryResults.callCount, 1,

@@ -1,26 +1,26 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Data needed to style a Gecko document.
 
+use crate::context::QuirksMode;
+use crate::dom::TElement;
+use crate::gecko_bindings::bindings::{self, RawServoStyleSet};
+use crate::gecko_bindings::structs::{RawGeckoPresContextBorrowed, ServoStyleSetSizes};
+use crate::gecko_bindings::structs::{StyleSheet as DomStyleSheet, StyleSheetInfo};
+use crate::gecko_bindings::sugar::ownership::{HasArcFFI, HasBoxFFI, HasFFI, HasSimpleFFI};
+use crate::invalidation::media_queries::{MediaListKey, ToMediaListKey};
+use crate::media_queries::{Device, MediaList};
+use crate::properties::ComputedValues;
+use crate::selector_parser::SnapshotMap;
+use crate::shared_lock::{Locked, SharedRwLockReadGuard, StylesheetGuards};
+use crate::stylesheets::{CssRule, Origin, StylesheetContents, StylesheetInDocument};
+use crate::stylist::Stylist;
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
-use context::QuirksMode;
-use dom::TElement;
-use gecko_bindings::bindings::{self, RawServoStyleSet};
-use gecko_bindings::structs::{RawGeckoPresContextBorrowed, ServoStyleSetSizes, StyleSheet as DomStyleSheet};
-use gecko_bindings::structs::{StyleSheetInfo, nsIDocument};
-use gecko_bindings::sugar::ownership::{HasArcFFI, HasBoxFFI, HasFFI, HasSimpleFFI};
-use invalidation::media_queries::{MediaListKey, ToMediaListKey};
 use malloc_size_of::MallocSizeOfOps;
-use media_queries::{Device, MediaList};
-use properties::ComputedValues;
-use selector_parser::SnapshotMap;
 use servo_arc::Arc;
-use shared_lock::{Locked, SharedRwLockReadGuard, StylesheetGuards};
 use std::fmt;
-use stylesheets::{CssRule, Origin, StylesheetContents, StylesheetInDocument};
-use stylist::Stylist;
 
 /// Little wrapper to a Gecko style sheet.
 #[derive(Eq, PartialEq)]
@@ -37,7 +37,7 @@ impl fmt::Debug for GeckoStyleSheet {
     }
 }
 
-impl ToMediaListKey for ::gecko::data::GeckoStyleSheet {
+impl ToMediaListKey for crate::gecko::data::GeckoStyleSheet {
     fn to_media_list_key(&self) -> MediaListKey {
         use std::mem;
         unsafe { MediaListKey::from_raw(mem::transmute(self.0)) }
@@ -104,7 +104,7 @@ impl StylesheetInDocument for GeckoStyleSheet {
     }
 
     fn media<'a>(&'a self, guard: &'a SharedRwLockReadGuard) -> Option<&'a MediaList> {
-        use gecko_bindings::structs::mozilla::dom::MediaList as DomMediaList;
+        use crate::gecko_bindings::structs::mozilla::dom::MediaList as DomMediaList;
         use std::mem;
 
         unsafe {
@@ -150,8 +150,7 @@ impl PerDocumentStyleData {
         // right now not always honored, see bug 1405543...
         //
         // Should we just force XBL Stylists to be NoQuirks?
-        let quirks_mode =
-            unsafe { (*device.pres_context().mDocument.raw::<nsIDocument>()).mCompatMode };
+        let quirks_mode = unsafe { (*device.pres_context().mDocument.mRawPtr).mCompatMode };
 
         PerDocumentStyleData(AtomicRefCell::new(PerDocumentStyleDataImpl {
             stylist: Stylist::new(device, quirks_mode.into()),
@@ -192,12 +191,7 @@ impl PerDocumentStyleDataImpl {
     /// Returns whether visited styles are enabled.
     #[inline]
     pub fn visited_styles_enabled(&self) -> bool {
-        let doc = self
-            .stylist
-            .device()
-            .pres_context()
-            .mDocument
-            .raw::<nsIDocument>();
+        let doc = self.stylist.device().pres_context().mDocument.mRawPtr;
         unsafe { bindings::Gecko_VisitedStylesEnabled(doc) }
     }
 

@@ -107,11 +107,10 @@ def gen_instruction_data(fmt):
     """
     Generate the InstructionData enum.
 
-    Every variant must contain `opcode` and `ty` fields. An instruction that
-    doesn't produce a value should have its `ty` field set to `VOID`. The size
-    of `InstructionData` should be kept at 16 bytes on 64-bit architectures. If
-    more space is needed to represent an instruction, use a `Box<AuxData>` to
-    store the additional information out of line.
+    Every variant must contain an `opcode` field. The size of `InstructionData`
+    should be kept at 16 bytes on 64-bit architectures. If more space is needed
+    to represent an instruction, use a `Box<AuxData>` to store the additional
+    information out of line.
     """
 
     fmt.line('#[derive(Clone, Debug)]')
@@ -258,8 +257,8 @@ def gen_instruction_data_impl(fmt):
                 'pub fn eq(&self, other: &Self, pool: &ir::ValueListPool)'
                 ' -> bool {',
                 '}'):
-            with fmt.indented('if ::std::mem::discriminant(self) != '
-                              '::std::mem::discriminant(other) {', '}'):
+            with fmt.indented('if ::core::mem::discriminant(self) != '
+                              '::core::mem::discriminant(other) {', '}'):
                 fmt.line('return false;')
             with fmt.indented('match (self, other) {', '}'):
                 for f in InstructionFormat.all_formats:
@@ -302,7 +301,7 @@ def gen_instruction_data_impl(fmt):
                 hash the contents of any `ValueLists`.
                 """)
         with fmt.indented(
-                'pub fn hash<H: ::std::hash::Hasher>'
+                'pub fn hash<H: ::core::hash::Hasher>'
                 '(&self, state: &mut H, pool: &ir::ValueListPool) {',
                 '}'):
             with fmt.indented('match *self {', '}'):
@@ -324,13 +323,13 @@ def gen_instruction_data_impl(fmt):
                         members.append(field.member)
                     pat = n + ' { ' + ', '.join(members) + ' }'
                     with fmt.indented(pat + ' => {', '}'):
-                        fmt.line('::std::hash::Hash::hash( '
-                                 '&::std::mem::discriminant(self), state);')
-                        fmt.line('::std::hash::Hash::hash(&opcode, state);')
+                        fmt.line('::core::hash::Hash::hash( '
+                                 '&::core::mem::discriminant(self), state);')
+                        fmt.line('::core::hash::Hash::hash(&opcode, state);')
                         for field in f.imm_fields:
-                            fmt.line('::std::hash::Hash::hash(&{}, state);'
+                            fmt.line('::core::hash::Hash::hash(&{}, state);'
                                      .format(field.member))
-                        fmt.line('::std::hash::Hash::hash({}, state);'
+                        fmt.line('::core::hash::Hash::hash({}, state);'
                                  .format(args))
 
 
@@ -662,7 +661,7 @@ def gen_inst_builder(inst, fmt):
     # The controlling type variable will be inferred from the input values if
     # possible. Otherwise, it is the first method argument.
     if inst.is_polymorphic and not inst.use_typevar_operand:
-        args.append('{}: ir::Type'.format(inst.ctrl_typevar.name))
+        args.append('{}: crate::ir::Type'.format(inst.ctrl_typevar.name))
 
     tmpl_types = list()  # type: List[str]
     into_args = list()  # type: List[str]
@@ -706,7 +705,7 @@ def gen_inst_builder(inst, fmt):
             args.append(inst.ctrl_typevar.name)
         elif not inst.is_polymorphic:
             # No controlling type variable needed.
-            args.append('types::VOID')
+            args.append('types::INVALID')
         else:
             assert inst.is_polymorphic and inst.use_typevar_operand
             # Infer the controlling type variable from the input operands.

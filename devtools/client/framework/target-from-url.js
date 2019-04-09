@@ -7,6 +7,8 @@
 const { TargetFactory } = require("devtools/client/framework/target");
 const { DebuggerServer } = require("devtools/server/main");
 const { DebuggerClient } = require("devtools/shared/client/debugger-client");
+const { remoteClientManager } =
+  require("devtools/client/shared/remote-debugging/remote-client-manager");
 
 /**
  * Construct a Target for a given URL object having various query parameters:
@@ -39,9 +41,14 @@ const { DebuggerClient } = require("devtools/shared/client/debugger-client");
  */
 exports.targetFromURL = async function targetFromURL(url) {
   const client = await clientFromURL(url);
-  await client.connect();
-
   const params = url.searchParams;
+
+  // Clients retrieved from the remote-client-manager are already connected.
+  if (!params.get("remoteId")) {
+    // Connect any other client.
+    await client.connect();
+  }
+
   const type = params.get("type");
   if (!type) {
     throw new Error("targetFromURL, missing type parameter");
@@ -51,7 +58,7 @@ exports.targetFromURL = async function targetFromURL(url) {
   // (handy to debug chrome stuff in a content process)
   let chrome = params.has("chrome");
 
-  let form;
+  let front;
   if (type === "tab") {
     // Fetch target for a remote tab
     id = parseInt(id, 10);
@@ -59,10 +66,9 @@ exports.targetFromURL = async function targetFromURL(url) {
       throw new Error(`targetFromURL, wrong tab id '${id}', should be a number`);
     }
     try {
-      const response = await client.getTab({ outerWindowID: id });
-      form = response.tab;
+      front = await client.mainRoot.getTab({ outerWindowID: id });
     } catch (ex) {
-      if (ex.error == "noTab") {
+      if (ex.startsWith("Protocol error (noTab)")) {
         throw new Error(`targetFromURL, tab with outerWindowID '${id}' doesn't exist`);
       }
       throw ex;
@@ -75,8 +81,7 @@ exports.targetFromURL = async function targetFromURL(url) {
       if (isNaN(id)) {
         id = 0;
       }
-      const response = await client.mainRoot.getProcess(id);
-      form = response.form;
+      front = await client.mainRoot.getProcess(id);
       chrome = true;
     } catch (ex) {
       if (ex.error == "noProcess") {
@@ -92,10 +97,9 @@ exports.targetFromURL = async function targetFromURL(url) {
       if (isNaN(id)) {
         throw new Error("targetFromURL, window requires id parameter");
       }
-      const response = await client.mainRoot.getWindow({
+      front = await client.mainRoot.getWindow({
         outerWindowID: id,
       });
-      form = response.window;
       chrome = true;
     } catch (ex) {
       if (ex.error == "notFound") {
@@ -107,7 +111,7 @@ exports.targetFromURL = async function targetFromURL(url) {
     throw new Error(`targetFromURL, unsupported type '${type}' parameter`);
   }
 
-  return TargetFactory.forRemoteTab({ client, form, chrome });
+  return TargetFactory.forRemoteTab({ client, activeTab: front, chrome });
 };
 
 /**
@@ -117,6 +121,8 @@ exports.targetFromURL = async function targetFromURL(url) {
  *    {String} The hostname or IP address to connect to.
  * port:
  *    {Number} The TCP port to connect to, to use with `host` argument.
+ * remoteId:
+ *    {String} Remote client id, for runtimes from the remote-client-manager
  * ws:
  *    {Boolean} If true, connect via websocket instead of regular TCP connection.
  *
@@ -126,6 +132,13 @@ exports.targetFromURL = async function targetFromURL(url) {
  */
 async function clientFromURL(url) {
   const params = url.searchParams;
+
+  // If a remote id was provided we should already have a connected client available.
+  const remoteId = params.get("remoteId");
+  if (remoteId) {
+    return remoteClientManager.getClientByRemoteId(remoteId);
+  }
+
   const host = params.get("host");
   const port = params.get("port");
   const webSocket = !!params.get("ws");

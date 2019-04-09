@@ -29,7 +29,7 @@ with Files('*configure*'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
 
 with Files('mach'):
-    BUG_COMPONENT = ('Core', 'mach')
+    BUG_COMPONENT = ('Firefox Build System', 'Mach Core')
 
 with Files('*moz*'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
@@ -115,6 +115,16 @@ if not CONFIG['JS_STANDALONE'] or not CONFIG['MOZ_BUILD_APP']:
 
     DIRS += [
         'build',
+    ]
+
+if CONFIG['PGO_PROFILE_PATH']:
+    profdata_gen = ('merged.profdata.stub', 'merged.profdata')
+    GENERATED_FILES += [
+        profdata_gen
+    ]
+    GENERATED_FILES[profdata_gen].script = 'build/merge_profdata.py'
+    GENERATED_FILES[profdata_gen].inputs = [
+        '/' + CONFIG['PGO_PROFILE_PATH'],
     ]
 
 DIRS += [

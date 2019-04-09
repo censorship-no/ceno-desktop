@@ -37,6 +37,7 @@ window.Application = {
 
     this.store = configureStore();
     this.actions = bindActionCreators(actions, this.store.dispatch);
+    this.serviceWorkerRegistrationFronts = [];
 
     const serviceContainer = {
       selectTool(toolId) {
@@ -44,9 +45,13 @@ window.Application = {
       },
     };
     this.toolbox.target.activeTab.on("workerListChanged", this.updateWorkers);
-    this.client.addListener("serviceWorkerRegistrationListChanged", this.updateWorkers);
-    this.client.addListener("registration-changed", this.updateWorkers);
-    this.client.addListener("processListChanged", this.updateWorkers);
+    this.client.mainRoot.on("serviceWorkerRegistrationListChanged", this.updateWorkers);
+    this.client.mainRoot.on("processListChanged", this.updateWorkers);
+    this.client.mainRoot.onFront("serviceWorkerRegistration", front => {
+      this.serviceWorkerRegistrationFronts.push(front);
+      front.on("push-subscription-modified", this.updateWorkers);
+      front.on("registration-changed", this.updateWorkers);
+    });
     this.toolbox.target.on("navigate", this.updateDomain);
 
     this.updateDomain();
@@ -83,17 +88,24 @@ window.Application = {
     this.actions.updateWorkers(service);
   },
 
+  removeRegistrationFrontListeners() {
+    for (const front of this.serviceWorkerRegistrationFronts) {
+      front.off("push-subscription-modified", this.updateWorkers);
+      front.off("registration-changed", this.updateWorkers);
+    }
+    this.serviceWorkerRegistrationFronts = [];
+  },
+
   updateDomain() {
     this.actions.updateDomain(this.toolbox.target.url);
   },
 
   destroy() {
     this.toolbox.target.activeTab.off("workerListChanged", this.updateWorkers);
-    this.client.removeListener("serviceWorkerRegistrationListChanged",
+    this.client.mainRoot.off("serviceWorkerRegistrationListChanged",
       this.updateWorkers);
-    this.client.removeListener("registration-changed", this.updateWorkers);
-    this.client.removeListener("processListChanged", this.updateWorkers);
-
+    this.client.mainRoot.off("processListChanged", this.updateWorkers);
+    this.removeRegistrationFrontListeners();
     this.toolbox.target.off("navigate", this.updateDomain);
 
     unmountComponentAtNode(this.mount);

@@ -3,23 +3,21 @@
 
 const SUGGESTIONS_ENGINE_NAME = "engine-suggestions.xml";
 
-add_task(async function init() {
-  // This history result would match some of the searches below were it not for
-  // the fact that don't include history results when the user has used an
-  // engine alias.  Therefore, this result should never appear below.
-  await PlacesTestUtils.addVisits("http://s.example.com/search?q=firefox");
-});
-
-
 // Basic test that uses two engines, a GET engine and a POST engine, neither
 // providing search suggestions.
-add_task(async function getPost() {
+add_task(async function basicGetAndPost() {
   // Note that head_autocomplete.js has already added a MozSearch engine.
   // Here we add another engine with a search alias.
   Services.search.addEngineWithDetails("AliasedGETMozSearch", "", "get", "",
                                        "GET", "http://s.example.com/search");
   Services.search.addEngineWithDetails("AliasedPOSTMozSearch", "", "post", "",
                                        "POST", "http://s.example.com/search");
+
+  await PlacesTestUtils.addVisits("http://s.example.com/search?q=firefox");
+  let historyMatch = {
+    value: "http://s.example.com/search?q=firefox",
+    comment: "test visit for http://s.example.com/search?q=firefox",
+  };
 
   for (let alias of ["get", "post"]) {
     await check_autocomplete({
@@ -32,6 +30,7 @@ add_task(async function getPost() {
           alias,
           heuristic: true,
         }),
+        historyMatch,
       ],
     });
 
@@ -45,6 +44,7 @@ add_task(async function getPost() {
           alias,
           heuristic: true,
         }),
+        historyMatch,
       ],
     });
 
@@ -58,6 +58,7 @@ add_task(async function getPost() {
           alias,
           heuristic: true,
         }),
+        historyMatch,
       ],
     });
 
@@ -99,6 +100,25 @@ add_task(async function getPost() {
         }),
       ],
     });
+
+    // When a restriction token is used before the alias, the alias should *not*
+    // be recognized.  It should be treated as part of the search string.  Try
+    // all the restriction tokens to test that.  We should get a single "search
+    // with" heuristic result without an alias.
+    for (let restrictToken in UrlbarTokenizer.RESTRICT) {
+      let search = `${restrictToken} ${alias} query string`;
+      await check_autocomplete({
+        search,
+        searchParam: "enable-actions",
+        matches: [
+          makeSearchMatch(search, {
+            engineName: "MozSearch",
+            searchQuery: search,
+            heuristic: true,
+          }),
+        ],
+      });
+    }
   }
 
   await cleanup();
@@ -109,61 +129,106 @@ add_task(async function getPost() {
 add_task(async function engineWithSuggestions() {
   let engine = await addTestSuggestionsEngine();
 
-  // Use a normal alias and then one with an "@", the latter to simulate the
-  // built-in "@" engine aliases (e.g., "@google").
-  for (let alias of ["moz", "@moz"]) {
-    engine.alias = alias;
+  // History matches should not appear with @ aliases, so this visit/match
+  // should not appear when searching with the @ alias below.
+  let historyTitle = "fire";
+  await PlacesTestUtils.addVisits({
+    uri: engine.searchForm,
+    title: historyTitle,
+  });
+  let historyMatch = {
+    value: "http://localhost:9000/search",
+    comment: historyTitle,
+  };
 
-    await check_autocomplete({
-      search: alias,
-      searchParam: "enable-actions",
-      matches: [
+  // Search in both a non-private and private context.
+  for (let private of [false, true]) {
+    let searchParam = "enable-actions";
+    if (private) {
+      searchParam += " private-window";
+    }
+
+    // Use a normal alias and then one with an "@".  For the @ alias, the only
+    // matches should be the search suggestions -- no history matches.
+    for (let alias of ["moz", "@moz"]) {
+      engine.alias = alias;
+      Assert.equal(engine.alias, alias);
+
+      // Search for "alias"
+      let expectedMatches = [
         makeSearchMatch(`${alias} `, {
           engineName: SUGGESTIONS_ENGINE_NAME,
           alias,
           searchQuery: "",
           heuristic: true,
         }),
-      ],
-    });
+      ];
+      if (alias[0] != "@") {
+        expectedMatches.push(historyMatch);
+      }
+      await check_autocomplete({
+        search: alias,
+        searchParam,
+        matches: expectedMatches,
+      });
 
-    await check_autocomplete({
-      search: `${alias} `,
-      searchParam: "enable-actions",
-      matches: [
+      // Search for "alias " (trailing space)
+      expectedMatches = [
         makeSearchMatch(`${alias} `, {
           engineName: SUGGESTIONS_ENGINE_NAME,
           alias,
           searchQuery: "",
           heuristic: true,
         }),
-      ],
-    });
+      ];
+      if (alias[0] != "@") {
+        expectedMatches.push(historyMatch);
+      }
+      await check_autocomplete({
+        search: `${alias} `,
+        searchParam,
+        matches: expectedMatches,
+      });
 
-    await check_autocomplete({
-      search: `${alias} fire`,
-      searchParam: "enable-actions",
-      matches: [
-        makeSearchMatch(`${alias} fire`, {
+      // Search for "alias historyTitle" -- Include the history title so that
+      // the history result is eligible to be shown.  Whether or not it's
+      // actually shown depends on the alias: If it's an @ alias, it shouldn't
+      // be shown.
+      expectedMatches = [
+        makeSearchMatch(`${alias} ${historyTitle}`, {
           engineName: SUGGESTIONS_ENGINE_NAME,
           alias,
-          searchQuery: "fire",
+          searchQuery: historyTitle,
           heuristic: true,
         }),
-        makeSearchMatch(`${alias} fire foo`, {
-          engineName: SUGGESTIONS_ENGINE_NAME,
-          alias,
-          searchQuery: "fire",
-          searchSuggestion: "fire foo",
-        }),
-        makeSearchMatch(`${alias} fire bar`, {
-          engineName: SUGGESTIONS_ENGINE_NAME,
-          alias,
-          searchQuery: "fire",
-          searchSuggestion: "fire bar",
-        }),
-      ],
-    });
+      ];
+      // Suggestions should be shown in a non-private context but not in a
+      // private context.
+      if (!private) {
+        expectedMatches.push(
+          makeSearchMatch(`${alias} ${historyTitle} foo`, {
+            engineName: SUGGESTIONS_ENGINE_NAME,
+            alias,
+            searchQuery: historyTitle,
+            searchSuggestion: `${historyTitle} foo`,
+          }),
+          makeSearchMatch(`${alias} ${historyTitle} bar`, {
+            engineName: SUGGESTIONS_ENGINE_NAME,
+            alias,
+            searchQuery: historyTitle,
+            searchSuggestion: `${historyTitle} bar`,
+          })
+        );
+      }
+      if (alias[0] != "@") {
+        expectedMatches.push(historyMatch);
+      }
+      await check_autocomplete({
+        search: `${alias} ${historyTitle}`,
+        searchParam,
+        matches: expectedMatches,
+      });
+    }
   }
 
   engine.alias = "";

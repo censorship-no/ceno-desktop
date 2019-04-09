@@ -11,6 +11,7 @@ import java.util.UUID;
 import org.mozilla.gecko.mozglue.JNIObject;
 import org.mozilla.gecko.annotation.WrapForJNI;
 
+import android.annotation.SuppressLint;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import android.media.MediaCrypto;
@@ -49,13 +50,14 @@ public final class MediaDrmProxy {
 
     private static boolean isSystemSupported() {
         // Support versions >= Marshmallow
-        if (Build.VERSION.SDK_INT < 23) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             if (DEBUG) Log.d(LOGTAG, "System Not supported !!, current SDK version is " + Build.VERSION.SDK_INT);
             return false;
         }
         return true;
     }
 
+    @SuppressLint("NewApi")
     @WrapForJNI
     public static boolean isSchemeSupported(String keySystem) {
         if (!isSystemSupported()) {
@@ -69,6 +71,7 @@ public final class MediaDrmProxy {
         return false;
     }
 
+    @SuppressLint("NewApi")
     @WrapForJNI
     public static boolean IsCryptoSchemeSupported(String keySystem,
                                                   String container) {
@@ -79,23 +82,6 @@ public final class MediaDrmProxy {
             return MediaDrm.isCryptoSchemeSupported(WIDEVINE_SCHEME_UUID, container);
         }
         if (DEBUG) Log.d(LOGTAG, "cannot decrypt key sytem = " + keySystem + ", container = " + container);
-        return false;
-    }
-
-    @WrapForJNI
-    public static boolean CanDecode(String mimeType) {
-        for (int i = 0; i < MediaCodecList.getCodecCount(); ++i) {
-            MediaCodecInfo info = MediaCodecList.getCodecInfoAt(i);
-            if (info.isEncoder()) {
-                continue;
-            }
-            for (String m : info.getSupportedTypes()) {
-                if (m.equals(mimeType)) {
-                  return true;
-                }
-            }
-        }
-        if (DEBUG) Log.d(LOGTAG, "cannot decode mimetype = " + mimeType);
         return false;
     }
 
@@ -297,6 +283,16 @@ public final class MediaDrmProxy {
     @WrapForJNI(calledFrom = "gecko")
     private String getStubId() {
         return mDrmStubId;
+    }
+
+    @WrapForJNI
+    public boolean setServerCertificate(final byte[] cert) {
+        try {
+            mImpl.setServerCertificate(cert);
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     // Get corresponding MediaCrypto object by a generated UUID for MediaCodec.

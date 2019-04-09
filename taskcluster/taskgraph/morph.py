@@ -11,10 +11,11 @@ locally, so they should be limited to changes that do not modify the meaning of
 the graph.
 """
 
-# Note that the translation of `{'task-reference': '..'}` is handled in the
-# optimization phase (since optimization involves dealing with taskIds
-# directly).  Similarly, `{'relative-datestamp': '..'}` is handled at the last
-# possible moment during task creation.
+# Note that the translation of `{'task-reference': '..'}` and
+# `artifact-reference` are handled in the optimization phase (since
+# optimization involves dealing with taskIds directly).  Similarly,
+# `{'relative-datestamp': '..'}` is handled at the last possible moment during
+# task creation.
 
 from __future__ import absolute_import, print_function, unicode_literals
 
@@ -37,7 +38,7 @@ MAX_ROUTES = 10
 def amend_taskgraph(taskgraph, label_to_taskid, to_add):
     """Add the given tasks to the taskgraph, returning a new taskgraph"""
     new_tasks = taskgraph.tasks.copy()
-    new_edges = taskgraph.graph.edges.copy()
+    new_edges = set(taskgraph.graph.edges)
     for task in to_add:
         new_tasks[task.task_id] = task
         assert task.label not in label_to_taskid
@@ -83,7 +84,7 @@ def derive_misc_task(task, purpose, image, taskgraph, label_to_taskid):
                 'taskclusterProxy': True,
             },
             'maxRunTime': 600,
-        }
+        },
     }
 
     # only include the docker-image dependency here if it is actually in the
@@ -132,7 +133,10 @@ def make_index_task(parent_task, taskgraph, label_to_taskid):
     task.task['scopes'] = sorted(scopes)
 
     task.task['payload']['command'] = ['insert-indexes.js'] + index_paths
-    task.task['payload']['env'] = {"TARGET_TASKID": parent_task.task_id}
+    task.task['payload']['env'] = {
+        'TARGET_TASKID': parent_task.task_id,
+        'INDEX_RANK': parent_task.task.get('extra', {}).get('index', {}).get('rank', 0),
+    }
     return task
 
 

@@ -1,42 +1,42 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! CSS handling for the computed value of
 //! [`position`][position] values.
 //!
 //! [position]: https://drafts.csswg.org/css-backgrounds-3/#position
 
+use crate::values::computed::{Integer, LengthPercentage, Percentage};
+use crate::values::generics::position::Position as GenericPosition;
+use crate::values::generics::position::ZIndex as GenericZIndex;
+pub use crate::values::specified::position::{GridAutoFlow, GridTemplateAreas};
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
-use values::computed::{Integer, LengthOrPercentage, Percentage};
-use values::generics::position::Position as GenericPosition;
-use values::generics::position::ZIndex as GenericZIndex;
-pub use values::specified::position::{GridAutoFlow, GridTemplateAreas};
 
 /// The computed value of a CSS `<position>`
 pub type Position = GenericPosition<HorizontalPosition, VerticalPosition>;
 
 /// The computed value of a CSS horizontal position.
-pub type HorizontalPosition = LengthOrPercentage;
+pub type HorizontalPosition = LengthPercentage;
 
 /// The computed value of a CSS vertical position.
-pub type VerticalPosition = LengthOrPercentage;
+pub type VerticalPosition = LengthPercentage;
 
 impl Position {
     /// `50% 50%`
     #[inline]
     pub fn center() -> Self {
         Self::new(
-            LengthOrPercentage::Percentage(Percentage(0.5)),
-            LengthOrPercentage::Percentage(Percentage(0.5)),
+            LengthPercentage::new_percent(Percentage(0.5)),
+            LengthPercentage::new_percent(Percentage(0.5)),
         )
     }
 
     /// `0% 0%`
     #[inline]
     pub fn zero() -> Self {
-        Self::new(LengthOrPercentage::zero(), LengthOrPercentage::zero())
+        Self::new(LengthPercentage::zero(), LengthPercentage::zero())
     }
 }
 

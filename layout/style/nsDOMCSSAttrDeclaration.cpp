@@ -8,32 +8,28 @@
 
 #include "nsDOMCSSAttrDeclaration.h"
 
-#include "mozilla/DeclarationBlock.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/MutationEventBinding.h"
+#include "mozilla/DeclarationBlock.h"
 #include "mozilla/InternalMutationEvent.h"
+#include "mozilla/SMILCSSValueType.h"
 #include "mozAutoDocUpdate.h"
-#include "nsIDocument.h"
 #include "nsIURI.h"
 #include "nsNodeUtils.h"
-#include "nsSMILCSSValueType.h"
 #include "nsWrapperCacheInlines.h"
 #include "nsIFrame.h"
 #include "ActiveLayerTracker.h"
 
 using namespace mozilla;
 
-nsDOMCSSAttributeDeclaration::nsDOMCSSAttributeDeclaration(dom::Element* aElement,
-                                                           bool aIsSMILOverride)
-  : mElement(aElement)
-  , mIsSMILOverride(aIsSMILOverride)
-{
+nsDOMCSSAttributeDeclaration::nsDOMCSSAttributeDeclaration(
+    dom::Element* aElement, bool aIsSMILOverride)
+    : mElement(aElement), mIsSMILOverride(aIsSMILOverride) {
   NS_ASSERTION(aElement, "Inline style for a NULL element?");
 }
 
-nsDOMCSSAttributeDeclaration::~nsDOMCSSAttributeDeclaration()
-{
-}
+nsDOMCSSAttributeDeclaration::~nsDOMCSSAttributeDeclaration() {}
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(nsDOMCSSAttributeDeclaration, mElement)
 
@@ -52,25 +48,23 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_END
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_BEGIN(nsDOMCSSAttributeDeclaration)
   return tmp->HasKnownLiveWrapper() ||
-    (tmp->mElement && Element::CanSkipInCC(tmp->mElement));
+         (tmp->mElement && Element::CanSkipInCC(tmp->mElement));
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_END
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_BEGIN(nsDOMCSSAttributeDeclaration)
   return tmp->HasKnownLiveWrapper() ||
-    (tmp->mElement && Element::CanSkipThis(tmp->mElement));
+         (tmp->mElement && Element::CanSkipThis(tmp->mElement));
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMCSSAttributeDeclaration)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-NS_IMPL_QUERY_TAIL_INHERITING(nsDOMCSSDeclaration)
+NS_INTERFACE_MAP_END_INHERITING(nsDOMCSSDeclaration)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsDOMCSSAttributeDeclaration)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsDOMCSSAttributeDeclaration)
 
-nsresult
-nsDOMCSSAttributeDeclaration::SetCSSDeclaration(DeclarationBlock* aDecl,
-                                                MutationClosureData* aClosureData)
-{
+nsresult nsDOMCSSAttributeDeclaration::SetCSSDeclaration(
+    DeclarationBlock* aDecl, MutationClosureData* aClosureData) {
   NS_ASSERTION(mElement, "Must have Element to set the declaration!");
 
   // Whenever changing element.style values, aClosureData must be non-null.
@@ -84,26 +78,21 @@ nsDOMCSSAttributeDeclaration::SetCSSDeclaration(DeclarationBlock* aDecl,
 
   aDecl->SetDirty();
   return mIsSMILOverride
-    ? mElement->SetSMILOverrideStyleDeclaration(aDecl, true)
-    : mElement->SetInlineStyleDeclaration(*aDecl, *aClosureData);
+             ? mElement->SetSMILOverrideStyleDeclaration(aDecl, true)
+             : mElement->SetInlineStyleDeclaration(*aDecl, *aClosureData);
 }
 
-nsIDocument*
-nsDOMCSSAttributeDeclaration::DocToUpdate()
-{
+Document* nsDOMCSSAttributeDeclaration::DocToUpdate() {
   // We need OwnerDoc() rather than GetUncomposedDoc() because it might
   // be the BeginUpdate call that inserts mElement into the document.
   return mElement->OwnerDoc();
 }
 
-DeclarationBlock*
-nsDOMCSSAttributeDeclaration::GetOrCreateCSSDeclaration(Operation aOperation,
-                                                        DeclarationBlock** aCreated)
-{
+DeclarationBlock* nsDOMCSSAttributeDeclaration::GetOrCreateCSSDeclaration(
+    Operation aOperation, DeclarationBlock** aCreated) {
   MOZ_ASSERT(aOperation != eOperation_Modify || aCreated);
 
-  if (!mElement)
-    return nullptr;
+  if (!mElement) return nullptr;
 
   DeclarationBlock* declaration;
   if (mIsSMILOverride) {
@@ -135,32 +124,29 @@ nsDOMCSSAttributeDeclaration::GetOrCreateCSSDeclaration(Operation aOperation,
 
 nsDOMCSSDeclaration::ParsingEnvironment
 nsDOMCSSAttributeDeclaration::GetParsingEnvironment(
-    nsIPrincipal* aSubjectPrincipal) const
-{
+    nsIPrincipal* aSubjectPrincipal) const {
   return {
-    mElement->GetURLDataForStyleAttr(aSubjectPrincipal),
-    mElement->OwnerDoc()->GetCompatibilityMode(),
-    mElement->OwnerDoc()->CSSLoader(),
+      mElement->GetURLDataForStyleAttr(aSubjectPrincipal),
+      mElement->OwnerDoc()->GetCompatibilityMode(),
+      mElement->OwnerDoc()->CSSLoader(),
   };
 }
 
-nsresult
-nsDOMCSSAttributeDeclaration::SetSMILValue(const nsCSSPropertyID aPropID,
-                                           const nsSMILValue& aValue)
-{
+nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
+    const nsCSSPropertyID aPropID, const SMILValue& aValue) {
   MOZ_ASSERT(mIsSMILOverride);
   // No need to do the ActiveLayerTracker / ScrollLinkedEffectDetector bits,
   // since we're in a SMIL animation anyway, no need to try to detect we're a
   // scripted animation.
   RefPtr<DeclarationBlock> created;
   DeclarationBlock* olddecl =
-    GetOrCreateCSSDeclaration(eOperation_Modify, getter_AddRefs(created));
+      GetOrCreateCSSDeclaration(eOperation_Modify, getter_AddRefs(created));
   if (!olddecl) {
     return NS_ERROR_NOT_AVAILABLE;
   }
   mozAutoDocUpdate autoUpdate(DocToUpdate(), true);
   RefPtr<DeclarationBlock> decl = olddecl->EnsureMutable();
-  bool changed = nsSMILCSSValueType::SetPropertyValues(aValue, *decl);
+  bool changed = SMILCSSValueType::SetPropertyValues(aValue, *decl);
   if (changed) {
     // We can pass nullptr as the latter param, since this is
     // mIsSMILOverride == true case.
@@ -169,11 +155,9 @@ nsDOMCSSAttributeDeclaration::SetSMILValue(const nsCSSPropertyID aPropID,
   return NS_OK;
 }
 
-nsresult
-nsDOMCSSAttributeDeclaration::SetPropertyValue(const nsCSSPropertyID aPropID,
-                                               const nsAString& aValue,
-                                               nsIPrincipal* aSubjectPrincipal)
-{
+nsresult nsDOMCSSAttributeDeclaration::SetPropertyValue(
+    const nsCSSPropertyID aPropID, const nsAString& aValue,
+    nsIPrincipal* aSubjectPrincipal) {
   // Scripted modifications to style.opacity or style.transform
   // could immediately force us into the animated state if heuristics suggest
   // this is scripted animation.
@@ -187,15 +171,15 @@ nsDOMCSSAttributeDeclaration::SetPropertyValue(const nsCSSPropertyID aPropID,
       aPropID == eCSSProperty_background_position) {
     nsIFrame* frame = mElement->GetPrimaryFrame();
     if (frame) {
-      ActiveLayerTracker::NotifyInlineStyleRuleModified(frame, aPropID, aValue, this);
+      ActiveLayerTracker::NotifyInlineStyleRuleModified(frame, aPropID, aValue,
+                                                        this);
     }
   }
-  return nsDOMCSSDeclaration::SetPropertyValue(aPropID, aValue, aSubjectPrincipal);
+  return nsDOMCSSDeclaration::SetPropertyValue(aPropID, aValue,
+                                               aSubjectPrincipal);
 }
 
-void
-nsDOMCSSAttributeDeclaration::MutationClosureFunction(void* aData)
-{
+void nsDOMCSSAttributeDeclaration::MutationClosureFunction(void* aData) {
   MutationClosureData* data = static_cast<MutationClosureData*>(aData);
   // Clear mClosure pointer so that it doesn't get called again.
   data->mClosure = nullptr;

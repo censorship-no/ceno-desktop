@@ -74,7 +74,11 @@
   !include WinVer.nsh
 !endif
 
-!include x64.nsh
+; When including x64.nsh check if ___X64__NSH___ is defined to prevent
+; loading the file a second time.
+!ifndef ___X64__NSH___
+  !include x64.nsh
+!endif
 
 ; NSIS provided macros that we have overridden.
 !include overrides.nsh
@@ -1450,6 +1454,7 @@
   ; The x64 regsvr32.exe registers x86 DLL's properly so just use it
   ; when installing on an x64 systems even when installing an x86 application.
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     ${DisableX64FSRedirection}
     ExecWait '"$SYSDIR\regsvr32.exe" /s "${DLL}"'
     ${EnableX64FSRedirection}
@@ -1464,6 +1469,7 @@
   ; The x64 regsvr32.exe registers x86 DLL's properly so just use it
   ; when installing on an x64 systems even when installing an x86 application.
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     ${DisableX64FSRedirection}
     ExecWait '"$SYSDIR\regsvr32.exe" /s /u "${DLL}"'
     ${EnableX64FSRedirection}
@@ -1705,6 +1711,124 @@
     !define _MOZFUNC_UN "un."
 
     !insertmacro GetSingleInstallPath
+
+    !undef _MOZFUNC_UN
+    !define _MOZFUNC_UN
+    !verbose pop
+  !endif
+!macroend
+
+/**
+ * Find the first existing installation for the application.
+ * This is similar to GetSingleInstallPath, except that it always returns the
+ * first path it finds, instead of an error when more than one path exists.
+ *
+ * The shell context and the registry view should already have been set.
+ *
+ * @param   _KEY
+ *          The registry subkey (typically Software\Mozilla\App Name).
+ * @return  _RESULT
+ *          path to the install directory of the first location found, or
+ *          the string "false" if no existing installation was found.
+ *
+ * $R5 = counter for the loop's EnumRegKey
+ * $R6 = return value from EnumRegKey
+ * $R7 = return value from ReadRegStr
+ * $R8 = storage for _KEY
+ * $R9 = _KEY and _RESULT
+ */
+!macro GetFirstInstallPath
+  !ifndef ${_MOZFUNC_UN}GetFirstInstallPath
+    !define _MOZFUNC_UN_TMP ${_MOZFUNC_UN}
+    !insertmacro ${_MOZFUNC_UN_TMP}GetLongPath
+    !insertmacro ${_MOZFUNC_UN_TMP}GetParent
+    !insertmacro ${_MOZFUNC_UN_TMP}RemoveQuotesFromPath
+    !undef _MOZFUNC_UN
+    !define _MOZFUNC_UN ${_MOZFUNC_UN_TMP}
+    !undef _MOZFUNC_UN_TMP
+
+    !verbose push
+    !verbose ${_MOZFUNC_VERBOSE}
+    !define ${_MOZFUNC_UN}GetFirstInstallPath "!insertmacro ${_MOZFUNC_UN}__GetFirstInstallPathCall"
+
+    Function ${_MOZFUNC_UN}__GetFirstInstallPath
+      Exch $R9
+      Push $R8
+      Push $R7
+      Push $R6
+      Push $R5
+
+      StrCpy $R8 $R9
+      StrCpy $R9 "false"
+      StrCpy $R5 0
+
+      ${Do}
+        ClearErrors
+        EnumRegKey $R6 SHCTX $R8 $R5
+        ${If} ${Errors}
+        ${OrIf} $R6 == ""
+          ${Break}
+        ${EndIf}
+
+        IntOp $R5 $R5 + 1
+
+        ReadRegStr $R7 SHCTX "$R8\$R6\Main" "PathToExe"
+        ${If} ${Errors}
+          ${Continue}
+        ${EndIf}
+
+        ${${_MOZFUNC_UN}RemoveQuotesFromPath} "$R7" $R7
+        GetFullPathName $R7 "$R7"
+        ${If} ${Errors}
+          ${Continue}
+        ${EndIf}
+
+        StrCpy $R9 "$R7"
+        ${Break}
+      ${Loop}
+
+      ${If} $R9 != "false"
+        ${${_MOZFUNC_UN}GetLongPath} "$R9" $R9
+        ${${_MOZFUNC_UN}GetParent} "$R9" $R9
+      ${EndIf}
+
+      Pop $R5
+      Pop $R6
+      Pop $R7
+      Pop $R8
+      Exch $R9
+    FunctionEnd
+
+    !verbose pop
+  !endif
+!macroend
+
+!macro __GetFirstInstallPathCall _KEY _RESULT
+  !verbose push
+  !verbose ${_MOZFUNC_VERBOSE}
+  Push "${_KEY}"
+  Call __GetFirstInstallPath
+  Pop ${_RESULT}
+  !verbose pop
+!macroend
+
+!macro un.__GetFirstInstallPathCall _KEY _RESULT
+  !verbose push
+  !verbose ${_MOZFUNC_VERBOSE}
+  Push "${_KEY}"
+  Call un.__GetFirstInstallPath
+  Pop ${_RESULT}
+  !verbose pop
+!macroend
+
+!macro un.__GetFirstInstallPath
+  !ifndef un.__GetFirstInstallPath
+    !verbose push
+    !verbose ${_MOZFUNC_VERBOSE}
+    !undef _MOZFUNC_UN
+    !define _MOZFUNC_UN "un."
+
+    !insertmacro __GetFirstInstallPath
 
     !undef _MOZFUNC_UN
     !define _MOZFUNC_UN
@@ -2355,6 +2479,7 @@
       StrCpy $R6 0  ; set the counter for the outer loop to 0
 
       ${If} ${RunningX64}
+      ${OrIf} ${IsNativeARM64}
         StrCpy $R0 "false"
         ; Set the registry to the 32 bit registry for 64 bit installations or to
         ; the 64 bit registry for 32 bit installations at the beginning so it can
@@ -2414,17 +2539,19 @@
 
       end:
       ${If} ${RunningX64}
-      ${AndIf} "$R0" == "false"
-        ; Set the registry to the correct view.
-        !ifdef HAVE_64BIT_BUILD
-          SetRegView 64
-        !else
-          SetRegView 32
-        !endif
+      ${OrIf} ${IsNativeARM64}
+        ${If} "$R0" == "false"
+          ; Set the registry to the correct view.
+          !ifdef HAVE_64BIT_BUILD
+            SetRegView 64
+          !else
+            SetRegView 32
+          !endif
 
-        StrCpy $R6 0  ; set the counter for the outer loop to 0
-        StrCpy $R0 "true"
-        GoTo outerloop
+          StrCpy $R6 0  ; set the counter for the outer loop to 0
+          StrCpy $R0 "true"
+          GoTo outerloop
+        ${EndIf}
       ${EndIf}
 
       ClearErrors
@@ -2521,6 +2648,7 @@
       StrCpy $R8 0
 
       ${If} ${RunningX64}
+      ${OrIf} ${IsNativeARM64}
         StrCpy $R3 "false"
         ; Set the registry to the 32 bit registry for 64 bit installations or to
         ; the 64 bit registry for 32 bit installations at the beginning so it can
@@ -2566,18 +2694,20 @@
 
       end:
       ${If} ${RunningX64}
-      ${AndIf} "$R3" == "false"
-        ; Set the registry to the correct view.
-        !ifdef HAVE_64BIT_BUILD
-          SetRegView 64
-        !else
-          SetRegView 32
-        !endif
+      ${OrIf} ${IsNativeARM64}
+        ${If} "$R3" == "false"
+          ; Set the registry to the correct view.
+          !ifdef HAVE_64BIT_BUILD
+            SetRegView 64
+          !else
+            SetRegView 32
+          !endif
 
-        StrCpy $R7 ""
-        StrCpy $R8 0
-        StrCpy $R3 "true"
-        GoTo loop
+          StrCpy $R7 ""
+          StrCpy $R8 0
+          StrCpy $R3 "true"
+          GoTo loop
+        ${EndIf}
       ${EndIf}
 
       ClearErrors
@@ -3025,6 +3155,7 @@
         Call ${_MOZFUNC_UN}CleanVirtualStore_Internal
 
         ${If} ${RunningX64}
+        ${OrIf} ${IsNativeARM64}
           StrCpy $R4 $PROGRAMFILES64
           Call ${_MOZFUNC_UN}CleanVirtualStore_Internal
         ${EndIf}
@@ -3285,41 +3416,68 @@
           ${If} $R2 != ""
             ; Backup the old update directory logs and delete the directory
             ${If} ${FileExists} "$R2\updates\last-update.log"
-              Rename "$R2\updates\last-update.log" "$TEMP\moz-update-old-last-update.log"
+              Rename "$R2\updates\last-update.log" "$TEMP\moz-update-oldest-last-update.log"
             ${EndIf}
 
             ${If} ${FileExists} "$R2\updates\backup-update.log"
-              Rename "$R2\updates\backup-update.log" "$TEMP\moz-update-old-backup-update.log"
+              Rename "$R2\updates\backup-update.log" "$TEMP\moz-update-oldest-backup-update.log"
             ${EndIf}
 
             ${If} ${FileExists} "$R2\updates"
                 RmDir /r "$R2"
             ${EndIf}
           ${EndIf}
+        ${EndIf}
 
-          ; Get the taskbar ID hash for this installation path
-          ReadRegStr $R1 HKLM "SOFTWARE\$R7\TaskBarIDs" $R6
-          ${If} $R1 == ""
-            ReadRegStr $R1 HKCU "SOFTWARE\$R7\TaskBarIDs" $R6
+        ; Get the taskbar ID hash for this installation path
+        ReadRegStr $R1 HKLM "SOFTWARE\$R7\TaskBarIDs" $R6
+        ${If} $R1 == ""
+          ReadRegStr $R1 HKCU "SOFTWARE\$R7\TaskBarIDs" $R6
+        ${EndIf}
+
+        ; If the taskbar ID hash exists then delete the new update directory
+        ; Backup its logs before deleting it.
+        ${If} $R1 != ""
+          StrCpy $R0 "$LOCALAPPDATA\$R8\$R1"
+
+          ${If} ${FileExists} "$R0\updates\last-update.log"
+            Rename "$R0\updates\last-update.log" "$TEMP\moz-update-older-last-update.log"
           ${EndIf}
 
-          ; If the taskbar ID hash exists then delete the new update directory
-          ; Backup its logs before deleting it.
-          ${If} $R1 != ""
-            StrCpy $R0 "$LOCALAPPDATA\$R8\$R1"
+          ${If} ${FileExists} "$R0\updates\backup-update.log"
+            Rename "$R0\updates\backup-update.log" "$TEMP\moz-update-older-backup-update.log"
+          ${EndIf}
 
-            ${If} ${FileExists} "$R0\updates\last-update.log"
-              Rename "$R0\updates\last-update.log" "$TEMP\moz-update-new-last-update.log"
-            ${EndIf}
+          ; Remove the old updates directory, located in the user's Windows profile directory
+          ${If} ${FileExists} "$R0\updates"
+            RmDir /r "$R0"
+          ${EndIf}
 
-            ${If} ${FileExists} "$R0\updates\backup-update.log"
-              Rename "$R0\updates\backup-update.log" "$TEMP\moz-update-new-backup-update.log"
-            ${EndIf}
+          ; Get the new updates directory so we can remove that too
+          ; The new update directory is in the Program Data directory
+          ; (currently C:\ProgramData).
+          ; This system call gets that directory path. The arguments are:
+          ;   A null ptr for hwnd
+          ;   $R0 for the output string
+          ;   CSIDL_COMMON_APPDATA == 0x0023 == 35 for the csidl indicating which dir to get
+          ;   false for fCreate (i.e. Do not create the folder if it doesn't exist)
+          ; We could use %APPDATA% for this instead, but that requires state: the shell
+          ; var context would need to be saved, set, and reset. It is easier just to use
+          ; the system call.
+          System::Call "Shell32::SHGetSpecialFolderPathW(p 0, t.R0, i 35, i 0)"
+          StrCpy $R0 "$R0\$R8\$R1"
 
-            ; Remove the old updates directory
-            ${If} ${FileExists} "$R0\updates"
-              RmDir /r "$R0"
-            ${EndIf}
+          ${If} ${FileExists} "$R0\updates\last-update.log"
+            Rename "$R0\updates\last-update.log" "$TEMP\moz-update-newest-last-update.log"
+          ${EndIf}
+
+          ${If} ${FileExists} "$R0\updates\backup-update.log"
+            Rename "$R0\updates\backup-update.log" "$TEMP\moz-update-newest-backup-update.log"
+          ${EndIf}
+
+          ; Remove the new updates directory, which is shared by all users of the installation
+          ${If} ${FileExists} "$R0\updates"
+            RmDir /r "$R0"
           ${EndIf}
         ${EndIf}
       ${EndIf}
@@ -3374,6 +3532,92 @@
     !verbose pop
   !endif
 !macroend
+
+/**
+ * Create the update directory and sets the permissions correctly
+ *
+ * @param   ROOT_DIR_NAME
+ *          The name of the update directory to be created in the common
+ *          application directory. For example, if ROOT_DIR_NAME is "Mozilla",
+ *          the created directory will be "C:\ProgramData\Mozilla".
+ *
+ * $R0 = Used for checking errors
+ * $R1 = The common application directory path
+ * $R9 = An error message to be returned on the stack
+ */
+!macro CreateUpdateDir ROOT_DIR_NAME
+  Push $R9
+  Push $R0
+  Push $R1
+
+  ; The update directory is in the Program Data directory
+  ; (currently C:\ProgramData).
+  ; This system call gets that directory path. The arguments are:
+  ;   A null ptr for hwnd
+  ;   $R1 for the output string
+  ;   CSIDL_COMMON_APPDATA == 0x0023 == 35 for the csidl indicating which dir to get
+  ;   true for fCreate (i.e. Do create the folder if it doesn't exist)
+  ; We could use %APPDATA% for this instead, but that requires state: the shell
+  ; var context would need to be saved, set, and reset. It is easier just to use
+  ; the system call.
+  System::Call "Shell32::SHGetSpecialFolderPathW(p 0, t.R1, i 35, i 1)"
+  StrCpy $R1 "$R1\${ROOT_DIR_NAME}"
+
+  ClearErrors
+  ${IfNot} ${FileExists} "$R1"
+    CreateDirectory "$R1"
+    ${If} ${Errors}
+      StrCpy $R9 "Unable to create directory: $R1"
+      GoTo end
+    ${EndIf}
+  ${EndIf}
+
+  ; Grant Full Access to the Builtin User group
+  AccessControl::SetOnFile "$R1" "(BU)" "FullAccess"
+  Pop $R0
+  ${If} $R0 == error
+    Pop $R9  ; Get AccessControl's Error Message
+    SetErrors
+    GoTo end
+  ${EndIf}
+
+  ; Grant Full Access to the Builtin Administrator group
+  AccessControl::SetOnFile "$R1" "(BA)" "FullAccess"
+  Pop $R0
+  ${If} $R0 == error
+    Pop $R9  ; Get AccessControl's Error Message
+    SetErrors
+    GoTo end
+  ${EndIf}
+
+  ; Grant Full Access to the SYSTEM user
+  AccessControl::SetOnFile "$R1" "(SY)" "FullAccess"
+  Pop $R0
+  ${If} $R0 == error
+    Pop $R9  ; Get AccessControl's Error Message
+    SetErrors
+    GoTo end
+  ${EndIf}
+
+  ; Remove inherited permissions
+  AccessControl::DisableFileInheritance "$R1"
+  Pop $R0
+  ${If} $R0 == error
+    Pop $R9  ; Get AccessControl's Error Message
+    SetErrors
+    GoTo end
+  ${EndIf}
+
+end:
+  Pop $R1
+  Pop $R0
+  ${If} ${Errors}
+    Exch $R9
+  ${Else}
+    Pop $R9
+  ${EndIf}
+!macroend
+!define CreateUpdateDir "!insertmacro CreateUpdateDir"
 
 /**
  * Deletes all relative profiles specified in an application's profiles.ini and
@@ -5092,10 +5336,11 @@
 
             ; We still accept the plural version for backwards compatibility,
             ; but the singular version takes priority.
+            ClearErrors
             ReadINIStr $R8 $R7 "Install" "StartMenuShortcut"
             ${If} $R8 == "false"
               StrCpy $AddStartMenuSC "0"
-            ${Else}
+            ${ElseIfNot} ${Errors}
               StrCpy $AddStartMenuSC "1"
             ${EndIf}
 
@@ -5528,6 +5773,7 @@
       ${GetSingleInstallPath} "Software\Mozilla\${BrandFullNameInternal}" $R9
 
       ${If} ${RunningX64}
+      ${OrIf} ${IsNativeARM64}
         ; In HKCU there is no WOW64 redirection, which means we may have gotten
         ; the path to a 32-bit install even though we're 64-bit, or vice-versa.
         ; In that case, just use the default path instead of offering an upgrade.
@@ -6112,11 +6358,7 @@
         ${LogMsg} "OS Name    : Unable to detect"
       ${EndIf}
 
-      !ifdef HAVE_64BIT_BUILD
-        ${LogMsg} "Target CPU : x64"
-      !else
-        ${LogMsg} "Target CPU : x86"
-      !endif
+      ${LogMsg} "Target CPU : ${ARCH}"
 
       Pop $9
       Pop $R0
@@ -8160,3 +8402,71 @@
   Pop $1
   Pop $0
 !macroend
+
+Function WriteRegQWORD
+          ; Stack contents:
+          ; VALUE, VALUE_NAME, SUBKEY, ROOTKEY
+  Exch $3 ; $3, VALUE_NAME, SUBKEY, ROOTKEY
+  Exch 1  ; VALUE_NAME, $3, SUBKEY, ROOTKEY
+  Exch $2 ; $2, $3, SUBKEY, ROOTKEY
+  Exch 2  ; SUBKEY, $3, $2, ROOTKEY
+  Exch $1 ; $1, $3, $2, ROOTKEY
+  Exch 3  ; ROOTKEY, $3, $2, $1
+  Exch $0 ; $0, $3, $2, $1
+  System::Call "advapi32::RegSetKeyValueW(p r0, w r1, w r2, i 11, *l r3, i 8) i.r0"
+  ${IfNot} $0 = 0
+    SetErrors
+  ${EndIf}
+  Pop $0
+  Pop $3
+  Pop $2
+  Pop $1
+FunctionEnd
+!macro WriteRegQWORD ROOTKEY SUBKEY VALUE_NAME VALUE
+  ${If} "${ROOTKEY}" == "HKCR"
+    Push 0x80000000
+  ${ElseIf} "${ROOTKEY}" == "HKCU"
+    Push 0x80000001
+  ${ElseIf} "${ROOTKEY}" == "HKLM"
+    Push 0x80000002
+  ${Endif}
+  Push "${SUBKEY}"
+  Push "${VALUE_NAME}"
+  System::Int64Op ${VALUE} + 0 ; The result is pushed on the stack
+  Call WriteRegQWORD
+!macroend
+!define WriteRegQWORD "!insertmacro WriteRegQWORD"
+
+Function ReadRegQWORD
+          ; Stack contents:
+          ; VALUE_NAME, SUBKEY, ROOTKEY
+  Exch $2 ; $2, SUBKEY, ROOTKEY
+  Exch 1  ; SUBKEY, $2, ROOTKEY
+  Exch $1 ; $1, $2, ROOTKEY
+  Exch 2  ; ROOTKEY, $2, $1
+  Exch $0 ; $0, $2, $1
+  System::Call "advapi32::RegGetValueW(p r0, w r1, w r2, i 0x48, p 0, *l s, *i 8) i.r0"
+  ${IfNot} $0 = 0
+    SetErrors
+  ${EndIf}
+          ; VALUE, $0, $2, $1
+  Exch 3  ; $1, $0, $2, VALUE
+  Pop $1  ; $0, $2, VALUE
+  Pop $0  ; $2, VALUE
+  Pop $2  ; VALUE
+FunctionEnd
+!macro ReadRegQWORD DEST ROOTKEY SUBKEY VALUE_NAME
+  ${If} "${ROOTKEY}" == "HKCR"
+    Push 0x80000000
+  ${ElseIf} "${ROOTKEY}" == "HKCU"
+    Push 0x80000001
+  ${ElseIf} "${ROOTKEY}" == "HKLM"
+    Push 0x80000002
+  ${Endif}
+  Push "${SUBKEY}"
+  Push "${VALUE_NAME}"
+  Call ReadRegQWORD
+  Pop ${DEST}
+!macroend
+!define ReadRegQWORD "!insertmacro ReadRegQWORD"
+

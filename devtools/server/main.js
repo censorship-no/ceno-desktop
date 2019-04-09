@@ -15,7 +15,6 @@ var { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
 var { dumpn } = DevToolsUtils;
 
-loader.lazyRequireGetter(this, "DebuggerSocket", "devtools/shared/security/socket", true);
 loader.lazyRequireGetter(this, "Authentication", "devtools/shared/security/auth");
 loader.lazyRequireGetter(this, "LocalDebuggerTransport", "devtools/shared/transport/local-transport", true);
 loader.lazyRequireGetter(this, "ChildDebuggerTransport", "devtools/shared/transport/child-transport", true);
@@ -64,6 +63,13 @@ var DebuggerServer = {
   allowChromeProcess: false,
 
   /**
+   * Flag used to check if the server can be destroyed when all connections have been
+   * removed. Firefox on Android runs a single shared DebuggerServer, and should not be
+   * closed even if no client is connected.
+   */
+  keepAlive: false,
+
+  /**
    * We run a special server in child process whose main actor is an instance
    * of FrameTargetActor, but that isn't a root actor. Instead there is no root
    * actor registered on DebuggerServer.
@@ -85,6 +91,7 @@ var DebuggerServer = {
     this._nextConnID = 0;
 
     this._initialized = true;
+    this._onSocketListenerAccepted = this._onSocketListenerAccepted.bind(this);
   },
 
   get protocol() {
@@ -93,6 +100,10 @@ var DebuggerServer = {
 
   get initialized() {
     return this._initialized;
+  },
+
+  hasConnection() {
+    return Object.keys(this._connections).length > 0;
   },
 
   /**
@@ -113,7 +124,7 @@ var DebuggerServer = {
 
     ActorRegistry.destroy();
 
-    this.closeAllListeners();
+    this.closeAllSocketListeners();
     this._initialized = false;
 
     dumpn("Debugger server is shut down.");
@@ -169,62 +180,21 @@ var DebuggerServer = {
     this.registerActors({ root: true, browser: true, target: true });
   },
 
-  /**
-   * Passes a set of options to the AddonTargetActors for the given ID.
-   *
-   * @param id string
-   *        The ID of the add-on to pass the options to
-   * @param options object
-   *        The options.
-   * @return a promise that will be resolved when complete.
-   */
-  setAddonOptions(id, options) {
-    if (!this._initialized) {
-      return Promise.resolve();
-    }
-
-    const promises = [];
-
-    // Pass to all connections
-    for (const connID of Object.getOwnPropertyNames(this._connections)) {
-      promises.push(this._connections[connID].setAddonOptions(id, options));
-    }
-
-    return Promise.all(promises);
-  },
-
   get listeningSockets() {
     return this._listeners.length;
-  },
-
-  /**
-   * Creates a socket listener for remote debugger connections.
-   *
-   * After calling this, set some socket options, such as the port / path to
-   * listen on, and then call |open| on the listener.
-   *
-   * See SocketListener in devtools/shared/security/socket.js for available
-   * options.
-   *
-   * @return SocketListener
-   *         A SocketListener instance that is waiting to be configured and
-   *         opened is returned.  This single listener can be closed at any
-   *         later time by calling |close| on the SocketListener.  If remote
-   *         connections are disabled, an error is thrown.
-   */
-  createListener() {
-    if (!Services.prefs.getBoolPref("devtools.debugger.remote-enabled")) {
-      throw new Error("Can't create listener, remote debugging disabled");
-    }
-    this._checkInit();
-    return DebuggerSocket.createListener();
   },
 
   /**
    * Add a SocketListener instance to the server's set of active
    * SocketListeners.  This is called by a SocketListener after it is opened.
    */
-  _addListener(listener) {
+  addSocketListener(listener) {
+    if (!Services.prefs.getBoolPref("devtools.debugger.remote-enabled")) {
+      throw new Error("Can't add a SocketListener, remote debugging disabled");
+    }
+    this._checkInit();
+
+    listener.on("accepted", this._onSocketListenerAccepted);
     this._listeners.push(listener);
   },
 
@@ -232,8 +202,17 @@ var DebuggerServer = {
    * Remove a SocketListener instance from the server's set of active
    * SocketListeners.  This is called by a SocketListener after it is closed.
    */
-  _removeListener(listener) {
+  removeSocketListener(listener) {
+    // Remove connections that were accepted in the listener.
+    for (const connID of Object.getOwnPropertyNames(this._connections)) {
+      const connection = this._connections[connID];
+      if (connection.isAcceptedBy(listener)) {
+        connection.close();
+      }
+    }
+
     this._listeners = this._listeners.filter(l => l !== listener);
+    listener.off("accepted", this._onSocketListenerAccepted);
   },
 
   /**
@@ -242,7 +221,7 @@ var DebuggerServer = {
    * @return boolean
    *         Whether any listeners were actually closed.
    */
-  closeAllListeners() {
+  closeAllSocketListeners() {
     if (!this.listeningSockets) {
       return false;
     }
@@ -252,6 +231,10 @@ var DebuggerServer = {
     }
 
     return true;
+  },
+
+  _onSocketListenerAccepted(transport, listener) {
+    this._onConnection(transport, null, false, listener);
   },
 
   /**
@@ -863,7 +846,7 @@ var DebuggerServer = {
    * that all our actors have names beginning with |forwardingPrefix + '/'|.
    * In particular, the root actor's name will be |forwardingPrefix + '/root'|.
    */
-  _onConnection(transport, forwardingPrefix, noRootActor = false) {
+  _onConnection(transport, forwardingPrefix, noRootActor = false, socketListener = null) {
     let connID;
     if (forwardingPrefix) {
       connID = forwardingPrefix + "/";
@@ -875,7 +858,7 @@ var DebuggerServer = {
       connID = "server" + loader.id + ".conn" + this._nextConnID++ + ".";
     }
 
-    const conn = new DebuggerServerConnection(connID, transport);
+    const conn = new DebuggerServerConnection(connID, transport, socketListener);
     this._connections[connID] = conn;
 
     // Create a root actor for the connection and send the hello packet.
@@ -974,12 +957,16 @@ exports.DebuggerServer = DebuggerServer;
  *        with prefix.
  * @param transport transport
  *        Packet transport for the debugging protocol.
+ * @param socketListener SocketListener
+ *        SocketListener which accepted the transport.
+ *        If this is null, the transport is not that was accepted by SocketListener.
  */
-function DebuggerServerConnection(prefix, transport) {
+function DebuggerServerConnection(prefix, transport, socketListener) {
   this._prefix = prefix;
   this._transport = transport;
   this._transport.hooks = this;
   this._nextID = 1;
+  this._socketListener = socketListener;
 
   this._actorPool = new Pool(this);
   this._extraPools = [this._actorPool];
@@ -1201,28 +1188,14 @@ DebuggerServerConnection.prototype = {
   },
 
   /**
-   * Passes a set of options to the AddonTargetActors for the given ID.
+   * This function returns whether the connection was accepted by passed SocketListener.
    *
-   * @param id string
-   *        The ID of the add-on to pass the options to
-   * @param options object
-   *        The options.
-   * @return a promise that will be resolved when complete.
+   * @param {SocketListener} socketListener
+   * @return {Boolean} return true if this connection was accepted by socketListener,
+   *         else returns false.
    */
-  setAddonOptions(id, options) {
-    const addonList = this.rootActor._parameters.addonList;
-    if (!addonList) {
-      return Promise.resolve();
-    }
-    return addonList.getList().then((addonTargetActors) => {
-      for (const actor of addonTargetActors) {
-        if (actor.addonId != id) {
-          continue;
-        }
-        actor.setOptions(options);
-        return;
-      }
-    });
+  isAcceptedBy(socketListener) {
+    return this._socketListener === socketListener;
   },
 
   /* Forwarding packets to other transports based on actor name prefixes. */

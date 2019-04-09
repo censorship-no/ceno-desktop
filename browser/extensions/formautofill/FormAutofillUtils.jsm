@@ -17,7 +17,7 @@ const EDIT_ADDRESS_KEYWORDS = [
   "givenName", "additionalName", "familyName", "organization2", "streetAddress",
   "state", "province", "city", "country", "zip", "postalCode", "email", "tel",
 ];
-const MANAGE_CREDITCARDS_KEYWORDS = ["manageCreditCardsTitle", "addNewCreditCardTitle", "showCreditCardsBtnLabel"];
+const MANAGE_CREDITCARDS_KEYWORDS = ["manageCreditCardsTitle", "addNewCreditCardTitle"];
 const EDIT_CREDITCARD_KEYWORDS = ["cardNumber", "nameOnCard", "cardExpiresMonth", "cardExpiresYear", "cardNetwork"];
 const FIELD_STATES = {
   NORMAL: "NORMAL",
@@ -94,7 +94,7 @@ let AddressDataLoader = {
       return null;
     }
 
-    const properties = ["languages", "sub_keys", "sub_names", "sub_lnames"];
+    const properties = ["languages", "sub_keys", "sub_isoids", "sub_names", "sub_lnames"];
     for (let key of properties) {
       if (!data[key]) {
         continue;
@@ -226,8 +226,7 @@ this.FormAutofillUtils = {
   },
 
   isCCNumber(ccNumber) {
-    let card = new CreditCard({number: ccNumber});
-    return card.isValidNumber();
+    return CreditCard.isValidNumber(ccNumber);
   },
 
   /**
@@ -308,16 +307,47 @@ this.FormAutofillUtils = {
     return parts.join(", ");
   },
 
-  toOneLineAddress(address, delimiter = "\n") {
+  /**
+   * Internal method to split an address to multiple parts per the provided delimiter,
+   * removing blank parts.
+   * @param {string} address The address the split
+   * @param {string} [delimiter] The separator that is used between lines in the address
+   * @returns {string[]}
+   */
+  _toStreetAddressParts(address, delimiter = "\n") {
     let array = typeof address == "string" ? address.split(delimiter) : address;
 
     if (!Array.isArray(array)) {
-      return "";
+      return [];
     }
     return array
       .map(s => s ? s.trim() : "")
-      .filter(s => s)
-      .join(this.getAddressSeparator());
+      .filter(s => s);
+  },
+
+  /**
+   * Converts a street address to a single line, removing linebreaks marked by the delimiter
+   * @param {string} address The address the convert
+   * @param {string} [delimiter] The separator that is used between lines in the address
+   * @returns {string}
+   */
+  toOneLineAddress(address, delimiter = "\n") {
+    let addressParts = this._toStreetAddressParts(address, delimiter);
+    return addressParts.join(this.getAddressSeparator());
+  },
+
+  /**
+   * Compares two addresses, removing internal whitespace
+   * @param {string} a The first address to compare
+   * @param {string} b The second address to compare
+   * @param {array} collators Search collators that will be used for comparison
+   * @param {string} [delimiter="\n"] The separator that is used between lines in the address
+   * @returns {boolean} True if the addresses are equal, false otherwise
+   */
+  compareStreetAddress(a, b, collators, delimiter = "\n") {
+    let oneLineA = this._toStreetAddressParts(a, delimiter).map(p => p.replace(/\s/g, "")).join("");
+    let oneLineB = this._toStreetAddressParts(b, delimiter).map(p => p.replace(/\s/g, "")).join("");
+    return this.strCompare(oneLineA, oneLineB, collators);
   },
 
   /**
@@ -366,7 +396,7 @@ this.FormAutofillUtils = {
   },
 
   loadDataFromScript(url, sandbox = {}) {
-    Services.scriptloader.loadSubScript(url, sandbox, "utf-8");
+    Services.scriptloader.loadSubScript(url, sandbox);
     return sandbox;
   },
 
@@ -437,7 +467,7 @@ this.FormAutofillUtils = {
    * @param   {string} country The specified country.
    * @returns {array} An array containing several collator objects.
    */
-  getCollators(country) {
+  getSearchCollators(country) {
     // TODO: Only one language should be used at a time per country. The locale
     //       of the page should be taken into account to do this properly.
     //       We are going to support more countries in bug 1370193 and this
@@ -446,9 +476,27 @@ this.FormAutofillUtils = {
     if (!this._collators[country]) {
       let dataset = this.getCountryAddressData(country);
       let languages = dataset.languages || [dataset.lang];
-      this._collators[country] = languages.map(lang => new Intl.Collator(lang, {sensitivity: "base", ignorePunctuation: true}));
+      let options = {
+        ignorePunctuation: true,
+        sensitivity: "base",
+        usage: "search",
+      };
+      this._collators[country] = languages.map(lang => new Intl.Collator(lang, options));
     }
     return this._collators[country];
+  },
+
+  // Based on the list of fields abbreviations in
+  // https://github.com/googlei18n/libaddressinput/wiki/AddressValidationMetadata
+  FIELDS_LOOKUP: {
+    N: "name",
+    O: "organization",
+    A: "street-address",
+    S: "address-level1",
+    C: "address-level2",
+    D: "address-level3",
+    Z: "postal-code",
+    n: "newLine",
   },
 
   /**
@@ -468,22 +516,10 @@ this.FormAutofillUtils = {
     if (!fmt) {
       throw new Error("fmt string is missing.");
     }
-    // Based on the list of fields abbreviations in
-    // https://github.com/googlei18n/libaddressinput/wiki/AddressValidationMetadata
-    const fieldsLookup = {
-      N: "name",
-      O: "organization",
-      A: "street-address",
-      S: "address-level1",
-      C: "address-level2",
-      D: "address-level3",
-      Z: "postal-code",
-      n: "newLine",
-    };
 
     return fmt.match(/%[^%]/g).reduce((parsed, part) => {
       // Take the first letter of each segment and try to identify it
-      let fieldId = fieldsLookup[part[1]];
+      let fieldId = this.FIELDS_LOOKUP[part[1]];
       // Early return if cannot identify part.
       if (!fieldId) {
         return parsed;
@@ -501,6 +537,57 @@ this.FormAutofillUtils = {
   },
 
   /**
+   * Used to populate dropdowns in the UI (e.g. FormAutofill preferences, Web Payments).
+   * Use findAddressSelectOption for matching a value to a region.
+   *
+   * @param {string[]} subKeys An array of regionCode strings
+   * @param {string[]} subIsoids An array of ISO ID strings, if provided will be preferred over the key
+   * @param {string[]} subNames An array of regionName strings
+   * @param {string[]} subLnames An array of latinised regionName strings
+   * @returns {Map?} Returns null if subKeys or subNames are not truthy.
+   *                   Otherwise, a Map will be returned mapping keys -> names.
+   */
+  buildRegionMapIfAvailable(subKeys, subIsoids, subNames, subLnames) {
+    // Not all regions have sub_keys. e.g. DE
+    if (!subKeys || !subKeys.length ||
+        (!subNames && !subLnames) ||
+        (subNames && subKeys.length != subNames.length ||
+         subLnames && subKeys.length != subLnames.length)) {
+      return null;
+    }
+
+    // Overwrite subKeys with subIsoids, when available
+    if (subIsoids && subIsoids.length && subIsoids.length == subKeys.length) {
+      for (let i = 0; i < subIsoids.length; i++) {
+        if (subIsoids[i]) {
+          subKeys[i] = subIsoids[i];
+        }
+      }
+    }
+
+    // Apply sub_lnames if sub_names does not exist
+    let names = subNames || subLnames;
+    return new Map(subKeys.map((key, index) => [key, names[index]]));
+  },
+
+  /**
+   * Parse a require string and outputs an array of fields.
+   * Spaces, commas, and other literals are ignored in this implementation.
+   * For example, a require string "ACS" should return:
+   * ["street-address", "address-level2", "address-level1"]
+   *
+   * @param   {string} requireString Country address require string
+   * @returns {array<string>} List of fields
+   */
+  parseRequireString(requireString) {
+    if (!requireString) {
+      throw new Error("requireString string is missing.");
+    }
+
+    return requireString.split("").map(fieldId => this.FIELDS_LOOKUP[fieldId]);
+  },
+
+  /**
    * Use alternative country name list to identify a country code from a
    * specified country name.
    * @param   {string} countryName A country name to be identified
@@ -512,7 +599,7 @@ this.FormAutofillUtils = {
     let countries = countrySpecified ? [countrySpecified] : [...FormAutofill.countries.keys()];
 
     for (let country of countries) {
-      let collators = this.getCollators(country);
+      let collators = this.getSearchCollators(country);
       let metadata = this.getCountryAddressData(country);
       if (country != metadata.key) {
         // We hit the fallback logic in getCountryAddressRawData so ignore it as
@@ -564,7 +651,7 @@ this.FormAutofillUtils = {
   getAbbreviatedSubregionName(subregionValues, country) {
     let values = Array.isArray(subregionValues) ? subregionValues : [subregionValues];
 
-    let collators = this.getCollators(country);
+    let collators = this.getSearchCollators(country);
     for (let metadata of this.getCountryAddressDataWithLocales(country)) {
       let {sub_keys: subKeys, sub_names: subNames, sub_lnames: subLnames} = metadata;
       if (!subKeys) {
@@ -615,7 +702,7 @@ this.FormAutofillUtils = {
       return null;
     }
 
-    let collators = this.getCollators(address.country);
+    let collators = this.getSearchCollators(address.country);
 
     for (let option of selectEl.options) {
       if (this.strCompare(value, option.value, collators) ||
@@ -806,17 +893,31 @@ this.FormAutofillUtils = {
    *         }
    */
   getFormFormat(country) {
-    const dataset = this.getCountryAddressData(country);
+    let dataset = this.getCountryAddressData(country);
+    // We hit a country fallback in `getCountryAddressRawData` but it's not relevant here.
+    if (country != dataset.key) {
+      // Use a sparse object so the below default values take effect.
+      dataset = {
+        /**
+         * Even though data/ZZ only has address-level2, include the other levels
+         * in case they are needed for unknown countries. Users can leave the
+         * unnecessary fields blank which is better than forcing users to enter
+         * the data in incorrect fields.
+         */
+        fmt: "%N%n%O%n%A%n%C %S %Z",
+      };
+    }
     return {
-      // Phillipines doesn't specify a sublocality_name_type but
-      // has one referenced in their fmt value.
+      // When particular values are missing for a country, the
+      // data/ZZ value should be used instead:
+      // https://chromium-i18n.appspot.com/ssl-aggregate-address/data/ZZ
       addressLevel3Label: dataset.sublocality_name_type || "suburb",
-      // Many locales don't specify a locality_name_type but
-      // have one referenced in their fmt value.
       addressLevel2Label: dataset.locality_name_type || "city",
       addressLevel1Label: dataset.state_name_type || "province",
+      addressLevel1Options: this.buildRegionMapIfAvailable(dataset.sub_keys, dataset.sub_isoids, dataset.sub_names, dataset.sub_lnames),
+      countryRequiredFields: this.parseRequireString(dataset.require || "AC"),
+      fieldsOrder: this.parseAddressFormat(dataset.fmt || "%N%n%O%n%A%n%C"),
       postalCodeLabel: dataset.zip_name_type || "postalCode",
-      fieldsOrder: this.parseAddressFormat(dataset.fmt || "%N%n%O%n%A%n%C, %S %Z"),
       postalCodePattern: dataset.zip,
     };
   },

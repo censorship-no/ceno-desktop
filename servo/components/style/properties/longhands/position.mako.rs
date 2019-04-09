@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 <%! from data import to_rust_ident %>
 <%namespace name="helpers" file="/helpers.mako.rs" />
@@ -12,8 +12,8 @@
 % for side in PHYSICAL_SIDES:
     ${helpers.predefined_type(
         side,
-        "LengthOrPercentageOrAuto",
-        "computed::LengthOrPercentageOrAuto::Auto",
+        "LengthPercentageOrAuto",
+        "computed::LengthPercentageOrAuto::Auto",
         spec="https://www.w3.org/TR/CSS2/visuren.html#propdef-%s" % side,
         flags="GETCS_NEEDS_LAYOUT_FLUSH",
         animation_value_type="ComputedValue",
@@ -26,8 +26,8 @@
 % for side in LOGICAL_SIDES:
     ${helpers.predefined_type(
         "inset-%s" % side,
-        "LengthOrPercentageOrAuto",
-        "computed::LengthOrPercentageOrAuto::Auto",
+        "LengthPercentageOrAuto",
+        "computed::LengthPercentageOrAuto::Auto",
         spec="https://drafts.csswg.org/css-logical-props/#propdef-inset-%s" % side,
         flags="GETCS_NEEDS_LAYOUT_FLUSH",
         alias="offset-%s:layout.css.offset-logical-properties.enabled" % side,
@@ -42,7 +42,7 @@ macro_rules! impl_align_conversions {
     ($name: path) => {
         impl From<u8> for $name {
             fn from(bits: u8) -> $name {
-                $name(::values::specified::align::AlignFlags::from_bits(bits)
+                $name(crate::values::specified::align::AlignFlags::from_bits(bits)
                       .expect("bits contain valid flag"))
             }
         }
@@ -149,7 +149,7 @@ ${helpers.single_keyword(
     )}
 
     #[cfg(feature = "gecko")]
-    impl_align_conversions!(::values::specified::align::AlignItems);
+    impl_align_conversions!(crate::values::specified::align::AlignItems);
 
     ${helpers.predefined_type(
         "justify-items",
@@ -160,7 +160,7 @@ ${helpers.single_keyword(
     )}
 
     #[cfg(feature = "gecko")]
-    impl_align_conversions!(::values::specified::align::JustifyItems);
+    impl_align_conversions!(crate::values::specified::align::JustifyItems);
 % endif
 
 // Flex item properties
@@ -214,7 +214,7 @@ ${helpers.predefined_type(
     )}
 
     #[cfg(feature = "gecko")]
-    impl_align_conversions!(::values::specified::align::SelfAlignment);
+    impl_align_conversions!(crate::values::specified::align::SelfAlignment);
 % endif
 
 // https://drafts.csswg.org/css-flexbox/#propdef-order
@@ -244,21 +244,12 @@ ${helpers.predefined_type(
         if logical:
             spec = "https://drafts.csswg.org/css-logical-props/#propdef-%s"
     %>
-    // NOTE: Block-size doesn't support -moz-*-content keywords, since they make
-    // no sense on the block axis, but it simplifies things the have that it has
-    // the same type as the other properties, since otherwise we'd need to
-    // handle logical props where the types are different, which looks like a
-    // pain.
     % if product == "gecko":
-        <%
-            parse_function = "parse" if size != "block-size" else "parse_disallow_keyword"
-        %>
         // width, height, block-size, inline-size
         ${helpers.predefined_type(
             size,
             "MozLength",
             "computed::MozLength::auto()",
-            parse_function,
             logical=logical,
             logical_group="size",
             allow_quirks=not logical,
@@ -272,7 +263,6 @@ ${helpers.predefined_type(
             "min-%s" % size,
             "MozLength",
             "computed::MozLength::auto()",
-            parse_function,
             logical=logical,
             logical_group="min-size",
             allow_quirks=not logical,
@@ -284,7 +274,6 @@ ${helpers.predefined_type(
             "max-%s" % size,
             "MaxLength",
             "computed::MaxLength::none()",
-            parse_function,
             logical=logical,
             logical_group="max-size",
             allow_quirks=not logical,
@@ -296,8 +285,8 @@ ${helpers.predefined_type(
         // servo versions (no keyword support)
         ${helpers.predefined_type(
             size,
-            "LengthOrPercentageOrAuto",
-            "computed::LengthOrPercentageOrAuto::Auto",
+            "LengthPercentageOrAuto",
+            "computed::LengthPercentageOrAuto::Auto",
             "parse_non_negative",
             spec=spec % size,
             logical_group="size",
@@ -307,8 +296,8 @@ ${helpers.predefined_type(
         )}
         ${helpers.predefined_type(
             "min-%s" % size,
-            "LengthOrPercentage",
-            "computed::LengthOrPercentage::Length(computed::Length::new(0.))",
+            "LengthPercentage",
+            "computed::LengthPercentage::zero()",
             "parse_non_negative",
             spec=spec % ("min-%s" % size),
             logical_group="min-size",
@@ -319,8 +308,8 @@ ${helpers.predefined_type(
         )}
         ${helpers.predefined_type(
             "max-%s" % size,
-            "LengthOrPercentageOrNone",
-            "computed::LengthOrPercentageOrNone::None",
+            "LengthPercentageOrNone",
+            "computed::LengthPercentageOrNone::None",
             "parse_non_negative",
             spec=spec % ("max-%s" % size),
             logical_group="max-size",
@@ -394,7 +383,7 @@ ${helpers.predefined_type(
         spec="https://drafts.csswg.org/css-grid/#propdef-grid-template-%ss" % kind,
         boxed=True,
         flags="GETCS_NEEDS_LAYOUT_FLUSH",
-        animation_value_type="discrete",
+        animation_value_type="ComputedValue",
     )}
 
 % endfor
@@ -419,24 +408,24 @@ ${helpers.predefined_type(
 
 ${helpers.predefined_type(
     "column-gap",
-    "length::NonNegativeLengthOrPercentageOrNormal",
+    "length::NonNegativeLengthPercentageOrNormal",
     "Either::Second(Normal)",
     alias="grid-column-gap" if product == "gecko" else "",
     extra_prefixes="moz",
     servo_pref="layout.columns.enabled",
     spec="https://drafts.csswg.org/css-align-3/#propdef-column-gap",
-    animation_value_type="NonNegativeLengthOrPercentageOrNormal",
+    animation_value_type="NonNegativeLengthPercentageOrNormal",
     servo_restyle_damage="reflow",
 )}
 
 // no need for -moz- prefixed alias for this property
 ${helpers.predefined_type(
     "row-gap",
-    "length::NonNegativeLengthOrPercentageOrNormal",
+    "length::NonNegativeLengthPercentageOrNormal",
     "Either::Second(Normal)",
     alias="grid-row-gap",
     products="gecko",
     spec="https://drafts.csswg.org/css-align-3/#propdef-row-gap",
-    animation_value_type="NonNegativeLengthOrPercentageOrNormal",
+    animation_value_type="NonNegativeLengthPercentageOrNormal",
     servo_restyle_damage="reflow",
 )}

@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,41 +8,40 @@
 
 #include "txXMLEventHandler.h"
 #include "nsCOMPtr.h"
-#include "nsWeakPtr.h"
+#include "nsIWeakReferenceUtils.h"
 #include "txOutputFormat.h"
 
 class nsITransformObserver;
-class nsIDocument;
 class nsIContent;
 
 namespace mozilla {
 namespace dom {
+class Document;
 class DocumentFragment;
 class Element;
-}
-}
+}  // namespace dom
+}  // namespace mozilla
 
-class txMozillaTextOutput : public txAOutputXMLEventHandler
-{
-public:
-    explicit txMozillaTextOutput(nsITransformObserver* aObserver);
-    explicit txMozillaTextOutput(mozilla::dom::DocumentFragment* aDest);
-    virtual ~txMozillaTextOutput();
+class txMozillaTextOutput : public txAOutputXMLEventHandler {
+ public:
+  explicit txMozillaTextOutput(nsITransformObserver* aObserver);
+  explicit txMozillaTextOutput(mozilla::dom::DocumentFragment* aDest);
+  virtual ~txMozillaTextOutput();
 
-    TX_DECL_TXAXMLEVENTHANDLER
-    TX_DECL_TXAOUTPUTXMLEVENTHANDLER
+  TX_DECL_TXAXMLEVENTHANDLER
+  TX_DECL_TXAOUTPUTXMLEVENTHANDLER
 
-    nsresult createResultDocument(nsIDocument* aSourceDocument,
-                                  bool aLoadedAsData);
+  nsresult createResultDocument(mozilla::dom::Document* aSourceDocument,
+                                bool aLoadedAsData);
 
-private:
-    nsresult createXHTMLElement(nsAtom* aName, mozilla::dom::Element** aResult);
+ private:
+  nsresult createXHTMLElement(nsAtom* aName, mozilla::dom::Element** aResult);
 
-    nsCOMPtr<nsIContent> mTextParent;
-    nsWeakPtr mObserver;
-    nsCOMPtr<nsIDocument> mDocument;
-    txOutputFormat mOutputFormat;
-    nsString mText;
+  nsCOMPtr<nsIContent> mTextParent;
+  nsWeakPtr mObserver;
+  RefPtr<mozilla::dom::Document> mDocument;
+  txOutputFormat mOutputFormat;
+  nsString mText;
 };
 
 #endif

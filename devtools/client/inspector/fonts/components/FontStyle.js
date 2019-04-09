@@ -13,6 +13,7 @@ const { getStr } = require("../utils/l10n");
 class FontStyle extends PureComponent {
   static get propTypes() {
     return {
+      disabled: PropTypes.bool.isRequired,
       onChange: PropTypes.func.isRequired,
       value: PropTypes.string.isRequired,
     };
@@ -41,12 +42,13 @@ class FontStyle extends PureComponent {
       ),
       dom.div(
         {
-          className: "font-control-input"
+          className: "font-control-input",
         },
         dom.input(
           {
             checked: this.props.value === "italic" || this.props.value === "oblique",
             className: "devtools-checkbox-toggle",
+            disabled: this.props.disabled,
             name: this.name,
             onChange: this.onToggle,
             type: "checkbox",

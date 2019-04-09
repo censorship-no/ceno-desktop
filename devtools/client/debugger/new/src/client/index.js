@@ -1,82 +1,97 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.onConnect = onConnect;
-
-var _firefox = require("./firefox");
-
-var firefox = _interopRequireWildcard(_firefox);
-
-var _prefs = require("../utils/prefs");
-
-var _dbg = require("../utils/dbg");
-
-var _bootstrap = require("../utils/bootstrap");
-
-function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = Object.defineProperty && Object.getOwnPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : {}; if (desc.get || desc.set) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } } newObj.default = obj; return newObj; } }
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function loadFromPrefs(actions) {
-  const {
-    pauseOnExceptions,
-    pauseOnCaughtExceptions
-  } = _prefs.prefs;
 
+// @flow
+
+import * as firefox from "./firefox";
+import * as chrome from "./chrome";
+
+import { prefs, asyncStore } from "../utils/prefs";
+import { setupHelper } from "../utils/dbg";
+
+import {
+  bootstrapApp,
+  bootstrapStore,
+  bootstrapWorkers
+} from "../utils/bootstrap";
+import { initialBreakpointsState } from "../reducers/breakpoints";
+
+function loadFromPrefs(actions: Object) {
+  const { pauseOnExceptions, pauseOnCaughtExceptions } = prefs;
   if (pauseOnExceptions || pauseOnCaughtExceptions) {
-    return actions.pauseOnExceptions(pauseOnExceptions, pauseOnCaughtExceptions);
+    return actions.pauseOnExceptions(
+      pauseOnExceptions,
+      pauseOnCaughtExceptions
+    );
   }
 }
 
-async function loadInitialState() {
-  const pendingBreakpoints = await _prefs.asyncStore.pendingBreakpoints;
-  const tabs = await _prefs.asyncStore.tabs;
-  return {
-    pendingBreakpoints,
-    tabs
-  };
+function syncXHRBreakpoints() {
+  asyncStore.xhrBreakpoints.then(bps => {
+    bps.forEach(({ path, method, disabled }) => {
+      if (!disabled) {
+        firefox.clientCommands.setXHRBreakpoint(path, method);
+      }
+    });
+  });
 }
 
-async function onConnect(connection, {
-  services,
-  toolboxActions
-}) {
+async function loadInitialState() {
+  const pendingBreakpoints = await asyncStore.pendingBreakpoints;
+  const tabs = await asyncStore.tabs;
+  const xhrBreakpoints = await asyncStore.xhrBreakpoints;
+  const eventListenerBreakpoints = await asyncStore.eventListenerBreakpoints;
+
+  const breakpoints = initialBreakpointsState(xhrBreakpoints);
+
+  return { pendingBreakpoints, tabs, breakpoints, eventListenerBreakpoints };
+}
+
+function getClient(connection: any) {
+  const {
+    tab: { clientType }
+  } = connection;
+  return clientType == "firefox" ? firefox : chrome;
+}
+
+export async function onConnect(
+  connection: Object,
+  { services, toolboxActions }: Object
+) {
   // NOTE: the landing page does not connect to a JS process
   if (!connection) {
     return;
   }
 
-  const commands = firefox.clientCommands;
+  const client = getClient(connection);
+  const commands = client.clientCommands;
+
   const initialState = await loadInitialState();
-  const {
-    store,
-    actions,
-    selectors
-  } = (0, _bootstrap.bootstrapStore)(commands, {
-    services,
-    toolboxActions
-  }, initialState);
-  const workers = (0, _bootstrap.bootstrapWorkers)();
-  await firefox.onConnect(connection, actions);
-  await loadFromPrefs(actions);
-  (0, _dbg.setupHelper)({
-    store,
-    actions,
-    selectors,
-    workers: { ...workers,
-      ...services
+
+  const { store, actions, selectors } = bootstrapStore(
+    commands,
+    {
+      services,
+      toolboxActions
     },
-    connection,
-    client: firefox.clientCommands
-  });
-  (0, _bootstrap.bootstrapApp)(store);
-  return {
+    initialState
+  );
+
+  const workers = bootstrapWorkers();
+  await client.onConnect(connection, actions);
+
+  await loadFromPrefs(actions);
+  syncXHRBreakpoints();
+  setupHelper({
     store,
     actions,
     selectors,
-    client: commands
-  };
+    workers: { ...workers, ...services },
+    connection,
+    client: client.clientCommands
+  });
+
+  bootstrapApp(store);
+  return { store, actions, selectors, client: commands };
 }

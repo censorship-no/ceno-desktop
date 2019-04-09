@@ -7,7 +7,6 @@
 const { Ci } = require("chrome");
 const promise = require("promise");
 const Services = require("Services");
-const asyncStorage = require("devtools/shared/async-storage");
 const EventEmitter = require("devtools/shared/event-emitter");
 
 loader.lazyRequireGetter(this, "DebuggerClient", "devtools/shared/client/debugger-client", true);
@@ -24,6 +23,7 @@ loader.lazyRequireGetter(this, "PriorityLevels", "devtools/client/shared/compone
 loader.lazyRequireGetter(this, "TargetFactory", "devtools/client/framework/target", true);
 loader.lazyRequireGetter(this, "gDevTools", "devtools/client/framework/devtools", true);
 loader.lazyRequireGetter(this, "Telemetry", "devtools/client/shared/telemetry");
+loader.lazyRequireGetter(this, "asyncStorage", "devtools/shared/async-storage");
 
 const TOOL_URL = "chrome://devtools/content/responsive.html/index.xhtml";
 
@@ -472,8 +472,8 @@ ResponsiveUI.prototype = {
     DebuggerServer.registerAllActors();
     this.client = new DebuggerClient(DebuggerServer.connectPipe());
     await this.client.connect();
-    const { tab } = await this.client.getTab();
-    this.emulationFront = EmulationFront(this.client, tab);
+    const targetFront = await this.client.mainRoot.getTab();
+    this.emulationFront = new EmulationFront(this.client, targetFront.targetForm);
   },
 
   /**
@@ -716,22 +716,31 @@ ResponsiveUI.prototype = {
   },
 
   /**
-   * Set or clear touch simulation.
+   * Set or clear touch simulation. When setting to true, this method will
+   * additionally set meta viewport override if the pref
+   * "devtools.responsive.metaViewport.enabled" is true. When setting to
+   * false, this method will clear all touch simulation and meta viewport
+   * overrides, returning to default behavior for both settings.
    *
    * @return boolean
-   *         Whether a reload is needed to apply the change.
+   *         Whether a reload is needed to apply the override change(s).
    */
-  updateTouchSimulation(enabled) {
+  async updateTouchSimulation(enabled) {
     let reloadNeeded;
     if (enabled) {
-      reloadNeeded = this.emulationFront.setTouchEventsOverride(
-        Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_ENABLED
-      ).then(() => this.emulationFront.setMetaViewportOverride(
-        Ci.nsIDocShell.META_VIEWPORT_OVERRIDE_ENABLED
-      ));
+      const metaViewportEnabled =
+        Services.prefs.getBoolPref("devtools.responsive.metaViewport.enabled", false);
+
+      reloadNeeded = await this.emulationFront.setTouchEventsOverride(
+        Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_ENABLED);
+
+      if (metaViewportEnabled) {
+        reloadNeeded |= await this.emulationFront.setMetaViewportOverride(
+          Ci.nsIDocShell.META_VIEWPORT_OVERRIDE_ENABLED);
+      }
     } else {
-      reloadNeeded = this.emulationFront.clearTouchEventsOverride()
-        .then(() => this.emulationFront.clearMetaViewportOverride());
+      reloadNeeded = await this.emulationFront.clearTouchEventsOverride();
+      reloadNeeded |= await this.emulationFront.clearMetaViewportOverride();
     }
     return reloadNeeded;
   },

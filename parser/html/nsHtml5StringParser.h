@@ -12,11 +12,14 @@ class nsHtml5OplessBuilder;
 class nsHtml5TreeBuilder;
 class nsHtml5Tokenizer;
 class nsIContent;
-class nsIDocument;
+namespace mozilla {
+namespace dom {
+class Document;
+}
+}  // namespace mozilla
 
-class nsHtml5StringParser : public nsParserBase
-{
-public:
+class nsHtml5StringParser : public nsParserBase {
+ public:
   NS_DECL_ISUPPORTS
 
   /**
@@ -39,10 +42,8 @@ public:
    * to tree.
    */
   nsresult ParseFragment(const nsAString& aSourceBuffer,
-                         nsIContent* aTargetNode,
-                         nsAtom* aContextLocalName,
-                         int32_t aContextNamespace,
-                         bool aQuirks,
+                         nsIContent* aTargetNode, nsAtom* aContextLocalName,
+                         int32_t aContextNamespace, bool aQuirks,
                          bool aPreventScriptExecution);
 
   /**
@@ -51,14 +52,14 @@ public:
    *
    */
   nsresult ParseDocument(const nsAString& aSourceBuffer,
-                         nsIDocument* aTargetDoc,
+                         mozilla::dom::Document* aTargetDoc,
                          bool aScriptingEnabledForNoscriptParsing);
 
-private:
+ private:
   virtual ~nsHtml5StringParser();
 
   nsresult Tokenize(const nsAString& aSourceBuffer,
-                    nsIDocument* aDocument,
+                    mozilla::dom::Document* aDocument,
                     bool aScriptingEnabledForNoscriptParsing);
 
   /**
@@ -82,4 +83,4 @@ private:
   nsHtml5AtomTable mAtomTable;
 };
 
-#endif // nsHtml5StringParser_h
+#endif  // nsHtml5StringParser_h

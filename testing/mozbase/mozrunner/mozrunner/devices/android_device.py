@@ -12,6 +12,7 @@ import psutil
 import re
 import shutil
 import signal
+import subprocess
 import sys
 import telnetlib
 import time
@@ -19,7 +20,7 @@ import urlparse
 import urllib2
 from distutils.spawn import find_executable
 
-from mozdevice import ADBHost, ADBAndroid
+from mozdevice import ADBHost, ADBDevice
 from mozprocess import ProcessHandler
 
 EMULATOR_HOME_DIR = os.path.join(os.path.expanduser('~'), '.mozbuild', 'android-device')
@@ -98,7 +99,7 @@ def _get_device(substs, device_serial=None):
         adb_path = _find_sdk_exe(substs, 'adb', False)
         if not adb_path:
             adb_path = 'adb'
-        device = ADBAndroid(adb=adb_path, verbose=verbose_logging, device=device_serial)
+        device = ADBDevice(adb=adb_path, verbose=verbose_logging, device=device_serial)
         devices[device_serial] = device
     return device
 
@@ -175,7 +176,7 @@ def _maybe_update_host_utils(build_obj):
 
 
 def verify_android_device(build_obj, install=False, xre=False, debugger=False,
-                          verbose=False, app=None, device_serial=None):
+                          network=False, verbose=False, app=None, device_serial=None):
     """
        Determine if any Android device is connected via adb.
        If no device is found, prompt to start an emulator.
@@ -187,6 +188,8 @@ def verify_android_device(build_obj, install=False, xre=False, debugger=False,
        one up.
        If 'debugger' is specified, also check that JimDB is installed;
        if JimDB is not found, prompt to set up JimDB.
+       If 'network' is specified, also check that the device has basic
+       network connectivity.
        Returns True if the emulator was started or another device was
        already connected.
     """
@@ -238,12 +241,7 @@ def verify_android_device(build_obj, install=False, xre=False, debugger=False,
         response = ''
         while not device.is_app_installed(app):
             try:
-                if 'fennec' not in app and 'firefox' not in app:
-                    response = raw_input(
-                        "It looks like %s is not installed on this device,\n"
-                        "but I don't know how to install it.\n"
-                        "Install it now, then hit Enter or quit to exit " % app)
-                else:
+                if 'fennec' in app or 'firefox' in app:
                     response = response = raw_input(
                         "It looks like %s is not installed on this device.\n"
                         "Install Firefox? (Y/n) or quit to exit " % app).strip()
@@ -251,6 +249,32 @@ def verify_android_device(build_obj, install=False, xre=False, debugger=False,
                         _log_info("Installing Firefox. This may take a while...")
                         build_obj._run_make(directory=".", target='install',
                                             ensure_exit_code=False)
+                elif app == 'org.mozilla.geckoview.test':
+                    response = response = raw_input(
+                        "It looks like %s is not installed on this device.\n"
+                        "Install geckoview AndroidTest? (Y/n) or quit to exit " % app).strip()
+                    if response.lower().startswith('y') or response == '':
+                        _log_info("Installing geckoview AndroidTest. This may take a while...")
+                        sub = 'geckoview:installWithGeckoBinariesDebugAndroidTest'
+                        build_obj._mach_context.commands.dispatch('gradle',
+                                                                  args=[sub],
+                                                                  context=build_obj._mach_context)
+                elif app == 'org.mozilla.geckoview_example':
+                    response = response = raw_input(
+                        "It looks like %s is not installed on this device.\n"
+                        "Install geckoview_example? (Y/n) or quit to exit " % app).strip()
+                    if response.lower().startswith('y') or response == '':
+                        _log_info("Installing geckoview_example. This may take a while...")
+                        sub = 'install-geckoview_example'
+                        build_obj._mach_context.commands.dispatch('android',
+                                                                  subcommand=sub,
+                                                                  args=[],
+                                                                  context=build_obj._mach_context)
+                else:
+                    response = raw_input(
+                        "It looks like %s is not installed on this device,\n"
+                        "but I don't know how to install it.\n"
+                        "Install it now, then hit Enter or quit to exit " % app)
             except EOFError:
                 response = 'quit'
             if response == 'quit':
@@ -283,6 +307,28 @@ def verify_android_device(build_obj, install=False, xre=False, debugger=False,
                 "Download and setup your host utilities? (Y/n) ").strip()
             if response.lower().startswith('y') or response == '':
                 _install_host_utils(build_obj)
+
+    if device_verified and network:
+        # Optionally check the network: If on a device that does not look like
+        # an emulator, verify that the device IP address can be obtained
+        # and check that this host can ping the device.
+        serial = device_serial or os.environ.get('DEVICE_SERIAL')
+        if not serial or ('emulator' not in serial):
+            device = _get_device(build_obj.substs, serial)
+            try:
+                addr = device.get_ip_address()
+                if not addr:
+                    _log_warning("unable to get Android device's IP address!")
+                    _log_warning("tests may fail without network connectivity to the device!")
+                else:
+                    _log_info("Android device's IP address: %s" % addr)
+                    response = subprocess.check_output(["ping", "-c", "1", addr])
+                    _log_debug(response)
+            except Exception as e:
+                _log_warning("unable to verify network connection to device: %s" % str(e))
+                _log_warning("tests may fail without network connectivity to the device!")
+        else:
+            _log_debug("network check skipped on emulator")
 
     if debugger:
         # Optionally set up JimDB. See https://wiki.mozilla.org/Mobile/Fennec/Android/GDB.
@@ -514,7 +560,7 @@ class AndroidEmulator(object):
         env['ANDROID_AVD_HOME'] = os.path.join(EMULATOR_HOME_DIR, "avd")
         command = [self.emulator_path, "-avd", self.avd_info.name]
         if self.gpu:
-            command += ['-gpu', 'swiftshader']
+            command += ['-gpu', 'swiftshader_indirect']
         if self.avd_info.extra_args:
             # -enable-kvm option is not valid on OSX
             if _get_host_platform() == 'macosx64' and '-enable-kvm' in self.avd_info.extra_args:
@@ -528,7 +574,7 @@ class AndroidEmulator(object):
                    log_path)
         self.proc = ProcessHandler(
             command, storeOutput=False, processOutputLine=outputHandler,
-            env=env, ignore_children=True)
+            stdin=subprocess.PIPE, env=env, ignore_children=True)
         self.proc.run()
         _log_debug("Emulator started with pid %d" %
                    int(self.proc.proc.pid))

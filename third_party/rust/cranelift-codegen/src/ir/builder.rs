@@ -3,11 +3,11 @@
 //! A `Builder` provides a convenient interface for inserting instructions into a Cranelift
 //! function. Many of its methods are generated from the meta language instruction definitions.
 
-use ir;
-use ir::types;
-use ir::{DataFlowGraph, InstructionData};
-use ir::{Inst, Opcode, Type, Value};
-use isa;
+use crate::ir;
+use crate::ir::types;
+use crate::ir::{DataFlowGraph, InstructionData};
+use crate::ir::{Inst, Opcode, Type, Value};
+use crate::isa;
 
 /// Base trait for instruction builders.
 ///
@@ -28,7 +28,7 @@ pub trait InstBuilderBase<'f>: Sized {
     /// Insert an instruction and return a reference to it, consuming the builder.
     ///
     /// The result types may depend on a controlling type variable. For non-polymorphic
-    /// instructions with multiple results, pass `VOID` for the `ctrl_typevar` argument.
+    /// instructions with multiple results, pass `INVALID` for the `ctrl_typevar` argument.
     fn build(self, data: InstructionData, ctrl_typevar: Type) -> (Inst, &'f mut DataFlowGraph);
 }
 
@@ -59,7 +59,7 @@ pub trait InstInserterBase<'f>: Sized {
     fn insert_built_inst(self, inst: Inst, ctrl_typevar: Type) -> &'f mut DataFlowGraph;
 }
 
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// Builder that inserts an instruction at the current position.
 ///
@@ -74,8 +74,8 @@ pub struct InsertBuilder<'f, IIB: InstInserterBase<'f>> {
 impl<'f, IIB: InstInserterBase<'f>> InsertBuilder<'f, IIB> {
     /// Create a new builder which inserts instructions at `pos`.
     /// The `dfg` and `pos.layout` references should be from the same `Function`.
-    pub fn new(inserter: IIB) -> InsertBuilder<'f, IIB> {
-        InsertBuilder {
+    pub fn new(inserter: IIB) -> Self {
+        Self {
             inserter,
             unused: PhantomData,
         }
@@ -162,7 +162,7 @@ where
         {
             let dfg = self.inserter.data_flow_graph_mut();
             inst = dfg.make_inst(data);
-            // Make an `Interator<Item = Option<Value>>`.
+            // Make an `Iterator<Item = Option<Value>>`.
             let ru = self.reuse.as_ref().iter().cloned();
             dfg.make_inst_results_reusing(inst, ctrl_typevar, ru);
         }
@@ -185,8 +185,8 @@ pub struct ReplaceBuilder<'f> {
 
 impl<'f> ReplaceBuilder<'f> {
     /// Create a `ReplaceBuilder` that will overwrite `inst`.
-    pub fn new(dfg: &'f mut DataFlowGraph, inst: Inst) -> ReplaceBuilder {
-        ReplaceBuilder { dfg, inst }
+    pub fn new(dfg: &'f mut DataFlowGraph, inst: Inst) -> Self {
+        Self { dfg, inst }
     }
 }
 
@@ -215,10 +215,10 @@ impl<'f> InstBuilderBase<'f> for ReplaceBuilder<'f> {
 
 #[cfg(test)]
 mod tests {
-    use cursor::{Cursor, FuncCursor};
-    use ir::condcodes::*;
-    use ir::types::*;
-    use ir::{Function, InstBuilder, ValueDef};
+    use crate::cursor::{Cursor, FuncCursor};
+    use crate::ir::condcodes::*;
+    use crate::ir::types::*;
+    use crate::ir::{Function, InstBuilder, ValueDef};
 
     #[test]
     fn types() {

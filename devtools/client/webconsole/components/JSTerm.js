@@ -19,6 +19,7 @@ loader.lazyRequireGetter(this, "KeyCodes", "devtools/client/shared/keycodes", tr
 loader.lazyRequireGetter(this, "Editor", "devtools/client/sourceeditor/editor");
 loader.lazyRequireGetter(this, "Telemetry", "devtools/client/shared/telemetry");
 loader.lazyRequireGetter(this, "saveScreenshot", "devtools/shared/screenshot/save");
+loader.lazyRequireGetter(this, "focusableSelector", "devtools/client/shared/focus", true);
 
 const l10n = require("devtools/client/webconsole/webconsole-l10n");
 
@@ -39,7 +40,9 @@ const {
   getHistory,
   getHistoryValue,
 } = require("devtools/client/webconsole/selectors/history");
+const {getAutocompleteState} = require("devtools/client/webconsole/selectors/autocomplete");
 const historyActions = require("devtools/client/webconsole/actions/history");
+const autocompleteActions = require("devtools/client/webconsole/actions/autocomplete");
 
 // Constants used for defining the direction of JSTerm input history navigation.
 const {
@@ -77,6 +80,10 @@ class JSTerm extends Component {
       codeMirrorEnabled: PropTypes.bool,
       // Update position in the history after executing an expression (action).
       updateHistoryPosition: PropTypes.func.isRequired,
+      // Update autocomplete popup state.
+      autocompleteUpdate: PropTypes.func.isRequired,
+      // Data to be displayed in the autocomplete popup.
+      autocompleteData: PropTypes.object.isRequired,
     };
   }
 
@@ -94,39 +101,13 @@ class JSTerm extends Component {
     this._inputEventHandler = this._inputEventHandler.bind(this);
     this._blurEventHandler = this._blurEventHandler.bind(this);
     this.onContextMenu = this.onContextMenu.bind(this);
-
-    this.SELECTED_FRAME = -1;
-
-    /**
-     * Array that caches the user input suggestions received from the server.
-     * @private
-     * @type array
-     */
-    this._autocompleteCache = null;
-
-    /**
-     * The input that caused the last request to the server, whose response is
-     * cached in the _autocompleteCache array.
-     * @private
-     * @type string
-     */
-    this._autocompleteQuery = null;
-
-    /**
-     * The frameActorId used in the last autocomplete query. Whenever this changes
-     * the autocomplete cache must be invalidated.
-     * @private
-     * @type string
-     */
-    this._lastFrameActorId = null;
+    this.imperativeUpdate = this.imperativeUpdate.bind(this);
 
     /**
      * Last input value.
      * @type string
      */
     this.lastInputValue = "";
-
-    this.currentAutoCompletionRequestId = null;
 
     this.autocompletePopup = null;
     this.inputNode = null;
@@ -190,6 +171,25 @@ class JSTerm extends Component {
           return null;
         };
 
+        const onArrowLeft = () => {
+          if (this.autocompletePopup.isOpen || this.getAutoCompletionText()) {
+            this.clearCompletion();
+          }
+          return "CodeMirror.Pass";
+        };
+
+        const onArrowRight = () => {
+          // We only want to complete on Right arrow if the completion text is
+          // displayed.
+          if (this.getAutoCompletionText()) {
+            this.acceptProposedCompletion();
+            return null;
+          }
+
+          this.clearCompletion();
+          return "CodeMirror.Pass";
+        };
+
         this.editor = new Editor({
           autofocus: true,
           enableCodeFolding: false,
@@ -242,30 +242,34 @@ class JSTerm extends Component {
               return true;
             },
 
+            "Shift-Tab": () => {
+              if (this.hasEmptyInput()) {
+                this.focusPreviousElement();
+                return false;
+              }
+
+              const hasSuggestion = this.hasAutocompletionSuggestion();
+
+              if (hasSuggestion) {
+                return false;
+              }
+
+              return "CodeMirror.Pass";
+            },
+
             "Up": onArrowUp,
             "Cmd-Up": onArrowUp,
 
             "Down": onArrowDown,
             "Cmd-Down": onArrowDown,
 
-            "Left": () => {
-              if (this.autocompletePopup.isOpen || this.getAutoCompletionText()) {
-                this.clearCompletion();
-              }
-              return "CodeMirror.Pass";
-            },
+            "Left": onArrowLeft,
+            "Ctrl-Left": onArrowLeft,
+            "Cmd-Left": onArrowLeft,
 
-            "Right": () => {
-              // We only want to complete on Right arrow if the completion text is
-              // displayed.
-              if (this.getAutoCompletionText()) {
-                this.acceptProposedCompletion();
-                return null;
-              }
-
-              this.clearCompletion();
-              return "CodeMirror.Pass";
-            },
+            "Right": onArrowRight,
+            "Ctrl-Right": onArrowRight,
+            "Cmd-Right": onArrowRight,
 
             "Ctrl-N": () => {
               // Control-N differs from down arrow: it ignores autocomplete state.
@@ -336,6 +340,10 @@ class JSTerm extends Component {
                 return null;
               }
 
+              if (this.getAutoCompletionText()) {
+                this.clearCompletion();
+              }
+
               return "CodeMirror.Pass";
             },
 
@@ -351,12 +359,16 @@ class JSTerm extends Component {
                 return null;
               }
 
+              if (this.getAutoCompletionText()) {
+                this.clearCompletion();
+              }
+
               return "CodeMirror.Pass";
             },
 
             "Ctrl-Space": () => {
               if (!this.autocompletePopup.isOpen) {
-                this.updateAutocompletion(true);
+                this.props.autocompleteUpdate(true);
                 return null;
               }
 
@@ -403,11 +415,30 @@ class JSTerm extends Component {
     this.lastInputValue && this.setInputValue(this.lastInputValue);
   }
 
-  shouldComponentUpdate(nextProps, nextState) {
+  componentWillReceiveProps(nextProps) {
+    this.imperativeUpdate(nextProps);
+  }
+
+  shouldComponentUpdate(nextProps) {
     // XXX: For now, everything is handled in an imperative way and we
     // only want React to do the initial rendering of the component.
     // This should be modified when the actual refactoring will take place.
     return false;
+  }
+
+  /**
+   * Do all the imperative work needed after a Redux store update.
+   *
+   * @param {Object} nextProps: props passed from shouldComponentUpdate.
+   */
+  imperativeUpdate(nextProps) {
+    if (
+      nextProps &&
+      nextProps.autocompleteData !== this.props.autocompleteData &&
+      nextProps.autocompleteData.pendingRequestId === null
+    ) {
+      this.updateAutocompletionPopup(nextProps.autocompleteData);
+    }
   }
 
   /**
@@ -431,6 +462,33 @@ class JSTerm extends Component {
       this.editor.focus();
     } else if (this.inputNode && !this.inputNode.getAttribute("focused")) {
       this.inputNode.focus();
+    }
+  }
+
+  focusPreviousElement() {
+    const inputField = this.editor.codeMirror.getInputField();
+
+    const findPreviousFocusableElement = el => {
+      if (!el || !el.querySelectorAll) {
+        return null;
+      }
+
+      const items = Array.from(el.querySelectorAll(focusableSelector));
+      const inputIndex = items.indexOf(inputField);
+
+      if (items.length === 0 || (inputIndex > -1 && items.length === 1)) {
+        return findPreviousFocusableElement(el.parentNode);
+      }
+
+      const index = inputIndex > 0
+        ? inputIndex - 1
+        : items.length - 1;
+      return items[index];
+    };
+
+    const focusableEl = findPreviousFocusableElement(this.node.parentNode);
+    if (focusableEl) {
+      focusableEl.focus();
     }
   }
 
@@ -565,7 +623,6 @@ class JSTerm extends Component {
     executeString = mappedExpressionRes ? mappedExpressionRes.expression : executeString;
 
     const options = {
-      frame: this.SELECTED_FRAME,
       selectedNodeActor,
       mapped: mappedExpressionRes ? mappedExpressionRes.mapped : null,
     };
@@ -589,12 +646,6 @@ class JSTerm extends Component {
    *        the evaluation. The Debugger.Object of the OA will be bound to
    *        |_self| during evaluation, such that it's usable in the string you
    *        execute.
-   *        - frame: tells the stackframe depth to evaluate the string in. If
-   *        the jsdebugger is paused, you can pick the stackframe to be used for
-   *        evaluation. Use |this.SELECTED_FRAME| to always pick th;
-   *        user-selected stackframe.
-   *        If you do not provide a |frame| the string will be evaluated in the
-   *        global content window.
    *        - selectedNodeActor: tells the NodeActor ID of the current selection
    *        in the Inspector, if such a selection exists. This is used by
    *        helper functions that can evaluate on the current selection.
@@ -611,13 +662,8 @@ class JSTerm extends Component {
       "lines": str.split(/\n/).length,
     });
 
-    let frameActor = null;
-    if ("frame" in options) {
-      frameActor = this.getFrameActor(options.frame);
-    }
-
-    return this.webConsoleClient.evaluateJSAsync(str, null, {
-      frameActor,
+    return this.webConsoleClient.evaluateJSAsync(str, {
+      frameActor: this.props.serviceContainer.getFrameActor(options.frame),
       ...options,
     });
   }
@@ -633,32 +679,7 @@ class JSTerm extends Component {
    *         received.
    */
   copyObject(evalString, evalOptions) {
-    return this.webConsoleClient.evaluateJSAsync(`copy(${evalString})`,
-      null, evalOptions);
-  }
-
-  /**
-   * Retrieve the FrameActor ID given a frame depth.
-   *
-   * @param number frame
-   *        Frame depth.
-   * @return string|null
-   *         The FrameActor ID for the given frame depth.
-   */
-  getFrameActor(frame) {
-    const state = this.hud.owner.getDebuggerFrames();
-    if (!state) {
-      return null;
-    }
-
-    let grip;
-    if (frame == this.SELECTED_FRAME) {
-      grip = state.frames[state.selected];
-    } else {
-      grip = state.frames[frame];
-    }
-
-    return grip ? grip.actor : null;
+    return this.webConsoleClient.evaluateJSAsync(`copy(${evalString})`, evalOptions);
   }
 
   /**
@@ -755,6 +776,14 @@ class JSTerm extends Component {
     return this.inputNode ? this.inputNode.selectionStart : null;
   }
 
+  getSelectedText() {
+    if (this.inputNode) {
+      return this.inputNode.value.substring(
+        this.inputNode.selectionStart, this.inputNode.selectionEnd);
+    }
+    return this.editor.getSelection();
+  }
+
   /**
    * Even handler for the "beforeChange" event fired by codeMirror. This event is fired
    * when codeMirror is about to make a change to its DOM representation.
@@ -773,7 +802,7 @@ class JSTerm extends Component {
     const value = this.getInputValue();
     if (this.lastInputValue !== value) {
       this.resizeInput();
-      this.updateAutocompletion();
+      this.props.autocompleteUpdate();
       this.lastInputValue = value;
     }
   }
@@ -860,7 +889,22 @@ class JSTerm extends Component {
 
       if (event.key === " " && !this.autocompletePopup.isOpen) {
         // Open the autocompletion popup on Ctrl-Space (if it wasn't displayed).
-        this.updateAutocompletion(true);
+        this.props.autocompleteUpdate(true);
+        event.preventDefault();
+      }
+
+      if (event.keyCode === KeyCodes.DOM_VK_LEFT &&
+        (this.autocompletePopup.isOpen || this.getAutoCompletionText())
+      ) {
+        this.clearCompletion();
+      }
+
+      // We only want to complete on Right arrow if the completion text is displayed.
+      if (event.keyCode === KeyCodes.DOM_VK_RIGHT) {
+        if (this.getAutoCompletionText()) {
+          this.acceptProposedCompletion();
+        }
+        this.clearCompletion();
         event.preventDefault();
       }
 
@@ -946,6 +990,8 @@ class JSTerm extends Component {
         if (this.autocompletePopup.isOpen) {
           this.autocompletePopup.selectItemAtIndex(0);
           event.preventDefault();
+        } else if (this.getAutoCompletionText()) {
+          this.clearCompletion();
         } else if (inputValue.length <= 0) {
           this.hud.outputScroller.scrollTop = 0;
           event.preventDefault();
@@ -956,6 +1002,8 @@ class JSTerm extends Component {
         if (this.autocompletePopup.isOpen) {
           this.autocompletePopup.selectItemAtIndex(this.autocompletePopup.itemCount - 1);
           event.preventDefault();
+        } else if (this.getAutoCompletionText()) {
+          this.clearCompletion();
         } else if (inputValue.length <= 0) {
           this.hud.outputScroller.scrollTop = this.hud.outputScroller.scrollHeight;
           event.preventDefault();
@@ -1104,136 +1152,29 @@ class JSTerm extends Component {
   }
 
   /**
+   * Takes the data returned by the server and update the autocomplete popup state (i.e.
+   * its visibility and items).
    *
-   * @param {Boolean} force: True to not perform any check before trying to show the
-   *                         autocompletion popup. Defaults to false.
+   * @param {Object} data
+   *        The autocompletion data as returned by the webconsole actor's autocomplete
+   *        service. Should be of the following shape:
+   *        {
+   *          matches: {Array} array of the properties matching the input,
+   *          matchProp: {String} The string used to filter the properties,
+   *          isElementAccess: {Boolean} True when the input is an element access,
+   *                           i.e. `document["addEve`.
+   *        }
+   * @fires autocomplete-updated
    */
-  async updateAutocompletion(force = false) {
-    const inputValue = this.getInputValue();
-    const {editor, inputNode} = this;
-    const frameActor = this.getFrameActor(this.SELECTED_FRAME);
-
-    const cursor = this.getSelectionStart();
-
-    // Complete if:
-    // - `force` is true OR
-    //   - The input is not empty
-    //   - AND there is not text selected
-    //   - AND the input or frameActor are different from previous completion
-    //   - AND there is not an alphanumeric (+ "_" and "$") right after the cursor
-    if (!force && (
-      !inputValue ||
-      (inputNode && inputNode.selectionStart != inputNode.selectionEnd) ||
-      (editor && editor.getSelection()) ||
-      (
-        !force &&
-        this.lastInputValue === inputValue &&
-        frameActor === this._lastFrameActorId
-      ) ||
-      /^[a-zA-Z0-9_$]/.test(inputValue.substring(cursor))
-    )) {
-      this.clearCompletion();
-      this.emit("autocomplete-updated");
-      return;
-    }
-
-    const input = this.getInputValueBeforeCursor();
-
-    // If the current input starts with the previous input, then we already
-    // have a list of suggestions and we just need to filter the cached
-    // suggestions. When the current input ends with a non-alphanumeric character we ask
-    // the server again for suggestions.
-
-    // Check if last character is non-alphanumeric
-    if (!/[a-zA-Z0-9]$/.test(input) || frameActor != this._lastFrameActorId) {
-      this._autocompleteQuery = null;
-      this._autocompleteCache = null;
-    }
-
-    if (this._autocompleteQuery && input.startsWith(this._autocompleteQuery)) {
-      let filterBy = input;
-      if (this._autocompleteCache.isElementAccess) {
-        // if we're performing an element access, we can simply retrieve whatever comes
-        // after the last opening bracket.
-        filterBy = input.substring(input.lastIndexOf("[") + 1);
-      } else {
-        // Find the last non-alphanumeric other than "_", ":", or "$" if it exists.
-        const lastNonAlpha = input.match(/[^a-zA-Z0-9_$:][a-zA-Z0-9_$:]*$/);
-        // If input contains non-alphanumerics, use the part after the last one
-        // to filter the cache.
-        if (lastNonAlpha) {
-          filterBy = input.substring(input.lastIndexOf(lastNonAlpha) + 1);
-        }
-      }
-
-      const stripWrappingQuotes = s => s.replace(/^['"`](.+(?=['"`]$))['"`]$/g, "$1");
-      const filterByLc = filterBy.toLocaleLowerCase();
-      const looseMatching = !filterBy || filterBy[0].toLocaleLowerCase() === filterBy[0];
-      const needStripQuote = this._autocompleteCache.isElementAccess
-        && !/^[`"']/.test(filterBy);
-      const newList = this._autocompleteCache.matches.filter(l => {
-        if (needStripQuote) {
-          l = stripWrappingQuotes(l);
-        }
-
-        if (looseMatching) {
-          return l.toLocaleLowerCase().startsWith(filterByLc);
-        }
-
-        return l.startsWith(filterBy);
-      });
-
-      this._receiveAutocompleteProperties(null, {
-        matches: newList,
-        matchProp: filterBy,
-        isElementAccess: this._autocompleteCache.isElementAccess,
-      });
-      return;
-    }
-    const requestId = gSequenceId();
-    this._lastFrameActorId = frameActor;
-    this.currentAutoCompletionRequestId = requestId;
-
-    const message = await this.webConsoleClient.autocomplete(input, cursor, frameActor);
-    this._receiveAutocompleteProperties(requestId, message);
-  }
-
-  /**
-   * Handler for the autocompletion results. This method takes
-   * the completion result received from the server and updates the UI
-   * accordingly.
-   *
-   * @param number requestId
-   *        Request ID.
-   * @param object message
-   *        The JSON message which holds the completion results received from
-   *        the content process.
-   */
-  _receiveAutocompleteProperties(requestId, message) {
-    if (this.currentAutoCompletionRequestId !== requestId) {
-      return;
-    }
-    this.currentAutoCompletionRequestId = null;
-
-    // Cache whatever came from the server if the last char is
-    // alphanumeric, '.' or '['.
-    const inputUntilCursor = this.getInputValueBeforeCursor();
-
-    if (requestId != null && /[a-zA-Z0-9.\[]$/.test(inputUntilCursor)) {
-      this._autocompleteCache = {
-        matches: message.matches,
-        matchProp: message.matchProp,
-        isElementAccess: message.isElementAccess,
-      };
-      this._autocompleteQuery = inputUntilCursor;
-    }
-
-    const {matches, matchProp, isElementAccess} = message;
+  updateAutocompletionPopup(data) {
+    const {matches, matchProp, isElementAccess} = data;
     if (!matches.length) {
       this.clearCompletion();
       this.emit("autocomplete-updated");
       return;
     }
+
+    const inputUntilCursor = this.getInputValueBeforeCursor();
 
     const items = matches.map(label => {
       let preLabel = label.substring(0, matchProp.length);
@@ -1285,12 +1226,11 @@ class JSTerm extends Component {
         && items[0].label !== matchProp
       )
     ) {
-      let popupAlignElement;
+      const popupAlignElement = this.props.serviceContainer.getJsTermTooltipAnchor();
       let xOffset;
       let yOffset;
 
       if (this.editor) {
-        popupAlignElement = this.node.querySelector(".CodeMirror-cursor");
         // We need to show the popup at the "." or "[".
         xOffset = -1 * matchProp.length * this._inputCharWidth;
         yOffset = 5;
@@ -1299,10 +1239,6 @@ class JSTerm extends Component {
           (inputUntilCursor.lastIndexOf("\n") + 1) -
           matchProp.length;
         xOffset = (offset * this._inputCharWidth) + this._paddingInlineStart;
-        // We use completeNode as the popup anchor as its height never exceeds the
-        // content size, whereas it can be the case for inputNode (when there's no message
-        // in the output, it takes the whole height).
-        popupAlignElement = this.completeNode;
       }
 
       if (popupAlignElement) {
@@ -1364,6 +1300,7 @@ class JSTerm extends Component {
         this.autocompletePopup.hidePopup();
       }
     }
+    this.emit("autocomplete-updated");
   }
 
   /**
@@ -1580,13 +1517,7 @@ class JSTerm extends Component {
   }
 
   onContextMenu(e) {
-    // The toolbox does it's own edit menu handling with
-    // toolbox-textbox-context-popup and friends. For now, fall
-    // back to use that if running inside the toolbox, but use our
-    // own menu when running in the Browser Console (see Bug 1476097).
-    if (this.props.hud.isBrowserConsole) {
-      this.props.serviceContainer.openEditContextMenu(e);
-    }
+    this.props.serviceContainer.openEditContextMenu(e);
   }
 
   destroy() {
@@ -1679,6 +1610,7 @@ function mapStateToProps(state) {
   return {
     history: getHistory(state),
     getValueFromHistory: (direction) => getHistoryValue(state, direction),
+    autocompleteData: getAutocompleteState(state),
   };
 }
 
@@ -1688,6 +1620,8 @@ function mapDispatchToProps(dispatch) {
     clearHistory: () => dispatch(historyActions.clearHistory()),
     updateHistoryPosition: (direction, expression) =>
       dispatch(historyActions.updateHistoryPosition(direction, expression)),
+    autocompleteUpdate: force => dispatch(autocompleteActions.autocompleteUpdate(force)),
+    autocompleteBailOut: () => dispatch(autocompleteActions.autocompleteBailOut()),
   };
 }
 

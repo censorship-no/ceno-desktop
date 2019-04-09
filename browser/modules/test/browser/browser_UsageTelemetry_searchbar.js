@@ -9,12 +9,12 @@ ChromeUtils.import("resource://testing-common/CustomizableUITestUtils.jsm", this
 let gCUITestUtils = new CustomizableUITestUtils(window);
 
 function checkHistogramResults(resultIndexes, expected, histogram) {
-  for (let i = 0; i < resultIndexes.counts.length; i++) {
+  for (let [i, val] of Object.entries(resultIndexes.values)) {
     if (i == expected) {
-      Assert.equal(resultIndexes.counts[i], 1,
+      Assert.equal(val, 1,
         `expected counts should match for ${histogram} index ${i}`);
     } else {
-      Assert.equal(resultIndexes.counts[i], 0,
+      Assert.equal(!!val, false,
         `unexpected counts should be zero for ${histogram} index ${i}`);
     }
   }
@@ -69,8 +69,8 @@ add_task(async function setup() {
 
   // Make the first engine the default search engine.
   let engineDefault = Services.search.getEngineByName("MozSearch");
-  let originalEngine = Services.search.currentEngine;
-  Services.search.currentEngine = engineDefault;
+  let originalEngine = Services.search.defaultEngine;
+  Services.search.defaultEngine = engineDefault;
 
   // Move the second engine at the beginning of the one-off list.
   let engineOneOff = Services.search.getEngineByName("MozSearch2");
@@ -86,7 +86,7 @@ add_task(async function setup() {
   // Make sure to restore the engine once we're done.
   registerCleanupFunction(function() {
     Services.telemetry.canRecordExtended = oldCanRecord;
-    Services.search.currentEngine = originalEngine;
+    Services.search.defaultEngine = originalEngine;
     Services.search.removeEngine(engineDefault);
     Services.search.removeEngine(engineOneOff);
     Services.telemetry.setEventRecordingEnabled("navigation", false);
@@ -97,8 +97,10 @@ add_task(async function test_plainQuery() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
-  let resultMethodHist = getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
-  let search_hist = getAndClearKeyedHistogram("SEARCH_COUNTS");
+  let resultMethodHist =
+    TelemetryTestUtils.getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
+  let search_hist =
+    TelemetryTestUtils.getAndClearKeyedHistogram("SEARCH_COUNTS");
 
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank");
 
@@ -109,18 +111,21 @@ add_task(async function test_plainQuery() {
   await p;
 
   // Check if the scalars contain the expected values.
-  const scalars = getParentProcessScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
-  checkKeyedScalar(scalars, SCALAR_SEARCHBAR, "search_enter", 1);
+  const scalars = TelemetryTestUtils.getParentProcessScalars(
+    Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
+  TelemetryTestUtils.assertKeyedScalar(scalars, SCALAR_SEARCHBAR, "search_enter", 1);
   Assert.equal(Object.keys(scalars[SCALAR_SEARCHBAR]).length, 1,
                "This search must only increment one entry in the scalar.");
 
   // Make sure SEARCH_COUNTS contains identical values.
-  checkKeyedHistogram(search_hist, "other-MozSearch.searchbar", 1);
+  TelemetryTestUtils.assertKeyedHistogramSum(search_hist, "other-MozSearch.searchbar", 1);
 
   // Also check events.
   let events = Services.telemetry.snapshotEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
   events = (events.parent || []).filter(e => e[1] == "navigation" && e[2] == "search");
-  checkEvents(events, [["navigation", "search", "searchbar", "enter", {engine: "other-MozSearch"}]]);
+  TelemetryTestUtils.assertEvents(events, [
+    ["navigation", "search", "searchbar", "enter", {engine: "other-MozSearch"}],
+  ]);
 
   // Check the histograms as well.
   let resultMethods = resultMethodHist.snapshot();
@@ -137,8 +142,10 @@ add_task(async function test_oneOff_enter() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
-  let resultMethodHist = getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
-  let search_hist = getAndClearKeyedHistogram("SEARCH_COUNTS");
+  let resultMethodHist =
+    TelemetryTestUtils.getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
+  let search_hist =
+    TelemetryTestUtils.getAndClearKeyedHistogram("SEARCH_COUNTS");
 
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank");
 
@@ -152,18 +159,21 @@ add_task(async function test_oneOff_enter() {
   await p;
 
   // Check if the scalars contain the expected values.
-  const scalars = getParentProcessScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
-  checkKeyedScalar(scalars, SCALAR_SEARCHBAR, "search_oneoff", 1);
+  const scalars = TelemetryTestUtils.getParentProcessScalars(
+    Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
+  TelemetryTestUtils.assertKeyedScalar(scalars, SCALAR_SEARCHBAR, "search_oneoff", 1);
   Assert.equal(Object.keys(scalars[SCALAR_SEARCHBAR]).length, 1,
                "This search must only increment one entry in the scalar.");
 
   // Make sure SEARCH_COUNTS contains identical values.
-  checkKeyedHistogram(search_hist, "other-MozSearch2.searchbar", 1);
+  TelemetryTestUtils.assertKeyedHistogramSum(search_hist, "other-MozSearch2.searchbar", 1);
 
   // Also check events.
   let events = Services.telemetry.snapshotEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
   events = (events.parent || []).filter(e => e[1] == "navigation" && e[2] == "search");
-  checkEvents(events, [["navigation", "search", "searchbar", "oneoff", {engine: "other-MozSearch2"}]]);
+  TelemetryTestUtils.assertEvents(events, [
+    ["navigation", "search", "searchbar", "oneoff", {engine: "other-MozSearch2"}],
+  ]);
 
   // Check the histograms as well.
   let resultMethods = resultMethodHist.snapshot();
@@ -180,7 +190,8 @@ add_task(async function test_oneOff_enter() {
 add_task(async function test_oneOff_enterSelection() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
-  let resultMethodHist = getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
+  let resultMethodHist =
+    TelemetryTestUtils.getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
 
   // Create an engine to generate search suggestions and add it as default
   // for this test.
@@ -192,8 +203,8 @@ add_task(async function test_oneOff_enterSelection() {
     });
   });
 
-  let previousEngine = Services.search.currentEngine;
-  Services.search.currentEngine = suggestionEngine;
+  let previousEngine = Services.search.defaultEngine;
+  Services.search.defaultEngine = suggestionEngine;
 
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank");
 
@@ -212,7 +223,7 @@ add_task(async function test_oneOff_enterSelection() {
     URLBAR_SELECTED_RESULT_METHODS.enterSelection,
     "FX_SEARCHBAR_SELECTED_RESULT_METHOD");
 
-  Services.search.currentEngine = previousEngine;
+  Services.search.defaultEngine = previousEngine;
   Services.search.removeEngine(suggestionEngine);
   BrowserTestUtils.removeTab(tab);
 });
@@ -223,7 +234,8 @@ add_task(async function test_oneOff_enterSelection() {
 add_task(async function test_oneOff_click() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
-  let resultMethodHist = getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
+  let resultMethodHist =
+    TelemetryTestUtils.getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
 
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank");
 
@@ -247,8 +259,10 @@ add_task(async function test_suggestion_click() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
-  let resultMethodHist = getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
-  let search_hist = getAndClearKeyedHistogram("SEARCH_COUNTS");
+  let resultMethodHist =
+    TelemetryTestUtils.getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
+  let search_hist =
+    TelemetryTestUtils.getAndClearKeyedHistogram("SEARCH_COUNTS");
 
   // Create an engine to generate search suggestions and add it as default
   // for this test.
@@ -260,8 +274,8 @@ add_task(async function test_suggestion_click() {
     });
   });
 
-  let previousEngine = Services.search.currentEngine;
-  Services.search.currentEngine = suggestionEngine;
+  let previousEngine = Services.search.defaultEngine;
+  Services.search.defaultEngine = suggestionEngine;
 
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank");
 
@@ -273,19 +287,22 @@ add_task(async function test_suggestion_click() {
   await p;
 
   // Check if the scalars contain the expected values.
-  const scalars = getParentProcessScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
-  checkKeyedScalar(scalars, SCALAR_SEARCHBAR, "search_suggestion", 1);
+  const scalars = TelemetryTestUtils.getParentProcessScalars(
+    Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true, false);
+  TelemetryTestUtils.assertKeyedScalar(scalars, SCALAR_SEARCHBAR, "search_suggestion", 1);
   Assert.equal(Object.keys(scalars[SCALAR_SEARCHBAR]).length, 1,
                "This search must only increment one entry in the scalar.");
 
   // Make sure SEARCH_COUNTS contains identical values.
   let searchEngineId = "other-" + suggestionEngine.name;
-  checkKeyedHistogram(search_hist, searchEngineId + ".searchbar", 1);
+  TelemetryTestUtils.assertKeyedHistogramSum(search_hist, searchEngineId + ".searchbar", 1);
 
   // Also check events.
   let events = Services.telemetry.snapshotEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
   events = (events.parent || []).filter(e => e[1] == "navigation" && e[2] == "search");
-  checkEvents(events, [["navigation", "search", "searchbar", "suggestion", {engine: searchEngineId}]]);
+  TelemetryTestUtils.assertEvents(events, [
+    ["navigation", "search", "searchbar", "suggestion", {engine: searchEngineId}],
+  ]);
 
   // Check the histograms as well.
   let resultMethods = resultMethodHist.snapshot();
@@ -293,7 +310,7 @@ add_task(async function test_suggestion_click() {
     URLBAR_SELECTED_RESULT_METHODS.click,
     "FX_SEARCHBAR_SELECTED_RESULT_METHOD");
 
-  Services.search.currentEngine = previousEngine;
+  Services.search.defaultEngine = previousEngine;
   Services.search.removeEngine(suggestionEngine);
   BrowserTestUtils.removeTab(tab);
 });
@@ -305,7 +322,8 @@ add_task(async function test_suggestion_click() {
 add_task(async function test_suggestion_enterSelection() {
   // Let's reset the counts.
   Services.telemetry.clearScalars();
-  let resultMethodHist = getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
+  let resultMethodHist =
+    TelemetryTestUtils.getAndClearHistogram("FX_SEARCHBAR_SELECTED_RESULT_METHOD");
 
   // Create an engine to generate search suggestions and add it as default
   // for this test.
@@ -317,8 +335,8 @@ add_task(async function test_suggestion_enterSelection() {
     });
   });
 
-  let previousEngine = Services.search.currentEngine;
-  Services.search.currentEngine = suggestionEngine;
+  let previousEngine = Services.search.defaultEngine;
+  Services.search.defaultEngine = suggestionEngine;
 
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank");
 
@@ -335,7 +353,7 @@ add_task(async function test_suggestion_enterSelection() {
     URLBAR_SELECTED_RESULT_METHODS.enterSelection,
     "FX_SEARCHBAR_SELECTED_RESULT_METHOD");
 
-  Services.search.currentEngine = previousEngine;
+  Services.search.defaultEngine = previousEngine;
   Services.search.removeEngine(suggestionEngine);
   BrowserTestUtils.removeTab(tab);
 });

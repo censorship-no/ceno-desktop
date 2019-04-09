@@ -51,7 +51,14 @@ mozharness_test_run_schema = Schema({
 
 def test_packages_url(taskdesc):
     """Account for different platforms that name their test packages differently"""
-    return get_artifact_url('<build>', get_artifact_path(taskdesc, 'target.test_packages.json'))
+    artifact_url = get_artifact_url('<build>', get_artifact_path(taskdesc,
+                                    'target.test_packages.json'))
+    # for android nightly we need to add 'en-US' to the artifact url
+    test = taskdesc['run']['test']
+    if get_variant(test['test-platform']) == "nightly" and 'android' in test['test-platform']:
+        head, tail = os.path.split(artifact_url)
+        artifact_url = os.path.join(head, 'en-US', tail)
+    return artifact_url
 
 
 @run_job_using('docker-engine', 'mozharness-test', schema=mozharness_test_run_schema)
@@ -74,7 +81,7 @@ def mozharness_test_on_docker(config, job, taskdesc):
 
     artifacts = [
         # (artifact name prefix, in-image path)
-        ("public/logs/", "{workdir}/workspace/build/upload/logs/".format(**run)),
+        ("public/logs/", "{workdir}/workspace/logs/".format(**run)),
         ("public/test", "{workdir}/artifacts/".format(**run)),
         ("public/test_info/", "{workdir}/workspace/build/blobber_upload_dir/".format(**run)),
     ]
@@ -140,7 +147,7 @@ def mozharness_test_on_docker(config, job, taskdesc):
     # If we have a source checkout, run mozharness from it instead of
     # downloading a zip file with the same content.
     if test['checkout']:
-        command.extend(['--vcs-checkout', '{workdir}/checkouts/gecko'.format(**run)])
+        command.extend(['--gecko-checkout', '{workdir}/checkouts/gecko'.format(**run)])
         env['MOZHARNESS_PATH'] = '{workdir}/checkouts/gecko/testing/mozharness'.format(**run)
     else:
         env['MOZHARNESS_URL'] = {'task-reference': mozharness_url}
@@ -344,7 +351,7 @@ def mozharness_test_on_native_engine(config, job, taskdesc):
         'type': 'directory',
     } for (prefix, path) in [
         # (artifact name prefix, in-image path relative to homedir)
-        ("public/logs/", "workspace/build/upload/logs/"),
+        ("public/logs/", "workspace/build/logs/"),
         ("public/test", "artifacts/"),
         ("public/test_info/", "workspace/build/blobber_upload_dir/"),
     ]]
@@ -422,7 +429,7 @@ def mozharness_test_on_script_engine_autophone(config, job, taskdesc):
     artifacts = [
         # (artifact name prefix, in-image path)
         ("public/test/", "/builds/worker/artifacts"),
-        ("public/logs/", "/builds/worker/workspace/build/upload/logs"),
+        ("public/logs/", "/builds/worker/workspace/build/logs"),
         ("public/test_info/", "/builds/worker/workspace/build/blobber_upload_dir"),
     ]
 

@@ -21,6 +21,7 @@ not-for-build-platforms:
    - macosx64-nightly/opt
    - win32-nightly/opt
    - win64-nightly/opt
+   - win64-aarch64-nightly/opt
    - linux-devedition-nightly/opt
    - linux64-devedition-nightly/opt
    - macosx64-devedition-nightly/opt
@@ -30,6 +31,8 @@ not-for-build-platforms:
    - win64-asan-reporter-nightly/opt
 
 job-template:
+   attributes:
+      artifact_map: taskcluster/taskgraph/manifests/fennec_geckoview.yml
    run-on-projects: ['mozilla-central', 'mozilla-release']
    run-on-hg-branches:
       by-project:

@@ -14,41 +14,66 @@ const {
   ADB_ADDON_STATUS_UPDATED,
   DEBUG_TARGET_COLLAPSIBILITY_UPDATED,
   NETWORK_LOCATIONS_UPDATED,
-  PAGE_SELECTED,
-  PAGES,
+  PAGE_TYPES,
+  SELECT_PAGE_FAILURE,
+  SELECT_PAGE_START,
+  SELECT_PAGE_SUCCESS,
+  SELECTED_RUNTIME_ID_UPDATED,
+  USB_RUNTIMES_SCAN_START,
+  USB_RUNTIMES_SCAN_SUCCESS,
 } = require("../constants");
 
 const NetworkLocationsModule = require("../modules/network-locations");
 const { adbAddon } = require("devtools/shared/adb/adb-addon");
+const { refreshUSBRuntimes } = require("../modules/usb-runtimes");
 
 const Actions = require("./index");
 
-// XXX: Isolating the code here, because it feels wrong to rely solely on the page "not"
-// being CONNECT to decide what to do. Should we have a page "type" on top of page "id"?
-function _isRuntimePage(page) {
-  return page && page !== PAGES.CONNECT;
-}
-
 function selectPage(page, runtimeId) {
   return async (dispatch, getState) => {
-    const currentPage = getState().ui.selectedPage;
-    // Nothing to dispatch if the page is the same as the current page.
-    if (page === currentPage) {
-      return;
-    }
+    dispatch({ type: SELECT_PAGE_START });
 
-    // Stop watching current runtime, if currently on a DEVICE or THIS_FIREFOX page.
-    if (_isRuntimePage(currentPage)) {
-      const currentRuntimeId = getState().runtimes.selectedRuntimeId;
-      await dispatch(Actions.unwatchRuntime(currentRuntimeId));
-    }
+    try {
+      const isSamePage = (oldPage, newPage) => {
+        if (newPage === PAGE_TYPES.RUNTIME && oldPage === PAGE_TYPES.RUNTIME) {
+          return runtimeId === getState().runtimes.selectedRuntimeId;
+        }
+        return newPage === oldPage;
+      };
 
-    // Start watching current runtime, if moving to a DEVICE or THIS_FIREFOX page.
-    if (_isRuntimePage(page)) {
-      await dispatch(Actions.watchRuntime(runtimeId));
-    }
+      if (!page) {
+        throw new Error("No page provided.");
+      }
 
-    dispatch({ type: PAGE_SELECTED, page });
+      const currentPage = getState().ui.selectedPage;
+      // Nothing to dispatch if the page is the same as the current page
+      if (isSamePage(currentPage, page)) {
+        return;
+      }
+
+      // Stop watching current runtime, if currently on a RUNTIME page.
+      if (currentPage === PAGE_TYPES.RUNTIME) {
+        const currentRuntimeId = getState().runtimes.selectedRuntimeId;
+        await dispatch(Actions.unwatchRuntime(currentRuntimeId));
+      }
+
+      // Always update the selected runtime id.
+      // If we are navigating to a non-runtime page, the Runtime page components are no
+      // longer rendered so it is safe to nullify the runtimeId.
+      // If we are navigating to a runtime page, the runtime corresponding to runtimeId
+      // is already connected, so components can safely get runtimeDetails on this new
+      // runtime.
+      dispatch({ type: SELECTED_RUNTIME_ID_UPDATED, runtimeId });
+
+      // Start watching current runtime, if moving to a RUNTIME page.
+      if (page === PAGE_TYPES.RUNTIME) {
+        await dispatch(Actions.watchRuntime(runtimeId));
+      }
+
+      dispatch({ type: SELECT_PAGE_SUCCESS, page });
+    } catch (e) {
+      dispatch({ type: SELECT_PAGE_FAILURE, error: e });
+    }
   };
 }
 
@@ -73,7 +98,10 @@ function updateAdbAddonStatus(adbAddonStatus) {
 }
 
 function updateNetworkLocations(locations) {
-  return { type: NETWORK_LOCATIONS_UPDATED, locations };
+  return (dispatch, getState) => {
+    dispatch(Actions.updateNetworkRuntimes(locations));
+    dispatch({ type: NETWORK_LOCATIONS_UPDATED, locations });
+  };
 }
 
 function installAdbAddon() {
@@ -81,10 +109,12 @@ function installAdbAddon() {
     dispatch({ type: ADB_ADDON_INSTALL_START });
 
     try {
-      await adbAddon.install();
+      // "aboutdebugging" will be forwarded to telemetry as the installation source
+      // for the addon.
+      await adbAddon.install("about:debugging");
       dispatch({ type: ADB_ADDON_INSTALL_SUCCESS });
     } catch (e) {
-      dispatch({ type: ADB_ADDON_INSTALL_FAILURE, error: e.message });
+      dispatch({ type: ADB_ADDON_INSTALL_FAILURE, error: e });
     }
   };
 }
@@ -97,8 +127,21 @@ function uninstallAdbAddon() {
       await adbAddon.uninstall();
       dispatch({ type: ADB_ADDON_UNINSTALL_SUCCESS });
     } catch (e) {
-      dispatch({ type: ADB_ADDON_UNINSTALL_FAILURE, error: e.message });
+      dispatch({ type: ADB_ADDON_UNINSTALL_FAILURE, error: e });
     }
+  };
+}
+
+function scanUSBRuntimes() {
+  return async (dispatch, getState) => {
+    // do not re-scan if we are already doing it
+    if (getState().ui.isScanningUsb) {
+      return;
+    }
+
+    dispatch({ type: USB_RUNTIMES_SCAN_START });
+    await refreshUSBRuntimes();
+    dispatch({ type: USB_RUNTIMES_SCAN_SUCCESS });
   };
 }
 
@@ -106,6 +149,7 @@ module.exports = {
   addNetworkLocation,
   installAdbAddon,
   removeNetworkLocation,
+  scanUSBRuntimes,
   selectPage,
   uninstallAdbAddon,
   updateAdbAddonStatus,

@@ -19,7 +19,9 @@ import java.util.UUID;
 import java.util.ArrayDeque;
 
 import android.annotation.SuppressLint;
+import android.annotation.TargetApi;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.media.DeniedByServerException;
@@ -33,6 +35,7 @@ import android.util.Log;
 import org.mozilla.gecko.util.StringUtils;
 import org.mozilla.gecko.util.ProxySelector;
 
+@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
 public class GeckoMediaDrmBridgeV21 implements GeckoMediaDrm {
     protected final String LOGTAG;
     private static final String INVALID_SESSION_ID = "Invalid";
@@ -299,6 +302,17 @@ public class GeckoMediaDrmBridgeV21 implements GeckoMediaDrm {
     public MediaCrypto getMediaCrypto() {
         if (DEBUG) Log.d(LOGTAG, "getMediaCrypto()");
         return mCrypto;
+    }
+
+    @SuppressLint("WrongConstant")
+    @Override
+    public void setServerCertificate(final byte[] cert) {
+        if (DEBUG) Log.d(LOGTAG, "setServerCertificate()");
+        if (mDrm == null) {
+            throw new IllegalStateException("MediaDrm instance doesn't exist !!");
+        }
+        mDrm.setPropertyByteArray("serviceCertificate", cert);
+        return;
     }
 
     protected void HandleKeyStatusChangeByDummyKey(String sessionId)
@@ -602,7 +616,7 @@ public class GeckoMediaDrmBridgeV21 implements GeckoMediaDrm {
         }
         try {
             mProvisioningPromiseId = promiseId;
-            MediaDrm.ProvisionRequest request = mDrm.getProvisionRequest();
+            @SuppressLint("NewApi") MediaDrm.ProvisionRequest request = mDrm.getProvisionRequest();
             PostRequestTask postTask =
                 new PostRequestTask(promiseId, request.getDefaultUrl(), request.getData());
             postTask.execute();

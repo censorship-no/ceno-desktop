@@ -33,7 +33,7 @@ namespace {
 // from the standard ones -- they use int instead of size_t.  But we don't need
 // a wrapper for free.
 
-#ifdef MOZ_DMD
+#  ifdef MOZ_DMD
 
 // sqlite does its own memory accounting, and we use its numbers in our memory
 // reporters.  But we don't want sqlite's heap blocks to show up in DMD's
@@ -51,28 +51,25 @@ namespace {
 MOZ_DEFINE_MALLOC_SIZE_OF_ON_ALLOC(SqliteMallocSizeOfOnAlloc)
 MOZ_DEFINE_MALLOC_SIZE_OF_ON_FREE(SqliteMallocSizeOfOnFree)
 
-#endif
+#  endif
 
-static void *sqliteMemMalloc(int n)
-{
-  void* p = ::malloc(n);
-#ifdef MOZ_DMD
+static void *sqliteMemMalloc(int n) {
+  void *p = ::malloc(n);
+#  ifdef MOZ_DMD
   gSqliteMemoryUsed += SqliteMallocSizeOfOnAlloc(p);
-#endif
+#  endif
   return p;
 }
 
-static void sqliteMemFree(void *p)
-{
-#ifdef MOZ_DMD
+static void sqliteMemFree(void *p) {
+#  ifdef MOZ_DMD
   gSqliteMemoryUsed -= SqliteMallocSizeOfOnFree(p);
-#endif
+#  endif
   ::free(p);
 }
 
-static void *sqliteMemRealloc(void *p, int n)
-{
-#ifdef MOZ_DMD
+static void *sqliteMemRealloc(void *p, int n) {
+#  ifdef MOZ_DMD
   gSqliteMemoryUsed -= SqliteMallocSizeOfOnFree(p);
   void *pnew = ::realloc(p, n);
   if (pnew) {
@@ -82,18 +79,14 @@ static void *sqliteMemRealloc(void *p, int n)
     gSqliteMemoryUsed += SqliteMallocSizeOfOnAlloc(p);
   }
   return pnew;
-#else
+#  else
   return ::realloc(p, n);
-#endif
+#  endif
 }
 
-static int sqliteMemSize(void *p)
-{
-  return ::moz_malloc_usable_size(p);
-}
+static int sqliteMemSize(void *p) { return ::moz_malloc_usable_size(p); }
 
-static int sqliteMemRoundup(int n)
-{
+static int sqliteMemRoundup(int n) {
   n = malloc_good_size(n);
 
   // jemalloc can return blocks of size 2 and 4, but SQLite requires that all
@@ -102,34 +95,21 @@ static int sqliteMemRoundup(int n)
   return n <= 8 ? 8 : n;
 }
 
-static int sqliteMemInit(void *p)
-{
-  return 0;
-}
+static int sqliteMemInit(void *p) { return 0; }
 
-static void sqliteMemShutdown(void *p)
-{
-}
+static void sqliteMemShutdown(void *p) {}
 
 const sqlite3_mem_methods memMethods = {
-  &sqliteMemMalloc,
-  &sqliteMemFree,
-  &sqliteMemRealloc,
-  &sqliteMemSize,
-  &sqliteMemRoundup,
-  &sqliteMemInit,
-  &sqliteMemShutdown,
-  nullptr
-};
+    &sqliteMemMalloc,  &sqliteMemFree, &sqliteMemRealloc,  &sqliteMemSize,
+    &sqliteMemRoundup, &sqliteMemInit, &sqliteMemShutdown, nullptr};
 
-} // namespace
+}  // namespace
 
 #endif  // MOZ_STORAGE_MEMORY
 
 namespace mozilla {
 
-AutoSQLiteLifetime::AutoSQLiteLifetime()
-{
+AutoSQLiteLifetime::AutoSQLiteLifetime() {
   if (++AutoSQLiteLifetime::sSingletonEnforcer != 1) {
     MOZ_CRASH("multiple instances of AutoSQLiteLifetime constructed!");
   }
@@ -152,8 +132,7 @@ AutoSQLiteLifetime::AutoSQLiteLifetime()
   }
 }
 
-AutoSQLiteLifetime::~AutoSQLiteLifetime()
-{
+AutoSQLiteLifetime::~AutoSQLiteLifetime() {
   // Shutdown the sqlite3 API.  Warn if shutdown did not turn out okay, but
   // there is nothing actionable we can do in that case.
   sResult = ::sqlite3_shutdown();
@@ -164,4 +143,4 @@ AutoSQLiteLifetime::~AutoSQLiteLifetime()
 int AutoSQLiteLifetime::sSingletonEnforcer = 0;
 int AutoSQLiteLifetime::sResult = SQLITE_MISUSE;
 
-} // namespace mozilla
+}  // namespace mozilla

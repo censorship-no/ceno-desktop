@@ -7,7 +7,6 @@ const { combineReducers } = require("devtools/client/shared/vendor/redux");
 const { recordingState: {
   NOT_YET_KNOWN,
 }} = require("devtools/client/performance-new/utils");
-
 /**
  * The current state of the recording.
  * @param state - A recordingState key.

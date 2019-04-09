@@ -28,8 +28,6 @@ ChromeUtils.defineModuleGetter(this, "ResponsivenessMonitor",
                                "resource://gre/modules/ResponsivenessMonitor.jsm");
 ChromeUtils.defineModuleGetter(this, "Sqlite",
                                "resource://gre/modules/Sqlite.jsm");
-ChromeUtils.defineModuleGetter(this, "TelemetryStopwatch",
-                               "resource://gre/modules/TelemetryStopwatch.jsm");
 ChromeUtils.defineModuleGetter(this, "WindowsRegistry",
                                "resource://gre/modules/WindowsRegistry.jsm");
 ChromeUtils.defineModuleGetter(this, "setTimeout",
@@ -1025,6 +1023,17 @@ var MigrationUtils = Object.freeze({
   },
 
   insertVisitsWrapper(pageInfos) {
+    let now = new Date();
+    // Ensure that none of the dates are in the future. If they are, rewrite
+    // them to be now. This means we don't loose history entries, but they will
+    // be valid for the history store.
+    for (let pageInfo of pageInfos) {
+      for (let visit of pageInfo.visits) {
+        if (visit.date && visit.date > now) {
+          visit.date = now;
+        }
+      }
+    }
     this._importQuantities.history += pageInfos.length;
     if (gKeepUndoData) {
       this._updateHistoryUndo(pageInfos);

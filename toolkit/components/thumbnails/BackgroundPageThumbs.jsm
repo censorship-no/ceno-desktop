@@ -208,7 +208,11 @@ const BackgroundPageThumbs = {
       }
     };
     webProgress.addProgressListener(this._listener, Ci.nsIWebProgress.NOTIFY_STATE_ALL);
-    wlBrowser.loadURI("chrome://global/content/backgroundPageThumbs.xhtml", 0, null, null, null);
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    };
+    wlBrowser.loadURI("chrome://global/content/backgroundPageThumbs.xhtml",
+                      loadURIOptions);
     this._windowlessContainer = wlBrowser;
 
     return false;
@@ -510,8 +514,9 @@ Capture.prototype = {
         // Clear the data in the private container for thumbnails.
         let privateIdentity =
           ContextualIdentityService.getPrivateIdentity("userContextIdInternal.thumbnail");
-        Services.obs.notifyObservers(null, "clear-origin-attributes-data",
-          JSON.stringify({ userContextId: privateIdentity.userContextId }));
+        if (privateIdentity) {
+          Services.clearData.deleteDataFromOriginAttributesPattern({ userContextId: privateIdentity.userContextId });
+        }
       }
     };
 

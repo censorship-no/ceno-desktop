@@ -101,6 +101,7 @@ locales = [
     "th",
     "tl",
     "tr",
+    "trs",
     "uk",
     "ur",
     "uz",
@@ -126,10 +127,6 @@ locales = [
 [[paths]]
     reference = "browser/extensions/formautofill/locales/en-US/**"
     l10n = "{l}browser/extensions/formautofill/**"
-
-[[paths]]
-    reference = "browser/extensions/onboarding/locales/en-US/**"
-    l10n = "{l}browser/extensions/onboarding/**"
 
 [[paths]]
     reference = "browser/extensions/webcompat-reporter/locales/en-US/**"

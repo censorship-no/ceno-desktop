@@ -40,7 +40,7 @@ function swapToInnerBrowser({ tab, containerURL, getInnerBrowser }) {
 
   // Dispatch a custom event each time the _viewport content_ is swapped from one browser
   // to another.  DevTools server code uses this to follow the content if there is an
-  // active DevTools connection.  While browser.xml does dispatch it's own SwapDocShells
+  // active DevTools connection.  While browser.js does dispatch it's own SwapDocShells
   // event, this one is easier for DevTools to follow because it's only emitted once per
   // transition, instead of twice like SwapDocShells.
   const dispatchDevToolsBrowserSwap = (from, to) => {
@@ -106,18 +106,46 @@ function swapToInnerBrowser({ tab, containerURL, getInnerBrowser }) {
 
     async start() {
       // In some cases, such as a preloaded browser used for about:newtab, browser code
-      // will force a new frameloader on next navigation to ensure balanced process
-      // assignment.  If this case will happen here, navigate to about:blank first to get
-      // this out of way so that we stay within one process while RDM is open.
-      const { newFrameloader } = E10SUtils.shouldLoadURIInBrowser(
-        tab.linkedBrowser,
-        "about:blank"
+      // will force a new frameloader on next navigation to remote content to ensure
+      // balanced process assignment.  If this case will happen here, navigate to
+      // about:blank first to get this out of way so that we stay within one process while
+      // RDM is open. Some process selection rules are specific to remote content, so we
+      // use `http://example.com` as a test for what a remote navigation would cause.
+      const {
+        requiredRemoteType,
+        mustChangeProcess,
+        newFrameloader,
+      } = E10SUtils.shouldLoadURIInBrowser(
+         tab.linkedBrowser,
+        "http://example.com"
       );
       if (newFrameloader) {
         debug(`Tab will force a new frameloader on navigation, load about:blank first`);
         await loadURIWithNewFrameLoader(tab.linkedBrowser, "about:blank", {
           flags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY,
           triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+        });
+      }
+      // When the separate privileged content process is enabled, about:home and
+      // about:newtab will load in it, and we'll need to switch away if the user
+      // ever browses to a new URL. To avoid that, when the privileged process is
+      // enabled, we do the process flip immediately before entering RDM mode. The
+      // trade-off is that about:newtab can't be inspected in RDM, but it allows
+      // users to start RDM on that page and keep it open.
+      //
+      // The other trade is that sometimes users will be viewing the local file
+      // URI process, and will want to view the page in RDM. We allow this without
+      // blanking out the page, but we trade that for closing RDM if browsing ever
+      // causes them to flip processes.
+      //
+      // Bug 1510806 has been filed to fix this properly, by making RDM resilient
+      // to process flips.
+      if (mustChangeProcess &&
+          tab.linkedBrowser.remoteType == "privileged") {
+        debug(`Tab must flip away from the privileged content process ` +
+              `on navigation`);
+        gBrowser.updateBrowserRemoteness(tab.linkedBrowser, true, {
+          remoteType: requiredRemoteType,
         });
       }
 
@@ -393,7 +421,7 @@ function addXULBrowserDecorations(browser) {
   }
 
   // It's not necessary for these to actually do anything.  These properties are
-  // swapped between browsers in browser.xml's `swapDocShells`, and then their
+  // swapped between browsers in browser.js's `swapDocShells`, and then their
   // `swapBrowser` methods are called, so we define them here for that to work
   // without errors.  During the swap process above, these will move from the
   // the new inner browser to the original tab's browser (step 4) and then to

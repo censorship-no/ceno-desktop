@@ -12,6 +12,8 @@
 use super::{UnknownUnit, Angle};
 use approxeq::ApproxEq;
 use homogen::HomogeneousVector;
+#[cfg(feature = "mint")]
+use mint;
 use trig::Trig;
 use point::{TypedPoint2D, TypedPoint3D};
 use vector::{TypedVector2D, TypedVector3D, vec2, vec3};
@@ -24,24 +26,26 @@ use core::marker::PhantomData;
 use core::fmt;
 use num_traits::NumCast;
 
-define_matrix! {
-    /// A 3d transform stored as a 4 by 4 matrix in row-major order in memory.
-    ///
-    /// Transforms can be parametrized over the source and destination units, to describe a
-    /// transformation from a space to another.
-    /// For example, `TypedTransform3D<f32, WorldSpace, ScreenSpace>::transform_point3d`
-    /// takes a `TypedPoint3D<f32, WorldSpace>` and returns a `TypedPoint3D<f32, ScreenSpace>`.
-    ///
-    /// Transforms expose a set of convenience methods for pre- and post-transformations.
-    /// A pre-transformation corresponds to adding an operation that is applied before
-    /// the rest of the transformation, while a post-transformation adds an operation
-    /// that is applied after.
-    pub struct TypedTransform3D<T, Src, Dst> {
-        pub m11: T, pub m12: T, pub m13: T, pub m14: T,
-        pub m21: T, pub m22: T, pub m23: T, pub m24: T,
-        pub m31: T, pub m32: T, pub m33: T, pub m34: T,
-        pub m41: T, pub m42: T, pub m43: T, pub m44: T,
-    }
+/// A 3d transform stored as a 4 by 4 matrix in row-major order in memory.
+///
+/// Transforms can be parametrized over the source and destination units, to describe a
+/// transformation from a space to another.
+/// For example, `TypedTransform3D<f32, WorldSpace, ScreenSpace>::transform_point3d`
+/// takes a `TypedPoint3D<f32, WorldSpace>` and returns a `TypedPoint3D<f32, ScreenSpace>`.
+///
+/// Transforms expose a set of convenience methods for pre- and post-transformations.
+/// A pre-transformation corresponds to adding an operation that is applied before
+/// the rest of the transformation, while a post-transformation adds an operation
+/// that is applied after.
+#[derive(EuclidMatrix)]
+#[repr(C)]
+pub struct TypedTransform3D<T, Src, Dst> {
+    pub m11: T, pub m12: T, pub m13: T, pub m14: T,
+    pub m21: T, pub m22: T, pub m23: T, pub m24: T,
+    pub m31: T, pub m32: T, pub m33: T, pub m34: T,
+    pub m41: T, pub m42: T, pub m43: T, pub m44: T,
+    #[doc(hidden)]
+    pub _unit: PhantomData<(Src, Dst)>,
 }
 
 /// The default 3d transform type with no units.
@@ -518,6 +522,42 @@ where T: Copy + Clone +
         self.post_mul(&TypedTransform3D::create_translation(v.x, v.y, v.z))
     }
 
+    /// Returns a projection of this transform in 2d space.
+    pub fn project_to_2d(&self) -> Self {
+        let (_0, _1): (T, T) = (Zero::zero(), One::one());
+
+        let mut result = self.clone();
+
+        result.m31 = _0;
+        result.m32 = _0;
+        result.m13 = _0;
+        result.m23 = _0;
+        result.m33 = _1;
+        result.m43 = _0;
+        result.m34 = _0;
+
+        // Try to normalize perspective when possible to convert to a 2d matrix.
+        // Some matrices, such as those derived from perspective transforms, can
+        // modify m44 from 1, while leaving the rest of the fourth column
+        // (m14, m24) at 0. In this case, after resetting the third row and
+        // third column above, the value of m44 functions only to scale the
+        // coordinate transform divide by W. The matrix can be converted to
+        // a true 2D matrix by normalizing out the scaling effect of m44 on
+        // the remaining components ahead of time.
+        if self.m14 == _0 && self.m24 == _0 && self.m44 != _0 && self.m44 != _1 {
+           let scale = _1 / self.m44;
+           result.m11 = result.m11 * scale;
+           result.m12 = result.m12 * scale;
+           result.m21 = result.m21 * scale;
+           result.m22 = result.m22 * scale;
+           result.m41 = result.m41 * scale;
+           result.m42 = result.m42 * scale;
+           result.m44 = _1;
+        }
+
+        result
+    }
+
     /// Create a 3d scale transform
     pub fn create_scale(x: T, y: T, z: T) -> Self {
         let (_0, _1): (T, T) = (Zero::zero(), One::one());
@@ -740,6 +780,31 @@ where T: Copy + fmt::Debug +
         }
     }
 }
+
+#[cfg(feature = "mint")]
+impl<T, Src, Dst> From<mint::RowMatrix4<T>> for TypedTransform3D<T, Src, Dst> {
+    fn from(m: mint::RowMatrix4<T>) -> Self {
+        TypedTransform3D {
+            m11: m.x.x, m12: m.x.y, m13: m.x.z, m14: m.x.w,
+            m21: m.y.x, m22: m.y.y, m23: m.y.z, m24: m.y.w,
+            m31: m.z.x, m32: m.z.y, m33: m.z.z, m34: m.z.w,
+            m41: m.w.x, m42: m.w.y, m43: m.w.z, m44: m.w.w,
+            _unit: PhantomData,
+        }
+    }
+}
+#[cfg(feature = "mint")]
+impl<T, Src, Dst> Into<mint::RowMatrix4<T>> for TypedTransform3D<T, Src, Dst> {
+    fn into(self) -> mint::RowMatrix4<T> {
+        mint::RowMatrix4 {
+            x: mint::Vector4 { x: self.m11, y: self.m12, z: self.m13, w: self.m14 },
+            y: mint::Vector4 { x: self.m21, y: self.m22, z: self.m23, w: self.m24 },
+            z: mint::Vector4 { x: self.m31, y: self.m32, z: self.m33, w: self.m34 },
+            w: mint::Vector4 { x: self.m41, y: self.m42, z: self.m43, w: self.m44 },
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -1020,5 +1085,15 @@ mod tests {
         m.m44 = 1.0;
         m.m24 = -1.0;
         assert_eq!(None, m.transform_point2d(&p));
+    }
+
+    #[cfg(feature = "mint")]
+    #[test]
+    pub fn test_mint() {
+        let m1 = Mf32::create_rotation(0.0, 0.0, 1.0, rad(FRAC_PI_2));
+        let mm: mint::RowMatrix4<_> = m1.into();
+        let m2 = Mf32::from(mm);
+
+        assert_eq!(m1, m2);
     }
 }

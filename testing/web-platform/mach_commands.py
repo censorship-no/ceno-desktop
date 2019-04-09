@@ -26,26 +26,33 @@ from mach_commands_base import WebPlatformTestsRunner, create_parser_wpt
 class WebPlatformTestsRunnerSetup(MozbuildObject):
     default_log_type = "mach"
 
-    def kwargs_common(self, kwargs):
+    def __init__(self, *args, **kwargs):
+        super(WebPlatformTestsRunnerSetup, self).__init__(*args, **kwargs)
+        self._here = os.path.join(self.topsrcdir, 'testing', 'web-platform')
+        kwargs["tests_root"] = os.path.join(self._here, "tests")
+        sys.path.insert(0, kwargs["tests_root"])
         build_path = os.path.join(self.topobjdir, 'build')
-        here = os.path.split(__file__)[0]
-        tests_src_path = os.path.join(here, "tests")
         if build_path not in sys.path:
             sys.path.append(build_path)
 
+    def kwargs_common(self, kwargs):
+        tests_src_path = os.path.join(self._here, "tests")
         if kwargs["product"] == "fennec":
-            # Note that this import may fail in non-fennec trees
-            from mozrunner.devices.android_device import verify_android_device, grant_runtime_permissions
-            verify_android_device(self, install=True, verbose=False, xre=True)
-
             # package_name may be non-fennec in the future
             package_name = kwargs["package_name"]
             if not package_name:
                 package_name = self.substs["ANDROID_PACKAGE_NAME"]
 
+            # Note that this import may fail in non-fennec trees
+            from mozrunner.devices.android_device import verify_android_device, grant_runtime_permissions
+            verify_android_device(self, install=True, verbose=False, xre=True, app=package_name)
+
             grant_runtime_permissions(self, package_name, kwargs["device_serial"])
             if kwargs["certutil_binary"] is None:
                 kwargs["certutil_binary"] = os.path.join(os.environ.get('MOZ_HOST_BIN'), "certutil")
+
+            if kwargs["install_fonts"] is None:
+                kwargs["install_fonts"] = True
 
         if kwargs["config"] is None:
             kwargs["config"] = os.path.join(self.topobjdir, '_tests', 'web-platform', 'wptrunner.local.ini')
@@ -70,8 +77,11 @@ class WebPlatformTestsRunnerSetup(MozbuildObject):
             if kwargs["host_cert_path"] is None:
                 kwargs["host_cert_path"] = os.path.join(cert_root, "web-platform.test.pem")
 
-        if kwargs["log_mach_screenshot"] is None:
-            kwargs["log_mach_screenshot"] = True
+        if kwargs["lsan_dir"] is None:
+            kwargs["lsan_dir"] = os.path.join(self.topsrcdir, "build", "sanitizers")
+
+        if kwargs["reftest_screenshot"] is None:
+            kwargs["reftest_screenshot"] = "fail"
 
         kwargs["capture_stdio"] = True
 
@@ -104,19 +114,14 @@ class WebPlatformTestsRunnerSetup(MozbuildObject):
 
     def kwargs_wptrun(self, kwargs):
         from wptrunner import wptcommandline
-        here = os.path.join(self.topsrcdir, 'testing', 'web-platform')
-
-        kwargs["tests_root"] = os.path.join(here, "tests")
-
-        sys.path.insert(0, kwargs["tests_root"])
 
         if kwargs["metadata_root"] is None:
-            metadir = os.path.join(here, "products", kwargs["product"])
+            metadir = os.path.join(self._here, "products", kwargs["product"])
             if not os.path.exists(metadir):
                 os.makedirs(metadir)
             kwargs["metadata_root"] = metadir
 
-        src_manifest = os.path.join(here, "meta", "MANIFEST.json")
+        src_manifest = os.path.join(self._here, "meta", "MANIFEST.json")
         dest_manifest = os.path.join(kwargs["metadata_root"], "MANIFEST.json")
 
         if not os.path.exists(dest_manifest) and os.path.exists(src_manifest):
@@ -160,9 +165,18 @@ class WebPlatformTestsUpdater(MozbuildObject):
         import update
         return update.setup_logging(kwargs, {"mach": sys.stdout})
 
+    def update_manifest(self, logger, **kwargs):
+        import manifestupdate
+        return manifestupdate.run(logger=logger,
+                                  src_root=self.topsrcdir,
+                                  obj_root=self.topobjdir,
+                                  **kwargs)
+
     def run_update(self, logger, **kwargs):
         import update
         from update import updatecommandline
+
+        self.update_manifest(logger, **kwargs)
 
         if kwargs["config"] is None:
             kwargs["config"] = os.path.join(self.topobjdir, '_tests', 'web-platform', 'wptrunner.local.ini')
@@ -339,6 +353,7 @@ class MachCommands(MachCommandBase):
     @Command("web-platform-tests",
              category="testing",
              conditions=[conditions.is_firefox_or_android],
+             description="Run web-platform-tests.",
              parser=create_parser_wpt)
     def run_web_platform_tests(self, **params):
         self.setup()
@@ -355,6 +370,9 @@ class MachCommands(MachCommandBase):
         wpt_setup = self._spawn(WebPlatformTestsRunnerSetup)
         wpt_runner = WebPlatformTestsRunner(wpt_setup)
 
+        if params["log_mach_screenshot"] is None:
+            params["log_mach_screenshot"] = True
+
         logger = wpt_runner.setup_logging(**params)
 
         return wpt_runner.run(logger, **params)
@@ -362,12 +380,14 @@ class MachCommands(MachCommandBase):
     @Command("wpt",
              category="testing",
              conditions=[conditions.is_firefox_or_android],
+             description="Run web-platform-tests.",
              parser=create_parser_wpt)
     def run_wpt(self, **params):
         return self.run_web_platform_tests(**params)
 
     @Command("web-platform-tests-update",
              category="testing",
+             description="Update web-platform-test metadata.",
              parser=create_parser_update)
     def update_web_platform_tests(self, **params):
         self.setup()
@@ -381,12 +401,14 @@ class MachCommands(MachCommandBase):
 
     @Command("wpt-update",
              category="testing",
+             description="Update web-platform-test metadata.",
              parser=create_parser_update)
     def update_wpt(self, **params):
         return self.update_web_platform_tests(**params)
 
     @Command("web-platform-tests-create",
              category="testing",
+             description="Create a new web-platform test.",
              parser=create_parser_create)
     def create_web_platform_test(self, **params):
         self.setup()
@@ -395,12 +417,14 @@ class MachCommands(MachCommandBase):
 
     @Command("wpt-create",
              category="testing",
+             description="Create a new web-platform test.",
              parser=create_parser_create)
     def create_wpt(self, **params):
         return self.create_web_platform_test(**params)
 
     @Command("wpt-manifest-update",
              category="testing",
+             description="Update web-platform-test manifests.",
              parser=create_parser_manifest_update)
     def wpt_manifest_update(self, **params):
         self.setup()

@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 <%namespace name="helpers" file="/helpers.mako.rs" />
 
@@ -88,7 +88,7 @@ ${helpers.predefined_type(
     "generics::basic_shape::ShapeSource::None",
     products="gecko",
     boxed=True,
-    animation_value_type="ComputedValue",
+    animation_value_type="basic_shape::ClippingShape",
     flags="CREATES_STACKING_CONTEXT",
     spec="https://drafts.fxtf.org/css-masking/#propdef-clip-path",
 )}
@@ -118,7 +118,7 @@ ${helpers.predefined_type(
     ${helpers.predefined_type(
         "mask-position-" + axis,
         "position::" + direction + "Position",
-        "computed::LengthOrPercentage::zero()",
+        "computed::LengthPercentage::zero()",
         products="gecko",
         extra_prefixes="webkit",
         initial_specified_value="specified::PositionComponent::Center",
@@ -183,6 +183,7 @@ ${helpers.predefined_type(
     "ImageLayer",
     "Either::First(None_)",
     initial_specified_value="Either::First(None_)",
+    parse_method="parse_with_cors_anonymous",
     spec="https://drafts.fxtf.org/css-masking/#propdef-mask-image",
     vector=True,
     products="gecko",

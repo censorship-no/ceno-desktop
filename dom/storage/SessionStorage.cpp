@@ -12,10 +12,11 @@
 #include "mozilla/Preferences.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
+#include "nsIWebProgressListener.h"
 #include "nsPIDOMWindow.h"
 
-#define DATASET IsSessionOnly()                          \
-                  ? SessionStorageCache::eSessionSetType \
+#define DATASET                                          \
+  IsSessionOnly() ? SessionStorageCache::eSessionSetType \
                   : SessionStorageCache::eDefaultSetType
 
 namespace mozilla {
@@ -33,40 +34,30 @@ SessionStorage::SessionStorage(nsPIDOMWindowInner* aWindow,
                                nsIPrincipal* aPrincipal,
                                SessionStorageCache* aCache,
                                SessionStorageManager* aManager,
-                               const nsAString& aDocumentURI,
-                               bool aIsPrivate)
-  : Storage(aWindow, aPrincipal)
-  , mCache(aCache)
-  , mManager(aManager)
-  , mDocumentURI(aDocumentURI)
-  , mIsPrivate(aIsPrivate)
-{
+                               const nsAString& aDocumentURI, bool aIsPrivate)
+    : Storage(aWindow, aPrincipal),
+      mCache(aCache),
+      mManager(aManager),
+      mDocumentURI(aDocumentURI),
+      mIsPrivate(aIsPrivate) {
   MOZ_ASSERT(aCache);
 }
 
-SessionStorage::~SessionStorage()
-{
-}
+SessionStorage::~SessionStorage() {}
 
-already_AddRefed<SessionStorage>
-SessionStorage::Clone() const
-{
+already_AddRefed<SessionStorage> SessionStorage::Clone() const {
   RefPtr<SessionStorage> storage =
-    new SessionStorage(GetParentObject(), Principal(), mCache, mManager,
-                       mDocumentURI, mIsPrivate);
+      new SessionStorage(GetParentObject(), Principal(), mCache, mManager,
+                         mDocumentURI, mIsPrivate);
   return storage.forget();
 }
 
-int64_t
-SessionStorage::GetOriginQuotaUsage() const
-{
+int64_t SessionStorage::GetOriginQuotaUsage() const {
   return mCache->GetOriginQuotaUsage(DATASET);
 }
 
-uint32_t
-SessionStorage::GetLength(nsIPrincipal& aSubjectPrincipal,
-                          ErrorResult& aRv)
-{
+uint32_t SessionStorage::GetLength(nsIPrincipal& aSubjectPrincipal,
+                                   ErrorResult& aRv) {
   if (!CanUseStorage(aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return 0;
@@ -75,11 +66,8 @@ SessionStorage::GetLength(nsIPrincipal& aSubjectPrincipal,
   return mCache->Length(DATASET);
 }
 
-void
-SessionStorage::Key(uint32_t aIndex, nsAString& aResult,
-                    nsIPrincipal& aSubjectPrincipal,
-                    ErrorResult& aRv)
-{
+void SessionStorage::Key(uint32_t aIndex, nsAString& aResult,
+                         nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
   if (!CanUseStorage(aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
@@ -88,11 +76,9 @@ SessionStorage::Key(uint32_t aIndex, nsAString& aResult,
   mCache->Key(DATASET, aIndex, aResult);
 }
 
-void
-SessionStorage::GetItem(const nsAString& aKey, nsAString& aResult,
-                        nsIPrincipal& aSubjectPrincipal,
-                        ErrorResult& aRv)
-{
+void SessionStorage::GetItem(const nsAString& aKey, nsAString& aResult,
+                             nsIPrincipal& aSubjectPrincipal,
+                             ErrorResult& aRv) {
   if (!CanUseStorage(aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
@@ -101,9 +87,7 @@ SessionStorage::GetItem(const nsAString& aKey, nsAString& aResult,
   mCache->GetItem(DATASET, aKey, aResult);
 }
 
-void
-SessionStorage::GetSupportedNames(nsTArray<nsString>& aKeys)
-{
+void SessionStorage::GetSupportedNames(nsTArray<nsString>& aKeys) {
   if (!CanUseStorage(*nsContentUtils::SubjectPrincipal())) {
     // return just an empty array
     aKeys.Clear();
@@ -113,11 +97,9 @@ SessionStorage::GetSupportedNames(nsTArray<nsString>& aKeys)
   mCache->GetKeys(DATASET, aKeys);
 }
 
-void
-SessionStorage::SetItem(const nsAString& aKey, const nsAString& aValue,
-                        nsIPrincipal& aSubjectPrincipal,
-                        ErrorResult& aRv)
-{
+void SessionStorage::SetItem(const nsAString& aKey, const nsAString& aValue,
+                             nsIPrincipal& aSubjectPrincipal,
+                             ErrorResult& aRv) {
   if (!CanUseStorage(aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
@@ -137,11 +119,9 @@ SessionStorage::SetItem(const nsAString& aKey, const nsAString& aValue,
   BroadcastChangeNotification(aKey, oldValue, aValue);
 }
 
-void
-SessionStorage::RemoveItem(const nsAString& aKey,
-                           nsIPrincipal& aSubjectPrincipal,
-                           ErrorResult& aRv)
-{
+void SessionStorage::RemoveItem(const nsAString& aKey,
+                                nsIPrincipal& aSubjectPrincipal,
+                                ErrorResult& aRv) {
   if (!CanUseStorage(aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
@@ -158,10 +138,7 @@ SessionStorage::RemoveItem(const nsAString& aKey,
   BroadcastChangeNotification(aKey, oldValue, VoidString());
 }
 
-void
-SessionStorage::Clear(nsIPrincipal& aSubjectPrincipal,
-                      ErrorResult& aRv)
-{
+void SessionStorage::Clear(nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
   uint32_t length = GetLength(aSubjectPrincipal, aRv);
   if (!length) {
     return;
@@ -171,18 +148,14 @@ SessionStorage::Clear(nsIPrincipal& aSubjectPrincipal,
   BroadcastChangeNotification(VoidString(), VoidString(), VoidString());
 }
 
-void
-SessionStorage::BroadcastChangeNotification(const nsAString& aKey,
-                                            const nsAString& aOldValue,
-                                            const nsAString& aNewValue)
-{
+void SessionStorage::BroadcastChangeNotification(const nsAString& aKey,
+                                                 const nsAString& aOldValue,
+                                                 const nsAString& aNewValue) {
   NotifyChange(this, Principal(), aKey, aOldValue, aNewValue, u"sessionStorage",
                mDocumentURI, mIsPrivate, false);
 }
 
-bool
-SessionStorage::IsForkOf(const Storage* aOther) const
-{
+bool SessionStorage::IsForkOf(const Storage* aOther) const {
   MOZ_ASSERT(aOther);
   if (aOther->Type() != eSessionStorage) {
     return false;
@@ -191,5 +164,11 @@ SessionStorage::IsForkOf(const Storage* aOther) const
   return mCache == static_cast<const SessionStorage*>(aOther)->mCache;
 }
 
-} // dom namespace
-} // mozilla namespace
+bool SessionStorage::ShouldThrowWhenStorageAccessDenied(
+    uint32_t aRejectedReason) {
+  return aRejectedReason !=
+         nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN;
+}
+
+}  // namespace dom
+}  // namespace mozilla

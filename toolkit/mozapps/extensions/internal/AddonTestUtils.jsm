@@ -11,7 +11,7 @@ var EXPORTED_SYMBOLS = ["AddonTestUtils", "MockAsyncShutdown"];
 
 const CERTDB_CONTRACTID = "@mozilla.org/security/x509certdb;1";
 
-Cu.importGlobalProperties(["fetch", "TextEncoder"]);
+Cu.importGlobalProperties(["fetch"]);
 
 ChromeUtils.import("resource://gre/modules/AsyncShutdown.jsm");
 ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
@@ -23,11 +23,10 @@ ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 const {EventEmitter} = ChromeUtils.import("resource://gre/modules/EventEmitter.jsm", {});
 const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm", {});
 
-
 ChromeUtils.defineModuleGetter(this, "AMTelemetry",
                                "resource://gre/modules/AddonManager.jsm");
-ChromeUtils.defineModuleGetter(this, "Extension",
-                               "resource://gre/modules/Extension.jsm");
+ChromeUtils.defineModuleGetter(this, "ExtensionTestCommon",
+                               "resource://testing-common/ExtensionTestCommon.jsm");
 XPCOMUtils.defineLazyGetter(this, "Management", () => {
   let {Management} = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
   return Management;
@@ -547,6 +546,13 @@ var AddonTestUtils = {
     return server;
   },
 
+  registerJSON(server, path, obj) {
+    server.registerPathHandler(path, (request, response) => {
+      response.setHeader("content-type", "application/json", true);
+      response.write(JSON.stringify(obj));
+    });
+  },
+
   info(msg) {
     // info() for mochitests, do_print for xpcshell.
     let print = this.testScope.info || this.testScope.do_print;
@@ -665,15 +671,23 @@ var AddonTestUtils = {
         callback = callback.wrappedJSObject;
 
         try {
-          let manifestURI = this.getManifestURI(file);
-
-          let id = await this.getIDFromManifest(manifestURI);
+          let id;
+          try {
+            let manifestURI = this.getManifestURI(file);
+            id = await this.getIDFromManifest(manifestURI);
+          } catch (err) {
+            if (file.leafName.endsWith(".xpi")) {
+              id = file.leafName.slice(0, -4);
+            }
+          }
 
           let fakeCert = {commonName: id};
           if (this.usePrivilegedSignatures) {
             let privileged = typeof this.usePrivilegedSignatures == "function" ?
                              this.usePrivilegedSignatures(id) : this.usePrivilegedSignatures;
-            if (privileged) {
+            if (privileged === "system") {
+              fakeCert.organizationalUnit = "Mozilla Components";
+            } else if (privileged) {
               fakeCert.organizationalUnit = "Mozilla Extensions";
             }
           }
@@ -788,16 +802,17 @@ var AddonTestUtils = {
 
     // Wait for all add-ons to finish starting up before resolving.
     const {XPIProvider} = ChromeUtils.import("resource://gre/modules/addons/XPIProvider.jsm", null);
-    await Promise.all(Array.from(XPIProvider.activeAddons,
+    await Promise.all(Array.from(XPIProvider.activeAddons.values(),
                                  addon => addon.startupPromise));
   },
 
-  async promiseShutdownManager() {
+  async promiseShutdownManager(clearOverrides = true) {
     if (!this.addonIntegrationService)
       return false;
 
-    if (this.overrideEntry) {
+    if (this.overrideEntry && clearOverrides) {
       this.overrideEntry.destruct();
+      this.overrideEntry = null;
     }
 
     Services.obs.notifyObservers(null, "quit-application-granted");
@@ -853,7 +868,7 @@ var AddonTestUtils = {
    *        after the AddonManager is shut down, before it is re-started.
    */
   async promiseRestartManager(newVersion) {
-    await this.promiseShutdownManager();
+    await this.promiseShutdownManager(false);
     await this.promiseStartupManager(newVersion);
   },
 
@@ -955,9 +970,8 @@ var AddonTestUtils = {
     data = Object.assign({}, defaults, data);
 
     let props = ["id", "version", "type", "internalName", "updateURL",
-                 "optionsURL", "optionsType", "aboutURL", "iconURL", "icon64URL",
-                 "skinnable", "bootstrap", "strictCompatibility",
-                 "hasEmbeddedWebExtension"];
+                 "optionsURL", "optionsType", "aboutURL", "iconURL",
+                 "skinnable", "bootstrap", "strictCompatibility"];
     rdf += this._writeProps(data, props);
 
     rdf += this._writeLocaleStrings(data);
@@ -1083,6 +1097,17 @@ var AddonTestUtils = {
   },
 
   tempXPIs: [],
+
+  allocTempXPIFile() {
+    let file = this.tempDir.clone();
+    let uuid = uuidGen.generateUUID().number.slice(1, -1);
+    file.append(`${uuid}.xpi`);
+
+    this.tempXPIs.push(file);
+
+    return file;
+  },
+
   /**
    * Creates an XPI file for some manifest data in the temporary directory and
    * returns the nsIFile for it. The file will be deleted when the test completes.
@@ -1092,12 +1117,7 @@ var AddonTestUtils = {
    * @return {nsIFile} A file pointing to the created XPI file
    */
   createTempXPIFile(files) {
-    var file = this.tempDir.clone();
-    let uuid = uuidGen.generateUUID().number.slice(1, -1);
-    file.append(`${uuid}.xpi`);
-
-    this.tempXPIs.push(file);
-
+    let file = this.allocTempXPIFile();
     if (typeof files["install.rdf"] === "object")
       files["install.rdf"] = this.createInstallRDF(files["install.rdf"]);
 
@@ -1111,11 +1131,11 @@ var AddonTestUtils = {
    *
    * @param {Object} data
    *        The object holding data about the add-on, as expected by
-   *        |Extension.generateXPI|.
+   *        |ExtensionTestCommon.generateXPI|.
    * @return {nsIFile} A file pointing to the created XPI file
    */
   createTempWebExtensionFile(data) {
-    let file = Extension.generateXPI(data);
+    let file = ExtensionTestCommon.generateXPI(data);
     this.tempXPIs.push(file);
     return file;
   },
@@ -1338,6 +1358,19 @@ var AddonTestUtils = {
     });
   },
 
+  promiseInstallEvent(event) {
+    return new Promise(resolve => {
+      let listener = {
+        [event](...args) {
+          AddonManager.removeInstallListener(listener);
+          resolve(args);
+        },
+      };
+
+      AddonManager.addInstallListener(listener);
+    });
+  },
+
   /**
    * A helper method to install AddonInstall and wait for completion.
    *
@@ -1493,8 +1526,7 @@ var AddonTestUtils = {
    *
    * @param {function} task
    *        The task to run while monitoring console output. May be
-   *        either a generator function, per Task.jsm, or an ordinary
-   *        function which returns promose.
+   *        an async function, or an ordinary function which returns a promose.
    * @return {Promise<[Array<nsIConsoleMessage>, *]>}
    *        Resolves to an object containing a `messages` property, with
    *        the array of console messages emitted during the execution

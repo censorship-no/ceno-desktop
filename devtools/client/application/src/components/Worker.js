@@ -33,9 +33,9 @@ class Worker extends Component {
         active: PropTypes.bool,
         name: PropTypes.string.isRequired,
         scope: PropTypes.string.isRequired,
-        // registrationActor can be missing in e10s.
-        registrationActor: PropTypes.string,
-        workerTargetActor: PropTypes.string,
+        // registrationFront can be missing in e10s.
+        registrationFront: PropTypes.object,
+        workerTargetFront: PropTypes.object,
       }).isRequired,
     };
   }
@@ -54,8 +54,8 @@ class Worker extends Component {
       return;
     }
 
-    const { client, worker } = this.props;
-    gDevToolsBrowser.openWorkerToolbox(client, worker.workerTargetActor);
+    const { workerTargetFront } = this.props.worker;
+    gDevToolsBrowser.openWorkerToolbox(workerTargetFront);
   }
 
   start() {
@@ -64,24 +64,18 @@ class Worker extends Component {
       return;
     }
 
-    const { client, worker } = this.props;
-    client.request({
-      to: worker.registrationActor,
-      type: "start",
-    });
+    const { registrationFront } = this.props.worker;
+    registrationFront.start();
   }
 
   unregister() {
-    const { client, worker } = this.props;
-    client.request({
-      to: worker.registrationActor,
-      type: "unregister",
-    });
+    const { registrationFront } = this.props.worker;
+    registrationFront.unregister();
   }
 
   isRunning() {
     // We know the worker is running if it has a worker actor.
-    return !!this.props.worker.workerTargetActor;
+    return !!this.props.worker.workerTargetFront;
   }
 
   isActive() {

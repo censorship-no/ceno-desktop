@@ -4,7 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-
 #ifndef mozilla_dom_VisualViewport_h
 #define mozilla_dom_VisualViewport_h
 
@@ -16,11 +15,10 @@
 namespace mozilla {
 namespace dom {
 
-/* Visual Viewport API spec:  https://wicg.github.io/visual-viewport/#the-visualviewport-interface */
-class VisualViewport final: public mozilla::DOMEventTargetHelper
-{
-
-public:
+/* Visual Viewport API spec:
+ * https://wicg.github.io/visual-viewport/#the-visualviewport-interface */
+class VisualViewport final : public mozilla::DOMEventTargetHelper {
+ public:
   explicit VisualViewport(nsPIDOMWindowInner* aWindow);
 
   double OffsetLeft() const;
@@ -30,19 +28,73 @@ public:
   double Width() const;
   double Height() const;
   double Scale() const;
+  IMPL_EVENT_HANDLER(resize)
+  IMPL_EVENT_HANDLER(scroll)
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
+  void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 
-private:
+  void PostResizeEvent();
+  void PostScrollEvent(const nsPoint& aPrevVisualOffset,
+                       const nsPoint& aPrevLayoutOffset);
+
+  // These two events are modelled after the ScrollEvent class in
+  // nsGfxScrollFrame.h.
+  class VisualViewportResizeEvent : public Runnable {
+   public:
+    NS_DECL_NSIRUNNABLE
+    VisualViewportResizeEvent(VisualViewport* aViewport,
+                              nsPresContext* aPresContext);
+    void Revoke() { mViewport = nullptr; }
+
+   private:
+    VisualViewport* mViewport;
+  };
+
+  class VisualViewportScrollEvent : public Runnable {
+   public:
+    NS_DECL_NSIRUNNABLE
+    VisualViewportScrollEvent(VisualViewport* aViewport,
+                              nsPresContext* aPresContext,
+                              const nsPoint& aPrevVisualOffset,
+                              const nsPoint& aPrevLayoutOffset);
+    void Revoke() { mViewport = nullptr; }
+    nsPoint PrevVisualOffset() const { return mPrevVisualOffset; }
+    nsPoint PrevLayoutOffset() const { return mPrevLayoutOffset; }
+
+   private:
+    VisualViewport* mViewport;
+    // The VisualViewport "scroll" event is supposed to be fired only when the
+    // *relative* offset between visual and layout viewport changes. The two
+    // viewports are updated independently from each other, though, so the only
+    // thing we can do is note the fact that one of the inputs into the relative
+    // visual viewport offset changed and then check the offset again at the
+    // next refresh driver tick, just before the event is going to fire.
+    // Hopefully, at this point both visual and layout viewport positions have
+    // been updated, so that we're able to tell whether the relative offset did
+    // in fact change or not.
+    const nsPoint mPrevVisualOffset;
+    const nsPoint mPrevLayoutOffset;
+  };
+
+ private:
   virtual ~VisualViewport();
 
   CSSSize VisualViewportSize() const;
   CSSPoint VisualViewportOffset() const;
   CSSPoint LayoutViewportOffset() const;
   nsIPresShell* GetPresShell() const;
+  nsPresContext* GetPresContext() const;
+
+  void FireResizeEvent();
+  void FireScrollEvent();
+
+  RefPtr<VisualViewportResizeEvent> mResizeEvent;
+  RefPtr<VisualViewportScrollEvent> mScrollEvent;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_VisualViewport_h
+#endif  // mozilla_dom_VisualViewport_h

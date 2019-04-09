@@ -15,82 +15,118 @@ const {
   SERVICE_WORKER_FETCH_STATES,
 } = require("../../constants");
 
+const FieldPair = createFactory(require("./FieldPair"));
+
+const Types = require("../../types/index");
+
 /**
  * This component displays detail information for worker.
  */
 class WorkerDetail extends PureComponent {
   static get propTypes() {
     return {
-      target: PropTypes.object.isRequired,
       // Provided by wrapping the component with FluentReact.withLocalization.
       getString: PropTypes.func.isRequired,
+      target: Types.debugTarget.isRequired,
     };
-  }
-
-  getStatusFtlId(status) {
-    switch (status) {
-      case "running":
-        return "about-debugging-worker-status-running";
-      case "stopped":
-        return "about-debugging-worker-status-stopped";
-      case "registering":
-        return "about-debugging-worker-status-registering";
-      default:
-        // Provided with a null id, Localized will simply use the fallback value defined
-        // in the component.
-        return null;
-    }
   }
 
   renderFetch() {
     const { fetch } = this.props.target.details;
-    const name = this.props.getString("about-debugging-worker-fetch");
-    const label = fetch === SERVICE_WORKER_FETCH_STATES.LISTENING
-                    ? this.props.getString("about-debugging-worker-fetch-listening")
-                    : this.props.getString("about-debugging-worker-fetch-not-listening");
-    return this.renderField("fetch", name, label);
-  }
-
-  renderField(key, name, value) {
-    return [
-      dom.dt({ key: `${ key }-dt` }, name),
-      dom.dd(
-        {
-          className: "ellipsis-text",
-          key: `${ key }-dd`,
-          title: value,
-        },
-        value,
-      ),
-    ];
-  }
-
-  renderStatus() {
-    const status = this.props.target.details.status.toLowerCase();
-    const ftlId = this.getStatusFtlId(status);
+    const status = fetch === SERVICE_WORKER_FETCH_STATES.LISTENING
+                    ? "listening"
+                    : "not-listening";
 
     return Localized(
       {
-        id: ftlId,
+        id: "about-debugging-worker-fetch",
+        attrs: { label: true, value: true },
+        $status: status,
       },
-      dom.div(
+      FieldPair(
         {
-          className: `worker-detail__status worker-detail__status--${ status }`,
-        },
-        status
+          slug: "fetch",
+          label: "Fetch",
+          value: status,
+        }
       )
     );
   }
 
+  renderPushService() {
+    const { pushServiceEndpoint } = this.props.target.details;
+
+    return Localized(
+      {
+        id: "about-debugging-worker-push-service",
+        attrs: { label: true },
+      },
+      FieldPair(
+        {
+          slug: "push-service",
+          label: "Push Service",
+          value: dom.span(
+            {
+              className: "js-worker-push-service-value",
+            },
+            pushServiceEndpoint,
+          ),
+        }
+      ),
+    );
+  }
+
+  renderScope() {
+    const { scope } = this.props.target.details;
+
+    return Localized(
+      {
+        id: "about-debugging-worker-scope",
+        attrs: { label: true },
+      },
+      FieldPair(
+        {
+          slug: "scope",
+          label: "Scope",
+          value: scope,
+        }
+      ),
+    );
+  }
+
+  renderStatus() {
+    const status = this.props.target.details.status.toLowerCase();
+
+    return FieldPair(
+      {
+        slug: "status",
+        label: Localized(
+          {
+            id: "about-debugging-worker-status",
+            $status: status,
+          },
+          dom.span(
+            {
+              className: `badge js-worker-status ` +
+                `${status === "running" ? "badge--success" : ""}`,
+            },
+            status
+          )
+        ),
+      }
+    );
+  }
+
   render() {
-    const { fetch, scope, status } = this.props.target.details;
+    const { fetch, pushServiceEndpoint, scope, status } = this.props.target.details;
 
     return dom.dl(
       {
         className: "worker-detail",
       },
+      pushServiceEndpoint ? this.renderPushService() : null,
       fetch ? this.renderFetch() : null,
-      scope ? this.renderField("scope", "Scope", scope) : null,
+      scope ? this.renderScope() : null,
       status ? this.renderStatus() : null,
     );
   }

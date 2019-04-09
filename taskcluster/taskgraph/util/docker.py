@@ -103,8 +103,18 @@ def post_to_docker(tar, api_path, **kwargs):
                 sys.stderr.write('{}\n'.format(data['status']))
         elif 'stream' in data:
             sys.stderr.write(data['stream'])
+        elif 'aux' in data:
+            sys.stderr.write(repr(data['aux']))
         elif 'error' in data:
-            raise Exception(data['error'])
+            sys.stderr.write('{}\n'.format(data['error']))
+            # Sadly, docker doesn't give more than a plain string for errors,
+            # so the best we can do to propagate the error code from the command
+            # that failed is to parse the error message...
+            errcode = 1
+            m = re.search(r'returned a non-zero code: (\d+)', data['error'])
+            if m:
+                errcode = int(m.group(1))
+            sys.exit(errcode)
         else:
             raise NotImplementedError(repr(data))
         sys.stderr.flush()
@@ -198,6 +208,9 @@ def stream_context_tar(topsrcdir, context_dir, out_file, prefix, args=None):
     object."""
     archive_files = {}
     replace = []
+    content = []
+
+    context_dir = os.path.join(topsrcdir, context_dir)
 
     for root, dirs, files in os.walk(context_dir):
         for f in files:
@@ -207,7 +220,6 @@ def stream_context_tar(topsrcdir, context_dir, out_file, prefix, args=None):
             archive_files[archive_path] = source_path
 
     # Parse Dockerfile for special syntax of extra files to include.
-    content = []
     with open(os.path.join(context_dir, 'Dockerfile'), 'rb') as fh:
         for line in fh:
             if line.startswith('# %ARG'):

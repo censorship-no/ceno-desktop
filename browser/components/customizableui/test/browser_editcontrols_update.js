@@ -59,6 +59,7 @@ add_task(async function test_init() {
 // Test updating when the panel is open with the edit-controls on the panel.
 // Updates should occur.
 add_task(async function test_panelui_opened() {
+  document.commandDispatcher.unlock();
   gURLBar.focus();
   gURLBar.value = "test";
 
@@ -91,7 +92,7 @@ add_task(async function test_panelui_opened() {
 add_task(async function test_panelui_customize_to_toolbar() {
   await startCustomizing();
   let navbar = document.getElementById("nav-bar");
-  simulateItemDrag(document.getElementById("edit-controls"), navbar.customizationTarget, "end");
+  simulateItemDrag(document.getElementById("edit-controls"), CustomizableUI.getCustomizationTarget(navbar), "end");
   await endCustomizing();
 
   // updateEditUIVisibility should be called when customization ends but isn't. See bug 1359790.

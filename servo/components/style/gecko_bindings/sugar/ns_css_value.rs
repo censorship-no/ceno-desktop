@@ -1,19 +1,19 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Little helpers for `nsCSSValue`.
 
-use gecko_bindings::bindings;
-use gecko_bindings::structs;
-use gecko_bindings::structs::{nsCSSUnit, nsCSSValue};
-use gecko_bindings::structs::{nsCSSValueList, nsCSSValue_Array};
-use gecko_string_cache::Atom;
+use crate::gecko_bindings::bindings;
+use crate::gecko_bindings::structs;
+use crate::gecko_bindings::structs::{nsCSSUnit, nsCSSValue};
+use crate::gecko_bindings::structs::{nsCSSValueList, nsCSSValue_Array};
+use crate::gecko_string_cache::Atom;
+use crate::values::computed::{Angle, Length, LengthPercentage, Percentage};
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Index, IndexMut};
 use std::slice;
-use values::computed::{Angle, Length, LengthOrPercentage, Percentage};
 
 impl nsCSSValue {
     /// Create a CSSValue with null unit, useful to be used as a return value.
@@ -67,13 +67,16 @@ impl nsCSSValue {
         &*array
     }
 
-    /// Sets LengthOrPercentage value to this nsCSSValue.
-    pub unsafe fn set_lop(&mut self, lop: LengthOrPercentage) {
-        match lop {
-            LengthOrPercentage::Length(px) => self.set_px(px.px()),
-            LengthOrPercentage::Percentage(pc) => self.set_percentage(pc.0),
-            LengthOrPercentage::Calc(calc) => bindings::Gecko_CSSValue_SetCalc(self, calc.into()),
+    /// Sets LengthPercentage value to this nsCSSValue.
+    pub unsafe fn set_length_percentage(&mut self, lp: LengthPercentage) {
+        if lp.was_calc {
+            return bindings::Gecko_CSSValue_SetCalc(self, lp.into());
         }
+        debug_assert!(!lp.has_percentage || lp.unclamped_length() == Length::zero());
+        if lp.has_percentage {
+            return self.set_percentage(lp.percentage());
+        }
+        self.set_px(lp.unclamped_length().px());
     }
 
     /// Sets a px value to this nsCSSValue.
@@ -86,18 +89,16 @@ impl nsCSSValue {
         bindings::Gecko_CSSValue_SetPercentage(self, unit_value)
     }
 
-    /// Returns LengthOrPercentage value.
-    pub unsafe fn get_lop(&self) -> LengthOrPercentage {
+    /// Returns LengthPercentage value.
+    pub unsafe fn get_length_percentage(&self) -> LengthPercentage {
         match self.mUnit {
             nsCSSUnit::eCSSUnit_Pixel => {
-                LengthOrPercentage::Length(Length::new(bindings::Gecko_CSSValue_GetNumber(self)))
+                LengthPercentage::new(Length::new(bindings::Gecko_CSSValue_GetNumber(self)), None)
             },
-            nsCSSUnit::eCSSUnit_Percent => LengthOrPercentage::Percentage(Percentage(
+            nsCSSUnit::eCSSUnit_Percent => LengthPercentage::new_percent(Percentage(
                 bindings::Gecko_CSSValue_GetPercentage(self),
             )),
-            nsCSSUnit::eCSSUnit_Calc => {
-                LengthOrPercentage::Calc(bindings::Gecko_CSSValue_GetCalc(self).into())
-            },
+            nsCSSUnit::eCSSUnit_Calc => bindings::Gecko_CSSValue_GetCalc(self).into(),
             _ => panic!("Unexpected unit"),
         }
     }
@@ -234,9 +235,13 @@ impl nsCSSValue {
         }
         debug_assert_eq!(self.mUnit, nsCSSUnit::eCSSUnit_List);
         let list: &mut structs::nsCSSValueList = &mut unsafe {
-            self.mValue.mList.as_ref() // &*nsCSSValueList_heap
-                .as_mut().expect("List pointer should be non-null")
-        }._base;
+            self.mValue
+                .mList
+                .as_ref() // &*nsCSSValueList_heap
+                .as_mut()
+                .expect("List pointer should be non-null")
+        }
+        ._base;
         for (item, new_value) in list.into_iter().zip(values) {
             *item = new_value;
         }
@@ -255,9 +260,13 @@ impl nsCSSValue {
         }
         debug_assert_eq!(self.mUnit, nsCSSUnit::eCSSUnit_PairList);
         let mut item_ptr = &mut unsafe {
-            self.mValue.mPairList.as_ref() // &*nsCSSValuePairList_heap
-                .as_mut().expect("List pointer should be non-null")
-        }._base as *mut structs::nsCSSValuePairList;
+            self.mValue
+                .mPairList
+                .as_ref() // &*nsCSSValuePairList_heap
+                .as_mut()
+                .expect("List pointer should be non-null")
+        }
+        ._base as *mut structs::nsCSSValuePairList;
         while let Some(item) = unsafe { item_ptr.as_mut() } {
             let value = values.next().expect("Values shouldn't have been exhausted");
             item.mXValue = value.0;

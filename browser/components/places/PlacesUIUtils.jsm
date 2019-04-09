@@ -518,11 +518,9 @@ var PlacesUIUtils = {
    *
    * @param aNode
    *        a node, except the root node of a query.
-   * @param aView
-   *        The view originating the request.
    * @return true if the aNode represents a removable entry, false otherwise.
    */
-  canUserRemove(aNode, aView) {
+  canUserRemove(aNode) {
     let parentNode = aNode.parent;
     if (!parentNode) {
       // canUserRemove doesn't accept root nodes.
@@ -544,21 +542,13 @@ var PlacesUIUtils = {
       }
     }
 
-    // If it's not a bookmark, we can remove it unless it's a child of a
-    // livemark.
-    if (aNode.itemId == -1) {
-      // Rather than executing a db query, checking the existence of the feedURI
-      // annotation, detect livemark children by the fact that they are the only
-      // direct non-bookmark children of bookmark folders.
-      return !PlacesUtils.nodeIsFolder(parentNode);
+    // If it's not a bookmark, or it's child of a query, we can remove it.
+    if (aNode.itemId == -1 || PlacesUtils.nodeIsQuery(parentNode)) {
+      return true;
     }
 
-    // Generally it's always possible to remove children of a query.
-    if (PlacesUtils.nodeIsQuery(parentNode))
-      return true;
-
     // Otherwise it has to be a child of an editable folder.
-    return !this.isFolderReadOnly(parentNode, aView);
+    return !this.isFolderReadOnly(parentNode);
   },
 
   /**
@@ -576,25 +566,15 @@ var PlacesUIUtils = {
    *
    * @param placesNode
    *        any folder result node.
-   * @param view
-   *        The view originating the request.
    * @throws if placesNode is not a folder result node or views is invalid.
-   * @note livemark "folders" are considered read-only (but see bug 1072833).
    * @return true if placesNode is a read-only folder, false otherwise.
    */
-  isFolderReadOnly(placesNode, view) {
+  isFolderReadOnly(placesNode) {
     if (typeof placesNode != "object" || !PlacesUtils.nodeIsFolder(placesNode)) {
       throw new Error("invalid value for placesNode");
     }
-    if (!view || typeof view != "object") {
-      throw new Error("invalid value for aView");
-    }
-    let itemId = PlacesUtils.getConcreteItemId(placesNode);
-    if (itemId == PlacesUtils.placesRootId ||
-        view.controller.hasCachedLivemarkInfo(placesNode))
-      return true;
 
-    return false;
+    return PlacesUtils.getConcreteItemId(placesNode) == PlacesUtils.placesRootId;
   },
 
   /** aItemsToOpen needs to be an array of objects of the form:
@@ -646,45 +626,36 @@ var PlacesUIUtils = {
     });
   },
 
-  openLiveMarkNodesInTabs:
-  function PUIU_openLiveMarkNodesInTabs(aNode, aEvent, aView) {
-    let window = aView.ownerWindow;
-
-    PlacesUtils.livemarks.getLivemark({id: aNode.itemId})
-      .then(aLivemark => {
-        let urlsToOpen = [];
-
-        let nodes = aLivemark.getNodesForContainer(aNode);
-        for (let node of nodes) {
-          urlsToOpen.push({uri: node.uri, isBookmark: false});
-        }
-
-        if (OpenInTabsUtils.confirmOpenInTabs(urlsToOpen.length, window)) {
-          this._openTabset(urlsToOpen, aEvent, window);
-        }
-      }, Cu.reportError);
-  },
-
-  openContainerNodeInTabs:
-  function PUIU_openContainerInTabs(aNode, aEvent, aView) {
-    let window = aView.ownerWindow;
-
-    let urlsToOpen = PlacesUtils.getURLsForContainerNode(aNode);
-    if (OpenInTabsUtils.confirmOpenInTabs(urlsToOpen.length, window)) {
-      this._openTabset(urlsToOpen, aEvent, window);
-    }
-  },
-
-  openURINodesInTabs: function PUIU_openURINodesInTabs(aNodes, aEvent, aView) {
-    let window = aView.ownerWindow;
-
+  /**
+   * Loads a selected node's or nodes' URLs in tabs,
+   * warning the user when lots of URLs are being opened
+   *
+   * @param {object|array} nodeOrNodes
+   *          Contains the node or nodes that we're opening in tabs
+   * @param {event} event
+   *          The DOM mouse/key event with modifier keys set that track the
+   *          user's preferred destination window or tab.
+   * @param {object} view
+   *          The current view that contains the node or nodes selected for
+   *          opening
+   */
+  openMultipleLinksInTabs(nodeOrNodes, event, view) {
+    let window = view.ownerWindow;
     let urlsToOpen = [];
-    for (var i = 0; i < aNodes.length; i++) {
-      // Skip over separators and folders.
-      if (PlacesUtils.nodeIsURI(aNodes[i]))
-        urlsToOpen.push({uri: aNodes[i].uri, isBookmark: PlacesUtils.nodeIsBookmark(aNodes[i])});
+
+    if (PlacesUtils.nodeIsContainer(nodeOrNodes)) {
+      urlsToOpen = PlacesUtils.getURLsForContainerNode(nodeOrNodes);
+    } else {
+      for (var i = 0; i < nodeOrNodes.length; i++) {
+        // Skip over separators and folders.
+        if (PlacesUtils.nodeIsURI(nodeOrNodes[i])) {
+          urlsToOpen.push({uri: nodeOrNodes[i].uri, isBookmark: PlacesUtils.nodeIsBookmark(nodeOrNodes[i])});
+        }
+      }
     }
-    this._openTabset(urlsToOpen, aEvent, window);
+    if (OpenInTabsUtils.confirmOpenInTabs(urlsToOpen.length, window)) {
+      this._openTabset(urlsToOpen, event, window);
+    }
   },
 
   /**
@@ -708,16 +679,12 @@ var PlacesUIUtils = {
       if (where == "current" && !aNode.uri.startsWith("javascript:")) {
         where = "tab";
       }
-      if (where == "tab" && browserWindow.isTabEmpty(browserWindow.gBrowser.selectedTab)) {
+      if (where == "tab" && browserWindow.gBrowser.selectedTab.isEmpty) {
         where = "current";
       }
     }
 
     this._openNodeIn(aNode, where, window);
-    let view = this.getViewForNode(aEvent.target);
-    if (view && view.controller.hasCachedLivemarkInfo(aNode.parent)) {
-      Services.telemetry.scalarAdd("browser.feeds.livebookmark_item_opened", 1);
-    }
   },
 
   /**
@@ -970,8 +937,7 @@ var PlacesUIUtils = {
       return;
 
     let tree = event.target.parentNode;
-    let tbo = tree.treeBoxObject;
-    let cell = tbo.getCellAt(event.clientX, event.clientY);
+    let cell = tree.getCellAt(event.clientX, event.clientY);
     if (cell.row == -1 || cell.childElt == "twisty")
       return;
 
@@ -981,7 +947,7 @@ var PlacesUIUtils = {
     // before the tree item icon (that is, to the left or right of it in
     // LTR and RTL modes, respectively) from the click target area.
     let win = tree.ownerGlobal;
-    let rect = tbo.getCoordsForCellItem(cell.row, cell.col, "image");
+    let rect = tree.getCoordsForCellItem(cell.row, cell.col, "image");
     let isRTL = win.getComputedStyle(tree).direction == "rtl";
     let mouseInGutter = isRTL ? event.clientX > rect.x
                               : event.clientX < rect.x;
@@ -989,23 +955,23 @@ var PlacesUIUtils = {
     let metaKey = AppConstants.platform === "macosx" ? event.metaKey
                                                      : event.ctrlKey;
     let modifKey = metaKey || event.shiftKey;
-    let isContainer = tbo.view.isContainer(cell.row);
+    let isContainer = tree.view.isContainer(cell.row);
     let openInTabs = isContainer &&
                      (event.button == 1 || (event.button == 0 && modifKey)) &&
                      PlacesUtils.hasChildURIs(tree.view.nodeForTreeIndex(cell.row));
 
     if (event.button == 0 && isContainer && !openInTabs) {
-      tbo.view.toggleOpenState(cell.row);
+      tree.view.toggleOpenState(cell.row);
     } else if (!mouseInGutter && openInTabs &&
                event.originalTarget.localName == "treechildren") {
-      tbo.view.selection.select(cell.row);
-      this.openContainerNodeInTabs(tree.selectedNode, event, tree);
+      tree.view.selection.select(cell.row);
+      this.openMultipleLinksInTabs(tree.selectedNode, event, tree);
     } else if (!mouseInGutter && !isContainer &&
                event.originalTarget.localName == "treechildren") {
       // Clear all other selection since we're loading a link now. We must
       // do this *before* attempting to load the link since openURL uses
       // selection as an indication of which link to load.
-      tbo.view.selection.select(cell.row);
+      tree.view.selection.select(cell.row);
       this.openNodeWithEvent(tree.selectedNode, event);
     }
   },
@@ -1028,7 +994,7 @@ var PlacesUIUtils = {
       return;
 
     let tree = treechildren.parentNode;
-    let cell = tree.treeBoxObject.getCellAt(event.clientX, event.clientY);
+    let cell = tree.getCellAt(event.clientX, event.clientY);
 
     // cell.row is -1 when the mouse is hovering an empty area within the tree.
     // To avoid showing a URL from a previously hovered node for a currently

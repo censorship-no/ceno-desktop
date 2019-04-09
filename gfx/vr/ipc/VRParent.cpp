@@ -8,12 +8,14 @@
 #include "VRGPUParent.h"
 #include "VRManager.h"
 #include "gfxConfig.h"
+#include "nsDebugImpl.h"
 
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
 
 #if defined(XP_WIN)
-#include "mozilla/gfx/DeviceManagerDx.h"
+#  include "mozilla/gfx/DeviceManagerDx.h"
 #endif
 
 namespace mozilla {
@@ -21,15 +23,11 @@ namespace gfx {
 
 using mozilla::ipc::IPCResult;
 
-VRParent::VRParent()
- : mVRGPUParent(nullptr)
-{
-}
+VRParent::VRParent() : mVRGPUParent(nullptr) {}
 
-IPCResult
-VRParent::RecvNewGPUVRManager(Endpoint<PVRGPUParent>&& aEndpoint)
-{
-  RefPtr<VRGPUParent> vrGPUParent = VRGPUParent::CreateForGPU(std::move(aEndpoint));
+IPCResult VRParent::RecvNewGPUVRManager(Endpoint<PVRGPUParent>&& aEndpoint) {
+  RefPtr<VRGPUParent> vrGPUParent =
+      VRGPUParent::CreateForGPU(std::move(aEndpoint));
   if (!vrGPUParent) {
     return IPC_FAIL_NO_REASON(this);
   }
@@ -38,11 +36,9 @@ VRParent::RecvNewGPUVRManager(Endpoint<PVRGPUParent>&& aEndpoint)
   return IPC_OK();
 }
 
-IPCResult
-VRParent::RecvInit(nsTArray<GfxPrefSetting>&& prefs,
-                   nsTArray<GfxVarUpdate>&& vars,
-                   const DevicePrefs& devicePrefs)
-{
+IPCResult VRParent::RecvInit(nsTArray<GfxPrefSetting>&& prefs,
+                             nsTArray<GfxVarUpdate>&& vars,
+                             const DevicePrefs& devicePrefs) {
   const nsTArray<gfxPrefs::Pref*>& globalPrefs = gfxPrefs::all();
   for (auto& setting : prefs) {
     gfxPrefs::Pref* pref = globalPrefs[setting.index()];
@@ -54,7 +50,8 @@ VRParent::RecvInit(nsTArray<GfxPrefSetting>&& prefs,
 
   // Inherit device preferences.
   gfxConfig::Inherit(Feature::HW_COMPOSITING, devicePrefs.hwCompositing());
-  gfxConfig::Inherit(Feature::D3D11_COMPOSITING, devicePrefs.d3d11Compositing());
+  gfxConfig::Inherit(Feature::D3D11_COMPOSITING,
+                     devicePrefs.d3d11Compositing());
   gfxConfig::Inherit(Feature::OPENGL_COMPOSITING, devicePrefs.oglCompositing());
   gfxConfig::Inherit(Feature::ADVANCED_LAYERS, devicePrefs.advancedLayers());
   gfxConfig::Inherit(Feature::DIRECT2D, devicePrefs.useD2D1());
@@ -67,57 +64,78 @@ VRParent::RecvInit(nsTArray<GfxPrefSetting>&& prefs,
   return IPC_OK();
 }
 
-IPCResult
-VRParent::RecvNotifyVsync(const TimeStamp& vsyncTimestamp)
-{
+IPCResult VRParent::RecvNotifyVsync(const TimeStamp& vsyncTimestamp) {
   VRManager* vm = VRManager::Get();
   vm->NotifyVsync(vsyncTimestamp);
   return IPC_OK();
 }
 
-IPCResult
-VRParent::RecvUpdatePref(const GfxPrefSetting& setting)
-{
+IPCResult VRParent::RecvUpdatePref(const GfxPrefSetting& setting) {
   gfxPrefs::Pref* pref = gfxPrefs::all()[setting.index()];
   pref->SetCachedValue(setting.value());
   return IPC_OK();
 }
 
-IPCResult
-VRParent::RecvUpdateVar(const GfxVarUpdate& aUpdate)
-{
+IPCResult VRParent::RecvUpdateVar(const GfxVarUpdate& aUpdate) {
   gfxVars::ApplyUpdate(aUpdate);
   return IPC_OK();
 }
 
-void
-VRParent::ActorDestroy(ActorDestroyReason aWhy)
-{
+mozilla::ipc::IPCResult VRParent::RecvOpenVRControllerActionPathToVR(
+    const nsCString& aPath) {
+  mOpenVRControllerAction = aPath;
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult VRParent::RecvOpenVRControllerManifestPathToVR(
+    const OpenVRControllerType& aType, const nsCString& aPath) {
+  mOpenVRControllerManifest.Put(static_cast<uint32_t>(aType), aPath);
+  return IPC_OK();
+}
+
+void VRParent::ActorDestroy(ActorDestroyReason aWhy) {
   if (AbnormalShutdown == aWhy) {
     NS_WARNING("Shutting down VR process early due to a crash!");
     ProcessChild::QuickExit();
   }
+  if (!mVRGPUParent->IsClosed()) {
+    mVRGPUParent->Close();
+  }
+  mVRGPUParent = nullptr;
 
-  mVRGPUParent->Close();
+#ifndef NS_FREE_PERMANENT_DATA
+  // No point in going through XPCOM shutdown because we don't keep persistent
+  // state.
+  ProcessChild::QuickExit();
+#endif
+
 #if defined(XP_WIN)
   DeviceManagerDx::Shutdown();
 #endif
   gfxVars::Shutdown();
   gfxConfig::Shutdown();
   gfxPrefs::DestroySingleton();
+  CrashReporterClient::DestroySingleton();
+  // Only calling XRE_ShutdownChildProcess() at the child process
+  // instead of the main process. Otherwise, it will close all child processes
+  // that are spawned from the main process.
   XRE_ShutdownChildProcess();
 }
 
-bool
-VRParent::Init(base::ProcessId aParentPid,
-               const char* aParentBuildID,
-               MessageLoop* aIOLoop,
-               IPC::Channel* aChannel)
-{
+bool VRParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
+                    MessageLoop* aIOLoop, IPC::Channel* aChannel) {
+  // Initialize the thread manager before starting IPC. Otherwise, messages
+  // may be posted to the main thread and we won't be able to process them.
+  if (NS_WARN_IF(NS_FAILED(nsThreadManager::get().Init()))) {
+    return false;
+  }
+
   // Now it's safe to start IPC.
   if (NS_WARN_IF(!Open(aChannel, aParentPid, aIOLoop))) {
     return false;
   }
+
+  nsDebugImpl::SetMultiprocessMode("VR");
 
   // This must be checked before any IPDL message, which may hit sentinel
   // errors due to parent and content processes having different
@@ -129,6 +147,9 @@ VRParent::Init(base::ProcessId aParentPid,
     ProcessChild::QuickExit();
   }
 
+  // Init crash reporter support.
+  CrashReporterClient::InitSingleton(this);
+
   // Ensure gfxPrefs are initialized.
   gfxPrefs::GetSingleton();
   gfxConfig::Init();
@@ -136,8 +157,26 @@ VRParent::Init(base::ProcessId aParentPid,
 #if defined(XP_WIN)
   DeviceManagerDx::Init();
 #endif
+  if (NS_FAILED(NS_InitMinimalXPCOM())) {
+    return false;
+  }
+
   return true;
 }
 
-} // namespace gfx
-} // namespace mozilla
+bool VRParent::GetOpenVRControllerActionPath(nsCString* aPath) {
+  if (!mOpenVRControllerAction.IsEmpty()) {
+    *aPath = mOpenVRControllerAction;
+    return true;
+  }
+
+  return false;
+}
+
+bool VRParent::GetOpenVRControllerManifestPath(OpenVRControllerType aType,
+                                               nsCString* aPath) {
+  return mOpenVRControllerManifest.Get(static_cast<uint32_t>(aType), aPath);
+}
+
+}  // namespace gfx
+}  // namespace mozilla

@@ -22,7 +22,7 @@ add_task(async function() {
     selector: "body",
     options: {type: "mousemove"},
     x: 1,
-    y: 1
+    y: 1,
   });
   await highlighterShowing;
 
@@ -39,5 +39,5 @@ add_task(async function() {
   ok(isVisible, "Inspector is highlighting after iframe nav.");
 
   info("Stopping element picker.");
-  await toolbox.highlighterUtils.stopPicker();
+  await toolbox.inspector.nodePicker.stop();
 });

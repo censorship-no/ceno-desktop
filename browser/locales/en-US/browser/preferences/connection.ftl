@@ -60,7 +60,7 @@ connection-proxy-socks4 =
 connection-proxy-socks5 =
     .label = SOCKS v5
     .accesskey = v
-connection-proxy-noproxy = No Proxy for
+connection-proxy-noproxy = No proxy for
     .accesskey = N
 
 connection-proxy-noproxy-desc = Example: .mozilla.org, .net.nz, 192.168.1.0/24
@@ -86,6 +86,14 @@ connection-dns-over-https =
     .label = Enable DNS over HTTPS
     .accesskey = b
 
-connection-dns-over-https-url = URL
+# Variables:
+#   $url (String) - URL for the DNS over HTTPS provider
+connection-dns-over-https-url-default =
+    .label = Use default ({ $url })
     .accesskey = U
-    .tooltiptext = URL for resolving DNS over HTTPS
+    .tooltiptext = Use the default URL for resolving DNS over HTTPS
+
+connection-dns-over-https-url-custom =
+    .label = Custom
+    .accesskey = C
+    .tooltiptext = Enter your preferred URL for resolving DNS over HTTPS

@@ -14,10 +14,10 @@ deps = ['httplib2 == 0.9.2',
         'mozinfo >= 0.10',
         'mozinstall == 1.16',
         'mozprocess == 0.26',
-        'mozprofile == 2.0.0',
-        'mozrunner == 7.0.2',
+        'mozprofile ~= 2.1',
+        'mozrunner ~= 7.2',
         'mozversion == 1.5',
-       ]
+        ]
 
 # we only support python 2.6+ right now
 assert sys.version_info[0] == 2
@@ -29,8 +29,8 @@ setup(name='tps',
       long_description="""\
 """,
       classifiers=['Programming Language :: Python :: 2.7',
-		   'Programming Language :: Python :: 2 :: Only',
-		  ], # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
+                   'Programming Language :: Python :: 2 :: Only',
+                   ],  # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
       keywords='',
       author='Mozilla Automation and Tools team',
       author_email='tools@lists.mozilla.org',

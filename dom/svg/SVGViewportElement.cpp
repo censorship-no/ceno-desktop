@@ -4,31 +4,32 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/SVGViewportElement.h"
+
 #include <stdint.h>
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Likely.h"
+#include "mozilla/SMILTypes.h"
+#include "mozilla/SVGContentUtils.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGMatrix.h"
-#include "mozilla/dom/SVGViewportElement.h"
 #include "mozilla/dom/SVGViewElement.h"
 
 #include "DOMSVGLength.h"
 #include "DOMSVGPoint.h"
-#include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsFrameSelection.h"
 #include "nsError.h"
 #include "nsGkAtoms.h"
-#include "nsIDocument.h"
 #include "nsIFrame.h"
 #include "nsIPresShell.h"
-#include "nsISVGSVGFrame.h" //XXX
+#include "nsISVGSVGFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsStyleUtil.h"
-#include "nsSMILTypes.h"
-#include "SVGContentUtils.h"
 
 #include <algorithm>
 #include "prtime.h"
@@ -38,40 +39,37 @@ using namespace mozilla::gfx;
 namespace mozilla {
 namespace dom {
 
-nsSVGElement::LengthInfo SVGViewportElement::sLengthInfo[4] =
-{
-  { nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
-  { nsGkAtoms::y, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
-  { nsGkAtoms::width, 100, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::X },
-  { nsGkAtoms::height, 100, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE, SVGContentUtils::Y },
+SVGElement::LengthInfo SVGViewportElement::sLengthInfo[4] = {
+    {nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::X},
+    {nsGkAtoms::y, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::Y},
+    {nsGkAtoms::width, 100, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::X},
+    {nsGkAtoms::height, 100, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
+     SVGContentUtils::Y},
 };
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGViewportElement::SVGViewportElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
-  : SVGGraphicsElement(std::move(aNodeInfo)),
-    mViewportWidth(0),
-    mViewportHeight(0),
-    mHasChildrenOnlyTransform(false)
-{
-}
+SVGViewportElement::SVGViewportElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGGraphicsElement(std::move(aNodeInfo)),
+      mViewportWidth(0),
+      mViewportHeight(0),
+      mHasChildrenOnlyTransform(false) {}
 
-SVGViewportElement::~SVGViewportElement()
-{
-}
+SVGViewportElement::~SVGViewportElement() {}
 
 //----------------------------------------------------------------------
 
-already_AddRefed<SVGAnimatedRect>
-SVGViewportElement::ViewBox()
-{
+already_AddRefed<SVGAnimatedRect> SVGViewportElement::ViewBox() {
   return mViewBox.ToSVGAnimatedRect(this);
 }
 
 already_AddRefed<DOMSVGAnimatedPreserveAspectRatio>
-SVGViewportElement::PreserveAspectRatio()
-{
+SVGViewportElement::PreserveAspectRatio() {
   return mPreserveAspectRatio.ToDOMAnimatedPreserveAspectRatio(this);
 }
 
@@ -79,14 +77,13 @@ SVGViewportElement::PreserveAspectRatio()
 // nsIContent methods
 
 NS_IMETHODIMP_(bool)
-SVGViewportElement::IsAttributeMapped(const nsAtom* name) const
-{
+SVGViewportElement::IsAttributeMapped(const nsAtom* name) const {
   // We want to map the 'width' and 'height' attributes into style for
   // outer-<svg>, except when the attributes aren't set (since their default
   // values of '100%' can cause unexpected and undesirable behaviour for SVG
-  // inline in HTML). We rely on nsSVGElement::UpdateContentStyleRule() to
+  // inline in HTML). We rely on SVGElement::UpdateContentStyleRule() to
   // prevent mapping of the default values into style (it only maps attributes
-  // that are set). We also rely on a check in nsSVGElement::
+  // that are set). We also rely on a check in SVGElement::
   // UpdateContentStyleRule() to prevent us mapping the attributes when they're
   // given a <length> value that is not currently recognized by the SVG
   // specification.
@@ -95,26 +92,24 @@ SVGViewportElement::IsAttributeMapped(const nsAtom* name) const
     return true;
   }
 
-  static const MappedAttributeEntry* const map[] = {
-    sColorMap,
-    sFEFloodMap,
-    sFillStrokeMap,
-    sFiltersMap,
-    sFontSpecificationMap,
-    sGradientStopMap,
-    sGraphicsMap,
-    sLightingEffectsMap,
-    sMarkersMap,
-    sTextContentElementsMap,
-    sViewportsMap
-  };
+  static const MappedAttributeEntry* const map[] = {sColorMap,
+                                                    sFEFloodMap,
+                                                    sFillStrokeMap,
+                                                    sFiltersMap,
+                                                    sFontSpecificationMap,
+                                                    sGradientStopMap,
+                                                    sGraphicsMap,
+                                                    sLightingEffectsMap,
+                                                    sMarkersMap,
+                                                    sTextContentElementsMap,
+                                                    sViewportsMap};
 
   return FindAttributeDependence(name, map) ||
-    SVGGraphicsElement::IsAttributeMapped(name);
+         SVGGraphicsElement::IsAttributeMapped(name);
 }
 
 //----------------------------------------------------------------------
-// nsSVGElement overrides
+// SVGElement overrides
 
 // Helper for GetViewBoxTransform on root <svg> node
 // * aLength: internal value for our <svg> width or height attribute.
@@ -123,11 +118,9 @@ SVGViewportElement::IsAttributeMapped(const nsAtom* name) const
 // NOTE: aSelf is not an ancestor viewport element, so it can't be used to
 // resolve percentage lengths. (It can only be used to resolve
 // 'em'/'ex'-valued units).
-inline float
-ComputeSynthesizedViewBoxDimension(const nsSVGLength2& aLength,
-                                   float aViewportLength,
-                                   const SVGViewportElement* aSelf)
-{
+inline float ComputeSynthesizedViewBoxDimension(
+    const nsSVGLength2& aLength, float aViewportLength,
+    const SVGViewportElement* aSelf) {
   if (aLength.IsPercentage()) {
     return aViewportLength * aLength.GetAnimValInSpecifiedUnits() / 100.0f;
   }
@@ -138,19 +131,15 @@ ComputeSynthesizedViewBoxDimension(const nsSVGLength2& aLength,
 //----------------------------------------------------------------------
 // public helpers:
 
-void
-SVGViewportElement::UpdateHasChildrenOnlyTransform()
-{
+void SVGViewportElement::UpdateHasChildrenOnlyTransform() {
   bool hasChildrenOnlyTransform =
-    HasViewBoxOrSyntheticViewBox() ||
-    (IsRoot() && (GetCurrentTranslate() != SVGPoint(0.0f, 0.0f) ||
-                  GetCurrentScale() != 1.0f));
+      HasViewBoxOrSyntheticViewBox() ||
+      (IsRoot() && (GetCurrentTranslate() != SVGPoint(0.0f, 0.0f) ||
+                    GetCurrentScale() != 1.0f));
   mHasChildrenOnlyTransform = hasChildrenOnlyTransform;
 }
 
-void
-SVGViewportElement::ChildrenOnlyTransformChanged(uint32_t aFlags)
-{
+void SVGViewportElement::ChildrenOnlyTransformChanged(uint32_t aFlags) {
   // Avoid wasteful calls:
   MOZ_ASSERT(!(GetPrimaryFrame()->GetStateBits() & NS_FRAME_IS_NONDISPLAY),
              "Non-display SVG frames don't maintain overflow rects");
@@ -182,12 +171,10 @@ SVGViewportElement::ChildrenOnlyTransformChanged(uint32_t aFlags)
   }
 }
 
-gfx::Matrix
-SVGViewportElement::GetViewBoxTransform() const
-{
+gfx::Matrix SVGViewportElement::GetViewBoxTransform() const {
   float viewportWidth, viewportHeight;
   if (IsInner()) {
-    SVGViewportElement *ctx = GetCtx();
+    SVGViewportElement* ctx = GetCtx();
     viewportWidth = mLengthAttributes[ATTR_WIDTH].GetAnimValue(ctx);
     viewportHeight = mLengthAttributes[ATTR_HEIGHT].GetAnimValue(ctx);
   } else {
@@ -196,37 +183,34 @@ SVGViewportElement::GetViewBoxTransform() const
   }
 
   if (viewportWidth <= 0.0f || viewportHeight <= 0.0f) {
-    return gfx::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0); // singular
+    return gfx::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);  // singular
   }
 
-  nsSVGViewBoxRect viewBox =
-    GetViewBoxWithSynthesis(viewportWidth, viewportHeight);
+  SVGViewBoxRect viewBox =
+      GetViewBoxWithSynthesis(viewportWidth, viewportHeight);
 
   if (viewBox.width <= 0.0f || viewBox.height <= 0.0f) {
-    return gfx::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0); // singular
+    return gfx::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);  // singular
   }
 
-  return SVGContentUtils::GetViewBoxTransform(viewportWidth, viewportHeight,
-                                              viewBox.x, viewBox.y,
-                                              viewBox.width, viewBox.height,
-                                              GetPreserveAspectRatioWithOverride());
+  return SVGContentUtils::GetViewBoxTransform(
+      viewportWidth, viewportHeight, viewBox.x, viewBox.y, viewBox.width,
+      viewBox.height, GetPreserveAspectRatioWithOverride());
 }
 //----------------------------------------------------------------------
 // SVGViewportElement
 
-float
-SVGViewportElement::GetLength(uint8_t aCtxType)
-{
-  const nsSVGViewBoxRect* viewbox =
-    GetViewBoxInternal().HasRect() ? &GetViewBoxInternal().GetAnimValue()
-                                   : nullptr;
+float SVGViewportElement::GetLength(uint8_t aCtxType) {
+  const SVGViewBoxRect* viewbox = GetViewBoxInternal().HasRect()
+                                      ? &GetViewBoxInternal().GetAnimValue()
+                                      : nullptr;
 
   float h, w;
   if (viewbox) {
     w = viewbox->width;
     h = viewbox->height;
   } else if (IsInner()) {
-    SVGViewportElement *ctx = GetCtx();
+    SVGViewportElement* ctx = GetCtx();
     w = mLengthAttributes[ATTR_WIDTH].GetAnimValue(ctx);
     h = mLengthAttributes[ATTR_HEIGHT].GetAnimValue(ctx);
   } else if (ShouldSynthesizeViewBox()) {
@@ -243,23 +227,21 @@ SVGViewportElement::GetLength(uint8_t aCtxType)
   h = std::max(h, 0.0f);
 
   switch (aCtxType) {
-  case SVGContentUtils::X:
-    return w;
-  case SVGContentUtils::Y:
-    return h;
-  case SVGContentUtils::XY:
-    return float(SVGContentUtils::ComputeNormalizedHypotenuse(w, h));
+    case SVGContentUtils::X:
+      return w;
+    case SVGContentUtils::Y:
+      return h;
+    case SVGContentUtils::XY:
+      return float(SVGContentUtils::ComputeNormalizedHypotenuse(w, h));
   }
   return 0;
 }
 
 //----------------------------------------------------------------------
-// nsSVGElement methods
+// SVGElement methods
 
-/* virtual */ gfxMatrix
-SVGViewportElement::PrependLocalTransformsTo(const gfxMatrix& aMatrix,
-                                        SVGTransformTypes aWhich) const
-{
+/* virtual */ gfxMatrix SVGViewportElement::PrependLocalTransformsTo(
+    const gfxMatrix& aMatrix, SVGTransformTypes aWhich) const {
   // 'transform' attribute (or an override from a fragment identifier):
   gfxMatrix userToParent;
 
@@ -275,15 +257,16 @@ SVGViewportElement::PrependLocalTransformsTo(const gfxMatrix& aMatrix,
 
   if (IsInner()) {
     float x, y;
-    const_cast<SVGViewportElement*>(this)->GetAnimatedLengthValues(&x, &y, nullptr);
+    const_cast<SVGViewportElement*>(this)->GetAnimatedLengthValues(&x, &y,
+                                                                   nullptr);
     childToUser = ThebesMatrix(GetViewBoxTransform().PostTranslate(x, y));
   } else if (IsRoot()) {
     SVGPoint translate = GetCurrentTranslate();
     float scale = GetCurrentScale();
-    childToUser = ThebesMatrix(GetViewBoxTransform()
-                                 .PostScale(scale, scale)
-                                 .PostTranslate(translate.GetX(),
-                                                translate.GetY()));
+    childToUser =
+        ThebesMatrix(GetViewBoxTransform()
+                         .PostScale(scale, scale)
+                         .PostTranslate(translate.GetX(), translate.GetY()));
   } else {
     // outer-<svg>, but inline in some other content:
     childToUser = ThebesMatrix(GetViewBoxTransform());
@@ -305,33 +288,21 @@ SVGViewportElement::PrependLocalTransformsTo(const gfxMatrix& aMatrix,
   return childToUser * aMatrix;
 }
 
-/* virtual */ bool
-SVGViewportElement::HasValidDimensions() const
-{
+/* virtual */ bool SVGViewportElement::HasValidDimensions() const {
   return !IsInner() ||
-    ((!mLengthAttributes[ATTR_WIDTH].IsExplicitlySet() ||
-       mLengthAttributes[ATTR_WIDTH].GetAnimValInSpecifiedUnits() > 0) &&
-     (!mLengthAttributes[ATTR_HEIGHT].IsExplicitlySet() ||
-       mLengthAttributes[ATTR_HEIGHT].GetAnimValInSpecifiedUnits() > 0));
+         ((!mLengthAttributes[ATTR_WIDTH].IsExplicitlySet() ||
+           mLengthAttributes[ATTR_WIDTH].GetAnimValInSpecifiedUnits() > 0) &&
+          (!mLengthAttributes[ATTR_HEIGHT].IsExplicitlySet() ||
+           mLengthAttributes[ATTR_HEIGHT].GetAnimValInSpecifiedUnits() > 0));
 }
 
+SVGViewBox* SVGViewportElement::GetViewBox() { return &mViewBox; }
 
-
-nsSVGViewBox*
-SVGViewportElement::GetViewBox()
-{
-  return &mViewBox;
-}
-
-SVGAnimatedPreserveAspectRatio *
-SVGViewportElement::GetPreserveAspectRatio()
-{
+SVGAnimatedPreserveAspectRatio* SVGViewportElement::GetPreserveAspectRatio() {
   return &mPreserveAspectRatio;
 }
 
-bool
-SVGViewportElement::ShouldSynthesizeViewBox() const
-{
+bool SVGViewportElement::ShouldSynthesizeViewBox() const {
   MOZ_ASSERT(!HasViewBoxRect(), "Should only be called if we lack a viewBox");
 
   return IsRoot() && OwnerDoc()->IsBeingUsedAsImage();
@@ -340,10 +311,8 @@ SVGViewportElement::ShouldSynthesizeViewBox() const
 //----------------------------------------------------------------------
 // implementation helpers
 
-nsSVGViewBoxRect
-SVGViewportElement::GetViewBoxWithSynthesis(
-  float aViewportWidth, float aViewportHeight) const
-{
+SVGViewBoxRect SVGViewportElement::GetViewBoxWithSynthesis(
+    float aViewportWidth, float aViewportHeight) const {
   if (GetViewBoxInternal().HasRect()) {
     return GetViewBoxInternal().GetAnimValue();
   }
@@ -351,25 +320,23 @@ SVGViewportElement::GetViewBoxWithSynthesis(
   if (ShouldSynthesizeViewBox()) {
     // Special case -- fake a viewBox, using height & width attrs.
     // (Use |this| as context, since if we get here, we're outermost <svg>.)
-    return nsSVGViewBoxRect(0, 0,
-              ComputeSynthesizedViewBoxDimension(mLengthAttributes[ATTR_WIDTH],
-                                                 mViewportWidth, this),
-              ComputeSynthesizedViewBoxDimension(mLengthAttributes[ATTR_HEIGHT],
-                                                 mViewportHeight, this));
-
+    return SVGViewBoxRect(
+        0, 0,
+        ComputeSynthesizedViewBoxDimension(mLengthAttributes[ATTR_WIDTH],
+                                           mViewportWidth, this),
+        ComputeSynthesizedViewBoxDimension(mLengthAttributes[ATTR_HEIGHT],
+                                           mViewportHeight, this));
   }
 
   // No viewBox attribute, so we shouldn't auto-scale. This is equivalent
   // to having a viewBox that exactly matches our viewport size.
-  return nsSVGViewBoxRect(0, 0, aViewportWidth, aViewportHeight);
+  return SVGViewBoxRect(0, 0, aViewportWidth, aViewportHeight);
 }
 
-nsSVGElement::LengthAttributesInfo
-SVGViewportElement::GetLengthInfo()
-{
+SVGElement::LengthAttributesInfo SVGViewportElement::GetLengthInfo() {
   return LengthAttributesInfo(mLengthAttributes, sLengthInfo,
                               ArrayLength(sLengthInfo));
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

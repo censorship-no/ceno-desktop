@@ -140,8 +140,11 @@ var progressListener = {
         dialog.title.setAttribute("value", aMessage);
     },
 
-    onSecurityChange(aWebProgress, aRequest, aOldState, aState,
-                     aContentBlockingLogJSON) {
+    onSecurityChange(aWebProgress, aRequest, state) {
+      // we can ignore this notification
+    },
+
+    onContentBlockingEvent(aWebProgress, aRequest, event) {
       // we can ignore this notification
     },
 

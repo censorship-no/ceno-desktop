@@ -34,16 +34,13 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] not in ('cocoa', 'uikit'):
     ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
+    DEFINES['MOZ_DISABLE_WINDOWS_WRAPPER'] = True
     EXPORTS.cairo += [
         'cairo-win32.h',
     ]
     SOURCES += [
         'cairo-dwrite-font.cpp',
     ]
-    if CONFIG['MOZ_ENABLE_D2D_SURFACE']:
-        SOURCES += [
-            'cairo-d2d-surface.cpp',
-        ]
     SOURCES += [
         'cairo-win32-font.c',
         'cairo-win32-surface.c',

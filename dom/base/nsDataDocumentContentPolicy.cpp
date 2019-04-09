@@ -15,7 +15,7 @@
 #include "nsNetUtil.h"
 #include "nsIProtocolHandler.h"
 #include "nsScriptSecurityManager.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsINode.h"
 #include "nsIDOMWindow.h"
 #include "nsIURI.h"
@@ -25,9 +25,7 @@ NS_IMPL_ISUPPORTS(nsDataDocumentContentPolicy, nsIContentPolicy)
 // Helper method for ShouldLoad()
 // Checks a URI for the given flags.  Returns true if the URI has the flags,
 // and false if not (or if we weren't able to tell).
-static bool
-HasFlags(nsIURI* aURI, uint32_t aURIFlags)
-{
+static bool HasFlags(nsIURI *aURI, uint32_t aURIFlags) {
   bool hasFlags;
   nsresult rv = NS_URIChainHasFlags(aURI, aURIFlags, &hasFlags);
   return NS_SUCCEEDED(rv) && hasFlags;
@@ -38,24 +36,25 @@ HasFlags(nsIURI* aURI, uint32_t aURIFlags)
 // nsContentPolicyUtils may not pass all the parameters to ShouldLoad.
 NS_IMETHODIMP
 nsDataDocumentContentPolicy::ShouldLoad(nsIURI *aContentLocation,
-                                        nsILoadInfo* aLoadInfo,
+                                        nsILoadInfo *aLoadInfo,
                                         const nsACString &aMimeGuess,
-                                        int16_t *aDecision)
-{
+                                        int16_t *aDecision) {
   uint32_t contentType = aLoadInfo->GetExternalContentPolicyType();
   nsCOMPtr<nsISupports> requestingContext = aLoadInfo->GetLoadingContext();
 
-  MOZ_ASSERT(contentType == nsContentUtils::InternalContentPolicyTypeToExternal(contentType),
+  MOZ_ASSERT(contentType == nsContentUtils::InternalContentPolicyTypeToExternal(
+                                contentType),
              "We should only see external content policy types here.");
 
   *aDecision = nsIContentPolicy::ACCEPT;
   // Look for the document.  In most cases, requestingContext is a node.
-  nsCOMPtr<nsIDocument> doc;
+  nsCOMPtr<mozilla::dom::Document> doc;
   nsCOMPtr<nsINode> node = do_QueryInterface(requestingContext);
   if (node) {
     doc = node->OwnerDoc();
   } else {
-    if (nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryInterface(requestingContext)) {
+    if (nsCOMPtr<nsPIDOMWindowOuter> window =
+            do_QueryInterface(requestingContext)) {
       doc = window->GetDoc();
     }
   }
@@ -68,13 +67,14 @@ nsDataDocumentContentPolicy::ShouldLoad(nsIURI *aContentLocation,
   // Nothing else is OK to load for data documents
   if (doc->IsLoadedAsData()) {
     // ...but let static (print/print preview) documents to load fonts.
-    if (!doc->IsStaticDocument() || contentType != nsIContentPolicy::TYPE_FONT) {
+    if (!doc->IsStaticDocument() ||
+        contentType != nsIContentPolicy::TYPE_FONT) {
       *aDecision = nsIContentPolicy::REJECT_TYPE;
       return NS_OK;
     }
   }
 
-  nsIDocument* docToCheckForImage = doc->GetDisplayDocument();
+  mozilla::dom::Document *docToCheckForImage = doc->GetDisplayDocument();
   if (!docToCheckForImage) {
     docToCheckForImage = doc;
   }
@@ -96,14 +96,14 @@ nsDataDocumentContentPolicy::ShouldLoad(nsIURI *aContentLocation,
 
       // Report error, if we can.
       if (node) {
-        nsIPrincipal* requestingPrincipal = node->NodePrincipal();
+        nsIPrincipal *requestingPrincipal = node->NodePrincipal();
         RefPtr<nsIURI> principalURI;
-        nsresult rv =
-          requestingPrincipal->GetURI(getter_AddRefs(principalURI));
+        nsresult rv = requestingPrincipal->GetURI(getter_AddRefs(principalURI));
         if (NS_SUCCEEDED(rv) && principalURI) {
           nsScriptSecurityManager::ReportError(
-            "ExternalDataError", principalURI, aContentLocation,
-            requestingPrincipal->OriginAttributesRef().mPrivateBrowsingId > 0);
+              "ExternalDataError", principalURI, aContentLocation,
+              requestingPrincipal->OriginAttributesRef().mPrivateBrowsingId >
+                  0);
         }
       }
     } else if ((contentType == nsIContentPolicy::TYPE_IMAGE ||
@@ -148,7 +148,6 @@ NS_IMETHODIMP
 nsDataDocumentContentPolicy::ShouldProcess(nsIURI *aContentLocation,
                                            nsILoadInfo *aLoadInfo,
                                            const nsACString &aMimeGuess,
-                                           int16_t *aDecision)
-{
+                                           int16_t *aDecision) {
   return ShouldLoad(aContentLocation, aLoadInfo, aMimeGuess, aDecision);
 }

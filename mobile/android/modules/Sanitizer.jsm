@@ -16,8 +16,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   OfflineAppCacheHelper: "resource://gre/modules/offlineAppCache.jsm",
   OS: "resource://gre/modules/osfile.jsm",
   ServiceWorkerCleanUp: "resource://gre/modules/ServiceWorkerCleanUp.jsm",
-  Task: "resource://gre/modules/Task.jsm",
-  TelemetryStopwatch: "resource://gre/modules/TelemetryStopwatch.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetters(this, {
@@ -82,26 +80,31 @@ Sanitizer.prototype = {
   // Any further specific differences caused by architectural differences between
   // Fennec and desktop Firefox are documented below for each item.
   items: {
-    // Same as desktop Firefox.
+    // The difference is specifically the Sanitize:Cache message,
+    // so that the Android front-end can clear its caches as well,
+    // while everything else is unchanged.
     cache: {
       clear: function() {
-        return new Promise(function(resolve, reject) {
-          let refObj = {};
-          TelemetryStopwatch.start("FX_SANITIZE_CACHE", refObj);
+        let refObj = {};
+        TelemetryStopwatch.start("FX_SANITIZE_CACHE", refObj);
 
-          try {
-            Services.cache2.clear();
-          } catch (er) {}
+        try {
+          Services.cache2.clear();
+        } catch (er) {}
 
-          let imageCache = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
+        let imageCache = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
                                                            .getImgCacheForDocument(null);
-          try {
-            imageCache.clearCache(false); // true=chrome, false=content
-          } catch (er) {}
+        try {
+          imageCache.clearCache(false); // true=chrome, false=content
+        } catch (er) {}
 
-          TelemetryStopwatch.finish("FX_SANITIZE_CACHE", refObj);
-          resolve();
-        });
+        return EventDispatcher.instance.sendRequestForResult({ type: "Sanitize:Cache" })
+          .catch((err) => {
+            Cu.reportError(`Java-side cache clearing failed with error: ${err}`);
+          })
+          .then(() => {
+            TelemetryStopwatch.finish("FX_SANITIZE_CACHE", refObj);
+          });
       },
 
       get canClear() {
@@ -139,7 +142,7 @@ Sanitizer.prototype = {
 
     // Same as desktop Firefox.
     siteSettings: {
-      clear: Task.async(function* () {
+      async clear() {
         let refObj = {};
         TelemetryStopwatch.start("FX_SANITIZE_SITESETTINGS", refObj);
 
@@ -157,7 +160,7 @@ Sanitizer.prototype = {
         sss.clearAll();
 
         // Clear push subscriptions
-        yield new Promise((resolve, reject) => {
+        await new Promise((resolve, reject) => {
           let push = Cc["@mozilla.org/push/Service;1"]
                        .getService(Ci.nsIPushService);
           push.clearForDomain("*", status => {
@@ -170,7 +173,7 @@ Sanitizer.prototype = {
           });
         });
         TelemetryStopwatch.finish("FX_SANITIZE_SITESETTINGS", refObj);
-      }),
+      },
 
       get canClear() {
         return true;
@@ -206,7 +209,7 @@ Sanitizer.prototype = {
               let uri = principal.URI;
               if (uri.scheme == "http" || uri.scheme == "https" || uri.scheme == "file") {
                 promises.push(new Promise(r => {
-                  let req = quotaManagerService.clearStoragesForPrincipal(principal, null, false);
+                  let req = quotaManagerService.clearStoragesForPrincipal(principal);
                   req.callback = () => { r(); };
                 }));
               }
@@ -322,14 +325,16 @@ Sanitizer.prototype = {
 
     // Adapted from desktop, but heavily modified - see comments below.
     downloadFiles: {
-      clear: Task.async(function* ({ startTime = 0,
-                                     deleteFiles = true,
-                                     clearUnfinishedDownloads = false } = {}) {
+      async clear({
+        startTime = 0,
+        deleteFiles = true,
+        clearUnfinishedDownloads = false,
+      } = {}) {
         let refObj = {};
         TelemetryStopwatch.start("FX_SANITIZE_DOWNLOADS", refObj);
 
-        let list = yield Downloads.getList(Downloads.ALL);
-        let downloads = yield list.getAll();
+        let list = await Downloads.getList(Downloads.ALL);
+        let downloads = await list.getAll();
         var finalizePromises = [];
 
         // Logic copied from DownloadList.removeFinished. Ideally, we would
@@ -342,7 +347,7 @@ Sanitizer.prototype = {
                download.startTime.getTime() >= startTime) {
             // Remove the download first, so that the views don't get the change
             // notifications that may occur during finalization.
-            yield list.remove(download);
+            await list.remove(download);
             // Ensure that the download is stopped and no partial data is kept.
             // This works even if the download state has changed meanwhile.  We
             // don't need to wait for the procedure to be complete before
@@ -360,10 +365,10 @@ Sanitizer.prototype = {
           }
         }
 
-        yield Promise.all(finalizePromises);
-        yield DownloadIntegration.forceSave();
+        await Promise.all(finalizePromises);
+        await DownloadIntegration.forceSave();
         TelemetryStopwatch.finish("FX_SANITIZE_DOWNLOADS", refObj);
-      }),
+      },
 
       get canClear() {
         return true;
