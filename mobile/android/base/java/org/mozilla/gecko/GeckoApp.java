@@ -1032,26 +1032,27 @@ public abstract class GeckoApp extends GeckoActivity
         //------------------------------------------------------------
         // Ouinet
         //------------------------------------------------------------
-        Ouinet.Config ouinet_cfg = new Ouinet.Config();
+        Ouinet.Config ouinetConfig = new Ouinet.Config();
 
-        ouinet_cfg.index_bep44_pubkey   = getResources().getString(R.string.ouinet_index_bep44_pubkey);
-        ouinet_cfg.index_ipns_id     = getResources().getString(R.string.ouinet_index_ipns_id);
-        ouinet_cfg.injector_endpoint    = getResources().getString(R.string.ouinet_injector_endpoint);
-        ouinet_cfg.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
-        ouinet_cfg.injector_tls_cert    = getResources().getString(R.string.ouinet_injector_tls_cert);
-        ouinet_cfg.tls_ca_cert_store_path = "file:///android_asset/ceno/cacert.pem";
+        ouinetConfig.index_bep44_pubkey   = getResources().getString(R.string.ouinet_index_bep44_pubkey);
+        ouinetConfig.index_ipns_id     = getResources().getString(R.string.ouinet_index_ipns_id);
+        ouinetConfig.injector_endpoint    = getResources().getString(R.string.ouinet_injector_endpoint);
+        ouinetConfig.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
+        ouinetConfig.injector_tls_cert    = getResources().getString(R.string.ouinet_injector_tls_cert);
+        ouinetConfig.tls_ca_cert_store_path = "file:///android_asset/ceno/cacert.pem";
 
-        if (ouinet_cfg.injector_tls_cert != null) {
+        if (ouinetConfig.injector_tls_cert != null) {
             Log.i(LOGTAG, "Injector's TLS certificate:");
 
-            String[] lines = ouinet_cfg.injector_tls_cert.split("\n");
+            String[] lines = ouinetConfig.injector_tls_cert.split("\n");
 
             for (String line : lines) {
                 Log.i(LOGTAG, "\"" + line + "\"");
             }
         }
 
-        mOuinet = new Ouinet(this, ouinet_cfg);
+        mOuinet = new Ouinet(this, ouinetConfig);
+        mOuinet.start();
         //------------------------------------------------------------
 
         // The clock starts...now. Better hurry!
