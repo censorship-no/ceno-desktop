@@ -23,6 +23,10 @@ String getProp(String propName, String defValue) {
 android {
     compileSdkVersion project.ext.compileSdkVersion
 
+    useLibrary 'android.test.runner'
+    useLibrary 'android.test.base'
+    useLibrary 'android.test.mock'
+
     defaultConfig {
         targetSdkVersion project.ext.targetSdkVersion
         minSdkVersion project.ext.minSdkVersion
@@ -50,7 +54,7 @@ android {
     }
 
     dexOptions {
-        javaMaxHeapSize "2g"
+        javaMaxHeapSize "4g"
         jumboMode = true
     }
 
