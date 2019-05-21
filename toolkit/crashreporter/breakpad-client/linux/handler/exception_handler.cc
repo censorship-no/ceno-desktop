@@ -216,6 +216,7 @@ pthread_mutex_t g_handler_stack_mutex_ = PTHREAD_MUTEX_INITIALIZER;
 ExceptionHandler::CrashContext g_crash_context_;
 
 FirstChanceHandler g_first_chance_handler_ = nullptr;
+FirstChanceHandlerDeprecated g_first_chance_handler_deprecated_ = nullptr;
 bool g_skip_sigill_ = false;
 }  // namespace
 
@@ -346,6 +347,11 @@ void ExceptionHandler::SignalHandler(int sig, siginfo_t* info, void* uc) {
   // chance to handle and recover from these signals first.
   if (g_first_chance_handler_ != nullptr &&
       g_first_chance_handler_(sig, info, uc)) {
+    return;
+  }
+
+  if (g_first_chance_handler_deprecated_ != nullptr &&
+      g_first_chance_handler_deprecated_(sig, info, uc)) {
     return;
   }
 
@@ -769,7 +775,7 @@ bool ExceptionHandler::WriteMinidump() {
 }
 
 void ExceptionHandler::AddMappingInfo(const string& name,
-                                      const uint8_t identifier[sizeof(MDGUID)],
+                                      const wasteful_vector<uint8_t>& identifier,
                                       uintptr_t start_address,
                                       size_t mapping_size,
                                       size_t file_offset) {
@@ -782,7 +788,7 @@ void ExceptionHandler::AddMappingInfo(const string& name,
 
   MappingEntry mapping;
   mapping.first = info;
-  memcpy(mapping.second, identifier, sizeof(MDGUID));
+  mapping.second.assign(identifier.begin(), identifier.end());
   mapping_list_.push_back(mapping);
 }
 
@@ -826,7 +832,13 @@ bool ExceptionHandler::WriteMinidumpForChild(pid_t child,
 }
 
 void SetFirstChanceExceptionHandler(FirstChanceHandler callback) {
+  g_first_chance_handler_deprecated_ = nullptr;
   g_first_chance_handler_ = callback;
+}
+
+void SetFirstChanceExceptionHandler(FirstChanceHandlerDeprecated callback) {
+  g_first_chance_handler_ = nullptr;
+  g_first_chance_handler_deprecated_ = callback;
 }
 
 }  // namespace google_breakpad

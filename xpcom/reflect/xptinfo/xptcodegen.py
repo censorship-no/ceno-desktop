@@ -171,7 +171,7 @@ utility_types = [
     {'tag': 'TD_BOOL'},
     {'tag': 'TD_CHAR'},
     {'tag': 'TD_WCHAR'},
-    {'tag': 'TD_PNSIID'},
+    {'tag': 'TD_NSIDPTR'},
     {'tag': 'TD_PSTRING'},
     {'tag': 'TD_PWSTRING'},
     {'tag': 'TD_INTERFACE_IS_TYPE', 'iid_is': 0},
@@ -361,7 +361,7 @@ def link_to_cpp(interfaces, fd):
 
     def lower_const(const, ifacename):
         assert const['type']['tag'] in \
-            ['TD_INT16', 'TD_INT32', 'TD_UINT16', 'TD_UINT32']
+            ['TD_INT16', 'TD_INT32', 'TD_UINT8', 'TD_UINT16', 'TD_UINT32']
         is_signed = const['type']['tag'] in ['TD_INT16', 'TD_INT32']
 
         # Constants are always either signed or unsigned 16 or 32 bit integers,
@@ -440,15 +440,16 @@ def link_to_cpp(interfaces, fd):
     # Write out our header
     fd.write("""
 #include "xptinfo.h"
+#include "mozilla/PerfectHash.h"
 #include "mozilla/TypeTraits.h"
 #include "mozilla/dom/BindingUtils.h"
 
 // These template methods are specialized to be used in the sDOMObjects table.
 template<mozilla::dom::prototypes::ID PrototypeID, typename T>
-static nsresult UnwrapDOMObject(JS::HandleValue aHandle, void** aObj)
+static nsresult UnwrapDOMObject(JS::HandleValue aHandle, void** aObj, JSContext* aCx)
 {
   RefPtr<T> p;
-  nsresult rv = mozilla::dom::UnwrapObject<PrototypeID, T>(aHandle, p);
+  nsresult rv = mozilla::dom::UnwrapObject<PrototypeID, T>(aHandle, p, aCx);
   p.forget(aObj);
   return rv;
 }

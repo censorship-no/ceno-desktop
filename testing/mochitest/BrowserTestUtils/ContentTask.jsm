@@ -10,8 +10,8 @@ var EXPORTED_SYMBOLS = [
   "ContentTask",
 ];
 
-ChromeUtils.import("resource://gre/modules/Promise.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Promise} = ChromeUtils.import("resource://gre/modules/Promise.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const FRAME_SCRIPT = "resource://testing-common/content-task.js";
 
@@ -113,7 +113,7 @@ var ContentMessageListener = {
       }
     } else if (aMessage.name == "content-task:test-result") {
       let data = aMessage.data;
-      ContentTask._testScope.ok(data.condition, data.name, null, data.stack);
+      ContentTask._testScope.record(data.condition, data.name, null, data.stack);
     } else if (aMessage.name == "content-task:test-info") {
       ContentTask._testScope.info(aMessage.data.name);
     } else if (aMessage.name == "content-task:test-todo") {

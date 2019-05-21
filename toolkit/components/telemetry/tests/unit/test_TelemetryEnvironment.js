@@ -1,18 +1,17 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const {AddonManager, AddonManagerPrivate} = ChromeUtils.import("resource://gre/modules/AddonManager.jsm", {});
+const {AddonManager, AddonManagerPrivate} = ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
 ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm", this);
-ChromeUtils.import("resource://gre/modules/ObjectUtils.jsm");
 ChromeUtils.import("resource://gre/modules/Preferences.jsm", this);
 ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm", this);
 ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
-ChromeUtils.import("resource://testing-common/httpd.js");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
 ChromeUtils.import("resource://testing-common/MockRegistrar.jsm", this);
-ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
-ChromeUtils.import("resource://services-common/utils.js");
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const {FileUtils} = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+const {CommonUtils} = ChromeUtils.import("resource://services-common/utils.js");
+const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 // AttributionCode is only needed for Firefox
 ChromeUtils.defineModuleGetter(this, "AttributionCode",
@@ -26,8 +25,12 @@ ChromeUtils.defineModuleGetter(this, "ExtensionTestUtils",
                                "resource://testing-common/ExtensionXPCShellUtils.jsm");
 
 async function installXPIFromURL(url) {
-  let install = await AddonManager.getInstallForURL(url, "application/x-xpinstall");
+  let install = await AddonManager.getInstallForURL(url);
   return install.install();
+}
+
+function promiseNextTick() {
+  return new Promise(resolve => executeSoon(resolve));
 }
 
 // The webserver hosting the addons.
@@ -407,8 +410,9 @@ function checkSettingsSection(data) {
   const EXPECTED_FIELDS_TYPES = {
     blocklistEnabled: "boolean",
     e10sEnabled: "boolean",
-    telemetryEnabled: "boolean",
+    intl: "object",
     locale: "string",
+    telemetryEnabled: "boolean",
     update: "object",
     userPrefs: "object",
   };
@@ -418,6 +422,11 @@ function checkSettingsSection(data) {
   for (let f in EXPECTED_FIELDS_TYPES) {
     Assert.equal(typeof data.settings[f], EXPECTED_FIELDS_TYPES[f],
                  f + " must have the correct type.");
+  }
+
+  // This property is not always present, but when it is, it must be a number.
+  if ("launcherProcessState" in data.settings) {
+    Assert.equal(typeof data.settings.launcherProcessState, "number");
   }
 
   // Check "addonCompatibilityCheckEnabled" separately.
@@ -448,6 +457,34 @@ function checkSettingsSection(data) {
   if (gIsWindows && AppConstants.MOZ_BUILD_APP == "browser") {
     Assert.equal(typeof data.settings.attribution, "object");
     Assert.equal(data.settings.attribution.source, "google.com");
+  }
+
+  checkIntlSettings(data.settings);
+}
+
+function checkIntlSettings({intl}) {
+  let fields = [
+    "requestedLocales",
+    "availableLocales",
+    "appLocales",
+    "acceptLanguages",
+  ];
+
+  for (let field of fields) {
+    Assert.ok(Array.isArray(intl[field]), `${field} is an array`);
+  }
+
+  // These fields may be null if they aren't ready yet. This is mostly to deal
+  // with test failures on Android, but they aren't guaranteed to exist.
+  let optionalFields = [
+    "systemLocales",
+    "regionalPrefsLocales",
+  ];
+
+  for (let field of optionalFields) {
+    let isArray = Array.isArray(intl[field]);
+    let isNull = intl[field] === null;
+    Assert.ok(isArray || isNull, `${field} is an array or null`);
   }
 }
 
@@ -534,6 +571,8 @@ function checkSystemSection(data) {
     if (gIsWindows) {
       Assert.equal(typeof data.system.isWow64, "boolean",
              "isWow64 must be available on Windows and have the correct type.");
+      Assert.equal(typeof data.system.isWowARM64, "boolean",
+             "isWowARM64 must be available on Windows and have the correct type.");
       Assert.ok("virtualMaxMB" in data.system, "virtualMaxMB must be available.");
       Assert.ok(Number.isFinite(data.system.virtualMaxMB),
                 "virtualMaxMB must be a number.");
@@ -594,6 +633,7 @@ function checkSystemSection(data) {
   let gfxData = data.system.gfx;
   Assert.ok("D2DEnabled" in gfxData);
   Assert.ok("DWriteEnabled" in gfxData);
+  Assert.equal(typeof gfxData.LowEndMachine, "boolean");
   // DWriteVersion is disabled due to main thread jank and will be enabled
   // again as part of bug 1154500.
   // Assert.ok("DWriteVersion" in gfxData);
@@ -908,11 +948,20 @@ add_task(async function test_checkEnvironment() {
   Assert.equal(AddonManagerPrivate.isDBLoaded(), false,
                "addons database is not loaded");
 
-  checkAddonsSection(TelemetryEnvironment.currentEnvironment, false, true);
+  let data = TelemetryEnvironment.currentEnvironment;
+  checkAddonsSection(data, false, true);
+
+  // Check that settings.intl is lazily loaded.
+  Assert.equal(typeof data.settings.intl, "object", "intl is initially an object");
+  Assert.equal(Object.keys(data.settings.intl).length, 0, "intl is initially empty");
 
   // Now continue with startup.
   let initPromise = TelemetryEnvironment.onInitialized();
   finishAddonManagerStartup();
+
+  // Fake the delayed startup event for intl data to load.
+  fakeIntlReady();
+
   let environmentData = await initPromise;
   checkEnvironmentData(environmentData, {isInitial: true});
 
@@ -945,7 +994,7 @@ add_task(async function test_prefWatchPolicies() {
   Preferences.set(PREF_TEST_5, expectedValue);
 
   // Set the Environment preferences to watch.
-  TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
+  await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
   let deferred = PromiseUtils.defer();
 
   // Check that the pref values are missing or present as expected
@@ -990,7 +1039,7 @@ add_task(async function test_prefWatch_prefReset() {
   Preferences.set(PREF_TEST, false);
 
   // Set the Environment preferences to watch.
-  TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
+  await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
   let deferred = PromiseUtils.defer();
   TelemetryEnvironment.registerChangeListener("testWatchPrefs_reset", deferred.resolve);
 
@@ -1019,7 +1068,7 @@ add_task(async function test_prefDefault() {
 
   // Set the Environment preferences to watch.
   // We're not watching, but this function does the setup we need.
-  TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
+  await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
 
   Assert.strictEqual(TelemetryEnvironment.currentEnvironment.settings.userPrefs[PREF_TEST], expectedValue);
 });
@@ -1032,7 +1081,7 @@ add_task(async function test_prefDefaultState() {
     [PREF_TEST, {what: TelemetryEnvironment.RECORD_DEFAULTPREF_STATE}],
   ]);
 
-  TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
+  await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
 
   Assert.equal(PREF_TEST in TelemetryEnvironment.currentEnvironment.settings.userPrefs, false);
 
@@ -1051,11 +1100,10 @@ add_task(async function test_prefInvalid() {
     [PREF_TEST_2, {what: TelemetryEnvironment.RECORD_DEFAULTPREF_STATE}],
   ]);
 
-  TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
+  await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
 
   Assert.strictEqual(TelemetryEnvironment.currentEnvironment.settings.userPrefs[PREF_TEST_1], undefined);
   Assert.strictEqual(TelemetryEnvironment.currentEnvironment.settings.userPrefs[PREF_TEST_2], undefined);
-
 });
 
 add_task(async function test_addonsWatch_InterestingChange() {
@@ -1238,7 +1286,7 @@ add_task(async function test_addonsAndPlugins() {
     updateDay: truncateToDays(SYSTEM_ADDON_INSTALL_DATE),
     signedState: undefined,
     isSystem: true,
-    isWebExtension: false,
+    isWebExtension: true,
     multiprocessCompatible: true,
   };
 
@@ -1533,7 +1581,8 @@ add_task(async function test_defaultSearchEngine() {
                           Services.io.newURI(url));
 
   // Initialize the search service.
-  await new Promise(resolve => Services.search.init(resolve));
+  await Services.search.init();
+  await promiseNextTick();
 
   // Our default engine from the JAR file has an identifier. Check if it is correctly
   // reported.
@@ -1549,13 +1598,14 @@ add_task(async function test_defaultSearchEngine() {
   Assert.deepEqual(data.settings.defaultSearchEngineData, expectedSearchEngineData);
 
   // Remove all the search engines.
-  for (let engine of Services.search.getEngines()) {
-    Services.search.removeEngine(engine);
+  for (let engine of await Services.search.getEngines()) {
+    await Services.search.removeEngine(engine);
   }
   // The search service does not notify "engine-current" when removing a default engine.
   // Manually force the notification.
   // TODO: remove this when bug 1165341 is resolved.
   Services.obs.notifyObservers(null, "browser-search-engine-modified", "engine-current");
+  await promiseNextTick();
 
   // Then check that no default engine is reported if none is available.
   data = TelemetryEnvironment.currentEnvironment;
@@ -1566,12 +1616,12 @@ add_task(async function test_defaultSearchEngine() {
   // Add a new search engine (this will have no engine identifier).
   const SEARCH_ENGINE_ID = "telemetry_default";
   const SEARCH_ENGINE_URL = "http://www.example.org/?search={searchTerms}";
-  Services.search.addEngineWithDetails(SEARCH_ENGINE_ID, "", null, "", "get", SEARCH_ENGINE_URL);
+  await Services.search.addEngineWithDetails(SEARCH_ENGINE_ID, "", null, "", "get", SEARCH_ENGINE_URL);
 
   // Register a new change listener and then wait for the search engine change to be notified.
   let deferred = PromiseUtils.defer();
   TelemetryEnvironment.registerChangeListener("testWatch_SearchDefault", deferred.resolve);
-  Services.search.defaultEngine = Services.search.getEngineByName(SEARCH_ENGINE_ID);
+  await Services.search.setDefault(Services.search.getEngineByName(SEARCH_ENGINE_ID));
   await deferred.promise;
 
   data = TelemetryEnvironment.currentEnvironment;
@@ -1608,10 +1658,9 @@ add_task(async function test_defaultSearchEngine() {
         reject(ex);
       }
     }, "browser-search-engine-modified");
-    Services.search.addEngine("file://" + do_get_cwd().path + "/engine.xml",
-                              null, false);
+    Services.search.addEngine("file://" + do_get_cwd().path + "/engine.xml", null, false);
   });
-  Services.search.defaultEngine = engine;
+  await Services.search.setDefault(engine);
   await promise;
   TelemetryEnvironment.unregisterChangeListener("testWatch_SearchDefault");
   data = TelemetryEnvironment.currentEnvironment;
@@ -1629,7 +1678,7 @@ add_task(async function test_defaultSearchEngine() {
   TelemetryEnvironment.unregisterChangeListener("testWatch_SearchDefault");
   data = TelemetryEnvironment.currentEnvironment;
   Assert.equal(data.settings.defaultSearchEngineData.origin, "invalid");
-  Services.search.removeEngine(engine);
+  await Services.search.removeEngine(engine);
 
   // Define and reset the test preference.
   const PREF_TEST = "toolkit.telemetry.test.pref1";
@@ -1639,7 +1688,7 @@ add_task(async function test_defaultSearchEngine() {
   Preferences.reset(PREF_TEST);
 
   // Watch the test preference.
-  TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
+  await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
   deferred = PromiseUtils.defer();
   TelemetryEnvironment.registerChangeListener("testSearchEngine_pref", deferred.resolve);
   // Trigger an environment change.
@@ -1709,7 +1758,7 @@ add_task({ skip_if: () => AppConstants.MOZ_APP_NAME == "thunderbird" },
   Preferences.reset(PREF_TEST);
 
   // Watch the test preference.
-  TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
+  await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
   let deferred = PromiseUtils.defer();
   TelemetryEnvironment.registerChangeListener("testDefaultBrowser_pref", deferred.resolve);
   // Trigger an environment change.
@@ -1925,7 +1974,7 @@ add_task(async function test_environmentShutdown() {
   Preferences.reset(PREF_TEST);
 
   // Set up the preferences and listener, then the trigger shutdown
-  TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
+  await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
   TelemetryEnvironment.registerChangeListener("test_environmentShutdownChange", () => {
   // Register a new change listener that asserts if change is propogated
     Assert.ok(false, "No change should be propagated after shutdown.");

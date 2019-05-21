@@ -4,7 +4,7 @@
 
 "use strict";
 
-const {pprint} = ChromeUtils.import("chrome://marionette/content/format.js", {});
+const {pprint} = ChromeUtils.import("chrome://marionette/content/format.js");
 
 const ERRORS = new Set([
   "ElementClickInterceptedError",
@@ -160,7 +160,8 @@ this.stack = function() {
   let trace = new Error().stack;
   let sa = trace.split("\n");
   sa = sa.slice(1);
-  return "stacktrace:\n" + sa.join("\n");
+  let rv = "stacktrace:\n" + sa.join("\n");
+  return rv.trimEnd();
 };
 
 /**

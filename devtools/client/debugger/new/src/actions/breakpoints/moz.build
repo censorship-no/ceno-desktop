@@ -7,8 +7,9 @@ DIRS += [
 
 ]
 
-DevToolsModules(
+CompiledModules(
     'addBreakpoint.js',
+    'breakpointPositions.js',
     'index.js',
     'remapLocations.js',
     'syncBreakpoint.js',

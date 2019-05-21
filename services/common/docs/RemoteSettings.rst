@@ -34,19 +34,42 @@ The ``get()`` method returns the list of entries for a specific key. Each entry 
 .. note::
     The ``id`` and ``last_modified`` (timestamp) attributes are assigned by the server.
 
+
+Empty local database
+--------------------
+
+On new user profiles or for recently added use-cases, the local database will be empty until a synchronization with the server happens. Synchronizations are managed internally, and can sometimes be triggered minutes after browser starts.
+
+By default, if ``.get()`` is called before the local database had the chance to be synchronized, and if no initial data was provided (:ref:`see below <services/initial-data>`), then the settings will be pulled from the server in order to avoid returning an empty list. In that case, the first call to ``.get()`` will thus take longer than the following ones.
+
+This behaviour can be disabled using the ``syncIfEmpty`` option.
+
+.. important::
+
+    If the implicit synchronization fails (e.g network is not available) then errors are silent and an empty list is returned. :ref:`Uptake Telemetry <services/settings/uptake-telemetry>` status is sent though.
+
+
 Options
 -------
 
-The list can optionally be filtered or ordered:
+* ``filters``, ``order``: The list can optionally be filtered or ordered:
 
-.. code-block:: js
+    .. code-block:: js
 
-    const subset = await RemoteSettings("a-key").get({
-      filters: {
-        "property": "value"
-      },
-      order: "-weight"
-    });
+        const subset = await RemoteSettings("a-key").get({
+        filters: {
+            "property": "value"
+        },
+        order: "-weight"
+        });
+
+* ``syncIfEmpty``: implicit synchronization if local data is empty (default: ``true``).
+  Set it to ``false`` if your use-case can tolerate an empty list until the first synchronization happens.
+
+    .. code-block:: js
+
+        await RemoteSettings("a-key").get({ syncIfEmpty: false });
+
 
 Events
 ------
@@ -70,7 +93,7 @@ The ``sync`` event allows to be notified when the remote settings are changed on
 
 .. note::
 
-    Currently, the synchronization of remote settings is triggered by its own timer every 24H (see the preference ``services.settings.poll_interval`` ).
+    Currently, the synchronization of remote settings is triggered via push notifications, and also by its own timer every 24H (see the preference ``services.settings.poll_interval`` ).
 
 File attachments
 ----------------
@@ -84,22 +107,28 @@ When an entry has a file attached to it, it has an ``attachment`` attribute, whi
     data.filter(d => d.attachment)
         .forEach(async ({ attachment: { url, filename, size } }) => {
           if (size < OS.freeDiskSpace) {
+            // Planned feature, see Bug 1501214
             await downloadLocally(url, filename);
           }
         });
 
+.. _services/initial-data:
+
 Initial data
 ------------
 
-For newly created user profiles, the list of entries returned by the ``.get()`` method will be empty until the first synchronization happens.
+It is possible to package a dump of the server records that will be loaded into the local database when no synchronization has happened yet.
 
-It is possible to package a dump of the server records that will be loaded into the local database when no synchronization has happened yet. It will thus serve as the default dataset and also reduce the amount of data to be downloaded on the first synchronization.
+The JSON dump will serve as the default dataset for ``.get()``, instead of doing a round-trip to pull the latest data. It will also reduce the amount of data to be downloaded on the first synchronization.
 
 #. Place the JSON dump of the server records in the ``services/settings/dumps/main/`` folder
 #. Add the filename to the ``FINAL_TARGET_FILES`` list in ``services/settings/dumps/main/moz.build``
 
 Now, when ``RemoteSettings("some-key").get()`` is called from an empty profile, the ``some-key.json`` file is going to be loaded before the results are returned.
 
+.. note::
+
+    JSON dumps are not shipped on Android to minimize the installer size.
 
 Targets and A/B testing
 =======================
@@ -112,6 +141,7 @@ From the client API standpoint, this is completely transparent: the ``.get()`` m
 
     The remote settings targets follow the same approach as the :ref:`Normandy recipe client <components/normandy>` (ie. JEXL filter expressions),
 
+.. _services/settings/uptake-telemetry:
 
 Uptake Telemetry
 ================
@@ -124,7 +154,7 @@ It is submitted to a single :ref:`keyed histogram <histogram-type-keyed>` whose 
 Create new remote settings
 ==========================
 
-Staff members can create new kinds of remote settings, following `this documentation <https://mana.mozilla.org/wiki/pages/viewpage.action?pageId=66655528>`_.
+Staff members can create new kinds of remote settings, following `this documentation <https://remote-settings.readthedocs.io/en/latest/getting-started.html>`_.
 
 It basically consists in:
 
@@ -139,8 +169,53 @@ And once done:
 #. Wait for Firefox to pick-up the changes for your settings key
 
 
-Debugging and testing
-=====================
+Global Notifications
+====================
+
+The polling for changes process sends two notifications that observers can register to:
+
+* ``remote-settings:changes-poll-start``: Polling for changes is starting. triggered either by the scheduled timer or a push broadcast.
+* ``remote-settings:changes-poll-end``: Polling for changes has ended
+
+.. code-block:: javascript
+
+    const observer = {
+      observe(aSubject, aTopic, aData) {
+        Services.obs.removeObserver(this, "remote-settings:changes-poll-start");
+
+        const { expectedTimestamp } = JSON.parse(aData);
+        console.log("Polling started", expectedTimestamp ? "from push broadcast" : "by scheduled trigger");
+      },
+    };
+    Services.obs.addObserver(observer, "remote-settings:changes-poll-start");
+
+
+Advanced Options
+================
+
+``filterFunc``: custom filtering function
+-----------------------------------------
+
+By default, the entries returned by ``.get()`` are filtered based on the JEXL expression result from the ``filter_expression`` field. The ``filterFunc`` option allows to execute a custom filter (async) function, that should return the record (modified or not) if kept or a falsy value if filtered out.
+
+.. code-block:: javascript
+
+    RemoteSettings("a-collection", {
+      filterFunc: (record, environment) => {
+        const { enabled, ...entry } = record;
+        return enabled ? entry : null;
+      }
+    });
+
+
+Debugging and manual testing
+============================
+
+Remote Settings Dev Tools
+-------------------------
+
+The Remote Settings Dev Tools extension provides some tooling to inspect synchronization statuses, to change the remote server or to switch to *preview* mode in order to sign-off pending changes. `More information on the dedicated repository <https://github.com/mozilla/remote-settings-devtools>`_.
+
 
 Trigger a synchronization manually
 ----------------------------------
@@ -151,14 +226,48 @@ The synchronization of every known remote settings clients can be triggered manu
 
     await RemoteSettings.pollChanges()
 
-The synchronization of a single client can be forced with ``maybeSync()``:
+The synchronization of a single client can be forced with the ``.sync()`` method:
 
 .. code-block:: js
 
-    const fakeTimestamp = Infinity;
-    const fakeServerTime = Date.now();
+    await RemoteSettings("a-key").sync();
 
-    await RemoteSettings("a-key").maybeSync(fakeTimestamp, fakeServerTime)
+.. important::
+
+    The above methods are only relevant during development or debugging and should never be called in production code.
+
+
+Inspect local data
+------------------
+
+The internal IndexedDB of Remote Settings can be accessed via the Storage Inspector in the `browser toolbox <https://developer.mozilla.org/en-US/docs/Tools/Browser_Toolbox>`_.
+
+For example, the local data of the ``"key"`` collection can be accessed in the ``remote-settings`` database at *Browser Toolbox* > *Storage* > *IndexedDB* > *chrome*, in the ``records`` store.
+
+
+Unit Tests
+==========
+
+As a foreword, we would like to underline the fact that your tests should not test Remote Settings itself. Your tests should assume Remote Settings works, and should only run assertions on the integration part. For example, if you see yourself mocking the server responses, your tests may go over their responsability.
+
+If your code relies on the ``"sync"`` event, you are likely to be interested in faking this event and make sure your code runs as expected. If it relies on ``.get()``, you will probably want to insert some fake local data.
+
+
+Simulate ``"sync"`` events
+--------------------------
+
+You can forge a ``payload`` that contains the events attributes as described above, and emit it :)
+
+.. code-block:: js
+
+    const payload = {
+      current: [{ id: "", age: 43 }],
+      created: [],
+      updated: [{ old: { id: "abc", age: 42 }, new: { id: "abc", age: 43 }}],
+      deleted: [],
+    };
+
+    await RemoteSettings("a-key").emit("sync", { "data": payload });
 
 
 Manipulate local data
@@ -199,23 +308,10 @@ The local data can be flushed with ``clear()``:
 For further documentation in collection API, checkout the `kinto.js library <https://kintojs.readthedocs.io/>`_, which is in charge of the IndexedDB interactions behind-the-scenes.
 
 
-Inspect local data
-------------------
+Misc
+====
 
-The internal IndexedDBs of remote settings can be accessed via the Storage Inspector in the `browser toolbox <https://developer.mozilla.org/en-US/docs/Tools/Browser_Toolbox>`_.
-
-For example, the local data of the ``"key"`` collection can be accessed in the ``main/key`` IndexedDB store at *Browser Toolbox* > *Storage* > *IndexedDB* > *chrome* > *main/key*.
-
-
-\about:remotesettings
----------------------
-
-The ``about:remotesettings`` extension provides some tooling to inspect synchronization statuses, to change the remote server or to switch to *preview* mode in order to sign-off pending changes. `More information on the dedicated repository <https://github.com/leplatrem/aboutremotesettings>`_.
-
-.. note::
-
-    With `Bug 1406036 <https://bugzilla.mozilla.org/show_bug.cgi?id=1406036>`_, about:remotesettings will be available natively.
-
+We host more documentation on https://remote-settings.readthedocs.io/, on how to run a server locally, manage attachments, or use the REST API etc.
 
 About blocklists
 ----------------

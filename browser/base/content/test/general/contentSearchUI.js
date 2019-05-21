@@ -6,7 +6,6 @@
 "use strict";
 
 (function() {
-
 const TEST_MSG = "ContentSearchUIControllerTest";
 const ENGINE_NAME = "browser_searchSuggestionEngine searchSuggestionEngine.xml";
 var gController;
@@ -18,7 +17,7 @@ addMessageListener(TEST_MSG, msg => {
 var messageHandlers = {
 
   init() {
-    Services.search.currentEngine = Services.search.getEngineByName(ENGINE_NAME);
+    Services.search.defaultEngine = Services.search.getEngineByName(ENGINE_NAME);
     let input = content.document.querySelector("input");
     gController =
       new content.ContentSearchUIController(input, input.parentNode, "test", "test");
@@ -202,5 +201,4 @@ function currentState() {
 
   return state;
 }
-
 })();

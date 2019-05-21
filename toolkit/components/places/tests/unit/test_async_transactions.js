@@ -11,7 +11,6 @@ const annosvc  = PlacesUtils.annotations;
 const PT       = PlacesTransactions;
 const menuGuid = PlacesUtils.bookmarks.menuGuid;
 
-Cu.importGlobalProperties(["URL"]);
 ChromeUtils.defineModuleGetter(this, "Preferences",
                                "resource://gre/modules/Preferences.jsm");
 
@@ -420,46 +419,6 @@ add_task(async function test_recycled_transactions() {
   await PT.clearTransactionsHistory();
   ensureUndoState();
   observer.reset();
-});
-
-add_task(async function test_new_folder_with_annotation() {
-  const ANNO = { name: "TestAnno", value: "TestValue" };
-  let folder_info = createTestFolderInfo();
-  folder_info.index = bmStartIndex;
-  folder_info.annotations = [ANNO];
-  ensureUndoState();
-  let txn = PT.NewFolder(folder_info);
-  folder_info.guid = await txn.transact();
-  let originalInfo = await PlacesUtils.promiseBookmarksTree(folder_info.guid);
-  let ensureDo = async function(aRedo = false) {
-    ensureUndoState([[txn]], 0);
-    await ensureItemsAdded(folder_info);
-    ensureAnnotationsSet(folder_info.guid, [ANNO]);
-    if (aRedo) {
-      // Ignore lastModified in the comparison, for performance reasons.
-      originalInfo.lastModified = null;
-      await ensureBookmarksTreeRestoredCorrectlyExceptDates(originalInfo);
-    }
-    observer.reset();
-  };
-
-  let ensureUndo = () => {
-    ensureUndoState([[txn]], 1);
-    ensureItemsRemoved({ guid:       folder_info.guid,
-                         parentGuid: folder_info.parentGuid,
-                         index:      bmStartIndex });
-    observer.reset();
-  };
-
-  await ensureDo();
-  await PT.undo();
-  await ensureUndo();
-  await PT.redo();
-  await ensureDo(true);
-  await PT.undo();
-  ensureUndo();
-  await PT.clearTransactionsHistory();
-  ensureUndoState();
 });
 
 add_task(async function test_new_folder_with_children() {
@@ -922,7 +881,6 @@ add_task(async function test_add_and_remove_bookmarks_with_additional_info() {
   const testURI = "http://add.remove.tag";
   const TAG_1 = "TestTag1";
   const TAG_2 = "TestTag2";
-  const ANNO = { name: "TestAnno", value: "TestAnnoValue" };
 
   let folder_info = createTestFolderInfo();
   folder_info.guid = await PT.NewFolder(folder_info).transact();
@@ -965,15 +923,8 @@ add_task(async function test_add_and_remove_bookmarks_with_additional_info() {
   observer.reset();
   let b2_info = { parentGuid:  folder_info.guid,
                   url:         testURI,
-                  tags:        [TAG_1, TAG_2],
-                  annotations: [ANNO] };
+                  tags:        [TAG_1, TAG_2] };
   b2_info.guid = await PT.NewBookmark(b2_info).transact();
-  let b2_post_creation_changes = [
-   { guid: b2_info.guid,
-     isAnnoProperty: true,
-     property: ANNO.name,
-     newValue: ANNO.value } ];
-  ensureItemsChanged(...b2_post_creation_changes);
   ensureTags([TAG_1, TAG_2]);
 
   observer.reset();
@@ -984,10 +935,6 @@ add_task(async function test_add_and_remove_bookmarks_with_additional_info() {
   // Check if Remove correctly restores tags and annotations.
   observer.reset();
   await PT.redo();
-  ensureItemsChanged({ guid: b2_info.guid,
-                       isAnnoProperty: true,
-                       property: ANNO.name,
-                       newValue: ANNO.value });
   ensureTags([TAG_1, TAG_2]);
 
   // Test Remove for multiple items.
@@ -1005,7 +952,6 @@ add_task(async function test_add_and_remove_bookmarks_with_additional_info() {
 
   observer.reset();
   await PT.undo();
-  ensureItemsChanged(...b2_post_creation_changes);
   ensureTags([TAG_1, TAG_2]);
 
   observer.reset();
@@ -1653,40 +1599,6 @@ add_task(async function test_array_input_for_batch() {
   Assert.equal((await PlacesUtils.promiseBookmarksTree(folderGuid)), null);
 
   // Cleanup
-  await PT.clearTransactionsHistory();
-});
-
-add_task(async function test_copy_excluding_annotations() {
-  let folderInfo = createTestFolderInfo();
-  let anno = n => { return { name: n, value: 1 }; };
-  folderInfo.annotations = [anno("a"), anno("b"), anno("c")];
-  let folderGuid = await PT.NewFolder(folderInfo).transact();
-
-  let ensureAnnosSet = async function(guid, ...expectedAnnoNames) {
-    let tree = await PlacesUtils.promiseBookmarksTree(guid);
-    let annoNames = "annos" in tree ?
-                      tree.annos.map(a => a.name).sort() : [];
-    Assert.deepEqual(annoNames, expectedAnnoNames);
-  };
-
-  await ensureAnnosSet(folderGuid, "a", "b", "c");
-
-  let excluding_a_dupeGuid =
-    await PT.Copy({ guid: folderGuid,
-                    newParentGuid: PlacesUtils.bookmarks.unfiledGuid,
-                    excludingAnnotation: "a" }).transact();
-  await ensureAnnosSet(excluding_a_dupeGuid, "b", "c");
-
-  let excluding_ac_dupeGuid =
-    await PT.Copy({ guid: folderGuid,
-                    newParentGuid: PlacesUtils.bookmarks.unfiledGuid,
-                    excludingAnnotations: ["a", "c"] }).transact();
-  await ensureAnnosSet(excluding_ac_dupeGuid, "b");
-
-  // Cleanup
-  await PT.undo();
-  await PT.undo();
-  await PT.undo();
   await PT.clearTransactionsHistory();
 });
 

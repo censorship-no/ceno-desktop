@@ -66,7 +66,7 @@ let chromeReg = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(Ci.nsIChr
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "42");
 
-const { GlobalManager } = ChromeUtils.import("resource://gre/modules/Extension.jsm", {});
+const { GlobalManager } = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
 
 add_task(async function test_1() {
   await promiseStartupManager();
@@ -95,7 +95,6 @@ add_task(async function test_1() {
     isWebExtension: true,
     signedState: AddonManager.SIGNEDSTATE_PRIVILEGED,
     iconURL: `${uri}icon48.png`,
-    icon64URL: `${uri}icon64.png`,
   });
 
   // Should persist through a restart
@@ -122,7 +121,6 @@ add_task(async function test_1() {
     type: "extension",
     signedState: AddonManager.SIGNEDSTATE_PRIVILEGED,
     iconURL: `${uri}icon48.png`,
-    icon64URL: `${uri}icon64.png`,
   });
 
   await addon.disable();

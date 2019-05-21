@@ -108,6 +108,7 @@ class TsBase(Test):
         'tpmozafterpaint',
         'fnbpaint',
         'tphero',
+        'tpmanifest',
         'profile',
         'firstpaint',
         'userready',
@@ -169,6 +170,14 @@ class ts_paint_flex(ts_paint):
 
 
 @register_test()
+class startup_about_home_paint(ts_paint):
+    url = None
+    cycles = 20
+    extensions = ['${talos}/startup_test/startup_about_home_paint/addon']
+    tpmanifest = '${talos}/startup_test/startup_about_home_paint/startup_about_home_paint.manifest'
+
+
+@register_test()
 class sessionrestore(TsBase):
     """
     A start up test measuring the time it takes to load a sessionstore.js file.
@@ -177,7 +186,7 @@ class sessionrestore(TsBase):
     2. Launch Firefox.
     3. Measure the delta between firstPaint and sessionRestored.
     """
-    extensions = ['${talos}/pageloader', '${talos}/startup_test/sessionrestore/addon']
+    extensions = ['${talos}/startup_test/sessionrestore/addon']
     cycles = 10
     timeout = 900
     gecko_profile_startup = True
@@ -200,7 +209,10 @@ class sessionrestore_no_auto_restore(sessionrestore):
     2. Launch Firefox.
     3. Measure the delta between firstPaint and sessionRestored.
     """
-    preferences = {'browser.startup.page': 1}
+    preferences = {
+        'browser.startup.page': 1,
+        'talos.sessionrestore.norestore': True,
+    }
 
 
 @register_test()
@@ -279,20 +291,41 @@ class tpaint(PageloaderTest):
 
 
 @register_test()
+class twinopen(PageloaderTest):
+    """
+    Tests the amount of time it takes an open browser to open a new browser
+    window and paint the browser chrome. This test does not include startup
+    time. Multiple test windows are opened in succession.
+    (Measures ctrl-n performance.)
+    """
+    extensions = ['${talos}/pageloader', '${talos}/tests/twinopen']
+    tpmanifest = '${talos}/tests/twinopen/twinopen.manifest'
+    tppagecycles = 20
+    timeout = 300
+    gecko_profile_interval = 1
+    gecko_profile_entries = 2000000
+    tpmozafterpaint = True
+    filters = filter.ignore_first.prepare(5) + filter.median.prepare()
+    unit = 'ms'
+    preferences = {
+        'browser.startup.homepage': 'about:blank'
+    }
+
+
+@register_test()
 class cpstartup(PageloaderTest):
     """
     Tests the amount of time it takes to start up a new content process and
     initialize it to the point where it can start processing incoming URLs
     to load.
     """
-    extensions = ['${talos}/tests/cpstartup', '${talos}/pageloader']
+    extensions = ['${talos}/pageloader', '${talos}/tests/cpstartup/extension']
     tpmanifest = '${talos}/tests/cpstartup/cpstartup.manifest'
     tppagecycles = 20
     gecko_profile_entries = 1000000
     tploadnocache = True
     unit = 'ms'
     preferences = {
-        'addon.test.cpstartup.webserver': '${webserver}',
         # By default, Talos is configured to open links from
         # content in new windows. We're overriding them so that
         # they open in new tabs instead.
@@ -323,16 +356,17 @@ class tabpaint(PageloaderTest):
         # and http://kb.mozillazine.org/Browser.link.open_newwindow.restriction
         'browser.link.open_newwindow': 3,
         'browser.link.open_newwindow.restriction': 2,
+        'browser.newtab.preload': False,
     }
 
 
 @register_test()
-class tps(PageloaderTest):
+class tabswitch(PageloaderTest):
     """
     Tests the amount of time it takes to switch between tabs
     """
     extensions = ['${talos}/tests/tabswitch', '${talos}/pageloader']
-    tpmanifest = '${talos}/tests/tabswitch/tps.manifest'
+    tpmanifest = '${talos}/tests/tabswitch/tabswitch.manifest'
     tppagecycles = 5
     gecko_profile_entries = 5000000
     tploadnocache = True

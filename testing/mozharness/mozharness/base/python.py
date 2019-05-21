@@ -9,7 +9,6 @@
 
 import errno
 import os
-import subprocess
 import sys
 import json
 import socket
@@ -283,7 +282,6 @@ class VirtualenvMixin(object):
         if not module and len(requirements) == 1:
             cwd = os.path.dirname(requirements[0])
 
-        quoted_command = subprocess.list2cmdline(command)
         # Allow for errors while building modules, but require a
         # return status of 0.
         self.retry(
@@ -293,8 +291,7 @@ class VirtualenvMixin(object):
             good_statuses=(0,),
             error_level=WARNING if optional else FATAL,
             error_message=(
-                'Could not install python package: '
-                + quoted_command + ' failed after %(attempts)d tries!'
+                'Could not install python package: failed all attempts.'
             ),
             args=[command, ],
             kwargs={
@@ -495,7 +492,7 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
 
         self.register_virtualenv_module('psutil>=3.1.1', method='pip',
                                         optional=True)
-        self.register_virtualenv_module('mozsystemmonitor==0.3',
+        self.register_virtualenv_module('mozsystemmonitor==0.4',
                                         method='pip', optional=True)
         self.register_virtualenv_module('jsonschema==2.5.1',
                                         method='pip')

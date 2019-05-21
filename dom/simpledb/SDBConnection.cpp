@@ -7,7 +7,10 @@
 #include "SDBConnection.h"
 
 #include "ActorsChild.h"
-#include "jsfriendapi.h"
+#include "jsfriendapi.h"     // JS_GetObjectAsArrayBufferView
+#include "js/ArrayBuffer.h"  // JS::{GetObjectAsArrayBuffer,IsArrayBufferObject}
+#include "js/RootingAPI.h"   // JS::{Handle,Rooted}
+#include "js/Value.h"        // JS::Value
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
@@ -23,16 +26,13 @@ using namespace mozilla::ipc;
 
 namespace {
 
-nsresult
-GetWriteData(JSContext* aCx,
-             JS::Handle<JS::Value> aValue,
-             nsCString& aData)
-{
+nsresult GetWriteData(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                      nsCString& aData) {
   if (aValue.isObject()) {
     JS::Rooted<JSObject*> obj(aCx, &aValue.toObject());
 
     bool isView = false;
-    if (JS_IsArrayBufferObject(obj) ||
+    if (JS::IsArrayBufferObject(obj) ||
         (isView = JS_IsArrayBufferViewObject(obj))) {
       uint8_t* data;
       uint32_t length;
@@ -40,11 +40,10 @@ GetWriteData(JSContext* aCx,
       if (isView) {
         JS_GetObjectAsArrayBufferView(obj, &length, &unused, &data);
       } else {
-        JS_GetObjectAsArrayBuffer(obj, &length, &data);
+        JS::GetObjectAsArrayBuffer(obj, &length, &data);
       }
 
-      if (NS_WARN_IF(!aData.Assign(reinterpret_cast<char*>(data),
-                                   length,
+      if (NS_WARN_IF(!aData.Assign(reinterpret_cast<char*>(data), length,
                                    fallible_t()))) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
@@ -56,19 +55,17 @@ GetWriteData(JSContext* aCx,
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-} // namespace
+}  // namespace
 
 SDBConnection::SDBConnection()
-  : mBackgroundActor(nullptr)
-  , mRunningRequest(false)
-  , mOpen(false)
-  , mAllowedToClose(false)
-{
+    : mBackgroundActor(nullptr),
+      mRunningRequest(false),
+      mOpen(false),
+      mAllowedToClose(false) {
   AssertIsOnOwningThread();
 }
 
-SDBConnection::~SDBConnection()
-{
+SDBConnection::~SDBConnection() {
   AssertIsOnOwningThread();
 
   if (mBackgroundActor) {
@@ -78,9 +75,8 @@ SDBConnection::~SDBConnection()
 }
 
 // static
-nsresult
-SDBConnection::Create(nsISupports* aOuter, REFNSIID aIID, void** aResult)
-{
+nsresult SDBConnection::Create(nsISupports* aOuter, REFNSIID aIID,
+                               void** aResult) {
   MOZ_ASSERT(aResult);
 
   if (NS_WARN_IF(!Preferences::GetBool(kPrefSimpleDBEnabled, false))) {
@@ -101,44 +97,34 @@ SDBConnection::Create(nsISupports* aOuter, REFNSIID aIID, void** aResult)
   return NS_OK;
 }
 
-void
-SDBConnection::ClearBackgroundActor()
-{
+void SDBConnection::ClearBackgroundActor() {
   AssertIsOnOwningThread();
 
   mBackgroundActor = nullptr;
 }
 
-void
-SDBConnection::OnNewRequest()
-{
+void SDBConnection::OnNewRequest() {
   AssertIsOnOwningThread();
   MOZ_ASSERT(!mRunningRequest);
 
   mRunningRequest = true;
 }
 
-void
-SDBConnection::OnRequestFinished()
-{
+void SDBConnection::OnRequestFinished() {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mRunningRequest);
 
   mRunningRequest = false;
 }
 
-void
-SDBConnection::OnOpen()
-{
+void SDBConnection::OnOpen() {
   AssertIsOnOwningThread();
   MOZ_ASSERT(!mOpen);
 
   mOpen = true;
 }
 
-void
-SDBConnection::OnClose(bool aAbnormal)
-{
+void SDBConnection::OnClose(bool aAbnormal) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mOpen);
 
@@ -153,17 +139,13 @@ SDBConnection::OnClose(bool aAbnormal)
   }
 }
 
-void
-SDBConnection::AllowToClose()
-{
+void SDBConnection::AllowToClose() {
   AssertIsOnOwningThread();
 
   mAllowedToClose = true;
 }
 
-nsresult
-SDBConnection::CheckState()
-{
+nsresult SDBConnection::CheckState() {
   AssertIsOnOwningThread();
 
   if (mAllowedToClose) {
@@ -177,9 +159,7 @@ SDBConnection::CheckState()
   return NS_OK;
 }
 
-nsresult
-SDBConnection::EnsureBackgroundActor()
-{
+nsresult SDBConnection::EnsureBackgroundActor() {
   AssertIsOnOwningThread();
 
   if (mBackgroundActor) {
@@ -187,18 +167,16 @@ SDBConnection::EnsureBackgroundActor()
   }
 
   PBackgroundChild* backgroundActor =
-    BackgroundChild::GetOrCreateForCurrentThread();
+      BackgroundChild::GetOrCreateForCurrentThread();
   if (NS_WARN_IF(!backgroundActor)) {
     return NS_ERROR_FAILURE;
   }
 
   SDBConnectionChild* actor = new SDBConnectionChild(this);
 
-  mBackgroundActor =
-    static_cast<SDBConnectionChild*>(
+  mBackgroundActor = static_cast<SDBConnectionChild*>(
       backgroundActor->SendPBackgroundSDBConnectionConstructor(
-                                                              actor,
-                                                              *mPrincipalInfo));
+          actor, *mPrincipalInfo));
   if (NS_WARN_IF(!mBackgroundActor)) {
     return NS_ERROR_FAILURE;
   }
@@ -206,10 +184,8 @@ SDBConnection::EnsureBackgroundActor()
   return NS_OK;
 }
 
-nsresult
-SDBConnection::InitiateRequest(SDBRequest* aRequest,
-                               const SDBRequestParams& aParams)
-{
+nsresult SDBConnection::InitiateRequest(SDBRequest* aRequest,
+                                        const SDBRequestParams& aParams) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aRequest);
   MOZ_ASSERT(mBackgroundActor);
@@ -229,8 +205,7 @@ SDBConnection::InitiateRequest(SDBRequest* aRequest,
 NS_IMPL_ISUPPORTS(SDBConnection, nsISDBConnection)
 
 NS_IMETHODIMP
-SDBConnection::Init(nsIPrincipal *aPrincipal)
-{
+SDBConnection::Init(nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
 
@@ -246,14 +221,17 @@ SDBConnection::Init(nsIPrincipal *aPrincipal)
     return NS_ERROR_INVALID_ARG;
   }
 
+  if (NS_WARN_IF(!QuotaManager::IsPrincipalInfoValid(*principalInfo))) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
   mPrincipalInfo = std::move(principalInfo);
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SDBConnection::Open(const nsAString& aName, nsISDBRequest** _retval)
-{
+SDBConnection::Open(const nsAString& aName, nsISDBRequest** _retval) {
   AssertIsOnOwningThread();
 
   nsresult rv = CheckState();
@@ -285,8 +263,7 @@ SDBConnection::Open(const nsAString& aName, nsISDBRequest** _retval)
 }
 
 NS_IMETHODIMP
-SDBConnection::Seek(uint64_t aOffset, nsISDBRequest** _retval)
-{
+SDBConnection::Seek(uint64_t aOffset, nsISDBRequest** _retval) {
   AssertIsOnOwningThread();
 
   nsresult rv = CheckState();
@@ -313,8 +290,7 @@ SDBConnection::Seek(uint64_t aOffset, nsISDBRequest** _retval)
 }
 
 NS_IMETHODIMP
-SDBConnection::Read(uint64_t aSize, nsISDBRequest** _retval)
-{
+SDBConnection::Read(uint64_t aSize, nsISDBRequest** _retval) {
   AssertIsOnOwningThread();
 
   nsresult rv = CheckState();
@@ -341,10 +317,8 @@ SDBConnection::Read(uint64_t aSize, nsISDBRequest** _retval)
 }
 
 NS_IMETHODIMP
-SDBConnection::Write(JS::HandleValue aValue,
-                     JSContext* aCx,
-                     nsISDBRequest** _retval)
-{
+SDBConnection::Write(JS::HandleValue aValue, JSContext* aCx,
+                     nsISDBRequest** _retval) {
   AssertIsOnOwningThread();
 
   nsresult rv = CheckState();
@@ -379,8 +353,7 @@ SDBConnection::Write(JS::HandleValue aValue,
 }
 
 NS_IMETHODIMP
-SDBConnection::Close(nsISDBRequest** _retval)
-{
+SDBConnection::Close(nsISDBRequest** _retval) {
   AssertIsOnOwningThread();
 
   nsresult rv = CheckState();
@@ -406,8 +379,7 @@ SDBConnection::Close(nsISDBRequest** _retval)
 }
 
 NS_IMETHODIMP
-SDBConnection::GetCloseCallback(nsISDBCloseCallback** aCloseCallback)
-{
+SDBConnection::GetCloseCallback(nsISDBCloseCallback** aCloseCallback) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aCloseCallback);
 
@@ -416,13 +388,12 @@ SDBConnection::GetCloseCallback(nsISDBCloseCallback** aCloseCallback)
 }
 
 NS_IMETHODIMP
-SDBConnection::SetCloseCallback(nsISDBCloseCallback* aCloseCallback)
-{
+SDBConnection::SetCloseCallback(nsISDBCloseCallback* aCloseCallback) {
   AssertIsOnOwningThread();
 
   mCloseCallback = aCloseCallback;
   return NS_OK;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

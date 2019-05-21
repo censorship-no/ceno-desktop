@@ -17,7 +17,7 @@
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIScriptContext.h"
 #include "nsIClassInfo.h"
-#include "nsIDocShell.h"
+#include "nsDocShell.h"
 #include "nsCOMArray.h"
 #include "nsIRunnable.h"
 #include "nsWeakReference.h"
@@ -33,25 +33,23 @@ namespace dom {
  * does not use any IPC infrastructure for its message passing.
  */
 
-class InProcessTabChildMessageManager final : public ContentFrameMessageManager,
-                                              public nsMessageManagerScriptExecutor,
-                                              public nsIInProcessContentFrameMessageManager,
-                                              public nsSupportsWeakReference,
-                                              public mozilla::dom::ipc::MessageManagerCallback
-{
+class InProcessTabChildMessageManager final
+    : public ContentFrameMessageManager,
+      public nsMessageManagerScriptExecutor,
+      public nsIInProcessContentFrameMessageManager,
+      public nsSupportsWeakReference,
+      public mozilla::dom::ipc::MessageManagerCallback {
   typedef mozilla::dom::ipc::StructuredCloneData StructuredCloneData;
 
-private:
-  InProcessTabChildMessageManager(nsIDocShell* aShell, nsIContent* aOwner,
+ private:
+  InProcessTabChildMessageManager(nsDocShell* aShell, nsIContent* aOwner,
                                   nsFrameMessageManager* aChrome);
 
-public:
-  static already_AddRefed<InProcessTabChildMessageManager> Create(nsIDocShell* aShell,
-                                                                  nsIContent* aOwner,
-                                                                  nsFrameMessageManager* aChrome)
-  {
+ public:
+  static already_AddRefed<InProcessTabChildMessageManager> Create(
+      nsDocShell* aShell, nsIContent* aOwner, nsFrameMessageManager* aChrome) {
     RefPtr<InProcessTabChildMessageManager> mm =
-      new InProcessTabChildMessageManager(aShell, aOwner, aChrome);
+        new InProcessTabChildMessageManager(aShell, aOwner, aChrome);
 
     NS_ENSURE_TRUE(mm->Init(), nullptr);
 
@@ -59,21 +57,18 @@ public:
   }
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(InProcessTabChildMessageManager,
-                                                         DOMEventTargetHelper)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
+      InProcessTabChildMessageManager, DOMEventTargetHelper)
 
   void MarkForCC();
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
-  virtual already_AddRefed<nsPIDOMWindowOuter>
-    GetContent(ErrorResult& aError) override;
-  virtual already_AddRefed<nsIDocShell>
-    GetDocShell(ErrorResult& aError) override
-  {
-    nsCOMPtr<nsIDocShell> docShell(mDocShell);
-    return docShell.forget();
+  Nullable<WindowProxyHolder> GetContent(ErrorResult& aError) override;
+  virtual already_AddRefed<nsIDocShell> GetDocShell(
+      ErrorResult& aError) override {
+    return do_AddRef(mDocShell);
   }
   virtual already_AddRefed<nsIEventTarget> GetTabEventTarget() override;
   virtual uint64_t ChromeOuterWindowID() override;
@@ -87,17 +82,15 @@ public:
   /**
    * MessageManagerCallback methods that we override.
    */
-  virtual bool DoSendBlockingMessage(JSContext* aCx,
-                                      const nsAString& aMessage,
+  virtual bool DoSendBlockingMessage(JSContext* aCx, const nsAString& aMessage,
+                                     StructuredCloneData& aData,
+                                     JS::Handle<JSObject*> aCpows,
+                                     nsIPrincipal* aPrincipal,
+                                     nsTArray<StructuredCloneData>* aRetVal,
+                                     bool aIsSync) override;
+  virtual nsresult DoSendAsyncMessage(JSContext* aCx, const nsAString& aMessage,
                                       StructuredCloneData& aData,
-                                      JS::Handle<JSObject *> aCpows,
-                                      nsIPrincipal* aPrincipal,
-                                      nsTArray<StructuredCloneData>* aRetVal,
-                                      bool aIsSync) override;
-  virtual nsresult DoSendAsyncMessage(JSContext* aCx,
-                                      const nsAString& aMessage,
-                                      StructuredCloneData& aData,
-                                      JS::Handle<JSObject *> aCpows,
+                                      JS::Handle<JSObject*> aCpows,
                                       nsIPrincipal* aPrincipal) override;
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
@@ -109,27 +102,24 @@ public:
   void SendMessageToParent(const nsString& aMessage, bool aSync,
                            const nsString& aJSON,
                            nsTArray<nsString>* aJSONRetVal);
-  nsFrameMessageManager* GetInnerManager()
-  {
+  nsFrameMessageManager* GetInnerManager() {
     return static_cast<nsFrameMessageManager*>(mMessageManager.get());
   }
 
   void SetOwner(nsIContent* aOwner) { mOwner = aOwner; }
-  nsFrameMessageManager* GetChromeMessageManager()
-  {
+  nsFrameMessageManager* GetChromeMessageManager() {
     return mChromeMessageManager;
   }
-  void SetChromeMessageManager(nsFrameMessageManager* aParent)
-  {
+  void SetChromeMessageManager(nsFrameMessageManager* aParent) {
     mChromeMessageManager = aParent;
   }
 
   already_AddRefed<nsFrameLoader> GetFrameLoader();
 
-protected:
+ protected:
   virtual ~InProcessTabChildMessageManager();
 
-  nsCOMPtr<nsIDocShell> mDocShell;
+  RefPtr<nsDocShell> mDocShell;
   bool mLoadingScript;
 
   // Is this the message manager for an in-process <iframe mozbrowser>? This
@@ -141,12 +131,13 @@ protected:
   // teardown. This allows us to dispatch message manager messages during this
   // time.
   RefPtr<nsFrameLoader> mFrameLoader;
-public:
+
+ public:
   nsIContent* mOwner;
   nsFrameMessageManager* mChromeMessageManager;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

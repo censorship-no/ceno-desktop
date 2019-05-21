@@ -4,8 +4,7 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "AppConstants",
   "resource://gre/modules/AppConstants.jsm");
 ChromeUtils.defineModuleGetter(this, "SessionStore",
@@ -69,19 +68,22 @@ function isTreeViewVisible() {
   return tabList.hasAttribute("available");
 }
 
-function initTreeView() {
+async function initTreeView() {
   // If we aren't visible we initialize as we are made visible (and it's OK
   // to initialize multiple times)
   if (!isTreeViewVisible()) {
     return;
   }
   var tabList = document.getElementById("tabList");
-  var winLabel = tabList.getAttribute("_window_label");
-
+  let l10nIds = [];
+  for (let labelIndex = 0; labelIndex < gStateObject.windows.length; labelIndex++) {
+      l10nIds.push({id: "restore-page-window-label", args: { windowNumber: (labelIndex + 1)}});
+  }
+  let winLabels = await document.l10n.formatValues(l10nIds);
   gTreeData = [];
   gStateObject.windows.forEach(function(aWinData, aIx) {
     var winState = {
-      label: winLabel.replace("%S", (aIx + 1)),
+      label: winLabels[aIx],
       open: true,
       checked: true,
       ix: aIx,
@@ -205,8 +207,9 @@ function onListClick(aEvent) {
         !treeView.isContainer(cell.row)) {
       restoreSingleTab(cell.row, aEvent.shiftKey);
       aEvent.stopPropagation();
-    } else if (cell.col.id == "restore")
+    } else if (cell.col.id == "restore") {
       toggleRowChecked(cell.row);
+    }
   }
 }
 

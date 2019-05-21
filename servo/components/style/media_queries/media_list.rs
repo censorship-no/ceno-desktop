@@ -1,17 +1,17 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! A media query list:
 //!
 //! https://drafts.csswg.org/mediaqueries/#typedef-media-query-list
 
-use context::QuirksMode;
+use super::{Device, MediaQuery, Qualifier};
+use crate::context::QuirksMode;
+use crate::error_reporting::ContextualParseError;
+use crate::parser::ParserContext;
 use cssparser::{Delimiter, Parser};
 use cssparser::{ParserInput, Token};
-use error_reporting::ContextualParseError;
-use parser::ParserContext;
-use super::{Device, MediaQuery, Qualifier};
 
 /// A type that encapsulates a media query list.
 #[css(comma, derive_debug)]
@@ -74,21 +74,22 @@ impl MediaList {
     pub fn evaluate(&self, device: &Device, quirks_mode: QuirksMode) -> bool {
         // Check if it is an empty media query list or any queries match.
         // https://drafts.csswg.org/mediaqueries-4/#mq-list
-        self.media_queries.is_empty() || self.media_queries.iter().any(|mq| {
-            let media_match = mq.media_type.matches(device.media_type());
+        self.media_queries.is_empty() ||
+            self.media_queries.iter().any(|mq| {
+                let media_match = mq.media_type.matches(device.media_type());
 
-            // Check if the media condition match.
-            let query_match = media_match && mq
-                .condition
-                .as_ref()
-                .map_or(true, |c| c.matches(device, quirks_mode));
+                // Check if the media condition match.
+                let query_match = media_match &&
+                    mq.condition
+                        .as_ref()
+                        .map_or(true, |c| c.matches(device, quirks_mode));
 
-            // Apply the logical NOT qualifier to the result
-            match mq.qualifier {
-                Some(Qualifier::Not) => !query_match,
-                _ => query_match,
-            }
-        })
+                // Apply the logical NOT qualifier to the result
+                match mq.qualifier {
+                    Some(Qualifier::Not) => !query_match,
+                    _ => query_match,
+                }
+            })
     }
 
     /// Whether this `MediaList` contains no media queries.

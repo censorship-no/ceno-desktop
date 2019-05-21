@@ -1,12 +1,11 @@
 /* import-globals-from ../../../common/tests/unit/head_helpers.js */
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://testing-common/httpd.js");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const { UptakeTelemetry } = ChromeUtils.import("resource://services-common/uptake-telemetry.js", {});
-const { RemoteSettings } = ChromeUtils.import("resource://services-settings/remote-settings.js", {});
-const { Kinto } = ChromeUtils.import("resource://services-common/kinto-offline-client.js", {});
+const { UptakeTelemetry } = ChromeUtils.import("resource://services-common/uptake-telemetry.js");
+const { RemoteSettings } = ChromeUtils.import("resource://services-settings/remote-settings.js");
+const { Kinto } = ChromeUtils.import("resource://services-common/kinto-offline-client.js");
 
 const IS_ANDROID = AppConstants.platform == "android";
 
@@ -16,6 +15,7 @@ const PREF_LAST_UPDATE = "services.settings.last_update_seconds";
 const PREF_LAST_ETAG = "services.settings.last_etag";
 const PREF_CLOCK_SKEW_SECONDS = "services.settings.clock_skew_seconds";
 
+const DB_NAME = "remote-settings";
 // Telemetry report result.
 const TELEMETRY_HISTOGRAM_KEY = "settings-changes-monitoring";
 const CHANGES_PATH = "/v1/buckets/monitor/collections/changes/records";
@@ -39,9 +39,11 @@ function serveChangesEntries(serverTime, entries) {
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Date", (new Date(serverTime)).toUTCString());
     if (entries.length) {
-      response.setHeader("ETag", `"${entries[0].last_modified}"`);
+      const latest = entries[0].last_modified;
+      response.setHeader("ETag", `"${latest}"`);
+      response.setHeader("Last-Modified", (new Date(latest)).toGMTString());
     }
-    response.write(JSON.stringify({"data": entries}));
+    response.write(JSON.stringify({ "data": entries }));
   };
 }
 
@@ -58,6 +60,31 @@ function run_test() {
 }
 
 add_task(clear_state);
+
+
+add_task(async function test_an_event_is_sent_on_start() {
+  server.registerPathHandler(CHANGES_PATH, (request, response) => {
+    response.write(JSON.stringify({ data: [] }));
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
+    response.setHeader("ETag", '"42"');
+    response.setHeader("Date", (new Date()).toUTCString());
+    response.setStatusLine(null, 200, "OK");
+  });
+  let notificationObserved = null;
+  const observer = {
+    observe(aSubject, aTopic, aData) {
+      Services.obs.removeObserver(this, "remote-settings:changes-poll-start");
+      notificationObserved = JSON.parse(aData);
+    },
+  };
+  Services.obs.addObserver(observer, "remote-settings:changes-poll-start");
+
+  await RemoteSettings.pollChanges({ expectedTimestamp: 13 });
+
+  Assert.equal(notificationObserved.expectedTimestamp, 13, "start notification should have been observed");
+});
+add_task(clear_state);
+
 
 add_task(async function test_check_success() {
   const startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
@@ -85,15 +112,15 @@ add_task(async function test_check_success() {
   let maybeSyncCalled = false;
   c.maybeSync = () => { maybeSyncCalled = true; };
 
-  // Ensure that the remote-settings-changes-polled notification works
+  // Ensure that the remote-settings:changes-poll-end notification works
   let notificationObserved = false;
   const observer = {
     observe(aSubject, aTopic, aData) {
-      Services.obs.removeObserver(this, "remote-settings-changes-polled");
+      Services.obs.removeObserver(this, "remote-settings:changes-poll-end");
       notificationObserved = true;
     },
   };
-  Services.obs.addObserver(observer, "remote-settings-changes-polled");
+  Services.obs.addObserver(observer, "remote-settings:changes-poll-end");
 
   await RemoteSettings.pollChanges();
 
@@ -130,7 +157,7 @@ add_task(async function test_update_timer_interface() {
   }]));
 
   await new Promise((resolve) => {
-    const e = "remote-settings-changes-polled";
+    const e = "remote-settings:changes-poll-end";
     const changesPolledObserver = {
       observe(aSubject, aTopic, aData) {
         Services.obs.removeObserver(this, e);
@@ -163,15 +190,15 @@ add_task(async function test_check_up_to_date() {
 
   Services.prefs.setCharPref(PREF_LAST_ETAG, '"1100"');
 
-  // Ensure that the remote-settings-changes-polled notification is sent.
+  // Ensure that the remote-settings:changes-poll-end notification is sent.
   let notificationObserved = false;
   const observer = {
     observe(aSubject, aTopic, aData) {
-      Services.obs.removeObserver(this, "remote-settings-changes-polled");
+      Services.obs.removeObserver(this, "remote-settings:changes-poll-end");
       notificationObserved = true;
     },
   };
-  Services.obs.addObserver(observer, "remote-settings-changes-polled");
+  Services.obs.addObserver(observer, "remote-settings:changes-poll-end");
 
   // If server has no change, a 304 is received, maybeSync() is not called.
   let maybeSyncCalled = false;
@@ -211,6 +238,7 @@ add_task(async function test_expected_timestamp() {
         data: entries,
       }));
     }
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("ETag", '"1100"');
     response.setHeader("Date", (new Date()).toUTCString());
     response.setStatusLine(null, 200, "OK");
@@ -224,6 +252,59 @@ add_task(async function test_expected_timestamp() {
   await RemoteSettings.pollChanges({ expectedTimestamp: '"42"'});
 
   Assert.ok(maybeSyncCalled, "maybeSync was called");
+});
+add_task(clear_state);
+
+
+add_task(async function test_client_last_check_is_saved() {
+  server.registerPathHandler(CHANGES_PATH, (request, response) => {
+      response.write(JSON.stringify({
+      data: [{
+        id: "695c2407-de79-4408-91c7-70720dd59d78",
+        last_modified: 1100,
+        host: "localhost",
+        bucket: "main",
+        collection: "models-recipes",
+      }],
+    }));
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
+    response.setHeader("ETag", '"42"');
+    response.setHeader("Date", (new Date()).toUTCString());
+    response.setStatusLine(null, 200, "OK");
+  });
+
+  const c = RemoteSettings("models-recipes");
+  c.maybeSync = () => {};
+
+  equal(c.lastCheckTimePref, "services.settings.main.models-recipes.last_check");
+  Services.prefs.setIntPref(c.lastCheckTimePref, 0);
+
+  await RemoteSettings.pollChanges({ expectedTimestamp: '"42"' });
+
+  notEqual(Services.prefs.getIntPref(c.lastCheckTimePref), 0);
+});
+add_task(clear_state);
+
+
+add_task(async function test_age_of_data_is_reported_in_uptake_status() {
+  const serverTime = 1552323900000;
+  server.registerPathHandler(CHANGES_PATH, serveChangesEntries(serverTime, [{
+    id: "b6ba7fab-a40a-4d03-a4af-6b627f3c5b36",
+    last_modified: serverTime - 3600 * 1000,
+    host: "localhost",
+    bucket: "main",
+    collection: "some-entry",
+  }]));
+  const backup = UptakeTelemetry.report;
+  let reportedAge;
+  UptakeTelemetry.report = (component, status, { age }) => {
+    reportedAge = age;
+  };
+
+  await RemoteSettings.pollChanges();
+
+  Assert.equal(reportedAge, 3600);
+  UptakeTelemetry.report = backup;
 });
 add_task(clear_state);
 
@@ -254,6 +335,7 @@ add_task(async function test_success_with_partial_list() {
       }));
       response.setHeader("ETag", '"42"');
     }
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Date", (new Date()).toUTCString());
     response.setStatusLine(null, 200, "OK");
   }
@@ -274,6 +356,8 @@ add_task(clear_state);
 
 
 add_task(async function test_server_bad_json() {
+  const startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+
   function simulateBadJSON(request, response) {
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.write("<html></html>");
@@ -288,6 +372,39 @@ add_task(async function test_server_bad_json() {
     error = e;
   }
   Assert.ok(/JSON.parse: unexpected character/.test(error.message));
+
+  const endHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+  const expectedIncrements = {
+    [UptakeTelemetry.STATUS.PARSE_ERROR]: 1,
+  };
+  checkUptakeTelemetry(startHistogram, endHistogram, expectedIncrements);
+});
+add_task(clear_state);
+
+
+add_task(async function test_server_bad_content_type() {
+  const startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+
+  function simulateBadContentType(request, response) {
+    response.setHeader("Content-Type", "text/html");
+    response.write("<html></html>");
+    response.setStatusLine(null, 200, "OK");
+  }
+  server.registerPathHandler(CHANGES_PATH, simulateBadContentType);
+
+  let error;
+  try {
+    await RemoteSettings.pollChanges();
+  } catch (e) {
+    error = e;
+  }
+  Assert.ok(/Unexpected content-type/.test(error.message));
+
+  const endHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
+  const expectedIncrements = {
+    [UptakeTelemetry.STATUS.CONTENT_ERROR]: 1,
+  };
+  checkUptakeTelemetry(startHistogram, endHistogram, expectedIncrements);
 });
 add_task(clear_state);
 
@@ -324,11 +441,11 @@ add_task(async function test_server_error() {
   let notificationObserved = false;
   const observer = {
     observe(aSubject, aTopic, aData) {
-      Services.obs.removeObserver(this, "remote-settings-changes-polled");
+      Services.obs.removeObserver(this, "remote-settings:changes-poll-end");
       notificationObserved = true;
     },
   };
-  Services.obs.addObserver(observer, "remote-settings-changes-polled");
+  Services.obs.addObserver(observer, "remote-settings:changes-poll-end");
   Services.prefs.setIntPref(PREF_LAST_UPDATE, 42);
 
   // pollChanges() fails with adequate error and no notification.
@@ -503,9 +620,8 @@ add_task(async function test_syncs_clients_with_local_database() {
   // This simulates what remote-settings would do when initializing a local database.
   // We don't want to instantiate a client using the RemoteSettings() API
   // since we want to test «unknown» clients that have a local database.
-  const dbName = "remote-settings";
-  await (new Kinto.adapters.IDB("blocklists/addons", { dbName })).saveLastModified(42);
-  await (new Kinto.adapters.IDB("main/recipes", { dbName })).saveLastModified(43);
+  await (new Kinto.adapters.IDB("blocklists/addons", { dbName: DB_NAME })).saveLastModified(42);
+  await (new Kinto.adapters.IDB("main/recipes", { dbName: DB_NAME })).saveLastModified(43);
 
   let error;
   try {
@@ -588,6 +704,7 @@ add_task(async function test_adding_client_resets_last_etag() {
       response.setHeader("ETag", '"42"');
       response.setStatusLine(null, 200, "OK");
     }
+    response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setHeader("Date", (new Date()).toUTCString());
   }
   server.registerPathHandler(CHANGES_PATH, serve200or304);

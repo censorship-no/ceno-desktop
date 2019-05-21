@@ -15,11 +15,8 @@ namespace layers {
 class APZCTreeManager;
 class APZUpdater;
 
-class APZCTreeManagerParent
-    : public PAPZCTreeManagerParent
-{
-public:
-
+class APZCTreeManagerParent : public PAPZCTreeManagerParent {
+ public:
   APZCTreeManagerParent(LayersId aLayersId,
                         RefPtr<APZCTreeManager> aAPZCTreeManager,
                         RefPtr<APZUpdater> mAPZUpdater);
@@ -34,64 +31,46 @@ public:
   void ChildAdopted(RefPtr<APZCTreeManager> aAPZCTreeManager,
                     RefPtr<APZUpdater> aAPZUpdater);
 
-  mozilla::ipc::IPCResult
-  RecvSetKeyboardMap(const KeyboardMap& aKeyboardMap) override;
+  mozilla::ipc::IPCResult RecvSetKeyboardMap(const KeyboardMap& aKeyboardMap);
 
-  mozilla::ipc::IPCResult
-  RecvZoomToRect(
-          const ScrollableLayerGuid& aGuid,
-          const CSSRect& aRect,
-          const uint32_t& aFlags) override;
+  mozilla::ipc::IPCResult RecvZoomToRect(const ScrollableLayerGuid& aGuid,
+                                         const CSSRect& aRect,
+                                         const uint32_t& aFlags);
 
-  mozilla::ipc::IPCResult
-  RecvContentReceivedInputBlock(
-          const uint64_t& aInputBlockId,
-          const bool& aPreventDefault) override;
+  mozilla::ipc::IPCResult RecvContentReceivedInputBlock(
+      const uint64_t& aInputBlockId, const bool& aPreventDefault);
 
-  mozilla::ipc::IPCResult
-  RecvSetTargetAPZC(
-          const uint64_t& aInputBlockId,
-          nsTArray<ScrollableLayerGuid>&& aTargets) override;
+  mozilla::ipc::IPCResult RecvSetTargetAPZC(
+      const uint64_t& aInputBlockId, nsTArray<ScrollableLayerGuid>&& aTargets);
 
-  mozilla::ipc::IPCResult
-  RecvUpdateZoomConstraints(
-          const ScrollableLayerGuid& aGuid,
-          const MaybeZoomConstraints& aConstraints) override;
+  mozilla::ipc::IPCResult RecvUpdateZoomConstraints(
+      const ScrollableLayerGuid& aGuid,
+      const MaybeZoomConstraints& aConstraints);
 
-  mozilla::ipc::IPCResult
-  RecvSetDPI(const float& aDpiValue) override;
+  mozilla::ipc::IPCResult RecvSetDPI(const float& aDpiValue);
 
-  mozilla::ipc::IPCResult
-  RecvSetAllowedTouchBehavior(
-          const uint64_t& aInputBlockId,
-          nsTArray<TouchBehaviorFlags>&& aValues) override;
+  mozilla::ipc::IPCResult RecvSetAllowedTouchBehavior(
+      const uint64_t& aInputBlockId, nsTArray<TouchBehaviorFlags>&& aValues);
 
-  mozilla::ipc::IPCResult
-  RecvStartScrollbarDrag(
-          const ScrollableLayerGuid& aGuid,
-          const AsyncDragMetrics& aDragMetrics) override;
+  mozilla::ipc::IPCResult RecvStartScrollbarDrag(
+      const ScrollableLayerGuid& aGuid, const AsyncDragMetrics& aDragMetrics);
 
-  mozilla::ipc::IPCResult
-  RecvStartAutoscroll(
-          const ScrollableLayerGuid& aGuid,
-          const ScreenPoint& aAnchorLocation) override;
+  mozilla::ipc::IPCResult RecvStartAutoscroll(
+      const ScrollableLayerGuid& aGuid, const ScreenPoint& aAnchorLocation);
 
-  mozilla::ipc::IPCResult
-  RecvStopAutoscroll(const ScrollableLayerGuid& aGuid) override;
+  mozilla::ipc::IPCResult RecvStopAutoscroll(const ScrollableLayerGuid& aGuid);
 
-  mozilla::ipc::IPCResult
-  RecvSetLongTapEnabled(const bool& aTapGestureEnabled) override;
+  mozilla::ipc::IPCResult RecvSetLongTapEnabled(const bool& aTapGestureEnabled);
 
-  void
-  ActorDestroy(ActorDestroyReason aWhy) override { }
+  void ActorDestroy(ActorDestroyReason aWhy) override {}
 
-private:
+ private:
   LayersId mLayersId;
   RefPtr<APZCTreeManager> mTreeManager;
   RefPtr<APZUpdater> mUpdater;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
-#endif // mozilla_layers_APZCTreeManagerParent_h
+#endif  // mozilla_layers_APZCTreeManagerParent_h

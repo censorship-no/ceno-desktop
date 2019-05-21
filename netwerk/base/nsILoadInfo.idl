@@ -8,19 +8,20 @@
 #include "nsIContentPolicy.idl"
 
 interface nsIChannel;
+interface nsICookieSettings;
 interface nsICSPEventListener;
 interface nsINode;
 interface nsIPrincipal;
 interface nsIRedirectHistoryEntry;
 interface nsIURI;
 webidl Document;
+webidl BrowsingContext;
 native LoadContextRef(already_AddRefed<nsISupports>);
 %{C++
 #include "nsTArray.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/LoadTainting.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/TelemetryHistogramEnums.h"
 #include "nsStringFwd.h"
 
 namespace mozilla {
@@ -33,7 +34,6 @@ class ServiceWorkerDescriptor;
 } // namespace mozilla
 %}
 
-native AnalyticsProvider(mozilla::Telemetry::LABELS_DOCUMENT_ANALYTICS_TRACKER_FASTBLOCKED);
 [ref] native nsIRedirectHistoryEntryArray(const nsTArray<nsCOMPtr<nsIRedirectHistoryEntry>>);
 native OriginAttributes(mozilla::OriginAttributes);
 [ref] native const_OriginAttributesRef(const mozilla::OriginAttributes);
@@ -77,7 +77,7 @@ interface nsILoadInfo : nsISupports
    * Exactly one of these flags are required to be set in order to allow
    * the channel to perform the correct security checks (SOP, CORS, ...) and
    * return the correct result principal. If none or more than one of these
-   * flags are set AsyncOpen2 will fail.
+   * flags are set AsyncOpen will fail.
    */
 
    /**
@@ -428,6 +428,12 @@ interface nsILoadInfo : nsISupports
   [infallible] readonly attribute unsigned long cookiePolicy;
 
   /**
+   * The cookie settings inherited from the top-level document's loadInfo.
+   * It cannot be null.
+   */
+  attribute nsICookieSettings cookieSettings;
+
+  /**
    * If forceInheritPrincipal is true, the data coming from the channel should
    * inherit its principal, even when the data is loaded over http:// or another
    * protocol that would normally use a URI-based principal.
@@ -621,13 +627,26 @@ interface nsILoadInfo : nsISupports
 
   /**
    * Only when the element being loaded is <frame src="foo.html">
-   * (or, more generally, if the element QIs to nsIFrameLoaderOwner),
+   * (or, more generally, if the element QIs to nsFrameLoaderOwner),
    * the frameOuterWindowID is the outer window containing the
    * foo.html document.
    *
    * Note: For other cases, frameOuterWindowID is 0.
    */
   [infallible] readonly attribute unsigned long long frameOuterWindowID;
+
+  /**
+   * The BrowsingContext performing the load for this nsILoadInfo object.
+   */
+  [infallible] readonly attribute unsigned long long browsingContextID;
+  readonly attribute BrowsingContext browsingContext;
+
+  /**
+   * Like `frameOuterWindowID`, however returning the BrowsingContextID
+   * instead.
+   */
+  [infallible] readonly attribute unsigned long long frameBrowsingContextID;
+  readonly attribute BrowsingContext frameBrowsingContext;
 
   /**
    * Resets the PrincipalToInherit to a freshly created NullPrincipal
@@ -667,21 +686,9 @@ interface nsILoadInfo : nsISupports
 %}
 
   /**
-   * Whenever a channel is openend by asyncOpen2() [or also open2()],
-   * lets set this flag so that redirects of such channels are also
-   * openend using asyncOpen2() [open2()].
-   *
-   * Please note, once the flag is set to true it must remain true
-   * throughout the lifetime of the channel. Trying to set it
-   * to anything else than true will be discareded.
-   *
-   */
-  [infallible] attribute boolean enforceSecurity;
-
-  /**
    * Whenever a channel is evaluated by the ContentSecurityManager
    * the first time, we set this flag to true to indicate that
-   * subsequent calls of AsyncOpen2() do not have to enforce all
+   * subsequent calls of AsyncOpen() do not have to enforce all
    * security checks again. E.g., after a redirect there is no
    * need to set up CORS again. We need this separate flag
    * because the redirectChain might also contain internal
@@ -764,7 +771,7 @@ interface nsILoadInfo : nsISupports
    * The ancestorPrincipals[0] entry for an image loaded in an iframe will be the
    * principal of the iframe element's owner document.
    *
-   * See nsIDocument::AncestorPrincipals for more information.
+   * See Document::AncestorPrincipals for more information.
    *
    * Please note that this array has the same lifetime as the
    * loadInfo object - use with caution!
@@ -884,32 +891,20 @@ interface nsILoadInfo : nsISupports
    * GetChannelResultPrincipal() to ensure that the same null principal object
    * is returned every time.
    */
-  [noscript] readonly attribute nsIPrincipal sandboxedLoadingPrincipal;
+  [notxpcom, nostdcall] readonly attribute nsIPrincipal sandboxedLoadingPrincipal;
 
   /**
    * Return the top-level principal, which is the principal of the top-level
    * window.
    */
-  [noscript] readonly attribute nsIPrincipal topLevelPrincipal;
-
-  /**
-   * A C++-friendly version of topLevelPrincipal.
-   */
-  [noscript, notxpcom, nostdcall, binaryname(TopLevelPrincipal)]
-  nsIPrincipal binaryTopLevelPrincipal();
+  [notxpcom, nostdcall] readonly attribute nsIPrincipal topLevelPrincipal;
 
   /**
    * Return the top-level storage area principal, which is the principal of
    * the top-level window if it's not a 3rd party context, non tracking
    * resource.
    */
-  [noscript] readonly attribute nsIPrincipal topLevelStorageAreaPrincipal;
-
-  /**
-   * A C++-friendly version of topLevelStorageAreaPrincipal.
-   */
-  [noscript, notxpcom, nostdcall, binaryname(TopLevelStorageAreaPrincipal)]
-  nsIPrincipal binaryTopLevelStorageAreaPrincipal();
+  [notxpcom, nostdcall] readonly attribute nsIPrincipal topLevelStorageAreaPrincipal;
 
   /**
    * Note which client (i.e. global) initiated this network request.  All
@@ -1056,14 +1051,6 @@ interface nsILoadInfo : nsISupports
   void SynthesizeServiceWorkerTainting(in LoadTainting aTainting);
 
   /**
-    * These flags are used for FastBlock statistics to see if a resource is a
-    * tracker and whether it was blocked by the FastBlock mechanism or not.
-    */
-  [infallible] attribute boolean isTracker;
-  [infallible] attribute boolean isTrackerBlocked;
-  attribute AnalyticsProvider trackerBlockedReason;
-
-  /**
     * The top-level document has been user-interacted.
     */
   [infallible] attribute boolean documentHasUserInteracted;
@@ -1073,6 +1060,14 @@ interface nsILoadInfo : nsISupports
     * load belongs had finished loading when the load was initiated.
     */
   [infallible] attribute boolean documentHasLoaded;
+
+  /**
+   * A snapshot of the nonce at load start time which is used for CSP
+   * checks and only set for:
+   *  * TYPE_SCRIPT and
+   *  * TYPE_STYLESHEET
+   */
+  attribute AString cspNonce;
 
   /**
     * The object in charged to receive CSP violation events. It can be null.
@@ -1087,4 +1082,21 @@ interface nsILoadInfo : nsISupports
    * or https://html.spec.whatwg.org/multipage/obsolete.html#process-the-frame-attributes
    */
   [infallible] readonly attribute boolean isFromProcessingFrameAttributes;
+
+  cenum CrossOriginOpenerPolicy : 8 {
+    OPENER_POLICY_NULL           = 0,
+    OPENER_POLICY_SAME_ORIGIN    = 1,
+    OPENER_POLICY_SAME_SITE      = 2,
+    OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG = 0x80,
+    OPENER_POLICY_SAME_ORIGIN_ALLOW_OUTGOING = OPENER_POLICY_SAME_ORIGIN | OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG,
+    OPENER_POLICY_SAME_SITE_ALLOW_OUTGOING = OPENER_POLICY_SAME_SITE | OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG
+  };
+
+  [infallible] attribute nsILoadInfo_CrossOriginOpenerPolicy openerPolicy;
+
+  cenum CrossOriginPolicy : 8 {
+    CROSS_ORIGIN_POLICY_NULL            = 0,
+    CROSS_ORIGIN_POLICY_ANONYMOUS       = 1,
+    CROSS_ORIGIN_POLICY_USE_CREDENTIALS = 2
+  };
 };

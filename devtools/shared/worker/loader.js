@@ -480,12 +480,12 @@ var {
                  .getService(Ci.mozIJSSubScriptLoader);
 
     const loadSubScript = function(url, sandbox) {
-      subScriptLoader.loadSubScript(url, sandbox, "UTF-8");
+      subScriptLoader.loadSubScript(url, sandbox);
     };
 
     const reportError = Cu.reportError;
 
-    const Timer = ChromeUtils.import("resource://gre/modules/Timer.jsm", {});
+    const Timer = ChromeUtils.import("resource://gre/modules/Timer.jsm", null);
 
     const setImmediate = function(callback) {
       Timer.setTimeout(callback, 0);
@@ -564,6 +564,9 @@ this.worker = new WorkerDebuggerLoader({
     "lazyRequireModule": lazyRequireModule,
     "retrieveConsoleEvents": this.retrieveConsoleEvents,
     "setConsoleEventHandler": this.setConsoleEventHandler,
+    "console": console,
+    "btoa": this.btoa,
+    "atob": this.atob,
   },
   loadSubScript: loadSubScript,
   modules: {
@@ -577,8 +580,6 @@ this.worker = new WorkerDebuggerLoader({
     "devtools": "resource://devtools",
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
     "promise": "resource://gre/modules/Promise-backend.js",
-    // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-    "source-map": "resource://devtools/shared/sourcemap/source-map.js",
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
     "xpcshell-test": "resource://test",
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠

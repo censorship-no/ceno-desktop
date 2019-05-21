@@ -19,15 +19,12 @@ namespace dom {
 // controls. Please see the spec for more information.
 // https://html.spec.whatwg.org/multipage/forms.html#the-details-element
 //
-class HTMLDetailsElement final : public nsGenericHTMLElement
-{
-public:
+class HTMLDetailsElement final : public nsGenericHTMLElement {
+ public:
   using NodeInfo = mozilla::dom::NodeInfo;
 
   explicit HTMLDetailsElement(already_AddRefed<NodeInfo>&& aNodeInfo)
-    : nsGenericHTMLElement(std::move(aNodeInfo))
-  {
-  }
+      : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLDetailsElement, details)
 
@@ -35,6 +32,7 @@ public:
 
   nsresult Clone(NodeInfo* aNodeInfo, nsINode** aResult) const override;
 
+  // Element
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
                                       int32_t aModType) const override;
 
@@ -42,16 +40,18 @@ public:
                          const nsAttrValueOrString* aValue,
                          bool aNotify) override;
 
+  bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override {
+    return true;
+  }
+
   // HTMLDetailsElement WebIDL
   bool Open() const { return GetBoolAttr(nsGkAtoms::open); }
 
-  void SetOpen(bool aOpen, ErrorResult& aError)
-  {
+  void SetOpen(bool aOpen, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::open, aOpen, aError);
   }
 
-  void ToggleOpen()
-  {
+  void ToggleOpen() {
     ErrorResult rv;
     SetOpen(!Open(), rv);
     rv.SuppressException();
@@ -59,7 +59,7 @@ public:
 
   virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
 
-protected:
+ protected:
   virtual ~HTMLDetailsElement();
 
   JSObject* WrapNode(JSContext* aCx,
@@ -68,7 +68,7 @@ protected:
   RefPtr<AsyncEventDispatcher> mToggleEventDispatcher;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_HTMLDetailsElement_h */

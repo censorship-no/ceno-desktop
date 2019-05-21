@@ -152,6 +152,11 @@ class TestExecutor(object):
         if self.protocol is not None:
             self.protocol.teardown()
 
+    def reset(self):
+        """Re-initialize internal state to facilitate repeated test execution
+        as implemented by the `--rerun` command-line argument."""
+        pass
+
     def run_test(self, test):
         """Run a particular test.
 
@@ -266,6 +271,9 @@ class RefTestImplementation(object):
 
         self.message.append("%s %s" % (test.url, rv[0]))
         return True, rv
+
+    def reset(self):
+        self.screenshot_cache.clear()
 
     def is_pass(self, lhs_hash, rhs_hash, relation):
         assert relation in ("==", "!=")
@@ -509,7 +517,8 @@ class CallbackHandler(object):
         self.actions = {
             "click": ClickAction(self.logger, self.protocol),
             "send_keys": SendKeysAction(self.logger, self.protocol),
-            "action_sequence": ActionSequenceAction(self.logger, self.protocol)
+            "action_sequence": ActionSequenceAction(self.logger, self.protocol),
+            "generate_test_report": GenerateTestReportAction(self.logger, self.protocol)
         }
 
     def __call__(self, result):
@@ -522,31 +531,26 @@ class CallbackHandler(object):
         return callback(url, payload)
 
     def process_complete(self, url, payload):
-        rv = [url] + payload
+        rv = [strip_server(url)] + payload
         return True, rv
 
     def process_action(self, url, payload):
-        parent = self.protocol.base.current_window
+        action = payload["action"]
+        self.logger.debug("Got action: %s" % action)
         try:
-            self.protocol.base.set_window(self.test_window)
-            action = payload["action"]
-            self.logger.debug("Got action: %s" % action)
-            try:
-                action_handler = self.actions[action]
-            except KeyError:
-                raise ValueError("Unknown action %s" % action)
-            try:
-                action_handler(payload)
-            except Exception:
-                self.logger.warning("Action %s failed" % action)
-                self.logger.warning(traceback.format_exc())
-                self._send_message("complete", "error")
-                raise
-            else:
-                self.logger.debug("Action %s completed" % action)
-                self._send_message("complete", "success")
-        finally:
-            self.protocol.base.set_window(parent)
+            action_handler = self.actions[action]
+        except KeyError:
+            raise ValueError("Unknown action %s" % action)
+        try:
+            action_handler(payload)
+        except Exception:
+            self.logger.warning("Action %s failed" % action)
+            self.logger.warning(traceback.format_exc())
+            self._send_message("complete", "error")
+            raise
+        else:
+            self.logger.debug("Action %s completed" % action)
+            self._send_message("complete", "success")
 
         return False, None
 
@@ -598,3 +602,13 @@ class ActionSequenceAction(object):
     def get_element(self, selector):
         element = self.protocol.select.element_by_selector(selector)
         return element
+
+class GenerateTestReportAction(object):
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        message = payload["message"]
+        self.logger.debug("Generating test report: %s" % message)
+        self.protocol.generate_test_report.generate_test_report(message)

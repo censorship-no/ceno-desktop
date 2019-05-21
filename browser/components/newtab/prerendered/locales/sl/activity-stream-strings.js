@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Razumem",
   "prefs_home_header": "Vsebina domače strani Firefoxa",
   "prefs_home_description": "Izberite vsebino, ki jo želite prikazati na domači strani Firefoxa.",
+  "prefs_content_discovery_header": "Domača stran Firefoxa",
+  "prefs_content_discovery_description": "Odkrivanje vsebine na Firefoxovi domači strani vam pomaga odkriti kakovostne članke na spletu, ki bi vas utegnili zanimati.",
+  "prefs_content_discovery_button": "Izklopi odkrivanje vsebine",
   "prefs_section_rows_option": "{num} vrstica;{num} vrstici;{num} vrstice;{num} vrstic",
   "prefs_search_header": "Iskanje po spletu",
   "prefs_topsites_description": "Strani, ki jih največkrat obiščete",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Shranite zgodbe, ki jih imate radi, v Pocket, in napolnite svoje misli z navdušujočim branjem.",
   "highlights_empty_state": "Začnite z brskanjem, mi pa vam bomo tu prikazovali odlične članke, videoposnetke ter druge strani, ki ste jih nedavno obiskali ali shranili med zaznamke.",
   "topstories_empty_state": "Zdaj ste seznanjeni z novicami. Vrnite se pozneje in si oglejte nove prispevke iz {provider}. Komaj čakate? Izberite priljubljeno temo in odkrijte več velikih zgodb na spletu.",
-  "manual_migration_explanation2": "Preskusite Firefox z zaznamki, zgodovino in gesli iz drugega brskalnika.",
-  "manual_migration_cancel_button": "Ne, hvala",
-  "manual_migration_import_button": "Uvozi zdaj",
   "error_fallback_default_info": "Ojoj, pri nalaganju te vsebine je šlo nekaj narobe.",
   "error_fallback_default_refresh_suggestion": "Osvežite stran za ponoven poskus.",
   "section_menu_action_remove_section": "Odstrani odsek",
@@ -108,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Nadaljuj",
   "firstrun_skip_login": "Preskoči ta korak",
   "context_menu_title": "Odpri meni",
-  "pocket_learn_more": "Več o tem"
+  "manual_migration_explanation2": "Preskusite Firefox z zaznamki, zgodovino in gesli iz drugega brskalnika.",
+  "manual_migration_cancel_button": "Ne, hvala",
+  "manual_migration_import_button": "Uvozi zdaj"
 };

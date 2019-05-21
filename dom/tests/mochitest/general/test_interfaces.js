@@ -15,7 +15,6 @@
 //   {name: "ExperimentalThing", release: false},
 //   {name: "ReallyExperimentalThing", nightly: true},
 //   {name: "DesktopOnlyThing", desktop: true},
-//   {name: "FancyControl", xbl: true},
 //   {name: "DisabledEverywhere", disabled: true},
 // ];
 //
@@ -36,6 +35,7 @@ const isWindows = /Windows/.test(navigator.oscpu);
 const isAndroid = navigator.userAgent.includes("Android");
 const isLinux = /Linux/.test(navigator.oscpu) && !isAndroid;
 const isInsecureContext = !window.isSecureContext;
+const isFennec = isAndroid && SpecialPowers.Cc["@mozilla.org/android/bridge;1"].getService(SpecialPowers.Ci.nsIAndroidBridge).isFennec;
 
 // IMPORTANT: Do not change this list without review from
 //            a JavaScript Engine peer!
@@ -45,8 +45,8 @@ var ecmaGlobals =
     {name: "ArrayBuffer", insecureContext: true},
     {name: "Atomics", insecureContext: true, disabled: true},
     {name: "Boolean", insecureContext: true},
-    {name: "ByteLengthQueuingStrategy", insecureContext: true, disabled: true},
-    {name: "CountQueuingStrategy", insecureContext: true, disabled: true},
+    {name: "ByteLengthQueuingStrategy", insecureContext: true},
+    {name: "CountQueuingStrategy", insecureContext: true},
     {name: "DataView", insecureContext: true},
     {name: "Date", insecureContext: true},
     {name: "Error", insecureContext: true},
@@ -69,7 +69,7 @@ var ecmaGlobals =
     {name: "Promise", insecureContext: true},
     {name: "Proxy", insecureContext: true},
     {name: "RangeError", insecureContext: true},
-    {name: "ReadableStream", insecureContext: true, disabled: true},
+    {name: "ReadableStream", insecureContext: true},
     {name: "ReferenceError", insecureContext: true},
     {name: "Reflect", insecureContext: true},
     {name: "RegExp", insecureContext: true},
@@ -175,8 +175,6 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "BlobEvent", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "BoxObject", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "BroadcastChannel", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "Cache", insecureContext: true},
@@ -201,15 +199,11 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "CharacterData", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "ChromeNodeList", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "Clipboard"},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "ClipboardEvent", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "CloseEvent", insecureContext: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "CommandEvent", insecureContext: true, xbl: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "Comment", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -285,6 +279,8 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "DelayNode", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
+    {name: "DeprecationReportBody", insecureContext: true, nightly: true},
+// IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "DeviceLightEvent", insecureContext: true, disabled: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "DeviceMotionEvent", insecureContext: true},
@@ -348,6 +344,8 @@ var interfaceNamesInGlobalScope =
     {name: "EventSource", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "EventTarget", insecureContext: true},
+// IMPORTANT: Do not change this list without review from a DOM peer!
+    {name: "FeaturePolicyViolationReportBody", insecureContext: true, nightly: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "File", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -472,6 +470,8 @@ var interfaceNamesInGlobalScope =
     {name: "HTMLLinkElement", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "HTMLMapElement", insecureContext: true},
+// IMPORTANT: Do not change this list without review from a DOM peer!
+    {name: "HTMLMarqueeElement", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "HTMLMediaElement", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -659,7 +659,7 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "MediaStreamTrack", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "MerchantValidationEvent", insecureContext: false, desktop: true, nightly: true, linux: false},
+    {name: "MerchantValidationEvent", insecureContext: false, desktop: true, nightly: true, linux: false, disabled: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "MessageChannel", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -741,15 +741,15 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "Path2D", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PaymentAddress", insecureContext: false, desktop: true, nightly: true, linux: false},
+    {name: "PaymentAddress", insecureContext: false, desktop: true, nightly: true, linux: false, disabled: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PaymentMethodChangeEvent", insecureContext: false, desktop: true, nightly: true, linux: false},
+    {name: "PaymentMethodChangeEvent", insecureContext: false, desktop: true, nightly: true, linux: false, disabled: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PaymentRequest", insecureContext: false, desktop: true, nightly: true, linux: false},
+    {name: "PaymentRequest", insecureContext: false, desktop: true, nightly: true, linux: false, disabled: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PaymentRequestUpdateEvent", insecureContext: false, desktop: true, nightly: true, linux: false},
+    {name: "PaymentRequestUpdateEvent", insecureContext: false, desktop: true, nightly: true, linux: false, disabled: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PaymentResponse", insecureContext: false, desktop: true, nightly: true, linux: false},
+    {name: "PaymentResponse", insecureContext: false, desktop: true, nightly: true, linux: false, disabled: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "Performance", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -811,15 +811,21 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "PublicKeyCredential"},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PushManager", insecureContext: true},
+    {name: "PushManager", insecureContext: true, fennecOrDesktop: true },
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PushSubscription", insecureContext: true},
+    {name: "PushSubscription", insecureContext: true, fennecOrDesktop: true },
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PushSubscriptionOptions", insecureContext: true},
+    {name: "PushSubscriptionOptions", insecureContext: true, fennecOrDesktop: true },
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "RadioNodeList", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "Range", insecureContext: true},
+// IMPORTANT: Do not change this list without review from a DOM peer!
+    {name: "Report", insecureContext: true, nightly: true},
+// IMPORTANT: Do not change this list without review from a DOM peer!
+    {name: "ReportBody", insecureContext: true, nightly: true},
+// IMPORTANT: Do not change this list without review from a DOM peer!
+    {name: "ReportingObserver", insecureContext: true, nightly: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "Request", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -879,9 +885,7 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "SharedWorker", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "SimpleGestureEvent", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "SimpleTest", insecureContext: true, xbl: false},
+    {name: "SimpleTest", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "SourceBuffer", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -897,7 +901,7 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "SpeechSynthesisVoice", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "SpecialPowers", insecureContext: true, xbl: false},
+    {name: "SpecialPowers", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "StereoPannerNode", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1141,15 +1145,9 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "TransitionEvent", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "TreeColumn", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "TreeColumns", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "TreeContentView", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "TreeWalker", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "U2F", insecureContext: true, disabled: true},
+    {name: "U2F", insecureContext: false},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "UIEvent", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1255,26 +1253,10 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "XSLTProcessor", insecureContext: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "XULCommandEvent", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "XULDocument", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "XULElement", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "XULFrameElement", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "XULMenuElement", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "XULPopupElement", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "XULScrollElement", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "XULTextElement", insecureContext: true, xbl: true},
-// IMPORTANT: Do not change this list without review from a DOM peer!
   ];
 // IMPORTANT: Do not change the list above without review from a DOM peer!
 
-function createInterfaceMap(isXBLScope) {
+function createInterfaceMap() {
   var interfaceMap = {};
 
   function addInterfaces(interfaces)
@@ -1286,12 +1268,12 @@ function createInterfaceMap(isXBLScope) {
         ok(!("pref" in entry), "Bogus pref annotation for " + entry.name);
         if ((entry.nightly === !isNightly) ||
             (entry.nightlyAndroid === !(isAndroid && isNightly) && isAndroid) ||
-            (entry.xbl === !isXBLScope) ||
             (entry.desktop === !isDesktop) ||
             (entry.windows === !isWindows) ||
             (entry.mac === !isMac) ||
             (entry.linux === !isLinux) ||
             (entry.android === !isAndroid && !entry.nightlyAndroid) ||
+            (entry.fennecOrDesktop === (isAndroid && !isFennec)) ||
             (entry.release === !isRelease) ||
             (entry.releaseNonWindowsAndMac === !(isRelease && !isWindows && !isMac)) ||
             (entry.releaseNonWindows === !(isRelease && !isWindows)) ||
@@ -1316,8 +1298,8 @@ function createInterfaceMap(isXBLScope) {
   return interfaceMap;
 }
 
-function runTest(isXBLScope) {
-  var interfaceMap = createInterfaceMap(isXBLScope);
+function runTest() {
+  var interfaceMap = createInterfaceMap();
   for (var name of Object.getOwnPropertyNames(window)) {
     // An interface name should start with an upper case character.
     // However, we have a couple of legacy interfaces that start with 'moz', so
@@ -1327,19 +1309,19 @@ function runTest(isXBLScope) {
     }
     ok(interfaceMap[name],
        "If this is failing: DANGER, are you sure you want to expose the new interface " + name +
-       " to all webpages as a property on the window (XBL: " + isXBLScope + ")? Do not make a change to this file without a " +
+       " to all webpages as a property on the window? Do not make a change to this file without a " +
        " review from a DOM peer for that specific change!!! (or a JS peer for changes to ecmaGlobals)");
 
     ok(name in window,
-       `${name} is exposed as an own property on the window but tests false for "in" in the ${isXBLScope ? "XBL" : "global"} scope`);
+       `${name} is exposed as an own property on the window but tests false for "in" in the global scope`);
     ok(Object.getOwnPropertyDescriptor(window, name),
-       `${name} is exposed as an own property on the window but has no property descriptor in the ${isXBLScope ? "XBL" : "global"} scope`);
+       `${name} is exposed as an own property on the window but has no property descriptor in the global scope`);
 
     delete interfaceMap[name];
   }
   for (var name of Object.keys(interfaceMap)) {
     ok(name in window === interfaceMap[name],
-       name + " should " + (interfaceMap[name] ? "" : " NOT") + " be defined on the " + (isXBLScope ? "XBL" : "global") +" scope");
+       name + " should " + (interfaceMap[name] ? "" : " NOT") + " be defined on the global scope");
     if (!interfaceMap[name]) {
       delete interfaceMap[name];
     }
@@ -1348,5 +1330,4 @@ function runTest(isXBLScope) {
      "The following interface(s) are not enumerated: " + Object.keys(interfaceMap).join(", "));
 }
 
-runTest(false);
-SimpleTest.waitForExplicitFinish();
+runTest();

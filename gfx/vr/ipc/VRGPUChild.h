@@ -12,25 +12,29 @@
 namespace mozilla {
 namespace gfx {
 
-class VRGPUChild final : public PVRGPUChild
-{
-public:
+class VRGPUChild final : public PVRGPUChild {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VRGPUChild);
 
   static VRGPUChild* Get();
   static bool InitForGPUProcess(Endpoint<PVRGPUChild>&& aEndpoint);
   static bool IsCreated();
-  static void ShutDown();
+  static void Shutdown();
 
-protected:
-  explicit VRGPUChild() {}
-  ~VRGPUChild() {}
+  virtual void ActorDestroy(ActorDestroyReason aWhy) override;
+  bool IsClosed();
 
-private:
+ protected:
+  explicit VRGPUChild() : mClosed(false) {}
+  ~VRGPUChild() = default;
+
+ private:
   DISALLOW_COPY_AND_ASSIGN(VRGPUChild);
+
+  bool mClosed;
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // GFX_VR_GPU_CHILD_H
+#endif  // GFX_VR_GPU_CHILD_H

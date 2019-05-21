@@ -14,17 +14,12 @@ AntiTracking.runTest("ServiceWorkers",
     });
   },
   [["dom.serviceWorkers.exemptFromPerDomainMax", true],
+   ["dom.ipc.processCount", 1],
    ["dom.serviceWorkers.enabled", true],
    ["dom.serviceWorkers.testing.enabled", true]]);
 
 AntiTracking.runTest("ServiceWorkers and Storage Access API",
   async _ => {
-    await SpecialPowers.pushPrefEnv({"set": [
-       ["dom.serviceWorkers.exemptFromPerDomainMax", true],
-       ["dom.serviceWorkers.enabled", true],
-       ["dom.serviceWorkers.testing.enabled", true],
-    ]});
-
     /* import-globals-from storageAccessAPIHelpers.js */
     await noStorageAccessInitially();
 
@@ -36,22 +31,27 @@ AntiTracking.runTest("ServiceWorkers and Storage Access API",
     /* import-globals-from storageAccessAPIHelpers.js */
     await callRequestStorageAccess();
 
-    await navigator.serviceWorker.register("empty.js").then(
-      reg => { ok(true, "ServiceWorker can be used!"); return reg; },
-      _ => { ok(false, "ServiceWorker cannot be used! " + _); }).then(
-      reg => reg.unregister(),
-      _ => { ok(false, "unregister failed"); }).
-      catch(e => ok(false, "Promise rejected: " + e));
+    if (SpecialPowers.Services.prefs.getIntPref("network.cookie.cookieBehavior") == SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT) {
+      await navigator.serviceWorker.register("empty.js").then(
+        _ => { ok(false, "ServiceWorker cannot be used!"); },
+        _ => { ok(true, "ServiceWorker cannot be used!"); }).
+        catch(e => ok(false, "Promise rejected: " + e));
+    } else {
+      await navigator.serviceWorker.register("empty.js").then(
+        reg => { ok(true, "ServiceWorker can be used!"); return reg; },
+        _ => { ok(false, "ServiceWorker cannot be used! " + _); }).then(
+        reg => reg.unregister(),
+        _ => { ok(false, "unregister failed"); }).
+        catch(e => ok(false, "Promise rejected: " + e));
+    }
   },
   async _ => {
-    await SpecialPowers.pushPrefEnv({"set": [
-       ["dom.serviceWorkers.exemptFromPerDomainMax", true],
-       ["dom.serviceWorkers.enabled", true],
-       ["dom.serviceWorkers.testing.enabled", true],
-    ]});
-
     /* import-globals-from storageAccessAPIHelpers.js */
-    await noStorageAccessInitially();
+    if (allowListed) {
+      await hasStorageAccessInitially();
+    } else {
+      await noStorageAccessInitially();
+    }
 
     await navigator.serviceWorker.register("empty.js").then(
       reg => { ok(true, "ServiceWorker can be used!"); return reg; },
@@ -77,6 +77,7 @@ AntiTracking.runTest("ServiceWorkers and Storage Access API",
     });
   },
   [["dom.serviceWorkers.exemptFromPerDomainMax", true],
+   ["dom.ipc.processCount", 1],
    ["dom.serviceWorkers.enabled", true],
    ["dom.serviceWorkers.testing.enabled", true]],
   false, false);

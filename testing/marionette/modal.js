@@ -4,7 +4,7 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 this.EXPORTED_SYMBOLS = ["modal"];
 
@@ -63,9 +63,8 @@ modal.findModalDialogs = function(context) {
   // First check if there is a modal dialog already present for the
   // current browser window.
   for (let win of Services.wm.getEnumerator(null)) {
-    // Modal dialogs which do not have an opener set, we cannot detect
-    // as long as GetZOrderDOMWindowEnumerator doesn't work on Linux
-    // (Bug 156333).
+    // TODO: Use BrowserWindowTracker.getTopWindow for modal dialogs without
+    // an opener.
     if (win.document.documentURI === COMMON_DIALOG &&
         win.opener && win.opener === context.window) {
       return new modal.Dialog(() => context, Cu.getWeakReference(win));
@@ -144,11 +143,19 @@ modal.Dialog = class {
     return null;
   }
 
-  get ui() {
+  get tabModal() {
     let win = this.window;
     if (win) {
-      return win.Dialog.ui;
+      return win.Dialog;
     }
-    return this.curBrowser_.getTabModalUI();
+    return this.curBrowser_.getTabModal();
+  }
+
+  get args() {
+    return this.tabModal.args;
+  }
+
+  get ui() {
+    return this.tabModal.ui;
   }
 };

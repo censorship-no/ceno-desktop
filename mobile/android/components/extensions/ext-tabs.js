@@ -85,6 +85,10 @@ this.tabs = class extends ExtensionAPI {
       } else {
         tab = tabManager.getWrapper(tabTracker.activeTab);
       }
+      if (!tab) {
+        throw new ExtensionError(tabId == null ?
+          "Cannot access activeTab" : `Invalid tab ID: ${tabId}`);
+      }
 
       await tabListener.awaitTabReady(tab.nativeTab);
 
@@ -96,7 +100,11 @@ this.tabs = class extends ExtensionAPI {
         onActivated: makeGlobalEvent(context, "tabs.onActivated", "Tab:Selected", (fire, data) => {
           let tab = tabManager.get(data.id);
 
-          fire.async({tabId: tab.id, windowId: tab.windowId});
+          fire.async({
+            tabId: tab.id,
+            previousTabId: data.previousTabId,
+            windowId: tab.windowId,
+          });
         }),
 
         onCreated: new EventManager({
@@ -332,7 +340,7 @@ this.tabs = class extends ExtensionAPI {
               // Not sure what to do here? Which tab should we select?
             }
           }
-          // FIXME: highlighted/selected, muted, pinned, openerTabId
+          // FIXME: highlighted/selected, muted, pinned, openerTabId, successorTabId
 
           return tabManager.convert(nativeTab);
         },

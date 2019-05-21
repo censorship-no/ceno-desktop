@@ -10,8 +10,6 @@
   --table-zebra-background: rgba(255,255,255,0.05);
   --sidemenu-selected-arrow: url(images/item-arrow-dark-ltr.svg);
   --sidemenu-selected-arrow-rtl: url(images/item-arrow-dark-rtl.svg);
-  --delete-icon: url(chrome://devtools/skin/images/vview-delete.png);
-  --delete-icon-2x: url(chrome://devtools/skin/images/vview-delete@2x.png);
 }
 
 .theme-light {
@@ -19,8 +17,6 @@
   --table-zebra-background: rgba(0,0,0,0.05);
   --sidemenu-selected-arrow: url(images/item-arrow-ltr.svg);
   --sidemenu-selected-arrow-rtl: url(images/item-arrow-rtl.svg);
-  --delete-icon: url(chrome://devtools/skin/images/vview-delete.png);
-  --delete-icon-2x: url(chrome://devtools/skin/images/vview-delete@2x.png);
 }
 
 /* Generic pane helpers */
@@ -103,164 +99,6 @@
      */
     margin-inline-end: 0 !important;
   }
-}
-
-/* SimpleListWidget */
-
-.simple-list-widget-container {
-  /* Hack: force hardware acceleration */
-  transform: translateZ(1px);
-}
-
-.simple-list-widget-item.selected {
-  background-color: var(--theme-selection-background);
-  color: var(--theme-selection-color);
-}
-
-.theme-dark .simple-list-widget-item:not(.selected):hover {
-  background-color: rgba(255,255,255,.05);
-}
-
-.theme-light .simple-list-widget-item:not(.selected):hover {
-  background-color: rgba(0,0,0,.05);
-}
-
-.simple-list-widget-empty-text,
-.simple-list-widget-perma-text {
-  padding: 4px 8px;
-}
-
-.simple-list-widget-empty-text,
-.simple-list-widget-perma-text {
-  color: var(--theme-body-color-alt);
-}
-
-/* FastListWidget */
-
-.fast-list-widget-container {
-  /* Hack: force hardware acceleration */
-  transform: translateZ(1px);
-}
-
-.fast-list-widget-empty-text {
-  padding: 4px 8px;
-}
-
-.fast-list-widget-empty-text {
-  color: var(--theme-body-color-alt);
-}
-
-/* SideMenuWidget */
-
-.side-menu-widget-container {
-  /* Hack: force hardware acceleration */
-  transform: translateZ(1px);
-}
-
-/* SideMenuWidget container */
-
-.side-menu-widget-container[with-arrows=true] .side-menu-widget-item {
-  /* To compensate for the arrow image's dark margin. */
-  margin-inline-end: -1px;
-}
-
-/* SideMenuWidget groups */
-
-.side-menu-widget-group-title {
-  padding: 4px;
-  font-weight: 600;
-  border-bottom: 1px solid rgba(128,128,128,0.15);
-}
-
-.side-menu-widget-group-title + .side-menu-widget-group-list .side-menu-widget-item-contents {
-  padding-inline-start: 20px;
-}
-
-/* SideMenuWidget items */
-
-.side-menu-widget-item {
-  border-bottom: 1px solid rgba(128,128,128,0.15);
-  background-clip: padding-box;
-}
-
-.side-menu-widget-item.selected {
-  background-color: var(--theme-selection-background);
-  color: var(--theme-selection-color);
-}
-
-.side-menu-widget-item-arrow {
-  margin-inline-start: -7px;
-  width: 7px; /* The image's width is 7 pixels */
-}
-
-.side-menu-widget-item.selected > .side-menu-widget-item-arrow {
-  background-image: var(--sidemenu-selected-arrow);
-  background-size: auto;
-  background-repeat: no-repeat;
-  background-position: center right;
-}
-
-.side-menu-widget-item.selected > .side-menu-widget-item-arrow:-moz-locale-dir(rtl) {
-  background-image: var(--sidemenu-selected-arrow-rtl);
-  background-position: center left;
-}
-
-/* SideMenuWidget items contents */
-
-.side-menu-widget-item-contents {
-  padding: 4px;
-  /* To avoid having content overlapping the arrow image. */
-  padding-inline-end: 8px;
-}
-
-.side-menu-widget-item-other {
-  /* To avoid having content overlapping the arrow image. */
-  padding-inline-end: 8px;
-  /* To compensate for the .side-menu-widget-item-contents padding. */
-  margin-inline-start: -4px;
-  margin-inline-end: -8px;
-}
-
-.side-menu-widget-group-title + .side-menu-widget-group-list .side-menu-widget-item-other {
-  /* To compensate for the .side-menu-widget-item-contents padding. */
-  margin-inline-start: -20px;
-}
-
-.side-menu-widget-item.selected .side-menu-widget-item-other:not(.selected) {
-  background-color: var(--theme-sidebar-background);
-  box-shadow: inset 2px 0 0 var(--theme-selection-background);
-  color: var(--theme-body-color);
-}
-
-.side-menu-widget-item.selected .side-menu-widget-item-other.selected {
-  background-color: var(--theme-selection-background);
-}
-
-.side-menu-widget-item-other:first-of-type {
-  margin-top: 4px;
-}
-
-.side-menu-widget-item-other:last-of-type {
-  margin-bottom: -4px;
-}
-
-/* SideMenuWidget checkboxes */
-
-.side-menu-widget-group-checkbox {
-  margin: 0;
-  margin-inline-end: 4px;
-}
-
-.side-menu-widget-item-checkbox {
-  margin: 0;
-  margin-inline-start: 4px;
-}
-
-/* SideMenuWidget misc */
-
-.side-menu-widget-empty-text {
-  padding: 4px 8px;
-  background-color: var(--theme-sidebar-background);
 }
 
 /* VariablesView */
@@ -473,52 +311,35 @@
   cursor: pointer;
 }
 
+.variables-view-open-inspector {
+  background-size: 15px;
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-dimmed-color);
+}
+
 .variables-view-delete:hover,
 .variables-view-edit:hover,
 .variables-view-open-inspector:hover {
-  filter: var(--theme-icon-checked-filter);
+  fill: var(--theme-icon-color);
 }
 
 .variables-view-delete:active,
 .variables-view-edit:active,
 .variables-view-open-inspector:active {
-  filter: var(--theme-icon-checked-filter) brightness(0.9);
-}
-
-.variable-or-property:focus > .title > .variables-view-delete,
-.variable-or-property:focus > .title > .variables-view-edit,
-.variable-or-property:focus > .title > .variables-view-open-inspector {
-  filter: none;
+  fill: var(--theme-icon-checked-color);
 }
 
 .variables-view-delete {
-  background-image: var(--delete-icon);
-}
-
-@media (min-resolution: 1.1dppx) {
-  .variables-view-delete {
-    background-image: var(--delete-icon-2x);
-  }
+  background-image: url("chrome://devtools/skin/images/vview-delete.svg");
 }
 
 .variables-view-edit {
-  background-image: url("chrome://devtools/skin/images/vview-edit.png");
-}
-
-@media (min-resolution: 1.1dppx) {
-  .variables-view-edit {
-    background-image: url("chrome://devtools/skin/images/vview-edit@2x.png");
-  }
+  background-image: url("chrome://devtools/skin/images/vview-edit.svg");
 }
 
 .variables-view-open-inspector {
-  background-image: url("chrome://devtools/skin/images/vview-open-inspector.png");
-}
-
-@media (min-resolution: 1.1dppx) {
-  .variables-view-open-inspector {
-    background-image: url("chrome://devtools/skin/images/vview-open-inspector@2x.png");
-  }
+  background-image: url("chrome://devtools/skin/images/open-inspector.svg");
 }
 
 /* Variables and properties input boxes */
@@ -926,12 +747,12 @@
 /* Tree Item */
 
 .tree-widget-container .tree-widget-item {
-  padding: 2px 0px 4px;
+  padding: 4px 0px;
   /* OSX has line-height 14px by default, which causes weird alignment issues
    * because of 20px high icons. thus making line-height consistent with that of
    * windows.
    */
-  line-height: 17px !important;
+  line-height: 16px;
   display: inline-block;
   width: 100%;
   word-break: keep-all; /* To prevent long urls like http://foo.com/bar from
@@ -951,24 +772,23 @@
 /* Twisties */
 .tree-widget-item::before {
   content: "";
-  width: 14px;
-  height: 14px;
-  float: left;
-  margin: 3px 2px -3px;
+  width: 16px;
+  height: 16px;
+  float: inline-start;
+  margin: 0 1px;
+  background-image: url("chrome://devtools/skin/images/arrow.svg");
+  background-position: 50% 50%;
   background-repeat: no-repeat;
-  background-image: url("chrome://devtools/skin/images/controls.png");
-  background-size: 56px 28px;
+  background-size: 10px;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-dimmed-color);
   cursor: pointer;
-  background-position: -28px -14px;
+  transition: transform 125ms ease;
+  transform: rotate(-90deg);
 }
 
 .tree-widget-item:-moz-locale-dir(rtl)::before {
-  float: right;
-  transform: scaleX(-1);
-}
-
-.theme-light .tree-widget-item:not(.theme-selected)::before {
-  background-position: 0 -14px;
+  transform: rotate(90deg);
 }
 
 .tree-widget-item[empty]::before {
@@ -976,11 +796,11 @@
 }
 
 .tree-widget-item[expanded]::before {
-  background-position: -42px -14px;
+  transform: none;
 }
 
-.theme-light .tree-widget-item:not(.theme-selected)[expanded]:before {
-  background-position: -14px -14px;
+.tree-widget-item.theme-selected::before {
+  fill: currentColor;
 }
 
 .tree-widget-item + ul {
@@ -1009,12 +829,6 @@
   }
   to {
     max-height: 500px;
-  }
-}
-
-@media (min-resolution: 1.1dppx) {
-  .tree-widget-item:before {
-    background-image: url("chrome://devtools/skin/images/controls@2x.png");
   }
 }
 
@@ -1059,43 +873,24 @@
 
 .tree-widget-item[type]::after {
   content: "";
-  float: left;
+  float: inline-start;
   width: 16px;
-  height: 17px;
+  height: 16px;
   margin-inline-end: 4px;
   background-repeat: no-repeat;
-  background-size: 20px auto;
-  background-position: 0 0;
-  background-size: auto 20px;
-  opacity: 0.75;
-}
-
-.tree-widget-item.theme-selected[type]::after {
-  opacity: 1;
-}
-
-.tree-widget-item:-moz-locale-dir(rtl)::after {
-  float: right;
-}
-
-.theme-light .tree-widget-item.theme-selected[type]::after,
-.theme-dark .tree-widget-item[type]::after {
-  filter: invert(1);
+  background-size: contain;
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .tree-widget-item[type="dir"]::after {
-  background-image: url(chrome://devtools/skin/images/filetypes/dir-close.svg);
-  background-position: 2px 0;
-  background-size: auto 16px;
-  width: 20px;
-}
-
-.tree-widget-item[type="dir"][expanded]:not([empty])::after {
-  background-image: url(chrome://devtools/skin/images/filetypes/dir-open.svg);
+  background-image: url(chrome://devtools/skin/images/folder.svg);
 }
 
 .tree-widget-item[type="url"]::after {
-  background-image: url(chrome://devtools/skin/images/filetypes/globe.svg);
-  background-size: auto 18px;
-  width: 18px;
+  background-image: url(chrome://devtools/skin/images/globe.svg);
+}
+
+.tree-widget-item[type="store"]::after {
+  background-image: url(chrome://devtools/skin/images/datastore.svg);
 }

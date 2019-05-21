@@ -7,29 +7,29 @@
 #include "mozilla/BasePrincipal.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIBrowserDOMWindow.h"
-#include "nsIFrameLoaderOwner.h"
+#include "nsFrameLoaderOwner.h"
+#include "nsIReferrerInfo.h"
 #include "nsString.h"
 
 namespace mozilla {
 class OriginAttributes;
 }
 
-class nsOpenURIInFrameParams final : public nsIOpenURIInFrameParams
-{
-public:
+class nsOpenURIInFrameParams final : public nsIOpenURIInFrameParams {
+ public:
   NS_DECL_CYCLE_COLLECTION_CLASS(nsOpenURIInFrameParams)
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIOPENURIINFRAMEPARAMS
 
-  explicit nsOpenURIInFrameParams(const mozilla::OriginAttributes& aOriginAttributes,
-                                  nsIFrameLoaderOwner* aOpener);
+  explicit nsOpenURIInFrameParams(
+      const mozilla::OriginAttributes& aOriginAttributes, Element* aOpener);
 
-private:
+ private:
   ~nsOpenURIInFrameParams();
 
   mozilla::OriginAttributes mOpenerOriginAttributes;
-  nsCOMPtr<nsIFrameLoaderOwner> mOpenerBrowser;
-  nsString mReferrer;
-  uint32_t mReferrerPolicy;
+  RefPtr<Element> mOpenerBrowser;
+  nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
+  nsCOMPtr<nsIContentSecurityPolicy> mCsp;
 };

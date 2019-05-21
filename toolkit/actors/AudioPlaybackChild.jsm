@@ -6,7 +6,7 @@
 
 var EXPORTED_SYMBOLS = ["AudioPlaybackChild"];
 
-ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
+const {ActorChild} = ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
 
 class AudioPlaybackChild extends ActorChild {
   handleMediaControlMessage(msg) {
@@ -64,9 +64,11 @@ class AudioPlaybackChild extends ActorChild {
     }
   }
 
-  receiveMessage(msg) {
-    if (msg.name == "AudioPlayback") {
-      this.handleMediaControlMessage(msg.data.type);
+  receiveMessage({name, data}) {
+    switch (name) {
+      case "AudioPlayback":
+        this.handleMediaControlMessage(data.type);
+        break;
     }
   }
 }

@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const nsIPrefLocalizedString = Ci.nsIPrefLocalizedString;
 const nsISupportsString = Ci.nsISupportsString;
@@ -108,7 +108,6 @@ var view = {
   selectionChanged() {},
   cycleCell(row, col) {},
   isEditable(row, col) { return false; },
-  isSelectable(row, col) { return false; },
   setCellValue(row, col, value) {},
   setCellText(row, col, value) {},
   performAction(action) {},

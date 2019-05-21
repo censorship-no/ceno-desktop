@@ -54,6 +54,9 @@ exports.PerfActor = ActorClassWithSpec(perfSpec, {
     // to be tweaked or made configurable as needed.
     const settings = {
       entries: options.entries || 1000000,
+      // Window length should be Infinite if nothing's been passed.
+      // options.duration is supported for `perfActorVersion > 0`.
+      duration: options.duration || 0,
       interval: options.interval || 1,
       features: options.features ||
         ["js", "stackwalk", "responsiveness", "threads", "leaf"],
@@ -68,7 +71,8 @@ exports.PerfActor = ActorClassWithSpec(perfSpec, {
         settings.features,
         settings.features.length,
         settings.threads,
-        settings.threads.length
+        settings.threads.length,
+        settings.duration
       );
     } catch (e) {
       // In case any errors get triggered, bailout with a false.
@@ -153,7 +157,7 @@ exports.PerfActor = ActorClassWithSpec(perfSpec, {
         break;
       case "profiler-started":
         const param = subject.QueryInterface(Ci.nsIProfilerStartParams);
-        this.emit(topic, param.entries, param.interval, param.features);
+        this.emit(topic, param.entries, param.interval, param.features, param.duration);
         break;
       case "profiler-stopped":
         this.emit(topic);

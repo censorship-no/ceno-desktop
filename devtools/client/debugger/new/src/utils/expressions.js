@@ -1,33 +1,22 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.sanitizeInput = sanitizeInput;
-exports.wrapExpression = wrapExpression;
-exports.getValue = getValue;
-
-var _indentation = require("./indentation");
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-// replace quotes that could interfere with the evaluation.
-function sanitizeInput(input) {
-  return input.replace(/"/g, '"');
-}
+
+// @flow
+
+import { correctIndentation } from "./indentation";
+import type { Expression } from "../types";
+
 /*
  * wrap the expression input in a try/catch so that it can be safely
  * evaluated.
  *
  * NOTE: we add line after the expression to protect against comments.
-*/
-
-
-function wrapExpression(input) {
-  return (0, _indentation.correctIndentation)(`
+ */
+export function wrapExpression(input: string) {
+  return correctIndentation(`
     try {
-      ${sanitizeInput(input)}
+      ${input}
     } catch (e) {
       e
     }
@@ -42,27 +31,19 @@ function isUnavailable(value) {
   return ["ReferenceError", "TypeError"].includes(value.preview.name);
 }
 
-function getValue(expression) {
+export function getValue(expression: Expression) {
   const value = expression.value;
-
   if (!value) {
     return {
       path: expression.from,
-      value: {
-        unavailable: true
-      }
+      value: { unavailable: true }
     };
   }
 
   if (value.exception) {
     if (isUnavailable(value.exception)) {
-      return {
-        value: {
-          unavailable: true
-        }
-      };
+      return { value: { unavailable: true } };
     }
-
     return {
       path: value.from,
       value: value.exception
@@ -77,24 +58,13 @@ function getValue(expression) {
   }
 
   if (value.result && value.result.class == "Error") {
-    const {
-      name,
-      message
-    } = value.result.preview;
-
+    const { name, message } = value.result.preview;
     if (isUnavailable(value.result)) {
-      return {
-        value: {
-          unavailable: true
-        }
-      };
+      return { value: { unavailable: true } };
     }
 
     const newValue = `${name}: ${message}`;
-    return {
-      path: value.input,
-      value: newValue
-    };
+    return { path: value.input, value: newValue };
   }
 
   if (typeof value.result == "object") {

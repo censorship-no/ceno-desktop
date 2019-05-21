@@ -4,8 +4,8 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewUtils} = ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   EventDispatcher: "resource://gre/modules/Messaging.jsm",
@@ -13,7 +13,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.jsm",
 });
 
-GeckoViewUtils.initLogging("GeckoView.TelemetryController", this);
+const {debug, warn} = GeckoViewUtils.initLogging("GeckoView.TelemetryController"); // eslint-disable-line no-unused-vars
 
 var EXPORTED_SYMBOLS = ["GeckoViewTelemetryController"];
 
@@ -88,23 +88,14 @@ const GeckoViewTelemetryController = {
   retrieveSnapshots(aClear, aCallback) {
     debug `retrieveSnapshots`;
 
-    // Selecting the opt-in dataset will ensure that we retrieve opt-in probes
-    // (iff canRecordPreRelease == true) and opt-out probes
-    // (iff canRecordRelease == true) if they are being recorded.
-    const dataset = Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN;
-
-    const rawHistograms = Services.telemetry.snapshotHistograms(dataset,
-                                                                /* subsession */ false,
-                                                                /* clear */ false);
-    const rawKeyedHistograms =
-      Services.telemetry.snapshotKeyedHistograms(dataset, /* subsession */ false,
-                                                 /* clear */ false);
-    const scalars = Services.telemetry.snapshotScalars(dataset, /* clear */ false);
-    const keyedScalars = Services.telemetry.snapshotKeyedScalars(dataset, /* clear */ false);
+    const histograms = Services.telemetry.getSnapshotForHistograms("main", /* clear */ false);
+    const keyedHistograms = Services.telemetry.getSnapshotForKeyedHistograms("main", /* clear */ false);
+    const scalars = Services.telemetry.getSnapshotForScalars("main", /* clear */ false);
+    const keyedScalars = Services.telemetry.getSnapshotForKeyedScalars("main", /* clear */ false);
 
     const snapshots = {
-      histograms: TelemetryUtils.packHistograms(rawHistograms),
-      keyedHistograms: TelemetryUtils.packKeyedHistograms(rawKeyedHistograms),
+      histograms,
+      keyedHistograms,
       scalars,
       keyedScalars,
     };

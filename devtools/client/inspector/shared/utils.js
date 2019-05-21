@@ -110,6 +110,22 @@ function createChild(parent, tagName, attributes = {}) {
 }
 
 /**
+ * Retrieve the content of a longString (via a promise resolving a LongStringActor).
+ *
+ * @param  {Promise} longStringActorPromise
+ *         promise expected to resolve a LongStringActor instance
+ * @return {Promise} promise resolving with the retrieved string as argument
+ */
+function getLongString(longStringActorPromise) {
+  return longStringActorPromise.then(longStringActor => {
+    return longStringActor.string().then(string => {
+      longStringActor.release().catch(console.error);
+      return string;
+    });
+  }).catch(console.error);
+}
+
+/**
  * Returns a selector of the Element Rep from the grip. This is based on the
  * getElements() function in our devtools-reps component for a ElementNode.
  *
@@ -122,7 +138,7 @@ function getSelectorFromGrip(grip) {
     attributes,
     nodeName,
     isAfterPseudoElement,
-    isBeforePseudoElement
+    isBeforePseudoElement,
   } = grip.preview;
 
   if (isAfterPseudoElement || isBeforePseudoElement) {
@@ -160,7 +176,7 @@ function promiseWarn(error) {
 }
 
 /**
- * While waiting for a reps fix in https://github.com/devtools-html/reps/issues/92,
+ * While waiting for a reps fix in https://github.com/firefox-devtools/reps/issues/92,
  * translate nodeFront to a grip-like object that can be used with an ElementNode rep.
  *
  * @params  {NodeFront} nodeFront
@@ -189,7 +205,7 @@ function translateNodeFrontToGrip(nodeFront) {
       // nodeName is already lowerCased in Node grips
       nodeName: nodeFront.nodeName.toLowerCase(),
       nodeType: nodeFront.nodeType,
-    }
+    },
   };
 }
 
@@ -197,6 +213,7 @@ exports.advanceValidate = advanceValidate;
 exports.appendText = appendText;
 exports.blurOnMultipleProperties = blurOnMultipleProperties;
 exports.createChild = createChild;
+exports.getLongString = getLongString;
 exports.getSelectorFromGrip = getSelectorFromGrip;
 exports.promiseWarn = promiseWarn;
 exports.translateNodeFrontToGrip = translateNodeFrontToGrip;

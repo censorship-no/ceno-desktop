@@ -15,7 +15,6 @@
 #include "nscore.h"
 
 class nsIContent;
-class nsIContentIterator;
 class nsIEditor;
 class nsINode;
 class nsISelectionController;
@@ -23,22 +22,22 @@ class nsRange;
 
 namespace mozilla {
 
+class FilteredContentIterator;
 class OffsetEntry;
 class TextEditor;
 
 namespace dom {
-class Elemenent;
-};
+class Document;
+class Element;
+};  // namespace dom
 
 /**
  * The TextServicesDocument presents the document in as a bunch of flattened
  * text blocks. Each text block can be retrieved as an nsString.
  */
-class TextServicesDocument final : public nsIEditActionListener
-{
-private:
-  enum class IteratorStatus : uint8_t
-  {
+class TextServicesDocument final : public nsIEditActionListener {
+ private:
+  enum class IteratorStatus : uint8_t {
     // No iterator (I), or iterator doesn't point to anything valid.
     eDone = 0,
     // I points to first text node (TN) in current block (CB).
@@ -49,10 +48,10 @@ private:
     eNext,
   };
 
-  nsCOMPtr<nsIDocument> mDocument;
+  RefPtr<dom::Document> mDocument;
   nsCOMPtr<nsISelectionController> mSelCon;
   RefPtr<TextEditor> mTextEditor;
-  nsCOMPtr<nsIContentIterator> mIterator;
+  RefPtr<FilteredContentIterator> mFilteredIter;
   nsCOMPtr<nsIContent> mPrevTextBlock;
   nsCOMPtr<nsIContent> mNextTextBlock;
   nsTArray<OffsetEntry*> mOffsetTable;
@@ -66,10 +65,10 @@ private:
 
   IteratorStatus mIteratorStatus;
 
-protected:
+ protected:
   virtual ~TextServicesDocument();
 
-public:
+ public:
   TextServicesDocument();
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -105,8 +104,8 @@ public:
 
   /**
    * Sets the filter type to be used while iterating over content.
-   * This will clear the current filter type if it's not either FILTERTYPE_NORMAL
-   * or FILTERTYPE_MAIL.
+   * This will clear the current filter type if it's not either
+   * FILTERTYPE_NORMAL or FILTERTYPE_MAIL.
    *
    * @param aFilterType         The filter type to be used while iterating over
    *                            content.
@@ -126,8 +125,7 @@ public:
    */
   nsresult FirstBlock();
 
-  enum class BlockSelectionStatus
-  {
+  enum class BlockSelectionStatus {
     // There is no text block (TB) in or before the selection (S).
     eBlockNotFound = 0,
     // No TB in S, but found one before/after S.
@@ -153,8 +151,7 @@ public:
    *                            characters that are selected in the string.
    */
   nsresult LastSelectedBlock(BlockSelectionStatus* aSelStatus,
-                             int32_t* aSelOffset,
-                             int32_t* aSelLength);
+                             int32_t* aSelOffset, int32_t* aSelLength);
 
   /**
    * Tells the document to point to the text block before the current one.
@@ -228,34 +225,35 @@ public:
   void DidDeleteNode(nsINode* aChild);
   void DidJoinNodes(nsINode& aLeftNode, nsINode& aRightNode);
 
-  static nsresult GetRangeEndPoints(nsRange* aRange,
-                                    nsINode** aStartContainer,
+  static nsresult GetRangeEndPoints(nsRange* aRange, nsINode** aStartContainer,
                                     int32_t* aStartOffset,
                                     nsINode** aEndContainer,
                                     int32_t* aEndOffset);
 
-private:
-  nsresult CreateContentIterator(nsRange* aRange,
-                                 nsIContentIterator** aIterator);
+ private:
+  nsresult CreateFilteredContentIterator(
+      nsRange* aRange, FilteredContentIterator** aFilteredIter);
 
   dom::Element* GetDocumentContentRootNode() const;
   already_AddRefed<nsRange> CreateDocumentContentRange();
   already_AddRefed<nsRange> CreateDocumentContentRootToNodeOffsetRange(
-                              nsINode* aParent,
-                              uint32_t aOffset,
-                              bool aToStart);
-  nsresult CreateDocumentContentIterator(nsIContentIterator** aIterator);
+      nsINode* aParent, uint32_t aOffset, bool aToStart);
+  nsresult CreateDocumentContentIterator(
+      FilteredContentIterator** aFilteredIter);
 
   nsresult AdjustContentIterator();
 
-  static nsresult FirstTextNode(nsIContentIterator* aIterator,
+  static nsresult FirstTextNode(FilteredContentIterator* aFilteredIter,
                                 IteratorStatus* aIteratorStatus);
-  static nsresult LastTextNode(nsIContentIterator* aIterator,
+  static nsresult LastTextNode(FilteredContentIterator* aFilteredIter,
                                IteratorStatus* aIteratorStatus);
 
-  static nsresult FirstTextNodeInCurrentBlock(nsIContentIterator* aIterator);
-  static nsresult FirstTextNodeInPrevBlock(nsIContentIterator* aIterator);
-  static nsresult FirstTextNodeInNextBlock(nsIContentIterator* aIterator);
+  static nsresult FirstTextNodeInCurrentBlock(
+      FilteredContentIterator* aFilteredIter);
+  static nsresult FirstTextNodeInPrevBlock(
+      FilteredContentIterator* aFilteredIter);
+  static nsresult FirstTextNodeInNextBlock(
+      FilteredContentIterator* aFilteredIter);
 
   nsresult GetFirstTextNodeInPrevBlock(nsIContent** aContent);
   nsresult GetFirstTextNodeInNextBlock(nsIContent** aContent);
@@ -263,16 +261,16 @@ private:
   static bool IsBlockNode(nsIContent* aContent);
   static bool IsTextNode(nsIContent* aContent);
 
-  static bool DidSkip(nsIContentIterator* aFilteredIter);
-  static void ClearDidSkip(nsIContentIterator* aFilteredIter);
+  static bool DidSkip(FilteredContentIterator* aFilteredIter);
+  static void ClearDidSkip(FilteredContentIterator* aFilteredIter);
 
   static bool HasSameBlockNodeParent(nsIContent* aContent1,
                                      nsIContent* aContent2);
 
   nsresult SetSelectionInternal(int32_t aOffset, int32_t aLength,
                                 bool aDoUpdate);
-  nsresult GetSelection(BlockSelectionStatus* aSelStatus,
-                        int32_t* aSelOffset, int32_t* aSelLength);
+  nsresult GetSelection(BlockSelectionStatus* aSelStatus, int32_t* aSelOffset,
+                        int32_t* aSelLength);
   nsresult GetCollapsedSelection(BlockSelectionStatus* aSelStatus,
                                  int32_t* aSelOffset, int32_t* aSelLength);
   nsresult GetUncollapsedSelection(BlockSelectionStatus* aSelStatus,
@@ -282,28 +280,26 @@ private:
   bool SelectionIsValid();
 
   static nsresult CreateOffsetTable(nsTArray<OffsetEntry*>* aOffsetTable,
-                                    nsIContentIterator* aIterator,
+                                    FilteredContentIterator* aFilteredIter,
                                     IteratorStatus* aIteratorStatus,
                                     nsRange* aIterRange, nsString* aStr);
   static nsresult ClearOffsetTable(nsTArray<OffsetEntry*>* aOffsetTable);
 
   static nsresult NodeHasOffsetEntry(nsTArray<OffsetEntry*>* aOffsetTable,
-                                     nsINode* aNode,
-                                     bool* aHasEntry,
+                                     nsINode* aNode, bool* aHasEntry,
                                      int32_t* aEntryIndex);
 
   nsresult RemoveInvalidOffsetEntries();
   nsresult SplitOffsetEntry(int32_t aTableIndex, int32_t aOffsetIntoEntry);
 
   static nsresult FindWordBounds(nsTArray<OffsetEntry*>* aOffsetTable,
-                                 nsString* aBlockStr,
-                                 nsINode* aNode, int32_t aNodeOffset,
-                                 nsINode** aWordStartNode,
+                                 nsString* aBlockStr, nsINode* aNode,
+                                 int32_t aNodeOffset, nsINode** aWordStartNode,
                                  int32_t* aWordStartOffset,
                                  nsINode** aWordEndNode,
                                  int32_t* aWordEndOffset);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // #ifndef mozilla_TextServicesDocument_h
+#endif  // #ifndef mozilla_TextServicesDocument_h

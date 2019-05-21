@@ -20,24 +20,16 @@ namespace mozilla {
 
 namespace dom {
 class Selection;
-} // namespace dom
+}  // namespace dom
 
-class TextInputListener final : public nsIDOMEventListener
-                              , public nsSupportsWeakReference
-{
-public:
+class TextInputListener final : public nsIDOMEventListener,
+                                public nsSupportsWeakReference {
+ public:
   explicit TextInputListener(nsITextControlElement* aTextControlElement);
 
-  void SetFrame(nsIFrame* aTextControlFrame)
-  {
-    mFrame = aTextControlFrame;
-  }
-  void SettingValue(bool aValue)
-  {
-    mSettingValue = aValue;
-  }
-  void SetValueChanged(bool aSetValueChanged)
-  {
+  void SetFrame(nsIFrame* aTextControlFrame) { mFrame = aTextControlFrame; }
+  void SettingValue(bool aValue) { mSettingValue = aValue; }
+  void SetValueChanged(bool aSetValueChanged) {
     mSetValueChanged = aSetValueChanged;
   }
 
@@ -55,33 +47,27 @@ public:
   /**
    * OnSelectionChange() is called when selection is changed in the editor.
    */
-  void OnSelectionChange(Selection& aSelection, int16_t aReason);
+  void OnSelectionChange(dom::Selection& aSelection, int16_t aReason);
 
   /**
    * Start to listen or end listening to selection change in the editor.
    */
-  void StartToListenToSelectionChange()
-  {
-    mListeningToSelectionChange = true;
-  }
-  void EndListeningToSelectionChange()
-  {
-    mListeningToSelectionChange = false;
-  }
+  void StartToListenToSelectionChange() { mListeningToSelectionChange = true; }
+  void EndListeningToSelectionChange() { mListeningToSelectionChange = false; }
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(TextInputListener,
                                            nsIDOMEventListener)
   NS_DECL_NSIDOMEVENTLISTENER
 
-protected:
+ protected:
   virtual ~TextInputListener() = default;
 
   nsresult UpdateTextInputCommands(const nsAString& aCommandsToUpdate,
                                    dom::Selection* aSelection = nullptr,
                                    int16_t aReason = 0);
 
-protected:
+ protected:
   nsIFrame* mFrame;
   nsITextControlElement* const mTxtCtrlElement;
 
@@ -113,6 +99,6 @@ protected:
   bool mListeningToSelectionChange;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // #ifndef mozilla_TextInputListener_h
+#endif  // #ifndef mozilla_TextInputListener_h

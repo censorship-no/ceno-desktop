@@ -10,7 +10,7 @@
    broken. So instead just show the normal titlebar in that case, and override
    the window color as transparent when the compositor is available. */
 @media (-moz-windows-compositor: 0) {
-  #main-window[tabsintitlebar] #titlebar:-moz-lwtheme {
+  :root[tabsintitlebar]:not([inDOMFullscreen]) > #navigator-toolbox > #titlebar:-moz-lwtheme {
     visibility: visible;
   }
 
@@ -40,9 +40,8 @@
 
     /* Because we're forcing the tabs toolbar to be [brighttext] to
      * get white toolbar button icons, we need to manually set the
-     * correct color for the tab hover and multiselect state for the light theme. */
-    .tabbrowser-tab:hover > .tab-stack > .tab-background:not([selected=true]):-moz-lwtheme-darktext,
-    .tabbrowser-tab[multiselected] > .tab-stack > .tab-background:not([selected=true]):-moz-lwtheme-darktext {
+     * correct color for the tab hover state for the light theme. */
+    .tabbrowser-tab:hover > .tab-stack > .tab-background:not([selected=true]):not([multiselected]):-moz-lwtheme-darktext {
       background-color: rgba(0,0,0,.1) !important;
     }
     .tabbrowser-tab:hover > .tab-stack > .tab-background > .tab-line:not([selected=true]):not([multiselected]):-moz-lwtheme-darktext {
@@ -52,9 +51,9 @@
 }
 
 @media (-moz-windows-glass) {
-  /* Set to full fill-opacity to improve visibility of toolbar buttons on aero glass. */
+  /* Use opaque white icons on Aero Glass. */
   #TabsToolbar {
-    --toolbarbutton-icon-fill-opacity: 1;
+    --lwt-toolbarbutton-icon-fill: white;
   }
 
   /* Make the menubar text readable on aero glass (copied from browser-aero.css). */
@@ -114,20 +113,14 @@
     display: none !important;
   }
 
-  /* Use default window colors */
-  #TabsToolbar,
-  #navigator-toolbox {
-    background-color: transparent;
-  }
-
   /* Use proper menu text styling in Win7 classic mode (copied from browser.css) */
   @media (-moz-windows-compositor: 0),
          (-moz-windows-default-theme: 0) {
-    :root[tabsintitlebar]:not([inFullscreen]) .titlebar-color {
+    :root[tabsintitlebar]:not([inFullscreen]) {
       color: CaptionText;
     }
 
-    :root[tabsintitlebar]:not([inFullscreen]) .titlebar-color:-moz-window-inactive {
+    :root[tabsintitlebar]:not([inFullscreen]):-moz-window-inactive {
       color: InactiveCaptionText;
     }
 

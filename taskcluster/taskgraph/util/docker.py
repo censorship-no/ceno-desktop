@@ -12,7 +12,6 @@ import requests_unixsocket
 import sys
 import urllib
 import urlparse
-import yaml
 
 from mozbuild.util import memoize
 from mozpack.files import GeneratedFile
@@ -20,6 +19,8 @@ from mozpack.archive import (
     create_tar_gz_from_files,
 )
 from .. import GECKO
+
+from .yaml import load_yaml
 
 
 IMAGE_DIR = os.path.join(GECKO, 'taskcluster', 'docker')
@@ -103,8 +104,18 @@ def post_to_docker(tar, api_path, **kwargs):
                 sys.stderr.write('{}\n'.format(data['status']))
         elif 'stream' in data:
             sys.stderr.write(data['stream'])
+        elif 'aux' in data:
+            sys.stderr.write(repr(data['aux']))
         elif 'error' in data:
-            raise Exception(data['error'])
+            sys.stderr.write('{}\n'.format(data['error']))
+            # Sadly, docker doesn't give more than a plain string for errors,
+            # so the best we can do to propagate the error code from the command
+            # that failed is to parse the error message...
+            errcode = 1
+            m = re.search(r'returned a non-zero code: (\d+)', data['error'])
+            if m:
+                errcode = int(m.group(1))
+            sys.exit(errcode)
         else:
             raise NotImplementedError(repr(data))
         sys.stderr.flush()
@@ -198,6 +209,9 @@ def stream_context_tar(topsrcdir, context_dir, out_file, prefix, args=None):
     object."""
     archive_files = {}
     replace = []
+    content = []
+
+    context_dir = os.path.join(topsrcdir, context_dir)
 
     for root, dirs, files in os.walk(context_dir):
         for f in files:
@@ -207,7 +221,6 @@ def stream_context_tar(topsrcdir, context_dir, out_file, prefix, args=None):
             archive_files[archive_path] = source_path
 
     # Parse Dockerfile for special syntax of extra files to include.
-    content = []
     with open(os.path.join(context_dir, 'Dockerfile'), 'rb') as fh:
         for line in fh:
             if line.startswith('# %ARG'):
@@ -261,13 +274,11 @@ def stream_context_tar(topsrcdir, context_dir, out_file, prefix, args=None):
 def image_paths():
     """Return a map of image name to paths containing their Dockerfile.
     """
-    with open(os.path.join(GECKO, 'taskcluster', 'ci', 'docker-image',
-                           'kind.yml')) as fh:
-        config = yaml.safe_load(fh)
-        return {
-            k: os.path.join(IMAGE_DIR, v.get('definition', k))
-            for k, v in config['jobs'].items()
-        }
+    config = load_yaml(GECKO, 'taskcluster', 'ci', 'docker-image', 'kind.yml')
+    return {
+        k: os.path.join(IMAGE_DIR, v.get('definition', k))
+        for k, v in config['jobs'].items()
+    }
 
 
 def image_path(name):

@@ -4,6 +4,8 @@
 
 from __future__ import absolute_import, print_function
 
+import os
+
 from marionette_driver.errors import SessionNotCreatedException
 from marionette_harness import MarionetteTestCase
 
@@ -19,6 +21,7 @@ class TestCapabilities(MarionetteTestCase):
                   name: Services.appinfo.name,
                   version: Services.appinfo.version,
                   processID: Services.appinfo.processID,
+                  buildID: Services.appinfo.appBuildID,
                 }
                 """)
             self.os_name = self.marionette.execute_script("""
@@ -35,25 +38,6 @@ class TestCapabilities(MarionetteTestCase):
             self.os_version = self.marionette.execute_script(
                 "return Services.sysinfo.getProperty('version')")
 
-    def get_fennec_profile(self):
-        profile = self.marionette.instance.runner.device.app_ctx.remote_profile
-        if self.caps["moz:profile"].lower() != profile.lower():
-            # mozdevice may be using a symlink and readlink is not
-            # universally available (missing from sdk 18).
-            # Attempt to resolve the most common symlink cases by using
-            # ls -l to determine if the root of the path (like /sdcard)
-            # is a symlink.
-            import posixpath
-            import re
-            device = self.marionette.instance.runner.device.app_ctx.device
-            root = posixpath.sep.join(profile.split(posixpath.sep)[0:2])
-            ls_out = device.shell_output("ls -l %s" % root)
-            match = re.match(r'.*->\s(.*)', ls_out)
-            if match:
-                new_root = match.group(1)
-                profile = profile.replace(root, new_root)
-        return profile
-
     def test_mandated_capabilities(self):
         self.assertIn("browserName", self.caps)
         self.assertIn("browserVersion", self.caps)
@@ -62,6 +46,7 @@ class TestCapabilities(MarionetteTestCase):
         self.assertIn("acceptInsecureCerts", self.caps)
         self.assertIn("setWindowRect", self.caps)
         self.assertIn("timeouts", self.caps)
+        self.assertIn("strictFileInteractability", self.caps)
 
         self.assertEqual(self.caps["browserName"], self.appinfo["name"].lower())
         self.assertEqual(self.caps["browserVersion"], self.appinfo["version"])
@@ -76,6 +61,7 @@ class TestCapabilities(MarionetteTestCase):
                              {"implicit": 0,
                               "pageLoad": 300000,
                               "script": 30000})
+        self.assertTrue(self.caps["strictFileInteractability"])
 
     def test_supported_features(self):
         self.assertIn("rotatable", self.caps)
@@ -88,15 +74,19 @@ class TestCapabilities(MarionetteTestCase):
         self.assertIn("moz:profile", self.caps)
         if self.marionette.instance is not None:
             if self.caps["browserName"] == "fennec":
-                current_profile = self.get_fennec_profile()
+                current_profile = self.marionette.instance.runner.device.app_ctx.remote_profile
             else:
                 current_profile = self.marionette.profile_path
             # Bug 1438461 - mozprofile uses lower-case letters even on case-sensitive filesystems
-            self.assertEqual(self.caps["moz:profile"].lower(), current_profile.lower())
+            # Bug 1533221 - paths may differ due to file system links or aliases
+            self.assertEqual(os.path.basename(self.caps["moz:profile"]).lower(),
+                os.path.basename(current_profile).lower())
 
         self.assertIn("moz:accessibilityChecks", self.caps)
         self.assertFalse(self.caps["moz:accessibilityChecks"])
 
+        self.assertIn("moz:buildID", self.caps)
+        self.assertEqual(self.caps["moz:buildID"], self.appinfo["buildID"])
         self.assertIn("moz:useNonSpecCompliantPointerOrigin", self.caps)
         self.assertFalse(self.caps["moz:useNonSpecCompliantPointerOrigin"])
 
@@ -180,6 +170,24 @@ class TestCapabilityMatching(MarionetteTestCase):
         self.assertDictEqual(self.marionette.session_capabilities["timeouts"], timeouts)
         self.assertDictEqual(self.marionette._send_message("WebDriver:GetTimeouts"), timeouts)
 
+    def test_strict_file_interactability(self):
+        for value in ["", 2.5, {}, []]:
+            print("  type {}".format(type(value)))
+            with self.assertRaises(SessionNotCreatedException):
+                self.marionette.start_session({"strictFileInteractability": value})
+
+        self.delete_session()
+
+        self.marionette.start_session({"strictFileInteractability": True})
+        self.assertIn("strictFileInteractability", self.marionette.session_capabilities)
+        self.assertTrue(self.marionette.session_capabilities["strictFileInteractability"])
+
+        self.delete_session()
+
+        self.marionette.start_session({"strictFileInteractability": False})
+        self.assertIn("strictFileInteractability", self.marionette.session_capabilities)
+        self.assertFalse(self.marionette.session_capabilities["strictFileInteractability"])
+
     def test_unhandled_prompt_behavior(self):
         behaviors = [
             "accept",
@@ -208,4 +216,3 @@ class TestCapabilityMatching(MarionetteTestCase):
             print("invalid unhandled prompt behavior {}".format(behavior))
             with self.assertRaisesRegexp(SessionNotCreatedException, "InvalidArgumentError"):
                 self.marionette.start_session({"unhandledPromptBehavior": behavior})
-

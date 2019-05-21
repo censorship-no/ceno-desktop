@@ -11,35 +11,30 @@
 #include "nsColor.h"
 #include "nsIFrame.h"
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(FEFlood)
+NS_IMPL_NS_NEW_SVG_ELEMENT(FEFlood)
 
 using namespace mozilla::gfx;
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGFEFloodElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
+JSObject* SVGFEFloodElement::WrapNode(JSContext* aCx,
+                                      JS::Handle<JSObject*> aGivenProto) {
   return SVGFEFloodElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsSVGElement::StringInfo SVGFEFloodElement::sStringInfo[1] =
-{
-  { nsGkAtoms::result, kNameSpaceID_None, true }
-};
+SVGElement::StringInfo SVGFEFloodElement::sStringInfo[1] = {
+    {nsGkAtoms::result, kNameSpaceID_None, true}};
 
 //----------------------------------------------------------------------
 // nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGFEFloodElement)
 
-FilterPrimitiveDescription
-SVGFEFloodElement::GetPrimitiveDescription(nsSVGFilterInstance* aInstance,
-                                           const IntRect& aFilterSubregion,
-                                           const nsTArray<bool>& aInputsAreTainted,
-                                           nsTArray<RefPtr<SourceSurface>>& aInputImages)
-{
+FilterPrimitiveDescription SVGFEFloodElement::GetPrimitiveDescription(
+    nsSVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
+    const nsTArray<bool>& aInputsAreTainted,
+    nsTArray<RefPtr<SourceSurface>>& aInputImages) {
   FloodAttributes atts;
   nsIFrame* frame = GetPrimaryFrame();
   if (frame) {
@@ -57,26 +52,20 @@ SVGFEFloodElement::GetPrimitiveDescription(nsSVGFilterInstance* aInstance,
 // nsIContent methods
 
 NS_IMETHODIMP_(bool)
-SVGFEFloodElement::IsAttributeMapped(const nsAtom* name) const
-{
-  static const MappedAttributeEntry* const map[] = {
-    sColorMap,
-    sFEFloodMap
-  };
+SVGFEFloodElement::IsAttributeMapped(const nsAtom* name) const {
+  static const MappedAttributeEntry* const map[] = {sColorMap, sFEFloodMap};
 
   return FindAttributeDependence(name, map) ||
-    SVGFEFloodElementBase::IsAttributeMapped(name);
+         SVGFEFloodElementBase::IsAttributeMapped(name);
 }
 
 //----------------------------------------------------------------------
-// nsSVGElement methods
+// SVGElement methods
 
-nsSVGElement::StringAttributesInfo
-SVGFEFloodElement::GetStringInfo()
-{
+SVGElement::StringAttributesInfo SVGFEFloodElement::GetStringInfo() {
   return StringAttributesInfo(mStringAttributes, sStringInfo,
                               ArrayLength(sStringInfo));
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

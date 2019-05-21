@@ -5,9 +5,9 @@
 
 var EXPORTED_SYMBOLS = ["Finder", "GetClipboardSearchString"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Geometry.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Rect} = ChromeUtils.import("resource://gre/modules/Geometry.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "BrowserUtils",
   "resource://gre/modules/BrowserUtils.jsm");
@@ -160,7 +160,7 @@ Finder.prototype = {
     if (this._highlighter)
       return this._highlighter;
 
-    const {FinderHighlighter} = ChromeUtils.import("resource://gre/modules/FinderHighlighter.jsm", {});
+    const {FinderHighlighter} = ChromeUtils.import("resource://gre/modules/FinderHighlighter.jsm");
     return this._highlighter = new FinderHighlighter(this);
   },
 
@@ -611,8 +611,7 @@ function GetClipboardSearchString(aLoadContext) {
     Clipboard.getData(trans, Ci.nsIClipboard.kFindClipboard);
 
     let data = {};
-    let dataLen = {};
-    trans.getTransferData("text/unicode", data, dataLen);
+    trans.getTransferData("text/unicode", data);
     if (data.value) {
       data = data.value.QueryInterface(Ci.nsISupportsString);
       searchString = data.toString();

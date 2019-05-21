@@ -6,12 +6,10 @@ add_task(async function setup() {
 });
 
 add_task(async function install_xpi() {
-
-  // Data for WebExtension with syntax error
-  let xpi1 = Extension.generateXPI({
+  // WebExtension with a JSON syntax error in manifest.json
+  let xpi1 = AddonTestUtils.createTempWebExtensionFile({
     files: {
       "manifest.json": String.raw`{
-        // This is a manifest. Intentional syntax error in next line.
         "manifest_version: 2,
         "applications": {"gecko": {"id": "${ADDON_ID}"}},
         "name": "Temp WebExt with Error",
@@ -20,11 +18,10 @@ add_task(async function install_xpi() {
     },
   });
 
-  // Data for WebExtension without syntax error
-  let xpi2 = Extension.generateXPI({
+  // Valid WebExtension
+  let xpi2 = AddonTestUtils.createTempWebExtensionFile({
     files: {
       "manifest.json": String.raw`{
-        // This is a manifest.
         "manifest_version": 2,
         "applications": {"gecko": {"id": "${ADDON_ID}"}},
         "name": "Temp WebExt without Error",
@@ -41,7 +38,5 @@ add_task(async function install_xpi() {
   xpi2.moveTo(xpi1.parent, xpi1.leafName);
 
   let install2 = await AddonManager.getInstallForFile(xpi2);
-  Assert.notEqual(install2.error, AddonManager.ERROR_CORRUPT_FILE);
-
-  xpi1.remove(false);
+  Assert.equal(install2.error, 0);
 });

@@ -15,22 +15,16 @@ namespace mozilla {
 namespace wr {
 
 RenderTextureHostWrapper::RenderTextureHostWrapper()
-  : mInited(false)
-  , mLocked(false)
-{
+    : mInited(false), mLocked(false) {
   MOZ_COUNT_CTOR_INHERITED(RenderTextureHostWrapper, RenderTextureHost);
 }
 
-RenderTextureHostWrapper::~RenderTextureHostWrapper()
-{
+RenderTextureHostWrapper::~RenderTextureHostWrapper() {
   MOZ_COUNT_DTOR_INHERITED(RenderTextureHostWrapper, RenderTextureHost);
 }
 
-wr::WrExternalImage
-RenderTextureHostWrapper::Lock(uint8_t aChannelIndex,
-                               gl::GLContext* aGL,
-                               wr::ImageRendering aRendering)
-{
+wr::WrExternalImage RenderTextureHostWrapper::Lock(
+    uint8_t aChannelIndex, gl::GLContext* aGL, wr::ImageRendering aRendering) {
   if (!mTextureHost) {
     MOZ_ASSERT_UNREACHABLE("unexpected to happen");
     return InvalidToWrExternalImage();
@@ -40,32 +34,27 @@ RenderTextureHostWrapper::Lock(uint8_t aChannelIndex,
   return mTextureHost->Lock(aChannelIndex, aGL, aRendering);
 }
 
-void
-RenderTextureHostWrapper::Unlock()
-{
+void RenderTextureHostWrapper::Unlock() {
   if (mTextureHost) {
     mTextureHost->Unlock();
   }
   mLocked = false;
 }
 
-void
-RenderTextureHostWrapper::ClearCachedResources()
-{
+void RenderTextureHostWrapper::ClearCachedResources() {
   if (mTextureHost) {
     mTextureHost->ClearCachedResources();
   }
 }
 
-void
-RenderTextureHostWrapper::UpdateRenderTextureHost(RenderTextureHost* aTextureHost)
-{
-  MOZ_ASSERT(!mInited || RenderThread::IsInRenderThread());
+void RenderTextureHostWrapper::UpdateRenderTextureHost(
+    RenderTextureHost* aTextureHost) {
+  MOZ_ASSERT(RenderThread::IsInRenderThread());
   MOZ_RELEASE_ASSERT(!mLocked);
 
   mInited = true;
   mTextureHost = aTextureHost;
 }
 
-} // namespace wr
-} // namespace mozilla
+}  // namespace wr
+}  // namespace mozilla

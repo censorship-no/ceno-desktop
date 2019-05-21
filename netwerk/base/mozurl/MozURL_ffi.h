@@ -17,8 +17,8 @@
 namespace mozilla {
 namespace net {
 class MozURL;
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
 extern "C" {
 
@@ -36,8 +36,7 @@ struct MozURLSpecSlice {
 nsrefcnt mozurl_addref(const mozilla::net::MozURL*);
 nsrefcnt mozurl_release(const mozilla::net::MozURL*);
 
-nsresult mozurl_new(mozilla::net::MozURL** aResult,
-                    const nsACString* aSpec,
+nsresult mozurl_new(mozilla::net::MozURL** aResult, const nsACString* aSpec,
                     /* optional */ const mozilla::net::MozURL* aBase);
 
 void mozurl_clone(const mozilla::net::MozURL* aThis,
@@ -50,6 +49,7 @@ MozURLSpecSlice mozurl_username(const mozilla::net::MozURL*);
 MozURLSpecSlice mozurl_password(const mozilla::net::MozURL*);
 MozURLSpecSlice mozurl_host(const mozilla::net::MozURL*);
 int32_t mozurl_port(const mozilla::net::MozURL*);
+int32_t mozurl_real_port(const mozilla::net::MozURL*);
 MozURLSpecSlice mozurl_host_port(const mozilla::net::MozURL*);
 MozURLSpecSlice mozurl_filepath(const mozilla::net::MozURL*);
 MozURLSpecSlice mozurl_path(const mozilla::net::MozURL*);
@@ -57,7 +57,9 @@ MozURLSpecSlice mozurl_query(const mozilla::net::MozURL*);
 MozURLSpecSlice mozurl_fragment(const mozilla::net::MozURL*);
 
 bool mozurl_has_fragment(const mozilla::net::MozURL*);
+MozURLSpecSlice mozurl_directory(const mozilla::net::MozURL*);
 void mozurl_origin(const mozilla::net::MozURL*, nsACString* aResult);
+nsresult mozurl_base_domain(const mozilla::net::MozURL*, nsACString* aResult);
 
 nsresult mozurl_common_base(const mozilla::net::MozURL* aUrl1,
                             const mozilla::net::MozURL* aUrl2,
@@ -78,12 +80,10 @@ nsresult mozurl_set_host_port(mozilla::net::MozURL* aUrl,
                               const nsACString* aHostPort);
 nsresult mozurl_set_hostname(mozilla::net::MozURL* aUrl,
                              const nsACString* aHostname);
-nsresult mozurl_set_port_no(mozilla::net::MozURL* aUrl,
-                            int32_t port);
+nsresult mozurl_set_port_no(mozilla::net::MozURL* aUrl, int32_t port);
 nsresult mozurl_set_pathname(mozilla::net::MozURL* aUrl,
                              const nsACString* aPath);
-nsresult mozurl_set_query(mozilla::net::MozURL* aUrl,
-                          const nsACString* aQuery);
+nsresult mozurl_set_query(mozilla::net::MozURL* aUrl, const nsACString* aQuery);
 nsresult mozurl_set_fragment(mozilla::net::MozURL* aUrl,
                              const nsACString* aFragment);
 
@@ -91,9 +91,8 @@ nsresult mozurl_set_fragment(mozilla::net::MozURL* aUrl,
 //
 // This function does not follow the mozurl_ naming convention, as it does not
 // work on MozURL objects.
-nsresult rusturl_parse_ipv6addr(const nsACString* aHost,
-                                nsACString* aAddr);
+nsresult rusturl_parse_ipv6addr(const nsACString* aHost, nsACString* aAddr);
 
-} // extern "C"
+}  // extern "C"
 
-#endif // !defined(mozilla_net_MozURL_ffi_h)
+#endif  // !defined(mozilla_net_MozURL_ffi_h)

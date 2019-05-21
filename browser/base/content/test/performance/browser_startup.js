@@ -24,22 +24,19 @@ const startupPhases = {
   // Anything loaded during app-startup must have a compelling reason
   // to run before we have even selected the user profile.
   // Consider loading your code after first paint instead,
-  // eg. from nsBrowserGlue.js' _onFirstWindowLoaded method).
+  // eg. from BrowserGlue.jsm' _onFirstWindowLoaded method).
   "before profile selection": {whitelist: {
-    components: new Set([
-      "nsBrowserGlue.js",
-      "MainProcessSingleton.js",
-
-      // Bugs to fix: The following components shouldn't be initialized that early.
-      "PushComponents.js", // bug 1369436
-    ]),
     modules: new Set([
+      "resource:///modules/BrowserGlue.jsm",
       "resource://gre/modules/AppConstants.jsm",
       "resource://gre/modules/ActorManagerParent.jsm",
       "resource://gre/modules/CustomElementsListener.jsm",
       "resource://gre/modules/ExtensionUtils.jsm",
+      "resource://gre/modules/MainProcessSingleton.jsm",
       "resource://gre/modules/XPCOMUtils.jsm",
       "resource://gre/modules/Services.jsm",
+      // Bugs to fix: The following components shouldn't be initialized that early.
+      "resource://gre/modules/PushComponents.jsm", // bug 1369436
     ]),
   }},
 
@@ -114,7 +111,6 @@ const startupPhases = {
     modules: new Set([
       "resource://gre/modules/AsyncPrefs.jsm",
       "resource://gre/modules/LoginManagerContextMenu.jsm",
-      "resource://gre/modules/Task.jsm",
       "resource://pdf.js/PdfStreamConverter.jsm",
     ]),
   }},
@@ -157,7 +153,6 @@ add_task(async function() {
   let startupRecorder = Cc["@mozilla.org/test/startuprecorder;1"].getService().wrappedJSObject;
   await startupRecorder.done;
 
-  let loader = Cc["@mozilla.org/moz/jsloader;1"].getService(Ci.xpcIJSModuleLoader);
   let componentStacks = new Map();
   let data = Cu.cloneInto(startupRecorder.data.code, {});
   // Keep only the file name for components, as the path is an absolute file
@@ -166,14 +161,14 @@ add_task(async function() {
     data[phase].components =
       data[phase].components.map(uri => {
         let fileName = uri.replace(/.*\//, "");
-        componentStacks.set(fileName, loader.getComponentLoadStack(uri));
+        componentStacks.set(fileName, Cu.getComponentLoadStack(uri));
         return fileName;
       }).filter(c => c != "startupRecorder.js");
   }
 
   function printStack(scriptType, name) {
     if (scriptType == "modules")
-      info(loader.getModuleImportStack(name));
+      info(Cu.getModuleImportStack(name));
     else if (scriptType == "components")
       info(componentStacks.get(name));
   }

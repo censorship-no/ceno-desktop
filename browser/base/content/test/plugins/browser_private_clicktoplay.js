@@ -6,8 +6,6 @@ var gTestBrowser = null;
 var gNextTest = null;
 var gPluginHost = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 var gPrivateWindow = null;
 var gPrivateBrowser = null;
 
@@ -70,9 +68,14 @@ add_task(async function test1b() {
   await promiseShown;
   is(gPrivateWindow.PopupNotifications.panel.firstElementChild.checkbox.hidden, true, "'Remember' checkbox should be hidden in private windows");
 
+  let promises = [
+    BrowserTestUtils.browserLoaded(gTestBrowser, false, gHttpTestRoot + "plugin_test.html"),
+    BrowserTestUtils.waitForEvent(window, "activate"),
+  ];
   gPrivateWindow.close();
   BrowserTestUtils.loadURI(gTestBrowser, gHttpTestRoot + "plugin_test.html");
-  await BrowserTestUtils.browserLoaded(gTestBrowser);
+  await Promise.all(promises);
+  await SimpleTest.promiseFocus(window);
 });
 
 add_task(async function test2a() {
@@ -127,10 +130,15 @@ add_task(async function test2c() {
      "Test 2c, Activated plugin in a private window should not have visible 'Remember' checkbox.");
 
   clearAllPluginPermissions();
-  gPrivateWindow.close();
 
+  let promises = [
+    BrowserTestUtils.browserLoaded(gTestBrowser, false, gHttpTestRoot + "plugin_test.html"),
+    BrowserTestUtils.waitForEvent(window, "activate"),
+  ];
+  gPrivateWindow.close();
   BrowserTestUtils.loadURI(gTestBrowser, gHttpTestRoot + "plugin_test.html");
-  await BrowserTestUtils.browserLoaded(gTestBrowser);
+  await Promise.all(promises);
+  await SimpleTest.promiseFocus(window);
 });
 
 add_task(async function test3a() {
@@ -179,40 +187,6 @@ add_task(async function test3c() {
 
   BrowserTestUtils.loadURI(gPrivateBrowser, gHttpTestRoot + "plugin_two_types.html");
   await BrowserTestUtils.browserLoaded(gPrivateBrowser);
-});
-
-add_task(async function test3d() {
-  let popupNotification = gPrivateWindow.PopupNotifications.getNotification("click-to-play-plugins", gPrivateBrowser);
-  ok(popupNotification, "Test 3d, Should have a click-to-play notification");
-
-  // Check the list item status
-  let promiseShown = BrowserTestUtils.waitForEvent(gPrivateWindow.PopupNotifications.panel,
-                                                   "Shown");
-  popupNotification.reshow();
-  await promiseShown;
-  let doc = gPrivateWindow.document;
-  for (let item of gPrivateWindow.PopupNotifications.panel.firstElementChild.children) {
-    let allowalways = doc.getAnonymousElementByAttribute(item, "anonid", "allowalways");
-    ok(allowalways, "Test 3d, should have list item for allow always");
-    let allownow = doc.getAnonymousElementByAttribute(item, "anonid", "allownow");
-    ok(allownow, "Test 3d, should have list item for allow now");
-    let block = doc.getAnonymousElementByAttribute(item, "anonid", "block");
-    ok(block, "Test 3d, should have list item for block");
-
-    if (item.action.pluginName === "Test") {
-      is(item.value, "allowalways", "Test 3d, Plugin should bet set to 'allow always'");
-      ok(!allowalways.hidden, "Test 3d, Plugin set to 'always allow' should have a visible 'always allow' action.");
-      ok(allownow.hidden, "Test 3d, Plugin set to 'always allow' should have an invisible 'allow now' action.");
-      ok(block.hidden, "Test 3d, Plugin set to 'always allow' should have an invisible 'block' action.");
-    } else if (item.action.pluginName === "Second Test") {
-      is(item.value, "block", "Test 3d, Second plugin should bet set to 'block'");
-      ok(allowalways.hidden, "Test 3d, Plugin set to 'block' should have a visible 'always allow' action.");
-      ok(!allownow.hidden, "Test 3d, Plugin set to 'block' should have a visible 'allow now' action.");
-      ok(!block.hidden, "Test 3d, Plugin set to 'block' should have a visible 'block' action.");
-    } else {
-      ok(false, "Test 3d, Unexpected plugin '" + item.action.pluginName + "'");
-    }
-  }
 
   finishTest();
 });

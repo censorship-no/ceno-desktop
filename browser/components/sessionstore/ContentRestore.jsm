@@ -8,46 +8,12 @@ var EXPORTED_SYMBOLS = ["ContentRestore"];
 
 ChromeUtils.import("resource://gre/modules/Services.jsm", this);
 
-ChromeUtils.defineModuleGetter(this, "DocShellCapabilities",
-  "resource:///modules/sessionstore/DocShellCapabilities.jsm");
-ChromeUtils.defineModuleGetter(this, "FormData",
-  "resource://gre/modules/FormData.jsm");
-ChromeUtils.defineModuleGetter(this, "ScrollPosition",
-  "resource://gre/modules/ScrollPosition.jsm");
 ChromeUtils.defineModuleGetter(this, "SessionHistory",
   "resource://gre/modules/sessionstore/SessionHistory.jsm");
-ChromeUtils.defineModuleGetter(this, "SessionStorage",
-  "resource:///modules/sessionstore/SessionStorage.jsm");
 ChromeUtils.defineModuleGetter(this, "Utils",
   "resource://gre/modules/sessionstore/Utils.jsm");
-
-const ssu = Cc["@mozilla.org/browser/sessionstore/utils;1"]
-              .getService(Ci.nsISessionStoreUtils);
-
-/**
- * Restores frame tree |data|, starting at the given root |frame|. As the
- * function recurses into descendant frames it will call cb(frame, data) for
- * each frame it encounters, starting with the given root.
- */
-function restoreFrameTreeData(frame, data, cb) {
-  // Restore data for the root frame.
-  // The callback can abort by returning false.
-  if (cb(frame, data) === false) {
-    return;
-  }
-
-  if (!data.hasOwnProperty("children")) {
-    return;
-  }
-
-  // Recurse into child frames.
-  ssu.forEachNonDynamicChildFrame(frame, (subframe, index) => {
-    if (data.children[index]) {
-      restoreFrameTreeData(subframe, data.children[index], cb);
-    }
-  });
-}
-
+ChromeUtils.defineModuleGetter(this, "E10SUtils",
+  "resource://gre/modules/E10SUtils.jsm");
 /**
  * This module implements the content side of session restoration. The chrome
  * side is handled by SessionStore.jsm. The functions in this module are called
@@ -168,11 +134,11 @@ ContentRestoreInternal.prototype = {
 
     // Make sure to reset the capabilities and attributes in case this tab gets
     // reused.
-    let disallow = new Set(tabData.disallow && tabData.disallow.split(","));
-    DocShellCapabilities.restore(this.docShell, disallow);
+    SessionStoreUtils.restoreDocShellCapabilities(this.docShell, tabData.disallow);
+
 
     if (tabData.storage && this.docShell instanceof Ci.nsIDocShell) {
-      SessionStorage.restore(this.docShell, tabData.storage);
+      SessionStoreUtils.restoreSessionStorage(this.docShell, tabData.storage);
       delete tabData.storage;
     }
 
@@ -217,35 +183,60 @@ ContentRestoreInternal.prototype = {
 
     try {
       if (loadArguments) {
+        // If the load was started in another process, and the in-flight channel
+        // was redirected into this process, resume that load within our process.
+        if (loadArguments.redirectLoadSwitchId) {
+          webNavigation.resumeRedirectedLoad(loadArguments.redirectLoadSwitchId,
+                                             loadArguments.redirectHistoryIndex);
+          return true;
+        }
+
         // A load has been redirected to a new process so get history into the
         // same state it was before the load started then trigger the load.
-        let referrer = loadArguments.referrer ?
-                       Services.io.newURI(loadArguments.referrer) : null;
-        let referrerPolicy = ("referrerPolicy" in loadArguments
+        // Referrer information is now stored as a referrerInfo property. We
+        // should also cope with the old format of passing `referrer` and
+        // `referrerPolicy` separately.
+        let referrerInfo = loadArguments.referrerInfo;
+        if (referrerInfo) {
+          referrerInfo = E10SUtils.deserializeReferrerInfo(referrerInfo);
+        } else {
+          let referrer = loadArguments.referrer ?
+            Services.io.newURI(loadArguments.referrer) : null;
+          let referrerPolicy = ("referrerPolicy" in loadArguments
             ? loadArguments.referrerPolicy
             : Ci.nsIHttpChannel.REFERRER_POLICY_UNSET);
+          let ReferrerInfo = Components.Constructor(
+            "@mozilla.org/referrer-info;1",
+            "nsIReferrerInfo",
+            "init");
+          referrerInfo = new ReferrerInfo(referrerPolicy, true, referrer);
+        }
         let postData = loadArguments.postData ?
-                       Utils.makeInputStream(loadArguments.postData) : null;
-        let triggeringPrincipal = loadArguments.triggeringPrincipal
-                                  ? Utils.deserializePrincipal(loadArguments.triggeringPrincipal)
-                                  : null;
+                       E10SUtils.makeInputStream(loadArguments.postData) : null;
+        let triggeringPrincipal = E10SUtils.deserializePrincipal(loadArguments.triggeringPrincipal, () => Services.scriptSecurityManager.createNullPrincipal({}));
+        let csp = loadArguments.csp ? E10SUtils.deserializeCSP(loadArguments.csp) : null;
 
         if (loadArguments.userContextId) {
           webNavigation.setOriginAttributesBeforeLoading({ userContextId: loadArguments.userContextId });
         }
-
-        webNavigation.loadURIWithOptions(loadArguments.uri, loadArguments.flags,
-                                         referrer, referrerPolicy, postData,
-                                         null, null, triggeringPrincipal);
+        let loadURIOptions = {
+          triggeringPrincipal,
+          loadFlags: loadArguments.flags,
+          referrerInfo,
+          postData,
+          csp,
+        };
+        webNavigation.loadURI(loadArguments.uri, loadURIOptions);
       } else if (tabData.userTypedValue && tabData.userTypedClear) {
         // If the user typed a URL into the URL bar and hit enter right before
         // we crashed, we want to start loading that page again. A non-zero
         // userTypedClear value means that the load had started.
         // Load userTypedValue and fix up the URL if it's partial/broken.
-        webNavigation.loadURI(tabData.userTypedValue,
-                              Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP,
-                              null, null, null,
-                              Services.scriptSecurityManager.getSystemPrincipal());
+        let loadURIOptions = {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+          loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP,
+        };
+        webNavigation.loadURI(tabData.userTypedValue, loadURIOptions);
       } else if (tabData.entries.length) {
         // Stash away the data we need for restoreDocument.
         let activeIndex = tabData.index - 1;
@@ -259,10 +250,11 @@ ContentRestoreInternal.prototype = {
         history.reloadCurrentEntry();
       } else {
         // If there's nothing to restore, we should still blank the page.
-        webNavigation.loadURI("about:blank",
-                              Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY,
-                              null, null, null,
-                              Services.scriptSecurityManager.getSystemPrincipal());
+        let loadURIOptions = {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+          loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY,
+        };
+        webNavigation.loadURI("about:blank", loadURIOptions);
       }
 
       return true;
@@ -317,17 +309,17 @@ ContentRestoreInternal.prototype = {
     let window = this.docShell.domWindow;
 
     // Restore form data.
-    restoreFrameTreeData(window, formdata, (frame, data) => {
+    Utils.restoreFrameTreeData(window, formdata, (frame, data) => {
       // restore() will return false, and thus abort restoration for the
       // current |frame| and its descendants, if |data.url| is given but
       // doesn't match the loaded document's URL.
-      return FormData.restore(frame, data);
+      return SessionStoreUtils.restoreFormData(frame.document, data);
     });
 
     // Restore scroll data.
-    restoreFrameTreeData(window, scrollPositions, (frame, data) => {
+    Utils.restoreFrameTreeData(window, scrollPositions, (frame, data) => {
       if (data.scroll) {
-        ScrollPosition.restore(frame, data.scroll);
+        SessionStoreUtils.restoreScrollPosition(frame, data);
       }
     });
   },
@@ -406,9 +398,11 @@ HistoryListener.prototype = {
     // STATE_START notification to be sent and the ProgressListener will then
     // notify the parent and do the rest.
     let flags = Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP;
-    this.webNavigation.loadURI(newURI.spec, flags,
-                               null, null, null,
-                               Services.scriptSecurityManager.getSystemPrincipal());
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      loadFlags: flags,
+    };
+    this.webNavigation.loadURI(newURI.spec, loadURIOptions);
   },
 
   OnHistoryReload(reloadURI, reloadFlags) {

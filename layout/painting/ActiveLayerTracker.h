@@ -11,6 +11,7 @@
 
 class nsIFrame;
 class nsIContent;
+class nsCSSPropertyIDSet;
 class nsDisplayListBuilder;
 class nsDOMCSSDeclaration;
 
@@ -22,14 +23,14 @@ namespace mozilla {
  * that drive those decisions. It manages per-frame state to support those
  * heuristics.
  */
-class ActiveLayerTracker
-{
-public:
+class ActiveLayerTracker {
+ public:
   static void Shutdown();
 
   /*
    * We track style changes to selected styles:
-   *   eCSSProperty_transform
+   *   eCSSProperty_transform, eCSSProperty_translate,
+   *   eCSSProperty_rotate, eCSSProperty_scale
    *   eCSSProperty_opacity
    *   eCSSProperty_left, eCSSProperty_top,
    *   eCSSProperty_right, eCSSProperty_bottom
@@ -55,8 +56,7 @@ public:
    * aNewValue and aDOMCSSDecl are used to determine whether the property's
    * value has changed.
    */
-  static void NotifyAnimated(nsIFrame* aFrame,
-                             nsCSSPropertyID aProperty,
+  static void NotifyAnimated(nsIFrame* aFrame, nsCSSPropertyID aProperty,
                              const nsAString& aNewValue,
                              nsDOMCSSDeclaration* aDOMCSSDecl);
   /**
@@ -86,17 +86,11 @@ public:
    */
   static void NotifyNeedsRepaint(nsIFrame* aFrame);
   /**
-   * Return true if aFrame's aProperty style should be considered as being
-   * animated for pre-rendering.
+   * Return true if aFrame's property style in |aPropertySet| should be
+   * considered as being animated for constructing active layers.
    */
-  static bool IsStyleMaybeAnimated(nsIFrame* aFrame, nsCSSPropertyID aProperty);
-  /**
-   * Return true if aFrame's aProperty style should be considered as being
-   * animated for constructing active layers.
-   */
-  static bool IsStyleAnimated(nsDisplayListBuilder* aBuilder,
-                              nsIFrame* aFrame,
-                              nsCSSPropertyID aProperty);
+  static bool IsStyleAnimated(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
+                              const nsCSSPropertyIDSet& aPropertySet);
   /**
    * Return true if any of aFrame's offset property styles should be considered
    * as being animated for constructing active layers.
@@ -108,6 +102,17 @@ public:
    */
   static bool IsBackgroundPositionAnimated(nsDisplayListBuilder* aBuilder,
                                            nsIFrame* aFrame);
+  /**
+   * Return true if aFrame's transform-like property,
+   * i.e. transform/translate/rotate/scale, is animated.
+   */
+  static bool IsTransformAnimated(nsDisplayListBuilder* aBuilder,
+                                  nsIFrame* aFrame);
+  /**
+   * Return true if aFrame's transform style should be considered as being
+   * animated for pre-rendering.
+   */
+  static bool IsTransformMaybeAnimated(nsIFrame* aFrame);
   /**
    * Return true if aFrame either has an animated scale now, or is likely to
    * have one in the future because it has a CSS animation or transition
@@ -151,6 +156,6 @@ public:
   static void SetCurrentScrollHandlerFrame(nsIFrame* aFrame);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif /* ACTIVELAYERTRACKER_H_ */

@@ -18,6 +18,10 @@ function run_test() {
     return;
   }
 
+  Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+  });
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-stack");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
@@ -40,7 +44,7 @@ function run_test() {
 
 function test_pause_frame() {
   gThreadClient.addOneTimeListener("paused", function(event, packet) {
-    gThreadClient.getFrames(0, null, function(frameResponse) {
+    gThreadClient.getFrames(0, null, async function(frameResponse) {
       Assert.equal(frameResponse.frames.length, 4);
 
       const wasmFrame = frameResponse.frames[1];
@@ -48,9 +52,10 @@ function test_pause_frame() {
       Assert.equal(wasmFrame.this, undefined);
 
       const location = wasmFrame.where;
+      const source = await getSourceById(gThreadClient, location.actor);
       Assert.equal(location.line > 0, true);
       Assert.equal(location.column > 0, true);
-      Assert.equal(/^wasm:(?:[^:]*:)*?[0-9a-f]{16}$/.test(location.source.url), true);
+      Assert.equal(/^wasm:(?:[^:]*:)*?[0-9a-f]{16}$/.test(source.url), true);
 
       finishClient(gClient);
     });

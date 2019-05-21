@@ -7,7 +7,6 @@
 #ifndef nsNativeCharsetUtils_h__
 #define nsNativeCharsetUtils_h__
 
-
 /*****************************************************************************\
  *                                                                           *
  *                             **** NOTICE ****                              *
@@ -24,6 +23,9 @@
  *                                                                           *
 \*****************************************************************************/
 
+#include "nsError.h"
+#include "nsStringFwd.h"
+
 /**
  * thread-safe conversion routines that do not depend on uconv libraries.
  */
@@ -39,9 +41,7 @@ nsresult NS_CopyUnicodeToNative(const nsAString& aInput, nsACString& aOutput);
  * than using |GetLeafName| and converting the result to UTF-8 if the file
  * system  encoding is UTF-8.
  */
-inline constexpr bool
-NS_IsNativeUTF8()
-{
+inline constexpr bool NS_IsNativeUTF8() {
 #ifdef XP_WIN
   return false;
 #else
@@ -49,4 +49,4 @@ NS_IsNativeUTF8()
 #endif
 }
 
-#endif // nsNativeCharsetUtils_h__
+#endif  // nsNativeCharsetUtils_h__

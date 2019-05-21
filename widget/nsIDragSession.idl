@@ -38,12 +38,6 @@ interface nsIDragSession : nsISupports
   attribute unsigned long dragAction;
   
   /**
-    * Sets the current width and height of the drag target area. 
-    * It will contain the current size of the Frame that the drag is currently in
-    */  
-  [noscript] attribute nsSize targetSize;
- 
-  /**
     * Get the number of items that were dropped
     */
   readonly attribute unsigned long numDropItems;
@@ -62,11 +56,11 @@ interface nsIDragSession : nsISupports
   readonly attribute Node sourceNode;
 
   /**
-   * The URI spec of the triggering principal.  This may be different than
-   * sourceNode's principal when sourceNode is xul:browser and the drag is
+   * the triggering principal.  This may be different than sourceNode's
+   * principal when sourceNode is xul:browser and the drag is
    * triggered in a browsing context inside it.
    */
-  attribute AUTF8String triggeringPrincipalURISpec;
+  attribute nsIPrincipal triggeringPrincipal;
 
   /**
    * The data transfer object for the current drag.

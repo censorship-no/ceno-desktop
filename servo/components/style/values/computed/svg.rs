@@ -1,21 +1,19 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Computed types for SVG properties.
 
-use app_units::Au;
-use values::RGBA;
-use values::computed::{LengthOrPercentage, NonNegativeLength};
-use values::computed::{NonNegativeLengthOrPercentage, NonNegativeNumber, Number};
-use values::computed::Opacity;
-use values::computed::color::Color;
-use values::computed::url::ComputedUrl;
-use values::generics::svg as generic;
+use crate::values::computed::color::Color;
+use crate::values::computed::url::ComputedUrl;
+use crate::values::computed::{LengthPercentage, NonNegativeLengthPercentage, Opacity};
+use crate::values::generics::svg as generic;
+use crate::values::RGBA;
+use crate::Zero;
 
-pub use values::specified::SVGPaintOrder;
+pub use crate::values::specified::SVGPaintOrder;
 
-pub use values::specified::MozContextProperties;
+pub use crate::values::specified::MozContextProperties;
 
 /// Computed SVG Paint value
 pub type SVGPaint = generic::SVGPaint<Color, ComputedUrl>;
@@ -42,53 +40,29 @@ impl SVGPaint {
     }
 }
 
-/// A value of <length> | <percentage> | <number> for stroke-dashoffset.
-/// <https://www.w3.org/TR/SVG11/painting.html#StrokeProperties>
-pub type SvgLengthOrPercentageOrNumber =
-    generic::SvgLengthOrPercentageOrNumber<LengthOrPercentage, Number>;
-
 /// <length> | <percentage> | <number> | context-value
-pub type SVGLength = generic::SVGLength<SvgLengthOrPercentageOrNumber>;
+pub type SVGLength = generic::SVGLength<LengthPercentage>;
 
-impl From<Au> for SVGLength {
-    fn from(length: Au) -> Self {
-        generic::SVGLength::Length(generic::SvgLengthOrPercentageOrNumber::LengthOrPercentage(
-            length.into(),
-        ))
-    }
-}
-
-/// A value of <length> | <percentage> | <number> for stroke-width/stroke-dasharray.
-/// <https://www.w3.org/TR/SVG11/painting.html#StrokeProperties>
-pub type NonNegativeSvgLengthOrPercentageOrNumber =
-    generic::SvgLengthOrPercentageOrNumber<NonNegativeLengthOrPercentage, NonNegativeNumber>;
-
-impl Into<NonNegativeSvgLengthOrPercentageOrNumber> for SvgLengthOrPercentageOrNumber {
-    fn into(self) -> NonNegativeSvgLengthOrPercentageOrNumber {
-        match self {
-            generic::SvgLengthOrPercentageOrNumber::LengthOrPercentage(lop) => {
-                generic::SvgLengthOrPercentageOrNumber::LengthOrPercentage(lop.into())
-            },
-            generic::SvgLengthOrPercentageOrNumber::Number(num) => {
-                generic::SvgLengthOrPercentageOrNumber::Number(num.into())
-            },
-        }
+impl SVGLength {
+    /// `0px`
+    pub fn zero() -> Self {
+        generic::SVGLength::LengthPercentage(LengthPercentage::zero())
     }
 }
 
 /// An non-negative wrapper of SVGLength.
-pub type SVGWidth = generic::SVGLength<NonNegativeSvgLengthOrPercentageOrNumber>;
+pub type SVGWidth = generic::SVGLength<NonNegativeLengthPercentage>;
 
-impl From<NonNegativeLength> for SVGWidth {
-    fn from(length: NonNegativeLength) -> Self {
-        generic::SVGLength::Length(generic::SvgLengthOrPercentageOrNumber::LengthOrPercentage(
-            length.into(),
-        ))
+impl SVGWidth {
+    /// `1px`.
+    pub fn one() -> Self {
+        use crate::values::generics::NonNegative;
+        generic::SVGLength::LengthPercentage(NonNegative(LengthPercentage::one()))
     }
 }
 
 /// [ <length> | <percentage> | <number> ]# | context-value
-pub type SVGStrokeDashArray = generic::SVGStrokeDashArray<NonNegativeSvgLengthOrPercentageOrNumber>;
+pub type SVGStrokeDashArray = generic::SVGStrokeDashArray<NonNegativeLengthPercentage>;
 
 impl Default for SVGStrokeDashArray {
     fn default() -> Self {

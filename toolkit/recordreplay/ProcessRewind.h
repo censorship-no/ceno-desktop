@@ -83,8 +83,7 @@ namespace recordreplay {
 // temporary. Normal checkpoints occur at the same point in the recording and
 // all replays, while temporary checkpoints are not used while recording and
 // may be at different points in different replays.
-struct CheckpointId
-{
+struct CheckpointId {
   // ID of the most recent normal checkpoint, which are numbered in sequence
   // starting at FirstCheckpointId.
   size_t mNormal;
@@ -98,8 +97,7 @@ struct CheckpointId
   size_t mTemporary;
 
   explicit CheckpointId(size_t aNormal = Invalid, size_t aTemporary = 0)
-    : mNormal(aNormal), mTemporary(aTemporary)
-  {}
+      : mNormal(aNormal), mTemporary(aTemporary) {}
 
   inline bool operator==(const CheckpointId& o) const {
     return mNormal == o.mNormal && mTemporary == o.mTemporary;
@@ -141,6 +139,9 @@ bool HasSavedCheckpoint();
 // Get the ID of the most recent saved checkpoint.
 CheckpointId GetLastSavedCheckpoint();
 
+// Get the ID of the saved checkpoint prior to aCheckpoint.
+CheckpointId GetLastSavedCheckpointPriorTo(const CheckpointId& aCheckpoint);
+
 // When paused at a breakpoint or at a checkpoint, restore a checkpoint that
 // was saved earlier and resume execution.
 void RestoreCheckpointAndResume(const CheckpointId& aCheckpoint);
@@ -178,7 +179,7 @@ bool IsActiveChild();
 // checkpoint was just saved, and false if it was just restored.
 bool NewCheckpoint(bool aTemporary);
 
-} // namespace recordreplay
-} // namespace mozilla
+}  // namespace recordreplay
+}  // namespace mozilla
 
-#endif // mozilla_recordreplay_ProcessRewind_h
+#endif  // mozilla_recordreplay_ProcessRewind_h

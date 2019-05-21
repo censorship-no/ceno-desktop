@@ -33,7 +33,7 @@ describe("SnippetsFeed", () => {
   let clock;
   beforeEach(() => {
     clock = sinon.useFakeTimers();
-    sandbox = sinon.sandbox.create();
+    sandbox = sinon.createSandbox();
     overrider.set({
       ProfileAge: () => Promise.resolve({
         created: Promise.resolve(0),
@@ -166,6 +166,15 @@ describe("SnippetsFeed", () => {
     const [action] = feed.store.dispatch.firstCall.args;
     assert.equal(action.type, at.SNIPPETS_DATA);
     assert.deepEqual(action.data, {selectedSearchEngine: searchData});
+  });
+  it("should catch errors when calling getVisibleEngines", async () => {
+    const feed = new SnippetsFeed();
+    sandbox.stub(global.Services.search, "getVisibleEngines").rejects();
+
+    const result = await feed.getSelectedSearchEngine();
+
+    assert.lengthOf(result.engines, 0);
+    assert.equal(result.searchEngineIdentifier, "");
   });
   it("should call showFirefoxAccounts", () => {
     const feed = new SnippetsFeed();

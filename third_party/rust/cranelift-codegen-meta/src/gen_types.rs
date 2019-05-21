@@ -1,19 +1,19 @@
 //! Generate sources with type info.
 //!
 //! This generates a `types.rs` file which is included in
-//! `lib/codegen/ir/types.rs`. The file provides constant definitions for the
+//! `cranelift-codegen/ir/types.rs`. The file provides constant definitions for the
 //! most commonly used types, including all of the scalar types.
 //!
 //! This ensures that the metaprogram and the generated program see the same
 //! type numbering.
 
-use cdsl::types as cdsl_types;
-use error;
-use srcgen;
+use crate::cdsl::types as cdsl_types;
+use crate::error;
+use crate::srcgen;
 
 /// Emit a constant definition of a single value type.
 fn emit_type(ty: &cdsl_types::ValueType, fmt: &mut srcgen::Formatter) -> Result<(), error::Error> {
-    let name = ty.name().to_uppercase();
+    let name = ty.to_string().to_uppercase();
     let number = ty.number().ok_or_else(|| {
         error::Error::with_msg(format!(
             "Could not emit type `{}` which has no number.",
@@ -21,10 +21,8 @@ fn emit_type(ty: &cdsl_types::ValueType, fmt: &mut srcgen::Formatter) -> Result<
         ))
     })?;
 
-    let definition = format!("pub const {}: Type = Type({:#x});\n", name, number);
-
     fmt.doc_comment(&ty.doc());
-    fmt.line(&definition);
+    fmtln!(fmt, "pub const {}: Type = Type({:#x});\n", name, number);
 
     Ok(())
 }
@@ -47,8 +45,7 @@ fn emit_vectors(bits: u64, fmt: &mut srcgen::Formatter) -> Result<(), error::Err
 /// Emit types using the given formatter object.
 fn emit_types(fmt: &mut srcgen::Formatter) -> Result<(), error::Error> {
     // Emit all of the special types, such as types for CPU flags.
-    for spec in cdsl_types::ValueType::all_special_types().map(|ty| cdsl_types::ValueType::from(ty))
-    {
+    for spec in cdsl_types::ValueType::all_special_types().map(cdsl_types::ValueType::from) {
         emit_type(&spec, fmt)?;
     }
 

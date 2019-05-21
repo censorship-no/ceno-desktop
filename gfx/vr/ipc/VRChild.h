@@ -10,18 +10,21 @@
 #include "mozilla/gfx/PVRChild.h"
 #include "mozilla/gfx/gfxVarReceiver.h"
 #include "mozilla/VsyncDispatcher.h"
+#include "gfxVR.h"
 
 namespace mozilla {
+namespace ipc {
+class CrashReporterHost;
+}  // namespace ipc
 namespace gfx {
 
 class VRProcessParent;
 class VRChild;
 
-class VRChild final
- : public PVRChild,
-   public gfxVarReceiver {
+class VRChild final : public PVRChild, public gfxVarReceiver {
+  friend class PVRChild;
 
-public:
+ public:
   explicit VRChild(VRProcessParent* aHost);
   ~VRChild() = default;
 
@@ -29,14 +32,21 @@ public:
   void Init();
   virtual void OnVarChanged(const GfxVarUpdate& aVar) override;
 
-protected:
+ protected:
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
+  mozilla::ipc::IPCResult RecvOpenVRControllerActionPathToParent(
+      const nsCString& aPath);
+  mozilla::ipc::IPCResult RecvOpenVRControllerManifestPathToParent(
+      const OpenVRControllerType& aType, const nsCString& aPath);
+  mozilla::ipc::IPCResult RecvInitCrashReporter(
+      Shmem&& shmem, const NativeThreadId& aThreadId);
 
-private:
+ private:
   VRProcessParent* mHost;
+  UniquePtr<ipc::CrashReporterHost> mCrashReporter;
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif  // GFX_VR_CHILD_H

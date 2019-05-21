@@ -55,7 +55,7 @@ function copyCF_HTML(cfhtml, success, failure) {
     cb.getData(trans, cb.kGlobalClipboard);
     var data = SpecialPowers.createBlankObject();
     try {
-      trans.getTransferData(CF_HTML, data, {});
+      trans.getTransferData(CF_HTML, data);
       data = SpecialPowers.wrap(data).value.QueryInterface(Ci.nsISupportsCString).data;
     } catch (e) {
       setTimeout(function() { copyCF_HTML_worker(successFn, failureFn); }, 100);
@@ -81,7 +81,7 @@ function loadCF_HTMLdata(filename) {
   req.open("GET", filename, false);
   req.overrideMimeType("text/plain; charset=x-user-defined");
   req.send(null);
-  ok(req.status, 200, "Could not read the binary file " + filename);
+  is(req.status, 200, "Could not read the binary file " + filename);
   return req.responseText;
 }
 
@@ -142,9 +142,9 @@ function runTest() {
 }
 
 var isMac = ("nsILocalFileMac" in SpecialPowers.Ci);
-if (isMac)
+if (isMac) {
   SimpleTest.waitForFocus(runTest);
-else {
+} else {
   // This test is not yet supported on non-Mac platforms, see bug 574005.
   todo(false, "Test not supported on this platform");
   SimpleTest.finish();

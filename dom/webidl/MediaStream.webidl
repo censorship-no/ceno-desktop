@@ -23,6 +23,11 @@ dictionary MediaStreamConstraints {
     DOMString? peerIdentity = null;
 };
 
+dictionary DisplayMediaStreamConstraints {
+    (boolean or MediaTrackConstraints) video = true;
+    (boolean or MediaTrackConstraints) audio = false;
+};
+
 [Exposed=Window,
  Constructor,
  Constructor (MediaStream stream),
@@ -39,7 +44,6 @@ interface MediaStream : EventTarget {
     readonly    attribute boolean      active;
                 attribute EventHandler onaddtrack;
                 attribute EventHandler onremovetrack;
-    readonly attribute double currentTime;
 
     [ChromeOnly, Throws]
     static Promise<long> countUnderlyingStreams();

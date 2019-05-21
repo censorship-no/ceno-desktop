@@ -68,7 +68,7 @@ test path(s):
 Please check spelling and make sure the named tests exist.
 '''.lstrip()
 
-SUPPORTED_APPS = ['firefox', 'android']
+SUPPORTED_APPS = ['firefox', 'android', 'thunderbird']
 
 parser = None
 
@@ -177,6 +177,11 @@ class MochitestRunner(MozbuildObject):
             manifest.tests.extend(tests)
             options.manifestFile = manifest
 
+        # Firefox for Android doesn't use e10s
+        if options.app is None or 'geckoview' not in options.app:
+            options.e10s = False
+            print("using e10s=False for non-geckoview app")
+
         return runtestsremote.run_test_harness(parser, options)
 
     def run_geckoview_junit_test(self, context, **kwargs):
@@ -207,6 +212,10 @@ class MochitestRunner(MozbuildObject):
             manifest = TestManifest()
             manifest.tests.extend(tests)
             options.manifestFile = manifest
+
+        # robocop only used for Firefox for Android - non-e10s
+        options.e10s = False
+        print("using e10s=False for robocop")
 
         return runrobocop.run_test_harness(parser, options)
 
@@ -275,7 +284,7 @@ def setup_junit_argument_parser():
         import runjunit
 
         from mozrunner.devices.android_device import verify_android_device
-        verify_android_device(build_obj, install=False, xre=True)
+        verify_android_device(build_obj, install=False, xre=True, network=True)
 
     global parser
     parser = runjunit.JunitArgumentParser()
@@ -447,8 +456,8 @@ class MachCommands(MachCommandBase):
             device_serial = kwargs.get('deviceSerial')
 
             # verify installation
-            verify_android_device(self, install=True, xre=False, app=app,
-                                  device_serial=device_serial)
+            verify_android_device(self, install=True, xre=False, network=True,
+                                  app=app, device_serial=device_serial)
             grant_runtime_permissions(self, app, device_serial=device_serial)
             run_mochitest = mochitest.run_android_test
         else:
@@ -559,8 +568,8 @@ class RobocopCommands(MachCommandBase):
         if not app:
             app = self.substs["ANDROID_PACKAGE_NAME"]
         device_serial = kwargs.get('deviceSerial')
-        verify_android_device(self, install=True, xre=False, app=app,
-                              device_serial=device_serial)
+        verify_android_device(self, install=True, xre=False, network=True,
+                              app=app, device_serial=device_serial)
         grant_runtime_permissions(self, app, device_serial=device_serial)
 
         if not kwargs['adbPath']:

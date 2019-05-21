@@ -24,23 +24,20 @@
 namespace mozilla {
 namespace dom {
 struct DateTimeValue;
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-class nsDateTimeControlFrame final : public nsContainerFrame,
-                                     public nsIAnonymousContentCreator
-{
+class nsDateTimeControlFrame final : public nsContainerFrame {
   typedef mozilla::dom::DateTimeValue DateTimeValue;
 
-  explicit nsDateTimeControlFrame(ComputedStyle* aStyle);
+  explicit nsDateTimeControlFrame(ComputedStyle* aStyle,
+                                  nsPresContext* aPresContext);
 
-public:
+ public:
   friend nsIFrame* NS_NewDateTimeControlFrame(nsIPresShell* aPresShell,
                                               ComputedStyle* aStyle);
 
   void ContentStatesChanged(mozilla::EventStates aStates) override;
-  void DestroyFrom(nsIFrame* aDestructRoot, PostDestroyData& aPostDestroyData) override;
-
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsDateTimeControlFrame)
 
@@ -50,10 +47,9 @@ public:
   }
 #endif
 
-  bool IsFrameOfType(uint32_t aFlags) const override
-  {
-    return nsContainerFrame::IsFrameOfType(aFlags &
-      ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
+  bool IsFrameOfType(uint32_t aFlags) const override {
+    return nsContainerFrame::IsFrameOfType(
+        aFlags & ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
   }
 
   // Reflow
@@ -61,60 +57,39 @@ public:
 
   nscoord GetPrefISize(gfxContext* aRenderingContext) override;
 
-  void Reflow(nsPresContext* aPresContext,
-              ReflowOutput& aDesiredSize,
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
               const ReflowInput& aReflowInput,
               nsReflowStatus& aStatus) override;
-
-  // nsIAnonymousContentCreator
-  nsresult CreateAnonymousContent(nsTArray<ContentInfo>& aElements) override;
-  void AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
-                                uint32_t aFilter) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                             int32_t aModType) override;
 
-  void OnValueChanged();
-  void OnMinMaxStepAttrChanged();
-  void SetValueFromPicker(const DateTimeValue& aValue);
-  void HandleFocusEvent();
-  void HandleBlurEvent();
-  void SetPickerState(bool aOpen);
-  bool HasBadInput();
-
-private:
+ private:
   class SyncDisabledStateEvent;
   friend class SyncDisabledStateEvent;
-  class SyncDisabledStateEvent : public mozilla::Runnable
-  {
-  public:
+  class SyncDisabledStateEvent : public mozilla::Runnable {
+   public:
     explicit SyncDisabledStateEvent(nsDateTimeControlFrame* aFrame)
-      : mozilla::Runnable("nsDateTimeControlFrame::SyncDisabledStateEvent")
-      , mFrame(aFrame)
-    {}
+        : mozilla::Runnable("nsDateTimeControlFrame::SyncDisabledStateEvent"),
+          mFrame(aFrame) {}
 
-    NS_IMETHOD Run() override
-    {
+    NS_IMETHOD Run() override {
       nsDateTimeControlFrame* frame =
-        static_cast<nsDateTimeControlFrame*>(mFrame.GetFrame());
+          static_cast<nsDateTimeControlFrame*>(mFrame.GetFrame());
       NS_ENSURE_STATE(frame);
 
       frame->SyncDisabledState();
       return NS_OK;
     }
 
-  private:
+   private:
     WeakFrame mFrame;
   };
 
   /**
-   * Sync the disabled state of the anonymous children up with our content's.
+   * Sync the disabled state of the datetimebox children up with our content's.
    */
   void SyncDisabledState();
-
-  // Anonymous child which is bound via XBL to an element that wraps the input
-  // area and reset button.
-  RefPtr<mozilla::dom::Element> mInputAreaContent;
 };
 
-#endif // nsDateTimeControlFrame_h__
+#endif  // nsDateTimeControlFrame_h__

@@ -1,9 +1,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Different objects protected by the same lock
 
+use crate::str::{CssString, CssStringWriter};
+use crate::stylesheets::Origin;
 #[cfg(feature = "gecko")]
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 #[cfg(feature = "servo")]
@@ -15,8 +17,6 @@ use std::fmt;
 use std::mem;
 #[cfg(feature = "gecko")]
 use std::ptr;
-use str::{CssString, CssStringWriter};
-use stylesheets::Origin;
 
 /// A shared read/write lock that can protect multiple objects.
 ///
@@ -239,7 +239,7 @@ pub trait ToCssWithGuard {
 #[cfg(feature = "gecko")]
 pub struct DeepCloneParams {
     /// The new sheet we're cloning rules into.
-    pub reference_sheet: *const ::gecko_bindings::structs::StyleSheet,
+    pub reference_sheet: *const crate::gecko_bindings::structs::StyleSheet,
 }
 
 /// Parameters needed for deep clones.

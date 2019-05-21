@@ -57,17 +57,22 @@ async function loadURL(url, {frameCount}) {
     }
   }
   function loadObserver(window) {
-    windows.set(window.location.href, window);
-    if (windows.size == frameCount) {
-      resolveLoad();
-    }
+    window.addEventListener("load", function onLoad() {
+      windows.set(window.location.href, window);
+      if (windows.size == frameCount) {
+        resolveLoad();
+      }
+    }, {once: true});
   }
 
   Services.obs.addObserver(requestObserver, "http-on-examine-response");
   Services.obs.addObserver(loadObserver, "content-document-global-created");
 
   let webNav = Services.appShell.createWindowlessBrowser(false);
-  webNav.loadURI(url, 0, null, null, null);
+  let loadURIOptions = {
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  };
+  webNav.loadURI(url, loadURIOptions);
 
   await loadPromise;
 

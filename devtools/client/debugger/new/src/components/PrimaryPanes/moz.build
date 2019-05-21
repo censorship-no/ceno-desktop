@@ -7,9 +7,10 @@ DIRS += [
 
 ]
 
-DevToolsModules(
+CompiledModules(
     'index.js',
     'Outline.js',
+    'OutlineFilter.js',
     'SourcesTree.js',
     'SourcesTreeItem.js',
 )

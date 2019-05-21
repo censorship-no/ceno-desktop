@@ -214,7 +214,7 @@ var gDevToolsBrowser = exports.gDevToolsBrowser = {
           toolbox.hostType == Toolbox.HostType.WINDOW) {
         toolbox.raise();
       } else {
-        gDevTools.closeToolbox(target);
+        toolbox.destroy();
       }
       gDevTools.emit("select-tool-command", toolId);
     } else {
@@ -242,6 +242,16 @@ var gDevToolsBrowser = exports.gDevToolsBrowser = {
    *        `Cu.now()` timing.
    */
   async onKeyShortcut(window, key, startTime) {
+    // Avoid to open devtools when the about:devtools-toolbox page is showing
+    // on the window now.
+    if (gDevToolsBrowser._isAboutDevtoolsToolbox(window) &&
+        (key.toolId ||
+         key.id === "toggleToolbox" ||
+         key.id === "toggleToolboxF12" ||
+         key.id === "inspectorMac")) {
+      return;
+    }
+
     // If this is a toolbox's panel key shortcut, delegate to selectToolCommand
     if (key.toolId) {
       await gDevToolsBrowser.selectToolCommand(window.gBrowser, key.toolId, startTime);
@@ -318,13 +328,7 @@ var gDevToolsBrowser = exports.gDevToolsBrowser = {
     const client = new DebuggerClient(transport);
 
     await client.connect();
-    const response = await client.mainRoot.getProcess(processId);
-    const options = {
-      form: response.form,
-      client: client,
-      chrome: true,
-    };
-    const target = await TargetFactory.forRemoteTab(options);
+    const target = await client.mainRoot.getProcess(processId);
     // Ensure closing the connection in order to cleanup
     // the debugger client and also the server created in the
     // content process
@@ -358,6 +362,10 @@ var gDevToolsBrowser = exports.gDevToolsBrowser = {
           .then(target => {
             // Display a new toolbox in a new window
             return gDevTools.showToolbox(target, null, Toolbox.HostType.WINDOW);
+          })
+          .catch(e => {
+            console.error("Exception while opening the browser content toolbox:",
+              e);
           });
     }
 
@@ -370,15 +378,14 @@ var gDevToolsBrowser = exports.gDevToolsBrowser = {
    * Open a window-hosted toolbox to debug the worker associated to the provided
    * worker actor.
    *
-   * @param  {DebuggerClient} client
-   * @param  {Object} workerTargetActor
-   *         worker actor form to debug
+   * @param  {WorkerTargetFront} workerTargetFront
+   *         worker actor front to debug
+   * @param  {String} toolId (optional)
+   *        The id of the default tool to show
    */
-  async openWorkerToolbox(client, workerTargetActor) {
-    const [, workerTargetFront] = await client.attachWorker(workerTargetActor);
-    const workerTarget = TargetFactory.forWorker(workerTargetFront);
-    const toolbox = await gDevTools.showToolbox(workerTarget, null, Toolbox.HostType.WINDOW);
-    toolbox.once("destroy", () => workerTargetFront.detach());
+  async openWorkerToolbox(workerTarget, toolId) {
+    const toolbox = await gDevTools.showToolbox(workerTarget, toolId, Toolbox.HostType.WINDOW);
+    toolbox.once("destroy", () => workerTarget.detach());
   },
 
   /**
@@ -585,6 +592,10 @@ var gDevToolsBrowser = exports.gDevToolsBrowser = {
 
     for (const win of gDevToolsBrowser._trackedBrowserWindows) {
       BrowserMenus.insertToolMenuElements(win.document, toolDefinition, prevDef);
+      // If we are on a page where devtools menu items are hidden such as
+      // about:devtools-toolbox, we need to call _updateMenuItems to update the
+      // visibility of the newly created menu item.
+      gDevToolsBrowser._updateMenuItems(win);
     }
 
     if (toolDefinition.id === "jsdebugger") {
@@ -603,20 +614,48 @@ var gDevToolsBrowser = exports.gDevToolsBrowser = {
   },
 
   /**
-   * Update the "Toggle Tools" checkbox in the developer tools menu. This is
+   * Update developer tools menu items and the "Toggle Tools" checkbox. This is
    * called when a toolbox is created or destroyed.
    */
-  _updateMenuCheckbox() {
+  _updateMenu() {
     for (const win of gDevToolsBrowser._trackedBrowserWindows) {
-      const hasToolbox = gDevToolsBrowser.hasToolboxOpened(win);
-
-      const menu = win.document.getElementById("menu_devToolbox");
-      if (hasToolbox) {
-        menu.setAttribute("checked", "true");
-      } else {
-        menu.removeAttribute("checked");
-      }
+      gDevToolsBrowser._updateMenuItems(win);
     }
+  },
+
+  /**
+   * Update developer tools menu items and the "Toggle Tools" checkbox of XULWindow.
+   *
+   * @param {XULWindow} win
+   */
+  _updateMenuItems(win) {
+    if (gDevToolsBrowser._isAboutDevtoolsToolbox(win)) {
+      BrowserMenus.disableDevtoolsMenuItems(win.document);
+      return;
+    }
+
+    BrowserMenus.enableDevtoolsMenuItems(win.document);
+
+    const hasToolbox = gDevToolsBrowser.hasToolboxOpened(win);
+
+    const menu = win.document.getElementById("menu_devToolbox");
+    if (hasToolbox) {
+      menu.setAttribute("checked", "true");
+    } else {
+      menu.removeAttribute("checked");
+    }
+  },
+
+  /**
+   * Check whether the window is showing about:devtools-toolbox page or not.
+   *
+   * @param {XULWindow} win
+   * @return {boolean} true: about:devtools-toolbox is showing
+   *                   false: otherwise
+   */
+  _isAboutDevtoolsToolbox(win) {
+    const currentURI = win.gBrowser.currentURI;
+    return currentURI.scheme === "about" && currentURI.filePath === "devtools-toolbox";
   },
 
   /**
@@ -671,7 +710,7 @@ var gDevToolsBrowser = exports.gDevToolsBrowser = {
   handleEvent(event) {
     switch (event.type) {
       case "TabSelect":
-        gDevToolsBrowser._updateMenuCheckbox();
+        gDevToolsBrowser._updateMenu();
         break;
       case "unload":
         // top-level browser window unload
@@ -723,8 +762,8 @@ gDevTools.on("tool-unregistered", function(toolId) {
   gDevToolsBrowser._removeToolFromWindows(toolId);
 });
 
-gDevTools.on("toolbox-ready", gDevToolsBrowser._updateMenuCheckbox);
-gDevTools.on("toolbox-destroyed", gDevToolsBrowser._updateMenuCheckbox);
+gDevTools.on("toolbox-ready", gDevToolsBrowser._updateMenu);
+gDevTools.on("toolbox-destroyed", gDevToolsBrowser._updateMenu);
 
 Services.obs.addObserver(gDevToolsBrowser, "quit-application");
 Services.obs.addObserver(gDevToolsBrowser, "browser-delayed-startup-finished");

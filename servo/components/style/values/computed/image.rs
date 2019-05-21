@@ -1,25 +1,23 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! CSS handling for the computed value of
 //! [`image`][image]s
 //!
 //! [image]: https://drafts.csswg.org/css-images/#image-values
 
+use crate::values::computed::position::Position;
+use crate::values::computed::url::ComputedImageUrl;
+use crate::values::computed::{Angle, Color, Context};
+use crate::values::computed::{Length, LengthPercentage, NumberOrPercentage, ToComputedValue};
+use crate::values::generics::image::{self as generic, CompatMode};
+use crate::values::specified::image::LineDirection as SpecifiedLineDirection;
+use crate::values::specified::position::{X, Y};
+use crate::values::{Either, None_};
 use std::f32::consts::PI;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
-use values::{Either, None_};
-use values::computed::{Angle, Color, Context};
-use values::computed::{Length, LengthOrPercentage, NumberOrPercentage, ToComputedValue};
-#[cfg(feature = "gecko")]
-use values::computed::Percentage;
-use values::computed::position::Position;
-use values::computed::url::ComputedImageUrl;
-use values::generics::image::{self as generic, CompatMode};
-use values::specified::image::LineDirection as SpecifiedLineDirection;
-use values::specified::position::{X, Y};
 
 /// A computed image layer.
 pub type ImageLayer = Either<None_, Image>;
@@ -31,11 +29,11 @@ pub type Image = generic::Image<Gradient, MozImageRect, ComputedImageUrl>;
 /// Computed values for a CSS gradient.
 /// <https://drafts.csswg.org/css-images/#gradients>
 pub type Gradient =
-    generic::Gradient<LineDirection, Length, LengthOrPercentage, Position, Color, Angle>;
+    generic::Gradient<LineDirection, Length, LengthPercentage, Position, Color, Angle>;
 
 /// A computed gradient kind.
 pub type GradientKind =
-    generic::GradientKind<LineDirection, Length, LengthOrPercentage, Position, Angle>;
+    generic::GradientKind<LineDirection, Length, LengthPercentage, Position, Angle>;
 
 /// A computed gradient line direction.
 #[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq)]
@@ -54,13 +52,13 @@ pub enum LineDirection {
 }
 
 /// A computed radial gradient ending shape.
-pub type EndingShape = generic::EndingShape<Length, LengthOrPercentage>;
+pub type EndingShape = generic::EndingShape<Length, LengthPercentage>;
 
 /// A computed gradient item.
-pub type GradientItem = generic::GradientItem<Color, LengthOrPercentage>;
+pub type GradientItem = generic::GradientItem<Color, LengthPercentage>;
 
 /// A computed color stop.
-pub type ColorStop = generic::ColorStop<Color, LengthOrPercentage>;
+pub type ColorStop = generic::ColorStop<Color, LengthPercentage>;
 
 /// Computed values for `-moz-image-rect(...)`.
 pub type MozImageRect = generic::MozImageRect<NumberOrPercentage, ComputedImageUrl>;
@@ -75,13 +73,14 @@ impl generic::LineDirection for LineDirection {
             #[cfg(feature = "gecko")]
             LineDirection::MozPosition(
                 Some(Position {
-                    horizontal: LengthOrPercentage::Percentage(Percentage(x)),
-                    vertical: LengthOrPercentage::Percentage(Percentage(y)),
+                    ref vertical,
+                    ref horizontal,
                 }),
                 None,
             ) => {
                 // `50% 0%` is the default value for line direction.
-                x == 0.5 && y == 0.0
+                horizontal.as_percentage().map_or(false, |p| p.0 == 0.5) &&
+                    vertical.as_percentage().map_or(false, |p| p.0 == 0.0)
             },
             _ => false,
         }

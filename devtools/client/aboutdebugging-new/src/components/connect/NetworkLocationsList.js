@@ -12,12 +12,13 @@ const FluentReact = require("devtools/client/shared/vendor/fluent-react");
 const Localized = createFactory(FluentReact.Localized);
 
 const Actions = require("../../actions/index");
+const Types = require("../../types/index");
 
 class NetworkLocationsList extends PureComponent {
   static get propTypes() {
     return {
       dispatch: PropTypes.func.isRequired,
-      networkLocations: PropTypes.arrayOf(PropTypes.string).isRequired,
+      networkLocations: PropTypes.arrayOf(Types.location).isRequired,
     };
   }
 
@@ -42,7 +43,7 @@ class NetworkLocationsList extends PureComponent {
             },
             dom.button(
               {
-                className: "std-button js-network-location-remove-button",
+                className: "default-button js-network-location-remove-button",
                 onClick: () => {
                   this.props.dispatch(Actions.removeNetworkLocation(location));
                 },

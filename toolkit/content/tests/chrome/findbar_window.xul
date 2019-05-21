@@ -20,9 +20,9 @@
           src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
   <script type="application/javascript"><![CDATA[
-    ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-    ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
-    ChromeUtils.import("resource://testing-common/ContentTask.jsm");
+    const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+    const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
+    const {ContentTask} = ChromeUtils.import("resource://testing-common/ContentTask.jsm");
     ContentTask.setTestScope(window.opener.wrappedJSObject);
 
     var gPrefsvc = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
@@ -89,9 +89,10 @@
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       let promise = BrowserTestUtils.browserLoaded(gBrowser);
-      gBrowser.loadURI("data:text/html,<h2 id='h2'>" + SEARCH_TEXT +
+      BrowserTestUtils.loadURI(gBrowser, "data:text/html,<h2 id='h2'>" + SEARCH_TEXT +
         "</h2><h2><a href='" + SAMPLE_URL + "'>Link Test</a></h2><input id='text' type='text' value='" +
-        SAMPLE_TEXT + "'></input><input id='button' type='button'></input><img id='img' width='50' height='50'/>");
+        SAMPLE_TEXT + "'></input><input id='button' type='button'></input><img id='img' width='50' height='50'/>",
+        { triggeringPrincipal: window.document.nodePrincipal });
       await promise;
       await onDocumentLoaded();
     }

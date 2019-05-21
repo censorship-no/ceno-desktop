@@ -7,8 +7,8 @@
 
 var EXPORTED_SYMBOLS = ["ProcessHangMonitor"];
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * This JSM is responsible for observing content process hang reports
@@ -420,8 +420,8 @@ var ProcessHangMonitor = {
    * Show the notification for a hang.
    */
   showNotification(win, report) {
-    let nb = win.document.getElementById("high-priority-global-notificationbox");
-    let notification = nb.getNotificationWithValue("process-hang");
+    let notification =
+        win.gHighPriorityNotificationBox.getNotificationWithValue("process-hang");
     if (notification) {
       return;
     }
@@ -458,8 +458,7 @@ var ProcessHangMonitor = {
       let linkText = bundle.getString("processHang.add-on.learn-more.text");
       let linkURL = "https://support.mozilla.org/kb/warning-unresponsive-script#w_other-causes";
 
-      let link = doc.createXULElement("label");
-      link.setAttribute("class", "text-link");
+      let link = doc.createXULElement("label", {is: "text-link"});
       link.setAttribute("role", "link");
       link.setAttribute("onclick", `openTrustedLinkIn(${JSON.stringify(linkURL)}, "tab")`);
       link.setAttribute("value", linkText);
@@ -487,19 +486,19 @@ var ProcessHangMonitor = {
       });
     }
 
-    nb.appendNotification(message, "process-hang",
-                          "chrome://browser/content/aboutRobots-icon.png",
-                          nb.PRIORITY_WARNING_HIGH, buttons);
+    win.gHighPriorityNotificationBox.appendNotification(message, "process-hang",
+      "chrome://browser/content/aboutRobots-icon.png",
+      win.gHighPriorityNotificationBox.PRIORITY_WARNING_HIGH, buttons);
   },
 
   /**
    * Ensure that no hang notifications are visible in |win|.
    */
   hideNotification(win) {
-    let nb = win.document.getElementById("high-priority-global-notificationbox");
-    let notification = nb.getNotificationWithValue("process-hang");
+    let notification =
+        win.gHighPriorityNotificationBox.getNotificationWithValue("process-hang");
     if (notification) {
-      nb.removeNotification(notification);
+      win.gHighPriorityNotificationBox.removeNotification(notification);
     }
   },
 

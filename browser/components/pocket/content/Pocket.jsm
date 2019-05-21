@@ -6,7 +6,7 @@
 
 var EXPORTED_SYMBOLS = ["Pocket"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "BrowserUtils",
   "resource://gre/modules/BrowserUtils.jsm");
@@ -19,7 +19,7 @@ var Pocket = {
     let win = event.view;
     let where = win.whereToOpenLink(event);
     // Never override the current tab unless it's blank:
-    if (where == "current" && !win.isTabEmpty(win.gBrowser.selectedTab)) {
+    if (where == "current" && !win.gBrowser.selectedTab.isEmpty) {
       where = "tab";
     }
     win.openTrustedLinkIn(this.listURL, where);

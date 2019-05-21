@@ -3,10 +3,12 @@
 
 /* eslint-disable block-spacing */
 
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
 
-ChromeUtils.import("resource://gre/modules/Log.jsm");
+Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+});
 
 var testFormatter = {
   format: function format(message) {

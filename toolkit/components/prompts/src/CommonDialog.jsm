@@ -4,7 +4,7 @@
 
 var EXPORTED_SYMBOLS = ["CommonDialog"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "EnableDelayHelper",
                                "resource://gre/modules/SharedPromptUtils.jsm");
 
@@ -138,6 +138,7 @@ CommonDialog.prototype = {
         if (label) {
             // Only show the checkbox if label has a value.
             this.ui.checkboxContainer.hidden = false;
+            this.ui.checkboxContainer.clientTop; // style flush to assure binding is attached
             this.setLabelForNode(this.ui.checkbox, label);
             this.ui.checkbox.checked = this.args.checked;
         }
@@ -161,8 +162,15 @@ CommonDialog.prototype = {
         else
             button.setAttribute("default", "true");
 
-        // Set default focus / selection.
-        this.setDefaultFocus(true);
+        if (!this.ui.promptContainer || !this.ui.promptContainer.hidden) {
+            // For tab prompts, we will need to ensure its content bindings are attached.
+            if (!xulDialog) {
+                this.ui.prompt.ensureXBLBindingAttached();
+            }
+
+            // Set default focus / selection.
+            this.setDefaultFocus(true);
+        }
 
         if (this.args.enableDelay) {
             this.delayHelper = new EnableDelayHelper({
@@ -183,10 +191,13 @@ CommonDialog.prototype = {
             Cu.reportError("Couldn't play common dialog event sound: " + e);
         }
 
-        let topic = "common-dialog-loaded";
-        if (!xulDialog)
-            topic = "tabmodal-dialog-loaded";
-        Services.obs.notifyObservers(this.ui.prompt, topic);
+        if (xulDialog) {
+            // ui.prompt is the window object of the dialog.
+            Services.obs.notifyObservers(this.ui.prompt, "common-dialog-loaded");
+        } else {
+            // ui.promptContainer is the <tabmodalprompt> element.
+            Services.obs.notifyObservers(this.ui.promptContainer, "tabmodal-dialog-loaded");
+        }
     },
 
     setLabelForNode(aNode, aLabel) {
@@ -250,9 +261,9 @@ CommonDialog.prototype = {
             else
                 this.ui.password1Textbox.focus();
         } else if (isInitialLoad) {
-                this.ui.loginTextbox.select();
+            this.ui.loginTextbox.select();
         } else {
-                this.ui.loginTextbox.focus();
+            this.ui.loginTextbox.focus();
         }
     },
 

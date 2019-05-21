@@ -8,16 +8,17 @@
 <?xml-stylesheet href="chrome://browser/skin/preferences/preferences.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/content/preferences/clearSiteData.css" type="text/css"?>
 
-<window id="ClearSiteDataDialog" class="windowDialog"
+<window id="ClearSiteDataDialog"
         windowtype="Browser:ClearSiteData"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
         data-l10n-id="clear-site-data-window"
         data-l10n-attrs="title, style"
         persist="screenX screenY width height">
 
   <linkset>
-    <link rel="localization" href="branding/brand.ftl"/>
-    <link rel="localization" href="browser/preferences/clearSiteData.ftl"/>
+    <html:link rel="localization" href="branding/brand.ftl"/>
+    <html:link rel="localization" href="browser/preferences/clearSiteData.ftl"/>
   </linkset>
   <script src="chrome://browser/content/preferences/clearSiteData.js"/>
 
@@ -25,7 +26,7 @@
     <key data-l10n-id="clear-site-data-close-key" modifiers="accel" oncommand="window.close();"/>
   </keyset>
 
-  <vbox class="contentPane largeDialogContainer" flex="1">
+  <vbox class="contentPane">
     <description control="url" data-l10n-id="clear-site-data-description"/>
     <separator class="thin"/>
     <vbox class="options-container">
@@ -39,12 +40,11 @@
       </vbox>
     </vbox>
   </vbox>
-  <vbox>
-    <hbox class="actionButtons" align="right" flex="1">
-      <button id="cancelButton" icon="close"
-              data-l10n-id="clear-site-data-cancel"/>
-      <button id="clearButton" icon="save"
-              data-l10n-id="clear-site-data-clear"/>
-    </hbox>
-  </vbox>
+
+  <hbox class="actionButtons" align="right" flex="1">
+    <button id="cancelButton" icon="close"
+            data-l10n-id="clear-site-data-cancel"/>
+    <button id="clearButton" icon="save"
+            data-l10n-id="clear-site-data-clear"/>
+  </hbox>
 </window>

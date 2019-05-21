@@ -7,10 +7,11 @@ this.event = {};
 
 "use strict";
 /* global content, is */
+/* eslint-disable no-restricted-globals */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-ChromeUtils.import("chrome://marionette/content/element.js");
+const {element} = ChromeUtils.import("chrome://marionette/content/element.js");
 
 const dblclickTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
 
@@ -320,6 +321,7 @@ function computeKeyCodeFromChar_(char, win) {
   }
 }
 /* eslint-enable */
+/* eslint-disable no-restricted-globals */
 
 /**
  * Returns true if the given key should cause keypress event when widget
@@ -769,6 +771,7 @@ function expectEvent_(expectedTarget, expectedEvent, testName) {
   return handler;
 }
 /* eslint-enable */
+/* eslint-disable no-restricted-globals */
 
 /**
  * Check if the event was fired or not. The provided event handler will
@@ -776,7 +779,6 @@ function expectEvent_(expectedTarget, expectedEvent, testName) {
  */
 function checkExpectedEvent_(
     expectedTarget, expectedEvent, eventHandler, testName) {
-
   if (eventHandler) {
     let expectEvent = (expectedEvent.charAt(0) != "!");
     let type = expectEvent;
@@ -824,7 +826,6 @@ function checkExpectedEvent_(
 event.synthesizeMouseExpectEvent = function(
     target, offsetX, offsetY, ev, expectedTarget, expectedEvent,
     testName, win) {
-
   let eventHandler = expectEvent_(
       expectedTarget,
       expectedEvent,

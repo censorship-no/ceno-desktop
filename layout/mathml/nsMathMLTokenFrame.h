@@ -15,10 +15,11 @@
 //
 
 class nsMathMLTokenFrame : public nsMathMLContainerFrame {
-public:
+ public:
   NS_DECL_FRAMEARENA_HELPERS(nsMathMLTokenFrame)
 
-  friend nsIFrame* NS_NewMathMLTokenFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle);
+  friend nsIFrame* NS_NewMathMLTokenFrame(nsIPresShell* aPresShell,
+                                          ComputedStyle* aStyle);
 
   NS_IMETHOD
   TransmitAutomaticData() override {
@@ -35,33 +36,27 @@ public:
 
   virtual eMathMLFrameType GetMathMLFrameType() override;
 
-  virtual void
-  SetInitialChildList(ChildListID     aListID,
-                      nsFrameList&    aChildList) override;
+  virtual void SetInitialChildList(ChildListID aListID,
+                                   nsFrameList& aChildList) override;
 
-  virtual void
-  AppendFrames(ChildListID            aListID,
-               nsFrameList&           aChildList) override;
+  virtual void AppendFrames(ChildListID aListID,
+                            nsFrameList& aChildList) override;
 
-  virtual void
-  InsertFrames(ChildListID            aListID,
-               nsIFrame*              aPrevFrame,
-               nsFrameList&           aChildList) override;
+  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            nsFrameList& aChildList) override;
 
-  virtual void
-  Reflow(nsPresContext*          aPresContext,
-         ReflowOutput&     aDesiredSize,
-         const ReflowInput& aReflowInput,
-         nsReflowStatus&          aStatus) override;
+  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+                      const ReflowInput& aReflowInput,
+                      nsReflowStatus& aStatus) override;
 
-  virtual nsresult
-  Place(DrawTarget*          aDrawTarget,
-        bool                 aPlaceOrigin,
-        ReflowOutput& aDesiredSize) override;
+  virtual nsresult Place(DrawTarget* aDrawTarget, bool aPlaceOrigin,
+                         ReflowOutput& aDesiredSize) override;
 
-protected:
-  explicit nsMathMLTokenFrame(ComputedStyle* aStyle, ClassID aID = kClassID)
-    : nsMathMLContainerFrame(aStyle, aID) {}
+ protected:
+  explicit nsMathMLTokenFrame(ComputedStyle* aStyle,
+                              nsPresContext* aPresContext,
+                              ClassID aID = kClassID)
+      : nsMathMLContainerFrame(aStyle, aPresContext, aID) {}
   virtual ~nsMathMLTokenFrame();
 
   void MarkTextFramesAsTokenMathML();

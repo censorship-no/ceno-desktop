@@ -6,7 +6,6 @@
 
 const { Component, createFactory } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const { div } = dom;
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const {
   fetchNetworkUpdatePacket,
@@ -205,7 +204,7 @@ class RequestListItem extends Component {
     fromCache && classList.push("fromCache");
 
     return (
-      div({
+      dom.tr({
         ref: "listItem",
         className: classList.join(" "),
         "data-id": item.id,
@@ -215,13 +214,13 @@ class RequestListItem extends Component {
       },
         columns.status && RequestListColumnStatus({ item }),
         columns.method && RequestListColumnMethod({ item }),
+        columns.domain && RequestListColumnDomain({
+            item,
+            onSecurityIconMouseDown,
+        }),
         columns.file && RequestListColumnFile({ item }),
         columns.protocol && RequestListColumnProtocol({ item }),
         columns.scheme && RequestListColumnScheme({ item }),
-        columns.domain && RequestListColumnDomain({
-          item,
-          onSecurityIconMouseDown,
-        }),
         columns.remoteip && RequestListColumnRemoteIP({ item }),
         columns.cause && RequestListColumnCause({
           item,

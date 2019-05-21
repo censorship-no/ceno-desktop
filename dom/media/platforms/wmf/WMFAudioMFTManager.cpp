@@ -18,12 +18,12 @@
 
 namespace mozilla {
 
-static void
-AACAudioSpecificConfigToUserData(uint8_t aAACProfileLevelIndication,
-                                 const uint8_t* aAudioSpecConfig,
-                                 uint32_t aConfigLength,
-                                 nsTArray<BYTE>& aOutUserData)
-{
+using media::TimeUnit;
+
+static void AACAudioSpecificConfigToUserData(uint8_t aAACProfileLevelIndication,
+                                             const uint8_t* aAudioSpecConfig,
+                                             uint32_t aConfigLength,
+                                             nsTArray<BYTE>& aOutUserData) {
   MOZ_ASSERT(aOutUserData.IsEmpty());
 
   // The MF_MT_USER_DATA for AAC is defined here:
@@ -57,7 +57,7 @@ AACAudioSpecificConfigToUserData(uint8_t aAACProfileLevelIndication,
   // the rest can be all 0x00.
   BYTE heeInfo[heeInfoLen] = {0};
   WORD* w = (WORD*)heeInfo;
-  w[0] = 0x0; // Payload type raw AAC packet
+  w[0] = 0x0;  // Payload type raw AAC packet
   w[1] = aAACProfileLevelIndication;
 
   aOutUserData.AppendElements(heeInfo, heeInfoLen);
@@ -67,7 +67,7 @@ AACAudioSpecificConfigToUserData(uint8_t aAACProfileLevelIndication,
     // (T=ObjectType, F=Frequency, C=Channel, G=GASpecificConfig)
     // If frequency = 0xf, then the frequency is explicitly defined on 24 bits.
     int8_t frequency =
-      (aAudioSpecConfig[0] & 0x7) << 1 | (aAudioSpecConfig[1] & 0x80) >> 7;
+        (aAudioSpecConfig[0] & 0x7) << 1 | (aAudioSpecConfig[1] & 0x80) >> 7;
     int8_t channels = (aAudioSpecConfig[1] & 0x78) >> 3;
     int8_t gasc = aAudioSpecConfig[1] & 0x7;
     if (frequency != 0xf && channels && !gasc) {
@@ -81,57 +81,53 @@ AACAudioSpecificConfigToUserData(uint8_t aAACProfileLevelIndication,
   aOutUserData.AppendElements(aAudioSpecConfig, aConfigLength);
 }
 
-WMFAudioMFTManager::WMFAudioMFTManager(
-  const AudioInfo& aConfig)
-  : mAudioChannels(aConfig.mChannels)
-  , mChannelsMap(AudioConfig::ChannelLayout::UNKNOWN_MAP)
-  , mAudioRate(aConfig.mRate)
-{
+WMFAudioMFTManager::WMFAudioMFTManager(const AudioInfo& aConfig)
+    : mAudioChannels(aConfig.mChannels),
+      mChannelsMap(AudioConfig::ChannelLayout::UNKNOWN_MAP),
+      mAudioRate(aConfig.mRate) {
   MOZ_COUNT_CTOR(WMFAudioMFTManager);
 
   if (aConfig.mMimeType.EqualsLiteral("audio/mpeg")) {
     mStreamType = MP3;
   } else if (aConfig.mMimeType.EqualsLiteral("audio/mp4a-latm")) {
     mStreamType = AAC;
-    AACAudioSpecificConfigToUserData(aConfig.mExtendedProfile,
-                                     aConfig.mCodecSpecificConfig->Elements(),
-                                     aConfig.mCodecSpecificConfig->Length(),
-                                     mUserData);
+    AACAudioSpecificConfigToUserData(
+        aConfig.mExtendedProfile, aConfig.mCodecSpecificConfig->Elements(),
+        aConfig.mCodecSpecificConfig->Length(), mUserData);
   } else {
     mStreamType = Unknown;
   }
 }
 
-WMFAudioMFTManager::~WMFAudioMFTManager()
-{
+WMFAudioMFTManager::~WMFAudioMFTManager() {
   MOZ_COUNT_DTOR(WMFAudioMFTManager);
 }
 
-const GUID&
-WMFAudioMFTManager::GetMFTGUID()
-{
+const GUID& WMFAudioMFTManager::GetMFTGUID() {
   MOZ_ASSERT(mStreamType != Unknown);
   switch (mStreamType) {
-    case AAC: return CLSID_CMSAACDecMFT;
-    case MP3: return CLSID_CMP3DecMediaObject;
-    default: return GUID_NULL;
+    case AAC:
+      return CLSID_CMSAACDecMFT;
+    case MP3:
+      return CLSID_CMP3DecMediaObject;
+    default:
+      return GUID_NULL;
   };
 }
 
-const GUID&
-WMFAudioMFTManager::GetMediaSubtypeGUID()
-{
+const GUID& WMFAudioMFTManager::GetMediaSubtypeGUID() {
   MOZ_ASSERT(mStreamType != Unknown);
   switch (mStreamType) {
-    case AAC: return MFAudioFormat_AAC;
-    case MP3: return MFAudioFormat_MP3;
-    default: return GUID_NULL;
+    case AAC:
+      return MFAudioFormat_AAC;
+    case MP3:
+      return MFAudioFormat_MP3;
+    default:
+      return GUID_NULL;
   };
 }
 
-bool
-WMFAudioMFTManager::Init()
-{
+bool WMFAudioMFTManager::Init() {
   NS_ENSURE_TRUE(mStreamType != Unknown, false);
 
   RefPtr<MFTDecoder> decoder(new MFTDecoder());
@@ -158,11 +154,10 @@ WMFAudioMFTManager::Init()
   NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
   if (mStreamType == AAC) {
-    hr = inputType->SetUINT32(MF_MT_AAC_PAYLOAD_TYPE, 0x0); // Raw AAC packet
+    hr = inputType->SetUINT32(MF_MT_AAC_PAYLOAD_TYPE, 0x0);  // Raw AAC packet
     NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
-    hr = inputType->SetBlob(MF_MT_USER_DATA,
-                            mUserData.Elements(),
+    hr = inputType->SetBlob(MF_MT_USER_DATA, mUserData.Elements(),
                             mUserData.Length());
     NS_ENSURE_TRUE(SUCCEEDED(hr), false);
   }
@@ -189,16 +184,14 @@ WMFAudioMFTManager::Init()
 }
 
 HRESULT
-WMFAudioMFTManager::Input(MediaRawData* aSample)
-{
-  return mDecoder->Input(aSample->Data(),
-                         uint32_t(aSample->Size()),
-                         aSample->mTime.ToMicroseconds());
+WMFAudioMFTManager::Input(MediaRawData* aSample) {
+  return mDecoder->Input(aSample->Data(), uint32_t(aSample->Size()),
+                         aSample->mTime.ToMicroseconds(),
+                         aSample->mDuration.ToMicroseconds());
 }
 
 HRESULT
-WMFAudioMFTManager::UpdateOutputType()
-{
+WMFAudioMFTManager::UpdateOutputType() {
   HRESULT hr;
 
   RefPtr<IMFMediaType> type;
@@ -224,9 +217,7 @@ WMFAudioMFTManager::UpdateOutputType()
 }
 
 HRESULT
-WMFAudioMFTManager::Output(int64_t aStreamOffset,
-                           RefPtr<MediaData>& aOutData)
-{
+WMFAudioMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutData) {
   aOutData = nullptr;
   RefPtr<IMFSample> sample;
   HRESULT hr;
@@ -255,59 +246,41 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset,
 
   if (!sample) {
     LOG("Audio MFTDecoder returned success but null output.");
-    nsCOMPtr<nsIRunnable> task = NS_NewRunnableFunction("WMFAudioMFTManager::Output",
-                                                        []() -> void {
-      LOG("Reporting telemetry AUDIO_MFT_OUTPUT_NULL_SAMPLES");
-      Telemetry::Accumulate(Telemetry::HistogramID::AUDIO_MFT_OUTPUT_NULL_SAMPLES, 1);
-    });
+    nsCOMPtr<nsIRunnable> task =
+        NS_NewRunnableFunction("WMFAudioMFTManager::Output", []() -> void {
+          LOG("Reporting telemetry AUDIO_MFT_OUTPUT_NULL_SAMPLES");
+          Telemetry::Accumulate(
+              Telemetry::HistogramID::AUDIO_MFT_OUTPUT_NULL_SAMPLES, 1);
+        });
     SystemGroup::Dispatch(TaskCategory::Other, task.forget());
     return E_FAIL;
   }
 
-  RefPtr<IMFMediaBuffer> buffer;
-  hr = sample->ConvertToContiguousBuffer(getter_AddRefs(buffer));
-  NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
-
-  BYTE* data = nullptr; // Note: *data will be owned by the IMFMediaBuffer, we
-                        // don't need to free it.
-  DWORD maxLength = 0, currentLength = 0;
-  hr = buffer->Lock(&data, &maxLength, &currentLength);
-  NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
-
-  // Sometimes when starting decoding, the AAC decoder gives us samples
-  // with a negative timestamp. AAC does usually have preroll (or encoder
-  // delay) encoded into its bitstream, but the amount encoded to the stream
-  // is variable, and it not signalled in-bitstream. There is sometimes
-  // signalling in the MP4 container what the preroll amount, but it's
-  // inconsistent. It looks like WMF's AAC encoder may take this into
-  // account, so strip off samples with a negative timestamp to get us
-  // to a 0-timestamp start. This seems to maintain A/V sync, so we can run
-  // with this until someone complains...
-
-  // We calculate the timestamp and the duration based on the number of audio
-  // frames we've already played. We don't trust the timestamp stored on the
-  // IMFSample, as sometimes it's wrong, possibly due to buggy encoders?
-
-  // If this sample block comes after a discontinuity (i.e. a gap or seek)
-  // reset the frame counters, and capture the timestamp. Future timestamps
-  // will be offset from this block's timestamp.
   UINT32 discontinuity = false;
   sample->GetUINT32(MFSampleExtension_Discontinuity, &discontinuity);
-  if (mMustRecaptureAudioPosition || discontinuity) {
+  if (mFirstFrame || discontinuity) {
     // Update the output type, in case this segment has a different
     // rate. This also triggers on the first sample, which can have a
     // different rate than is advertised in the container, and sometimes we
     // don't get a MF_E_TRANSFORM_STREAM_CHANGE when the rate changes.
     hr = UpdateOutputType();
     NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
-
-    mAudioFrameSum = 0;
-    LONGLONG timestampHns = 0;
-    hr = sample->GetSampleTime(&timestampHns);
-    NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
-    mAudioTimeOffset = media::TimeUnit::FromMicroseconds(timestampHns / 10);
-    mMustRecaptureAudioPosition = false;
+    mFirstFrame = false;
   }
+
+  TimeUnit pts = GetSampleTime(sample);
+  NS_ENSURE_TRUE(pts.IsValid(), E_FAIL);
+
+  RefPtr<IMFMediaBuffer> buffer;
+  hr = sample->ConvertToContiguousBuffer(getter_AddRefs(buffer));
+  NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
+
+  BYTE* data = nullptr;  // Note: *data will be owned by the IMFMediaBuffer, we
+                         // don't need to free it.
+  DWORD maxLength = 0, currentLength = 0;
+  hr = buffer->Lock(&data, &maxLength, &currentLength);
+  NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
+
   // Output is made of floats.
   int32_t numSamples = currentLength / sizeof(float);
   int32_t numFrames = numSamples / mAudioChannels;
@@ -328,36 +301,21 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset,
 
   buffer->Unlock();
 
-  media::TimeUnit timestamp =
-    mAudioTimeOffset + FramesToTimeUnit(mAudioFrameSum, mAudioRate);
-  NS_ENSURE_TRUE(timestamp.IsValid(), E_FAIL);
-
-  mAudioFrameSum += numFrames;
-
-  media::TimeUnit duration = FramesToTimeUnit(numFrames, mAudioRate);
+  TimeUnit duration = FramesToTimeUnit(numFrames, mAudioRate);
   NS_ENSURE_TRUE(duration.IsValid(), E_FAIL);
 
-  aOutData = new AudioData(aStreamOffset,
-                           timestamp,
-                           duration,
-                           numFrames,
-                           std::move(audioData),
-                           mAudioChannels,
-                           mAudioRate,
-                           mChannelsMap);
+  aOutData = new AudioData(aStreamOffset, pts, std::move(audioData),
+                           mAudioChannels, mAudioRate, mChannelsMap);
+  MOZ_DIAGNOSTIC_ASSERT(duration == aOutData->mDuration, "must be equal");
 
-  #ifdef LOG_SAMPLE_DECODE
+#ifdef LOG_SAMPLE_DECODE
   LOG("Decoded audio sample! timestamp=%lld duration=%lld currentLength=%u",
-      timestamp.ToMicroseconds(), duration.ToMicroseconds(), currentLength);
-  #endif
+      pts.ToMicroseconds(), duration.ToMicroseconds(), currentLength);
+#endif
 
   return S_OK;
 }
 
-void
-WMFAudioMFTManager::Shutdown()
-{
-  mDecoder = nullptr;
-}
+void WMFAudioMFTManager::Shutdown() { mDecoder = nullptr; }
 
-} // namespace mozilla
+}  // namespace mozilla

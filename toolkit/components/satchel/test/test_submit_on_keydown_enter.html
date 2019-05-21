@@ -32,9 +32,21 @@ function handleSubmit() { // eslint-disable-line no-unused-vars
   SimpleTest.finish();
 }
 
-function handleInput() {
+function handleInput(aEvent) {
   info("Input");
   is(input.value, expectedValue, "Check input value");
+  ok(aEvent instanceof InputEvent,
+     '"input" event should be dispatched with InputEvent interface');
+  is(aEvent.cancelable, false,
+     '"input" event should be never cancelable');
+  is(aEvent.bubbles, true,
+     '"input" event should always bubble');
+  is(aEvent.inputType, "insertReplacementText",
+     'inputType should be "insertReplacementText"');
+  is(aEvent.data, expectedValue,
+     `data should be "${expectedValue}"`);
+  is(aEvent.dataTransfer, null,
+     "dataTransfer should be null");
   input.removeEventListener("input", handleInput, true);
   SimpleTest.finish();
 }

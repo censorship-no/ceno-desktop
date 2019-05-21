@@ -12,7 +12,8 @@ import voluptuous
 import taskgraph
 
 from mozbuild import schedules
-from .attributes import keymatch
+
+from .keyed_by import evaluate_keyed_by
 
 
 def validate_schema(schema, obj, msg_prefix):
@@ -79,6 +80,7 @@ def resolve_keyed_by(item, field, item_name, **extra_values):
     would mutate item in-place to::
 
         job:
+            test-platform: linux128
             chunks: 12
 
     The `item_name` parameter is used to generate useful error messages.
@@ -109,46 +111,14 @@ def resolve_keyed_by(item, field, item_name, **extra_values):
 
     if subfield not in container:
         return item
-    value = container[subfield]
-    while True:
-        if not isinstance(value, dict) or len(value) != 1 or not value.keys()[0].startswith('by-'):
-            return item
 
-        keyed_by = value.keys()[0][3:]  # strip off 'by-' prefix
-        key = extra_values[keyed_by] if keyed_by in extra_values else item.get(keyed_by)
-        alternatives = value.values()[0]
+    container[subfield] = evaluate_keyed_by(
+        value=container[subfield],
+        item_name="`{}` in `{}`".format(field, item_name),
+        attributes=dict(item, **extra_values),
+    )
 
-        if len(alternatives) == 1 and 'default' in alternatives:
-            # Error out when only 'default' is specified as only alternatives,
-            # because we don't need to by-{keyed_by} there.
-            raise Exception(
-                "Keyed-by '{}' unnecessary with only value 'default' "
-                "found, when determining item '{}' in '{}'".format(
-                    keyed_by, field, item_name))
-
-        if key is None:
-            if 'default' in alternatives:
-                value = container[subfield] = alternatives['default']
-                continue
-            else:
-                raise Exception(
-                    "No attribute {} and no value for 'default' found "
-                    "while determining item {} in {}".format(
-                        keyed_by, field, item_name))
-
-        matches = keymatch(alternatives, key)
-        if len(matches) > 1:
-            raise Exception(
-                "Multiple matching values for {} {!r} found while "
-                "determining item {} in {}".format(
-                    keyed_by, key, field, item_name))
-        elif matches:
-            value = container[subfield] = matches[0]
-            continue
-
-        raise Exception(
-            "No {} matching {!r} nor 'default' found while determining item {} in {}".format(
-                keyed_by, key, field, item_name))
+    return item
 
 
 # Schemas for YAML files should use dashed identifiers by default.  If there are
@@ -199,14 +169,24 @@ def check_schema(schema):
     iter('schema', schema.schema)
 
 
-def Schema(*args, **kwargs):
+class Schema(voluptuous.Schema):
     """
     Operates identically to voluptuous.Schema, but applying some taskgraph-specific checks
     in the process.
     """
-    schema = voluptuous.Schema(*args, **kwargs)
-    check_schema(schema)
-    return schema
+    def __init__(self, *args, **kwargs):
+        super(Schema, self).__init__(*args, **kwargs)
+        check_schema(self)
+
+    def extend(self, *args, **kwargs):
+        schema = super(Schema, self).extend(*args, **kwargs)
+        check_schema(schema)
+        # We want twice extend schema to be checked too.
+        schema.__class__ = Schema
+        return schema
+
+    def __getitem__(self, item):
+        return self.schema[item]
 
 
 OptimizationSchema = voluptuous.Any(
@@ -223,7 +203,11 @@ OptimizationSchema = voluptuous.Any(
     {'skip-unless-schedules': list(schedules.ALL_COMPONENTS)},
     # skip if SETA or skip-unless-schedules says to
     {'skip-unless-schedules-or-seta': list(schedules.ALL_COMPONENTS)},
-    # only run this task if its dependencies will run (useful for follow-on tasks that
-    # are unnecessary if the parent tasks are not run)
-    {'only-if-dependencies-run': None}
+)
+
+# shortcut for a string where task references are allowed
+taskref_or_string = voluptuous.Any(
+    basestring,
+    {voluptuous.Required('task-reference'): basestring},
+    {voluptuous.Required('artifact-reference'): basestring},
 )

@@ -25,7 +25,6 @@ from taskgraph.util.taskcluster import get_artifact_prefix
 from taskgraph.util.workertypes import worker_type_implementation
 from taskgraph.transforms.task import task_description_schema
 from voluptuous import (
-    Any,
     Extra,
     Optional,
     Required,
@@ -33,10 +32,6 @@ from voluptuous import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Voluptuous uses marker objects as dictionary *keys*, but they are not
-# comparable, so we cast all of the keys back to regular strings
-task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
 
 # Schema for a build description
 job_description_schema = Schema({
@@ -53,6 +48,8 @@ job_description_schema = Schema({
     Optional('attributes'): task_description_schema['attributes'],
     Optional('job-from'): task_description_schema['job-from'],
     Optional('dependencies'): task_description_schema['dependencies'],
+    Optional('soft-dependencies'): task_description_schema['soft-dependencies'],
+    Optional('requires'): task_description_schema['requires'],
     Optional('expires-after'): task_description_schema['expires-after'],
     Optional('routes'): task_description_schema['routes'],
     Optional('scopes'): task_description_schema['scopes'],
@@ -73,12 +70,12 @@ job_description_schema = Schema({
     # this task should be included in the task graph.  This will be converted
     # into an optimization, so it cannot be specified in a job description that
     # also gives 'optimization'.
-    Exclusive('when', 'optimization'): Any({
+    Exclusive('when', 'optimization'): {
         # This task only needs to be run if a file matching one of the given
         # patterns has changed in the push.  The patterns use the mozpack
         # match function (python/mozbuild/mozpack/path.py).
         Optional('files-changed'): [basestring],
-    }),
+    },
 
     # A list of artifacts to install from 'fetch' tasks.
     Optional('fetches'): {
@@ -110,14 +107,7 @@ job_description_schema = Schema({
 })
 
 transforms = TransformSequence()
-
-
-@transforms.add
-def validate(config, jobs):
-    for job in jobs:
-        validate_schema(job_description_schema, job,
-                        "In job {!r}:".format(job.get('name', job.get('label'))))
-        yield job
+transforms.add_validate(job_description_schema)
 
 
 @transforms.add
@@ -137,6 +127,23 @@ def rewrite_when_to_optimization(config, jobs):
         job['optimization'] = {'skip-unless-changed': files_changed}
 
         assert 'when' not in job
+        yield job
+
+
+@transforms.add
+def set_implementation(config, jobs):
+    for job in jobs:
+        impl, os = worker_type_implementation(job['worker-type'])
+        if os:
+            job.setdefault('tags', {})['os'] = os
+        if impl:
+            job.setdefault('tags', {})['worker-implementation'] = impl
+        worker = job.setdefault('worker', {})
+        assert 'implementation' not in worker
+        worker['implementation'] = impl
+        if os:
+            worker['os'] = os
+
         yield job
 
 
@@ -164,11 +171,6 @@ def use_fetches(config, jobs):
         if not fetches:
             yield job
             continue
-
-        # Hack added for `mach artifact toolchain` to support reading toolchain
-        # kinds in isolation.
-        if 'fetch' in fetches and config.params.get('ignore_fetches'):
-            fetches['fetch'][:] = []
 
         job_fetches = []
         name = job.get('name', job.get('label'))
@@ -221,8 +223,7 @@ def use_fetches(config, jobs):
         env = job.setdefault('worker', {}).setdefault('env', {})
         env['MOZ_FETCHES'] = {'task-reference': json.dumps(job_fetches, sort_keys=True)}
 
-        impl, os = worker_type_implementation(job['worker-type'])
-        if os == 'windows':
+        if job['worker']['os'] in ('windows', 'macosx'):
             env.setdefault('MOZ_FETCHES_DIR', 'fetches')
         else:
             workdir = job['run'].get('workdir', '/builds/worker')
@@ -244,17 +245,6 @@ def make_task_description(config, jobs):
         if job.get('name'):
             del job['name']
 
-        impl, os = worker_type_implementation(job['worker-type'])
-        if os:
-            job.setdefault('tags', {})['os'] = os
-        if impl:
-            job.setdefault('tags', {})['worker-implementation'] = impl
-        worker = job.setdefault('worker', {})
-        assert 'implementation' not in worker
-        worker['implementation'] = impl
-        if os:
-            worker['os'] = os
-
         # always-optimized tasks never execute, so have no workdir
         if job['run']['using'] != 'always-optimized':
             job['run'].setdefault('workdir', '/builds/worker')
@@ -264,13 +254,14 @@ def make_task_description(config, jobs):
         # fill in some empty defaults to make run implementations easier
         taskdesc.setdefault('attributes', {})
         taskdesc.setdefault('dependencies', {})
+        taskdesc.setdefault('soft-dependencies', [])
         taskdesc.setdefault('routes', [])
         taskdesc.setdefault('scopes', [])
         taskdesc.setdefault('extra', {})
 
         # give the function for job.run.using on this worker implementation a
         # chance to set up the task description.
-        configure_taskdesc_for_run(config, job, taskdesc, impl)
+        configure_taskdesc_for_run(config, job, taskdesc, job['worker']['implementation'])
         del taskdesc['run']
 
         # yield only the task description, discarding the job description

@@ -636,8 +636,11 @@ exports.isShadowHost = isShadowHost;
  * @return {Boolean}
  */
 function isDirectShadowHostChild(node) {
-  // Pseudo elements are always part of the anonymous tree.
-  if (isBeforePseudoElement(node) || isAfterPseudoElement(node)) {
+  // Pseudo elements and native anonymous elements are always part of the anonymous tree.
+  if (
+    isBeforePseudoElement(node) ||
+    isAfterPseudoElement(node) ||
+    isNativeAnonymous(node)) {
     return false;
   }
 
@@ -821,3 +824,130 @@ function removeSheet(window, url, type = "agent") {
   }
 }
 exports.removeSheet = removeSheet;
+
+/**
+ * Get the untransformed coordinates for a node.
+ *
+ * @param  {DOMNode} node
+ *         The node for which the DOMQuad is to be returned.
+ * @param  {String} region
+ *         The box model region to return: "content", "padding", "border" or
+ *         "margin".
+ * @return {DOMQuad}
+ *         A DOMQuad representation of the node.
+ */
+function getUntransformedQuad(node, region = "border") {
+  // Get the inverse transformation matrix for the node.
+  const matrix = node.getTransformToViewport();
+  const inverse = matrix.inverse();
+  const win = node.ownerGlobal;
+
+  // Get the adjusted quads for the node (including scroll offsets).
+  const quads = getAdjustedQuads(win, node, region, {
+    ignoreZoom: true,
+  });
+
+  // Create DOMPoints from the transformed node position.
+  const p1 = new DOMPoint(quads[0].p1.x, quads[0].p1.y);
+  const p2 = new DOMPoint(quads[0].p2.x, quads[0].p2.y);
+  const p3 = new DOMPoint(quads[0].p3.x, quads[0].p3.y);
+  const p4 = new DOMPoint(quads[0].p4.x, quads[0].p4.y);
+
+  // Apply the inverse transformation matrix to the points to get the
+  // untransformed points.
+  const ip1 = inverse.transformPoint(p1);
+  const ip2 = inverse.transformPoint(p2);
+  const ip3 = inverse.transformPoint(p3);
+  const ip4 = inverse.transformPoint(p4);
+
+  // Save the results in a DOMQuad.
+  const quad = new DOMQuad(
+    { x: ip1.x, y: ip1.y },
+    { x: ip2.x, y: ip2.y },
+    { x: ip3.x, y: ip3.y },
+    { x: ip4.x, y: ip4.y }
+  );
+
+  // Remove the border offsets because we include them when calculating
+  // offsets in the while loop.
+  const style = win.getComputedStyle(node);
+  const leftAdjustment = parseInt(style.borderLeftWidth, 10) || 0;
+  const topAdjustment = parseInt(style.borderTopWidth, 10) || 0;
+
+  quad.p1.x -= leftAdjustment;
+  quad.p2.x -= leftAdjustment;
+  quad.p3.x -= leftAdjustment;
+  quad.p4.x -= leftAdjustment;
+  quad.p1.y -= topAdjustment;
+  quad.p2.y -= topAdjustment;
+  quad.p3.y -= topAdjustment;
+  quad.p4.y -= topAdjustment;
+
+  // Calculate offsets.
+  while (node) {
+    const nodeStyle = win.getComputedStyle(node);
+    const borderLeftWidth = parseInt(nodeStyle.borderLeftWidth, 10) || 0;
+    const borderTopWidth = parseInt(nodeStyle.borderTopWidth, 10) || 0;
+    const leftOffset = node.offsetLeft - node.scrollLeft + borderLeftWidth;
+    const topOffset = node.offsetTop - node.scrollTop + borderTopWidth;
+
+    quad.p1.x += leftOffset;
+    quad.p2.x += leftOffset;
+    quad.p3.x += leftOffset;
+    quad.p4.x += leftOffset;
+    quad.p1.y += topOffset;
+    quad.p2.y += topOffset;
+    quad.p3.y += topOffset;
+    quad.p4.y += topOffset;
+
+    node = node.offsetParent;
+  }
+
+  return quad;
+}
+exports.getUntransformedQuad = getUntransformedQuad;
+
+/**
+ * Calculate the total of the node and all of its ancestor's scrollTop and
+ * scrollLeft values.
+ *
+ * @param  {DOMNode} node
+ *         The node for which the absolute scroll offsets should be calculated.
+ * @return {Object} object
+ *         An object containing scrollTop and scrollLeft values.
+ * @return {Number} object.scrollLeft
+ *         The total scrollLeft values of the node and all of its ancestors.
+ * @return {Number} object.scrollTop
+ *         The total scrollTop values of the node and all of its ancestors.
+ */
+function getAbsoluteScrollOffsetsForNode(node) {
+  const doc = node.ownerDocument;
+
+  // Our walker will only iterate up to document.body so we start by saving the
+  // scroll values for `document.documentElement`.
+  let scrollTop = doc.documentElement.scrollTop;
+  let scrollLeft = doc.documentElement.scrollLeft;
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT);
+  walker.currentNode = node;
+  let currentNode = walker.currentNode;
+
+  // Iterate from `node` up the tree to `document.body` adding scroll offsets
+  // as we go.
+  while (currentNode) {
+    const nodeScrollTop = currentNode.scrollTop;
+    const nodeScrollLeft = currentNode.scrollLeft;
+
+    if (nodeScrollTop || nodeScrollLeft) {
+      scrollTop += nodeScrollTop;
+      scrollLeft += nodeScrollLeft;
+    }
+
+    currentNode = walker.parentNode();
+  }
+
+  return {
+    scrollLeft,
+    scrollTop,
+  };
+}
+exports.getAbsoluteScrollOffsetsForNode = getAbsoluteScrollOffsetsForNode;

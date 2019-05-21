@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  *
  * Copyright 2017 Mozilla Foundation
  *
@@ -26,19 +26,60 @@ namespace wasm {
 
 class WasmFrameIter;
 
+// These provide argument type information for a subset of the SymbolicAddress
+// targets, for which type info is needed to generate correct stackmaps.
+
+extern const SymbolicAddressSignature SASigSinD;
+extern const SymbolicAddressSignature SASigCosD;
+extern const SymbolicAddressSignature SASigTanD;
+extern const SymbolicAddressSignature SASigASinD;
+extern const SymbolicAddressSignature SASigACosD;
+extern const SymbolicAddressSignature SASigATanD;
+extern const SymbolicAddressSignature SASigCeilD;
+extern const SymbolicAddressSignature SASigCeilF;
+extern const SymbolicAddressSignature SASigFloorD;
+extern const SymbolicAddressSignature SASigFloorF;
+extern const SymbolicAddressSignature SASigTruncD;
+extern const SymbolicAddressSignature SASigTruncF;
+extern const SymbolicAddressSignature SASigNearbyIntD;
+extern const SymbolicAddressSignature SASigNearbyIntF;
+extern const SymbolicAddressSignature SASigExpD;
+extern const SymbolicAddressSignature SASigLogD;
+extern const SymbolicAddressSignature SASigPowD;
+extern const SymbolicAddressSignature SASigATan2D;
+extern const SymbolicAddressSignature SASigMemoryGrow;
+extern const SymbolicAddressSignature SASigMemorySize;
+extern const SymbolicAddressSignature SASigWaitI32;
+extern const SymbolicAddressSignature SASigWaitI64;
+extern const SymbolicAddressSignature SASigWake;
+extern const SymbolicAddressSignature SASigMemCopy;
+extern const SymbolicAddressSignature SASigDataDrop;
+extern const SymbolicAddressSignature SASigMemFill;
+extern const SymbolicAddressSignature SASigMemInit;
+extern const SymbolicAddressSignature SASigTableCopy;
+extern const SymbolicAddressSignature SASigElemDrop;
+extern const SymbolicAddressSignature SASigTableGet;
+extern const SymbolicAddressSignature SASigTableGrow;
+extern const SymbolicAddressSignature SASigTableInit;
+extern const SymbolicAddressSignature SASigTableSet;
+extern const SymbolicAddressSignature SASigTableSize;
+extern const SymbolicAddressSignature SASigPostBarrier;
+extern const SymbolicAddressSignature SASigPostBarrierFiltering;
+extern const SymbolicAddressSignature SASigStructNew;
+extern const SymbolicAddressSignature SASigStructNarrow;
+
 // A SymbolicAddress that NeedsBuiltinThunk() will call through a thunk to the
 // C++ function. This will be true for all normal calls from normal wasm
 // function code. Only calls to C++ from other exits/thunks do not need a thunk.
 
-bool
-NeedsBuiltinThunk(SymbolicAddress sym);
+bool NeedsBuiltinThunk(SymbolicAddress sym);
 
 // This function queries whether pc is in one of the process's builtin thunks
 // and, if so, returns the CodeRange and pointer to the code segment that the
 // CodeRange is relative to.
 
-bool
-LookupBuiltinThunk(void* pc, const CodeRange** codeRange, uint8_t** codeBase);
+bool LookupBuiltinThunk(void* pc, const CodeRange** codeRange,
+                        uint8_t** codeBase);
 
 // EnsureBuiltinThunksInitialized() must be called, and must succeed, before
 // SymbolicAddressTarget() or MaybeGetBuiltinThunk(). This function creates all
@@ -46,22 +87,27 @@ LookupBuiltinThunk(void* pc, const CodeRange** codeRange, uint8_t** codeBase);
 // ReleaseProcessExecutableMemory() so that the latter can assert that all
 // executable code has been released.
 
-bool
-EnsureBuiltinThunksInitialized();
+bool EnsureBuiltinThunksInitialized();
 
-void*
-HandleThrow(JSContext* cx, WasmFrameIter& iter);
+void* HandleThrow(JSContext* cx, WasmFrameIter& iter);
 
-void*
-SymbolicAddressTarget(SymbolicAddress sym);
+void* SymbolicAddressTarget(SymbolicAddress sym);
 
-void*
-MaybeGetBuiltinThunk(HandleFunction f, const FuncType& funcType);
+void* MaybeGetBuiltinThunk(HandleFunction f, const FuncType& funcType);
 
-void
-ReleaseBuiltinThunks();
+void ReleaseBuiltinThunks();
 
-} // namespace wasm
-} // namespace js
+void* AddressOf(SymbolicAddress imm, jit::ABIFunctionType* abiType);
 
-#endif // wasm_builtins_h
+#ifdef WASM_CODEGEN_DEBUG
+void PrintI32(int32_t val);
+void PrintF32(float val);
+void PrintF64(double val);
+void PrintPtr(uint8_t* val);
+void PrintText(const char* out);
+#endif
+
+}  // namespace wasm
+}  // namespace js
+
+#endif  // wasm_builtins_h

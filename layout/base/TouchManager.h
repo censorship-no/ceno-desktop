@@ -17,18 +17,16 @@
 #include "mozilla/TouchEvents.h"
 #include "nsRefPtrHashtable.h"
 
-class nsIDocument;
-
 namespace mozilla {
 class PresShell;
 
 class TouchManager {
-public:
+ public:
   // Initialize and release static variables
   static void InitializeStatics();
   static void ReleaseStatics();
 
-  void Init(PresShell* aPresShell, nsIDocument* aDocument);
+  void Init(PresShell* aPresShell, dom::Document* aDocument);
   void Destroy();
 
   // Perform hit test and setup the event targets for touchstart. Other touch
@@ -48,12 +46,10 @@ public:
    * @return          The targeted frame of aEvent.
    */
   static nsIFrame* SuppressInvalidPointsAndGetTargetedFrame(
-    WidgetTouchEvent* aEvent);
+      WidgetTouchEvent* aEvent);
 
-  bool PreHandleEvent(mozilla::WidgetEvent* aEvent,
-                      nsEventStatus* aStatus,
-                      bool& aTouchIsNew,
-                      bool& aIsHandlingUserInput,
+  bool PreHandleEvent(mozilla::WidgetEvent* aEvent, nsEventStatus* aStatus,
+                      bool& aTouchIsNew, bool& aIsHandlingUserInput,
                       nsCOMPtr<nsIContent>& aCurrentEventContent);
 
   static already_AddRefed<nsIContent> GetAnyCapturedTouchTarget();
@@ -61,17 +57,17 @@ public:
   static already_AddRefed<dom::Touch> GetCapturedTouch(int32_t aId);
   static bool ShouldConvertTouchToPointer(const dom::Touch* aTouch,
                                           const WidgetTouchEvent* aEvent);
-private:
+
+ private:
   void EvictTouches();
   static void EvictTouchPoint(RefPtr<dom::Touch>& aTouch,
-                              nsIDocument* aLimitToDocument = nullptr);
+                              dom::Document* aLimitToDocument = nullptr);
   static void AppendToTouchList(WidgetTouchEvent::TouchArray* aTouchList);
 
-  RefPtr<PresShell>   mPresShell;
-  nsCOMPtr<nsIDocument> mDocument;
+  RefPtr<PresShell> mPresShell;
+  RefPtr<dom::Document> mDocument;
 
-  struct TouchInfo
-  {
+  struct TouchInfo {
     RefPtr<mozilla::dom::Touch> mTouch;
     nsCOMPtr<nsIContent> mNonAnonymousTarget;
     bool mConvertToPointer;
@@ -79,6 +75,6 @@ private:
   static nsDataHashtable<nsUint32HashKey, TouchInfo>* sCaptureTouchList;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif /* !defined(TouchManager_h_) */

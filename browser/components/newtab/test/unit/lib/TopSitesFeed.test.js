@@ -815,14 +815,6 @@ describe("Top Sites Feed", () => {
       feed.onAction({type: at.INIT});
       assert.calledOnce(feed.init);
     });
-    it("should call refresh on MIGRATION_COMPLETED action", async () => {
-      sinon.stub(feed, "refresh");
-
-      await feed.onAction({type: at.MIGRATION_COMPLETED});
-
-      assert.calledOnce(feed.refresh);
-      assert.calledWithExactly(feed.refresh, {broadcast: true});
-    });
     it("should call refresh on PLACES_LINK_BLOCKED action", async () => {
       sinon.stub(feed, "refresh");
       await feed.onAction({type: at.PLACES_LINK_BLOCKED});
@@ -1078,7 +1070,7 @@ describe("Top Sites Feed", () => {
       assert.calledTwice(fakeNewTabUtils.pinnedLinks.pin);
       assert.calledWith(fakeNewTabUtils.pinnedLinks.pin, site1, 2);
       assert.calledWith(fakeNewTabUtils.pinnedLinks.pin, site2, 1);
-      fakeNewTabUtils.pinnedLinks.pin.reset();
+      fakeNewTabUtils.pinnedLinks.pin.resetHistory();
       feed.insert({data: {index: 2, site: site1, draggedFromIndex: 5}});
       assert.calledTwice(fakeNewTabUtils.pinnedLinks.pin);
       assert.calledWith(fakeNewTabUtils.pinnedLinks.pin, site1, 2);
@@ -1123,14 +1115,9 @@ describe("Top Sites Feed", () => {
 
   describe("improvesearch.noDefaultSearchTile experiment", () => {
     const NO_DEFAULT_SEARCH_TILE_PREF = "improvesearch.noDefaultSearchTile";
-    let cachedDefaultSearch;
     beforeEach(() => {
-      cachedDefaultSearch = global.Services.search.currentEngine;
-      global.Services.search.currentEngine = {identifier: "google", searchForm: "google.com"};
+      global.Services.search.getDefault = async () => ({identifier: "google", searchForm: "google.com"});
       feed.store.state.Prefs.values[NO_DEFAULT_SEARCH_TILE_PREF] = true;
-    });
-    afterEach(() => {
-      global.Services.search.currentEngine = cachedDefaultSearch;
     });
     it("should filter out alexa top 5 search from the default sites", async () => {
       const TOP_5_TEST = [
@@ -1167,7 +1154,7 @@ describe("Top Sites Feed", () => {
     });
     it("should call refresh and set ._currentSearchHostname to the new engine hostname when the the default search engine has been set", () => {
       sinon.stub(feed, "refresh");
-      global.Services.search.currentEngine = {identifier: "ddg", searchForm: "duckduckgo.com"};
+      sandbox.stub(global.Services.search, "defaultEngine").value({identifier: "ddg", searchForm: "duckduckgo.com"});
       feed.observe(null, "browser-search-engine-modified", "engine-current");
       assert.equal(feed._currentSearchHostname, "duckduckgo");
       assert.calledOnce(feed.refresh);
@@ -1192,7 +1179,7 @@ describe("Top Sites Feed", () => {
         {wrappedJSObject: {_internalAliases: ["@google"]}},
         {wrappedJSObject: {_internalAliases: ["@amazon"]}},
       ];
-      global.Services.search.getDefaultEngines = () => searchEngines;
+      global.Services.search.getDefaultEngines = async () => searchEngines;
       fakeNewTabUtils.pinnedLinks.pin = sinon.stub().callsFake((site, index) => {
         fakeNewTabUtils.pinnedLinks.links[index] = site;
       });
@@ -1348,6 +1335,12 @@ describe("Top Sites Feed", () => {
         assert.deepEqual(fakeNewTabUtils.pinnedLinks.links[6], {url: "https://amazon.com", searchTopSite: true, label: "@amazon"});
       });
 
+      it("should not pin shortcuts for the current default search engine", async () => {
+        feed._currentSearchHostname = "google";
+        await feed._maybeInsertSearchShortcuts(fakeNewTabUtils.pinnedLinks.links);
+        assert.deepEqual(fakeNewTabUtils.pinnedLinks.links[3], {url: "https://amazon.com", searchTopSite: true, label: "@amazon"});
+      });
+
       it("should only pin the first shortcut if there's only one available slot", async () => {
         fakeNewTabUtils.pinnedLinks.links[3] = {url: ""};
         await feed._maybeInsertSearchShortcuts(fakeNewTabUtils.pinnedLinks.links);
@@ -1366,7 +1359,7 @@ describe("Top Sites Feed", () => {
 
       it("should not pin a shortcut if the corresponding search engine is not available", async () => {
         // Make Amazon search engine unavailable
-        global.Services.search.getDefaultEngines = () => [{wrappedJSObject: {_internalAliases: ["@google"]}}];
+        global.Services.search.getDefaultEngines = async () => [{wrappedJSObject: {_internalAliases: ["@google"]}}];
         fakeNewTabUtils.pinnedLinks.links.fill(null);
         await feed._maybeInsertSearchShortcuts(fakeNewTabUtils.pinnedLinks.links);
         assert.notOk(fakeNewTabUtils.pinnedLinks.links.find(s => s && s.url === "https://amazon.com"));

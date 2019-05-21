@@ -17,10 +17,10 @@
 class nsSHEntryShared;
 class nsIInputStream;
 class nsIURI;
+class nsIReferrerInfo;
 
-class nsSHEntry final : public nsISHEntry
-{
-public:
+class nsSHEntry final : public nsISHEntry {
+ public:
   nsSHEntry();
   nsSHEntry(const nsSHEntry& aOther);
 
@@ -32,7 +32,7 @@ public:
   static nsresult Startup();
   static void Shutdown();
 
-private:
+ private:
   ~nsSHEntry();
 
   // We share the state in here with other SHEntries which correspond to the
@@ -43,8 +43,7 @@ private:
   nsCOMPtr<nsIURI> mURI;
   nsCOMPtr<nsIURI> mOriginalURI;
   nsCOMPtr<nsIURI> mResultPrincipalURI;
-  nsCOMPtr<nsIURI> mReferrerURI;
-  uint32_t mReferrerPolicy;
+  nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
   nsString mTitle;
   nsCOMPtr<nsIInputStream> mPostData;
   uint32_t mLoadType;

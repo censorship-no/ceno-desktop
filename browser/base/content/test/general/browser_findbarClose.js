@@ -27,7 +27,9 @@ add_task(async function findbar_test() {
   ok(!gFindBar.hidden, "the Find bar isn't hidden after the location of a " +
      "subdocument changes");
 
+  let findBarClosePromise = BrowserTestUtils.waitForEvent(gBrowser, "findbarclose");
   gFindBar.close();
+  await findBarClosePromise;
+
   gBrowser.removeTab(newTab);
 });
-

@@ -11,9 +11,8 @@ DIRS += [
     'utils',
 ]
 
-DevToolsModules(
+CompiledModules(
     'ast.js',
-    'coverage.js',
     'debuggee.js',
     'event-listeners.js',
     'expressions.js',

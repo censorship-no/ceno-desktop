@@ -13,9 +13,8 @@
 namespace mozilla {
 namespace gfx {
 
-class VsyncIOThreadHolder final
-{
-public:
+class VsyncIOThreadHolder final {
+ public:
   VsyncIOThreadHolder();
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VsyncIOThreadHolder)
@@ -24,14 +23,22 @@ public:
 
   RefPtr<nsIThread> GetThread() const;
 
-private:
+  bool IsOnCurrentThread() const {
+    return mThread->IsOnCurrentThread();
+  }
+
+  void Dispatch(already_AddRefed<nsIRunnable> task) {
+    mThread->Dispatch(std::move(task), NS_DISPATCH_NORMAL);
+  }
+
+ private:
   ~VsyncIOThreadHolder();
 
-private:
+ private:
   RefPtr<nsIThread> mThread;
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // mozilla_gfx_ipc_VsyncIOThreadHolder_h
+#endif  // mozilla_gfx_ipc_VsyncIOThreadHolder_h

@@ -1,9 +1,7 @@
 const { Constructor: CC } = Components;
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://testing-common/httpd.js");
-
-const BlocklistClients = ChromeUtils.import("resource://services-common/blocklist-clients.js", {});
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const BlocklistClients = ChromeUtils.import("resource://services-common/blocklist-clients.js", null);
 
 const BinaryInputStream = CC("@mozilla.org/binaryinputstream;1",
   "nsIBinaryInputStream", "setInputStream");
@@ -51,7 +49,7 @@ add_task(async function test_something() {
   server.registerPathHandler(recordsPath, handleResponse);
 
   // Test an empty db populates
-  await OneCRLBlocklistClient.maybeSync(2000, Date.now());
+  await OneCRLBlocklistClient.maybeSync(2000);
 
   // Open the collection, verify it's been populated:
   const list = await OneCRLBlocklistClient.get();
@@ -63,9 +61,7 @@ add_task(async function test_something() {
   Services.prefs.clearUserPref("services.settings.server");
   Services.prefs.setIntPref("services.blocklist.onecrl.checked", 0);
   // Use any last_modified older than highest shipped in JSON dump.
-  await OneCRLBlocklistClient.maybeSync(123456, Date.now());
-  // Last check value was updated.
-  Assert.notEqual(0, Services.prefs.getIntPref("services.blocklist.onecrl.checked"));
+  await OneCRLBlocklistClient.maybeSync(123456);
 
   // Restore server pref.
   Services.prefs.setCharPref("services.settings.server", dummyServerURL);
@@ -78,7 +74,7 @@ add_task(async function test_something() {
   // single record
   await collection.db.saveLastModified(1000);
 
-  await OneCRLBlocklistClient.maybeSync(2000, Date.now());
+  await OneCRLBlocklistClient.maybeSync(2000);
 
   // Open the collection, verify it's been updated:
   // Our test data now has two records; both should be in the local collection
@@ -86,7 +82,7 @@ add_task(async function test_something() {
   Assert.equal(before.length, 1);
 
   // Test the db is updated when we call again with a later lastModified value
-  await OneCRLBlocklistClient.maybeSync(4000, Date.now());
+  await OneCRLBlocklistClient.maybeSync(4000);
 
   // Open the collection, verify it's been updated:
   // Our test data now has two records; both should be in the local collection
@@ -97,23 +93,16 @@ add_task(async function test_something() {
   // should be attempted.
   // Clear the kinto base pref so any connections will cause a test failure
   Services.prefs.clearUserPref("services.settings.server");
-  await OneCRLBlocklistClient.maybeSync(4000, Date.now());
+  await OneCRLBlocklistClient.maybeSync(4000);
 
   // Try again with a lastModified value at some point in the past
-  await OneCRLBlocklistClient.maybeSync(3000, Date.now());
-
-  // Check the OneCRL check time pref is modified, even if the collection
-  // hasn't changed
-  Services.prefs.setIntPref("services.blocklist.onecrl.checked", 0);
-  await OneCRLBlocklistClient.maybeSync(3000, Date.now());
-  let newValue = Services.prefs.getIntPref("services.blocklist.onecrl.checked");
-  Assert.notEqual(newValue, 0);
+  await OneCRLBlocklistClient.maybeSync(3000);
 
   // Check that a sync completes even when there's bad data in the
   // collection. This will throw on fail, so just calling maybeSync is an
   // acceptible test.
   Services.prefs.setCharPref("services.settings.server", dummyServerURL);
-  await OneCRLBlocklistClient.maybeSync(5000, Date.now());
+  await OneCRLBlocklistClient.maybeSync(5000);
 });
 
 function run_test() {
@@ -242,5 +231,4 @@ function getSampleResponse(req, port) {
   };
   return responses[`${req.method}:${req.path}?${req.queryString}`] ||
          responses[req.method];
-
 }

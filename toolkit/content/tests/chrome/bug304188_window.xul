@@ -17,7 +17,8 @@
 find-menu appears in editor element which has had makeEditable() called but designMode not set">
 
   <script type="application/javascript"><![CDATA[
-    ChromeUtils.import("resource://testing-common/ContentTask.jsm");
+    const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
+    const {ContentTask} = ChromeUtils.import("resource://testing-common/ContentTask.jsm");
     ContentTask.setTestScope(window.opener.wrappedJSObject);
 
     var gFindBar = null;
@@ -52,7 +53,7 @@ find-menu appears in editor element which has had makeEditable() called but desi
           });
         });
       });
-      gBrowser.loadURI("data:text/html;charset=utf-8,some%20random%20text");
+      BrowserTestUtils.loadURI(gBrowser, "data:text/html;charset=utf-8,some%20random%20text");
       await promise;
       await onDocumentLoaded();
     }

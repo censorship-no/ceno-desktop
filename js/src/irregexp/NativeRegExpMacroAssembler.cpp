@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99: */
+ * vim: set ts=8 sts=2 et sw=2 tw=80: */
 
 // Copyright 2012 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
@@ -132,7 +132,7 @@ NativeRegExpMacroAssembler::GenerateCode(JSContext* cx, bool match_only)
     masm.Str(PseudoStackPointer64, vixl::MemOperand(sp, -16, vixl::PreIndex));
 
     // Initialize the PSP from the SP.
-    masm.initStackPtr();
+    masm.initPseudoStackPtr();
 #endif
 
     // Push non-volatile registers which might be modified by jitcode.
@@ -505,8 +505,7 @@ NativeRegExpMacroAssembler::GenerateCode(JSContext* cx, bool match_only)
         masm.jump(&return_temp0);
     }
 
-    Linker linker(masm);
-    AutoFlushICache afc("RegExp");
+    Linker linker(masm, "RegExp");
     JitCode* code = linker.newCode(cx, CodeKind::RegExp);
     if (!code)
         return RegExpCode();

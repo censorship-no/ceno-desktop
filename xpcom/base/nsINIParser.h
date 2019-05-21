@@ -10,7 +10,7 @@
 #define nsINIParser_h__
 
 #ifdef MOZILLA_INTERNAL_API
-#define nsINIParser nsINIParser_internal
+#  define nsINIParser nsINIParser_internal
 #endif
 
 #include "nscore.h"
@@ -21,9 +21,8 @@
 
 class nsIFile;
 
-class nsINIParser
-{
-public:
+class nsINIParser {
+ public:
   nsINIParser() {}
   ~nsINIParser() {}
 
@@ -57,8 +56,8 @@ public:
    * Enumerate the strings within a section. If the section does
    * not exist, this function will silently return.
    */
-  nsresult GetStrings(const char* aSection,
-                      INIStringCallback aCB, void* aClosure);
+  nsresult GetStrings(const char* aSection, INIStringCallback aCB,
+                      void* aClosure);
 
   /**
    * Get the value of the specified key in the specified section
@@ -84,8 +83,8 @@ public:
    *
    * @see GetString [1]
    */
-  nsresult GetString(const char* aSection, const char* aKey,
-                     char* aResult, uint32_t aResultLen);
+  nsresult GetString(const char* aSection, const char* aKey, char* aResult,
+                     uint32_t aResultLen);
 
   /**
    * Sets the value of the specified key in the specified section. The section
@@ -95,7 +94,8 @@ public:
    * @param aKey          key name
    * @param aValue        the value to set
    */
-  nsresult SetString(const char* aSection, const char* aKey, const char* aValue);
+  nsresult SetString(const char* aSection, const char* aKey,
+                     const char* aValue);
 
   /**
    * Deletes the value of the specified key in the specified section.
@@ -117,23 +117,29 @@ public:
   nsresult DeleteSection(const char* aSection);
 
   /**
+   * Renames the specified section.
+   *
+   * @param aSection      section name
+   * @param aNewName      new section name
+   *
+   * @throws NS_ERROR_FAILURE if the section did not exist.
+   * @throws NS_ERROR_ILLEGAL_VALUE if the new section name already exists.
+   */
+  nsresult RenameSection(const char* aSection, const char* aNewName);
+
+  /**
    * Writes the ini data to disk.
    * @param aFile         the file to write to
    * @throws NS_ERROR_FAILURE on failure.
    */
-  nsresult WriteToFile(nsIFile *aFile);
+  nsresult WriteToFile(nsIFile* aFile);
 
-private:
-  struct INIValue
-  {
+ private:
+  struct INIValue {
     INIValue(const char* aKey, const char* aValue)
-      : key(strdup(aKey))
-      , value(strdup(aValue))
-    {
-    }
+        : key(strdup(aKey)), value(strdup(aValue)) {}
 
-    ~INIValue()
-    {
+    ~INIValue() {
       delete key;
       delete value;
     }

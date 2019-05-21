@@ -10,7 +10,7 @@ ChromeUtils.defineModuleGetter(this, "ProxyScriptContext",
                                "resource://gre/modules/ProxyScriptContext.jsm");
 ChromeUtils.defineModuleGetter(this, "ProxyChannelFilter",
                                "resource://gre/modules/ProxyScriptContext.jsm");
-ChromeUtils.import("resource://gre/modules/ExtensionPreferencesManager.jsm");
+var {ExtensionPreferencesManager} = ChromeUtils.import("resource://gre/modules/ExtensionPreferencesManager.jsm");
 
 var {
   ExtensionError,
@@ -30,6 +30,13 @@ const PROXY_TYPES_MAP = new Map([
   ["system", proxySvc.PROXYCONFIG_SYSTEM],
   ["manual", proxySvc.PROXYCONFIG_MANUAL],
   ["autoConfig", proxySvc.PROXYCONFIG_PAC],
+]);
+
+const DEFAULT_PORTS = new Map([
+  ["http", 80],
+  ["ssl", 443],
+  ["ftp", 21],
+  ["socks", 1080],
 ]);
 
 ExtensionPreferencesManager.addSetting("proxy.settings", {
@@ -66,8 +73,10 @@ ExtensionPreferencesManager.addSetting("proxy.settings", {
       if (value[prop]) {
         let url = new URL(`http://${value[prop]}`);
         prefs[`network.proxy.${prop}`] = url.hostname;
-        let port = parseInt(url.port, 10);
-        prefs[`network.proxy.${prop}_port`] = isNaN(port) ? 0 : port;
+        // Only fall back to defaults if no port provided.
+        let [, rawPort] = value[prop].split(":");
+        let port = parseInt(rawPort, 10) || DEFAULT_PORTS.get(prop);
+        prefs[`network.proxy.${prop}_port`] = port;
       } else {
         prefs[`network.proxy.${prop}`] = undefined;
         prefs[`network.proxy.${prop}_port`] = undefined;
@@ -87,7 +96,6 @@ function registerProxyFilterEvent(context, extension, fire, filterProps, extraIn
   if (filter.urls) {
     let perms = new MatchPatternSet([...extension.whiteListedHosts.patterns,
                                      ...extension.optionalOrigins.patterns]);
-
     filter.urls = new MatchPatternSet(filter.urls);
 
     if (!perms.overlapsAll(filter.urls)) {
@@ -219,6 +227,10 @@ this.proxy = class extends ExtensionAPI {
               if (AppConstants.platform === "android") {
                 throw new ExtensionError(
                   "proxy.settings is not supported on android.");
+              }
+
+              if (!extension.privateBrowsingAllowed) {
+                throw new ExtensionError("proxy.settings requires private browsing permission.");
               }
 
               if (!Services.policies.isAllowed("changeProxySettings")) {

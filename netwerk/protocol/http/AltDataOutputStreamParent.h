@@ -15,11 +15,9 @@ namespace mozilla {
 namespace net {
 
 // Forwards data received from the content process to an output stream.
-class AltDataOutputStreamParent
-  : public PAltDataOutputStreamParent
-  , public nsISupports
-{
-public:
+class AltDataOutputStreamParent : public PAltDataOutputStreamParent,
+                                  public nsISupports {
+ public:
   NS_DECL_ISUPPORTS
 
   // Called from NeckoParent::AllocPAltDataOutputStreamParent which also opens
@@ -29,26 +27,26 @@ public:
 
   // Called when data is received from the content process.
   // We proceed to write that data to the output stream.
-  virtual mozilla::ipc::IPCResult RecvWriteData(const nsCString& data) override;
+  mozilla::ipc::IPCResult RecvWriteData(const nsCString& data);
   // Called when AltDataOutputStreamChild::Close() is
   // Closes and nulls the output stream.
-  virtual mozilla::ipc::IPCResult RecvClose() override;
+  mozilla::ipc::IPCResult RecvClose(const nsresult& aStatus);
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
   // Sets an error that will be reported to the content process.
   void SetError(nsresult status) { mStatus = status; }
-  virtual mozilla::ipc::IPCResult RecvDeleteSelf() override;
+  mozilla::ipc::IPCResult RecvDeleteSelf();
 
-private:
+ private:
   virtual ~AltDataOutputStreamParent();
   nsCOMPtr<nsIOutputStream> mOutputStream;
-  // In case any error occurs mStatus will be != NS_OK, and this status code will
-  // be sent to the content process asynchronously.
+  // In case any error occurs mStatus will be != NS_OK, and this status code
+  // will be sent to the content process asynchronously.
   nsresult mStatus;
-  bool     mIPCOpen;
+  bool mIPCOpen;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
-#endif // mozilla_net_AltDataOutputStreamParent_h
+#endif  // mozilla_net_AltDataOutputStreamParent_h

@@ -7,7 +7,7 @@ DIRS += [
 
 ]
 
-DevToolsModules(
+CompiledModules(
     'CloseButton.js',
     'CommandBarButton.js',
     'index.js',

@@ -7,17 +7,16 @@
 #ifndef mozilla_layers_CompositorVsyncScheduler_h
 #define mozilla_layers_CompositorVsyncScheduler_h
 
-#include <stdint.h>                     // for uint64_t
+#include <stdint.h>  // for uint64_t
 
-#include "mozilla/Attributes.h"         // for override
-#include "mozilla/Monitor.h"            // for Monitor
-#include "mozilla/RefPtr.h"             // for RefPtr
-#include "mozilla/TimeStamp.h"          // for TimeStamp
-#include "mozilla/gfx/Point.h"          // for IntSize
+#include "mozilla/Attributes.h"  // for override
+#include "mozilla/Monitor.h"     // for Monitor
+#include "mozilla/RefPtr.h"      // for RefPtr
+#include "mozilla/TimeStamp.h"   // for TimeStamp
+#include "mozilla/gfx/Point.h"   // for IntSize
 #include "mozilla/VsyncDispatcher.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "nsISupportsImpl.h"
-
 
 namespace mozilla {
 
@@ -26,7 +25,7 @@ class Runnable;
 
 namespace gfx {
 class DrawTarget;
-} // namespace gfx
+}  // namespace gfx
 
 namespace layers {
 
@@ -37,19 +36,19 @@ class CompositorVsyncSchedulerOwner;
  * compositor when it need to paint.
  * Turns vsync notifications into scheduled composites.
  **/
-class CompositorVsyncScheduler
-{
+class CompositorVsyncScheduler {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CompositorVsyncScheduler)
 
-public:
-  explicit CompositorVsyncScheduler(CompositorVsyncSchedulerOwner* aVsyncSchedulerOwner,
-                                    widget::CompositorWidget* aWidget);
+ public:
+  explicit CompositorVsyncScheduler(
+      CompositorVsyncSchedulerOwner* aVsyncSchedulerOwner,
+      widget::CompositorWidget* aWidget);
 
   /**
    * Notify this class of a vsync. This will trigger a composite if one is
    * needed. This must be called from the vsync dispatch thread.
    */
-  bool NotifyVsync(TimeStamp aVsyncTimestamp);
+  bool NotifyVsync(const VsyncEvent& aVsync);
 
   /**
    * Do cleanup. This must be called on the compositor thread.
@@ -78,7 +77,8 @@ public:
    * Force a composite to happen right away, without waiting for the next vsync.
    * This must be called on the compositor thread.
    */
-  void ForceComposeToTarget(gfx::DrawTarget* aTarget, const gfx::IntRect* aRect);
+  void ForceComposeToTarget(gfx::DrawTarget* aTarget,
+                            const gfx::IntRect* aRect);
 
   /**
    * If a composite is pending, force it to trigger right away. This must be
@@ -94,12 +94,20 @@ public:
   const TimeStamp& GetLastComposeTime() const;
 
   /**
+   * Return the vsync timestamp and id of the most recently received
+   * vsync event. Must be called on the compositor thread.
+   */
+  const TimeStamp& GetLastVsyncTime() const;
+  const VsyncId& GetLastVsyncId() const;
+
+  /**
    * Update LastCompose TimeStamp to current timestamp.
-   * The function is typically used when composition is handled outside the CompositorVsyncScheduler.
+   * The function is typically used when composition is handled outside the
+   * CompositorVsyncScheduler.
    */
   void UpdateLastComposeTime();
 
-private:
+ private:
   virtual ~CompositorVsyncScheduler();
 
   // Schedule a task to run on the compositor thread.
@@ -107,7 +115,7 @@ private:
 
   // Post a task to run Composite() on the compositor thread, if there isn't
   // such a task already queued. Can be called from any thread.
-  void PostCompositeTask(TimeStamp aCompositeTimestamp);
+  void PostCompositeTask(VsyncId aId, TimeStamp aCompositeTimestamp);
 
   // Post a task to run DispatchVREvents() on the VR thread, if there isn't
   // such a task already queued. Can be called from any thread.
@@ -115,20 +123,20 @@ private:
 
   // This gets run at vsync time and "does" a composite (which really means
   // update internal state and call the owner to do the composite).
-  void Composite(TimeStamp aVsyncTimestamp);
+  void Composite(VsyncId aId, TimeStamp aVsyncTimestamp);
 
   void ObserveVsync();
   void UnobserveVsync();
 
   void DispatchVREvents(TimeStamp aVsyncTimestamp);
 
-  class Observer final : public VsyncObserver
-  {
-  public:
+  class Observer final : public VsyncObserver {
+   public:
     explicit Observer(CompositorVsyncScheduler* aOwner);
-    virtual bool NotifyVsync(TimeStamp aVsyncTimestamp) override;
+    virtual bool NotifyVsync(const VsyncEvent& aVsync) override;
     void Destroy();
-  private:
+
+   private:
     virtual ~Observer();
 
     Mutex mMutex;
@@ -138,6 +146,8 @@ private:
 
   CompositorVsyncSchedulerOwner* mVsyncSchedulerOwner;
   TimeStamp mLastCompose;
+  TimeStamp mLastVsync;
+  VsyncId mLastVsyncId;
 
   bool mAsapScheduling;
   bool mIsObservingVsync;
@@ -153,7 +163,7 @@ private:
   RefPtr<Runnable> mCurrentVRTask;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
-#endif // mozilla_layers_CompositorVsyncScheduler_h
+#endif  // mozilla_layers_CompositorVsyncScheduler_h

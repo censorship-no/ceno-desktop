@@ -1,224 +1,133 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-var _propTypes = require("devtools/client/shared/vendor/react-prop-types");
-
-var _propTypes2 = _interopRequireDefault(_propTypes);
-
-var _react = require("devtools/client/shared/vendor/react");
-
-var _react2 = _interopRequireDefault(_react);
-
-var _reactDom = require("devtools/client/shared/vendor/react-dom");
-
-var _reactDom2 = _interopRequireDefault(_reactDom);
-
-var _reactRedux = require("devtools/client/shared/vendor/react-redux");
-
-var _classnames = require("devtools/client/debugger/new/dist/vendors").vendored["classnames"];
-
-var _classnames2 = _interopRequireDefault(_classnames);
-
-var _source = require("../../utils/source");
-
-var _devtoolsEnvironment = require("devtools/client/debugger/new/dist/vendors").vendored["devtools-environment"];
-
-var _prefs = require("../../utils/prefs");
-
-var _indentation = require("../../utils/indentation");
-
-var _selectors = require("../../selectors/index");
-
-var _actions = require("../../actions/index");
-
-var _actions2 = _interopRequireDefault(_actions);
-
-var _Footer = require("./Footer");
-
-var _Footer2 = _interopRequireDefault(_Footer);
-
-var _SearchBar = require("./SearchBar");
-
-var _SearchBar2 = _interopRequireDefault(_SearchBar);
-
-var _HighlightLines = require("./HighlightLines");
-
-var _HighlightLines2 = _interopRequireDefault(_HighlightLines);
-
-var _Preview = require("./Preview/index");
-
-var _Preview2 = _interopRequireDefault(_Preview);
-
-var _Breakpoints = require("./Breakpoints");
-
-var _Breakpoints2 = _interopRequireDefault(_Breakpoints);
-
-var _HitMarker = require("./HitMarker");
-
-var _HitMarker2 = _interopRequireDefault(_HitMarker);
-
-var _CallSites = require("./CallSites");
-
-var _CallSites2 = _interopRequireDefault(_CallSites);
-
-var _DebugLine = require("./DebugLine");
-
-var _DebugLine2 = _interopRequireDefault(_DebugLine);
-
-var _HighlightLine = require("./HighlightLine");
-
-var _HighlightLine2 = _interopRequireDefault(_HighlightLine);
-
-var _EmptyLines = require("./EmptyLines");
-
-var _EmptyLines2 = _interopRequireDefault(_EmptyLines);
-
-var _GutterMenu = require("./GutterMenu");
-
-var _GutterMenu2 = _interopRequireDefault(_GutterMenu);
-
-var _EditorMenu = require("./EditorMenu");
-
-var _EditorMenu2 = _interopRequireDefault(_EditorMenu);
-
-var _ConditionalPanel = require("./ConditionalPanel");
-
-var _ConditionalPanel2 = _interopRequireDefault(_ConditionalPanel);
-
-var _editor = require("../../utils/editor/index");
-
-var _ui = require("../../utils/ui");
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+// @flow
+
+import PropTypes from "prop-types";
+import React, { PureComponent } from "react";
+import { bindActionCreators } from "redux";
+import ReactDOM from "react-dom";
+import { connect } from "../../utils/connect";
+import classnames from "classnames";
+import { throttle } from "lodash";
+
+import { isLoaded } from "../../utils/source";
+import { isFirefox } from "devtools-environment";
+import { features } from "../../utils/prefs";
+import { getIndentation } from "../../utils/indentation";
+
+import { showMenu } from "devtools-contextmenu";
+import {
+  createBreakpointItems,
+  breakpointItemActions
+} from "./menus/breakpoints";
+
+import { continueToHereItem, editorItemActions } from "./menus/editor";
+
+import type { BreakpointItemActions } from "./menus/breakpoints";
+import type { EditorItemActions } from "./menus/editor";
+
+import {
+  getActiveSearch,
+  getSelectedLocation,
+  getSelectedSource,
+  getConditionalPanelLocation,
+  getSymbols,
+  getIsPaused,
+  getCurrentThread
+} from "../../selectors";
+
 // Redux actions
+import actions from "../../actions";
+
+import Footer from "./Footer";
+import SearchBar from "./SearchBar";
+import HighlightLines from "./HighlightLines";
+import Preview from "./Preview";
+import Breakpoints from "./Breakpoints";
+import ColumnBreakpoints from "./ColumnBreakpoints";
+import DebugLine from "./DebugLine";
+import HighlightLine from "./HighlightLine";
+import EmptyLines from "./EmptyLines";
+import EditorMenu from "./EditorMenu";
+import ConditionalPanel from "./ConditionalPanel";
+
+import {
+  showSourceText,
+  updateDocument,
+  showLoading,
+  showErrorMessage,
+  shouldShowFooter,
+  getEditor,
+  clearEditor,
+  getCursorLine,
+  lineAtHeight,
+  toSourceLine,
+  getDocument,
+  scrollToColumn,
+  toEditorPosition,
+  getSourceLocationFromMouseEvent,
+  hasDocument,
+  onMouseOver,
+  startOperation,
+  endOperation
+} from "../../utils/editor";
+
+import { resizeToggleButton, resizeBreakpointGutter } from "../../utils/ui";
+
+import "./Editor.css";
+import "./Breakpoints.css";
+import "./Highlight.css";
+
+import type SourceEditor from "../../utils/editor/source-editor";
+import type { SymbolDeclarations } from "../../workers/parser";
+import type { SourceLocation, Source } from "../../types";
+
 const cssVars = {
   searchbarHeight: "var(--editor-searchbar-height)",
   footerHeight: "var(--editor-footer-height)"
 };
 
-class Editor extends _react.PureComponent {
-  constructor(props) {
+export type Props = {
+  selectedLocation: ?SourceLocation,
+  selectedSource: ?Source,
+  searchOn: boolean,
+  horizontal: boolean,
+  startPanelSize: number,
+  endPanelSize: number,
+  conditionalPanelLocation: SourceLocation,
+  symbols: SymbolDeclarations,
+  isPaused: boolean,
+
+  // Actions
+  openConditionalPanel: typeof actions.openConditionalPanel,
+  closeConditionalPanel: typeof actions.closeConditionalPanel,
+  continueToHere: typeof actions.continueToHere,
+  addBreakpointAtLine: typeof actions.addBreakpointAtLine,
+  jumpToMappedLocation: typeof actions.jumpToMappedLocation,
+  toggleBreakpointAtLine: typeof actions.toggleBreakpointAtLine,
+  traverseResults: typeof actions.traverseResults,
+  updateViewport: typeof actions.updateViewport,
+  closeTab: typeof actions.closeTab,
+  breakpointActions: BreakpointItemActions,
+  editorActions: EditorItemActions
+};
+
+type State = {
+  editor: SourceEditor,
+  contextMenu: ?MouseEvent
+};
+
+class Editor extends PureComponent<Props, State> {
+  $editorWrapper: ?HTMLDivElement;
+  constructor(props: Props) {
     super(props);
-
-    this.onToggleBreakpoint = (key, e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const {
-        selectedSource,
-        conditionalPanelLine
-      } = this.props;
-
-      if (!selectedSource) {
-        return;
-      }
-
-      const line = this.getCurrentLine();
-
-      if (e.shiftKey) {
-        this.toggleConditionalPanel(line);
-      } else if (!conditionalPanelLine) {
-        this.props.toggleBreakpoint(line);
-      } else {
-        this.toggleConditionalPanel(line);
-        this.props.toggleBreakpoint(line);
-      }
-    };
-
-    this.onToggleConditionalPanel = (key, e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      const line = this.getCurrentLine();
-      this.toggleConditionalPanel(line);
-    };
-
-    this.onEscape = (key, e) => {
-      if (!this.state.editor) {
-        return;
-      }
-
-      const {
-        codeMirror
-      } = this.state.editor;
-
-      if (codeMirror.listSelections().length > 1) {
-        codeMirror.execCommand("singleSelection");
-        e.preventDefault();
-      }
-    };
-
-    this.onSearchAgain = (_, e) => {
-      this.props.traverseResults(e.shiftKey, this.state.editor);
-    };
-
-    this.onGutterClick = (cm, line, gutter, ev) => {
-      const {
-        selectedSource,
-        conditionalPanelLine,
-        closeConditionalPanel,
-        addOrToggleDisabledBreakpoint,
-        toggleBreakpointsAtLine,
-        continueToHere
-      } = this.props; // ignore right clicks in the gutter
-
-      if (ev.ctrlKey && ev.button === 0 || ev.button === 2 || selectedSource && selectedSource.isBlackBoxed || !selectedSource) {
-        return;
-      }
-
-      if (conditionalPanelLine) {
-        return closeConditionalPanel();
-      }
-
-      if (gutter === "CodeMirror-foldgutter") {
-        return;
-      }
-
-      const sourceLine = (0, _editor.toSourceLine)(selectedSource.id, line);
-
-      if (ev.metaKey) {
-        return continueToHere(sourceLine);
-      }
-
-      if (ev.shiftKey) {
-        return addOrToggleDisabledBreakpoint(sourceLine);
-      }
-
-      return toggleBreakpointsAtLine(sourceLine);
-    };
-
-    this.onGutterContextMenu = event => {
-      event.stopPropagation();
-      event.preventDefault();
-      return this.props.setContextMenu("Gutter", event);
-    };
-
-    this.toggleConditionalPanel = line => {
-      const {
-        conditionalPanelLine,
-        closeConditionalPanel,
-        openConditionalPanel
-      } = this.props;
-
-      if (conditionalPanelLine) {
-        return closeConditionalPanel();
-      }
-
-      return openConditionalPanel(line);
-    };
-
-    this.closeConditionalPanel = () => {
-      return this.props.closeConditionalPanel();
-    };
 
     this.state = {
       highlightedLineRange: null,
-      editor: null
+      editor: (null: any),
+      contextMenu: null
     };
   }
 
@@ -227,10 +136,10 @@ class Editor extends _react.PureComponent {
       return;
     }
 
-    (0, _editor.startOperation)();
-    (0, _ui.resizeBreakpointGutter)(this.state.editor.codeMirror);
-    (0, _ui.resizeToggleButton)(this.state.editor.codeMirror);
-    (0, _editor.endOperation)();
+    startOperation();
+    resizeBreakpointGutter(this.state.editor.codeMirror);
+    resizeToggleButton(this.state.editor.codeMirror);
+    endOperation();
   }
 
   componentWillUpdate(nextProps) {
@@ -244,37 +153,40 @@ class Editor extends _react.PureComponent {
   }
 
   setupEditor() {
-    const editor = (0, _editor.getEditor)(); // disables the default search shortcuts
-    // $FlowIgnore
+    const editor = getEditor();
 
+    // disables the default search shortcuts
+    // $FlowIgnore
     editor._initShortcuts = () => {};
 
-    const node = _reactDom2.default.findDOMNode(this);
-
+    const node = ReactDOM.findDOMNode(this);
     if (node instanceof HTMLElement) {
       editor.appendToLocalElement(node.querySelector(".editor-mount"));
     }
 
-    const {
-      codeMirror
-    } = editor;
+    const { codeMirror } = editor;
     const codeMirrorWrapper = codeMirror.getWrapperElement();
-    (0, _editor.startOperation)();
-    (0, _ui.resizeBreakpointGutter)(codeMirror);
-    (0, _ui.resizeToggleButton)(codeMirror);
-    (0, _editor.endOperation)();
-    codeMirror.on("gutterClick", this.onGutterClick); // Set code editor wrapper to be focusable
 
+    startOperation();
+    resizeBreakpointGutter(codeMirror);
+    resizeToggleButton(codeMirror);
+    endOperation();
+
+    codeMirror.on("gutterClick", this.onGutterClick);
+
+    // Set code editor wrapper to be focusable
     codeMirrorWrapper.tabIndex = 0;
     codeMirrorWrapper.addEventListener("keydown", e => this.onKeyDown(e));
     codeMirrorWrapper.addEventListener("click", e => this.onClick(e));
-    codeMirrorWrapper.addEventListener("mouseover", (0, _editor.onMouseOver)(codeMirror));
+    codeMirrorWrapper.addEventListener("mouseover", onMouseOver(codeMirror));
 
     const toggleFoldMarkerVisibility = e => {
       if (node instanceof HTMLElement) {
-        node.querySelectorAll(".CodeMirror-guttermarker-subtle").forEach(elem => {
-          elem.classList.toggle("visible");
-        });
+        node
+          .querySelectorAll(".CodeMirror-guttermarker-subtle")
+          .forEach(elem => {
+            elem.classList.toggle("visible");
+          });
       }
     };
 
@@ -282,91 +194,136 @@ class Editor extends _react.PureComponent {
     codeMirrorGutter.addEventListener("mouseleave", toggleFoldMarkerVisibility);
     codeMirrorGutter.addEventListener("mouseenter", toggleFoldMarkerVisibility);
 
-    if (!(0, _devtoolsEnvironment.isFirefox)()) {
-      codeMirror.on("gutterContextMenu", (cm, line, eventName, event) => this.onGutterContextMenu(event));
+    if (!isFirefox()) {
+      codeMirror.on("gutterContextMenu", (cm, line, eventName, event) =>
+        this.onGutterContextMenu(event)
+      );
       codeMirror.on("contextmenu", (cm, event) => this.openMenu(event));
     } else {
-      codeMirrorWrapper.addEventListener("contextmenu", event => this.openMenu(event));
+      codeMirrorWrapper.addEventListener("contextmenu", event =>
+        this.openMenu(event)
+      );
     }
 
-    this.setState({
-      editor
-    });
+    codeMirror.on("scroll", this.onEditorScroll);
+    this.onEditorScroll();
+    this.setState({ editor });
     return editor;
   }
 
   componentDidMount() {
-    const {
-      shortcuts
-    } = this.context;
+    const { shortcuts } = this.context;
+
     const searchAgainKey = L10N.getStr("sourceSearch.search.again.key2");
-    const searchAgainPrevKey = L10N.getStr("sourceSearch.search.againPrev.key2");
+    const searchAgainPrevKey = L10N.getStr(
+      "sourceSearch.search.againPrev.key2"
+    );
+
     shortcuts.on(L10N.getStr("toggleBreakpoint.key"), this.onToggleBreakpoint);
-    shortcuts.on(L10N.getStr("toggleCondPanel.key"), this.onToggleConditionalPanel);
+    shortcuts.on(
+      L10N.getStr("toggleCondPanel.breakpoint.key"),
+      this.onToggleConditionalPanel
+    );
+    shortcuts.on(
+      L10N.getStr("toggleCondPanel.logPoint.key"),
+      this.onToggleConditionalPanel
+    );
+    shortcuts.on(L10N.getStr("sourceTabs.closeTab.key"), this.onClosePress);
     shortcuts.on("Esc", this.onEscape);
     shortcuts.on(searchAgainPrevKey, this.onSearchAgain);
     shortcuts.on(searchAgainKey, this.onSearchAgain);
   }
 
+  onClosePress = (key, e: KeyboardEvent) => {
+    const { selectedSource } = this.props;
+    if (selectedSource) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.props.closeTab(selectedSource);
+    }
+  };
+
   componentWillUnmount() {
     if (this.state.editor) {
       this.state.editor.destroy();
-      this.setState({
-        editor: null
-      });
+      this.state.editor.codeMirror.off("scroll", this.onEditorScroll);
+      this.setState({ editor: (null: any) });
     }
 
     const searchAgainKey = L10N.getStr("sourceSearch.search.again.key2");
-    const searchAgainPrevKey = L10N.getStr("sourceSearch.search.againPrev.key2");
+    const searchAgainPrevKey = L10N.getStr(
+      "sourceSearch.search.againPrev.key2"
+    );
     const shortcuts = this.context.shortcuts;
+    shortcuts.off(L10N.getStr("sourceTabs.closeTab.key"));
     shortcuts.off(L10N.getStr("toggleBreakpoint.key"));
-    shortcuts.off(L10N.getStr("toggleCondPanel.key"));
+    shortcuts.off(L10N.getStr("toggleCondPanel.breakpoint.key"));
+    shortcuts.off(L10N.getStr("toggleCondPanel.logPoint.key"));
     shortcuts.off(searchAgainPrevKey);
     shortcuts.off(searchAgainKey);
   }
 
   componentDidUpdate(prevProps, prevState) {
-    const {
-      selectedSource
-    } = this.props; // NOTE: when devtools are opened, the editor is not set when
+    const { selectedSource } = this.props;
+    // NOTE: when devtools are opened, the editor is not set when
     // the source loads so we need to wait until the editor is
     // set to update the text and size.
-
     if (!prevState.editor && selectedSource) {
       if (!this.state.editor) {
         const editor = this.setupEditor();
-        (0, _editor.updateDocument)(editor, selectedSource);
+        updateDocument(editor, selectedSource);
       } else {
         this.setText(this.props);
         this.setSize(this.props);
       }
     }
+
+    if (prevProps.selectedSource != selectedSource) {
+      this.props.updateViewport();
+    }
   }
 
   getCurrentLine() {
-    const {
-      codeMirror
-    } = this.state.editor;
-    const {
-      selectedSource
-    } = this.props;
-
+    const { codeMirror } = this.state.editor;
+    const { selectedSource } = this.props;
     if (!selectedSource) {
       return;
     }
 
-    const line = (0, _editor.getCursorLine)(codeMirror);
-    return (0, _editor.toSourceLine)(selectedSource.id, line);
+    const line = getCursorLine(codeMirror);
+    return toSourceLine(selectedSource.id, line);
   }
 
-  onKeyDown(e) {
-    const {
-      codeMirror
-    } = this.state.editor;
-    const {
-      key,
-      target
-    } = e;
+  onToggleBreakpoint = (key, e: KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const line = this.getCurrentLine();
+    if (typeof line !== "number") {
+      return;
+    }
+
+    this.props.toggleBreakpointAtLine(line);
+  };
+
+  onToggleConditionalPanel = (key, e: KeyboardEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const line = this.getCurrentLine();
+
+    if (typeof line !== "number") {
+      return;
+    }
+
+    const isLog = key === L10N.getStr("toggleCondPanel.logPoint.key");
+    this.toggleConditionalPanel(line, isLog);
+  };
+
+  onEditorScroll = throttle(this.props.updateViewport, 100);
+
+  onKeyDown(e: KeyboardEvent) {
+    const { codeMirror } = this.state.editor;
+    const { key, target } = e;
     const codeWrapper = codeMirror.getWrapperElement();
     const textArea = codeWrapper.querySelector("textArea");
 
@@ -375,87 +332,201 @@ class Editor extends _react.PureComponent {
       e.preventDefault();
       codeWrapper.focus();
     } else if (key === "Enter" && target == codeWrapper) {
-      e.preventDefault(); // Focus into editor's text area
-
+      e.preventDefault();
+      // Focus into editor's text area
       textArea.focus();
     }
   }
+
   /*
    * The default Esc command is overridden in the CodeMirror keymap to allow
    * the Esc keypress event to be catched by the toolbox and trigger the
    * split console. Restore it here, but preventDefault if and only if there
    * is a multiselection.
    */
-
-
-  openMenu(event) {
-    event.stopPropagation();
-    event.preventDefault();
-    const {
-      setContextMenu
-    } = this.props;
-    const target = event.target;
-
-    if (target.classList.contains("CodeMirror-linenumber")) {
-      return setContextMenu("Gutter", event);
+  onEscape = (key, e: KeyboardEvent) => {
+    if (!this.state.editor) {
+      return;
     }
 
-    return setContextMenu("Editor", event);
+    const { codeMirror } = this.state.editor;
+    if (codeMirror.listSelections().length > 1) {
+      codeMirror.execCommand("singleSelection");
+      e.preventDefault();
+    }
+  };
+
+  onSearchAgain = (_, e: KeyboardEvent) => {
+    this.props.traverseResults(e.shiftKey, this.state.editor);
+  };
+
+  openMenu(event: MouseEvent) {
+    event.stopPropagation();
+    event.preventDefault();
+
+    const {
+      selectedSource,
+      breakpointActions,
+      editorActions,
+      isPaused
+    } = this.props;
+    const { editor } = this.state;
+    if (!selectedSource || !editor) {
+      return;
+    }
+
+    const target: Element = (event.target: any);
+    const { id: sourceId } = selectedSource;
+    const line = lineAtHeight(editor, sourceId, event);
+
+    if (typeof line != "number") {
+      return;
+    }
+
+    const location = { line, column: undefined, sourceId };
+
+    if (target.classList.contains("CodeMirror-linenumber")) {
+      return showMenu(event, [
+        ...createBreakpointItems(location, breakpointActions),
+        { type: "separator" },
+        continueToHereItem(location, isPaused, editorActions)
+      ]);
+    }
+
+    if (target.getAttribute("id") === "columnmarker") {
+      return;
+    }
+
+    this.setState({ contextMenu: event });
   }
 
-  onClick(e) {
+  clearContextMenu = () => {
+    this.setState({ contextMenu: null });
+  };
+
+  onGutterClick = (
+    cm: Object,
+    line: number,
+    gutter: string,
+    ev: MouseEvent
+  ) => {
     const {
-      selectedLocation,
-      jumpToMappedLocation
+      selectedSource,
+      conditionalPanelLocation,
+      closeConditionalPanel,
+      addBreakpointAtLine,
+      continueToHere
     } = this.props;
 
-    if (selectedLocation && e.metaKey && e.altKey) {
-      const sourceLocation = (0, _editor.getSourceLocationFromMouseEvent)(this.state.editor, selectedLocation, e);
+    // ignore right clicks in the gutter
+    if (
+      (ev.ctrlKey && ev.button === 0) ||
+      ev.button === 2 ||
+      (selectedSource && selectedSource.isBlackBoxed) ||
+      !selectedSource
+    ) {
+      return;
+    }
+
+    if (conditionalPanelLocation) {
+      return closeConditionalPanel();
+    }
+
+    if (gutter === "CodeMirror-foldgutter") {
+      return;
+    }
+
+    const sourceLine = toSourceLine(selectedSource.id, line);
+    if (typeof sourceLine !== "number") {
+      return;
+    }
+
+    if (ev.metaKey) {
+      return continueToHere(sourceLine);
+    }
+
+    return addBreakpointAtLine(sourceLine);
+  };
+
+  onGutterContextMenu = (event: MouseEvent) => {
+    return this.openMenu(event);
+  };
+
+  onClick(e: MouseEvent) {
+    const { selectedSource, jumpToMappedLocation } = this.props;
+
+    if (selectedSource && e.metaKey && e.altKey) {
+      const sourceLocation = getSourceLocationFromMouseEvent(
+        this.state.editor,
+        selectedSource,
+        e
+      );
       jumpToMappedLocation(sourceLocation);
     }
   }
 
-  shouldScrollToLocation(nextProps) {
+  toggleConditionalPanel = (line, log: boolean = false) => {
     const {
-      selectedLocation,
+      conditionalPanelLocation,
+      closeConditionalPanel,
+      openConditionalPanel,
       selectedSource
     } = this.props;
-    const {
-      editor
-    } = this.state;
 
-    if (!editor || !nextProps.selectedSource || !nextProps.selectedLocation || !nextProps.selectedLocation.line || !(0, _source.isLoaded)(nextProps.selectedSource)) {
+    if (conditionalPanelLocation) {
+      return closeConditionalPanel();
+    }
+
+    if (!selectedSource) {
+      return;
+    }
+
+    return openConditionalPanel(
+      {
+        line: line,
+        sourceId: selectedSource.id,
+        sourceUrl: selectedSource.url
+      },
+      log
+    );
+  };
+
+  shouldScrollToLocation(nextProps) {
+    const { selectedLocation, selectedSource } = this.props;
+    const { editor } = this.state;
+
+    if (
+      !editor ||
+      !nextProps.selectedSource ||
+      !nextProps.selectedLocation ||
+      !nextProps.selectedLocation.line ||
+      !isLoaded(nextProps.selectedSource)
+    ) {
       return false;
     }
 
-    const isFirstLoad = (!selectedSource || !(0, _source.isLoaded)(selectedSource)) && (0, _source.isLoaded)(nextProps.selectedSource);
+    const isFirstLoad =
+      (!selectedSource || !isLoaded(selectedSource)) &&
+      isLoaded(nextProps.selectedSource);
     const locationChanged = selectedLocation !== nextProps.selectedLocation;
     const symbolsChanged = nextProps.symbols != this.props.symbols;
+
     return isFirstLoad || locationChanged || symbolsChanged;
   }
 
   scrollToLocation(nextProps) {
-    const {
-      editor
-    } = this.state;
-    const {
-      selectedLocation,
-      selectedSource
-    } = nextProps;
+    const { editor } = this.state;
+    const { selectedLocation, selectedSource } = nextProps;
 
     if (selectedLocation && this.shouldScrollToLocation(nextProps)) {
-      let {
-        line,
-        column
-      } = (0, _editor.toEditorPosition)(selectedLocation);
+      let { line, column } = toEditorPosition(selectedLocation);
 
-      if (selectedSource && (0, _editor.hasDocument)(selectedSource.id)) {
-        const doc = (0, _editor.getDocument)(selectedSource.id);
-        const lineText = doc.getLine(line);
-        column = Math.max(column, (0, _indentation.getIndentation)(lineText));
+      if (selectedSource && hasDocument(selectedSource.id)) {
+        const doc = getDocument(selectedSource.id);
+        const lineText: ?string = doc.getLine(line);
+        column = Math.max(column, getIndentation(lineText));
       }
-
-      (0, _editor.scrollToColumn)(editor.codeMirror, line, column);
+      scrollToColumn(editor.codeMirror, line, column);
     }
   }
 
@@ -464,28 +535,28 @@ class Editor extends _react.PureComponent {
       return;
     }
 
-    if (nextProps.startPanelSize !== this.props.startPanelSize || nextProps.endPanelSize !== this.props.endPanelSize) {
+    if (
+      nextProps.startPanelSize !== this.props.startPanelSize ||
+      nextProps.endPanelSize !== this.props.endPanelSize
+    ) {
       this.state.editor.codeMirror.setSize();
     }
   }
 
   setText(props) {
-    const {
-      selectedSource,
-      symbols
-    } = props;
+    const { selectedSource, symbols } = props;
 
     if (!this.state.editor) {
       return;
-    } // check if we previously had a selected source
+    }
 
-
+    // check if we previously had a selected source
     if (!selectedSource) {
       return this.clearEditor();
     }
 
-    if (!(0, _source.isLoaded)(selectedSource)) {
-      return (0, _editor.showLoading)(this.state.editor);
+    if (!isLoaded(selectedSource)) {
+      return showLoading(this.state.editor);
     }
 
     if (selectedSource.error) {
@@ -493,43 +564,34 @@ class Editor extends _react.PureComponent {
     }
 
     if (selectedSource) {
-      return (0, _editor.showSourceText)(this.state.editor, selectedSource, symbols);
+      return showSourceText(this.state.editor, selectedSource, symbols);
     }
   }
 
   clearEditor() {
-    const {
-      editor
-    } = this.state;
-
+    const { editor } = this.state;
     if (!editor) {
       return;
     }
 
-    (0, _editor.clearEditor)(editor);
+    clearEditor(editor);
   }
 
   showErrorMessage(msg) {
-    const {
-      editor
-    } = this.state;
-
+    const { editor } = this.state;
     if (!editor) {
       return;
     }
 
-    (0, _editor.showErrorMessage)(editor, msg);
+    showErrorMessage(editor, msg);
   }
 
   getInlineEditorStyles() {
-    const {
-      selectedSource,
-      horizontal,
-      searchOn
-    } = this.props;
+    const { selectedSource, horizontal, searchOn } = this.props;
+
     const subtractions = [];
 
-    if ((0, _editor.shouldShowFooter)(selectedSource, horizontal)) {
+    if (shouldShowFooter(selectedSource, horizontal)) {
       subtractions.push(cssVars.footerHeight);
     }
 
@@ -538,121 +600,110 @@ class Editor extends _react.PureComponent {
     }
 
     return {
-      height: subtractions.length === 0 ? "100%" : `calc(100% - ${subtractions.join(" - ")})`
+      height:
+        subtractions.length === 0
+          ? "100%"
+          : `calc(100% - ${subtractions.join(" - ")})`
     };
   }
 
-  renderHitCounts() {
-    const {
-      hitCount,
-      selectedSource
-    } = this.props;
-
-    if (!selectedSource || !(0, _source.isLoaded)(selectedSource) || !hitCount || !this.state.editor) {
-      return;
-    }
-
-    return hitCount.filter(marker => marker.get("count") > 0).map(marker => _react2.default.createElement(_HitMarker2.default, {
-      key: marker.get("line"),
-      hitData: marker.toJS(),
-      editor: this.state.editor.codeMirror
-    }));
-  }
-
   renderItems() {
-    const {
-      horizontal,
-      selectedSource
-    } = this.props;
-    const {
-      editor
-    } = this.state;
+    const { horizontal, selectedSource, conditionalPanelLocation } = this.props;
+    const { editor, contextMenu } = this.state;
 
-    if (!editor || !selectedSource) {
+    if (!selectedSource || !editor || !getDocument(selectedSource.id)) {
       return null;
     }
 
-    return _react2.default.createElement("div", null, _react2.default.createElement(_DebugLine2.default, {
-      editor: editor
-    }), _react2.default.createElement(_HighlightLine2.default, null), _react2.default.createElement(_EmptyLines2.default, {
-      editor: editor
-    }), _react2.default.createElement(_Breakpoints2.default, {
-      editor: editor
-    }), _react2.default.createElement(_Preview2.default, {
-      editor: editor,
-      editorRef: this.$editorWrapper
-    }), ";", _react2.default.createElement(_Footer2.default, {
-      horizontal: horizontal
-    }), _react2.default.createElement(_HighlightLines2.default, {
-      editor: editor
-    }), _react2.default.createElement(_EditorMenu2.default, {
-      editor: editor
-    }), _react2.default.createElement(_GutterMenu2.default, {
-      editor: editor
-    }), _react2.default.createElement(_ConditionalPanel2.default, {
-      editor: editor
-    }), _prefs.features.columnBreakpoints ? _react2.default.createElement(_CallSites2.default, {
-      editor: editor
-    }) : null, this.renderHitCounts());
+    return (
+      <div>
+        <DebugLine editor={editor} />
+        <HighlightLine />
+        <EmptyLines editor={editor} />
+        <Breakpoints editor={editor} />
+        <Preview editor={editor} editorRef={this.$editorWrapper} />
+        <Footer editor={editor} horizontal={horizontal} />
+        <HighlightLines editor={editor} />
+        {
+          <EditorMenu
+            editor={editor}
+            contextMenu={contextMenu}
+            clearContextMenu={this.clearContextMenu}
+            selectedSource={selectedSource}
+          />
+        }
+        {conditionalPanelLocation ? <ConditionalPanel editor={editor} /> : null}
+        {features.columnBreakpoints ? (
+          <ColumnBreakpoints editor={editor} />
+        ) : null}
+      </div>
+    );
   }
 
   renderSearchBar() {
-    const {
-      editor
-    } = this.state;
+    const { editor } = this.state;
 
     if (!editor) {
       return null;
     }
 
-    return _react2.default.createElement(_SearchBar2.default, {
-      editor: editor
-    });
+    return <SearchBar editor={editor} />;
   }
 
   render() {
-    const {
-      coverageOn
-    } = this.props;
-    return _react2.default.createElement("div", {
-      className: (0, _classnames2.default)("editor-wrapper", {
-        "coverage-on": coverageOn
-      }),
-      ref: c => this.$editorWrapper = c
-    }, _react2.default.createElement("div", {
-      className: "editor-mount devtools-monospace",
-      style: this.getInlineEditorStyles()
-    }), this.renderSearchBar(), this.renderItems());
+    return (
+      <div
+        className={classnames("editor-wrapper")}
+        ref={c => (this.$editorWrapper = c)}
+      >
+        <div
+          className="editor-mount devtools-monospace"
+          style={this.getInlineEditorStyles()}
+        />
+        {this.renderSearchBar()}
+        {this.renderItems()}
+      </div>
+    );
   }
-
 }
 
 Editor.contextTypes = {
-  shortcuts: _propTypes2.default.object
+  shortcuts: PropTypes.object
 };
 
 const mapStateToProps = state => {
-  const selectedSource = (0, _selectors.getSelectedSource)(state);
-  const sourceId = selectedSource ? selectedSource.id : "";
+  const selectedSource = getSelectedSource(state);
+
   return {
-    selectedLocation: (0, _selectors.getSelectedLocation)(state),
+    selectedLocation: getSelectedLocation(state),
     selectedSource,
-    searchOn: (0, _selectors.getActiveSearch)(state) === "file",
-    hitCount: (0, _selectors.getHitCountForSource)(state, sourceId),
-    coverageOn: (0, _selectors.getCoverageEnabled)(state),
-    conditionalPanelLine: (0, _selectors.getConditionalPanelLine)(state),
-    symbols: (0, _selectors.getSymbols)(state, selectedSource)
+    searchOn: getActiveSearch(state) === "file",
+    conditionalPanelLocation: getConditionalPanelLocation(state),
+    symbols: getSymbols(state, selectedSource),
+    isPaused: getIsPaused(state, getCurrentThread(state))
   };
 };
 
-exports.default = (0, _reactRedux.connect)(mapStateToProps, {
-  openConditionalPanel: _actions2.default.openConditionalPanel,
-  closeConditionalPanel: _actions2.default.closeConditionalPanel,
-  setContextMenu: _actions2.default.setContextMenu,
-  continueToHere: _actions2.default.continueToHere,
-  toggleBreakpoint: _actions2.default.toggleBreakpoint,
-  toggleBreakpointsAtLine: _actions2.default.toggleBreakpointsAtLine,
-  addOrToggleDisabledBreakpoint: _actions2.default.addOrToggleDisabledBreakpoint,
-  jumpToMappedLocation: _actions2.default.jumpToMappedLocation,
-  traverseResults: _actions2.default.traverseResults
-})(Editor);
+const mapDispatchToProps = dispatch => ({
+  ...bindActionCreators(
+    {
+      openConditionalPanel: actions.openConditionalPanel,
+      closeConditionalPanel: actions.closeConditionalPanel,
+      continueToHere: actions.continueToHere,
+      toggleBreakpointAtLine: actions.toggleBreakpointAtLine,
+      addBreakpointAtLine: actions.addBreakpointAtLine,
+      jumpToMappedLocation: actions.jumpToMappedLocation,
+      traverseResults: actions.traverseResults,
+      updateViewport: actions.updateViewport,
+      closeTab: actions.closeTab
+    },
+    dispatch
+  ),
+  breakpointActions: breakpointItemActions(dispatch),
+  editorActions: editorItemActions(dispatch)
+});
+
+export default connect(
+  mapStateToProps,
+  mapDispatchToProps
+)(Editor);

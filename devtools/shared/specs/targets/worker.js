@@ -32,11 +32,16 @@ const workerTargetSpec = generateActorSpec({
   events: {
     // WorkerTargetActor still uses old sendActorEvent function,
     // but it should use emit instead.
-    close: {
+    // Do not emit a `close` event as Target class emit this event on destroy
+    "worker-close": {
       type: "close",
     },
-    // newSource is being sent by ThreadActor in the name of its parent,
-    // i.e. WorkerTargetActor
+
+    // The thread actor is no longer emitting newSource event in the name of the target
+    // actor (bug 1269919), but as we may still connect to older servers which still do,
+    // we have to keep it being mentioned here. Otherwise the event is considered as a
+    // response to a request and confuses the packet ordering.
+    // We can remove that once FF66 is no longer supported.
     newSource: {
       type: "newSource",
     },

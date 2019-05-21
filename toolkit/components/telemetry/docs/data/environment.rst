@@ -45,9 +45,18 @@ Structure:
           submissionURL: <string> // set for default engines or well known search domains
         },
         searchCohort: <string>, // optional, contains an identifier for any active search A/B experiments
+        launcherProcessState: <integer>, // optional, values correspond to values of mozilla::LauncherRegistryInfo::EnabledState enum
         e10sEnabled: <bool>, // whether e10s is on, i.e. browser tabs open by default in a different process
         telemetryEnabled: <bool>, // false on failure
         locale: <string>, // e.g. "it", null on failure
+        intl: {
+          requestedLocales: [ <string>, ... ], // The locales that are being requested.
+          availableLocales: [ <string>, ... ], // The locales that are available for use.
+          appLocales: [ <string>, ... ], // The negotiated locales that are being used.
+          systemLocales: [ <string>, ... ], // The locales for the OS.
+          regionalPrefsLocales: [ <string>, ... ], // The regional preferences for the OS.
+          acceptLanguages: [ <string>, ... ], // The languages for the Accept-Languages header.
+        },
         update: {
           channel: <string>, // e.g. "release", null on failure
           enabled: <bool>, // true on failure
@@ -90,6 +99,7 @@ Structure:
         memoryMB: <number>,
         virtualMaxMB: <number>, // windows-only
         isWow64: <bool>, // windows-only
+	isWowARM64: <bool>, // windows-only
         cpu: {
             count: <number>,  // desktop only, e.g. 8, or null on failure - logical cpus
             cores: <number>, // desktop only, e.g., 4, or null on failure - physical cores
@@ -143,6 +153,7 @@ Structure:
         gfx: {
             D2DEnabled: <bool>, // null on failure
             DWriteEnabled: <bool>, // null on failure
+            LowEndMachine: <bool>, // whether we're adjusting to being on low-spec hardware
             //DWriteVersion: <string>, // temporarily removed, pending bug 1154500
             adapters: [
               {
@@ -459,3 +470,4 @@ Version History
 - Firefox 61:
 
   - Removed empty ``addons.activeExperiment`` (`bug 1452935 <https://bugzilla.mozilla.org/show_bug.cgi?id=1452935>`_).
+

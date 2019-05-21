@@ -1,9 +1,8 @@
 #include "gdb-tests.h"
 #include "jsapi.h"
 
-#ifdef ENABLE_BIGINT
+#include "js/Symbol.h"
 #include "vm/BigIntType.h"
-#endif
 
 FRAGMENT(jsval, simple) {
   using namespace JS;
@@ -22,15 +21,14 @@ FRAGMENT(jsval, simple) {
   RootedString hello(cx, JS_NewStringCopyZ(cx, "Hello!"));
   RootedValue friendly_string(cx, StringValue(hello));
   RootedValue symbol(cx, SymbolValue(GetSymbolFor(cx, hello)));
-#ifdef ENABLE_BIGINT
-  RootedValue bi(cx, BigIntValue(BigInt::create(cx)));
-#endif
+  RootedValue bi(cx, BigIntValue(BigInt::zero(cx)));
 
   RootedValue global(cx);
   global.setObject(*CurrentGlobalOrNull(cx));
 
   // Some interesting value that floating-point won't munge.
-  RootedValue onehundredthirtysevenonehundredtwentyeighths(cx, DoubleValue(137.0 / 128.0));
+  RootedValue onehundredthirtysevenonehundredtwentyeighths(
+      cx, DoubleValue(137.0 / 128.0));
 
   breakpoint();
 
@@ -45,8 +43,6 @@ FRAGMENT(jsval, simple) {
   use(empty_string);
   use(friendly_string);
   use(symbol);
-#ifdef ENABLE_BIGINT
   use(bi);
-#endif
   use(global);
 }

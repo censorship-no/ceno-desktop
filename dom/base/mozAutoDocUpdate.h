@@ -7,8 +7,8 @@
 #ifndef mozAutoDocUpdate_h_
 #define mozAutoDocUpdate_h_
 
-#include "nsContentUtils.h" // For AddScriptBlocker() and RemoveScriptBlocker().
-#include "nsIDocument.h"
+#include "nsContentUtils.h"  // For AddScriptBlocker() and RemoveScriptBlocker().
+#include "mozilla/dom/Document.h"
 #include "nsIDocumentObserver.h"
 
 /**
@@ -18,12 +18,10 @@
  * in which case no updates will be called.  The constructor also takes a
  * boolean that can be set to false to prevent notifications.
  */
-class MOZ_STACK_CLASS mozAutoDocUpdate
-{
-public:
-  mozAutoDocUpdate(nsIDocument* aDocument, bool aNotify)
-    : mDocument(aNotify ? aDocument : nullptr)
-  {
+class MOZ_STACK_CLASS mozAutoDocUpdate {
+ public:
+  mozAutoDocUpdate(mozilla::dom::Document* aDocument, bool aNotify)
+      : mDocument(aNotify ? aDocument : nullptr) {
     if (mDocument) {
       mDocument->BeginUpdate();
     } else {
@@ -31,8 +29,7 @@ public:
     }
   }
 
-  ~mozAutoDocUpdate()
-  {
+  ~mozAutoDocUpdate() {
     if (mDocument) {
       mDocument->EndUpdate();
     } else {
@@ -40,16 +37,15 @@ public:
     }
   }
 
-private:
-  nsCOMPtr<nsIDocument> mDocument;
+ private:
+  RefPtr<mozilla::dom::Document> mDocument;
 };
 
-#define MOZ_AUTO_DOC_UPDATE_PASTE2(tok,line) tok##line
-#define MOZ_AUTO_DOC_UPDATE_PASTE(tok,line) \
-  MOZ_AUTO_DOC_UPDATE_PASTE2(tok,line)
-#define MOZ_AUTO_DOC_UPDATE(doc,notify) \
-  mozAutoDocUpdate MOZ_AUTO_DOC_UPDATE_PASTE(_autoDocUpdater_, __LINE__) \
-  (doc,notify)
-
+#define MOZ_AUTO_DOC_UPDATE_PASTE2(tok, line) tok##line
+#define MOZ_AUTO_DOC_UPDATE_PASTE(tok, line) \
+  MOZ_AUTO_DOC_UPDATE_PASTE2(tok, line)
+#define MOZ_AUTO_DOC_UPDATE(doc, notify)                                  \
+  mozAutoDocUpdate MOZ_AUTO_DOC_UPDATE_PASTE(_autoDocUpdater_, __LINE__)( \
+      doc, notify)
 
 #endif

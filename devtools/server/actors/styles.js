@@ -9,6 +9,7 @@ const protocol = require("devtools/shared/protocol");
 const {getCSSLexer} = require("devtools/shared/css/lexer");
 const {LongStringActor} = require("devtools/server/actors/string");
 const InspectorUtils = require("InspectorUtils");
+const TrackChangeEmitter = require("devtools/server/actors/utils/track-change-emitter");
 
 // This will also add the "stylesheet" actor type for protocol.js to recognize
 
@@ -22,11 +23,16 @@ loader.lazyRequireGetter(this, "isCssPropertyKnown",
   "devtools/server/actors/css-properties", true);
 loader.lazyRequireGetter(this, "parseNamedDeclarations",
   "devtools/shared/css/parsing-utils", true);
+loader.lazyRequireGetter(this, "prettifyCSS",
+  "devtools/shared/inspector/css-logic", true);
 loader.lazyRequireGetter(this, "UPDATE_PRESERVING_RULES",
   "devtools/server/actors/stylesheets", true);
 loader.lazyRequireGetter(this, "UPDATE_GENERAL",
   "devtools/server/actors/stylesheets", true);
-loader.lazyRequireGetter(this, "findCssSelector", "devtools/shared/inspector/css-logic", true);
+loader.lazyRequireGetter(this, "findCssSelector",
+  "devtools/shared/inspector/css-logic", true);
+loader.lazyRequireGetter(this, "CSSRuleTypeName",
+  "devtools/shared/inspector/css-logic", true);
 
 loader.lazyGetter(this, "PSEUDO_ELEMENTS", () => {
   return InspectorUtils.getCSSPseudoElementNames();
@@ -106,11 +112,11 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
     return this.inspector.conn;
   },
 
-  form: function(detail) {
-    if (detail === "actorid") {
-      return this.actorID;
-    }
+  get ownerWindow() {
+    return this.inspector.targetActor.window;
+  },
 
+  form: function() {
     // We need to use CSS from the inspected window in order to use CSS.supports() and
     // detect the right platform features from there.
     const CSS = this.inspector.targetActor.window.CSS;
@@ -123,8 +129,6 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
         // style cache. Clients requesting getApplied from actors that have not
         // been fixed must make sure cssLogic.highlight(node) was called before.
         getAppliedCreatesStyleCache: true,
-        // Whether addNewRule accepts the editAuthored argument.
-        authoredStyles: true,
         // Whether the page supports values of font-stretch from CSS Fonts Level 4.
         fontStretchLevel4: CSS.supports("font-stretch: 100%"),
         // Whether the page supports values of font-style from CSS Fonts Level 4.
@@ -198,6 +202,26 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
   },
 
   /**
+   * Get the StyleRuleActor matching the given rule id or null if no match is found.
+   *
+   * @param  {String} ruleId
+   *         Actor ID of the StyleRuleActor
+   * @return {StyleRuleActor|null}
+   */
+  getRule: function(ruleId) {
+    let match = null;
+
+    for (const actor of this.refMap.values()) {
+      if (actor.actorID === ruleId) {
+        match = actor;
+        continue;
+      }
+    }
+
+    return match;
+  },
+
+  /**
    * Get the computed style for a node.
    *
    * @param NodeActor node
@@ -210,6 +234,8 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
    *     when a computed property has been modified by a style included
    *     by `filter`.
    *   `onlyMatched`: true if unmatched properties shouldn't be included.
+   *   `filterProperties`: An array of properties names that you would like
+   *     returned.
    *
    * @returns a JSON blob with the following form:
    *   {
@@ -293,7 +319,13 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
     const contentDocument = actualNode.ownerDocument;
     // We don't get fonts for a node, but for a range
     const rng = contentDocument.createRange();
-    rng.selectNodeContents(actualNode);
+    const isPseudoElement =
+      Boolean(CssLogic.getBindingElementAndPseudo(actualNode).pseudo);
+    if (isPseudoElement) {
+      rng.selectNodeContents(actualNode);
+    } else {
+      rng.selectNode(actualNode);
+    }
     const fonts = InspectorUtils.getUsedFontFaces(rng);
     const fontsArray = [];
 
@@ -920,13 +952,9 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
    * @param {NodeActor} node
    * @param {String} pseudoClasses The list of pseudo classes to append to the
    *        new selector.
-   * @param {Boolean} editAuthored
-   *        True if the selector should be updated by editing the
-   *        authored text; false if the selector should be updated via
-   *        CSSOM.
    * @returns {StyleRuleActor} the new rule
    */
-  async addNewRule(node, pseudoClasses, editAuthored = false) {
+  async addNewRule(node, pseudoClasses) {
     const style = this.getStyleElement(node.rawNode.ownerDocument);
     const sheet = style.sheet;
     const cssRules = sheet.cssRules;
@@ -950,17 +978,34 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
 
     // If inserting the rule succeeded, go ahead and edit the source
     // text if requested.
-    if (editAuthored) {
-      const sheetActor = this._sheetRef(sheet);
-      let {str: authoredText} = await sheetActor.getText();
-      authoredText += "\n" + selector + " {\n" + "}";
-      await sheetActor.update(authoredText, false);
-    }
+    const sheetActor = this._sheetRef(sheet);
+    let {str: authoredText} = await sheetActor.getText();
+    authoredText += "\n" + selector + " {\n" + "}";
+    await sheetActor.update(authoredText, false);
 
-    return this.getNewAppliedProps(node, sheet.cssRules.item(index));
+    const cssRule = sheet.cssRules.item(index);
+    const ruleActor = this._styleRef(cssRule);
+
+    TrackChangeEmitter.trackChange({
+      ...ruleActor.metadata,
+      type: "rule-add",
+      add: null,
+      remove: null,
+      selector,
+    });
+
+    return this.getNewAppliedProps(node, cssRule);
   },
 });
 exports.PageStyleActor = PageStyleActor;
+
+const SUPPORTED_RULE_TYPES = [
+  CSSRule.STYLE_RULE,
+  CSSRule.SUPPORTS_RULE,
+  CSSRule.KEYFRAME_RULE,
+  CSSRule.KEYFRAMES_RULE,
+  CSSRule.MEDIA_RULE,
+];
 
 /**
  * An actor that represents a CSS style object on the protocol.
@@ -985,13 +1030,11 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
     if (CSSRule.isInstance(item)) {
       this.type = item.type;
       this.rawRule = item;
-      if ((this.type === CSSRule.STYLE_RULE ||
-           this.type === CSSRule.KEYFRAME_RULE) &&
-          this.rawRule.parentStyleSheet) {
+      this._computeRuleIndex();
+      if (SUPPORTED_RULE_TYPES.includes(this.type) && this.rawRule.parentStyleSheet) {
         this.line = InspectorUtils.getRelativeRuleLine(this.rawRule);
         this.column = InspectorUtils.getRuleColumn(this.rawRule);
         this._parentSheet = this.rawRule.parentStyleSheet;
-        this._computeRuleIndex();
         this.sheetActor = this.pageStyle._sheetRef(this._parentSheet);
         this.sheetActor.on("style-applied", this._onStyleApplied);
       }
@@ -1048,6 +1091,105 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
             this._parentSheet.href !== "about:PreferenceStyleSheet");
   },
 
+  /**
+   * Return an array with StyleRuleActor instances for each of this rule's ancestor rules
+   * (@media, @supports, @keyframes, etc) obtained by recursively reading rule.parentRule.
+   * If the rule has no ancestors, return an empty array.
+   *
+   * @return {Array}
+   */
+  get ancestorRules() {
+    const ancestors = [];
+    let rule = this.rawRule;
+
+    while (rule.parentRule) {
+      ancestors.unshift(this.pageStyle._styleRef(rule.parentRule));
+      rule = rule.parentRule;
+    }
+
+    return ancestors;
+  },
+
+  /**
+   * Return an object with information about this rule used for tracking changes.
+   * It will be decorated with information about a CSS change before being tracked.
+   *
+   * It contains:
+   * - the rule selector (or generated selectror for inline styles)
+   * - the rule's host stylesheet (or element for inline styles)
+   * - the rule's ancestor rules (@media, @supports, @keyframes), if any
+   * - the rule's position within its ancestor tree, if any
+   *
+   * @return {Object}
+   */
+  get metadata() {
+    const data = {};
+    data.id = this.actorID;
+    // Collect information about the rule's ancestors (@media, @supports, @keyframes).
+    // Used to show context for this change in the UI and to match the rule for undo/redo.
+    data.ancestors = this.ancestorRules.map(rule => {
+      return {
+        id: rule.actorID,
+        // Rule type as number defined by CSSRule.type (ex: 4, 7, 12)
+        // @see https://developer.mozilla.org/en-US/docs/Web/API/CSSRule
+        type: rule.rawRule.type,
+        // Rule type as human-readable string (ex: "@media", "@supports", "@keyframes")
+        typeName: CSSRuleTypeName[rule.rawRule.type],
+        // Conditions of @media and @supports rules (ex: "min-width: 1em")
+        conditionText: rule.rawRule.conditionText,
+        // Name of @keyframes rule; refrenced by the animation-name CSS property.
+        name: rule.rawRule.name,
+        // Selector of individual @keyframe rule within a @keyframes rule (ex: 0%, 100%).
+        keyText: rule.rawRule.keyText,
+        // Array with the indexes of this rule and its ancestors within the CSS rule tree.
+        ruleIndex: rule._ruleIndex,
+      };
+    });
+
+    // For changes in element style attributes, generate a unique selector.
+    if (this.type === ELEMENT_STYLE && this.rawNode) {
+      // findCssSelector() fails on XUL documents. Catch and silently ignore that error.
+      try {
+        data.selector = findCssSelector(this.rawNode);
+      } catch (err) {}
+
+      data.source = {
+        type: "element",
+        // Used to differentiate between elements which match the same generated selector
+        // but live in different documents (ex: host document and iframe).
+        href: this.rawNode.baseURI,
+        // Element style attributes don't have a rule index; use the generated selector.
+        index: data.selector,
+        // Whether the element lives in a different frame than the host document.
+        isFramed: this.rawNode.ownerGlobal !== this.pageStyle.ownerWindow,
+      };
+
+      const nodeActor = this.pageStyle.walker.getNode(this.rawNode);
+      if (nodeActor) {
+        data.source.id = nodeActor.actorID;
+      }
+
+      data.ruleIndex = 0;
+    } else {
+      data.selector = (this.type === CSSRule.KEYFRAME_RULE)
+        ? this.rawRule.keyText
+        : this.rawRule.selectorText;
+      data.source = {
+        // Inline stylesheets have a null href; Use window URL instead.
+        type: this.sheetActor.href ? "stylesheet" : "inline",
+        href: this.sheetActor.href || this.sheetActor.window.location.toString(),
+        id: this.sheetActor.actorID,
+        index: this.sheetActor.styleSheetIndex,
+        // Whether the stylesheet lives in a different frame than the host document.
+        isFramed: this.sheetActor.ownerWindow !== this.sheetActor.window,
+      };
+      // Used to differentiate between changes to rules with identical selectors.
+      data.ruleIndex = this._ruleIndex;
+    }
+
+    return data;
+  },
+
   getDocument: function(sheet) {
     if (sheet.ownerNode) {
       return sheet.ownerNode.nodeType == sheet.ownerNode.DOCUMENT_NODE ?
@@ -1062,11 +1204,7 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
     return "[StyleRuleActor for " + this.rawRule + "]";
   },
 
-  form: function(detail) {
-    if (detail === "actorid") {
-      return this.actorID;
-    }
-
+  form: function() {
     const form = {
       actor: this.actorID,
       type: this.type,
@@ -1140,9 +1278,11 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
     // and so that we can safely determine if a declaration is valid rather than
     // have the client guess it.
     if (form.authoredText || form.cssText) {
-      const declarations = parseNamedDeclarations(isCssPropertyKnown,
-                                                form.authoredText || form.cssText,
-                                                true);
+      // authoredText may be an empty string when deleting all properties; it's ok to use.
+      const cssText = (typeof form.authoredText === "string")
+        ? form.authoredText
+        : form.cssText;
+      const declarations = parseNamedDeclarations(isCssPropertyKnown, cssText, true);
 
       // We need to grab CSS from the window, since calling supports() on the
       // one from the current global will fail due to not being an HTML global.
@@ -1185,10 +1325,10 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
     const result = [];
 
     while (rule) {
-      let cssRules;
+      let cssRules = [];
       if (rule.parentRule) {
         cssRules = rule.parentRule.cssRules;
-      } else {
+      } else if (rule.parentStyleSheet) {
         cssRules = rule.parentStyleSheet.cssRules;
       }
 
@@ -1270,21 +1410,22 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
    * authored form is available, this also sets |this.authoredText|.
    * The authored text will include invalid and otherwise ignored
    * properties.
+   *
+   * @param {Boolean} skipCache
+   *        If a value for authoredText was previously found and cached,
+   *        ignore it and parse the stylehseet again. The authoredText
+   *        may be outdated if a descendant of this rule has changed.
    */
-  getAuthoredCssText: function() {
-    if (!this.canSetRuleText ||
-        (this.type !== CSSRule.STYLE_RULE &&
-         this.type !== CSSRule.KEYFRAME_RULE)) {
+  getAuthoredCssText: function(skipCache = false) {
+    if (!this.canSetRuleText || !SUPPORTED_RULE_TYPES.includes(this.type)) {
       return Promise.resolve("");
     }
 
-    if (typeof this.authoredText === "string") {
+    if (typeof this.authoredText === "string" && !skipCache) {
       return Promise.resolve(this.authoredText);
     }
 
-    const parentStyleSheet =
-        this.pageStyle._sheetRef(this._parentSheet);
-    return parentStyleSheet.getText().then((longStr) => {
+    return this.sheetActor.getText().then((longStr) => {
       const cssText = longStr.str;
       const {text} = getRuleText(cssText, this.line, this.column);
 
@@ -1292,6 +1433,56 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
       this.authoredText = text;
       return this.authoredText;
     });
+  },
+
+  /**
+   * Return a promise that resolves to the complete cssText of the rule as authored.
+   *
+   * Unlike |getAuthoredCssText()|, which only returns the contents of the rule, this
+   * method includes the CSS selectors and at-rules (@media, @supports, @keyframes, etc.)
+   *
+   * If the rule type is unrecongized, the promise resolves to an empty string.
+   * If the rule is an element inline style, the promise resolves with the generated
+   * selector that uniquely identifies the element and with the rule body consisting of
+   * the element's style attribute.
+   *
+   * @return {String}
+   */
+  getRuleText: async function() {
+    // Bail out if the rule is not supported or not an element inline style.
+    if (![...SUPPORTED_RULE_TYPES, ELEMENT_STYLE].includes(this.type)) {
+      return Promise.resolve("");
+    }
+
+    let ruleBodyText;
+    let selectorText;
+    let text;
+
+    // For element inline styles, use the style attribute and generated unique selector.
+    if (this.type === ELEMENT_STYLE) {
+      ruleBodyText = this.rawNode.getAttribute("style");
+      selectorText = this.metadata.selector;
+    } else {
+      // Get the rule's authored text and skip any cached value.
+      ruleBodyText = await this.getAuthoredCssText(true);
+      const { str: stylesheetText } = await this.sheetActor.getText();
+      const [start, end] = getSelectorOffsets(stylesheetText, this.line, this.column);
+      selectorText = stylesheetText.substring(start, end);
+    }
+
+    // CSS rule type as a string "@media", "@supports", "@keyframes", etc.
+    const typeName = CSSRuleTypeName[this.type];
+
+    // When dealing with at-rules, getSelectorOffsets() will not return the rule type.
+    // We prepend it ourselves.
+    if (typeName) {
+      text = `${typeName}${selectorText} {${ruleBodyText}}`;
+    } else {
+      text = `${selectorText} {${ruleBodyText}}`;
+    }
+
+    const prettyCSS = prettifyCSS(text);
+    return Promise.resolve(prettyCSS);
   },
 
   /**
@@ -1323,7 +1514,7 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
     }
 
     // Log the changes before applying them so we have access to the previous values.
-    modifications.map(mod => this.logChange(mod));
+    modifications.map(mod => this.logDeclarationChange(mod));
 
     if (this.type === ELEMENT_STYLE) {
       // For element style rules, set the node's style attribute.
@@ -1383,12 +1574,12 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
     const tempElement = document.createElementNS(XHTML_NS, "div");
 
     for (const mod of modifications) {
-      this.logChange(mod);
+      this.logDeclarationChange(mod);
       if (mod.type === "set") {
         tempElement.style.setProperty(mod.name, mod.value, mod.priority || "");
         this.rawStyle.setProperty(mod.name,
           tempElement.style.getPropertyValue(mod.name), mod.priority || "");
-      } else if (mod.type === "remove") {
+      } else if (mod.type === "remove" || mod.type === "disable") {
         this.rawStyle.removeProperty(mod.name);
       }
     }
@@ -1459,77 +1650,105 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
   },
 
   /**
-   * Take an object with instructions to modify a CSS declaration and emit a
-   * "track-change" event with normalized metadata which describes the change.
+   * Take an object with instructions to modify a CSS declaration and log an object with
+   * normalized metadata which describes the change in the context of this rule.
    *
    * @param {Object} change
-   *        Data about a modification to a rule. @see |modifyProperties()|
+   *        Data about a modification to a declaration. @see |modifyProperties()|
    */
-  logChange(change) {
-    const prevValue = this._declarations[change.index]
-      ? this._declarations[change.index].value
-      : null;
-    const prevName = this._declarations[change.index]
-      ? this._declarations[change.index].name
-      : null;
+  logDeclarationChange(change) {
+    // Position of the declaration within its rule.
+    const index = change.index;
+    // Destructure properties from the previous CSS declaration at this index, if any,
+    // to new variable names to indicate the previous state.
+    let {
+      value: prevValue,
+      name: prevName,
+      priority: prevPriority,
+      commentOffsets,
+    } = this._declarations[index] || {};
+    // A declaration is disabled if it has a `commentOffsets` array.
+    // Here we type coerce the value to a boolean with double-bang (!!)
+    const prevDisabled = !!commentOffsets;
+    // Append the "!important" string if defined in the previous priority flag.
+    prevValue = (prevValue && prevPriority) ? `${prevValue} !important` : prevValue;
 
-    // Metadata about a change.
-    const data = {};
-    data.type = change.type;
-    data.selector = this.rawRule.selectorText;
-
-    // For inline style changes, generate a unique selector and pass the node tag.
-    if (this.type === ELEMENT_STYLE) {
-      data.tag = this.rawNode.tagName;
-      data.href = "inline";
-      // findCssSelector() fails on XUL documents. Catch and silently ignore that error.
-      try {
-        data.selector = findCssSelector(this.rawNode);
-      } catch (err) {}
-    } else {
-      data.href = this._parentSheet.href || "inline stylesheet";
-    }
+    const data = this.metadata;
 
     switch (change.type) {
       case "set":
+        data.type = prevValue ? "declaration-add" : "declaration-update";
         // If `change.newName` is defined, use it because the property is being renamed.
         // Otherwise, a new declaration is being created or the value of an existing
         // declaration is being updated. In that case, use the provided `change.name`.
         const name = change.newName ? change.newName : change.name;
-        // Reuse the previous value when the property is being renamed.
-        const value = change.newName ? prevValue : change.value;
+        // Append the "!important" string if defined in the incoming priority flag.
+        const newValue = change.priority ? `${change.value} !important` : change.value;
+        // Reuse the previous value string, when the property is renamed.
+        // Otherwise, use the incoming value string.
+        const value = change.newName ? prevValue : newValue;
 
-        data.add = { property: name, value };
+        data.add = [{ property: name, value, index }];
         // If there is a previous value, log its removal together with the previous
         // property name. Using the previous name handles the case for renaming a property
         // and is harmless when updating an existing value (the name stays the same).
-        data.remove = prevValue ? { property: prevName, value: prevValue } : null;
+        if (prevValue) {
+          data.remove = [{ property: prevName, value: prevValue, index }];
+        } else {
+          data.remove = null;
+        }
+
+        // When toggling a declaration from OFF to ON, if not renaming the property,
+        // do not mark the previous declaration for removal, otherwise the add and
+        // remove operations will cancel each other out when tracked. Tracked changes
+        // have no context of "disabled", only "add" or remove, like diffs.
+        if (prevDisabled && !change.newName && prevValue === newValue) {
+          data.remove = null;
+        }
+
         break;
 
       case "remove":
+        data.type = "declaration-remove";
         data.add = null;
-        data.remove = { property: change.name, value: prevValue };
+        data.remove = [{ property: change.name, value: prevValue, index }];
+        break;
+
+      case "disable":
+        data.type = "declaration-disable";
+        data.add = null;
+        data.remove = [{ property: change.name, value: prevValue, index }];
         break;
     }
 
-    // Do not track non-changes. This can occur when typing a value in the Rule view
-    // inline editor, then committing it by pressing the Enter key.
-    if (data.add && data.remove &&
-        data.add.property === data.remove.property &&
-        data.add.value === data.remove.value) {
-      return;
-    }
-
-    this.emit("track-change", data);
+    TrackChangeEmitter.trackChange(data);
   },
 
   /**
-   * Calls modifySelector2() which needs to be kept around for backwards compatibility.
-   * TODO: Once Firefox 64 is no longer supported, inline that mehtod's content,
-   * then remove its definition from this file and from specs/styles.js
+   * Helper method for tracking CSS changes. Logs the change of this rule's selector as
+   * two operations: a removal using the old selector and an addition using the new one.
+   *
+   * @param {String} oldSelector
+   *        This rule's previous selector.
+   * @param {String} newSelector
+   *        This rule's new selector.
    */
-  modifySelector: function(node, value, editAuthored = false) {
-    return this.modifySelector2(node, value, editAuthored);
+  logSelectorChange(oldSelector, newSelector) {
+    TrackChangeEmitter.trackChange({
+      ...this.metadata,
+      type: "selector-remove",
+      add: null,
+      remove: null,
+      selector: oldSelector,
+    });
+
+    TrackChangeEmitter.trackChange({
+      ...this.metadata,
+      type: "selector-add",
+      add: null,
+      remove: null,
+      selector: newSelector,
+    });
   },
 
   /**
@@ -1554,17 +1773,20 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
    *        new rule and a boolean indicating whether or not the new selector
    *        matches the current selected element
    */
-  modifySelector2: function(node, value, editAuthored = false) {
+  modifySelector: function(node, value, editAuthored = false) {
     if (this.type === ELEMENT_STYLE ||
         this.rawRule.selectorText === value) {
       return { ruleProps: null, isMatching: true };
     }
 
+    // The rule's previous selector is lost after calling _addNewSelector(). Save it now.
+    const oldValue = this.rawRule.selectorText;
     let selectorPromise = this._addNewSelector(value, editAuthored);
 
     if (editAuthored) {
       selectorPromise = selectorPromise.then((newCssRule) => {
         if (newCssRule) {
+          this.logSelectorChange(oldValue, value);
           const style = this.pageStyle._styleRef(newCssRule);
           // See the comment in |form| to understand this.
           return style.getAuthoredCssText().then(() => newCssRule);

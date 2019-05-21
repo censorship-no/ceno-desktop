@@ -1,6 +1,12 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/AppMenuNotifications.jsm");
+// This test tends to trigger a race in the fullscreen time telemetry,
+// where the fullscreen enter and fullscreen exit events (which use the
+// same histogram ID) overlap. That causes TelemetryStopwatch to log an
+// error.
+SimpleTest.ignoreAllUncaughtExceptions(true);
+
+const {AppMenuNotifications} = ChromeUtils.import("resource://gre/modules/AppMenuNotifications.jsm");
 
 function waitForDocshellActivated() {
   return ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
@@ -71,8 +77,7 @@ add_task(async function testFullscreen() {
   isnot(PanelUI.notificationPanel.state, "closed", "update-manual doorhanger is shown after exiting DOM fullscreen.");
   isnot(PanelUI.menuButton.getAttribute("badge-status"), "update-manual", "Badge is not displaying on PanelUI button.");
 
-  let mainActionButton = document.getAnonymousElementByAttribute(doorhanger, "anonid", "button");
-  mainActionButton.click();
+  doorhanger.button.click();
   ok(mainActionCalled, "Main action callback was called");
   is(PanelUI.notificationPanel.state, "closed", "update-manual doorhanger is closed.");
   is(PanelUI.menuButton.hasAttribute("badge-status"), false, "Should not have a badge status");

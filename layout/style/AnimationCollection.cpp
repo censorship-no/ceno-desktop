@@ -7,21 +7,17 @@
 #include "mozilla/AnimationCollection.h"
 
 #include "mozilla/RestyleManager.h"
-#include "nsAnimationManager.h" // For dom::CSSAnimation
+#include "nsAnimationManager.h"  // For dom::CSSAnimation
 #include "nsPresContext.h"
-#include "nsTransitionManager.h" // For dom::CSSTransition
+#include "nsTransitionManager.h"  // For dom::CSSTransition
 
 namespace mozilla {
 
 template <class AnimationType>
-/* static */ void
-AnimationCollection<AnimationType>::PropertyDtor(void* aObject,
-                                                 nsAtom* aPropertyName,
-                                                 void* aPropertyValue,
-                                                 void* aData)
-{
+/* static */ void AnimationCollection<AnimationType>::PropertyDtor(
+    void* aObject, nsAtom* aPropertyName, void* aPropertyValue, void* aData) {
   AnimationCollection* collection =
-    static_cast<AnimationCollection*>(aPropertyValue);
+      static_cast<AnimationCollection*>(aPropertyValue);
 #ifdef DEBUG
   MOZ_ASSERT(!collection->mCalledPropertyDtor, "can't call dtor twice");
   collection->mCalledPropertyDtor = true;
@@ -29,7 +25,7 @@ AnimationCollection<AnimationType>::PropertyDtor(void* aObject,
   {
     nsAutoAnimationMutationBatch mb(collection->mElement->OwnerDoc());
 
-    for (size_t animIdx = collection->mAnimations.Length(); animIdx-- != 0; ) {
+    for (size_t animIdx = collection->mAnimations.Length(); animIdx-- != 0;) {
       collection->mAnimations[animIdx]->CancelFromStyle();
     }
   }
@@ -39,9 +35,7 @@ AnimationCollection<AnimationType>::PropertyDtor(void* aObject,
 template <class AnimationType>
 /* static */ AnimationCollection<AnimationType>*
 AnimationCollection<AnimationType>::GetAnimationCollection(
-  const dom::Element *aElement,
-  CSSPseudoElementType aPseudoType)
-{
+    const dom::Element* aElement, PseudoStyleType aPseudoType) {
   if (!aElement->MayHaveAnimations()) {
     // Early return for the most common case.
     return nullptr;
@@ -52,18 +46,16 @@ AnimationCollection<AnimationType>::GetAnimationCollection(
     return nullptr;
   }
 
-  return
-    static_cast<AnimationCollection<AnimationType>*>(aElement->
-                                                     GetProperty(propName));
+  return static_cast<AnimationCollection<AnimationType>*>(
+      aElement->GetProperty(propName));
 }
 
 template <class AnimationType>
 /* static */ AnimationCollection<AnimationType>*
 AnimationCollection<AnimationType>::GetAnimationCollection(
-  const nsIFrame* aFrame)
-{
+    const nsIFrame* aFrame) {
   Maybe<NonOwningAnimationTarget> pseudoElement =
-    EffectCompositor::GetAnimationElementAndPseudoForFrame(aFrame);
+      EffectCompositor::GetAnimationElementAndPseudoForFrame(aFrame);
   if (!pseudoElement) {
     return nullptr;
   }
@@ -79,26 +71,24 @@ AnimationCollection<AnimationType>::GetAnimationCollection(
 template <class AnimationType>
 /* static */ AnimationCollection<AnimationType>*
 AnimationCollection<AnimationType>::GetOrCreateAnimationCollection(
-  dom::Element* aElement,
-  CSSPseudoElementType aPseudoType,
-  bool* aCreatedCollection)
-{
+    dom::Element* aElement, PseudoStyleType aPseudoType,
+    bool* aCreatedCollection) {
   MOZ_ASSERT(aCreatedCollection);
   *aCreatedCollection = false;
 
   nsAtom* propName = GetPropertyAtomForPseudoType(aPseudoType);
-  MOZ_ASSERT(propName, "Should only try to create animations for one of the"
+  MOZ_ASSERT(propName,
+             "Should only try to create animations for one of the"
              " recognized pseudo types");
 
   auto collection = static_cast<AnimationCollection<AnimationType>*>(
-                      aElement->GetProperty(propName));
+      aElement->GetProperty(propName));
   if (!collection) {
     // FIXME: Consider arena-allocating?
     collection = new AnimationCollection<AnimationType>(aElement, propName);
-    nsresult rv =
-      aElement->SetProperty(propName, collection,
-                            &AnimationCollection<AnimationType>::PropertyDtor,
-                            false);
+    nsresult rv = aElement->SetProperty(
+        propName, collection, &AnimationCollection<AnimationType>::PropertyDtor,
+        false);
     if (NS_FAILED(rv)) {
       NS_WARNING("SetProperty failed");
       // The collection must be destroyed via PropertyDtor, otherwise
@@ -115,19 +105,17 @@ AnimationCollection<AnimationType>::GetOrCreateAnimationCollection(
   return collection;
 }
 
-
-template<class AnimationType>
+template <class AnimationType>
 /*static*/ nsAtom*
 AnimationCollection<AnimationType>::GetPropertyAtomForPseudoType(
-  CSSPseudoElementType aPseudoType)
-{
+    PseudoStyleType aPseudoType) {
   nsAtom* propName = nullptr;
 
-  if (aPseudoType == CSSPseudoElementType::NotPseudo) {
+  if (aPseudoType == PseudoStyleType::NotPseudo) {
     propName = TraitsType::ElementPropertyAtom();
-  } else if (aPseudoType == CSSPseudoElementType::before) {
+  } else if (aPseudoType == PseudoStyleType::before) {
     propName = TraitsType::BeforePropertyAtom();
-  } else if (aPseudoType == CSSPseudoElementType::after) {
+  } else if (aPseudoType == PseudoStyleType::after) {
     propName = TraitsType::AfterPropertyAtom();
   }
 
@@ -139,4 +127,4 @@ AnimationCollection<AnimationType>::GetPropertyAtomForPseudoType(
 template class AnimationCollection<dom::CSSAnimation>;
 template class AnimationCollection<dom::CSSTransition>;
 
-} // namespace mozilla
+}  // namespace mozilla

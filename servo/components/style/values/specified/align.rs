@@ -1,14 +1,14 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Values for CSS Box Alignment properties
 //!
 //! https://drafts.csswg.org/css-align/
 
+use crate::gecko_bindings::structs;
+use crate::parser::{Parse, ParserContext};
 use cssparser::Parser;
-use gecko_bindings::structs;
-use parser::{Parse, ParserContext};
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, KeywordsCollectFn, ParseError, SpecifiedValueInfo, ToCss};
 
@@ -92,8 +92,7 @@ impl ToCss for AlignFlags {
                 dest.write_char(' ')?;
             },
             AlignFlags::SAFE => dest.write_str("safe ")?,
-            // Don't serialize "unsafe", since it's the default.
-            AlignFlags::UNSAFE => {},
+            AlignFlags::UNSAFE => dest.write_str("unsafe ")?,
             _ => {
                 debug_assert_eq!(extra_flags, AlignFlags::empty());
             },
@@ -287,7 +286,7 @@ impl From<AlignContent> for u16 {
 
 /// Value for the `justify-content` property.
 ///
-/// <https://drafts.csswg.org/css-align/#propdef-align-content>
+/// <https://drafts.csswg.org/css-align/#propdef-justify-content>
 #[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, ToComputedValue, ToCss)]
 pub struct JustifyContent(pub ContentDistribution);
 
@@ -461,7 +460,7 @@ impl From<JustifySelf> for u8 {
 
 /// Value of the `align-items` property
 ///
-/// <https://drafts.csswg.org/css-align/#self-alignment>
+/// <https://drafts.csswg.org/css-align/#propdef-align-items>
 #[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, ToComputedValue, ToCss)]
 pub struct AlignItems(pub AlignFlags);
 

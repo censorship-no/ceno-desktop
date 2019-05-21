@@ -9,7 +9,7 @@ Test the payment-dialog custom element
   <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="/tests/SimpleTest/AddTask.js"></script>
   <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script src="sinon-2.3.2.js"></script>
+  <script src="sinon-7.2.7.js"></script>
   <script src="payments_common.js"></script>
   <script src="../../res/unprivileged-fallbacks.js"></script>
   <script src="autofillEditForms.js"></script>
@@ -21,6 +21,7 @@ Test the payment-dialog custom element
 <body>
   <p id="display" style="height: 100vh; margin: 0;">
     <iframe id="templateFrame" src="paymentRequest.xhtml" width="0" height="0"
+            sandbox="allow-same-origin"
             style="float: left;"></iframe>
   </p>
 <div id="content" style="display: none">

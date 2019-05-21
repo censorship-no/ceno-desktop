@@ -10,16 +10,17 @@
 #include "nsComponentManagerUtils.h"
 #include "mozilla/ClearOnShutdown.h"
 
+extern mozilla::LazyLogModule gTextTrackLog;
+
+#define LOG(msg, ...) \
+  MOZ_LOG(gTextTrackLog, LogLevel::Debug, ("TextTrackCue=%p, " msg, this, ##__VA_ARGS__))
+
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(TextTrackCue,
-                                   DOMEventTargetHelper,
-                                   mDocument,
-                                   mTrack,
-                                   mTrackElement,
-                                   mDisplayState,
-                                   mRegion)
+NS_IMPL_CYCLE_COLLECTION_INHERITED(TextTrackCue, DOMEventTargetHelper,
+                                   mDocument, mTrack, mTrackElement,
+                                   mDisplayState, mRegion)
 
 NS_IMPL_ADDREF_INHERITED(TextTrackCue, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(TextTrackCue, DOMEventTargetHelper)
@@ -28,13 +29,11 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 StaticRefPtr<nsIWebVTTParserWrapper> TextTrackCue::sParserWrapper;
 
-// Set cue setting defaults based on step 19 & seq.
-// in http://dev.w3.org/html5/webvtt/#parsing
-void
-TextTrackCue::SetDefaultCueSettings()
-{
+// Set default value for cue, spec https://w3c.github.io/webvtt/#model-cues
+void TextTrackCue::SetDefaultCueSettings() {
   mPositionIsAutoKeyword = true;
-  mPositionAlign = PositionAlignSetting::Center;
+  // Spec https://www.w3.org/TR/webvtt1/#webvtt-cue-position-automatic-alignment
+  mPositionAlign = PositionAlignSetting::Auto;
   mSize = 100.0;
   mPauseOnExit = false;
   mSnapToLines = true;
@@ -45,21 +44,20 @@ TextTrackCue::SetDefaultCueSettings()
   mActive = false;
 }
 
-TextTrackCue::TextTrackCue(nsPIDOMWindowInner* aOwnerWindow,
-                           double aStartTime,
-                           double aEndTime,
-                           const nsAString& aText,
+TextTrackCue::TextTrackCue(nsPIDOMWindowInner* aOwnerWindow, double aStartTime,
+                           double aEndTime, const nsAString& aText,
                            ErrorResult& aRv)
-  : DOMEventTargetHelper(aOwnerWindow)
-  , mText(aText)
-  , mStartTime(aStartTime)
-  , mEndTime(aEndTime)
-  , mPosition(0.0)
-  , mLine(0.0)
-  , mReset(false, "TextTrackCue::mReset")
-  , mHaveStartedWatcher(false)
-  , mWatchManager(this, GetOwnerGlobal()->AbstractMainThreadFor(TaskCategory::Other))
-{
+    : DOMEventTargetHelper(aOwnerWindow),
+      mText(aText),
+      mStartTime(aStartTime),
+      mEndTime(aEndTime),
+      mPosition(0.0),
+      mLine(0.0),
+      mReset(false, "TextTrackCue::mReset"),
+      mHaveStartedWatcher(false),
+      mWatchManager(
+          this, GetOwnerGlobal()->AbstractMainThreadFor(TaskCategory::Other)) {
+  LOG("create TextTrackCue");
   SetDefaultCueSettings();
   MOZ_ASSERT(aOwnerWindow);
   if (NS_FAILED(StashDocument())) {
@@ -67,23 +65,21 @@ TextTrackCue::TextTrackCue(nsPIDOMWindowInner* aOwnerWindow,
   }
 }
 
-TextTrackCue::TextTrackCue(nsPIDOMWindowInner* aOwnerWindow,
-                           double aStartTime,
-                           double aEndTime,
-                           const nsAString& aText,
-                           HTMLTrackElement* aTrackElement,
-                           ErrorResult& aRv)
-  : DOMEventTargetHelper(aOwnerWindow)
-  , mText(aText)
-  , mStartTime(aStartTime)
-  , mEndTime(aEndTime)
-  , mTrackElement(aTrackElement)
-  , mPosition(0.0)
-  , mLine(0.0)
-  , mReset(false, "TextTrackCue::mReset")
-  , mHaveStartedWatcher(false)
-  , mWatchManager(this, GetOwnerGlobal()->AbstractMainThreadFor(TaskCategory::Other))
-{
+TextTrackCue::TextTrackCue(nsPIDOMWindowInner* aOwnerWindow, double aStartTime,
+                           double aEndTime, const nsAString& aText,
+                           HTMLTrackElement* aTrackElement, ErrorResult& aRv)
+    : DOMEventTargetHelper(aOwnerWindow),
+      mText(aText),
+      mStartTime(aStartTime),
+      mEndTime(aEndTime),
+      mTrackElement(aTrackElement),
+      mPosition(0.0),
+      mLine(0.0),
+      mReset(false, "TextTrackCue::mReset"),
+      mHaveStartedWatcher(false),
+      mWatchManager(
+          this, GetOwnerGlobal()->AbstractMainThreadFor(TaskCategory::Other)) {
+  LOG("create TextTrackCue");
   SetDefaultCueSettings();
   MOZ_ASSERT(aOwnerWindow);
   if (NS_FAILED(StashDocument())) {
@@ -91,16 +87,12 @@ TextTrackCue::TextTrackCue(nsPIDOMWindowInner* aOwnerWindow,
   }
 }
 
-TextTrackCue::~TextTrackCue()
-{
-}
+TextTrackCue::~TextTrackCue() {}
 
 /** Save a reference to our creating document so we don't have to
  *  keep getting it from our window.
  */
-nsresult
-TextTrackCue::StashDocument()
-{
+nsresult TextTrackCue::StashDocument() {
   nsPIDOMWindowInner* window = GetOwner();
   if (!window) {
     return NS_ERROR_NO_INTERFACE;
@@ -112,9 +104,7 @@ TextTrackCue::StashDocument()
   return NS_OK;
 }
 
-already_AddRefed<DocumentFragment>
-TextTrackCue::GetCueAsHTML()
-{
+already_AddRefed<DocumentFragment> TextTrackCue::GetCueAsHTML() {
   // mDocument may be null during cycle collector shutdown.
   // See bug 941701.
   if (!mDocument) {
@@ -124,7 +114,7 @@ TextTrackCue::GetCueAsHTML()
   if (!sParserWrapper) {
     nsresult rv;
     nsCOMPtr<nsIWebVTTParserWrapper> parserWrapper =
-      do_CreateInstance(NS_WEBVTTPARSERWRAPPER_CONTRACTID, &rv);
+        do_CreateInstance(NS_WEBVTTPARSERWRAPPER_CONTRACTID, &rv);
     if (NS_FAILED(rv)) {
       return mDocument->CreateDocumentFragment();
     }
@@ -138,35 +128,25 @@ TextTrackCue::GetCueAsHTML()
   }
 
   RefPtr<DocumentFragment> frag;
-  sParserWrapper->ConvertCueToDOMTree(window, this,
-                                      getter_AddRefs(frag));
+  sParserWrapper->ConvertCueToDOMTree(window, this, getter_AddRefs(frag));
   if (!frag) {
     return mDocument->CreateDocumentFragment();
   }
   return frag.forget();
 }
 
-void
-TextTrackCue::SetTrackElement(HTMLTrackElement* aTrackElement)
-{
+void TextTrackCue::SetTrackElement(HTMLTrackElement* aTrackElement) {
   mTrackElement = aTrackElement;
 }
 
-JSObject*
-TextTrackCue::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
+JSObject* TextTrackCue::WrapObject(JSContext* aCx,
+                                   JS::Handle<JSObject*> aGivenProto) {
   return VTTCue_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-TextTrackRegion*
-TextTrackCue::GetRegion()
-{
-  return mRegion;
-}
+TextTrackRegion* TextTrackCue::GetRegion() { return mRegion; }
 
-void
-TextTrackCue::SetRegion(TextTrackRegion* aRegion)
-{
+void TextTrackCue::SetRegion(TextTrackRegion* aRegion) {
   if (mRegion == aRegion) {
     return;
   }
@@ -174,19 +154,15 @@ TextTrackCue::SetRegion(TextTrackRegion* aRegion)
   mReset = true;
 }
 
-double
-TextTrackCue::ComputedLine()
-{
+double TextTrackCue::ComputedLine() {
   // See spec https://w3c.github.io/webvtt/#cue-computed-line
-  if (!mLineIsAutoKeyword && !mSnapToLines &&
-      (mLine < 0.0 || mLine > 100.0)) {
+  if (!mLineIsAutoKeyword && !mSnapToLines && (mLine < 0.0 || mLine > 100.0)) {
     return 100.0;
   } else if (!mLineIsAutoKeyword) {
     return mLine;
   } else if (mLineIsAutoKeyword && !mSnapToLines) {
     return 100.0;
-  } else if (!mTrack ||
-             !mTrack->GetTextTrackList() ||
+  } else if (!mTrack || !mTrack->GetTextTrackList() ||
              !mTrack->GetTextTrackList()->GetMediaElement()) {
     return -1.0;
   }
@@ -208,9 +184,7 @@ TextTrackCue::ComputedLine()
   return (-1.0) * showingTracksNum;
 }
 
-double
-TextTrackCue::ComputedPosition()
-{
+double TextTrackCue::ComputedPosition() {
   // See spec https://w3c.github.io/webvtt/#cue-computed-position
   if (!mPositionIsAutoKeyword) {
     return mPosition;
@@ -222,9 +196,7 @@ TextTrackCue::ComputedPosition()
   return 50.0;
 }
 
-PositionAlignSetting
-TextTrackCue::ComputedPositionAlign()
-{
+PositionAlignSetting TextTrackCue::ComputedPositionAlign() {
   // See spec https://w3c.github.io/webvtt/#cue-computed-position-alignment
   if (mPositionAlign != PositionAlignSetting::Auto) {
     return mPositionAlign;
@@ -236,21 +208,33 @@ TextTrackCue::ComputedPositionAlign()
   return PositionAlignSetting::Center;
 }
 
-void
-TextTrackCue::NotifyDisplayStatesChanged()
-{
+void TextTrackCue::NotifyDisplayStatesChanged() {
   if (!mReset) {
     return;
   }
 
-  if (!mTrack ||
-      !mTrack->GetTextTrackList() ||
+  if (!mTrack || !mTrack->GetTextTrackList() ||
       !mTrack->GetTextTrackList()->GetMediaElement()) {
     return;
   }
 
-  mTrack->GetTextTrackList()->GetMediaElement()->NotifyCueDisplayStatesChanged();
+  mTrack->GetTextTrackList()
+      ->GetMediaElement()
+      ->NotifyCueDisplayStatesChanged();
 }
 
-} // namespace dom
-} // namespace mozilla
+void TextTrackCue::SetActive(bool aActive) {
+  if (mActive == aActive) {
+    return;
+  }
+
+  LOG("TextTrackCue, SetActive=%d", aActive);
+  mActive = aActive;
+  mDisplayState = mActive ? mDisplayState : nullptr;
+  if (mTrack) {
+    mTrack->NotifyCueActiveStateChanged(this);
+  }
+}
+
+}  // namespace dom
+}  // namespace mozilla

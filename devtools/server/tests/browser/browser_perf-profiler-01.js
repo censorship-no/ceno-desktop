@@ -14,8 +14,7 @@ const { pmmIsProfilerActive, pmmLoadFrameScripts } = require("devtools/client/pe
 add_task(async function() {
   const target = await addTabTarget(MAIN_DOMAIN + "doc_perf.html");
 
-  const front = target.getFront("performance");
-  await front.connect();
+  const front = await target.getFront("performance");
 
   pmmLoadFrameScripts(gBrowser);
 
@@ -32,7 +31,6 @@ add_task(async function() {
   ok((await pmmIsProfilerActive()),
     "The built-in profiler module should still be active (2).");
 
-  await front.destroy();
   await target.destroy();
 
   ok(!(await pmmIsProfilerActive()),

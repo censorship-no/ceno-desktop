@@ -15,7 +15,6 @@ const { getPerformanceAnalysisURL } = require("../utils/mdn-utils");
 
 // Components
 const MDNLink = createFactory(require("devtools/client/shared/components/MdnLink"));
-const RequestListHeader = createFactory(require("./RequestListHeader"));
 
 const { button, div, span } = dom;
 
@@ -25,6 +24,7 @@ const RELOAD_NOTICE_3 = L10N.getStr("netmonitor.reloadNotice3");
 const PERFORMANCE_NOTICE_1 = L10N.getStr("netmonitor.perfNotice1");
 const PERFORMANCE_NOTICE_2 = L10N.getStr("netmonitor.perfNotice2");
 const PERFORMANCE_NOTICE_3 = L10N.getStr("netmonitor.perfNotice3");
+const PERFORMANCE_LEARN_MORE = L10N.getStr("charts.learnMore");
 
 /**
  * UI displayed when the request list is empty. Contains instructions on reloading
@@ -44,7 +44,6 @@ class RequestListEmptyNotice extends Component {
       {
         className: "request-list-empty-notice",
       },
-      RequestListHeader(),
       div({ className: "notice-reload-message empty-notice-element" },
         span(null, RELOAD_NOTICE_1),
         button(
@@ -66,7 +65,10 @@ class RequestListEmptyNotice extends Component {
           onClick: this.props.onPerfClick,
         }),
         span(null, PERFORMANCE_NOTICE_2),
-        MDNLink({ url: getPerformanceAnalysisURL() })
+        MDNLink({
+          url: getPerformanceAnalysisURL(),
+          title: PERFORMANCE_LEARN_MORE,
+        })
       )
     );
   }

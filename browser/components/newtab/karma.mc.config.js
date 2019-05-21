@@ -42,13 +42,14 @@ module.exports = function(config) {
       "sinon", // require("sinon") require("karma-sinon")
     ],
     reporters: [
-      "coverage", // require("karma-coverage")
+      "coverage-istanbul", // require("karma-coverage")
       "mocha", // require("karma-mocha-reporter")
     ],
-    coverageReporter: {
+    coverageIstanbulReporter: {
+      reports: ["html", "text-summary"],
       dir: PATHS.coverageReportingPath,
       // This will make karma fail if coverage reporting is less than the minimums here
-      check: !isTDD && {
+      thresholds: !isTDD && {
         global: {
           statements: 100,
           lines: 100,
@@ -56,11 +57,6 @@ module.exports = function(config) {
           branches: 90,
         },
       },
-      reporters: [
-        {type: "html", subdir: "report-html"},
-        {type: "text", subdir: ".", file: "text.txt"},
-        {type: "text-summary", subdir: ".", file: "text-summary.txt"},
-      ],
     },
     files: [PATHS.testEntryFile],
     preprocessors,
@@ -95,7 +91,7 @@ module.exports = function(config) {
               options: {
                 plugins: [
                   // Converts .jsm files into common-js modules
-                  ["jsm-to-commonjs", {basePath: PATHS.resourcePathRegEx, replace: true}], // require("babel-plugin-jsm-to-commonjs")
+                  ["jsm-to-commonjs", {basePath: PATHS.resourcePathRegEx, removeOtherImports: true, replace: true}], // require("babel-plugin-jsm-to-commonjs")
                   ["transform-async-to-module-method", {module: "co-task", method: "async"}], // require("babel-plugin-transform-async-to-module-method")
                   "transform-es2015-modules-commonjs", // require("babel-plugin-transform-es2015-modules-commonjs")
                   ["transform-object-rest-spread", {"useBuiltIns": true}], // require("babel-plugin-transform-object-rest-spread")

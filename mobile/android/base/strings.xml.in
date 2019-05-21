@@ -29,17 +29,22 @@
   <string name="firstrun_panel_title_welcome">&firstrun_panel_title_welcome;</string>
 
   <string name="firstrun_urlbar_message">&firstrun_urlbar_message2;</string>
+  <string name="newfirstrun_urlbar_message">&newfirstrun_urlbar_message;</string>
   <string name="firstrun_urlbar_subtext">&firstrun_urlbar_subtext2;</string>
+  <string name="newfirstrun_urlbar_subtext">&newfirstrun_urlbar_subtext;</string>
   <string name="firstrun_panel_title_privacy">&firstrun_panel_title_privacy;</string>
   <string name="firstrun_privacy_message">&firstrun_privacy_message;</string>
   <string name="firstrun_privacy_subtext">&firstrun_privacy_subtext;</string>
+  <string name="newfirstrun_privacy_subtext">&newfirstrun_privacy_subtext;</string>
   <string name="firstrun_panel_title_customize">&firstrun_panel_title_customize;</string>
   <string name="firstrun_customize_message">&firstrun_customize_message;</string>
   <string name="firstrun_customize_subtext">&firstrun_customize_subtext;</string>
   <string name="firstrun_sync_title">&firstrun_sync_title;</string>
   <string name="firstrun_sync_message">&firstrun_sync_message2;</string>
   <string name="firstrun_sync_subtext">&firstrun_sync_subtext2;</string>
+  <string name="newfirstrun_sync_subtext">&newfirstrun_sync_subtext;</string>
   <string name="firstrun_signin_button">&firstrun_signin_button;</string>
+  <string name="newfirstrun_signin_button">&newfirstrun_signin_button;</string>
   <string name="firstrun_welcome_button_browser">&onboard_start_button_browser;</string>
   <string name="firstrun_button_next">&firstrun_button_next;</string>
 
@@ -68,6 +73,10 @@
   <string name="url_bar_default_text">&url_bar_default_text2;</string>
   <string name="url_bar_qrcode_text">&url_bar_qrcode_text2;</string>
   <string name="url_bar_mic_text">&url_bar_mic_text2;</string>
+
+  <string name="search_widget_default_text">&search_widget_default_text;</string>
+  <string name="search_widget_default_cropped_text">&search_widget_default_cropped_text;</string>
+  <string name="search_widget_logo_description">&search_widget_logo_description;</string>
 
   <!-- https://support.mozilla.org/1/mobile/%VERSION%/%OS%/%LOCALE%/mobile-help -->
   <string name="help_link">https://support.mozilla.org/1/mobile/&formatS1;/&formatS2;/&formatS3;/mobile-help</string>
@@ -224,7 +233,8 @@
 
   <string name="pref_feature_tips_notification">&pref_feature_tips_notification;</string>
   <string name="pref_feature_tips_notification_summary">&pref_feature_tips_notification_summary;</string>
-  <string name="pref_feature_tips_notification_enabling_hint">&pref_feature_tips_notification_enabling_hint;</string>
+  <string name="pref_feature_tips_notification_enabling_path">&pref_feature_tips_notification_enabling_path;</string>
+  <string name="pref_feature_tips_notification_enabling_hint">&pref_feature_tips_notification_enabling_hint2;</string>
 
   <string name="pref_category_experimental">&pref_category_experimental;</string>
 
@@ -267,7 +277,6 @@
   <string name="pref_private_data_searchHistory">&pref_private_data_searchHistory;</string>
   <string name="pref_private_data_formdata2">&pref_private_data_formdata2;</string>
   <string name="pref_private_data_cookies2">&pref_private_data_cookies2;</string>
-  <string name="pref_private_data_passwords">&pref_private_data_passwords2;</string>
   <string name="pref_private_data_cache">&pref_private_data_cache;</string>
   <string name="pref_private_data_offlineApps">&pref_private_data_offlineApps;</string>
   <string name="pref_private_data_siteSettings">&pref_private_data_siteSettings2;</string>
@@ -298,11 +307,13 @@
   <string name="tab_queue_toast_action">&tab_queue_toast_action;</string>
   <string name="tab_queue_notification_text_singular">&tab_queue_notification_text_singular2;</string>
   <string name="tab_queue_notification_text_plural">&tab_queue_notification_text_plural2;</string>
+  <string name="tab_queue_notification_prompt">&tab_queue_notification_prompt;</string>
   <string name="tab_queue_notification_title">&tab_queue_notification_title;</string>
   <string name="tab_queue_notification_settings">&tab_queue_notification_settings;</string>
 
-  <string name="pref_default_browser">&pref_default_browser;</string>
+  <string name="pref_default_browser">&pref_default_browser2;</string>
   <string name="pref_default_browser_mozilla_support_tablet">&pref_default_browser_mozilla_support_tablet;</string>
+  <string name="default_browser_system_settings_toast">&default_browser_system_settings_toast;</string>
 
   <string name="pref_about_firefox">&pref_about_firefox;</string>
 
@@ -647,12 +658,20 @@
   <string name="pip_pause_button_title">&pip_pause_button_title;</string>
   <string name="pip_pause_button_description">&pip_pause_button_description;</string>
 
-  <string name="default_notification_channel">&default_notification_channel;</string>
+  <string name="default_notification_channel2">&default_notification_channel2;</string>
   <string name="mls_notification_channel">&mls_notification_channel;</string>
-  <string name="media_notification_channel">&media_notification_channel;</string>
+  <string name="media_notification_channel2">&media_notification_channel2;</string>
   <string name="download_notification_channel">&download_notification_channel;</string>
-  <string name="leanplum_default_notifications_channel">&leanplum_default_notifications_channel;</string>
+  <string name="leanplum_default_notifications_channel2">&leanplum_default_notifications_channel2;</string>
   <string name="updater_notification_channel">&updater_notification_channel;</string>
   <string name="synced_tabs_notification_channel">&synced_tabs_notification_channel;</string>
   <string name="site_notifications_channel">&site_notifications_channel;</string>
+
+  <!-- CENO dialog strings -->
+  <string name="no_wifi_dialog_title">&no_wifi_dialog_title;</string>
+  <string name="no_wifi_dialog_description">&no_wifi_dialog_description;</string>
+  <string name="no_wifi_close_button">&no_wifi_close_button;</string>
+  <string name="wifi_disconnected_dialog_title">&wifi_disconnected_dialog_title;</string>
+  <string name="wifi_disconnected_dialog_description">&wifi_disconnected_dialog_description;</string>
+  <string name="wifi_disconnected_dismiss_button">&wifi_disconnected_dismiss_button;</string>
 </resources>

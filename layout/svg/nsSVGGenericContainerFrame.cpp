@@ -8,13 +8,15 @@
 #include "nsSVGGenericContainerFrame.h"
 #include "nsSVGIntegrationUtils.h"
 
+using namespace mozilla;
+
 //----------------------------------------------------------------------
 // nsSVGGenericContainerFrame Implementation
 
-nsIFrame*
-NS_NewSVGGenericContainerFrame(nsIPresShell* aPresShell, ComputedStyle* aStyle)
-{
-  return new (aPresShell) nsSVGGenericContainerFrame(aStyle);
+nsIFrame* NS_NewSVGGenericContainerFrame(nsIPresShell* aPresShell,
+                                         ComputedStyle* aStyle) {
+  return new (aPresShell)
+      nsSVGGenericContainerFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGGenericContainerFrame)
@@ -22,16 +24,14 @@ NS_IMPL_FRAMEARENA_HELPERS(nsSVGGenericContainerFrame)
 //----------------------------------------------------------------------
 // nsIFrame methods
 
-nsresult
-nsSVGGenericContainerFrame::AttributeChanged(int32_t         aNameSpaceID,
-                                             nsAtom*        aAttribute,
-                                             int32_t         aModType)
-{
+nsresult nsSVGGenericContainerFrame::AttributeChanged(int32_t aNameSpaceID,
+                                                      nsAtom* aAttribute,
+                                                      int32_t aModType) {
 #ifdef DEBUG
-    nsAutoString str;
-    aAttribute->ToString(str);
-    printf("** nsSVGGenericContainerFrame::AttributeChanged(%s)\n",
-           NS_LossyConvertUTF16toASCII(str).get());
+  nsAutoString str;
+  aAttribute->ToString(str);
+  printf("** nsSVGGenericContainerFrame::AttributeChanged(%s)\n",
+         NS_LossyConvertUTF16toASCII(str).get());
 #endif
 
   return NS_OK;
@@ -40,9 +40,7 @@ nsSVGGenericContainerFrame::AttributeChanged(int32_t         aNameSpaceID,
 //----------------------------------------------------------------------
 // nsSVGContainerFrame methods:
 
-gfxMatrix
-nsSVGGenericContainerFrame::GetCanvasTM()
-{
+gfxMatrix nsSVGGenericContainerFrame::GetCanvasTM() {
   NS_ASSERTION(GetParent(), "null parent");
 
   return static_cast<nsSVGContainerFrame*>(GetParent())->GetCanvasTM();

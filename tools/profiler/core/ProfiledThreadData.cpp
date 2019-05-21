@@ -6,38 +6,43 @@
 
 #include "ProfiledThreadData.h"
 
+#include "ProfileBuffer.h"
+#include "ProfileJSONWriter.h"
+
+#include "js/TraceLoggerAPI.h"
+#include "mozilla/dom/ContentChild.h"
+
 #if defined(GP_OS_darwin)
-#include <pthread.h>
+#  include <pthread.h>
 #endif
 
 #ifdef XP_WIN
-#include <process.h>
-#define getpid _getpid
+#  include <process.h>
+#  define getpid _getpid
 #else
-#include <unistd.h> // for getpid()
+#  include <unistd.h>  // for getpid()
 #endif
 
 ProfiledThreadData::ProfiledThreadData(ThreadInfo* aThreadInfo,
                                        nsIEventTarget* aEventTarget,
                                        bool aIncludeResponsiveness)
-  : mThreadInfo(aThreadInfo)
-{
+    : mThreadInfo(aThreadInfo) {
   MOZ_COUNT_CTOR(ProfiledThreadData);
   if (aIncludeResponsiveness) {
     mResponsiveness.emplace(aEventTarget, aThreadInfo->IsMainThread());
   }
 }
 
-ProfiledThreadData::~ProfiledThreadData()
-{
+ProfiledThreadData::~ProfiledThreadData() {
   MOZ_COUNT_DTOR(ProfiledThreadData);
 }
 
-void
-ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer, JSContext* aCx,
-                               SpliceableJSONWriter& aWriter,
-                               const TimeStamp& aProcessStartTime, double aSinceTime)
-{
+void ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer,
+                                    JSContext* aCx,
+                                    SpliceableJSONWriter& aWriter,
+                                    const nsACString& aProcessName,
+                                    const mozilla::TimeStamp& aProcessStartTime,
+                                    double aSinceTime, bool JSTracerEnabled) {
   if (mJITFrameInfoForPreviousJSContexts &&
       mJITFrameInfoForPreviousJSContexts->HasExpired(aBuffer.mRangeStart)) {
     mJITFrameInfoForPreviousJSContexts = nullptr;
@@ -45,12 +50,14 @@ ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer, JSContext* aCx,
 
   // If we have an existing JITFrameInfo in mJITFrameInfoForPreviousJSContexts,
   // copy the data from it.
-  JITFrameInfo jitFrameInfo = mJITFrameInfoForPreviousJSContexts
-    ? JITFrameInfo(*mJITFrameInfoForPreviousJSContexts) : JITFrameInfo();
+  JITFrameInfo jitFrameInfo =
+      mJITFrameInfoForPreviousJSContexts
+          ? JITFrameInfo(*mJITFrameInfoForPreviousJSContexts)
+          : JITFrameInfo();
 
   if (aCx && mBufferPositionWhenReceivedJSContext) {
     aBuffer.AddJITInfoForRange(*mBufferPositionWhenReceivedJSContext,
-      mThreadInfo->ThreadId(), aCx, jitFrameInfo);
+                               mThreadInfo->ThreadId(), aCx, jitFrameInfo);
   }
 
   UniqueStacks uniqueStacks(std::move(jitFrameInfo));
@@ -58,8 +65,7 @@ ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer, JSContext* aCx,
   aWriter.Start();
   {
     StreamSamplesAndMarkers(mThreadInfo->Name(), mThreadInfo->ThreadId(),
-                            aBuffer, aWriter,
-                            aProcessStartTime,
+                            aBuffer, aWriter, aProcessName, aProcessStartTime,
                             mThreadInfo->RegisterTime(), mUnregisterTime,
                             aSinceTime, uniqueStacks);
 
@@ -72,9 +78,7 @@ ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer, JSContext* aCx,
       }
 
       aWriter.StartArrayProperty("data");
-      {
-        uniqueStacks.SpliceStackTableElements(aWriter);
-      }
+      { uniqueStacks.SpliceStackTableElements(aWriter); }
       aWriter.EndArray();
     }
     aWriter.EndObject();
@@ -84,6 +88,7 @@ ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer, JSContext* aCx,
       {
         JSONSchemaWriter schema(aWriter);
         schema.WriteField("location");
+        schema.WriteField("relevantForJS");
         schema.WriteField("implementation");
         schema.WriteField("optimizations");
         schema.WriteField("line");
@@ -92,51 +97,145 @@ ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer, JSContext* aCx,
       }
 
       aWriter.StartArrayProperty("data");
-      {
-        uniqueStacks.SpliceFrameTableElements(aWriter);
-      }
+      { uniqueStacks.SpliceFrameTableElements(aWriter); }
       aWriter.EndArray();
     }
     aWriter.EndObject();
 
     aWriter.StartArrayProperty("stringTable");
-    {
-      uniqueStacks.mUniqueStrings->SpliceStringTableElements(aWriter);
-    }
+    { uniqueStacks.mUniqueStrings->SpliceStringTableElements(aWriter); }
     aWriter.EndArray();
+  }
+
+  if (aCx && JSTracerEnabled) {
+    StreamTraceLoggerJSON(aCx, aWriter, aProcessStartTime);
   }
 
   aWriter.End();
 }
 
-void
-StreamSamplesAndMarkers(const char* aName,
-                        int aThreadId,
-                        const ProfileBuffer& aBuffer,
-                        SpliceableJSONWriter& aWriter,
-                        const TimeStamp& aProcessStartTime,
-                        const TimeStamp& aRegisterTime,
-                        const TimeStamp& aUnregisterTime,
-                        double aSinceTime,
-                        UniqueStacks& aUniqueStacks)
-{
+void ProfiledThreadData::StreamTraceLoggerJSON(
+    JSContext* aCx, SpliceableJSONWriter& aWriter,
+    const mozilla::TimeStamp& aProcessStartTime) {
+  aWriter.StartObjectProperty("jsTracerEvents");
+  {
+    JS::AutoTraceLoggerLockGuard lockGuard;
+    uint32_t length = 0;
+
+    // Collect Event Ids
+    aWriter.StartArrayProperty("events", mozilla::JSONWriter::SingleLineStyle);
+    {
+      JS::TraceLoggerIdBuffer collectionBuffer(lockGuard, aCx);
+      while (collectionBuffer.NextChunk()) {
+        for (uint32_t val : collectionBuffer) {
+          aWriter.IntElement(val);
+          length++;
+        }
+      }
+    }
+    aWriter.EndArray();
+
+    // Collect Event Timestamps
+    aWriter.StartArrayProperty("timestamps",
+                               mozilla::JSONWriter::SingleLineStyle);
+    {
+      JS::TraceLoggerTimeStampBuffer collectionBuffer(lockGuard, aCx);
+      while (collectionBuffer.NextChunk()) {
+        for (mozilla::TimeStamp val : collectionBuffer) {
+          aWriter.DoubleElement((val - aProcessStartTime).ToMicroseconds());
+        }
+      }
+    }
+    aWriter.EndArray();
+
+    // Collect Event Durations
+    aWriter.StartArrayProperty("durations",
+                               mozilla::JSONWriter::SingleLineStyle);
+    {
+      JS::TraceLoggerDurationBuffer collectionBuffer(lockGuard, aCx);
+      while (collectionBuffer.NextChunk()) {
+        for (double val : collectionBuffer) {
+          if (val == -1) {
+            aWriter.NullElement();
+          } else {
+            aWriter.DoubleElement(val);
+          }
+        }
+      }
+    }
+    aWriter.EndArray();
+
+    // Collect Event LineNo
+    aWriter.StartArrayProperty("line", mozilla::JSONWriter::SingleLineStyle);
+    {
+      JS::TraceLoggerLineNoBuffer collectionBuffer(lockGuard, aCx);
+      while (collectionBuffer.NextChunk()) {
+        for (int32_t val : collectionBuffer) {
+          if (val == -1) {
+            aWriter.NullElement();
+          } else {
+            aWriter.IntElement(val);
+          }
+        }
+      }
+    }
+    aWriter.EndArray();
+
+    // Collect Event ColNo
+    aWriter.StartArrayProperty("column", mozilla::JSONWriter::SingleLineStyle);
+    {
+      JS::TraceLoggerColNoBuffer collectionBuffer(lockGuard, aCx);
+      while (collectionBuffer.NextChunk()) {
+        for (int32_t val : collectionBuffer) {
+          if (val == -1) {
+            aWriter.NullElement();
+          } else {
+            aWriter.IntElement(val);
+          }
+        }
+      }
+    }
+    aWriter.EndArray();
+
+    aWriter.IntProperty("length", length);
+  }
+  aWriter.EndObject();
+}
+
+void StreamSamplesAndMarkers(const char* aName, int aThreadId,
+                             const ProfileBuffer& aBuffer,
+                             SpliceableJSONWriter& aWriter,
+                             const nsACString& aProcessName,
+                             const mozilla::TimeStamp& aProcessStartTime,
+                             const mozilla::TimeStamp& aRegisterTime,
+                             const mozilla::TimeStamp& aUnregisterTime,
+                             double aSinceTime, UniqueStacks& aUniqueStacks) {
   aWriter.StringProperty("processType",
                          XRE_ChildProcessTypeToString(XRE_GetProcessType()));
 
   aWriter.StringProperty("name", aName);
+
+  // Use given process name (if any), unless we're the parent process.
+  if (XRE_IsParentProcess()) {
+    aWriter.StringProperty("processName", "Parent Process");
+  } else if (!aProcessName.IsEmpty()) {
+    aWriter.StringProperty("processName", aProcessName.Data());
+  }
+
   aWriter.IntProperty("tid", static_cast<int64_t>(aThreadId));
   aWriter.IntProperty("pid", static_cast<int64_t>(getpid()));
 
   if (aRegisterTime) {
-    aWriter.DoubleProperty("registerTime",
-      (aRegisterTime - aProcessStartTime).ToMilliseconds());
+    aWriter.DoubleProperty(
+        "registerTime", (aRegisterTime - aProcessStartTime).ToMilliseconds());
   } else {
     aWriter.NullProperty("registerTime");
   }
 
   if (aUnregisterTime) {
-    aWriter.DoubleProperty("unregisterTime",
-      (aUnregisterTime - aProcessStartTime).ToMilliseconds());
+    aWriter.DoubleProperty(
+        "unregisterTime",
+        (aUnregisterTime - aProcessStartTime).ToMilliseconds());
   } else {
     aWriter.NullProperty("unregisterTime");
   }
@@ -167,6 +266,7 @@ StreamSamplesAndMarkers(const char* aName,
       JSONSchemaWriter schema(aWriter);
       schema.WriteField("name");
       schema.WriteField("time");
+      schema.WriteField("category");
       schema.WriteField("data");
     }
 
@@ -180,11 +280,9 @@ StreamSamplesAndMarkers(const char* aName,
   aWriter.EndObject();
 }
 
-void
-ProfiledThreadData::NotifyAboutToLoseJSContext(JSContext* aContext,
-                                               const TimeStamp& aProcessStartTime,
-                                               ProfileBuffer& aBuffer)
-{
+void ProfiledThreadData::NotifyAboutToLoseJSContext(
+    JSContext* aContext, const mozilla::TimeStamp& aProcessStartTime,
+    ProfileBuffer& aBuffer) {
   if (!mBufferPositionWhenReceivedJSContext) {
     return;
   }
@@ -196,12 +294,14 @@ ProfiledThreadData::NotifyAboutToLoseJSContext(JSContext* aContext,
     mJITFrameInfoForPreviousJSContexts = nullptr;
   }
 
-  UniquePtr<JITFrameInfo> jitFrameInfo = mJITFrameInfoForPreviousJSContexts
-    ? std::move(mJITFrameInfoForPreviousJSContexts) : MakeUnique<JITFrameInfo>();
+  mozilla::UniquePtr<JITFrameInfo> jitFrameInfo =
+      mJITFrameInfoForPreviousJSContexts
+          ? std::move(mJITFrameInfoForPreviousJSContexts)
+          : mozilla::MakeUnique<JITFrameInfo>();
 
   aBuffer.AddJITInfoForRange(*mBufferPositionWhenReceivedJSContext,
-     mThreadInfo->ThreadId(), aContext, *jitFrameInfo);
+                             mThreadInfo->ThreadId(), aContext, *jitFrameInfo);
 
   mJITFrameInfoForPreviousJSContexts = std::move(jitFrameInfo);
-  mBufferPositionWhenReceivedJSContext = Nothing();
+  mBufferPositionWhenReceivedJSContext = mozilla::Nothing();
 }

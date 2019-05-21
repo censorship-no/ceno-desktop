@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +13,7 @@
 #include "nsTArray.h"
 #include "nsISerializable.h"
 #include "nsCycleCollectionParticipant.h"
+#include <functional>
 
 class nsAtom;
 class nsIPrincipal;
@@ -21,12 +22,6 @@ class nsNodeInfoManager;
 class nsXULPrototypeElement;
 class nsXULPrototypePI;
 
-namespace mozilla {
-namespace dom {
-class XULDocument;
-} // namespace dom
-} // namespace mozilla
-
 /**
  * A "prototype" document that stores shared document information
  * for the XUL cache.
@@ -34,91 +29,91 @@ class XULDocument;
  * objects, from which the real DOM tree is built later in
  * XULDocument::ResumeWalk.
  */
-class nsXULPrototypeDocument final : public nsISerializable
-{
-public:
-    static nsresult
-    Create(nsIURI* aURI, nsXULPrototypeDocument** aResult);
+class nsXULPrototypeDocument final : public nsISerializable {
+ public:
+  static nsresult Create(nsIURI* aURI, nsXULPrototypeDocument** aResult);
 
-    // nsISupports interface
-    NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  typedef std::function<void()> Callback;
 
-    // nsISerializable interface
-    NS_DECL_NSISERIALIZABLE
+  // nsISupports interface
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
-    nsresult InitPrincipal(nsIURI* aURI, nsIPrincipal* aPrincipal);
-    nsIURI* GetURI();
+  // nsISerializable interface
+  NS_DECL_NSISERIALIZABLE
 
-    /**
-     * Get/set the root nsXULPrototypeElement of the document.
-     */
-    nsXULPrototypeElement* GetRootElement();
-    void SetRootElement(nsXULPrototypeElement* aElement);
+  nsresult InitPrincipal(nsIURI* aURI, nsIPrincipal* aPrincipal);
+  nsIURI* GetURI();
 
-    /**
-     * Add a processing instruction to the prolog. Note that only
-     * PI nodes are currently stored in a XUL prototype document's
-     * prolog and that they're handled separately from the rest of
-     * prototype node tree.
-     *
-     * @param aPI an already adrefed PI proto to add. This method takes
-     *            ownership of the passed PI.
-     */
-    nsresult AddProcessingInstruction(nsXULPrototypePI* aPI);
-    /**
-     * @note GetProcessingInstructions retains the ownership (the PI
-     *       protos only get deleted when the proto document is deleted)
-     */
-    const nsTArray<RefPtr<nsXULPrototypePI> >& GetProcessingInstructions() const;
+  /**
+   * Get/set the root nsXULPrototypeElement of the document.
+   */
+  nsXULPrototypeElement* GetRootElement();
+  void SetRootElement(nsXULPrototypeElement* aElement);
 
-    nsIPrincipal *DocumentPrincipal();
-    void SetDocumentPrincipal(nsIPrincipal *aPrincipal);
+  /**
+   * Add a processing instruction to the prolog. Note that only
+   * PI nodes are currently stored in a XUL prototype document's
+   * prolog and that they're handled separately from the rest of
+   * prototype node tree.
+   *
+   * @param aPI an already adrefed PI proto to add. This method takes
+   *            ownership of the passed PI.
+   */
+  nsresult AddProcessingInstruction(nsXULPrototypePI* aPI);
+  /**
+   * @note GetProcessingInstructions retains the ownership (the PI
+   *       protos only get deleted when the proto document is deleted)
+   */
+  const nsTArray<RefPtr<nsXULPrototypePI> >& GetProcessingInstructions() const;
 
-    /**
-     * If current prototype document has not yet finished loading,
-     * appends aDocument to the list of documents to notify (via
-     * XULDocument::OnPrototypeLoadDone()) and sets aLoaded to false.
-     * Otherwise sets aLoaded to true.
-     */
-    nsresult AwaitLoadDone(mozilla::dom::XULDocument* aDocument, bool* aResult);
+  nsIPrincipal* DocumentPrincipal();
+  void SetDocumentPrincipal(nsIPrincipal* aPrincipal);
 
-    /**
-     * Notifies each document registered via AwaitLoadDone on this
-     * prototype document that the prototype has finished loading.
-     * The notification is performed by calling
-     * XULDocument::OnPrototypeLoadDone on the registered documents.
-     */
-    nsresult NotifyLoadDone();
+  /**
+   * If current prototype document has not yet finished loading,
+   * appends aDocument to the list of documents to notify (via
+   * XULDocument::OnPrototypeLoadDone()) and sets aLoaded to false.
+   * Otherwise sets aLoaded to true.
+   */
+  nsresult AwaitLoadDone(Callback&& aCallback, bool* aResult);
 
-    nsNodeInfoManager *GetNodeInfoManager();
+  /**
+   * Notifies each document registered via AwaitLoadDone on this
+   * prototype document that the prototype has finished loading.
+   * The notification is performed by calling
+   * XULDocument::OnPrototypeLoadDone on the registered documents.
+   */
+  nsresult NotifyLoadDone();
 
-    void MarkInCCGeneration(uint32_t aCCGeneration);
+  nsNodeInfoManager* GetNodeInfoManager();
 
-    NS_DECL_CYCLE_COLLECTION_CLASS(nsXULPrototypeDocument)
+  void MarkInCCGeneration(uint32_t aCCGeneration);
 
-    void TraceProtos(JSTracer* aTrc);
+  NS_DECL_CYCLE_COLLECTION_CLASS(nsXULPrototypeDocument)
 
-protected:
-    nsCOMPtr<nsIURI> mURI;
-    RefPtr<nsXULPrototypeElement> mRoot;
-    nsTArray<RefPtr<nsXULPrototypePI> > mProcessingInstructions;
+  void TraceProtos(JSTracer* aTrc);
 
-    bool mLoaded;
-    nsTArray< RefPtr<mozilla::dom::XULDocument> > mPrototypeWaiters;
+ protected:
+  nsCOMPtr<nsIURI> mURI;
+  RefPtr<nsXULPrototypeElement> mRoot;
+  nsTArray<RefPtr<nsXULPrototypePI> > mProcessingInstructions;
 
-    RefPtr<nsNodeInfoManager> mNodeInfoManager;
+  bool mLoaded;
+  nsTArray<Callback> mPrototypeWaiters;
 
-    uint32_t mCCGeneration;
-    uint32_t mGCNumber;
+  RefPtr<nsNodeInfoManager> mNodeInfoManager;
 
-    nsXULPrototypeDocument();
-    virtual ~nsXULPrototypeDocument();
-    nsresult Init();
+  uint32_t mCCGeneration;
+  uint32_t mGCNumber;
 
-    friend NS_IMETHODIMP
-    NS_NewXULPrototypeDocument(nsXULPrototypeDocument** aResult);
+  nsXULPrototypeDocument();
+  virtual ~nsXULPrototypeDocument();
+  nsresult Init();
 
-    static uint32_t gRefCnt;
+  friend NS_IMETHODIMP NS_NewXULPrototypeDocument(
+      nsXULPrototypeDocument** aResult);
+
+  static uint32_t gRefCnt;
 };
 
-#endif // nsXULPrototypeDocument_h__
+#endif  // nsXULPrototypeDocument_h__

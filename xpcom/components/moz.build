@@ -26,9 +26,26 @@ EXPORTS += [
 EXPORTS.mozilla += [
     'GenericFactory.h',
     'Module.h',
-    'ModuleLoader.h',
     'ModuleUtils.h',
 ]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
+if CONFIG['COMPILE_ENVIRONMENT']:
+    EXPORTS.mozilla += [
+        '!Components.h',
+    ]
+
+    generated = ('Components.h', 'StaticComponentData.h',
+                 'StaticComponents.cpp')
+
+    GENERATED_FILES += [generated]
+
+    gen = GENERATED_FILES[generated]
+    gen.script = 'gen_static_components.py'
+    gen.inputs += ['!manifest-lists.json', 'StaticComponents.cpp.in']
 
 UNIFIED_SOURCES += [
     'GenericFactory.cpp',
@@ -39,6 +56,10 @@ UNIFIED_SOURCES += [
     'nsComponentManagerUtils.cpp',
 ]
 
+SOURCES += [
+    '!StaticComponents.cpp',
+]
+
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
@@ -47,8 +68,12 @@ LOCAL_INCLUDES += [
     '../build',
     '../ds',
     '/chrome',
+    '/js/xpconnect/loader',
+    '/layout/build',
     '/modules/libjar',
 ]
 
 if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
     CXXFLAGS += CONFIG['TK_CFLAGS']
+
+include('/ipc/chromium/chromium-config.mozbuild')

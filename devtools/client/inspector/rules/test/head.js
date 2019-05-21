@@ -2,6 +2,7 @@
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
+/* import-globals-from ../../../shared/test/telemetry-test-helpers.js */
 /* import-globals-from ../../test/head.js */
 "use strict";
 
@@ -20,16 +21,11 @@ var {getInplaceEditorForSpan: inplaceEditor} =
 const ROOT_TEST_DIR = getRootDirectory(gTestPath);
 const FRAME_SCRIPT_URL = ROOT_TEST_DIR + "doc_frame_script.js";
 
-const STYLE_INSPECTOR_L10N
-      = new LocalizationHelper("devtools/shared/locales/styleinspector.properties");
-
-Services.prefs.setBoolPref("devtools.inspector.flexboxHighlighter.enabled", true);
-Services.prefs.setBoolPref("devtools.inspector.shapesHighlighter.enabled", true);
+const STYLE_INSPECTOR_L10N =
+  new LocalizationHelper("devtools/shared/locales/styleinspector.properties");
 
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.defaultColorUnit");
-  Services.prefs.clearUserPref("devtools.inspector.flexboxHighlighter.enabled");
-  Services.prefs.clearUserPref("devtools.inspector.shapesHighlighter.enabled");
 });
 
 /**
@@ -364,6 +360,34 @@ var setProperty = async function(view, textProp, value,
   if (blurNewProperty) {
     view.styleDocument.activeElement.blur();
   }
+};
+
+/**
+ * Change the name of a property in a rule in the rule-view.
+ *
+ * @param {CssRuleView} view
+ *        The instance of the rule-view panel.
+ * @param {TextProperty} textProp
+ *        The instance of the TextProperty to be changed.
+ * @param {String} name
+ *        The new property name.
+ */
+var renameProperty = async function(view, textProp, name) {
+  await focusEditableField(view, textProp.editor.nameSpan);
+
+  const onNameDone = view.once("ruleview-changed");
+  info(`Rename the property to ${name}`);
+  EventUtils.sendString(name, view.styleWindow);
+  EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
+  info("Wait for property name.");
+  await onNameDone;
+  // Renaming the property auto-advances the focus to the value input. Exiting without
+  // committing will still fire a change event. @see TextPropertyEditor._onValueDone().
+  // Wait for that event too before proceeding.
+  const onValueDone = view.once("ruleview-changed");
+  EventUtils.synthesizeKey("VK_ESCAPE", {}, view.styleWindow);
+  info("Wait for property value.");
+  await onValueDone;
 };
 
 /**

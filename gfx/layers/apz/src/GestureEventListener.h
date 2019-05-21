@@ -7,12 +7,12 @@
 #ifndef mozilla_layers_GestureEventListener_h
 #define mozilla_layers_GestureEventListener_h
 
-#include "InputData.h"                  // for MultiTouchInput, etc
+#include "InputData.h"  // for MultiTouchInput, etc
 #include "Units.h"
-#include "mozilla/EventForwards.h"      // for nsEventStatus
-#include "mozilla/RefPtr.h"             // for RefPtr
+#include "mozilla/EventForwards.h"  // for nsEventStatus
+#include "mozilla/RefPtr.h"         // for RefPtr
 #include "nsISupportsImpl.h"
-#include "nsTArray.h"                   // for nsTArray
+#include "nsTArray.h"  // for nsTArray
 
 namespace mozilla {
 
@@ -35,10 +35,11 @@ class AsyncPanZoomController;
  * and AsyncPanZoomController is expected to handle it.
  */
 class GestureEventListener final {
-public:
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GestureEventListener)
 
-  explicit GestureEventListener(AsyncPanZoomController* aAsyncPanZoomController);
+  explicit GestureEventListener(
+      AsyncPanZoomController* aAsyncPanZoomController);
 
   // --------------------------------------------------------------------------
   // These methods must only be called on the controller/UI thread.
@@ -66,7 +67,7 @@ public:
    */
   static void SetLongTapEnabled(bool aLongTapEnabled);
 
-private:
+ private:
   // Private destructor, to discourage deletion outside of Release():
   ~GestureEventListener();
 
@@ -77,14 +78,16 @@ private:
     // This is the initial and final state of any gesture.
     // In this state there's no gesture going on, and we don't think we're
     // about to enter one.
-    // Allowed next states: GESTURE_FIRST_SINGLE_TOUCH_DOWN, GESTURE_MULTI_TOUCH_DOWN.
+    // Allowed next states: GESTURE_FIRST_SINGLE_TOUCH_DOWN,
+    // GESTURE_MULTI_TOUCH_DOWN.
     GESTURE_NONE,
 
     // A touch start with a single touch point has just happened.
     // After having gotten into this state we start timers for MAX_TAP_TIME and
     // gfxPrefs::UiClickHoldContextMenusDelay().
     // Allowed next states: GESTURE_MULTI_TOUCH_DOWN, GESTURE_NONE,
-    //                      GESTURE_FIRST_SINGLE_TOUCH_UP, GESTURE_LONG_TOUCH_DOWN,
+    //                      GESTURE_FIRST_SINGLE_TOUCH_UP,
+    //                      GESTURE_LONG_TOUCH_DOWN,
     //                      GESTURE_FIRST_SINGLE_TOUCH_MAX_TAP_DOWN.
     GESTURE_FIRST_SINGLE_TOUCH_DOWN,
 
@@ -153,7 +156,7 @@ private:
    * Returns current vertical span, counting from the where the gesture first
    * began (after a brief delay detecting the gesture from first touch).
    */
-  ParentLayerCoord GetYSpanFromGestureStartPoint();
+  ScreenCoord GetYSpanFromGestureStartPoint();
 
   /**
    * Do actual state transition and reset substates.
@@ -182,17 +185,17 @@ private:
    * out we are compared to our original pinch span. Note that this does _not_
    * continue to be updated once we jump into the |GESTURE_PINCH| state.
    */
-  ParentLayerCoord mSpanChange;
+  ScreenCoord mSpanChange;
 
   /**
    * Previous span calculated for the purposes of setting inside a
    * PinchGestureInput.
    */
-  ParentLayerCoord mPreviousSpan;
+  ScreenCoord mPreviousSpan;
 
   /* Properties similar to mSpanChange and mPreviousSpan, but for the focus */
-  ParentLayerCoord mFocusChange;
-  ParentLayerPoint mPreviousFocus;
+  ScreenCoord mFocusChange;
+  ScreenPoint mPreviousFocus;
 
   /**
    * Cached copy of the last touch input.
@@ -216,7 +219,7 @@ private:
    * is calculated from, instead of starting at 1.0 when the threshold gets
    * passed.
    */
-  ParentLayerPoint mOneTouchPinchStartPosition;
+  ScreenPoint mOneTouchPinchStartPosition;
 
   /**
    * Position of the last touch starting. This is only valid during an attempt
@@ -227,7 +230,13 @@ private:
    * or GESTURE_SECOND_SINGLE_TOUCH_DOWN then we're certain the gesture is
    * not tap.
    */
-  ParentLayerPoint mTouchStartPosition;
+  ScreenPoint mTouchStartPosition;
+
+  /**
+   * We store the window/GeckoView's display offset as well, so we can
+   * track the user's physical touch movements in absolute display coordinates.
+   */
+  ExternalPoint mTouchStartOffset;
 
   /**
    * Task used to timeout a long tap. This gets posted to the UI thread such
@@ -260,14 +269,14 @@ private:
   /**
    * Tracks whether the single-tap event was already sent to content. This is
    * needed because it affects how the double-tap gesture, if detected, is
-   * handled. The value is only valid in states GESTURE_FIRST_SINGLE_TOUCH_UP and
-   * GESTURE_SECOND_SINGLE_TOUCH_DOWN; to more easily catch violations it is
+   * handled. The value is only valid in states GESTURE_FIRST_SINGLE_TOUCH_UP
+   * and GESTURE_SECOND_SINGLE_TOUCH_DOWN; to more easily catch violations it is
    * stored in a Maybe which is set to Nothing() at all other times.
    */
   Maybe<bool> mSingleTapSent;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif

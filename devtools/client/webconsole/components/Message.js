@@ -7,25 +7,19 @@
 "use strict";
 
 // React & Redux
-const { Component, createFactory } = require("devtools/client/shared/vendor/react");
+const { Component, createFactory, createElement } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { l10n } =
-  require("devtools/client/webconsole/utils/messages");
-const actions =
-  require("devtools/client/webconsole/actions/index");
-const { MESSAGE_SOURCE, MESSAGE_TYPE } =
-  require("devtools/client/webconsole/constants");
-const CollapseButton =
-  require("devtools/client/webconsole/components/CollapseButton");
-const { MessageIndent } =
-  require("devtools/client/webconsole/components/MessageIndent");
-const MessageIcon =
-  require("devtools/client/webconsole/components/MessageIcon");
-const MessageRepeat =
-  require("devtools/client/webconsole/components/MessageRepeat");
+const { l10n } = require("devtools/client/webconsole/utils/messages");
+const actions = require("devtools/client/webconsole/actions/index");
+const { MESSAGE_SOURCE, MESSAGE_TYPE } = require("devtools/client/webconsole/constants");
+const { MessageIndent } = require("devtools/client/webconsole/components/MessageIndent");
+const MessageIcon = require("devtools/client/webconsole/components/MessageIcon");
 const FrameView = createFactory(require("devtools/client/shared/components/Frame"));
-const StackTrace = createFactory(require("devtools/client/shared/components/StackTrace"));
+
+loader.lazyRequireGetter(this, "CollapseButton", "devtools/client/webconsole/components/CollapseButton");
+loader.lazyRequireGetter(this, "MessageRepeat", "devtools/client/webconsole/components/MessageRepeat");
+loader.lazyRequireGetter(this, "PropTypes", "devtools/client/shared/vendor/react-prop-types");
+loader.lazyRequireGetter(this, "SmartTrace", "devtools/client/shared/components/SmartTrace");
 
 class Message extends Component {
   static get propTypes() {
@@ -44,7 +38,12 @@ class Message extends Component {
       attachment: PropTypes.any,
       stacktrace: PropTypes.any,
       messageId: PropTypes.string,
-      executionPoint: PropTypes.string,
+      executionPoint: PropTypes.shape({
+        progress: PropTypes.number,
+      }),
+      pausedExecutionPoint: PropTypes.shape({
+        progress: PropTypes.number,
+      }),
       scrollToMessage: PropTypes.bool,
       exceptionDocURL: PropTypes.string,
       request: PropTypes.object,
@@ -65,6 +64,7 @@ class Message extends Component {
         frame: PropTypes.any,
       })),
       isPaused: PropTypes.bool,
+      maybeScrollToBottom: PropTypes.func,
     };
   }
 
@@ -79,6 +79,7 @@ class Message extends Component {
     this.onLearnMoreClick = this.onLearnMoreClick.bind(this);
     this.toggleMessage = this.toggleMessage.bind(this);
     this.onContextMenu = this.onContextMenu.bind(this);
+    this.onMouseEvent = this.onMouseEvent.bind(this);
     this.renderIcon = this.renderIcon.bind(this);
   }
 
@@ -122,12 +123,19 @@ class Message extends Component {
     e.preventDefault();
   }
 
+  onMouseEvent(ev) {
+    const {messageId, serviceContainer, executionPoint} = this.props;
+    if (serviceContainer.canRewind() && executionPoint) {
+      serviceContainer.onMessageHover(ev.type, messageId);
+    }
+  }
+
   renderIcon() {
     const { level, messageId, executionPoint, serviceContainer } = this.props;
 
     return MessageIcon({
       level,
-      onRewindClick: serviceContainer.canRewind()
+      onRewindClick: (serviceContainer.canRewind() && executionPoint)
         ? () => serviceContainer.jumpToExecutionPoint(executionPoint, messageId)
         : null,
     });
@@ -151,12 +159,25 @@ class Message extends Component {
       exceptionDocURL,
       timeStamp = Date.now(),
       timestampsVisible,
+      executionPoint,
+      pausedExecutionPoint,
+      messageId,
       notes,
     } = this.props;
 
-    topLevelClasses.push("message", source, type, level, isPaused ? "paused" : "");
+    topLevelClasses.push("message", source, type, level);
     if (open) {
       topLevelClasses.push("open");
+    }
+
+    if (isPaused) {
+      topLevelClasses.push("paused");
+
+      if (pausedExecutionPoint
+        && executionPoint
+        && pausedExecutionPoint.progress < executionPoint.progress) {
+        topLevelClasses.push("paused-before");
+      }
     }
 
     let timestampEl;
@@ -177,21 +198,23 @@ class Message extends Component {
         {
           className: "stacktrace devtools-monospace",
         },
-        StackTrace({
-          stacktrace: stacktrace,
+        createElement(SmartTrace, {
+          stacktrace,
           onViewSourceInDebugger: serviceContainer.onViewSourceInDebugger
             || serviceContainer.onViewSource,
           onViewSourceInScratchpad: serviceContainer.onViewSourceInScratchpad
             || serviceContainer.onViewSource,
+          onViewSource: serviceContainer.onViewSource,
+          onReady: this.props.maybeScrollToBottom,
           sourceMapService: serviceContainer.sourceMapService,
-        })
+        }),
       );
     }
 
     // If there is an expandable part, make it collapsible.
     let collapse = null;
     if (collapsible) {
-      collapse = CollapseButton({
+      collapse = createElement(CollapseButton, {
         open,
         title: collapseTitle,
         onClick: this.toggleMessage,
@@ -221,8 +244,9 @@ class Message extends Component {
       notesNodes = [];
     }
 
-    const repeat = this.props.repeat && this.props.repeat > 1 ?
-      MessageRepeat({repeat: this.props.repeat}) : null;
+    const repeat = this.props.repeat && this.props.repeat > 1
+      ? createElement(MessageRepeat, {repeat: this.props.repeat})
+      : null;
 
     let onFrameClick;
     if (serviceContainer && frame) {
@@ -262,12 +286,18 @@ class Message extends Component {
 
     const bodyElements = Array.isArray(messageBody) ? messageBody : [messageBody];
 
+    const mouseEvents = serviceContainer.canRewind() && executionPoint
+      ? { onMouseEnter: this.onMouseEvent, onMouseLeave: this.onMouseEvent }
+      : {};
+
     return dom.div({
       className: topLevelClasses.join(" "),
       onContextMenu: this.onContextMenu,
+      ...mouseEvents,
       ref: node => {
         this.messageNode = node;
       },
+      "data-message-id": messageId,
       "aria-live": type === MESSAGE_TYPE.COMMAND ? "off" : "polite",
     },
       timestampEl,
@@ -289,12 +319,11 @@ class Message extends Component {
           repeat,
           " ", location
         ),
-        // Add a newline for formatting when copying to the clipboard.
-        "\n",
-        // If an attachment is displayed, the final newline is handled by the attachment.
         attachment,
         ...notesNodes
-      )
+      ),
+      // If an attachment is displayed, the final newline is handled by the attachment.
+      attachment ? null : dom.br(),
     );
   }
 }

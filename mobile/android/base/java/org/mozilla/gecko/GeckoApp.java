@@ -19,6 +19,7 @@ import org.mozilla.gecko.menu.GeckoMenuInflater;
 import org.mozilla.gecko.menu.MenuPanel;
 import org.mozilla.gecko.mma.MmaDelegate;
 import org.mozilla.gecko.notifications.NotificationHelper;
+import org.mozilla.gecko.search.SearchWidgetProvider;
 import org.mozilla.gecko.util.IntentUtils;
 import org.mozilla.gecko.mozglue.SafeIntent;
 import org.mozilla.gecko.mozglue.GeckoLoader;
@@ -51,26 +52,34 @@ import android.animation.ObjectAnimator;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Configuration;
 import android.graphics.BitmapFactory;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Parcelable;
 import android.os.StrictMode;
 import android.provider.ContactsContract;
 import android.support.annotation.NonNull;
 import android.support.annotation.WorkerThread;
 import android.support.design.widget.Snackbar;
+import android.support.v4.app.ActivityCompat;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.util.SparseArray;
 import android.util.SparseBooleanArray;
 import android.util.SparseIntArray;
 import android.view.KeyEvent;
@@ -111,6 +120,7 @@ import static org.mozilla.gecko.Tabs.INTENT_EXTRA_TAB_ID;
 import static org.mozilla.gecko.Tabs.INVALID_TAB_ID;
 import static org.mozilla.gecko.mma.MmaDelegate.DOWNLOAD_MEDIA_SAVED_IMAGE;
 import static org.mozilla.gecko.mma.MmaDelegate.READER_AVAILABLE;
+import static org.mozilla.gecko.util.JavaUtil.getBundleSizeInBytes;
 
 public abstract class GeckoApp extends GeckoActivity
                                implements AnchoredPopup.OnVisibilityChangeListener,
@@ -147,6 +157,7 @@ public abstract class GeckoApp extends GeckoActivity
 
     public static final String INTENT_REGISTER_STUMBLER_LISTENER = "org.mozilla.gecko.STUMBLER_REGISTER_LOCAL_LISTENER";
 
+    private static final String GECKOVIEW_STATE_BUNDLE     = "geckoViewState";
     public static final String EXTRA_STATE_BUNDLE          = "stateBundle";
 
     public static final String PREFS_ALLOW_STATE_BUNDLE    = "allowStateBundle";
@@ -159,7 +170,7 @@ public abstract class GeckoApp extends GeckoActivity
     /**
      * Used with SharedPreferences, per profile, to determine if this is the first run of
      * the application. When accessing SharedPreferences, the default value of true should be used.
-
+     *
      * Originally, this was only used for the telemetry core ping logic. To avoid
      * having to write custom migration logic, we just keep the original pref key.
      * Be aware of {@link org.mozilla.gecko.fxa.EnvironmentUtils#GECKO_PREFS_IS_FIRST_RUN}.
@@ -168,6 +179,11 @@ public abstract class GeckoApp extends GeckoActivity
 
     public static final String SAVED_STATE_IN_BACKGROUND   = "inBackground";
     public static final String SAVED_STATE_PRIVATE_SESSION = "privateSession";
+    /**
+     * Speculative value for the maximum size the Activity Bundle can have in the hope to avoid
+     * TransactionTooLarge exceptions.
+     */
+    protected static final int MAX_BUNDLE_SIZE_BYTES = 300_000;
 
     // Delay before running one-time "cleanup" tasks that may be needed
     // after a version upgrade.
@@ -189,6 +205,8 @@ public abstract class GeckoApp extends GeckoActivity
 
     /** Tells if we're aborting app launch, e.g. if this is an unsupported device configuration. */
     protected boolean mIsAbortingAppLaunch;
+
+    protected boolean mDumpProfileOnShutdown;
 
     private PromptService mPromptService;
     protected TextSelection mTextSelection;
@@ -300,6 +318,15 @@ public abstract class GeckoApp extends GeckoActivity
 
         @Override
         public void onClosedTabsRead(final JSONArray closedTabData) throws JSONException {
+            // All tabs opened in the current session (including those that will be restored through
+            // the session store) will be numbered with a tab ID ≥ 0.
+            // To avoid duplicate IDs with closed tabs read from the previous session, we therefore
+            // renumber the latter with IDs in the negative range.
+            int closedTabId = Tabs.INVALID_TAB_ID;
+            for (int i = 0; i < closedTabData.length(); i++) {
+                final JSONObject closedTab = closedTabData.getJSONObject(i);
+                closedTab.put("tabId", --closedTabId);
+            }
             windowObject.put("closedTabs", closedTabData);
         }
 
@@ -332,8 +359,8 @@ public abstract class GeckoApp extends GeckoActivity
 
     protected boolean mInitialized;
     protected boolean mWindowFocusInitialized;
-    private Telemetry.Timer mJavaUiStartupTimer;
-    private Telemetry.Timer mGeckoReadyStartupTimer;
+    private TelemetryUtils.Timer mJavaUiStartupTimer;
+    private TelemetryUtils.Timer mGeckoReadyStartupTimer;
 
     private String mPrivateBrowsingSession;
     private boolean mPrivateBrowsingSessionOutdated;
@@ -647,9 +674,24 @@ public abstract class GeckoApp extends GeckoActivity
                 } catch (final InterruptedException e) { }
             }
             outState.putString(SAVED_STATE_PRIVATE_SESSION, mPrivateBrowsingSession);
+
+            // Make sure we are not bloating the Bundle which can result in TransactionTooLargeException
+            if (getBundleSizeInBytes(outState) > MAX_BUNDLE_SIZE_BYTES) {
+                outState.remove(SAVED_STATE_PRIVATE_SESSION);
+            }
         }
 
         outState.putBoolean(SAVED_STATE_IN_BACKGROUND, isApplicationInBackground());
+
+        // There are situations where the saved instance state will be cleared (e.g. user swipes
+        // away activity in the task switcher), but Gecko will actually remain alive (because
+        // another activity or service of ours is still running in this process). The saved state is
+        // the only way we can reconnect to our previous GeckoView session and all the user's open
+        // tabs, so we need to keep a copy of the state ourselves.
+        SparseArray<Parcelable> geckoViewState = new SparseArray<>();
+        mLayerView.saveHierarchyState(geckoViewState);
+        outState.putSparseParcelableArray(GECKOVIEW_STATE_BUNDLE, geckoViewState);
+        getGeckoApplication().setSavedState(geckoViewState);
     }
 
     public void addTab(int flags) { }
@@ -688,7 +730,7 @@ public abstract class GeckoApp extends GeckoActivity
               rec.recordGeckoStartupTime(mGeckoReadyStartupTimer.getElapsed());
             }
 
-            ((GeckoApplication) getApplicationContext()).onDelayedStartup();
+            getGeckoApplication().onDelayedStartup();
 
             // Reset the crash loop counter if we remain alive for at least half a minute.
             ThreadUtils.postDelayedToBackgroundThread(new Runnable() {
@@ -911,9 +953,9 @@ public abstract class GeckoApp extends GeckoActivity
     }
 
     @Override
-    public void onContextMenu(final GeckoSession session, final int screenX,
-                              final int screenY, final String uri,
-                              int elementType, final String elementSrc) {
+    public void onContextMenu(final GeckoSession session,
+                              final int screenX, final int screenY,
+                              final GeckoSession.ContentDelegate.ContextElement element) {
     }
 
     @Override
@@ -924,6 +966,10 @@ public abstract class GeckoApp extends GeckoActivity
     @Override
     public void onCrash(final GeckoSession session) {
         // Won't happen, as we don't use e10s in Fennec
+    }
+
+    @Override
+    public void onFirstComposite(final GeckoSession session) {
     }
 
     protected void setFullScreen(final boolean fullscreen) {
@@ -937,8 +983,9 @@ public abstract class GeckoApp extends GeckoActivity
 
     /**
      * Check and start the Java profiler if MOZ_PROFILER_STARTUP env var is specified.
+     * Also check whether we want to dump the captured profile on shutdown.
      **/
-    protected static void earlyStartJavaSampler(SafeIntent intent) {
+    protected void handleGeckoProfilerOptions(SafeIntent intent) {
         String env = intent.getStringExtra("env0");
         for (int i = 1; env != null; i++) {
             if (env.startsWith("MOZ_PROFILER_STARTUP=")) {
@@ -946,7 +993,10 @@ public abstract class GeckoApp extends GeckoActivity
                     GeckoJavaSampler.start(10, 1000);
                     Log.d(LOGTAG, "Profiling Java on startup");
                 }
-                break;
+            } else if (env.startsWith("MOZ_PROFILER_SHUTDOWN=")) {
+                if (!env.endsWith("=")) {
+                    mDumpProfileOnShutdown = true;
+                }
             }
             env = intent.getStringExtra("env" + i);
         }
@@ -960,6 +1010,11 @@ public abstract class GeckoApp extends GeckoActivity
      **/
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Within onCreate(), we might inject a different savedInstanceState for testing, but this
+        // won't influence what the OS will do with regards to calling onSaveInstanceState().
+        // Therefore, record whether we were passed some data or not.
+        final boolean receivedSavedInstanceState = (savedInstanceState != null);
+
         // Enable Android Strict Mode for developers' local builds (the "default" channel).
         if ("default".equals(AppConstants.MOZ_UPDATE_CHANNEL)) {
             enableStrictMode();
@@ -988,42 +1043,36 @@ public abstract class GeckoApp extends GeckoActivity
         //------------------------------------------------------------
         // Ouinet
         //------------------------------------------------------------
-        if (USE_SERVICE) {
-            Log.d(LOGTAG, " --------- Starting ouinet service");
-            Intent startOuinetIntent = new Intent(this, OuinetService.class);
-            startService(startOuinetIntent);
-        } else {
-            Log.d(LOGTAG, " --------- Starting ouinet in activity");
 
-            Ouinet.Config ouinet_cfg = new Ouinet.Config();
+        Ouinet.Config ouinetConfig = new Ouinet.Config();
 
-            ouinet_cfg.injector_ipfs_id = getResources().getString(R.string.ouinet_injector_ipfs_id);
-            ouinet_cfg.injector_endpoint = getResources().getString(R.string.ouinet_injector_endpoint);
-            ouinet_cfg.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
-            ouinet_cfg.injector_tls_cert = getResources().getString(R.string.ouinet_injector_tls_cert);
-            ouinet_cfg.tls_ca_cert_store_path = "file:///android_asset/ceno/cacert.pem";
-            ouinet_cfg.injector_bt_pubkey = getResources().getString(R.string.ouinet_injector_bt_pubkey);
+        ouinetConfig.index_bep44_pubkey   = getResources().getString(R.string.ouinet_index_bep44_pubkey);
+        ouinetConfig.index_ipns_id     = getResources().getString(R.string.ouinet_index_ipns_id);
+        ouinetConfig.injector_endpoint    = getResources().getString(R.string.ouinet_injector_endpoint);
+        ouinetConfig.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
+        ouinetConfig.injector_tls_cert    = getResources().getString(R.string.ouinet_injector_tls_cert);
+        ouinetConfig.tls_ca_cert_store_path = "file:///android_asset/ceno/cacert.pem";
 
+        if (ouinetConfig.injector_tls_cert != null) {
             Log.i(LOGTAG, "Injector's TLS certificate:");
 
-            String[] lines = ouinet_cfg.injector_tls_cert.split("\n");
+            String[] lines = ouinetConfig.injector_tls_cert.split("\n");
 
             for (String line : lines) {
                 Log.i(LOGTAG, "\"" + line + "\"");
             }
 
-            mOuinet = new Ouinet(this, ouinet_cfg);
-            mOuinet.start();
-        }
+        mOuinet = new Ouinet(this, ouinetConfig);
+        mOuinet.start();
         //------------------------------------------------------------
 
         // The clock starts...now. Better hurry!
-        mJavaUiStartupTimer = new Telemetry.UptimeTimer("FENNEC_STARTUP_TIME_JAVAUI");
-        mGeckoReadyStartupTimer = new Telemetry.UptimeTimer("FENNEC_STARTUP_TIME_GECKOREADY");
+        mJavaUiStartupTimer = new TelemetryUtils.UptimeTimer("FENNEC_STARTUP_TIME_JAVAUI");
+        mGeckoReadyStartupTimer = new TelemetryUtils.UptimeTimer("FENNEC_STARTUP_TIME_GECKOREADY");
 
         final SafeIntent intent = new SafeIntent(getIntent());
 
-        earlyStartJavaSampler(intent);
+        handleGeckoProfilerOptions(intent);
 
         // Workaround for <http://code.google.com/p/android/issues/detail?id=20915>.
         try {
@@ -1122,14 +1171,16 @@ public abstract class GeckoApp extends GeckoActivity
         mGeckoLayout = (RelativeLayout) findViewById(R.id.gecko_layout);
         mMainLayout = (RelativeLayout) findViewById(R.id.main_layout);
         mLayerView = (GeckoView) findViewById(R.id.layer_view);
+        // Disable automatic state staving - we require some special handling that we need to do
+        // ourselves.
+        mLayerView.setSaveFromParentEnabled(false);
 
-        final GeckoSession session = new GeckoSession();
-        session.getSettings().setString(GeckoSessionSettings.CHROME_URI,
-                                        "chrome://browser/content/browser.xul");
-        //TOOD(sarah) Replace this with a binder call to Ouinet service.
-        session.getSettings().setString(GeckoSessionSettings.OUINET_CLIENT_ROOT_CERTIFICATE,
-            "/data/user/0/ie.equalit.ceno/files/ouinet/ssl-ca-cert.pem");
-                                        // mOuinet.pathToCARootCert());
+        final GeckoSession session = new GeckoSession(
+                new GeckoSessionSettings.Builder()
+                        .chromeUri("chrome://browser/content/browser.xul")
+                        .ouinetClientRootCertificate(mOuinet.pathToCARootCert())
+                        .build());
+
         session.setContentDelegate(this);
 
         // If the view already has a session, we need to ensure it is closed.
@@ -1138,6 +1189,9 @@ public abstract class GeckoApp extends GeckoActivity
         }
         mLayerView.setSession(session, GeckoApplication.getRuntime());
         mLayerView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        if (mIsRestoringActivity && !receivedSavedInstanceState) {
+            restoreGeckoViewState(getGeckoApplication().getSavedState());
+        }
 
         getAppEventDispatcher().registerGeckoThreadListener(this,
             "Locale:Set",
@@ -1201,7 +1255,7 @@ public abstract class GeckoApp extends GeckoActivity
                         // history). This JSON data is then sent to Gecko so session
                         // history can be restored for each tab.
                         restoreMessage = restoreSessionTabs(isExternalURL, false);
-                    } catch (SessionRestoreException e) {
+                    } catch (SessionRestoreException | OutOfMemoryError e) {
                         // If mShouldRestore was set to false in restoreSessionTabs(), this means
                         // either that we intentionally skipped all tabs read from the session file,
                         // or else that the file was syntactically valid, but didn't contain any
@@ -1214,13 +1268,13 @@ public abstract class GeckoApp extends GeckoActivity
                             // Since we will also hit this situation regularly during first run though,
                             // we'll only report it in telemetry if we failed to restore despite the
                             // file existing, which means it's very probably damaged.
-                            if (getProfile().sessionFileExists()) {
+                            if (getProfile().sessionFileExists() && !(e instanceof OutOfMemoryError)) {
                                 Telemetry.addToHistogram("FENNEC_SESSIONSTORE_DAMAGED_SESSION_FILE", 1);
                             }
                             try {
                                 restoreMessage = restoreSessionTabs(isExternalURL, true);
                                 Telemetry.addToHistogram("FENNEC_SESSIONSTORE_RESTORING_FROM_BACKUP", 1);
-                            } catch (SessionRestoreException ex) {
+                            } catch (SessionRestoreException | OutOfMemoryError ex) {
                                 if (!mShouldRestore) {
                                     // Restoring only "failed" because the backup copy was deliberately empty, too.
                                     Telemetry.addToHistogram("FENNEC_SESSIONSTORE_RESTORING_FROM_BACKUP", 1);
@@ -1230,7 +1284,8 @@ public abstract class GeckoApp extends GeckoActivity
                                     mShouldRestore = false;
 
                                     if (!getSharedPreferencesForProfile().
-                                            getBoolean(PREFS_IS_FIRST_RUN, true)) {
+                                            getBoolean(PREFS_IS_FIRST_RUN, true) &&
+                                            !(ex instanceof OutOfMemoryError)) {
                                         // Except when starting with a fresh profile, we should normally
                                         // always have a session file available, even if it might only
                                         // contain an empty window.
@@ -1250,10 +1305,9 @@ public abstract class GeckoApp extends GeckoActivity
                 // If we are doing a restore, send the parsed session data to Gecko.
                 if (!mIsRestoringActivity) {
                     getAppEventDispatcher().dispatch("Session:Restore", restoreMessage);
+                    // Make sure sessionstore.old is either updated or deleted as necessary.
+                    getProfile().updateSessionFile(mShouldRestore);
                 }
-
-                // Make sure sessionstore.old is either updated or deleted as necessary.
-                getProfile().updateSessionFile(mShouldRestore);
             }
         });
 
@@ -1320,6 +1374,61 @@ public abstract class GeckoApp extends GeckoActivity
                 BrowserLocaleManager.storeAndNotifyOSLocale(getSharedPreferencesForProfile(), osLocale);
             }
         });
+
+        ConnectivityManager connectivityMgr =
+                (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo wifi = connectivityMgr.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+
+        DialogInterface.OnClickListener closeApp = new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                Log.d(LOGTAG, "Closing app from dialog");
+                /**
+                 * This is the preferred way to exit the app, but it is triggering an
+                 * exception in the cpp code which brings up the crash handler dialog.
+                 * ActivityCompat.finishAffinity(GeckoApp.this);
+                 */
+                android.os.Process.killProcess(android.os.Process.myPid());
+            }
+        };
+        DialogInterface.OnClickListener doNothing = new DialogInterface.OnClickListener() {
+           @Override
+            public void onClick(DialogInterface dialog, int which) {
+                Log.d(LOGTAG, "Dismissing dialog");
+            }
+        };
+
+        if (!wifi.isConnected()) {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.no_wifi_dialog_title)
+                    .setMessage(R.string.no_wifi_dialog_description)
+                    .setCancelable(false)
+                    .setPositiveButton(R.string.no_wifi_close_button, closeApp).show();
+        }
+
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(WifiManager.SUPPLICANT_CONNECTION_CHANGE_ACTION);
+        registerReceiver(new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                final String action = intent.getAction();
+                if (!WifiManager.SUPPLICANT_CONNECTION_CHANGE_ACTION.equals(action)) {
+                    return;
+                }
+                if (intent.getBooleanExtra(WifiManager.EXTRA_SUPPLICANT_CONNECTED, false)) {
+                    // Wifi connected
+                    return;
+                }
+                // Wifi disconnected
+                Log.d(LOGTAG, "Wifi connection lost, showing dialog");
+                new AlertDialog.Builder(GeckoApp.this)
+                        .setTitle(R.string.wifi_disconnected_dialog_title)
+                        .setMessage(R.string.wifi_disconnected_dialog_description)
+                        .setNegativeButton(R.string.wifi_disconnected_dismiss_button, doNothing)
+                        .setPositiveButton(R.string.no_wifi_close_button, closeApp)
+                        .show();
+            }
+        }, intentFilter);
     }
 
     @Override
@@ -1330,6 +1439,26 @@ public abstract class GeckoApp extends GeckoActivity
         }
 
         mWasFirstTabShownAfterActivityUnhidden = false; // onStart indicates we were hidden.
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Bundle savedInstanceState) {
+        super.onRestoreInstanceState(savedInstanceState);
+
+        final SparseArray<Parcelable> stateToRestore =
+                savedInstanceState.getSparseParcelableArray(GECKOVIEW_STATE_BUNDLE);
+        restoreGeckoViewState(stateToRestore);
+    }
+
+    /**
+     * Restores the given state into our GeckoView and clears any state we might have kept locally
+     * within our process, as it has now become obsolete.
+     */
+    private void restoreGeckoViewState(final SparseArray<Parcelable> state) {
+        if (state != null) {
+            mLayerView.restoreHierarchyState(state);
+        }
+        getGeckoApplication().setSavedState(null);
     }
 
     @Override
@@ -1431,6 +1560,8 @@ public abstract class GeckoApp extends GeckoActivity
     /**
      * Loads the initial tab at Fennec startup. If we don't restore tabs, this
      * tab will be about:home, or the homepage if the user has set one.
+     * If the app was started from the search widget we need to always load about:home
+     * and not the homepage which the user may have set to be another address.
      * If we've temporarily disabled restoring to break out of a crash loop, we'll show
      * the Recent Tabs folder of the Combined History panel, so the user can manually
      * restore tabs as needed.
@@ -1438,6 +1569,12 @@ public abstract class GeckoApp extends GeckoActivity
      * to be #android.Intent.ACTION_VIEW, which is launched from widget to create a new tab.
      */
     protected void loadStartupTab(final int flags, String action) {
+        final SearchWidgetProvider.InputType input = getWidgetInputType(getIntent());
+        if (input != null) {
+            Tabs.getInstance().loadUrl("about:home", flags);
+            return;
+        }
+
         if (!mShouldRestore || Intent.ACTION_VIEW.equals(action)) {
             if (mLastSessionCrashed) {
                 // The Recent Tabs panel no longer exists, but BrowserApp will redirect us
@@ -1465,6 +1602,14 @@ public abstract class GeckoApp extends GeckoActivity
         }
 
         Tabs.getInstance().loadUrlWithIntentExtras(url, intent, flags);
+    }
+
+    protected SearchWidgetProvider.InputType getWidgetInputType(final Intent intent) {
+        final Intent searchIntent = intent != null ? intent : getIntent();
+        if (searchIntent == null) {
+            return null;
+        }
+        return (SearchWidgetProvider.InputType) searchIntent.getSerializableExtra(SearchWidgetProvider.INPUT_TYPE_KEY);
     }
 
     protected String getIntentURI(SafeIntent intent) {
@@ -2560,6 +2705,10 @@ public abstract class GeckoApp extends GeckoActivity
 
     public GeckoView getGeckoView() {
         return mLayerView;
+    }
+
+    protected GeckoApplication getGeckoApplication() {
+        return (GeckoApplication) getApplicationContext();
     }
 
     @Override

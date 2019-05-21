@@ -1,100 +1,62 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef include_dom_ipc_RemoteVideoDecoder_h
-#define include_dom_ipc_RemoteVideoDecoder_h
+#ifndef include_dom_media_ipc_RemoteVideoDecoderChild_h
+#define include_dom_media_ipc_RemoteVideoDecoderChild_h
+#include "RemoteDecoderChild.h"
+#include "RemoteDecoderParent.h"
 
-#include "mozilla/RefPtr.h"
-#include "mozilla/DebugOnly.h"
-#include "MediaData.h"
-#include "PlatformDecoderModule.h"
+namespace mozilla {
+namespace layers {
+class BufferRecycleBin;
+}  // namespace layers
+}  // namespace mozilla
 
 namespace mozilla {
 
-namespace dom {
-class RemoteVideoDecoder;
-}
-DDLoggedTypeCustomNameAndBase(dom::RemoteVideoDecoder,
-                              RemoteVideoDecoder,
-                              MediaDataDecoder);
+using mozilla::ipc::IPCResult;
 
-namespace dom {
+class RemoteVideoDecoderChild final : public RemoteDecoderChild {
+ public:
+  explicit RemoteVideoDecoderChild();
 
-class VideoDecoderChild;
-class RemoteDecoderModule;
+  MOZ_IS_CLASS_INIT
+  MediaResult InitIPDL(const VideoInfo& aVideoInfo, float aFramerate,
+                       const CreateDecoderParams::OptionSet& aOptions);
 
-// A MediaDataDecoder implementation that proxies through IPDL
-// to a 'real' decoder in the GPU process.
-// All requests get forwarded to a VideoDecoderChild instance that
-// operates solely on the VideoDecoderManagerChild thread.
-class RemoteVideoDecoder
-  : public MediaDataDecoder
-  , public DecoderDoctorLifeLogger<RemoteVideoDecoder>
-{
-public:
-  friend class RemoteDecoderModule;
+  IPCResult RecvOutput(const DecodedOutputIPDL& aDecodedData) override;
 
-  // MediaDataDecoder
-  RefPtr<InitPromise> Init() override;
-  RefPtr<DecodePromise> Decode(MediaRawData* aSample) override;
-  RefPtr<DecodePromise> Drain() override;
-  RefPtr<FlushPromise> Flush() override;
-  RefPtr<ShutdownPromise> Shutdown() override;
-  bool IsHardwareAccelerated(nsACString& aFailureReason) const override;
-  void SetSeekThreshold(const media::TimeUnit& aTime) override;
-  nsCString GetDescriptionName() const override;
-  ConversionRequired NeedsConversion() const override;
+ private:
+  RefPtr<mozilla::layers::Image> DeserializeImage(
+      const SurfaceDescriptorBuffer& sdBuffer, const IntSize& aPicSize);
 
-private:
-  RemoteVideoDecoder();
-  ~RemoteVideoDecoder();
-
-  // Only ever written to from the reader task queue (during the constructor and
-  // destructor when we can guarantee no other threads are accessing it). Only
-  // read from the manager thread.
-  RefPtr<VideoDecoderChild> mActor;
-  // Only ever written/modified during decoder initialisation.
-  // As such can be accessed from any threads after that.
-  nsCString mDescription;
-  bool mIsHardwareAccelerated;
-  nsCString mHardwareAcceleratedReason;
-  MediaDataDecoder::ConversionRequired mConversion;
+  RefPtr<mozilla::layers::BufferRecycleBin> mBufferRecycleBin;
 };
 
-// A PDM implementation that creates RemoteVideoDecoders.
-// We currently require a 'wrapped' PDM in order to be able to answer SupportsMimeType
-// and DecoderNeedsConversion. Ideally we'd check these over IPDL using the manager
-// protocol
-class RemoteDecoderModule : public PlatformDecoderModule
-{
-public:
-  explicit RemoteDecoderModule(PlatformDecoderModule* aWrapped)
-    : mWrapped(aWrapped)
-  {}
+class RemoteVideoDecoderParent final : public RemoteDecoderParent {
+ public:
+  RemoteVideoDecoderParent(RemoteDecoderManagerParent* aParent,
+                           const VideoInfo& aVideoInfo, float aFramerate,
+                           const CreateDecoderParams::OptionSet& aOptions,
+                           TaskQueue* aManagerTaskQueue,
+                           TaskQueue* aDecodeTaskQueue, bool* aSuccess,
+                           nsCString* aErrorDescription);
 
-  nsresult Startup() override;
+ protected:
+  MediaResult ProcessDecodedData(
+      const MediaDataDecoder::DecodedData& aData) override;
 
-  bool SupportsMimeType(const nsACString& aMimeType,
-                        DecoderDoctorDiagnostics* aDiagnostics) const override;
-  bool Supports(const TrackInfo& aTrackInfo,
-                DecoderDoctorDiagnostics* aDiagnostics) const override;
-
-  already_AddRefed<MediaDataDecoder> CreateVideoDecoder(
-    const CreateDecoderParams& aParams) override;
-
-  already_AddRefed<MediaDataDecoder> CreateAudioDecoder(
-    const CreateDecoderParams& aParams) override
-  {
-    return nullptr;
-  }
-
-private:
-  RefPtr<PlatformDecoderModule> mWrapped;
+ private:
+  // Can only be accessed from the manager thread
+  // Note: we can't keep a reference to the original VideoInfo here
+  // because unlike in typical MediaDataDecoder situations, we're being
+  // passed a deserialized VideoInfo from RecvPRemoteDecoderConstructor
+  // which is destroyed when RecvPRemoteDecoderConstructor returns.
+  const VideoInfo mVideoInfo;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // include_dom_ipc_RemoteVideoDecoder_h
+#endif  // include_dom_media_ipc_RemoteVideoDecoderChild_h

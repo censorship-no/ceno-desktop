@@ -1,62 +1,42 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.ConditionalPanel = undefined;
-
-var _react = require("devtools/client/shared/vendor/react");
-
-var _react2 = _interopRequireDefault(_react);
-
-var _reactDom = require("devtools/client/shared/vendor/react-dom");
-
-var _reactDom2 = _interopRequireDefault(_reactDom);
-
-var _reactRedux = require("devtools/client/shared/vendor/react-redux");
-
-var _editor = require("../../utils/editor/index");
-
-var _actions = require("../../actions/index");
-
-var _actions2 = _interopRequireDefault(_actions);
-
-var _selectors = require("../../selectors/index");
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-class ConditionalPanel extends _react.PureComponent {
+
+// @flow
+import React, { PureComponent } from "react";
+import ReactDOM from "react-dom";
+import { connect } from "../../utils/connect";
+import classNames from "classnames";
+import "./ConditionalPanel.css";
+import { toEditorLine } from "../../utils/editor";
+import actions from "../../actions";
+
+import {
+  getBreakpointForLocation,
+  getConditionalPanelLocation,
+  getLogPointStatus
+} from "../../selectors";
+
+import type { SourceLocation } from "../../types";
+
+type Props = {
+  breakpoint: ?Object,
+  setBreakpointOptions: Function,
+  location: SourceLocation,
+  log: boolean,
+  editor: Object,
+  openConditionalPanel: typeof actions.openConditionalPanel,
+  closeConditionalPanel: typeof actions.closeConditionalPanel
+};
+
+export class ConditionalPanel extends PureComponent<Props> {
+  cbPanel: null | Object;
+  input: ?HTMLInputElement;
+  panelNode: ?HTMLDivElement;
+  scrollParent: ?HTMLElement;
+
   constructor() {
     super();
-
-    this.saveAndClose = () => {
-      if (this.input) {
-        this.setBreakpoint(this.input.value);
-      }
-
-      this.props.closeConditionalPanel();
-    };
-
-    this.onKey = e => {
-      if (e.key === "Enter") {
-        this.saveAndClose();
-      } else if (e.key === "Escape") {
-        this.props.closeConditionalPanel();
-      }
-    };
-
-    this.repositionOnScroll = () => {
-      if (this.panelNode && this.scrollParent) {
-        const {
-          scrollLeft
-        } = this.scrollParent;
-        this.panelNode.style.transform = `translateX(${scrollLeft}px)`;
-      }
-    };
-
     this.cbPanel = null;
   }
 
@@ -66,18 +46,29 @@ class ConditionalPanel extends _react.PureComponent {
     }
   }
 
-  setBreakpoint(condition) {
-    const {
-      selectedLocation,
-      line
-    } = this.props;
-    const sourceId = selectedLocation ? selectedLocation.sourceId : "";
-    const location = {
-      sourceId,
-      line
-    };
-    return this.props.setBreakpointCondition(location, {
-      condition
+  saveAndClose = () => {
+    if (this.input) {
+      this.setBreakpoint(this.input.value);
+    }
+
+    this.props.closeConditionalPanel();
+  };
+
+  onKey = (e: SyntheticKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      this.saveAndClose();
+    } else if (e.key === "Escape") {
+      this.props.closeConditionalPanel();
+    }
+  };
+
+  setBreakpoint(value: string) {
+    const { location, log, breakpoint } = this.props;
+    const options = breakpoint ? breakpoint.options : {};
+    const type = log ? "logValue" : "condition";
+    return this.props.setBreakpointOptions(location, {
+      ...options,
+      [type]: value
     });
   }
 
@@ -86,27 +77,27 @@ class ConditionalPanel extends _react.PureComponent {
       this.cbPanel.clear();
       this.cbPanel = null;
     }
-
     if (this.scrollParent) {
       this.scrollParent.removeEventListener("scroll", this.repositionOnScroll);
     }
   }
 
-  componentWillMount() {
-    if (this.props.line) {
-      return this.renderToWidget(this.props);
+  repositionOnScroll = () => {
+    if (this.panelNode && this.scrollParent) {
+      const { scrollLeft } = this.scrollParent;
+      this.panelNode.style.transform = `translateX(${scrollLeft}px)`;
     }
+  };
+
+  componentWillMount() {
+    return this.renderToWidget(this.props);
   }
 
-  componentWillUpdate(nextProps) {
-    if (nextProps.line) {
-      return this.renderToWidget(nextProps);
-    }
-
+  componentWillUpdate() {
     return this.clearConditionalPanel();
   }
 
-  componentDidUpdate(prevProps) {
+  componentDidUpdate(prevProps: Props) {
     this.keepFocusOnInput();
   }
 
@@ -117,37 +108,33 @@ class ConditionalPanel extends _react.PureComponent {
     return this.clearConditionalPanel();
   }
 
-  renderToWidget(props) {
+  renderToWidget(props: Props) {
     if (this.cbPanel) {
-      if (this.props.line && this.props.line == props.line) {
-        return props.closeConditionalPanel();
-      }
-
       this.clearConditionalPanel();
     }
 
-    const {
-      selectedLocation,
-      line,
-      editor
-    } = props;
-    const sourceId = selectedLocation ? selectedLocation.sourceId : "";
-    const editorLine = (0, _editor.toEditorLine)(sourceId, line);
-    this.cbPanel = editor.codeMirror.addLineWidget(editorLine, this.renderConditionalPanel(props), {
-      coverGutter: true,
-      noHScroll: false
-    });
+    const { location, editor } = props;
 
+    const editorLine = toEditorLine(location.sourceId, location.line || 0);
+    this.cbPanel = editor.codeMirror.addLineWidget(
+      editorLine,
+      this.renderConditionalPanel(props),
+      {
+        coverGutter: true,
+        noHScroll: true
+      }
+    );
     if (this.input) {
-      let parent = this.input.parentNode;
-
+      let parent: ?Node = this.input.parentNode;
       while (parent) {
-        if (parent instanceof HTMLElement && parent.classList.contains("CodeMirror-scroll")) {
+        if (
+          parent instanceof HTMLElement &&
+          parent.classList.contains("CodeMirror-scroll")
+        ) {
           this.scrollParent = parent;
           break;
         }
-
-        parent = parent.parentNode;
+        parent = (parent.parentNode: ?Node);
       }
 
       if (this.scrollParent) {
@@ -157,59 +144,80 @@ class ConditionalPanel extends _react.PureComponent {
     }
   }
 
-  renderConditionalPanel(props) {
-    const {
-      breakpoint
-    } = props;
-    const condition = breakpoint ? breakpoint.condition : "";
+  renderConditionalPanel(props: Props) {
+    const { breakpoint, log, editor } = props;
+    const options = (breakpoint && breakpoint.options) || {};
+    const condition = log ? options.logValue : options.condition;
+
     const panel = document.createElement("div");
+    ReactDOM.render(
+      <div
+        className={classNames("conditional-breakpoint-panel", {
+          "log-point": log
+        })}
+        onClick={() => this.keepFocusOnInput()}
+        onBlur={this.props.closeConditionalPanel}
+        ref={node => (this.panelNode = node)}
+      >
+        <div className="prompt">»</div>
+        <input
+          defaultValue={condition}
+          ref={input => {
+            const codeMirror = editor.CodeMirror.fromTextArea(input, {
+              mode: "javascript",
+              theme: "mozilla",
+              placeholder: L10N.getStr(
+                log
+                  ? "editor.conditionalPanel.logPoint.placeholder"
+                  : "editor.conditionalPanel.placeholder"
+              )
+            });
+            const codeMirrorWrapper = codeMirror.getWrapperElement();
 
-    _reactDom2.default.render(_react2.default.createElement("div", {
-      className: "conditional-breakpoint-panel",
-      onClick: () => this.keepFocusOnInput(),
-      onBlur: this.props.closeConditionalPanel,
-      ref: node => this.panelNode = node
-    }, _react2.default.createElement("div", {
-      className: "prompt"
-    }, "\xBB"), _react2.default.createElement("input", {
-      defaultValue: condition,
-      placeholder: L10N.getStr("editor.conditionalPanel.placeholder"),
-      onKeyDown: this.onKey,
-      ref: input => {
-        this.input = input;
-        this.keepFocusOnInput();
-      }
-    })), panel);
+            codeMirrorWrapper.addEventListener("keydown", e => {
+              codeMirror.save();
+              this.onKey(e);
+            });
 
+            this.input = input;
+            codeMirror.focus();
+            codeMirror.setCursor(codeMirror.lineCount(), 0);
+          }}
+        />
+      </div>,
+      panel
+    );
     return panel;
   }
 
   render() {
     return null;
   }
-
 }
 
-exports.ConditionalPanel = ConditionalPanel;
-
 const mapStateToProps = state => {
-  const line = (0, _selectors.getConditionalPanelLine)(state);
-  const selectedLocation = (0, _selectors.getSelectedLocation)(state);
+  const location = getConditionalPanelLocation(state);
+  const log = getLogPointStatus(state);
   return {
-    selectedLocation,
-    breakpoint: (0, _selectors.getBreakpointForLine)(state, selectedLocation.sourceId, line),
-    line
+    breakpoint: getBreakpointForLocation(state, location),
+    location,
+    log
   };
 };
 
 const {
-  setBreakpointCondition,
+  setBreakpointOptions,
   openConditionalPanel,
   closeConditionalPanel
-} = _actions2.default;
+} = actions;
+
 const mapDispatchToProps = {
-  setBreakpointCondition,
+  setBreakpointOptions,
   openConditionalPanel,
   closeConditionalPanel
 };
-exports.default = (0, _reactRedux.connect)(mapStateToProps, mapDispatchToProps)(ConditionalPanel);
+
+export default connect(
+  mapStateToProps,
+  mapDispatchToProps
+)(ConditionalPanel);

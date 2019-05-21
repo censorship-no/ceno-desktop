@@ -5,7 +5,6 @@
 "use strict";
 
 {
-
 function _isTextColorDark(r, g, b) {
   return (0.2125 * r + 0.7154 * g + 0.0721 * b) <= 110;
 }
@@ -27,6 +26,8 @@ const inContentVariableMap = [
       const {r, g, b, a} = rgbaChannels;
       if (!_isTextColorDark(r, g, b)) {
         element.setAttribute("lwt-newtab-brighttext", "true");
+      } else {
+        element.removeAttribute("lwt-newtab-brighttext");
       }
 
       return `rgba(${r}, ${g}, ${b}, ${a})`;
@@ -56,6 +57,8 @@ const inContentVariableMap = [
       const {r, g, b, a} = rgbaChannels;
       if (!_isTextColorDark(r, g, b)) {
         element.setAttribute("lwt-sidebar-brighttext", "true");
+      } else {
+        element.removeAttribute("lwt-sidebar-brighttext");
       }
 
       return `rgba(${r}, ${g}, ${b}, ${a})`;
@@ -148,5 +151,4 @@ const ContentThemeController = {
   },
 };
 ContentThemeController.init();
-
 }

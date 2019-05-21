@@ -56,7 +56,6 @@ ignored_js_src_dirs = [
 # We ignore #includes of these files, because they don't follow the usual rules.
 included_inclnames_to_ignore = set([
     'ffi.h',                    # generated in ctypes/libffi/
-    'devtools/sharkctl.h',      # we ignore devtools/ in general
     'devtools/Instruments.h',   # we ignore devtools/ in general
     'double-conversion/double-conversion.h',  # strange MFBT case
     'javascript-trace.h',       # generated in $OBJDIR if HAVE_DTRACE is defined
@@ -113,7 +112,6 @@ included_inclnames_to_ignore = set([
 # ignore #includes of them when checking #include ordering.
 oddly_ordered_inclnames = set([
     'ctypes/typedefs.h',        # Included multiple times in the body of ctypes/CTypes.h
-    'frontend/BinSource-auto.h',  # Included in the body of frontend/BinSource.h
     # Included in the body of frontend/TokenStream.h
     'frontend/ReservedWordsGenerated.h',
     'gc/StatsPhasesGenerated.h',         # Included in the body of gc/Statistics.h

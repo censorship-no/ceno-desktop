@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Iawn, deall",
   "prefs_home_header": "Cynnwys Cartref Firefox",
   "prefs_home_description": "Dewis pa gynnwys rydych eisiau ar eich sgrin Firefox Cartref.",
+  "prefs_content_discovery_header": "Cartref Firefox",
+  "prefs_content_discovery_description": "Mae Darganfod Cynnwys yng Nghartref Firefox yn caniatáu i chi ddarganfod erthyglau perthnasol o ansawdd uchel ar draws y we.",
+  "prefs_content_discovery_button": "Diffodd Ddarganfod Cynnwys",
   "prefs_section_rows_option": "{num} rhes;{num} rhes;{num} rhes;{num} rhes;{num} rhes;{num} rhes",
   "prefs_search_header": "Chwilio'r We",
   "prefs_topsites_description": "Y gwefannau rydych yn ymweld â nhw amlaf",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Cadw'r straeon rydych yn eu hoffi i Pocket a bwydo'ch meddwl á deunydd diddorol.",
   "highlights_empty_state": "Cychwynnwch bori ac fe ddangoswn rhai erthyglau, fideos a thudalennau eraill difyr rydych wedi ymweld â nhw'n ddiweddar neu wedi gosod nod tudalen arnyn nhw yma.",
   "topstories_empty_state": "Rydych wedi dal i fynDewch nôl rhywbryd eto am fwy o'r straeon pwysicaf gan {provider}. Methu aros? Dewiswch bwnc poblogaidd i ganfod straeon da o ar draws y we. ",
-  "manual_migration_explanation2": "Profwch Firefox gyda nodau tudalen, hanes a chyfrineiriau o borwr arall.",
-  "manual_migration_cancel_button": "Dim Diolch",
-  "manual_migration_import_button": "Mewnforio Nawr",
   "error_fallback_default_info": "Wps, aeth rhywbeth o'i le wrth llwytho'r cynnwys hwn.",
   "error_fallback_default_refresh_suggestion": "Adnewyddu'r dudalen i geisio eto.",
   "section_menu_action_remove_section": "Tynnu'r Adran",
@@ -108,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Parhau",
   "firstrun_skip_login": "Hepgor y cam hwn",
   "context_menu_title": "Agor y ddewislen",
-  "pocket_learn_more": "Dysgu Rhagor"
+  "manual_migration_explanation2": "Profwch Firefox gyda nodau tudalen, hanes a chyfrineiriau o borwr arall.",
+  "manual_migration_cancel_button": "Dim Diolch",
+  "manual_migration_import_button": "Mewnforio Nawr"
 };

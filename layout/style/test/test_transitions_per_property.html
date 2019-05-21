@@ -64,6 +64,10 @@ var supported_properties = {
     "border-bottom-right-radius": [ test_radius_transition ],
     "border-top-left-radius": [ test_radius_transition ],
     "border-top-right-radius": [ test_radius_transition ],
+    "border-start-start-radius": [ test_radius_transition ],
+    "border-start-end-radius": [ test_radius_transition ],
+    "border-end-start-radius": [ test_radius_transition ],
+    "border-end-end-radius": [ test_radius_transition ],
     "-moz-box-flex": [ test_float_zeroToOne_transition,
                        test_float_aboveOne_transition,
                        test_float_zeroToOne_clamped ],
@@ -240,6 +244,14 @@ var supported_properties = {
     "right": [ test_length_transition, test_percent_transition,
                test_length_percent_calc_transition,
                test_length_unclamped, test_percent_unclamped ],
+    "shape-image-threshold": [ test_float_zeroToOne_transition,
+                               // shape-image-threshold (like opacity) is
+                               // clamped in computed style
+                               // (not parsing/interpolation)
+                               test_float_zeroToOne_clamped ],
+    "shape-margin": [ test_length_transition, test_percent_transition,
+                      test_length_clamped, test_percent_clamped ],
+    "shape-outside": [ test_basic_shape_or_url_transition ],
     "stop-color": [ test_color_transition,
                     test_currentcolor_transition ],
     "stop-opacity" : [ test_float_zeroToOne_transition,
@@ -249,20 +261,17 @@ var supported_properties = {
     "stroke": [ test_color_transition,
                 test_currentcolor_transition ],
     "stroke-dasharray": [ test_dasharray_transition ],
-    // NOTE: when calc() is supported on 'stroke-dashoffset', we should
-    // add test_length_percent_calc_transition.
-    "stroke-dashoffset": [ test_length_transition_svg, test_percent_transition,
-                           test_length_unclamped_svg, test_percent_unclamped ],
-    "stroke-miterlimit": [ test_float_aboveOne_transition,
-                           test_float_aboveOne_clamped ],
+    "stroke-dashoffset": [ test_length_transition, test_percent_transition,
+                           test_length_unclamped, test_percent_unclamped, ],
+    "stroke-miterlimit": [ test_float_zeroToOne_transition,
+                           test_float_aboveOne_transition,
+                           test_float_aboveZero_clamped ],
     "stroke-opacity" : [ test_float_zeroToOne_transition,
                          // opacity is clamped in computed style
                          // (not parsing/interpolation)
                          test_float_zeroToOne_clamped ],
-    // NOTE: when calc() is supported on 'stroke-width', we should add
-    // test_length_percent_calc_transition.
-    "stroke-width": [ test_length_transition_svg, test_percent_transition,
-                      test_length_clamped_svg, test_percent_clamped ],
+    "stroke-width": [ test_length_transition, test_percent_transition,
+                      test_length_clamped, test_percent_clamped, ],
     "-moz-tab-size": [ test_float_zeroToOne_transition,
                        test_float_aboveOne_transition, test_length_clamped ],
     "text-decoration": [ test_color_shorthand_transition,
@@ -295,21 +304,6 @@ var supported_properties = {
                                    test_currentcolor_transition ]
 };
 
-if (SpecialPowers.getBoolPref("layout.css.shape-outside.enabled")) {
-  supported_properties["shape-image-threshold"] =
-    [ test_float_zeroToOne_transition,
-      // shape-image-threshold (like opacity) is clamped in computed style
-      // (not parsing/interpolation)
-      test_float_zeroToOne_clamped ];
-
-  supported_properties["shape-margin"] =
-    [ test_length_transition, test_percent_transition,
-      test_length_clamped, test_percent_clamped ];
-
-  supported_properties["shape-outside"] =
-    [ test_basic_shape_or_url_transition ];
-}
-
 if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
   supported_properties["offset-path"] = [ test_path_function ];
 }
@@ -334,6 +328,44 @@ if (IsCSSPropertyPrefEnabled("layout.css.scrollbar-color.enabled")) {
   ];
 }
 
+if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
+  supported_properties["scroll-margin-top"] = [
+    test_length_transition,
+  ];
+  supported_properties["scroll-margin-right"] = [
+    test_length_transition,
+  ];
+  supported_properties["scroll-margin-bottom"] = [
+    test_length_transition,
+  ];
+  supported_properties["scroll-margin-left"] = [
+    test_length_transition,
+  ];
+  supported_properties["scroll-padding-top"] = [
+    test_length_transition, test_percent_transition,
+    test_length_clamped, test_percent_clamped,
+  ];
+  supported_properties["scroll-padding-right"] = [
+    test_length_transition, test_percent_transition,
+    test_length_clamped, test_percent_clamped,
+  ];
+  supported_properties["scroll-padding-bottom"] = [
+    test_length_transition, test_percent_transition,
+    test_length_clamped, test_percent_clamped,
+  ];
+  supported_properties["scroll-padding-left"] = [
+    test_length_transition, test_percent_transition,
+    test_length_clamped, test_percent_clamped,
+  ];
+}
+
+// For properties which are well-tested by web-platform-tests, we don't need to
+// test animations/transitions again on them.
+var skipped_transitionable_properties = [
+  "grid-template-columns",
+  "grid-template-rows",
+]
+
 // Logical properties.
 for (const logical_side of ["inline-start", "inline-end", "block-start", "block-end"]) {
   supported_properties["border-" + logical_side + "-color"] = supported_properties["border-top-color"];
@@ -341,6 +373,10 @@ for (const logical_side of ["inline-start", "inline-end", "block-start", "block-
   supported_properties["margin-" + logical_side] = supported_properties["margin-top"];
   supported_properties["padding-" + logical_side] = supported_properties["padding-top"];
   supported_properties["inset-" + logical_side] = supported_properties["top"];
+  if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
+    supported_properties["scroll-margin-" + logical_side] = supported_properties["scroll-margin-top"];
+    supported_properties["scroll-padding-" + logical_side] = supported_properties["scroll-padding-top"];
+  }
 }
 
 for (const logical_size of ["inline", "block"]) {
@@ -1098,6 +1134,7 @@ function sample_array(array, count) {
 for (prop in gCSSProperties) {
   var info = gCSSProperties[prop];
   if (!(prop in supported_properties) &&
+      !skipped_transitionable_properties.includes(prop) &&
       info.type != CSS_TYPE_TRUE_SHORTHAND &&
       !("alias_for" in info) &&
       !prop.match(/^transition-/) &&
@@ -1224,52 +1261,34 @@ function check_distance(prop, start, quarter, end)
   ok(Math.abs((qe * 4 - se * 3) / se) < 0.0001, "property '" + prop + "': distance " + qe + " from quarter '" + quarter + "' to end '" + end + "' should be three quarters distance " + se + " from start '" + start + "' to end '" + end + "'");
 }
 
-function test_length_transition_svg_or_units(prop, numbers_are_pixels) {
+function test_length_transition(prop) {
   div.style.setProperty("transition-property", "none", "");
   div.style.setProperty(prop, "4px", "");
   is(cs.getPropertyValue(prop), "4px",
      "length-valued property " + prop + ": computed value before transition");
   div.style.setProperty("transition-property", prop, "");
   div.style.setProperty(prop, "12px", "");
-  is(cs.getPropertyValue(prop), numbers_are_pixels ? "6" : "6px",
+  is(cs.getPropertyValue(prop), "6px",
      "length-valued property " + prop + ": interpolation of lengths");
   check_distance(prop, "4px", "6px", "12px");
 }
 
-function test_length_transition(prop) {
-  test_length_transition_svg_or_units(prop, false);
-}
-
-function test_length_transition_svg(prop) {
-  test_length_transition_svg_or_units(prop, true);
-}
-
 function test_length_clamped(prop) {
-  test_length_clamped_or_unclamped(prop, true, false);
+  test_length_clamped_or_unclamped(prop, true);
 }
 
 function test_length_unclamped(prop) {
-  test_length_clamped_or_unclamped(prop, false, false);
+  test_length_clamped_or_unclamped(prop, false);
 }
 
-function test_length_clamped_svg(prop) {
-  test_length_clamped_or_unclamped(prop, true, true);
-}
-
-function test_length_unclamped_svg(prop) {
-  test_length_clamped_or_unclamped(prop, false, true);
-}
-
-function test_length_clamped_or_unclamped(prop, is_clamped, numbers_are_pixels) {
+function test_length_clamped_or_unclamped(prop, is_clamped) {
   div.style.setProperty("transition-timing-function", FUNC_NEGATIVE, "");
   div.style.setProperty("transition-property", "none", "");
   div.style.setProperty(prop, "0px", "");
-  is(cs.getPropertyValue(prop), "0px",
-     "length-valued property " + prop + ": flush before clamping test");
+  let zero_val = cs.getPropertyValue(prop); // Flushes
   div.style.setProperty("transition-property", prop, "");
   div.style.setProperty(prop, "100px", "");
-  (is_clamped ? is : isnot)(cs.getPropertyValue(prop),
-     numbers_are_pixels ? "0" : "0px",
+  (is_clamped ? is : isnot)(cs.getPropertyValue(prop), zero_val,
      "length-valued property " + prop + ": clamping of negatives");
   div.style.setProperty("transition-timing-function", "linear", "");
 }
@@ -1332,7 +1351,7 @@ function test_float_zeroToOne_clamped_or_unclamped(prop, is_clamped) {
   div.style.setProperty("transition-timing-function", "linear", "");
 }
 
-// Test using float values in the range [1, infinity) (e.g. stroke-miterlimit)
+// Test using float values in the range [1, infinity)
 function test_float_aboveOne_transition(prop) {
   div.style.setProperty("transition-property", "none", "");
   div.style.setProperty(prop, "1", "");
@@ -1345,15 +1364,15 @@ function test_float_aboveOne_transition(prop) {
   check_distance(prop, "1", "1.275", "2.1");
 }
 
-function test_float_aboveOne_clamped(prop) {
+function test_float_aboveZero_clamped(prop) {
   div.style.setProperty("transition-timing-function", FUNC_NEGATIVE, "");
   div.style.setProperty("transition-property", "none", "");
-  div.style.setProperty(prop, "1", "");
-  is(cs.getPropertyValue(prop), "1",
+  div.style.setProperty(prop, "0", "");
+  is(cs.getPropertyValue(prop), "0",
      "float-valued property " + prop + ": flush before clamping test");
   div.style.setProperty("transition-property", prop, "");
   div.style.setProperty(prop, "5", "");
-  is(cs.getPropertyValue(prop), "1",
+  is(cs.getPropertyValue(prop), "0",
      "float-valued property " + prop + ": clamping of negatives");
   div.style.setProperty("transition-timing-function", "linear", "");
 }
@@ -1399,6 +1418,8 @@ function test_percent_clamped_or_unclamped(prop, is_clamped) {
   div.style.setProperty("transition-timing-function", "linear", "");
 }
 
+// FIXME: This doesn't deal well with properties for which the resolved value
+// is not the used value, like stroke-dashoffset or stroke-width.
 function test_length_percent_calc_transition(prop) {
   div.style.setProperty("transition-property", "none", "");
   div.style.setProperty(prop, "0%", "");
@@ -1590,9 +1611,14 @@ function test_auto_color_transition(prop, options={}) {
   const test_color = "rgb(51, 102, 153)";
   div.style.setProperty("transition-property", "none", "");
   div.style.setProperty(prop, "auto", "");
-  let used_value_of_auto = get_color(cs.getPropertyValue(prop));
-  isnot(used_value_of_auto, test_color,
-        msg_prefix + "ensure used auto value is different than our test color");
+  if (prop == "scrollbar-color") {
+    is(cs.getPropertyValue(prop), "auto",
+       msg_prefix + "auto should not be resolved to rgb color");
+  } else {
+    let used_value_of_auto = get_color(cs.getPropertyValue(prop));
+    isnot(used_value_of_auto, test_color,
+          msg_prefix + "ensure used auto value is different than our test color");
+  }
 
   div.style.setProperty("transition-property", prop, "");
   div.style.setProperty(prop, set_color(test_color), "");
@@ -2001,53 +2027,60 @@ function test_shadow_transition(prop) {
 function test_dasharray_transition(prop) {
   div.style.setProperty("transition-property", "none", "");
   div.style.setProperty(prop, "3", "");
-  is(cs.getPropertyValue(prop), "3",
+  is(cs.getPropertyValue(prop), "3px",
      "dasharray-valued property " + prop +
      ": computed value before transition");
   div.style.setProperty("transition-property", prop, "");
   div.style.setProperty(prop, "15px", "");
-  is(cs.getPropertyValue(prop), "6",
+  is(cs.getPropertyValue(prop), "6px",
      "dasharray-valued property " + prop + ": interpolation of dasharray");
   check_distance(prop, "3", "6", "15px");
   div.style.setProperty(prop, "none", "");
   is(cs.getPropertyValue(prop), "none",
      "dasharray-valued property " + prop + ": non-interpolability of none");
   div.style.setProperty(prop, "6,8px,4,4", "");
-  is(cs.getPropertyValue(prop), "6, 8px, 4, 4",
+  is(cs.getPropertyValue(prop), "6px, 8px, 4px, 4px",
      "dasharray-valued property " + prop +
      ": computed value before transition");
   div.style.setProperty(prop, "14, 12,16,16px", "");
-  is(cs.getPropertyValue(prop), "8, 9, 7, 7",
+  is(cs.getPropertyValue(prop), "8px, 9px, 7px, 7px",
      "dasharray-valued property " + prop + ": interpolation of dasharray");
   check_distance(prop, "6,8px,4,4", "8,9,7,7", "14, 12,16,16px");
   div.style.setProperty(prop, "none", "");
   is(cs.getPropertyValue(prop), "none",
      "dasharray-valued property " + prop + ": non-interpolability of none");
   div.style.setProperty(prop, "8,16,4", "");
-  is(cs.getPropertyValue(prop), "8, 16, 4",
+  is(cs.getPropertyValue(prop), "8px, 16px, 4px",
      "dasharray-valued property " + prop +
      ": computed value before transition");
   div.style.setProperty(prop, "4,8,12,16", "");
-  is(cs.getPropertyValue(prop), "7, 14, 6, 10, 13, 5, 9, 16, 4, 8, 15, 7",
+  is(cs.getPropertyValue(prop), "7px, 14px, 6px, 10px, 13px, 5px, 9px, 16px, 4px, 8px, 15px, 7px",
      "dasharray-valued property " + prop + ": interpolation of dasharray");
   check_distance(prop, "8,16,4", "7, 14, 6, 10, 13, 5, 9, 16, 4, 8, 15, 7",
                        "4,8,12,16");
   div.style.setProperty(prop, "2,50%,6,10", "");
-  is(cs.getPropertyValue(prop), "2, 50%, 6, 10",
-     "dasharray-valued property " + prop + ": non-interpolability of mixed units");
+  is(cs.getPropertyValue(prop),
+     "5.75px, calc(12.5% + 10.5px), 6px, 10px, 10.25px, calc(12.5% + 3.75px), 8.25px, 14.5px, 3.5px, calc(12.5% + 6px), 12.75px, 7.75px",
+     "dasharray-valued property " + prop + ": interpolability of mixed units");
+  div.style.setProperty(prop, "none", "");
+  is(cs.getPropertyValue(prop), "none",
+     "dasharray-valued property " + prop + ": non-interpolability of none");
+  div.style.setProperty(prop, "2,50%,6,10", "");
+  is(cs.getPropertyValue(prop), "2px, 50%, 6px, 10px",
+     "dasharray-valued property " + prop + ": non-interpolability of none");
   div.style.setProperty(prop, "6,30%,2,2", "");
-  is(cs.getPropertyValue(prop), "3, 45%, 5, 8",
+  is(cs.getPropertyValue(prop), "3px, 45%, 5px, 8px",
      "dasharray-valued property " + prop + ": interpolation of dasharray");
   check_distance(prop, "2,50%,6,10", "3, 45%, 5, 8", "6,30%,2,2");
 
   div.style.setProperty("transition-timing-function", FUNC_NEGATIVE, "");
   div.style.setProperty("transition-property", "none", "");
   div.style.setProperty(prop, "0,0%", "");
-  is(cs.getPropertyValue(prop), "0, 0%",
+  is(cs.getPropertyValue(prop), "0px, 0%",
      "dasharray-valued property " + prop + ": flush before clamping test");
   div.style.setProperty("transition-property", prop, "");
-  div.style.setProperty(prop, "5, 25%", "");
-  is(cs.getPropertyValue(prop), "0, 0%",
+  div.style.setProperty(prop, "5px, 25%", "");
+  is(cs.getPropertyValue(prop), "0px, 0%",
      "dasharray-valued property " + prop + ": clamping of negatives");
   div.style.setProperty("transition-timing-function", "linear", "");
 }
@@ -2106,10 +2139,10 @@ function test_radius_transition(prop) {
      "radius-valued property " + prop + ": computed value before transition");
   div.style.setProperty("transition-property", prop, "");
   div.style.setProperty(prop, "64px 16px", "");
-  is(cs.getPropertyValue(prop), "calc(16px + 4.6875%) calc(4px + 9.375%)",
+  is(cs.getPropertyValue(prop), "calc(4.6875% + 16px) calc(9.375% + 4px)",
      "radius-valued property " + prop + ": interpolation of radius with mixed units");
   check_distance(prop, "6.25% 12.5%",
-                 "calc(16px + 4.6875%) calc(4px + 9.375%)",
+                 "calc(4.6875% + 16px) calc(9.375% + 4px)",
                  "64px 16px");
 
   div.style.setProperty("transition-property", "none", "");
@@ -2491,11 +2524,11 @@ function test_background_position_transition(prop) {
   // values.
   div.style.setProperty("transition-property", "none", "");
   div.style.setProperty(prop, "right 20px bottom 30%", "");
-  is(cs.getPropertyValue(prop), "calc(-20px + 100%) 70%",
+  is(cs.getPropertyValue(prop), "calc(100% - 20px) 70%",
      "property " + prop + ": computed value before transition");
   div.style.setProperty("transition-property", prop, "");
   div.style.setProperty(prop, "calc(40px + 20%) calc(12px + 30%)", "");
-  is(cs.getPropertyValue(prop), "calc(-5px + 80%) calc(3px + 60%)",
+  is(cs.getPropertyValue(prop), "calc(80% - 5px) calc(60% + 3px)",
      "property " + prop + ": interpolation of edge keywords w/ offsets & calc");
   if (doesPropHaveDistanceComputation) {
     check_distance(prop, "right 20px bottom 30%",
@@ -2634,8 +2667,6 @@ function test_background_position_size_common(prop, doesPropTakeListValues,
     check_distance(prop, "10px 40px", "20px 30px", "50px 0");
   }
 
-  const serializesCalcAccordingToTheSpec = prop == "mask-size" || prop == "background-size";
-
   // Test interpolation that computes to to calc() (transition from % to px)
   div.style.setProperty("transition-property", "none", "");
   div.style.setProperty(prop, "20% 40%", "");
@@ -2644,7 +2675,7 @@ function test_background_position_size_common(prop, doesPropTakeListValues,
   div.style.setProperty("transition-property", prop, "");
   div.style.setProperty(prop, "12px 20px", "");
   is(cs.getPropertyValue(prop),
-     serializesCalcAccordingToTheSpec ? "calc(15% + 3px) calc(30% + 5px)" : "calc(3px + 15%) calc(5px + 30%)",
+     "calc(15% + 3px) calc(30% + 5px)",
      "property " + prop + ": interpolation that computes to calc()");
   if (doesPropHaveDistanceComputation) {
     check_distance(prop, "20% 40%",
@@ -2660,7 +2691,7 @@ function test_background_position_size_common(prop, doesPropTakeListValues,
   div.style.setProperty("transition-property", prop, "");
   div.style.setProperty(prop, "20% 40%", "");
   is(cs.getPropertyValue(prop),
-     serializesCalcAccordingToTheSpec ? "calc(5% + 9px) calc(10% + 15px)" : "calc(9px + 5%) calc(15px + 10%)",
+     "calc(5% + 9px) calc(10% + 15px)",
      "property " + prop + ": interpolation that computes to calc()");
   if (doesPropHaveDistanceComputation) {
     check_distance(prop, "12px 20px",
@@ -2671,11 +2702,11 @@ function test_background_position_size_common(prop, doesPropTakeListValues,
   // Test interpolation between calc() and non-calc()
   div.style.setProperty("transition-property", "none", "");
   div.style.setProperty(prop, "calc(40px + 10%) 16px", "");
-  is(cs.getPropertyValue(prop), serializesCalcAccordingToTheSpec ? "calc(10% + 40px) 16px" : "calc(40px + 10%) 16px",
+  is(cs.getPropertyValue(prop), "calc(10% + 40px) 16px",
      "property " + prop + ": computed value before transition");
   div.style.setProperty("transition-property", prop, "");
   div.style.setProperty(prop, "30% calc(8px + 60%)", "");
-  is(cs.getPropertyValue(prop), serializesCalcAccordingToTheSpec ? "calc(15% + 30px) calc(15% + 14px)" : "calc(30px + 15%) calc(14px + 15%)",
+  is(cs.getPropertyValue(prop), "calc(15% + 30px) calc(15% + 14px)",
      "property " + prop + ": interpolation between calc() and non-calc()");
   if (doesPropHaveDistanceComputation) {
     check_distance(prop, "calc(40px + 10%) 16px",
@@ -2717,9 +2748,8 @@ function test_background_position_size_common(prop, doesPropTakeListValues,
        "property " + prop + ": computed value before transition");
     div.style.setProperty("transition-property", prop, "");
     div.style.setProperty(prop, "12px 20px, 40% 16%", "");
-    is(cs.getPropertyValue(prop), serializesCalcAccordingToTheSpec
-        ? "calc(15% + 3px) calc(30% + 5px), calc(10% + 6px) calc(4% + 9px)"
-        : "calc(3px + 15%) calc(5px + 30%), calc(6px + 10%) calc(9px + 4%)",
+    is(cs.getPropertyValue(prop),
+       "calc(15% + 3px) calc(30% + 5px), calc(10% + 6px) calc(4% + 9px)",
        "property " + prop + ": interpolation that computes to calc()");
     if (doesPropHaveDistanceComputation) {
       check_distance(prop, "20% 40%, 8px 12px",
@@ -2728,15 +2758,13 @@ function test_background_position_size_common(prop, doesPropTakeListValues,
     }
     div.style.setProperty("transition-property", "none", "");
     div.style.setProperty(prop, "calc(20% + 40px) calc(40px + 40%), 8px 12%, calc(20px + 12%) calc(24px + 8%)", "");
-    is(cs.getPropertyValue(prop), serializesCalcAccordingToTheSpec
-        ? "calc(20% + 40px) calc(40% + 40px), 8px 12%, calc(12% + 20px) calc(8% + 24px)"
-        : "calc(40px + 20%) calc(40px + 40%), 8px 12%, calc(20px + 12%) calc(24px + 8%)",
+    is(cs.getPropertyValue(prop),
+       "calc(20% + 40px) calc(40% + 40px), 8px 12%, calc(12% + 20px) calc(8% + 24px)",
        "property " + prop + ": computed value before transition");
     div.style.setProperty("transition-property", prop, "");
     div.style.setProperty(prop, "12px 20%, calc(20%) calc(16px + 60%), calc(8px + 20%) calc(40px + 16%)", "");
-    is(cs.getPropertyValue(prop), serializesCalcAccordingToTheSpec
-        ? "calc(15% + 33px) calc(35% + 30px), calc(5% + 6px) calc(24% + 4px), calc(14% + 17px) calc(10% + 28px)"
-        : "calc(33px + 15%) calc(30px + 35%), calc(6px + 5%) calc(4px + 24%), calc(17px + 14%) calc(28px + 10%)",
+    is(cs.getPropertyValue(prop),
+        "calc(15% + 33px) calc(35% + 30px), calc(5% + 6px) calc(24% + 4px), calc(14% + 17px) calc(10% + 28px)",
        "property " + prop + ": interpolation that computes to calc()");
     if (doesPropHaveDistanceComputation) {
       check_distance(prop, "calc(20% + 40px) calc(40px + 40%), 8px 12%, calc(20px + 12%) calc(24px + 8%)",

@@ -13,6 +13,7 @@ kind-dependencies:
 transforms:
    - taskgraph.transforms.release_deps:transforms
    - taskgraph.transforms.update_verify:transforms
+   - taskgraph.transforms.job:transforms
    - taskgraph.transforms.task:transforms
 
 job-defaults:
@@ -25,18 +26,13 @@ job-defaults:
          - name: 'public/build/diff-summary.log'
            path: '/builds/worker/tools/release/updates/diff-summary.log'
            type: file
-      implementation: docker-worker
-      os: linux
       docker-image:
          in-tree: "update-verify"
       max-run-time: 5400
       retry-exit-status:
          - 255
-      env:
-         NO_BBCONFIG: "1"
-         BUILD_TOOLS_REPO: https://hg.mozilla.org/build/tools
    extra:
-      chunks: 12
+      chunks: 16
 
 jobs:
    firefox-linux64:
@@ -98,6 +94,26 @@ jobs:
          tier: 1
       attributes:
          build_platform: win64-nightly
+
+   firefox-win64-aarch64:
+      description: win64-aarch64 update verify
+      shipping-product: firefox
+      worker:
+         env:
+            CHANNEL:
+               by-release-type:
+                  beta: "beta-localtest"
+                  release(-rc)?: "release-localtest"
+                  esr60: "esr-localtest"
+                  nightly: "nightly"
+                  default: "default"
+      treeherder:
+         symbol: UV(UV)
+         platform: windows2012-aarch64/opt
+         kind: test
+         tier: 1
+      attributes:
+         build_platform: win64-aarch64-nightly
 
    firefox-win32:
       description: win32 update verify
@@ -180,6 +196,20 @@ jobs:
          tier: 1
       attributes:
          build_platform: win64-devedition-nightly
+
+   devedition-win64-aarch64:
+      description: win64-aarch64 update verify
+      shipping-product: devedition
+      worker:
+         env:
+            CHANNEL: "aurora-localtest"
+      treeherder:
+         symbol: UV(UV)
+         platform: windows2012-aarch64-devedition/opt
+         kind: test
+         tier: 1
+      attributes:
+         build_platform: win64-aarch64-devedition-nightly
 
    devedition-win32:
       description: win32 update verify

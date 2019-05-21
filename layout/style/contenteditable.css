@@ -9,27 +9,18 @@
   cursor: text;
 }
 
-*|*:-moz-read-write :-moz-read-only {
-  -moz-user-select: all;
-}
-
-*|*:-moz-read-only > :-moz-read-write {
-  /* override the above -moz-user-select: all rule. */
-  -moz-user-select: -moz-text;
-}
-
 input:-moz-read-write > .anonymous-div:-moz-read-only,
 textarea:-moz-read-write > .anonymous-div:-moz-read-only {
   -moz-user-select: text;
 }
 
-/* Use default arrow over objects with size that 
+/* Use default arrow over objects with size that
    are selected when clicked on.
    Override the browser's pointer cursor over links
 */
 
 img:-moz-read-write, img:-moz-read-write[usemap], area:-moz-read-write,
-object:-moz-read-write, object:-moz-read-write[usemap], 
+object:-moz-read-write, object:-moz-read-write[usemap],
 applet:-moz-read-write, hr:-moz-read-write, button:-moz-read-write,
 select:-moz-read-write,
 a:-moz-read-write:link img, a:-moz-read-write:visited img,
@@ -47,7 +38,7 @@ a:active:-moz-read-write img {
   -moz-user-input: none;
 }
 
-/* We suppress user/author's prefs for link underline, 
+/* We suppress user/author's prefs for link underline,
    so we must set explicitly. This isn't good!
 */
 a:link:-moz-read-write {
@@ -79,15 +70,6 @@ input[contenteditable="true"][type="file"] {
   -moz-user-focus: none !important;
 }
 
-/* emulation of non-standard HTML <marquee> tag */
-marquee:-moz-read-write {
-  -moz-binding: url('chrome://xbl-marquee/content/xbl-marquee.xml#marquee-horizontal-editable');
-}
-
-marquee[direction="up"]:-moz-read-write, marquee[direction="down"]:-moz-read-write {
-  -moz-binding: url('chrome://xbl-marquee/content/xbl-marquee.xml#marquee-vertical-editable');
-}
-
 *|*:-moz-read-write > input[type="hidden"],
 input[contenteditable="true"][type="hidden"] {
   border: 1px solid black !important;
@@ -95,7 +77,7 @@ input[contenteditable="true"][type="hidden"] {
 }
 
 label:-moz-read-write {
-    -moz-user-select: all;
+  -moz-user-select: all;
 }
 
 *|*::-moz-display-comboboxcontrol-frame {

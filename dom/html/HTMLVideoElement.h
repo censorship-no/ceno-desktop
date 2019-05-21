@@ -20,9 +20,11 @@ namespace dom {
 class WakeLock;
 class VideoPlaybackQuality;
 
-class HTMLVideoElement final : public HTMLMediaElement
-{
-public:
+class HTMLVideoElement final : public HTMLMediaElement {
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLVideoElement, HTMLMediaElement)
+
   typedef mozilla::dom::NodeInfo NodeInfo;
 
   explicit HTMLVideoElement(already_AddRefed<NodeInfo>&& aNodeInfo);
@@ -31,26 +33,32 @@ public:
 
   using HTMLMediaElement::GetPaused;
 
-  virtual bool IsVideo() const override {
-    return true;
-  }
+  void Invalidate(bool aImageSizeChanged, Maybe<nsIntSize>& aNewIntrinsicSize,
+                  bool aForceInvalidate) override;
 
-  virtual bool ParseAttribute(int32_t aNamespaceID,
-                              nsAtom* aAttribute,
+  virtual bool IsVideo() const override { return true; }
+
+  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                               const nsAString& aValue,
                               nsIPrincipal* aMaybeScriptedPrincipal,
                               nsAttrValue& aResult) override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
-  static void Init();
+  static void InitStatics();
 
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
+  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
+      const override;
 
   virtual nsresult Clone(NodeInfo*, nsINode** aResult) const override;
+
+  virtual void UnbindFromTree(bool aDeep = true,
+                              bool aNullParent = true) override;
 
   // Set size with the current video frame's height and width.
   // If there is no video frame, returns NS_ERROR_FAILURE.
   nsresult GetVideoSize(nsIntSize* size);
+
+  virtual void UpdateMediaSize(const nsIntSize& aSize) override;
 
   virtual nsresult SetAcceptHeader(nsIHttpChannel* aChannel) override;
 
@@ -59,28 +67,19 @@ public:
 
   // WebIDL
 
-  uint32_t Width() const
-  {
-    return GetIntAttr(nsGkAtoms::width, 0);
-  }
+  uint32_t Width() const { return GetIntAttr(nsGkAtoms::width, 0); }
 
-  void SetWidth(uint32_t aValue, ErrorResult& aRv)
-  {
+  void SetWidth(uint32_t aValue, ErrorResult& aRv) {
     SetUnsignedIntAttr(nsGkAtoms::width, aValue, 0, aRv);
   }
 
-  uint32_t Height() const
-  {
-    return GetIntAttr(nsGkAtoms::height, 0);
-  }
+  uint32_t Height() const { return GetIntAttr(nsGkAtoms::height, 0); }
 
-  void SetHeight(uint32_t aValue, ErrorResult& aRv)
-  {
+  void SetHeight(uint32_t aValue, ErrorResult& aRv) {
     SetUnsignedIntAttr(nsGkAtoms::height, aValue, 0, aRv);
   }
 
-  uint32_t VideoWidth() const
-  {
+  uint32_t VideoWidth() const {
     if (mMediaInfo.HasVideo()) {
       if (mMediaInfo.mVideo.mRotation == VideoInfo::Rotation::kDegree_90 ||
           mMediaInfo.mVideo.mRotation == VideoInfo::Rotation::kDegree_270) {
@@ -91,8 +90,7 @@ public:
     return 0;
   }
 
-  uint32_t VideoHeight() const
-  {
+  uint32_t VideoHeight() const {
     if (mMediaInfo.HasVideo()) {
       if (mMediaInfo.mVideo.mRotation == VideoInfo::Rotation::kDegree_90 ||
           mMediaInfo.mVideo.mRotation == VideoInfo::Rotation::kDegree_270) {
@@ -103,17 +101,14 @@ public:
     return 0;
   }
 
-  VideoInfo::Rotation RotationDegrees() const
-  {
+  VideoInfo::Rotation RotationDegrees() const {
     return mMediaInfo.mVideo.mRotation;
   }
 
-  void GetPoster(nsAString& aValue)
-  {
+  void GetPoster(nsAString& aValue) {
     GetURIAttr(nsGkAtoms::poster, nullptr, aValue);
   }
-  void SetPoster(const nsAString& aValue, ErrorResult& aRv)
-  {
+  void SetPoster(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::poster, aValue, aRv);
   }
 
@@ -134,26 +129,25 @@ public:
 
   already_AddRefed<VideoPlaybackQuality> GetVideoPlaybackQuality();
 
-
-  bool MozOrientationLockEnabled() const
-  {
+  bool MozOrientationLockEnabled() const {
     return StaticPrefs::MediaVideocontrolsLockVideoOrientation();
   }
 
-  bool MozIsOrientationLocked() const
-  {
-    return mIsOrientationLocked;
-  }
+  bool MozIsOrientationLocked() const { return mIsOrientationLocked; }
 
-  void SetMozIsOrientationLocked(bool aLock)
-  {
-    mIsOrientationLocked = aLock;
-  }
+  void SetMozIsOrientationLocked(bool aLock) { mIsOrientationLocked = aLock; }
 
-protected:
+  void CloneElementVisually(HTMLVideoElement& aTarget, ErrorResult& rv);
+
+  void StopCloningElementVisually();
+
+  bool IsCloningElementVisually() const { return !!mVisualCloneTarget; }
+
+ protected:
   virtual ~HTMLVideoElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
   /**
    * We create video wakelock when the video is playing and release it when
@@ -172,15 +166,37 @@ protected:
 
   bool mIsOrientationLocked;
 
-private:
+ private:
+  bool SetVisualCloneTarget(HTMLVideoElement* aCloneTarget);
+  bool SetVisualCloneSource(HTMLVideoElement* aCloneSource);
+
+  // For video elements, we can clone the frames being played to
+  // a secondary video element. If we're doing that, we hold a
+  // reference to the video element we're cloning to in
+  // mVisualCloneSource.
+  //
+  // Please don't set this to non-nullptr values directly - use
+  // SetVisualCloneTarget() instead.
+  RefPtr<HTMLVideoElement> mVisualCloneTarget;
+  // If this video is the clone target of another video element,
+  // then mVisualCloneSource points to that originating video
+  // element.
+  //
+  // Please don't set this to non-nullptr values directly - use
+  // SetVisualCloneTarget() instead.
+  RefPtr<HTMLVideoElement> mVisualCloneSource;
+
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
                                     MappedDeclarations&);
 
   static bool IsVideoStatsEnabled();
   double TotalPlayTime() const;
+
+  virtual void MaybeBeginCloningVisually() override;
+  void EndCloningVisually();
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_HTMLVideoElement_h
+#endif  // mozilla_dom_HTMLVideoElement_h

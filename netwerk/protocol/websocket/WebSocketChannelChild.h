@@ -21,8 +21,9 @@ class ChannelEventQueue;
 
 class WebSocketChannelChild final : public BaseWebSocketChannel,
                                     public PWebSocketChild,
-                                    public NeckoTargetHolder
-{
+                                    public NeckoTargetHolder {
+  friend class PWebSocketChild;
+
  public:
   explicit WebSocketChannelChild(bool aSecure);
 
@@ -30,15 +31,15 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
 
   // nsIWebSocketChannel methods BaseWebSocketChannel didn't implement for us
   //
-  NS_IMETHOD AsyncOpen(nsIURI *aURI, const nsACString &aOrigin,
-                       uint64_t aInnerWindowID,
-                       nsIWebSocketListener *aListener,
-                       nsISupports *aContext) override;
-  NS_IMETHOD Close(uint16_t code, const nsACString & reason) override;
-  NS_IMETHOD SendMsg(const nsACString &aMsg) override;
-  NS_IMETHOD SendBinaryMsg(const nsACString &aMsg) override;
-  NS_IMETHOD SendBinaryStream(nsIInputStream *aStream, uint32_t aLength) override;
-  NS_IMETHOD GetSecurityInfo(nsISupports **aSecurityInfo) override;
+  NS_IMETHOD AsyncOpen(nsIURI* aURI, const nsACString& aOrigin,
+                       uint64_t aInnerWindowID, nsIWebSocketListener* aListener,
+                       nsISupports* aContext) override;
+  NS_IMETHOD Close(uint16_t code, const nsACString& reason) override;
+  NS_IMETHOD SendMsg(const nsACString& aMsg) override;
+  NS_IMETHOD SendBinaryMsg(const nsACString& aMsg) override;
+  NS_IMETHOD SendBinaryStream(nsIInputStream* aStream,
+                              uint32_t aLength) override;
+  NS_IMETHOD GetSecurityInfo(nsISupports** aSecurityInfo) override;
 
   void AddIPDLReference();
   void ReleaseIPDLReference();
@@ -50,13 +51,16 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
  private:
   ~WebSocketChannelChild();
 
-  mozilla::ipc::IPCResult RecvOnStart(const nsCString& aProtocol, const nsCString& aExtensions,
-                                   const nsString& aEffectiveURL, const bool& aSecure) override;
-  mozilla::ipc::IPCResult RecvOnStop(const nsresult& aStatusCode) override;
-  mozilla::ipc::IPCResult RecvOnMessageAvailable(const nsCString& aMsg) override;
-  mozilla::ipc::IPCResult RecvOnBinaryMessageAvailable(const nsCString& aMsg) override;
-  mozilla::ipc::IPCResult RecvOnAcknowledge(const uint32_t& aSize) override;
-  mozilla::ipc::IPCResult RecvOnServerClose(const uint16_t& aCode, const nsCString &aReason) override;
+  mozilla::ipc::IPCResult RecvOnStart(const nsCString& aProtocol,
+                                      const nsCString& aExtensions,
+                                      const nsString& aEffectiveURL,
+                                      const bool& aSecure);
+  mozilla::ipc::IPCResult RecvOnStop(const nsresult& aStatusCode);
+  mozilla::ipc::IPCResult RecvOnMessageAvailable(const nsCString& aMsg);
+  mozilla::ipc::IPCResult RecvOnBinaryMessageAvailable(const nsCString& aMsg);
+  mozilla::ipc::IPCResult RecvOnAcknowledge(const uint32_t& aSize);
+  mozilla::ipc::IPCResult RecvOnServerClose(const uint16_t& aCode,
+                                            const nsCString& aReason);
 
   void OnStart(const nsCString& aProtocol, const nsCString& aExtensions,
                const nsString& aEffectiveURL, const bool& aSecure);
@@ -67,7 +71,6 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   void OnServerClose(const uint16_t& aCode, const nsCString& aReason);
   void AsyncOpenFailed();
 
-  void DispatchToTargetThread(ChannelEvent *aChannelEvent);
   bool IsOnTargetThread();
 
   void MaybeReleaseIPCObject();
@@ -79,11 +82,7 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   nsString mEffectiveURL;
 
   // This variable is protected by mutex.
-  enum {
-    Opened,
-    Closing,
-    Closed
-  } mIPCState;
+  enum { Opened, Closing, Closed } mIPCState;
 
   mozilla::Mutex mMutex;
 
@@ -95,7 +94,7 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   friend class AsyncOpenFailedEvent;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
-#endif // mozilla_net_WebSocketChannelChild_h
+#endif  // mozilla_net_WebSocketChannelChild_h

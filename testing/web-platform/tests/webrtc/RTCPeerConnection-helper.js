@@ -103,73 +103,41 @@ function assert_session_desc_not_similar(sessionDesc1, sessionDesc2) {
     'Expect both session descriptions to have different count of media lines');
 }
 
-// Helper function to generate offer using a freshly created RTCPeerConnection
-// object with any audio, video, data media lines present
-function generateOffer(options={}) {
-  const {
-    audio = false,
-    video = false,
-    data = false,
-    pc,
-  } = options;
+async function generateDataChannelOffer(pc) {
+  pc.createDataChannel('test');
+  const offer = await pc.createOffer();
+  assert_equals(countApplicationLine(offer.sdp), 1, 'Expect m=application line to be present in generated SDP');
+  return offer;
+}
 
-  if (data) {
-    pc.createDataChannel('test');
-  }
-
-  const setup = {};
-
-  if (audio) {
-    setup.offerToReceiveAudio = true;
-  }
-
-  if (video) {
-    setup.offerToReceiveVideo = true;
-  }
-
-  return pc.createOffer(setup).then(offer => {
-    // Guard here to ensure that the generated offer really
-    // contain the number of media lines we want
-    const { sdp } = offer;
-
-    if(audio) {
-      assert_equals(countAudioLine(sdp), 1,
-        'Expect m=audio line to be present in generated SDP');
-    } else {
-      assert_equals(countAudioLine(sdp), 0,
-        'Expect m=audio line to be present in generated SDP');
+async function generateAudioReceiveOnlyOffer(pc)
+{
+    try {
+        pc.addTransceiver('audio', { direction: 'recvonly' });
+        return pc.createOffer();
+    } catch(e) {
+        return pc.createOffer({ offerToReceiveAudio: true });
     }
+}
 
-    if(video) {
-      assert_equals(countVideoLine(sdp), 1,
-        'Expect m=video line to be present in generated SDP');
-    } else {
-      assert_equals(countVideoLine(sdp), 0,
-        'Expect m=video line to not present in generated SDP');
+async function generateVideoReceiveOnlyOffer(pc)
+{
+    try {
+        pc.addTransceiver('video', { direction: 'recvonly' });
+        return pc.createOffer();
+    } catch(e) {
+        return pc.createOffer({ offerToReceiveVideo: true });
     }
-
-    if(data) {
-      assert_equals(countApplicationLine(sdp), 1,
-        'Expect m=application line to be present in generated SDP');
-    } else {
-      assert_equals(countApplicationLine(sdp), 0,
-        'Expect m=application line to not present in generated SDP');
-    }
-
-    return offer;
-  });
 }
 
 // Helper function to generate answer based on given offer using a freshly
 // created RTCPeerConnection object
-function generateAnswer(offer) {
+async function generateAnswer(offer) {
   const pc = new RTCPeerConnection();
-  return pc.setRemoteDescription(offer)
-  .then(() => pc.createAnswer())
-  .then((answer) => {
-    pc.close();
-    return answer;
-  });
+  await pc.setRemoteDescription(offer);
+  const answer = await pc.createAnswer();
+  pc.close();
+  return answer;
 }
 
 // Run a test function that return a promise that should
@@ -214,16 +182,76 @@ function exchangeIceCandidates(pc1, pc2) {
 }
 
 // Helper function for doing one round of offer/answer exchange
-// betweeen two local peer connections
-function doSignalingHandshake(localPc, remotePc) {
-  return localPc.createOffer()
-  .then(offer => Promise.all([
-    localPc.setLocalDescription(offer),
-    remotePc.setRemoteDescription(offer)]))
-  .then(() => remotePc.createAnswer())
-  .then(answer => Promise.all([
-    remotePc.setLocalDescription(answer),
-    localPc.setRemoteDescription(answer)]))
+// between two local peer connections
+async function doSignalingHandshake(localPc, remotePc, options={}) {
+  let offer = await localPc.createOffer();
+  // Modify offer if callback has been provided
+  if (options.modifyOffer) {
+    offer = await options.modifyOffer(offer);
+  }
+
+  // Apply offer
+  await localPc.setLocalDescription(offer);
+  await remotePc.setRemoteDescription(offer);
+
+  let answer = await remotePc.createAnswer();
+  // Modify answer if callback has been provided
+  if (options.modifyAnswer) {
+    answer = await options.modifyAnswer(answer);
+  }
+
+  // Apply answer
+  await remotePc.setLocalDescription(answer);
+  await localPc.setRemoteDescription(answer);
+}
+
+// Returns a promise that resolves when |pc.iceConnectionState| is 'connected'
+// or 'completed'.
+function listenToIceConnected(pc) {
+  return new Promise((resolve) => {
+    function isConnected(pc) {
+      return pc.iceConnectionState == 'connected' ||
+            pc.iceConnectionState == 'completed';
+    }
+    if (isConnected(pc)) {
+      resolve();
+      return;
+    }
+    pc.oniceconnectionstatechange = () => {
+      if (isConnected(pc))
+        resolve();
+    };
+  });
+}
+
+// Returns a promise that resolves when |pc.connectionState| is 'connected'.
+function listenToConnected(pc) {
+  return new Promise((resolve) => {
+    if (pc.connectionState == 'connected') {
+      resolve();
+      return;
+    }
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState == 'connected')
+        resolve();
+    };
+  });
+}
+
+// Resolves when RTP packets have been received.
+function listenForSSRCs(t, receiver) {
+  return new Promise((resolve) => {
+    function listen() {
+      const ssrcs = receiver.getSynchronizationSources();
+      assert_true(ssrcs != undefined);
+      if (ssrcs.length > 0) {
+        resolve(ssrcs);
+        return;
+      }
+      t.step_timeout(listen, 0);
+    };
+    listen();
+  });
 }
 
 // Helper function to create a pair of connected data channel.
@@ -283,12 +311,17 @@ function createDataChannelPair(
 
 // Wait for RTP and RTCP stats to arrive
 async function waitForRtpAndRtcpStats(pc) {
+  // If remote stats are never reported, return after 5 seconds.
+  const startTime = performance.now();
   while (true) {
     const report = await pc.getStats();
     const stats = [...report.values()].filter(({type}) => type.endsWith("bound-rtp"));
     // Each RTP and RTCP stat has a reference
     // to the matching stat in the other direction
     if (stats.length && stats.every(({localId, remoteId}) => localId || remoteId)) {
+      break;
+    }
+    if (performance.now() > startTime + 5000) {
       break;
     }
   }
@@ -322,23 +355,25 @@ function blobToArrayBuffer(blob) {
   });
 }
 
-// Assert that two ArrayBuffer objects have the same byte values
-function assert_equals_array_buffer(buffer1, buffer2) {
-  assert_true(buffer1 instanceof ArrayBuffer,
-    'Expect buffer to be instance of ArrayBuffer');
+// Assert that two TypedArray or ArrayBuffer objects have the same byte values
+function assert_equals_typed_array(array1, array2) {
+  const [view1, view2] = [array1, array2].map((array) => {
+    if (array instanceof ArrayBuffer) {
+      return new DataView(array);
+    } else {
+      assert_true(array.buffer instanceof ArrayBuffer,
+        'Expect buffer to be instance of ArrayBuffer');
+      return new DataView(array.buffer, array.byteOffset, array.byteLength);
+    }
+  });
 
-  assert_true(buffer2 instanceof ArrayBuffer,
-    'Expect buffer to be instance of ArrayBuffer');
+  assert_equals(view1.byteLength, view2.byteLength,
+    'Expect both arrays to be of the same byte length');
 
-  assert_equals(buffer1.byteLength, buffer2.byteLength,
-    'Expect both array buffers to be of the same byte length');
+  const byteLength = view1.byteLength;
 
-  const byteLength = buffer1.byteLength;
-  const byteArray1 = new Uint8Array(buffer1);
-  const byteArray2 = new Uint8Array(buffer2);
-
-  for(let i=0; i<byteLength; i++) {
-    assert_equals(byteArray1[i], byteArray2[i],
+  for (let i = 0; i < byteLength; ++i) {
+    assert_equals(view1.getUint8(i), view2.getUint8(i),
       `Expect byte at buffer position ${i} to be equal`);
   }
 }
@@ -371,7 +406,7 @@ const trackFactories = {
    */
   canCreate(requested) {
     const supported = {
-      audio: !!window.MediaStreamAudioDestinationNode,
+      audio: !!window.AudioContext && !!window.MediaStreamAudioDestinationNode,
       video: !!HTMLCanvasElement.prototype.captureStream
     };
 
@@ -505,18 +540,45 @@ async function exchangeOfferAndListenToOntrack(t, caller, callee) {
   return ontrackPromise;
 }
 
-// The resolver has a |promise| that can be resolved or rejected using |resolve|
+// The resolver extends a |promise| that can be resolved or rejected using |resolve|
 // or |reject|.
-class Resolver {
-  constructor() {
-    let promiseResolve;
-    let promiseReject;
-    this.promise = new Promise(function(resolve, reject) {
-      promiseResolve = resolve;
-      promiseReject = reject;
+class Resolver extends Promise {
+  constructor(executor) {
+    let resolve, reject;
+    super((resolve_, reject_) => {
+      resolve = resolve_;
+      reject = reject_;
+      if (executor) {
+        return executor(resolve_, reject_);
+      }
     });
-    this.resolve = promiseResolve;
-    this.reject = promiseReject;
+
+    this._done = false;
+    this._resolve = resolve;
+    this._reject = reject;
+  }
+
+  /**
+   * Return whether the promise is done (resolved or rejected).
+   */
+  get done() {
+    return this._done;
+  }
+
+  /**
+   * Resolve the promise.
+   */
+  resolve(...args) {
+    this._done = true;
+    return this._resolve(...args);
+  }
+
+  /**
+   * Reject the promise.
+   */
+  reject(...args) {
+    this._done = true;
+    return this._reject(...args);
   }
 }
 
@@ -539,7 +601,7 @@ function createPeerConnectionWithCleanup(t) {
 async function createTrackAndStreamWithCleanup(t, kind = 'audio') {
   let constraints = {};
   constraints[kind] = true;
-  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  const stream = await getNoiseStream(constraints);
   const [track] = stream.getTracks();
   t.add_cleanup(() => track.stop());
   return [track, stream];
@@ -552,4 +614,24 @@ function findTransceiverForSender(pc, sender) {
       return transceivers[i];
   }
   return null;
+}
+
+// Contains a set of values and will yell at you if you try to add a value twice.
+class UniqueSet extends Set {
+  constructor(items) {
+    super();
+    if (items !== undefined) {
+      for (const item of items) {
+        this.add(item);
+      }
+    }
+  }
+
+  add(value, message) {
+    if (message === undefined) {
+      message = `Value '${value}' needs to be unique but it is already in the set`;
+    }
+    assert_true(!this.has(value), message);
+    super.add(value);
+  }
 }

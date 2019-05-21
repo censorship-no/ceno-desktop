@@ -72,7 +72,7 @@ fn empty() {
     assert_eq!(None, poly);
 }
 
-fn test_trasnformed(rect: TypedRect<f32, ()>, transform: TypedTransform3D<f32, (), ()>) {
+fn test_transformed(rect: TypedRect<f32, ()>, transform: TypedTransform3D<f32, (), ()>) {
     let poly = Polygon::from_transformed_rect(rect, transform, 0).unwrap();
     assert!(poly.is_valid());
 
@@ -89,7 +89,7 @@ fn from_transformed_rect() {
     let transform =
         TypedTransform3D::create_rotation(0.5f32.sqrt(), 0.0, 0.5f32.sqrt(), Angle::radians(5.0))
         .pre_translate(vec3(0.0, 0.0, 10.0));
-    test_trasnformed(rect, transform);
+    test_transformed(rect, transform);
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn from_transformed_rect_perspective() {
         TypedTransform3D::create_perspective(400.0)
         .pre_translate(vec3(0.0, 0.0, 100.0));
     transform.m44 = 0.7; //for fun
-    test_trasnformed(rect, transform);
+    test_transformed(rect, transform);
 }
 
 #[test]
@@ -218,10 +218,16 @@ fn intersect() {
     assert!(poly_a.intersect(&poly_d).is_outside());
 }
 
-fn test_cut(poly_base: &Polygon<f32, ()>, extra_count: u8, line: Line<f32, ()>) {
+fn test_cut(
+    poly_base: &Polygon<f32, ()>,
+    extra_count: u8,
+    line: Line<f32, ()>,
+) {
     assert!(line.is_valid());
+
+    let normal = poly_base.plane.normal.cross(line.dir).normalize();
     let mut poly = poly_base.clone();
-    let (extra1, extra2) = poly.split(&line);
+    let (extra1, extra2) = poly.split_with_normal(&line, &normal);
     assert!(poly.is_valid() && poly_base.contains(&poly));
     assert_eq!(extra_count > 0, extra1.is_some());
     assert_eq!(extra_count > 1, extra2.is_some());
@@ -277,6 +283,12 @@ fn split() {
     test_cut(&poly, 2, Line {
         origin: point3(0.5, 1.0, 0.0),
         dir: vec3(-0.5f32.sqrt(), 0.0, 0.5f32.sqrt()),
+    });
+
+    // perfect diagonal
+    test_cut(&poly, 1, Line {
+        origin: point3(0.0, 1.0, 0.0),
+        dir: vec3(0.5f32.sqrt(), 0.0, 0.5f32.sqrt()),
     });
 }
 

@@ -1,83 +1,36 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-var _react = require("devtools/client/shared/vendor/react");
-
-var _react2 = _interopRequireDefault(_react);
-
-var _reactDom = require("devtools/client/shared/vendor/react-dom");
-
-var _reactDom2 = _interopRequireDefault(_reactDom);
-
-var _classnames = require("devtools/client/debugger/new/dist/vendors").vendored["classnames"];
-
-var _classnames2 = _interopRequireDefault(_classnames);
-
-var _Svg = require("devtools/client/debugger/new/dist/vendors").vendored["Svg"];
-
-var _Svg2 = _interopRequireDefault(_Svg);
-
-var _editor = require("../../utils/editor/index");
-
-var _prefs = require("../../utils/prefs");
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+// @flow
+
+import React, { PureComponent } from "react";
+import ReactDOM from "react-dom";
+import classnames from "classnames";
+import Svg from "../shared/Svg";
+
+import { getDocument, toEditorLine } from "../../utils/editor";
+import { getSelectedLocation } from "../../utils/source-maps";
+import { features } from "../../utils/prefs";
+import { showMenu } from "devtools-contextmenu";
+import { breakpointItems } from "./menus/breakpoints";
+import type { BreakpointItemActions } from "./menus/breakpoints";
+import type { EditorItemActions } from "./menus/editor";
+
+import type { Source, Breakpoint as BreakpointType } from "../../types";
+
 const breakpointSvg = document.createElement("div");
+ReactDOM.render(<Svg name="breakpoint" />, breakpointSvg);
 
-_reactDom2.default.render(_react2.default.createElement(_Svg2.default, {
-  name: "breakpoint"
-}), breakpointSvg);
+type Props = {
+  breakpoint: BreakpointType,
+  selectedSource: Source,
+  editor: Object,
+  breakpointActions: BreakpointItemActions,
+  editorActions: EditorItemActions
+};
 
-function makeMarker(isDisabled) {
-  const bp = breakpointSvg.cloneNode(true);
-  bp.className = (0, _classnames2.default)("editor new-breakpoint", {
-    "breakpoint-disabled": isDisabled,
-    "folding-enabled": _prefs.features.codeFolding
-  });
-  return bp;
-}
-
-class Breakpoint extends _react.PureComponent {
-  constructor(...args) {
-    var _temp;
-
-    return _temp = super(...args), this.addBreakpoint = () => {
-      const {
-        breakpoint,
-        editor,
-        selectedSource
-      } = this.props; // Hidden Breakpoints are never rendered on the client
-
-      if (breakpoint.hidden) {
-        return;
-      } // NOTE: we need to wait for the breakpoint to be loaded
-      // to get the generated location
-
-
-      if (!selectedSource || breakpoint.loading) {
-        return;
-      }
-
-      const sourceId = selectedSource.id;
-      const line = (0, _editor.toEditorLine)(sourceId, breakpoint.location.line);
-      editor.codeMirror.setGutterMarker(line, "breakpoints", makeMarker(breakpoint.disabled));
-      editor.codeMirror.addLineClass(line, "line", "new-breakpoint");
-
-      if (breakpoint.condition) {
-        editor.codeMirror.addLineClass(line, "line", "has-condition");
-      } else {
-        editor.codeMirror.removeLineClass(line, "line", "has-condition");
-      }
-    }, _temp;
-  }
-
+class Breakpoint extends PureComponent<Props> {
   componentDidMount() {
     this.addBreakpoint();
   }
@@ -87,43 +40,113 @@ class Breakpoint extends _react.PureComponent {
   }
 
   componentWillUnmount() {
-    const {
-      editor,
-      breakpoint,
-      selectedSource
-    } = this.props;
-
-    if (!selectedSource) {
-      return;
-    }
-
-    if (breakpoint.loading) {
+    const { breakpoint, selectedSource } = this.props;
+    if (!selectedSource || breakpoint.loading) {
       return;
     }
 
     const sourceId = selectedSource.id;
-    const doc = (0, _editor.getDocument)(sourceId);
+    const doc = getDocument(sourceId);
 
     if (!doc) {
       return;
     }
 
-    const line = (0, _editor.toEditorLine)(sourceId, breakpoint.location.line); // NOTE: when we upgrade codemirror we can use `doc.setGutterMarker`
+    const line = toEditorLine(sourceId, this.selectedLocation.line);
 
-    if (doc.setGutterMarker) {
-      doc.setGutterMarker(line, "breakpoints", null);
-    } else {
-      editor.codeMirror.setGutterMarker(line, "breakpoints", null);
-    }
-
+    doc.setGutterMarker(line, "breakpoints", null);
     doc.removeLineClass(line, "line", "new-breakpoint");
     doc.removeLineClass(line, "line", "has-condition");
+    doc.removeLineClass(line, "line", "has-log");
   }
+
+  get selectedLocation() {
+    const { breakpoint, selectedSource } = this.props;
+    return getSelectedLocation(breakpoint, selectedSource);
+  }
+
+  makeMarker() {
+    const { breakpoint } = this.props;
+    const bp = breakpointSvg.cloneNode(true);
+
+    bp.className = classnames("editor new-breakpoint", {
+      "breakpoint-disabled": breakpoint.disabled,
+      "folding-enabled": features.codeFolding
+    });
+
+    bp.onmousedown = this.onClick;
+    // NOTE: flow does not know about oncontextmenu
+    (bp: any).oncontextmenu = this.onContextMenu;
+
+    return bp;
+  }
+
+  onClick = (event: MouseEvent) => {
+    const { breakpointActions, editorActions, breakpoint } = this.props;
+
+    // ignore right clicks
+    if ((event.ctrlKey && event.button === 0) || event.button === 2) {
+      return;
+    }
+
+    event.stopPropagation();
+    event.preventDefault();
+
+    if (event.metaKey) {
+      return editorActions.continueToHere(this.selectedLocation.line);
+    }
+
+    if (event.shiftKey) {
+      return breakpointActions.toggleDisabledBreakpoint(breakpoint);
+    }
+
+    return breakpointActions.removeBreakpointsAtLine(
+      this.selectedLocation.sourceId,
+      this.selectedLocation.line
+    );
+  };
+
+  onContextMenu = (event: MouseEvent) => {
+    const { breakpoint, breakpointActions } = this.props;
+    event.stopPropagation();
+    event.preventDefault();
+    showMenu(event, breakpointItems(breakpoint, breakpointActions));
+  };
+
+  addBreakpoint = () => {
+    const { breakpoint, editor, selectedSource } = this.props;
+
+    // Hidden Breakpoints are never rendered on the client
+    if (breakpoint.options.hidden) {
+      return;
+    }
+
+    // NOTE: we need to wait for the breakpoint to be loaded
+    // to get the generated location
+    if (!selectedSource || breakpoint.loading) {
+      return;
+    }
+
+    const sourceId = selectedSource.id;
+    const line = toEditorLine(sourceId, this.selectedLocation.line);
+    const doc = getDocument(sourceId);
+
+    doc.setGutterMarker(line, "breakpoints", this.makeMarker());
+
+    editor.codeMirror.addLineClass(line, "line", "new-breakpoint");
+    editor.codeMirror.removeLineClass(line, "line", "has-condition");
+    editor.codeMirror.removeLineClass(line, "line", "has-log");
+
+    if (breakpoint.options.logValue) {
+      editor.codeMirror.addLineClass(line, "line", "has-log");
+    } else if (breakpoint.options.condition) {
+      editor.codeMirror.addLineClass(line, "line", "has-condition");
+    }
+  };
 
   render() {
     return null;
   }
-
 }
 
-exports.default = Breakpoint;
+export default Breakpoint;

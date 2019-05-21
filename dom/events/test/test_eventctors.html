@@ -12,7 +12,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=675884
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=675884">Mozilla Bug 675884</a>
 <p id="display"></p>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
 <script type="application/javascript">
@@ -364,7 +364,7 @@ ok(ex, "KeyboardEvent: First parameter is required!");
 ex = false;
 
 e = new KeyboardEvent("hello");
-ok(e.type, "hello", "KeyboardEvent: Wrong event type!");
+is(e.type, "hello", "KeyboardEvent: Wrong event type!");
 ok(!e.isTrusted, "KeyboardEvent: Event shouldn't be trusted!");
 ok(!e.bubbles, "KeyboardEvent: Event shouldn't bubble!");
 ok(!e.cancelable, "KeyboardEvent: Event shouldn't be cancelable!");
@@ -439,7 +439,7 @@ for (var i = 0; i < keyboardEventProps.length; ++i) {
     if (!isMethodResultInitializer(prop)) {
       ok(prop in e, "keyboardEvent: KeyboardEvent doesn't have property " + prop + "!");
     }
-    defaultKeyboardEventValues[prop] = keyboardEventProps[i][prop]; 
+    defaultKeyboardEventValues[prop] = keyboardEventProps[i][prop];
   }
 }
 
@@ -698,7 +698,7 @@ for (var i = 0; i < mouseEventProps.length; ++i) {
     if (!isMethodResultInitializer(prop)) {
       ok(prop in e, "MouseEvent: MouseEvent doesn't have property " + prop + "!");
     }
-    defaultMouseEventValues[prop] = mouseEventProps[i][prop]; 
+    defaultMouseEventValues[prop] = mouseEventProps[i][prop];
   }
 }
 
@@ -824,7 +824,7 @@ for (var i = 0; i < wheelEventProps.length; ++i) {
     if (!isMethodResultInitializer(prop)) {
       ok(prop in e, "WheelEvent: WheelEvent doesn't have property " + prop + "!");
     }
-    defaultWheelEventValues[prop] = wheelEventProps[i][prop]; 
+    defaultWheelEventValues[prop] = wheelEventProps[i][prop];
   }
 }
 
@@ -884,6 +884,40 @@ is(e.cancelable, false, "Lack of cancelable property in AnimationEventInit");
 is(e.type, "hello", "Wrong event type!");
 is(e.isTrusted, false, "Event shouldn't be trusted!");
 is(e.eventPhase, Event.NONE, "Wrong event phase");
+
+// InputEvent
+let dataTransfer = new DataTransfer();
+dataTransfer.setData("text/plain", "foo");
+e = new InputEvent("hello", {data: "something data", dataTransfer: dataTransfer, inputType: "invalid input type", isComposing: true});
+is(e.type, "hello", "InputEvent should set type attribute");
+is(e.data, "something data", "InputEvent should have data attribute");
+is(e.dataTransfer, dataTransfer, "InputEvent should have the dataTransfer");
+is(e.dataTransfer.getData("text/plain"), "foo", "InputEvent.dataTransfer should keep handling its data");
+try {
+  e.dataTransfer.setData("text/plain", "bar");
+} catch (ex) {
+  ok(false, `InputEvent.dataTransfer.setData("text/plain", "bar") shouldn't fail (${ex})`);
+}
+is(e.dataTransfer.getData("text/plain"), "bar", "InputEvent.dataTransfer should be modified by a call of its setData()");
+is(e.inputType, "invalid input type", "InputEvent should have inputType attribute");
+is(e.isComposing, true, "InputEvent should have isComposing attribute");
+
+dataTransfer = new DataTransfer();
+e = new InputEvent("hello", {data: "", dataTransfer: dataTransfer, inputType: "insertText"});
+is(e.data, "", "InputEvent.data should be empty string when empty string is specified explicitly");
+is(e.dataTransfer, dataTransfer, "InputEvent.dataTransfer should have the empty dataTransfer");
+is(e.inputType, "insertText", "InputEvent.inputType should return valid inputType from EditorInputType enum");
+e = new InputEvent("hello", {data: "foo", inputType: "deleteWordBackward"});
+is(e.data, "foo", "InputEvent.data should be the specified string");
+is(e.inputType, "deleteWordBackward", "InputEvent.inputType should return valid inputType from EditorInputType enum");
+e = new InputEvent("hello", {inputType: "formatFontName"});
+is(e.inputType, "formatFontName", "InputEvent.inputType should return valid inputType from EditorInputType enum");
+
+e = new InputEvent("input", {});
+is(e.data, null, "InputEvent.data should be null in default");
+is(e.dataTransfer, null, "InputEvent.dataTransfer should be null in default");
+is(e.inputType, "", "InputEvent.inputType should be empty string in default");
+is(e.isComposing, false, "InputEvent.isComposing should be false in default");
 
 </script>
 </pre>

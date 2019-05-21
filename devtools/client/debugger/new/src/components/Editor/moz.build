@@ -4,23 +4,22 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DIRS += [
+    'menus',
     'Preview',
 ]
 
-DevToolsModules(
+CompiledModules(
     'Breakpoint.js',
     'Breakpoints.js',
-    'CallSite.js',
-    'CallSites.js',
+    'ColumnBreakpoint.js',
+    'ColumnBreakpoints.js',
     'ConditionalPanel.js',
     'DebugLine.js',
     'EditorMenu.js',
     'EmptyLines.js',
     'Footer.js',
-    'GutterMenu.js',
     'HighlightLine.js',
     'HighlightLines.js',
-    'HitMarker.js',
     'index.js',
     'SearchBar.js',
     'Tab.js',

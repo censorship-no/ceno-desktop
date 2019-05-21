@@ -25,8 +25,7 @@ namespace net {
 
 NS_IMPL_ADDREF(WebSocketChannelChild)
 
-NS_IMETHODIMP_(MozExternalRefCountType) WebSocketChannelChild::Release()
-{
+NS_IMETHODIMP_(MozExternalRefCountType) WebSocketChannelChild::Release() {
   MOZ_ASSERT(0 != mRefCnt, "dup release");
   --mRefCnt;
   NS_LOG_RELEASE(this, mRefCnt, "WebSocketChannelChild");
@@ -52,10 +51,9 @@ NS_INTERFACE_MAP_BEGIN(WebSocketChannelChild)
 NS_INTERFACE_MAP_END
 
 WebSocketChannelChild::WebSocketChannelChild(bool aEncrypted)
- : NeckoTargetHolder(nullptr)
- , mIPCState(Closed)
- , mMutex("WebSocketChannelChild::mMutex")
-{
+    : NeckoTargetHolder(nullptr),
+      mIPCState(Closed),
+      mMutex("WebSocketChannelChild::mMutex") {
   MOZ_ASSERT(NS_IsMainThread(), "not main thread");
 
   LOG(("WebSocketChannelChild::WebSocketChannelChild() %p\n", this));
@@ -63,42 +61,37 @@ WebSocketChannelChild::WebSocketChannelChild(bool aEncrypted)
   mEventQ = new ChannelEventQueue(static_cast<nsIWebSocketChannel*>(this));
 }
 
-WebSocketChannelChild::~WebSocketChannelChild()
-{
+WebSocketChannelChild::~WebSocketChannelChild() {
   LOG(("WebSocketChannelChild::~WebSocketChannelChild() %p\n", this));
 }
 
-void
-WebSocketChannelChild::AddIPDLReference()
-{
+void WebSocketChannelChild::AddIPDLReference() {
   MOZ_ASSERT(NS_IsMainThread());
 
   {
     MutexAutoLock lock(mMutex);
-    MOZ_ASSERT(mIPCState == Closed, "Attempt to retain more than one IPDL reference");
+    MOZ_ASSERT(mIPCState == Closed,
+               "Attempt to retain more than one IPDL reference");
     mIPCState = Opened;
   }
 
   AddRef();
 }
 
-void
-WebSocketChannelChild::ReleaseIPDLReference()
-{
+void WebSocketChannelChild::ReleaseIPDLReference() {
   MOZ_ASSERT(NS_IsMainThread());
 
   {
     MutexAutoLock lock(mMutex);
-    MOZ_ASSERT(mIPCState != Closed, "Attempt to release nonexistent IPDL reference");
+    MOZ_ASSERT(mIPCState != Closed,
+               "Attempt to release nonexistent IPDL reference");
     mIPCState = Closed;
   }
 
   Release();
 }
 
-void
-WebSocketChannelChild::MaybeReleaseIPCObject()
-{
+void WebSocketChannelChild::MaybeReleaseIPCObject() {
   {
     MutexAutoLock lock(mMutex);
     if (mIPCState != Opened) {
@@ -110,80 +103,69 @@ WebSocketChannelChild::MaybeReleaseIPCObject()
 
   if (!NS_IsMainThread()) {
     nsCOMPtr<nsIEventTarget> target = GetNeckoTarget();
-    MOZ_ALWAYS_SUCCEEDS(
-      target->Dispatch(NewRunnableMethod("WebSocketChannelChild::MaybeReleaseIPCObject",
-                                         this,
-                                         &WebSocketChannelChild::MaybeReleaseIPCObject),
-                       NS_DISPATCH_NORMAL));
+    MOZ_ALWAYS_SUCCEEDS(target->Dispatch(
+        NewRunnableMethod("WebSocketChannelChild::MaybeReleaseIPCObject", this,
+                          &WebSocketChannelChild::MaybeReleaseIPCObject),
+        NS_DISPATCH_NORMAL));
     return;
   }
 
   SendDeleteSelf();
 }
 
-void
-WebSocketChannelChild::GetEffectiveURL(nsAString& aEffectiveURL) const
-{
+void WebSocketChannelChild::GetEffectiveURL(nsAString& aEffectiveURL) const {
   aEffectiveURL = mEffectiveURL;
 }
 
-bool
-WebSocketChannelChild::IsEncrypted() const
-{
-  return mEncrypted;
-}
+bool WebSocketChannelChild::IsEncrypted() const { return mEncrypted; }
 
-class WrappedChannelEvent : public Runnable
-{
-public:
-  explicit WrappedChannelEvent(ChannelEvent* aChannelEvent)
-    : Runnable("net::WrappedChannelEvent")
-    , mChannelEvent(aChannelEvent)
-  {
-    MOZ_RELEASE_ASSERT(aChannelEvent);
-  }
-  NS_IMETHOD Run() override
-  {
-    mChannelEvent->Run();
-    return NS_OK;
-  }
-private:
-  nsAutoPtr<ChannelEvent> mChannelEvent;
+class WebSocketEvent {
+ public:
+  WebSocketEvent() { MOZ_COUNT_CTOR(WebSocketEvent); }
+  virtual ~WebSocketEvent() { MOZ_COUNT_DTOR(WebSocketEvent); }
+  virtual void Run(WebSocketChannelChild* aChild) = 0;
 };
 
-void
-WebSocketChannelChild::DispatchToTargetThread(ChannelEvent *aChannelEvent)
-{
-  MOZ_RELEASE_ASSERT(NS_IsMainThread());
-  MOZ_RELEASE_ASSERT(mTargetThread);
-  MOZ_RELEASE_ASSERT(aChannelEvent);
+class WrappedWebSocketEvent : public Runnable {
+ public:
+  WrappedWebSocketEvent(WebSocketChannelChild* aChild,
+                        WebSocketEvent* aWebSocketEvent)
+      : Runnable("net::WrappedWebSocketEvent"),
+        mChild(aChild),
+        mWebSocketEvent(aWebSocketEvent) {
+    MOZ_RELEASE_ASSERT(aWebSocketEvent);
+  }
+  NS_IMETHOD Run() override {
+    mWebSocketEvent->Run(mChild);
+    return NS_OK;
+  }
 
-  mTargetThread->Dispatch(new WrappedChannelEvent(aChannelEvent),
-                          NS_DISPATCH_NORMAL);
-}
+ private:
+  RefPtr<WebSocketChannelChild> mChild;
+  nsAutoPtr<WebSocketEvent> mWebSocketEvent;
+};
 
-class EventTargetDispatcher : public ChannelEvent
-{
-public:
-  EventTargetDispatcher(ChannelEvent* aChannelEvent,
+class EventTargetDispatcher : public ChannelEvent {
+ public:
+  EventTargetDispatcher(WebSocketChannelChild* aChild,
+                        WebSocketEvent* aWebSocketEvent,
                         nsIEventTarget* aEventTarget)
-    : mChannelEvent(aChannelEvent)
-    , mEventTarget(aEventTarget)
-  {}
+      : mChild(aChild),
+        mWebSocketEvent(aWebSocketEvent),
+        mEventTarget(aEventTarget) {}
 
-  void Run() override
-  {
+  void Run() override {
     if (mEventTarget) {
-      mEventTarget->Dispatch(new WrappedChannelEvent(mChannelEvent.forget()),
-                             NS_DISPATCH_NORMAL);
+      mEventTarget->Dispatch(
+          new WrappedWebSocketEvent(mChild, mWebSocketEvent.forget()),
+          NS_DISPATCH_NORMAL);
       return;
     }
 
-    mChannelEvent->Run();
+    mWebSocketEvent->Run(mChild);
   }
 
-  already_AddRefed<nsIEventTarget> GetEventTarget() override
-  {
+  already_AddRefed<nsIEventTarget> GetEventTarget() override {
     nsCOMPtr<nsIEventTarget> target = mEventTarget;
     if (!target) {
       target = GetMainThreadEventTarget();
@@ -191,64 +173,47 @@ public:
     return target.forget();
   }
 
-private:
-  nsAutoPtr<ChannelEvent> mChannelEvent;
+ private:
+  // The lifetime of the child is ensured by ChannelEventQueue.
+  WebSocketChannelChild* mChild;
+  nsAutoPtr<WebSocketEvent> mWebSocketEvent;
   nsCOMPtr<nsIEventTarget> mEventTarget;
 };
 
-class StartEvent : public ChannelEvent
-{
+class StartEvent : public WebSocketEvent {
  public:
-  StartEvent(WebSocketChannelChild* aChild,
-             const nsCString& aProtocol,
-             const nsCString& aExtensions,
-             const nsString& aEffectiveURL,
-             bool aEncrypted)
-  : mChild(aChild)
-  , mProtocol(aProtocol)
-  , mExtensions(aExtensions)
-  , mEffectiveURL(aEffectiveURL)
-  , mEncrypted(aEncrypted)
-  {}
+  StartEvent(const nsCString& aProtocol, const nsCString& aExtensions,
+             const nsString& aEffectiveURL, bool aEncrypted)
+      : mProtocol(aProtocol),
+        mExtensions(aExtensions),
+        mEffectiveURL(aEffectiveURL),
+        mEncrypted(aEncrypted) {}
 
-  void Run() override
-  {
-    mChild->OnStart(mProtocol, mExtensions, mEffectiveURL, mEncrypted);
-  }
-
-  already_AddRefed<nsIEventTarget> GetEventTarget() override
-  {
-    return do_AddRef(GetCurrentThreadEventTarget());
+  void Run(WebSocketChannelChild* aChild) override {
+    aChild->OnStart(mProtocol, mExtensions, mEffectiveURL, mEncrypted);
   }
 
  private:
-  RefPtr<WebSocketChannelChild> mChild;
   nsCString mProtocol;
   nsCString mExtensions;
   nsString mEffectiveURL;
   bool mEncrypted;
 };
 
-mozilla::ipc::IPCResult
-WebSocketChannelChild::RecvOnStart(const nsCString& aProtocol,
-                                   const nsCString& aExtensions,
-                                   const nsString& aEffectiveURL,
-                                   const bool& aEncrypted)
-{
-  mEventQ->RunOrEnqueue(
-    new EventTargetDispatcher(new StartEvent(this, aProtocol, aExtensions,
-                                             aEffectiveURL, aEncrypted),
-                              mTargetThread));
+mozilla::ipc::IPCResult WebSocketChannelChild::RecvOnStart(
+    const nsCString& aProtocol, const nsCString& aExtensions,
+    const nsString& aEffectiveURL, const bool& aEncrypted) {
+  mEventQ->RunOrEnqueue(new EventTargetDispatcher(
+      this, new StartEvent(aProtocol, aExtensions, aEffectiveURL, aEncrypted),
+      mTargetThread));
 
   return IPC_OK();
 }
 
-void
-WebSocketChannelChild::OnStart(const nsCString& aProtocol,
-                               const nsCString& aExtensions,
-                               const nsString& aEffectiveURL,
-                               const bool& aEncrypted)
-{
+void WebSocketChannelChild::OnStart(const nsCString& aProtocol,
+                                    const nsCString& aExtensions,
+                                    const nsString& aEffectiveURL,
+                                    const bool& aEncrypted) {
   LOG(("WebSocketChannelChild::RecvOnStart() %p\n", this));
   SetProtocol(aProtocol);
   mNegotiatedExtensions = aExtensions;
@@ -259,253 +224,187 @@ WebSocketChannelChild::OnStart(const nsCString& aProtocol,
     AutoEventEnqueuer ensureSerialDispatch(mEventQ);
     nsresult rv = mListenerMT->mListener->OnStart(mListenerMT->mContext);
     if (NS_FAILED(rv)) {
-      LOG(("WebSocketChannelChild::OnStart "
+      LOG(
+          ("WebSocketChannelChild::OnStart "
            "mListenerMT->mListener->OnStart() failed with error 0x%08" PRIx32,
            static_cast<uint32_t>(rv)));
     }
   }
 }
 
-class StopEvent : public ChannelEvent
-{
+class StopEvent : public WebSocketEvent {
  public:
-  StopEvent(WebSocketChannelChild* aChild,
-            const nsresult& aStatusCode)
-  : mChild(aChild)
-  , mStatusCode(aStatusCode)
-  {}
+  explicit StopEvent(const nsresult& aStatusCode) : mStatusCode(aStatusCode) {}
 
-  void Run() override
-  {
-    mChild->OnStop(mStatusCode);
-  }
-
-  already_AddRefed<nsIEventTarget> GetEventTarget() override
-  {
-    return do_AddRef(GetCurrentThreadEventTarget());
+  void Run(WebSocketChannelChild* aChild) override {
+    aChild->OnStop(mStatusCode);
   }
 
  private:
-  RefPtr<WebSocketChannelChild> mChild;
   nsresult mStatusCode;
 };
 
-mozilla::ipc::IPCResult
-WebSocketChannelChild::RecvOnStop(const nsresult& aStatusCode)
-{
-  mEventQ->RunOrEnqueue(
-    new EventTargetDispatcher(new StopEvent(this, aStatusCode),
-                              mTargetThread));
+mozilla::ipc::IPCResult WebSocketChannelChild::RecvOnStop(
+    const nsresult& aStatusCode) {
+  mEventQ->RunOrEnqueue(new EventTargetDispatcher(
+      this, new StopEvent(aStatusCode), mTargetThread));
 
   return IPC_OK();
 }
 
-void
-WebSocketChannelChild::OnStop(const nsresult& aStatusCode)
-{
+void WebSocketChannelChild::OnStop(const nsresult& aStatusCode) {
   LOG(("WebSocketChannelChild::RecvOnStop() %p\n", this));
   if (mListenerMT) {
     AutoEventEnqueuer ensureSerialDispatch(mEventQ);
     nsresult rv =
-      mListenerMT->mListener->OnStop(mListenerMT->mContext, aStatusCode);
+        mListenerMT->mListener->OnStop(mListenerMT->mContext, aStatusCode);
     if (NS_FAILED(rv)) {
-      LOG(("WebSocketChannel::OnStop "
+      LOG(
+          ("WebSocketChannel::OnStop "
            "mListenerMT->mListener->OnStop() failed with error 0x%08" PRIx32,
            static_cast<uint32_t>(rv)));
     }
   }
 }
 
-class MessageEvent : public ChannelEvent
-{
+class MessageEvent : public WebSocketEvent {
  public:
-  MessageEvent(WebSocketChannelChild* aChild,
-               const nsCString& aMessage,
-               bool aBinary)
-  : mChild(aChild)
-  , mMessage(aMessage)
-  , mBinary(aBinary)
-  {}
+  MessageEvent(const nsCString& aMessage, bool aBinary)
+      : mMessage(aMessage), mBinary(aBinary) {}
 
-  void Run() override
-  {
+  void Run(WebSocketChannelChild* aChild) override {
     if (!mBinary) {
-      mChild->OnMessageAvailable(mMessage);
+      aChild->OnMessageAvailable(mMessage);
     } else {
-      mChild->OnBinaryMessageAvailable(mMessage);
+      aChild->OnBinaryMessageAvailable(mMessage);
     }
   }
 
-  already_AddRefed<nsIEventTarget> GetEventTarget() override
-  {
-    return do_AddRef(GetCurrentThreadEventTarget());
-  }
-
  private:
-  RefPtr<WebSocketChannelChild> mChild;
   nsCString mMessage;
   bool mBinary;
 };
 
-mozilla::ipc::IPCResult
-WebSocketChannelChild::RecvOnMessageAvailable(const nsCString& aMsg)
-{
-  mEventQ->RunOrEnqueue(
-    new EventTargetDispatcher(new MessageEvent(this, aMsg, false),
-                              mTargetThread));
+mozilla::ipc::IPCResult WebSocketChannelChild::RecvOnMessageAvailable(
+    const nsCString& aMsg) {
+  mEventQ->RunOrEnqueue(new EventTargetDispatcher(
+      this, new MessageEvent(aMsg, false), mTargetThread));
 
   return IPC_OK();
 }
 
-void
-WebSocketChannelChild::OnMessageAvailable(const nsCString& aMsg)
-{
+void WebSocketChannelChild::OnMessageAvailable(const nsCString& aMsg) {
   LOG(("WebSocketChannelChild::RecvOnMessageAvailable() %p\n", this));
   if (mListenerMT) {
     AutoEventEnqueuer ensureSerialDispatch(mEventQ);
     nsresult rv =
-      mListenerMT->mListener->OnMessageAvailable(mListenerMT->mContext, aMsg);
+        mListenerMT->mListener->OnMessageAvailable(mListenerMT->mContext, aMsg);
     if (NS_FAILED(rv)) {
-      LOG(("WebSocketChannelChild::OnMessageAvailable "
+      LOG(
+          ("WebSocketChannelChild::OnMessageAvailable "
            "mListenerMT->mListener->OnMessageAvailable() "
-           "failed with error 0x%08" PRIx32, static_cast<uint32_t>(rv)));
+           "failed with error 0x%08" PRIx32,
+           static_cast<uint32_t>(rv)));
     }
   }
 }
 
-mozilla::ipc::IPCResult
-WebSocketChannelChild::RecvOnBinaryMessageAvailable(const nsCString& aMsg)
-{
-  mEventQ->RunOrEnqueue(
-    new EventTargetDispatcher(new MessageEvent(this, aMsg, true),
-                              mTargetThread));
+mozilla::ipc::IPCResult WebSocketChannelChild::RecvOnBinaryMessageAvailable(
+    const nsCString& aMsg) {
+  mEventQ->RunOrEnqueue(new EventTargetDispatcher(
+      this, new MessageEvent(aMsg, true), mTargetThread));
 
   return IPC_OK();
 }
 
-void
-WebSocketChannelChild::OnBinaryMessageAvailable(const nsCString& aMsg)
-{
+void WebSocketChannelChild::OnBinaryMessageAvailable(const nsCString& aMsg) {
   LOG(("WebSocketChannelChild::RecvOnBinaryMessageAvailable() %p\n", this));
   if (mListenerMT) {
     AutoEventEnqueuer ensureSerialDispatch(mEventQ);
-    nsresult rv =
-      mListenerMT->mListener->OnBinaryMessageAvailable(mListenerMT->mContext,
-                                                       aMsg);
+    nsresult rv = mListenerMT->mListener->OnBinaryMessageAvailable(
+        mListenerMT->mContext, aMsg);
     if (NS_FAILED(rv)) {
-      LOG(("WebSocketChannelChild::OnBinaryMessageAvailable "
+      LOG(
+          ("WebSocketChannelChild::OnBinaryMessageAvailable "
            "mListenerMT->mListener->OnBinaryMessageAvailable() "
-           "failed with error 0x%08" PRIx32, static_cast<uint32_t>(rv)));
+           "failed with error 0x%08" PRIx32,
+           static_cast<uint32_t>(rv)));
     }
   }
 }
 
-class AcknowledgeEvent : public ChannelEvent
-{
+class AcknowledgeEvent : public WebSocketEvent {
  public:
-  AcknowledgeEvent(WebSocketChannelChild* aChild,
-                   const uint32_t& aSize)
-  : mChild(aChild)
-  , mSize(aSize)
-  {}
+  explicit AcknowledgeEvent(const uint32_t& aSize) : mSize(aSize) {}
 
-  void Run() override
-  {
-    mChild->OnAcknowledge(mSize);
-  }
-
-  already_AddRefed<nsIEventTarget> GetEventTarget() override
-  {
-    return do_AddRef(GetCurrentThreadEventTarget());
+  void Run(WebSocketChannelChild* aChild) override {
+    aChild->OnAcknowledge(mSize);
   }
 
  private:
-  RefPtr<WebSocketChannelChild> mChild;
   uint32_t mSize;
 };
 
-mozilla::ipc::IPCResult
-WebSocketChannelChild::RecvOnAcknowledge(const uint32_t& aSize)
-{
-  mEventQ->RunOrEnqueue(
-    new EventTargetDispatcher(new AcknowledgeEvent(this, aSize),
-                              mTargetThread));
+mozilla::ipc::IPCResult WebSocketChannelChild::RecvOnAcknowledge(
+    const uint32_t& aSize) {
+  mEventQ->RunOrEnqueue(new EventTargetDispatcher(
+      this, new AcknowledgeEvent(aSize), mTargetThread));
 
   return IPC_OK();
 }
 
-void
-WebSocketChannelChild::OnAcknowledge(const uint32_t& aSize)
-{
+void WebSocketChannelChild::OnAcknowledge(const uint32_t& aSize) {
   LOG(("WebSocketChannelChild::RecvOnAcknowledge() %p\n", this));
   if (mListenerMT) {
     AutoEventEnqueuer ensureSerialDispatch(mEventQ);
     nsresult rv =
-      mListenerMT->mListener->OnAcknowledge(mListenerMT->mContext, aSize);
+        mListenerMT->mListener->OnAcknowledge(mListenerMT->mContext, aSize);
     if (NS_FAILED(rv)) {
-      LOG(("WebSocketChannel::OnAcknowledge "
+      LOG(
+          ("WebSocketChannel::OnAcknowledge "
            "mListenerMT->mListener->OnAcknowledge() "
-           "failed with error 0x%08" PRIx32, static_cast<uint32_t>(rv)));
+           "failed with error 0x%08" PRIx32,
+           static_cast<uint32_t>(rv)));
     }
   }
 }
 
-class ServerCloseEvent : public ChannelEvent
-{
+class ServerCloseEvent : public WebSocketEvent {
  public:
-  ServerCloseEvent(WebSocketChannelChild* aChild,
-                   const uint16_t aCode,
-                   const nsCString &aReason)
-  : mChild(aChild)
-  , mCode(aCode)
-  , mReason(aReason)
-  {}
+  ServerCloseEvent(const uint16_t aCode, const nsCString& aReason)
+      : mCode(aCode), mReason(aReason) {}
 
-  void Run() override
-  {
-    mChild->OnServerClose(mCode, mReason);
-  }
-
-  already_AddRefed<nsIEventTarget> GetEventTarget() override
-  {
-    return do_AddRef(GetCurrentThreadEventTarget());
+  void Run(WebSocketChannelChild* aChild) override {
+    aChild->OnServerClose(mCode, mReason);
   }
 
  private:
-  RefPtr<WebSocketChannelChild> mChild;
   uint16_t mCode;
   nsCString mReason;
 };
 
-mozilla::ipc::IPCResult
-WebSocketChannelChild::RecvOnServerClose(const uint16_t& aCode,
-                                         const nsCString& aReason)
-{
-  mEventQ->RunOrEnqueue(
-    new EventTargetDispatcher(new ServerCloseEvent(this, aCode, aReason),
-                              mTargetThread));
+mozilla::ipc::IPCResult WebSocketChannelChild::RecvOnServerClose(
+    const uint16_t& aCode, const nsCString& aReason) {
+  mEventQ->RunOrEnqueue(new EventTargetDispatcher(
+      this, new ServerCloseEvent(aCode, aReason), mTargetThread));
 
   return IPC_OK();
 }
 
-void
-WebSocketChannelChild::OnServerClose(const uint16_t& aCode,
-                                     const nsCString& aReason)
-{
+void WebSocketChannelChild::OnServerClose(const uint16_t& aCode,
+                                          const nsCString& aReason) {
   LOG(("WebSocketChannelChild::RecvOnServerClose() %p\n", this));
   if (mListenerMT) {
     AutoEventEnqueuer ensureSerialDispatch(mEventQ);
-    DebugOnly<nsresult> rv =
-      mListenerMT->mListener->OnServerClose(mListenerMT->mContext, aCode,
-                                            aReason);
+    DebugOnly<nsresult> rv = mListenerMT->mListener->OnServerClose(
+        mListenerMT->mContext, aCode, aReason);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 }
 
-void
-WebSocketChannelChild::SetupNeckoTarget()
-{
-  mNeckoTarget = nsContentUtils::GetEventTargetByLoadInfo(mLoadInfo, TaskCategory::Network);
+void WebSocketChannelChild::SetupNeckoTarget() {
+  mNeckoTarget = nsContentUtils::GetEventTargetByLoadInfo(
+      mLoadInfo, TaskCategory::Network);
   if (!mNeckoTarget) {
     return;
   }
@@ -514,12 +413,10 @@ WebSocketChannelChild::SetupNeckoTarget()
 }
 
 NS_IMETHODIMP
-WebSocketChannelChild::AsyncOpen(nsIURI *aURI,
-                                 const nsACString &aOrigin,
+WebSocketChannelChild::AsyncOpen(nsIURI* aURI, const nsACString& aOrigin,
                                  uint64_t aInnerWindowID,
-                                 nsIWebSocketListener *aListener,
-                                 nsISupports *aContext)
-{
+                                 nsIWebSocketListener* aListener,
+                                 nsISupports* aContext) {
   LOG(("WebSocketChannelChild::AsyncOpen() %p\n", this));
 
   MOZ_ASSERT(NS_IsMainThread(), "not main thread");
@@ -530,8 +427,7 @@ WebSocketChannelChild::AsyncOpen(nsIURI *aURI,
 
   mozilla::dom::TabChild* tabChild = nullptr;
   nsCOMPtr<nsITabChild> iTabChild;
-  NS_QueryNotificationCallbacks(mCallbacks, mLoadGroup,
-                                NS_GET_IID(nsITabChild),
+  NS_QueryNotificationCallbacks(mCallbacks, mLoadGroup, NS_GET_IID(nsITabChild),
                                 getter_AddRefs(iTabChild));
   if (iTabChild) {
     tabChild = static_cast<mozilla::dom::TabChild*>(iTabChild.get());
@@ -548,35 +444,31 @@ WebSocketChannelChild::AsyncOpen(nsIURI *aURI,
   // Corresponding release in DeallocPWebSocket
   AddIPDLReference();
 
-  OptionalURIParams uri;
-  OptionalLoadInfoArgs loadInfoArgs;
-  OptionalTransportProvider transportProvider;
+  Maybe<URIParams> uri;
+  Maybe<LoadInfoArgs> loadInfoArgs;
+  Maybe<PTransportProviderChild*> transportProvider;
 
   if (!mIsServerSide) {
-    uri = URIParams();
-    SerializeURI(aURI, uri.get_URIParams());
+    uri.emplace(URIParams());
+    SerializeURI(aURI, uri.ref());
     nsresult rv = LoadInfoToLoadInfoArgs(mLoadInfo, &loadInfoArgs);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    transportProvider = void_t();
+    transportProvider = Nothing();
   } else {
-    uri = void_t();
-    loadInfoArgs = void_t();
-
     MOZ_ASSERT(mServerTransportProvider);
-    PTransportProviderChild *ipcChild;
+    PTransportProviderChild* ipcChild;
     nsresult rv = mServerTransportProvider->GetIPCChild(&ipcChild);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    transportProvider = ipcChild;
+    transportProvider = Some(ipcChild);
   }
 
   // This must be called before sending constructor message.
   SetupNeckoTarget();
 
-  gNeckoChild->SendPWebSocketConstructor(this, tabChild,
-                                         IPC::SerializedLoadContext(this),
-                                         mSerial);
+  gNeckoChild->SendPWebSocketConstructor(
+      this, tabChild, IPC::SerializedLoadContext(this), mSerial);
   if (!SendAsyncOpen(uri, nsCString(aOrigin), aInnerWindowID, mProtocol,
                      mEncrypted, mPingInterval, mClientSetPingInterval,
                      mPingResponseTimeout, mClientSetPingTimeout, loadInfoArgs,
@@ -597,35 +489,31 @@ WebSocketChannelChild::AsyncOpen(nsIURI *aURI,
   return NS_OK;
 }
 
-class CloseEvent : public Runnable
-{
-public:
-  CloseEvent(WebSocketChannelChild* aChild,
-             uint16_t aCode,
+class CloseEvent : public Runnable {
+ public:
+  CloseEvent(WebSocketChannelChild* aChild, uint16_t aCode,
              const nsACString& aReason)
-    : Runnable("net::CloseEvent")
-    , mChild(aChild)
-    , mCode(aCode)
-    , mReason(aReason)
-  {
+      : Runnable("net::CloseEvent"),
+        mChild(aChild),
+        mCode(aCode),
+        mReason(aReason) {
     MOZ_RELEASE_ASSERT(!NS_IsMainThread());
     MOZ_ASSERT(aChild);
   }
-  NS_IMETHOD Run() override
-  {
+  NS_IMETHOD Run() override {
     MOZ_RELEASE_ASSERT(NS_IsMainThread());
     mChild->Close(mCode, mReason);
     return NS_OK;
   }
-private:
+
+ private:
   RefPtr<WebSocketChannelChild> mChild;
-  uint16_t                        mCode;
-  nsCString                       mReason;
+  uint16_t mCode;
+  nsCString mReason;
 };
 
 NS_IMETHODIMP
-WebSocketChannelChild::Close(uint16_t code, const nsACString & reason)
-{
+WebSocketChannelChild::Close(uint16_t code, const nsACString& reason) {
   if (!NS_IsMainThread()) {
     MOZ_RELEASE_ASSERT(mTargetThread->IsOnCurrentThread());
     nsCOMPtr<nsIEventTarget> target = GetNeckoTarget();
@@ -648,22 +536,18 @@ WebSocketChannelChild::Close(uint16_t code, const nsACString & reason)
   return NS_OK;
 }
 
-class MsgEvent : public Runnable
-{
-public:
-  MsgEvent(WebSocketChannelChild* aChild,
-           const nsACString& aMsg,
+class MsgEvent : public Runnable {
+ public:
+  MsgEvent(WebSocketChannelChild* aChild, const nsACString& aMsg,
            bool aBinaryMsg)
-    : Runnable("net::MsgEvent")
-    , mChild(aChild)
-    , mMsg(aMsg)
-    , mBinaryMsg(aBinaryMsg)
-  {
+      : Runnable("net::MsgEvent"),
+        mChild(aChild),
+        mMsg(aMsg),
+        mBinaryMsg(aBinaryMsg) {
     MOZ_RELEASE_ASSERT(!NS_IsMainThread());
     MOZ_ASSERT(aChild);
   }
-  NS_IMETHOD Run() override
-  {
+  NS_IMETHOD Run() override {
     MOZ_RELEASE_ASSERT(NS_IsMainThread());
     if (mBinaryMsg) {
       mChild->SendBinaryMsg(mMsg);
@@ -672,15 +556,15 @@ public:
     }
     return NS_OK;
   }
-private:
+
+ private:
   RefPtr<WebSocketChannelChild> mChild;
-  nsCString                       mMsg;
-  bool                            mBinaryMsg;
+  nsCString mMsg;
+  bool mBinaryMsg;
 };
 
 NS_IMETHODIMP
-WebSocketChannelChild::SendMsg(const nsACString &aMsg)
-{
+WebSocketChannelChild::SendMsg(const nsACString& aMsg) {
   if (!NS_IsMainThread()) {
     MOZ_RELEASE_ASSERT(IsOnTargetThread());
     nsCOMPtr<nsIEventTarget> target = GetNeckoTarget();
@@ -704,13 +588,11 @@ WebSocketChannelChild::SendMsg(const nsACString &aMsg)
 }
 
 NS_IMETHODIMP
-WebSocketChannelChild::SendBinaryMsg(const nsACString &aMsg)
-{
+WebSocketChannelChild::SendBinaryMsg(const nsACString& aMsg) {
   if (!NS_IsMainThread()) {
     MOZ_RELEASE_ASSERT(IsOnTargetThread());
     nsCOMPtr<nsIEventTarget> target = GetNeckoTarget();
-    return target->Dispatch(new MsgEvent(this, aMsg, true),
-                            NS_DISPATCH_NORMAL);
+    return target->Dispatch(new MsgEvent(this, aMsg, true), NS_DISPATCH_NORMAL);
   }
   LOG(("WebSocketChannelChild::SendBinaryMsg() %p\n", this));
 
@@ -728,40 +610,38 @@ WebSocketChannelChild::SendBinaryMsg(const nsACString &aMsg)
   return NS_OK;
 }
 
-class BinaryStreamEvent : public Runnable
-{
-public:
-  BinaryStreamEvent(WebSocketChannelChild* aChild,
-                    nsIInputStream* aStream,
+class BinaryStreamEvent : public Runnable {
+ public:
+  BinaryStreamEvent(WebSocketChannelChild* aChild, nsIInputStream* aStream,
                     uint32_t aLength)
-    : Runnable("net::BinaryStreamEvent")
-    , mChild(aChild)
-    , mStream(aStream)
-    , mLength(aLength)
-  {
+      : Runnable("net::BinaryStreamEvent"),
+        mChild(aChild),
+        mStream(aStream),
+        mLength(aLength) {
     MOZ_RELEASE_ASSERT(!NS_IsMainThread());
     MOZ_ASSERT(aChild);
   }
-  NS_IMETHOD Run() override
-  {
+  NS_IMETHOD Run() override {
     MOZ_ASSERT(NS_IsMainThread());
     nsresult rv = mChild->SendBinaryStream(mStream, mLength);
     if (NS_FAILED(rv)) {
-      LOG(("WebSocketChannelChild::BinaryStreamEvent %p "
-           "SendBinaryStream failed (%08" PRIx32 ")\n", this, static_cast<uint32_t>(rv)));
+      LOG(
+          ("WebSocketChannelChild::BinaryStreamEvent %p "
+           "SendBinaryStream failed (%08" PRIx32 ")\n",
+           this, static_cast<uint32_t>(rv)));
     }
     return NS_OK;
   }
-private:
+
+ private:
   RefPtr<WebSocketChannelChild> mChild;
   nsCOMPtr<nsIInputStream> mStream;
   uint32_t mLength;
 };
 
 NS_IMETHODIMP
-WebSocketChannelChild::SendBinaryStream(nsIInputStream *aStream,
-                                        uint32_t aLength)
-{
+WebSocketChannelChild::SendBinaryStream(nsIInputStream* aStream,
+                                        uint32_t aLength) {
   if (!NS_IsMainThread()) {
     MOZ_RELEASE_ASSERT(mTargetThread->IsOnCurrentThread());
     nsCOMPtr<nsIEventTarget> target = GetNeckoTarget();
@@ -772,8 +652,8 @@ WebSocketChannelChild::SendBinaryStream(nsIInputStream *aStream,
   LOG(("WebSocketChannelChild::SendBinaryStream() %p\n", this));
 
   AutoIPCStream autoStream;
-  autoStream.Serialize(aStream,
-                       static_cast<mozilla::dom::ContentChild*>(gNeckoChild->Manager()));
+  autoStream.Serialize(aStream, static_cast<mozilla::dom::ContentChild*>(
+                                    gNeckoChild->Manager()));
 
   {
     MutexAutoLock lock(mMutex);
@@ -790,15 +670,12 @@ WebSocketChannelChild::SendBinaryStream(nsIInputStream *aStream,
 }
 
 NS_IMETHODIMP
-WebSocketChannelChild::GetSecurityInfo(nsISupports **aSecurityInfo)
-{
+WebSocketChannelChild::GetSecurityInfo(nsISupports** aSecurityInfo) {
   LOG(("WebSocketChannelChild::GetSecurityInfo() %p\n", this));
   return NS_ERROR_NOT_AVAILABLE;
 }
 
-bool
-WebSocketChannelChild::IsOnTargetThread()
-{
+bool WebSocketChannelChild::IsOnTargetThread() {
   MOZ_ASSERT(mTargetThread);
   bool isOnTargetThread = false;
   nsresult rv = mTargetThread->IsOnCurrentThread(&isOnTargetThread);
@@ -806,5 +683,5 @@ WebSocketChannelChild::IsOnTargetThread()
   return NS_FAILED(rv) ? false : isOnTargetThread;
 }
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla

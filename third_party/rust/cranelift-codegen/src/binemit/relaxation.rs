@@ -27,13 +27,15 @@
 //! ebb23:
 //! ```
 
-use binemit::CodeOffset;
-use cursor::{Cursor, FuncCursor};
-use ir::{Function, InstructionData, Opcode};
-use isa::{EncInfo, TargetIsa};
-use iterators::IteratorExtras;
-use timing;
-use CodegenResult;
+use crate::binemit::CodeOffset;
+use crate::cursor::{Cursor, FuncCursor};
+use crate::ir::{Function, InstructionData, Opcode};
+use crate::isa::{EncInfo, TargetIsa};
+use crate::iterators::IteratorExtras;
+use crate::regalloc::RegDiversions;
+use crate::timing;
+use crate::CodegenResult;
+use log::debug;
 
 /// Relax branches and compute the final layout of EBB headers in `func`.
 ///
@@ -51,16 +53,32 @@ pub fn relax_branches(func: &mut Function, isa: &TargetIsa) -> CodegenResult<Cod
     fallthroughs(func);
 
     let mut offset = 0;
+    let mut divert = RegDiversions::new();
 
-    // The relaxation algorithm iterates to convergence.
+    // First, compute initial offsets for every EBB.
+    {
+        let mut cur = FuncCursor::new(func);
+        while let Some(ebb) = cur.next_ebb() {
+            divert.clear();
+            cur.func.offsets[ebb] = offset;
+            while let Some(inst) = cur.next_inst() {
+                let enc = cur.func.encodings[inst];
+                offset += encinfo.byte_size(enc, inst, &divert, &cur.func);
+            }
+        }
+    }
+
+    // Then, run the relaxation algorithm until it converges.
     let mut go_again = true;
     while go_again {
         go_again = false;
         offset = 0;
 
-        // Visit all instructions in layout order
+        // Visit all instructions in layout order.
         let mut cur = FuncCursor::new(func);
         while let Some(ebb) = cur.next_ebb() {
+            divert.clear();
+
             // Record the offset for `ebb` and make sure we iterate until offsets are stable.
             if cur.func.offsets[ebb] != offset {
                 debug_assert!(
@@ -72,27 +90,33 @@ pub fn relax_branches(func: &mut Function, isa: &TargetIsa) -> CodegenResult<Cod
             }
 
             while let Some(inst) = cur.next_inst() {
-                let enc = cur.func.encodings[inst];
-                let size = encinfo.bytes(enc);
+                divert.apply(&cur.func.dfg[inst]);
 
-                // See if this might be a branch that is out of range.
+                let enc = cur.func.encodings[inst];
+
+                // See if this is a branch has a range and a destination, and if the target is in
+                // range.
                 if let Some(range) = encinfo.branch_range(enc) {
                     if let Some(dest) = cur.func.dfg[inst].branch_destination() {
                         let dest_offset = cur.func.offsets[dest];
-                        // This could be an out-of-range branch.
-                        // Relax it unless the destination offset has not been computed yet.
-                        if !range.contains(offset, dest_offset)
-                            && (dest_offset != 0 || Some(dest) == cur.func.layout.entry_block())
-                        {
-                            offset += relax_branch(&mut cur, offset, dest_offset, &encinfo, isa);
+                        if !range.contains(offset, dest_offset) {
+                            offset +=
+                                relax_branch(&mut cur, &divert, offset, dest_offset, &encinfo, isa);
                             continue;
                         }
                     }
                 }
 
-                offset += size;
+                offset += encinfo.byte_size(enc, inst, &divert, &cur.func);
             }
         }
+    }
+
+    for (jt, jt_data) in func.jump_tables.iter() {
+        func.jt_offsets[jt] = offset;
+        // TODO: this should be computed based on the min size needed to hold
+        //        the furthest branch.
+        offset += jt_data.len() as u32 * 4;
     }
 
     Ok(offset)
@@ -134,6 +158,7 @@ fn fallthroughs(func: &mut Function) {
 /// left.
 fn relax_branch(
     cur: &mut FuncCursor,
+    divert: &RegDiversions,
     offset: CodeOffset,
     dest_offset: CodeOffset,
     encinfo: &EncInfo,
@@ -172,9 +197,10 @@ fn relax_branch(
                 debug!("  trying [{}]: OK", encinfo.display(enc));
                 true
             }
-        }) {
+        })
+    {
         cur.func.encodings[inst] = enc;
-        return encinfo.bytes(enc);
+        return encinfo.byte_size(enc, inst, &divert, &cur.func);
     }
 
     // Note: On some RISC ISAs, conditional branches have shorter range than unconditional

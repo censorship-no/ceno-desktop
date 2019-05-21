@@ -1,7 +1,5 @@
 "use strict";
 
-const TOOLKIT_ID = "toolkit@mozilla.org";
-
 // We don't have an easy way to serve update manifests from a secure URL.
 Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
 
@@ -86,18 +84,8 @@ var checkUpdates = async function(aData, aReason = AddonManager.UPDATE_WHEN_PERI
 
     delete update.addon;
 
-    let file;
-    if (addon.rdf) {
-      provide(addon, "version", version);
-      provide(addon, "targetApplications", [{id: TOOLKIT_ID,
-                                             minVersion: "42",
-                                             maxVersion: "*"}]);
-
-      file = createTempXPIFile(addon);
-    } else {
-      provide(addon, "manifest.version", version);
-      file = createTempWebExtensionFile(addon);
-    }
+    provide(addon, "manifest.version", version);
+    let file = createTempWebExtensionFile(addon);
     file.moveTo(addonsDir, `${id}-${version}.xpi`.replace(/[{}]/g, ""));
 
     let path = `/addons/${file.leafName}`;
@@ -175,40 +163,6 @@ add_task(async function checkUpdateToWebExt() {
 
   let addon = await promiseAddonByID(update.addon.id);
   equal(addon.version, "1.2", "new add-on version");
-
-  await addon.uninstall();
-});
-
-
-// Check that updates from web extensions to XUL extensions fail.
-add_task(async function checkUpdateToRDF() {
-  let update = await checkUpdates({
-    addon: { manifest: { version: "1.0" } },
-    updates: {
-      "1.1": { addon: { rdf: true, bootstrap: true } },
-    },
-  });
-
-  ok(!update.compatibilityUpdate, "have no compat update");
-  ok(update.updateAvailable, "have add-on update");
-
-  equal(update.addon.version, "1.0", "add-on version");
-
-  let result = await new Promise((resolve, reject) => {
-    update.updateAvailable.addListener({
-      onDownloadFailed: resolve,
-      onDownloadEnded: reject,
-      onInstalling: reject,
-      onInstallStarted: reject,
-      onInstallEnded: reject,
-    });
-    update.updateAvailable.install();
-  });
-
-  equal(result.error, AddonManager.ERROR_UNEXPECTED_ADDON_TYPE, "error: unexpected add-on type");
-
-  let addon = await promiseAddonByID(update.addon.id);
-  equal(addon.version, "1.0", "new add-on version");
 
   await addon.uninstall();
 });

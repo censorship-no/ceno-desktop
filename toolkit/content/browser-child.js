@@ -4,9 +4,7 @@
 
 /* eslint-env mozilla/frame-script */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
-ChromeUtils.import("resource://gre/modules/WebProgressChild.jsm");
+const {WebProgressChild} = ChromeUtils.import("resource://gre/modules/WebProgressChild.jsm");
 
 this.WebProgress = new WebProgressChild(this);
 
@@ -28,5 +26,6 @@ addEventListener("ImageContentLoaded", function(aEvent) {
 
 // We may not get any responses to Browser:Init if the browser element
 // is torn down too quickly.
-var outerWindowID = content.windowUtils.outerWindowID;
-sendAsyncMessage("Browser:Init", {outerWindowID});
+var outerWindowID = docShell.outerWindowID;
+var browsingContextId = docShell.browsingContext.id;
+sendAsyncMessage("Browser:Init", {outerWindowID, browsingContextId});

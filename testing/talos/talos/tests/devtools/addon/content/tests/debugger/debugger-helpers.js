@@ -132,19 +132,26 @@ function waitForSource(dbg, sourceURL) {
 
 async function waitForPaused(dbg) {
   const onLoadedScope = waitForLoadedScopes(dbg);
+  const {
+    selectors: { getSelectedScope, getIsPaused, getCurrentThread },
+  } = dbg;
   const onStateChange =  waitForState(
     dbg,
     state => {
-      return dbg.selectors.getSelectedScope(state) && dbg.selectors.isPaused(state);
+      const thread = getCurrentThread(state);
+      return getSelectedScope(state, thread) && getIsPaused(state, thread);
     },
   );
   return Promise.all([onLoadedScope, onStateChange]);
 }
 
 async function waitForResumed(dbg) {
+  const {
+    selectors: { getIsPaused, getCurrentThread },
+  } = dbg;
   return waitForState(
     dbg,
-    state => !dbg.selectors.isPaused(state)
+    state => !getIsPaused(state, getCurrentThread(state))
   );
 }
 
@@ -239,8 +246,10 @@ async function addBreakpoint(dbg, line, url) {
   const location = {
     sourceId: source.id,
     line,
-    column: 0,
   };
+
+  await selectSource(dbg, url);
+
   const onDispatched = waitForDispatch(dbg, "ADD_BREAKPOINT");
   dbg.actions.addBreakpoint(location);
   return onDispatched;
@@ -249,11 +258,11 @@ exports.addBreakpoint = addBreakpoint;
 
 async function removeBreakpoints(dbg, line, url) {
   dump(`remove all breakpoints\n`);
-  const breakpoints = dbg.selectors.getBreakpoints(dbg.getState());
+  const breakpoints = dbg.selectors.getBreakpointsList(dbg.getState());
 
-  const onBreakpointsCleared =  waitForState(
+  const onBreakpointsCleared = waitForState(
     dbg,
-    state => !dbg.selectors.getBreakpoints(state).length
+    state => dbg.selectors.getBreakpointCount(state) === 0
   );
   await dbg.actions.removeBreakpoints(breakpoints);
   return onBreakpointsCleared;

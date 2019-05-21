@@ -10,9 +10,11 @@ with Files("**"):
 EXPORTS.mozilla.dom += [
     'LocalStorage.h',
     'LocalStorageManager.h',
+    'PartitionedLocalStorage.h',
     'SessionStorageManager.h',
     'Storage.h',
     'StorageActivityService.h',
+    'StorageDBUpdater.h',
     'StorageIPC.h',
     'StorageNotifierService.h',
     'StorageObserver.h',
@@ -23,9 +25,11 @@ UNIFIED_SOURCES += [
     'LocalStorage.cpp',
     'LocalStorageCache.cpp',
     'LocalStorageManager.cpp',
+    'PartitionedLocalStorage.cpp',
     'SessionStorage.cpp',
     'SessionStorageCache.cpp',
     'SessionStorageManager.cpp',
+    'SessionStorageObserver.cpp',
     'Storage.cpp',
     'StorageActivityService.cpp',
     'StorageDBThread.cpp',
@@ -39,6 +43,7 @@ UNIFIED_SOURCES += [
 IPDL_SOURCES += [
     'PBackgroundLocalStorageCache.ipdl',
     'PBackgroundStorage.ipdl',
+    'PSessionStorageObserver.ipdl',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -50,6 +55,3 @@ LOCAL_INCLUDES += [
 
 if CONFIG['ENABLE_TESTS']:
     DEFINES['DOM_STORAGE_TESTS'] = True
-
-if CONFIG['CC_TYPE'] == 'clang-cl':
-    AllowCompilerWarnings()  # workaround for bug 1090497

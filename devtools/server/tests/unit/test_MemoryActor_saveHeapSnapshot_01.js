@@ -8,7 +8,9 @@
 
 const { OS } = require("resource://gre/modules/osfile.jsm");
 
-const run_test = makeMemoryActorTest(async function(client, memoryFront) {
+add_task(async () => {
+  const { memoryFront } = await createTabMemoryFront();
+
   const snapshotFilePath = await memoryFront.saveHeapSnapshot();
   ok(!!(await OS.File.stat(snapshotFilePath)),
      "Should have the heap snapshot file");

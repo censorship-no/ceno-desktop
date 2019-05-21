@@ -11,38 +11,53 @@
 namespace mozilla {
 namespace recordreplay {
 
-// In a replaying or middleman process, all middleman calls that have been
-// encountered, indexed by their ID.
-static StaticInfallibleVector<MiddlemanCall*> gMiddlemanCalls;
-
-// In a replaying or middleman process, association between values produced by
-// a middleman call and the call itself.
 typedef std::unordered_map<const void*, MiddlemanCall*> MiddlemanCallMap;
-static MiddlemanCallMap* gMiddlemanCallMap;
 
-// In a middleman process, any buffers allocated for performed calls.
-static StaticInfallibleVector<void*> gAllocatedBuffers;
+// State used for keeping track of middleman calls in either a replaying
+// process or middleman process.
+struct MiddlemanCallState {
+  // In a replaying or middleman process, all middleman calls that have been
+  // encountered, indexed by their ID.
+  InfallibleVector<MiddlemanCall*> mCalls;
 
-// Lock protecting middleman call state.
+  // In a replaying or middleman process, association between values produced by
+  // a middleman call and the call itself.
+  MiddlemanCallMap mCallMap;
+
+  // In a middleman process, any buffers allocated for performed calls.
+  InfallibleVector<void*> mAllocatedBuffers;
+};
+
+// In a replaying process, all middleman call state. In a middleman process,
+// state for the child currently being processed.
+static MiddlemanCallState* gState;
+
+// In a middleman process, middleman call state for each child process, indexed
+// by the child ID.
+static StaticInfallibleVector<MiddlemanCallState*> gStatePerChild;
+
+// In a replaying process, lock protecting middleman call state. In the
+// middleman, all accesses occur on the main thread.
 static Monitor* gMonitor;
 
-void
-InitializeMiddlemanCalls()
-{
+void InitializeMiddlemanCalls() {
   MOZ_RELEASE_ASSERT(IsRecordingOrReplaying() || IsMiddleman());
 
-  gMiddlemanCallMap = new MiddlemanCallMap();
-  gMonitor = new Monitor();
+  if (IsReplaying()) {
+    gState = new MiddlemanCallState();
+    gMonitor = new Monitor();
+  }
 }
 
 // Apply the ReplayInput phase to aCall and any calls it depends on that have
 // not been sent to the middleman yet, filling aOutgoingCalls with the set of
 // such calls.
-static bool
-GatherDependentCalls(InfallibleVector<MiddlemanCall*>& aOutgoingCalls, MiddlemanCall* aCall)
-{
+static bool GatherDependentCalls(
+    InfallibleVector<MiddlemanCall*>& aOutgoingCalls, MiddlemanCall* aCall) {
   MOZ_RELEASE_ASSERT(!aCall->mSent);
   aCall->mSent = true;
+
+  const Redirection& redirection = GetRedirection(aCall->mCallId);
 
   CallArguments arguments;
   aCall->mArguments.CopyTo(&arguments);
@@ -51,8 +66,12 @@ GatherDependentCalls(InfallibleVector<MiddlemanCall*>& aOutgoingCalls, Middleman
 
   MiddlemanCallContext cx(aCall, &arguments, MiddlemanCallPhase::ReplayInput);
   cx.mDependentCalls = &dependentCalls;
-  gRedirections[aCall->mCallId].mMiddlemanCall(cx);
+  redirection.mMiddlemanCall(cx);
   if (cx.mFailed) {
+    if (child::CurrentRepaintCannotFail()) {
+      child::ReportFatalError(Nothing(), "Middleman call input failed: %s\n",
+                              redirection.mName);
+    }
     return false;
   }
 
@@ -66,32 +85,36 @@ GatherDependentCalls(InfallibleVector<MiddlemanCall*>& aOutgoingCalls, Middleman
   return true;
 }
 
-bool
-SendCallToMiddleman(size_t aCallId, CallArguments* aArguments, bool aDiverged)
-{
+bool SendCallToMiddleman(size_t aCallId, CallArguments* aArguments,
+                         bool aDiverged) {
   MOZ_RELEASE_ASSERT(IsReplaying());
 
-  const Redirection& redirection = gRedirections[aCallId];
+  const Redirection& redirection = GetRedirection(aCallId);
   MOZ_RELEASE_ASSERT(redirection.mMiddlemanCall);
 
-  Maybe<MonitorAutoLock> lock;
-  lock.emplace(*gMonitor);
+  MonitorAutoLock lock(*gMonitor);
 
   // Allocate and fill in a new MiddlemanCall.
-  size_t id = gMiddlemanCalls.length();
+  size_t id = gState->mCalls.length();
   MiddlemanCall* newCall = new MiddlemanCall();
-  gMiddlemanCalls.emplaceBack(newCall);
+  gState->mCalls.emplaceBack(newCall);
   newCall->mId = id;
   newCall->mCallId = aCallId;
   newCall->mArguments.CopyFrom(aArguments);
 
   // Perform the ReplayPreface phase on the new call.
   {
-    MiddlemanCallContext cx(newCall, aArguments, MiddlemanCallPhase::ReplayPreface);
+    MiddlemanCallContext cx(newCall, aArguments,
+                            MiddlemanCallPhase::ReplayPreface);
     redirection.mMiddlemanCall(cx);
     if (cx.mFailed) {
       delete newCall;
-      gMiddlemanCalls.popBack();
+      gState->mCalls.popBack();
+      if (child::CurrentRepaintCannotFail()) {
+        child::ReportFatalError(Nothing(),
+                                "Middleman call preface failed: %s\n",
+                                redirection.mName);
+      }
       return false;
     }
   }
@@ -120,12 +143,8 @@ SendCallToMiddleman(size_t aCallId, CallArguments* aArguments, bool aDiverged)
 
   // Perform the calls synchronously in the middleman.
   InfallibleVector<char> outputData;
-  if (!child::SendMiddlemanCallRequest(inputData.begin(), inputData.length(), &outputData)) {
-    // This thread is not allowed to perform middleman calls anymore. Release
-    // the lock and block until the process rewinds.
-    lock.reset();
-    Thread::WaitForever();
-  }
+  child::SendMiddlemanCallRequest(inputData.begin(), inputData.length(),
+                                  &outputData);
 
   // Decode outputs for the calls just sent, and perform the ReplayOutput phase
   // on any older dependent calls we sent.
@@ -136,24 +155,33 @@ SendCallToMiddleman(size_t aCallId, CallArguments* aArguments, bool aDiverged)
     if (call != newCall) {
       CallArguments oldArguments;
       call->mArguments.CopyTo(&oldArguments);
-      MiddlemanCallContext cx(call, &oldArguments, MiddlemanCallPhase::ReplayOutput);
+      MiddlemanCallContext cx(call, &oldArguments,
+                              MiddlemanCallPhase::ReplayOutput);
       cx.mReplayOutputIsOld = true;
-      gRedirections[call->mCallId].mMiddlemanCall(cx);
+      GetRedirection(call->mCallId).mMiddlemanCall(cx);
     }
   }
 
   // Perform the ReplayOutput phase to fill in outputs for the current call.
   newCall->mArguments.CopyTo(aArguments);
-  MiddlemanCallContext cx(newCall, aArguments, MiddlemanCallPhase::ReplayOutput);
+  MiddlemanCallContext cx(newCall, aArguments,
+                          MiddlemanCallPhase::ReplayOutput);
   redirection.mMiddlemanCall(cx);
   return true;
 }
 
-void
-ProcessMiddlemanCall(const char* aInputData, size_t aInputSize,
-                     InfallibleVector<char>* aOutputData)
-{
+void ProcessMiddlemanCall(size_t aChildId, const char* aInputData,
+                          size_t aInputSize,
+                          InfallibleVector<char>* aOutputData) {
   MOZ_RELEASE_ASSERT(IsMiddleman());
+
+  while (aChildId >= gStatePerChild.length()) {
+    gStatePerChild.append(nullptr);
+  }
+  if (!gStatePerChild[aChildId]) {
+    gStatePerChild[aChildId] = new MiddlemanCallState();
+  }
+  gState = gStatePerChild[aChildId];
 
   BufferStream inputStream(aInputData, aInputSize);
   BufferStream outputStream(aOutputData);
@@ -162,38 +190,44 @@ ProcessMiddlemanCall(const char* aInputData, size_t aInputSize,
     MiddlemanCall* call = new MiddlemanCall();
     call->DecodeInput(inputStream);
 
-    const Redirection& redirection = gRedirections[call->mCallId];
-    MOZ_RELEASE_ASSERT(gRedirections[call->mCallId].mMiddlemanCall);
+    const Redirection& redirection = GetRedirection(call->mCallId);
+    MOZ_RELEASE_ASSERT(redirection.mMiddlemanCall);
 
     CallArguments arguments;
     call->mArguments.CopyTo(&arguments);
 
+    bool skipCall;
     {
-      MiddlemanCallContext cx(call, &arguments, MiddlemanCallPhase::MiddlemanInput);
+      MiddlemanCallContext cx(call, &arguments,
+                              MiddlemanCallPhase::MiddlemanInput);
       redirection.mMiddlemanCall(cx);
+      skipCall = cx.mSkipCallInMiddleman;
     }
 
-    RecordReplayInvokeCall(call->mCallId, &arguments);
+    if (!skipCall) {
+      RecordReplayInvokeCall(redirection.mBaseFunction, &arguments);
+    }
 
     {
-      MiddlemanCallContext cx(call, &arguments, MiddlemanCallPhase::MiddlemanOutput);
+      MiddlemanCallContext cx(call, &arguments,
+                              MiddlemanCallPhase::MiddlemanOutput);
       redirection.mMiddlemanCall(cx);
     }
 
     call->mArguments.CopyFrom(&arguments);
     call->EncodeOutput(outputStream);
 
-    while (call->mId >= gMiddlemanCalls.length()) {
-      gMiddlemanCalls.emplaceBack(nullptr);
+    while (call->mId >= gState->mCalls.length()) {
+      gState->mCalls.emplaceBack(nullptr);
     }
-    MOZ_RELEASE_ASSERT(!gMiddlemanCalls[call->mId]);
-    gMiddlemanCalls[call->mId] = call;
+    MOZ_RELEASE_ASSERT(!gState->mCalls[call->mId]);
+    gState->mCalls[call->mId] = call;
   }
+
+  gState = nullptr;
 }
 
-void*
-MiddlemanCallContext::AllocateBytes(size_t aSize)
-{
+void* MiddlemanCallContext::AllocateBytes(size_t aSize) {
   void* rv = malloc(aSize);
 
   // In a middleman process, any buffers we allocate live until the calls are
@@ -202,70 +236,76 @@ MiddlemanCallContext::AllocateBytes(size_t aSize)
   // of the MiddlemanCall itself) or will be recovered when we rewind after we
   // are done with our divergence from the recording (any other phase).
   if (IsMiddleman()) {
-    gAllocatedBuffers.append(rv);
+    gState->mAllocatedBuffers.append(rv);
   }
 
   return rv;
 }
 
-void
-ResetMiddlemanCalls()
-{
+void ResetMiddlemanCalls(size_t aChildId) {
   MOZ_RELEASE_ASSERT(IsMiddleman());
 
-  for (MiddlemanCall* call : gMiddlemanCalls) {
+  if (aChildId >= gStatePerChild.length()) {
+    return;
+  }
+
+  gState = gStatePerChild[aChildId];
+  if (!gState) {
+    return;
+  }
+
+  for (MiddlemanCall* call : gState->mCalls) {
     if (call) {
       CallArguments arguments;
       call->mArguments.CopyTo(&arguments);
 
-      MiddlemanCallContext cx(call, &arguments, MiddlemanCallPhase::MiddlemanRelease);
-      gRedirections[call->mCallId].mMiddlemanCall(cx);
-
-      delete call;
+      MiddlemanCallContext cx(call, &arguments,
+                              MiddlemanCallPhase::MiddlemanRelease);
+      GetRedirection(call->mCallId).mMiddlemanCall(cx);
     }
   }
 
-  gMiddlemanCalls.clear();
-  for (auto buffer : gAllocatedBuffers) {
+  // Delete the calls in a second pass. The MiddlemanRelease phase depends on
+  // previous middleman calls still existing.
+  for (MiddlemanCall* call : gState->mCalls) {
+    delete call;
+  }
+
+  gState->mCalls.clear();
+  for (auto buffer : gState->mAllocatedBuffers) {
     free(buffer);
   }
-  gAllocatedBuffers.clear();
+  gState->mAllocatedBuffers.clear();
+  gState->mCallMap.clear();
+
+  gState = nullptr;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // System Values
 ///////////////////////////////////////////////////////////////////////////////
 
-static void
-AddMiddlemanCallValue(const void* aThing, MiddlemanCall* aCall)
-{
-  gMiddlemanCallMap->erase(aThing);
-  gMiddlemanCallMap->insert(MiddlemanCallMap::value_type(aThing, aCall));
+static void AddMiddlemanCallValue(const void* aThing, MiddlemanCall* aCall) {
+  gState->mCallMap.erase(aThing);
+  gState->mCallMap.insert(MiddlemanCallMap::value_type(aThing, aCall));
 }
 
-static MiddlemanCall*
-LookupMiddlemanCall(const void* aThing)
-{
-  MiddlemanCallMap::const_iterator iter = gMiddlemanCallMap->find(aThing);
-  if (iter != gMiddlemanCallMap->end()) {
+static MiddlemanCall* LookupMiddlemanCall(const void* aThing) {
+  MiddlemanCallMap::const_iterator iter = gState->mCallMap.find(aThing);
+  if (iter != gState->mCallMap.end()) {
     return iter->second;
   }
   return nullptr;
 }
 
-static const void*
-GetMiddlemanCallValue(size_t aId)
-{
+static const void* GetMiddlemanCallValue(size_t aId) {
   MOZ_RELEASE_ASSERT(IsMiddleman());
-  MOZ_RELEASE_ASSERT(aId < gMiddlemanCalls.length() &&
-                     gMiddlemanCalls[aId] &&
-                     gMiddlemanCalls[aId]->mMiddlemanValue.isSome());
-  return gMiddlemanCalls[aId]->mMiddlemanValue.ref();
+  MOZ_RELEASE_ASSERT(aId < gState->mCalls.length() && gState->mCalls[aId] &&
+                     gState->mCalls[aId]->mMiddlemanValue.isSome());
+  return gState->mCalls[aId]->mMiddlemanValue.ref();
 }
 
-bool
-Middleman_SystemInput(MiddlemanCallContext& aCx, const void** aThingPtr)
-{
+bool MM_SystemInput(MiddlemanCallContext& aCx, const void** aThingPtr) {
   MOZ_RELEASE_ASSERT(aCx.AccessPreface());
 
   if (!*aThingPtr) {
@@ -286,24 +326,24 @@ Middleman_SystemInput(MiddlemanCallContext& aCx, const void** aThingPtr)
   aCx.ReadOrWritePrefaceBytes(&callId, sizeof(callId));
 
   switch (aCx.mPhase) {
-  case MiddlemanCallPhase::ReplayPreface:
-    return true;
-  case MiddlemanCallPhase::ReplayInput:
-    if (callId.isSome()) {
-      aCx.WriteInputScalar(callId.ref());
-      aCx.mDependentCalls->append(gMiddlemanCalls[callId.ref()]);
+    case MiddlemanCallPhase::ReplayPreface:
       return true;
-    }
-    return false;
-  case MiddlemanCallPhase::MiddlemanInput:
-    if (callId.isSome()) {
-      size_t callIndex = aCx.ReadInputScalar();
-      *aThingPtr = GetMiddlemanCallValue(callIndex);
-      return true;
-    }
-    return false;
-  default:
-    MOZ_CRASH("Bad phase");
+    case MiddlemanCallPhase::ReplayInput:
+      if (callId.isSome()) {
+        aCx.WriteInputScalar(callId.ref());
+        aCx.mDependentCalls->append(gState->mCalls[callId.ref()]);
+        return true;
+      }
+      return false;
+    case MiddlemanCallPhase::MiddlemanInput:
+      if (callId.isSome()) {
+        size_t callIndex = aCx.ReadInputScalar();
+        *aThingPtr = GetMiddlemanCallValue(callIndex);
+        return true;
+      }
+      return false;
+    default:
+      MOZ_CRASH("Bad phase");
   }
 }
 
@@ -313,60 +353,60 @@ Middleman_SystemInput(MiddlemanCallContext& aCx, const void** aThingPtr)
 // the pointer came from the recording or from the middleman. This avoids
 // accidentally conflating pointers that happen to have the same value but
 // which originate from different processes.
-static const void*
-MangleSystemValue(const void* aValue, bool aFromRecording)
-{
-  return (const void*) ((size_t)aValue | (1ULL << (aFromRecording ? 63 : 62)));
+static const void* MangleSystemValue(const void* aValue, bool aFromRecording) {
+  return (const void*)((size_t)aValue | (1ULL << (aFromRecording ? 63 : 62)));
 }
 
-void
-Middleman_SystemOutput(MiddlemanCallContext& aCx, const void** aOutput, bool aUpdating)
-{
+void MM_SystemOutput(MiddlemanCallContext& aCx, const void** aOutput,
+                     bool aUpdating) {
   if (!*aOutput) {
+    if (aCx.mPhase == MiddlemanCallPhase::MiddlemanOutput) {
+      aCx.mCall->SetMiddlemanValue(*aOutput);
+    }
     return;
   }
 
   switch (aCx.mPhase) {
-  case MiddlemanCallPhase::ReplayPreface:
-    if (!HasDivergedFromRecording()) {
-      // If we haven't diverged from the recording, use the output value saved
-      // in the recording.
+    case MiddlemanCallPhase::ReplayPreface:
+      if (!HasDivergedFromRecording()) {
+        // If we haven't diverged from the recording, use the output value saved
+        // in the recording.
+        if (!aUpdating) {
+          *aOutput = MangleSystemValue(*aOutput, true);
+        }
+        aCx.mCall->SetRecordingValue(*aOutput);
+        AddMiddlemanCallValue(*aOutput, aCx.mCall);
+      }
+      break;
+    case MiddlemanCallPhase::MiddlemanOutput:
+      aCx.mCall->SetMiddlemanValue(*aOutput);
+      AddMiddlemanCallValue(*aOutput, aCx.mCall);
+      break;
+    case MiddlemanCallPhase::ReplayOutput: {
       if (!aUpdating) {
-        *aOutput = MangleSystemValue(*aOutput, true);
+        *aOutput = MangleSystemValue(*aOutput, false);
       }
-      aCx.mCall->SetRecordingValue(*aOutput);
-      AddMiddlemanCallValue(*aOutput, aCx.mCall);
-    }
-    break;
-  case MiddlemanCallPhase::MiddlemanOutput:
-    aCx.mCall->SetMiddlemanValue(*aOutput);
-    AddMiddlemanCallValue(*aOutput, aCx.mCall);
-    break;
-  case MiddlemanCallPhase::ReplayOutput: {
-    if (!aUpdating) {
-      *aOutput = MangleSystemValue(*aOutput, false);
-    }
-    aCx.mCall->SetMiddlemanValue(*aOutput);
+      aCx.mCall->SetMiddlemanValue(*aOutput);
 
-    // Associate the value produced by the middleman with this call. If the
-    // call previously went through the ReplayPreface phase when we did not
-    // diverge from the recording, we will associate values from both the
-    // recording and middleman processes with this call. If a call made after
-    // diverging produced the same value as a call made before diverging, use
-    // the value saved in the recording for the first call, so that equality
-    // tests on the value work as expected.
-    MiddlemanCall* previousCall = LookupMiddlemanCall(*aOutput);
-    if (previousCall) {
-      if (previousCall->mRecordingValue.isSome()) {
-        *aOutput = previousCall->mRecordingValue.ref();
+      // Associate the value produced by the middleman with this call. If the
+      // call previously went through the ReplayPreface phase when we did not
+      // diverge from the recording, we will associate values from both the
+      // recording and middleman processes with this call. If a call made after
+      // diverging produced the same value as a call made before diverging, use
+      // the value saved in the recording for the first call, so that equality
+      // tests on the value work as expected.
+      MiddlemanCall* previousCall = LookupMiddlemanCall(*aOutput);
+      if (previousCall) {
+        if (previousCall->mRecordingValue.isSome()) {
+          *aOutput = previousCall->mRecordingValue.ref();
+        }
+      } else {
+        AddMiddlemanCallValue(*aOutput, aCx.mCall);
       }
-    } else {
-      AddMiddlemanCallValue(*aOutput, aCx.mCall);
+      break;
     }
-    break;
-  }
-  default:
-    return;
+    default:
+      return;
   }
 }
 
@@ -374,9 +414,7 @@ Middleman_SystemOutput(MiddlemanCallContext& aCx, const void** aOutput, bool aUp
 // MiddlemanCall
 ///////////////////////////////////////////////////////////////////////////////
 
-void
-MiddlemanCall::EncodeInput(BufferStream& aStream) const
-{
+void MiddlemanCall::EncodeInput(BufferStream& aStream) const {
   aStream.WriteScalar(mId);
   aStream.WriteScalar(mCallId);
   aStream.WriteBytes(&mArguments, sizeof(CallRegisterArguments));
@@ -386,9 +424,7 @@ MiddlemanCall::EncodeInput(BufferStream& aStream) const
   aStream.WriteBytes(mInput.begin(), mInput.length());
 }
 
-void
-MiddlemanCall::DecodeInput(BufferStream& aStream)
-{
+void MiddlemanCall::DecodeInput(BufferStream& aStream) {
   mId = aStream.ReadScalar();
   mCallId = aStream.ReadScalar();
   aStream.ReadBytes(&mArguments, sizeof(CallRegisterArguments));
@@ -400,17 +436,13 @@ MiddlemanCall::DecodeInput(BufferStream& aStream)
   aStream.ReadBytes(mInput.begin(), inputLength);
 }
 
-void
-MiddlemanCall::EncodeOutput(BufferStream& aStream) const
-{
+void MiddlemanCall::EncodeOutput(BufferStream& aStream) const {
   aStream.WriteBytes(&mArguments, sizeof(CallRegisterArguments));
   aStream.WriteScalar(mOutput.length());
   aStream.WriteBytes(mOutput.begin(), mOutput.length());
 }
 
-void
-MiddlemanCall::DecodeOutput(BufferStream& aStream)
-{
+void MiddlemanCall::DecodeOutput(BufferStream& aStream) {
   // Only update the return value when decoding arguments, so that we don't
   // clobber the call's arguments with any changes made in the middleman.
   CallRegisterArguments newArguments;
@@ -422,5 +454,5 @@ MiddlemanCall::DecodeOutput(BufferStream& aStream)
   aStream.ReadBytes(mOutput.begin(), outputLength);
 }
 
-} // namespace recordreplay
-} // namespace mozilla
+}  // namespace recordreplay
+}  // namespace mozilla

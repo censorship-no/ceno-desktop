@@ -22,9 +22,8 @@ namespace mozilla {
  * (an nsIEditor).
  */
 
-class EditorCommandBase : public nsIControllerCommand
-{
-public:
+class EditorCommandBase : public nsIControllerCommand {
+ public:
   EditorCommandBase();
 
   NS_DECL_ISUPPORTS
@@ -32,41 +31,40 @@ public:
   NS_IMETHOD IsCommandEnabled(const char* aCommandName,
                               nsISupports* aCommandRefCon,
                               bool* aIsEnabled) override = 0;
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD DoCommand(const char* aCommandName,
                        nsISupports* aCommandRefCon) override = 0;
 
-protected:
+ protected:
   virtual ~EditorCommandBase() {}
 };
 
-
-#define NS_DECL_EDITOR_COMMAND(_cmd)                                           \
-class _cmd final : public EditorCommandBase                                    \
-{                                                                              \
-public:                                                                        \
-  NS_IMETHOD IsCommandEnabled(const char* aCommandName,                        \
-                              nsISupports* aCommandRefCon,                     \
-                              bool* aIsEnabled) override;                      \
-  NS_IMETHOD DoCommand(const char* aCommandName,                               \
-                       nsISupports* aCommandRefCon) override;                  \
-  NS_IMETHOD DoCommandParams(const char* aCommandName,                         \
-                             nsICommandParams* aParams,                        \
-                             nsISupports* aCommandRefCon) override;            \
-  NS_IMETHOD GetCommandStateParams(const char* aCommandName,                   \
-                                   nsICommandParams* aParams,                  \
-                                   nsISupports* aCommandRefCon) override;      \
-};
+#define NS_DECL_EDITOR_COMMAND(_cmd)                                        \
+  class _cmd final : public EditorCommandBase {                             \
+   public:                                                                  \
+    NS_IMETHOD IsCommandEnabled(const char* aCommandName,                   \
+                                nsISupports* aCommandRefCon,                \
+                                bool* aIsEnabled) override;                 \
+    MOZ_CAN_RUN_SCRIPT                                                      \
+    NS_IMETHOD DoCommand(const char* aCommandName,                          \
+                         nsISupports* aCommandRefCon) override;             \
+    MOZ_CAN_RUN_SCRIPT                                                      \
+    NS_IMETHOD DoCommandParams(const char* aCommandName,                    \
+                               nsICommandParams* aParams,                   \
+                               nsISupports* aCommandRefCon) override;       \
+    NS_IMETHOD GetCommandStateParams(const char* aCommandName,              \
+                                     nsICommandParams* aParams,             \
+                                     nsISupports* aCommandRefCon) override; \
+  };
 
 // basic editor commands
 NS_DECL_EDITOR_COMMAND(UndoCommand)
 NS_DECL_EDITOR_COMMAND(RedoCommand)
-NS_DECL_EDITOR_COMMAND(ClearUndoCommand)
 
 NS_DECL_EDITOR_COMMAND(CutCommand)
 NS_DECL_EDITOR_COMMAND(CutOrDeleteCommand)
 NS_DECL_EDITOR_COMMAND(CopyCommand)
 NS_DECL_EDITOR_COMMAND(CopyOrDeleteCommand)
-NS_DECL_EDITOR_COMMAND(CopyAndCollapseToEndCommand)
 NS_DECL_EDITOR_COMMAND(PasteCommand)
 NS_DECL_EDITOR_COMMAND(PasteTransferableCommand)
 NS_DECL_EDITOR_COMMAND(SwitchTextDirectionCommand)
@@ -80,7 +78,6 @@ NS_DECL_EDITOR_COMMAND(InsertPlaintextCommand)
 NS_DECL_EDITOR_COMMAND(InsertParagraphCommand)
 NS_DECL_EDITOR_COMMAND(InsertLineBreakCommand)
 NS_DECL_EDITOR_COMMAND(PasteQuotationCommand)
-
 
 #if 0
 // template for new command
@@ -101,6 +98,6 @@ FooCommand::DoCommand(const char* aCommandName,
 }
 #endif
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // #ifndef EditorCommands_h_
+#endif  // #ifndef EditorCommands_h_

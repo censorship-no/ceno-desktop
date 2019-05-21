@@ -1,10 +1,10 @@
 //! The `CFGPrinter` utility.
 
-use std::fmt::{Display, Formatter, Result, Write};
+use core::fmt::{Display, Formatter, Result, Write};
 
-use flowgraph::{BasicBlock, ControlFlowGraph};
-use ir::instructions::BranchInfo;
-use ir::Function;
+use crate::flowgraph::{BasicBlock, ControlFlowGraph};
+use crate::ir::instructions::BranchInfo;
+use crate::ir::Function;
 
 /// A utility for pretty-printing the CFG of a `Function`.
 pub struct CFGPrinter<'a> {
@@ -15,8 +15,8 @@ pub struct CFGPrinter<'a> {
 /// A utility for pretty-printing the CFG of a `Function`.
 impl<'a> CFGPrinter<'a> {
     /// Create a new CFGPrinter.
-    pub fn new(func: &'a Function) -> CFGPrinter<'a> {
-        CFGPrinter {
+    pub fn new(func: &'a Function) -> Self {
+        Self {
             func,
             cfg: ControlFlowGraph::with_function(func),
         }
@@ -48,8 +48,11 @@ impl<'a> CFGPrinter<'a> {
                     BranchInfo::SingleDest(dest, _) => {
                         write!(w, " | <{}>{} {}", inst, idata.opcode(), dest)?
                     }
-                    BranchInfo::Table(table) => {
-                        write!(w, " | <{}>{} {}", inst, idata.opcode(), table)?
+                    BranchInfo::Table(table, dest) => {
+                        write!(w, " | <{}>{} {}", inst, idata.opcode(), table)?;
+                        if let Some(dest) = dest {
+                            write!(w, " {}", dest)?
+                        }
                     }
                     BranchInfo::NotABranch => {}
                 }

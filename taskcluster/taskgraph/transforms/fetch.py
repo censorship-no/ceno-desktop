@@ -7,6 +7,8 @@
 
 from __future__ import absolute_import, unicode_literals
 
+from mozbuild.shellutil import quote as shell_quote
+
 import os
 
 from voluptuous import (
@@ -25,7 +27,6 @@ from ..util.cached_tasks import (
 )
 from ..util.schema import (
     Schema,
-    validate_schema,
 )
 from ..util.treeherder import (
     join_symbol,
@@ -33,8 +34,6 @@ from ..util.treeherder import (
 
 
 CACHE_TYPE = 'content.v1'
-
-transforms = TransformSequence()
 
 FETCH_SCHEMA = Schema({
     # Name of the task.
@@ -47,46 +46,55 @@ FETCH_SCHEMA = Schema({
     # Description of the task.
     Required('description'): basestring,
 
-    Required('fetch'): Any({
-        'type': 'static-url',
+    Required('fetch'): Any(
+        {
+            'type': 'static-url',
 
-        # The URL to download.
-        Required('url'): basestring,
+            # The URL to download.
+            Required('url'): basestring,
 
-        # The SHA-256 of the downloaded content.
-        Required('sha256'): basestring,
+            # The SHA-256 of the downloaded content.
+            Required('sha256'): basestring,
 
-        # Size of the downloaded entity, in bytes.
-        Required('size'): int,
+            # Size of the downloaded entity, in bytes.
+            Required('size'): int,
 
-        # GPG signature verification.
-        Optional('gpg-signature'): {
-            # URL where GPG signature document can be obtained. Can contain the
-            # value ``{url}``, which will be substituted with the value from
-            # ``url``.
-            Required('sig-url'): basestring,
-            # Path to file containing GPG public key(s) used to validate
-            # download.
-            Required('key-path'): basestring,
+            # GPG signature verification.
+            Optional('gpg-signature'): {
+                # URL where GPG signature document can be obtained. Can contain the
+                # value ``{url}``, which will be substituted with the value from
+                # ``url``.
+                Required('sig-url'): basestring,
+                # Path to file containing GPG public key(s) used to validate
+                # download.
+                Required('key-path'): basestring,
+            },
+
+            # The name to give to the generated artifact.
+            Optional('artifact-name'): basestring,
+
+            # IMPORTANT: when adding anything that changes the behavior of the task,
+            # it is important to update the digest data used to compute cache hits.
         },
+        {
+            'type': 'chromium-fetch',
 
-        # The name to give to the generated artifact.
-        Optional('artifact-name'): basestring,
+            Required('script'): basestring,
 
-        # IMPORTANT: when adding anything that changes the behavior of the task,
-        # it is important to update the digest data used to compute cache hits.
-    }),
+            # Platform type for chromium build
+            Required('platform'): basestring,
+
+            # Chromium revision to obtain
+            Optional('revision'): basestring,
+
+            # The name to give to the generated artifact.
+            Required('artifact-name'): basestring
+        }
+    ),
 })
 
-
-@transforms.add
-def validate(config, jobs):
-    for job in jobs:
-        validate_schema(
-            FETCH_SCHEMA, job,
-            'In fetch task {!r}:'.format(job.get('name', 'unknown')))
-
-        yield job
+transforms = TransformSequence()
+transforms.add_validate(FETCH_SCHEMA)
 
 
 @transforms.add
@@ -100,6 +108,8 @@ def process_fetch_job(config, jobs):
 
         if typ == 'static-url':
             yield create_fetch_url_task(config, job)
+        elif typ == 'chromium-fetch':
+            yield create_chromium_fetch_task(config, job)
         else:
             # validate() should have caught this.
             assert False
@@ -197,6 +207,58 @@ def create_fetch_url_task(config, job):
             # materially important for caching: GPG signatures are supplemental
             # trust checking beyond what the shasum already provides.
             digest_data=[fetch['sha256'], '%d' % fetch['size'], artifact_name],
+        )
+
+    return task
+
+
+def create_chromium_fetch_task(config, job):
+    name = job['name']
+    fetch = job['fetch']
+    artifact_name = fetch.get('artifact-name')
+
+    workdir = '/builds/worker'
+
+    platform = fetch.get('platform')
+    revision = fetch.get('revision')
+
+    args = '--platform ' + shell_quote(platform)
+    if revision:
+        args += ' --revision ' + shell_quote(revision)
+
+    cmd = [
+        'bash',
+        '-c',
+        'cd {} && '
+        '/usr/bin/python3 {} {}'.format(
+            workdir, fetch['script'], args
+        )
+    ]
+
+    env = {
+        'UPLOAD_DIR': '/builds/worker/artifacts'
+    }
+
+    task = make_base_task(config, name, job['description'], cmd)
+    task['treeherder']['symbol'] = join_symbol('Fetch-URL', name)
+    task['worker']['artifacts'] = [{
+        'type': 'directory',
+        'name': 'public',
+        'path': '/builds/worker/artifacts',
+    }]
+    task['worker']['env'] = env
+    task['attributes']['fetch-artifact'] = 'public/%s' % artifact_name
+
+    if not taskgraph.fast:
+        cache_name = task['label'].replace('{}-'.format(config.kind), '', 1)
+
+        # This adds the level to the index path automatically.
+        add_optimization(
+            config,
+            task,
+            cache_type=CACHE_TYPE,
+            cache_name=cache_name,
+            digest_data=["revision={}".format(revision), "platform={}".format(platform)],
         )
 
     return task

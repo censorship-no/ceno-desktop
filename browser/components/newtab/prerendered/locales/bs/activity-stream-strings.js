@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "U redu, razumijem",
   "prefs_home_header": "Firefox početni sadržaj",
   "prefs_home_description": "Odaberite koji sadržaj želite na vašem početnom ekranu Firefoxa.",
+  "prefs_content_discovery_header": "Firefox Home",
+  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
+  "prefs_content_discovery_button": "Turn Off Content Discovery",
   "prefs_section_rows_option": "{num} red;{num} redovi",
   "prefs_search_header": "Web pretraga",
   "prefs_topsites_description": "Stranice koje najviše posjećujete",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "Započnite pretraživati i pokazat ćemo vam neke od izvrsnih članaka, videa i drugih web stranica prema vašim nedavno posjećenim stranicama ili zabilješkama.",
   "topstories_empty_state": "Provjerite kasnije za više najpopularnijih priča od {provider}. Ne možete čekati? Odaberite popularne teme kako biste pronašli više kvalitetnih priča s cijelog weba.",
-  "manual_migration_explanation2": "Probajte Firefox s zabilješkama, historijom i lozinkama iz drugog pretraživača.",
-  "manual_migration_cancel_button": "Ne, hvala",
-  "manual_migration_import_button": "Uvezi sada",
   "error_fallback_default_info": "Ups, došlo je do greške pri učitavanju ovog sadržaja.",
   "error_fallback_default_refresh_suggestion": "Osvježite stranicu da biste pokušali ponovo.",
   "section_menu_action_remove_section": "Ukloni sekciju",
@@ -120,5 +120,8 @@ window.gActivityStreamStrings = {
   "settings_pane_snippets_body": "Pročitajte kratke i slatke obavijesti od Mozille o Firefoxu, internet kulturi i povremenim nasumičnim temama.",
   "settings_pane_done_button": "Gotovo",
   "settings_pane_topstories_options_sponsored": "Prikaži sponzorisane priče",
-  "pocket_description": "Otkrijte visoko kvalitetan sadržaj koji ste možda propustili, uz pomoć Pocketa koji je sada dio Mozille."
+  "pocket_description": "Otkrijte visoko kvalitetan sadržaj koji ste možda propustili, uz pomoć Pocketa koji je sada dio Mozille.",
+  "manual_migration_explanation2": "Probajte Firefox s zabilješkama, historijom i lozinkama iz drugog pretraživača.",
+  "manual_migration_cancel_button": "Ne, hvala",
+  "manual_migration_import_button": "Uvezi sada"
 };

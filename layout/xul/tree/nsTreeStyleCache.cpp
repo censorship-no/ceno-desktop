@@ -11,34 +11,24 @@
 using namespace mozilla;
 
 nsTreeStyleCache::Transition::Transition(DFAState aState, nsAtom* aSymbol)
-  : mState(aState), mInputSymbol(aSymbol)
-{
-}
+    : mState(aState), mInputSymbol(aSymbol) {}
 
-bool
-nsTreeStyleCache::Transition::operator==(const Transition& aOther) const
-{
+bool nsTreeStyleCache::Transition::operator==(const Transition& aOther) const {
   return aOther.mState == mState && aOther.mInputSymbol == mInputSymbol;
 }
 
-uint32_t
-nsTreeStyleCache::Transition::Hash() const
-{
-  // Make a 32-bit integer that combines the low-order 16 bits of the state and the input symbol.
+uint32_t nsTreeStyleCache::Transition::Hash() const {
+  // Make a 32-bit integer that combines the low-order 16 bits of the state and
+  // the input symbol.
   uint32_t hb = mState << 16;
   uint32_t lb = (NS_PTR_TO_UINT32(mInputSymbol.get()) << 16) >> 16;
-  return hb+lb;
+  return hb + lb;
 }
 
-
 // The ComputedStyle cache impl
-ComputedStyle*
-nsTreeStyleCache::GetComputedStyle(nsPresContext* aPresContext,
-                                   nsIContent* aContent,
-                                   ComputedStyle* aStyle,
-                                   nsCSSAnonBoxPseudoStaticAtom* aPseudoElement,
-                                   const AtomArray & aInputWord)
-{
+ComputedStyle* nsTreeStyleCache::GetComputedStyle(
+    nsPresContext* aPresContext, nsIContent* aContent, ComputedStyle* aStyle,
+    nsCSSAnonBoxPseudoStaticAtom* aPseudoElement, const AtomArray& aInputWord) {
   MOZ_ASSERT(nsCSSAnonBoxes::IsTreePseudoElement(aPseudoElement));
 
   uint32_t count = aInputWord.Length();
@@ -80,11 +70,26 @@ nsTreeStyleCache::GetComputedStyle(nsPresContext* aPresContext,
   }
   if (!result) {
     // We missed the cache. Resolve this pseudo-style.
-    RefPtr<ComputedStyle> newResult = aPresContext->StyleSet()->
-        ResolveXULTreePseudoStyle(aContent->AsElement(),
-                                  aPseudoElement, aStyle, aInputWord);
+    RefPtr<ComputedStyle> newResult =
+        aPresContext->StyleSet()->ResolveXULTreePseudoStyle(
+            aContent->AsElement(), aPseudoElement, aStyle, aInputWord);
 
-    // Put the ComputedStyle in our table, transferring the owning reference to the table.
+    // Normally we rely on nsFrame::Init / RestyleManager to call this, but
+    // these are weird and don't use a frame, yet ::-moz-tree-twisty definitely
+    // pokes at list-style-image.
+    newResult->StartImageLoads(*aPresContext->Document());
+
+    // Even though xul-tree pseudos are defined in nsCSSAnonBoxList, nothing has
+    // ever treated them as an anon box, and they don't ever get boxes anyway.
+    //
+    // This is really weird, and probably nothing really relies on the result of
+    // these assert, but it's here just to avoid changing them accidentally.
+    MOZ_ASSERT(newResult->GetPseudoType() == PseudoStyleType::XULTree);
+    MOZ_ASSERT(!newResult->IsAnonBox());
+    MOZ_ASSERT(!newResult->IsPseudoElement());
+
+    // Put the ComputedStyle in our table, transferring the owning reference to
+    // the table.
     if (!mCache) {
       mCache = new ComputedStyleCache();
     }
@@ -94,4 +99,3 @@ nsTreeStyleCache::GetComputedStyle(nsPresContext* aPresContext,
 
   return result;
 }
-

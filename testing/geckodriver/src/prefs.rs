@@ -2,28 +2,37 @@ use mozprofile::preferences::Pref;
 
 // ALL CHANGES TO THIS FILE MUST HAVE REVIEW FROM A GECKODRIVER PEER!
 //
-// The Marionette Python client is used out-of-tree with release
-// channel builds of Firefox.  Removing a preference from this file
-// will cause regressions, so please be careful and get review from
-// a Testing :: Marionette peer before you make any changes to this file.
-
+// All preferences in this file are not immediately effective, and
+// require a restart of Firefox, or have to be set in the profile before
+// Firefox gets started the first time. If a preference has to be added,
+// which is immediately effective, it needs to be done in Marionette
+// (marionette.js).
+//
+// Note: geckodriver is used out-of-tree with various builds of Firefox.
+// Removing a preference from this file will cause regressions,
+// so please be careful and get review from a Testing :: geckodriver peer
+// before you make any changes to this file.
 lazy_static! {
     pub static ref DEFAULT: Vec<(&'static str, Pref)> = vec![
         // Make sure Shield doesn't hit the network.
         ("app.normandy.api_url", Pref::new("")),
 
-        // Disable automatic downloading of new releases
-        ("app.update.auto", Pref::new(false)),
+        // Disable Firefox old build background check
+        ("app.update.checkInstallTime", Pref::new(false)),
 
         // Disable automatically upgrading Firefox
+        //
+        // Note: Possible update tests could reset or flip the value to allow
+        // updates to be downloaded and applied.
         ("app.update.disabledForTesting", Pref::new(true)),
-        // app.update.enabled is being removed. Once Firefox 62 becomes stable,
-        // the line below can be removed as well.
-        ("app.update.enabled", Pref::new(false)),
+        // !!! For backward compatibility up to Firefox 64. Only remove
+        // when this Firefox version is no longer supported by geckodriver !!!
+        ("app.update.auto", Pref::new(false)),
 
         // Enable the dump function, which sends messages to the system
         // console
         ("browser.dom.window.dump.enabled", Pref::new(true)),
+        ("devtools.console.stdout.chrome", Pref::new(true)),
 
         // Disable safebrowsing components
         ("browser.safebrowsing.blockedURIs.enabled", Pref::new(false)),
@@ -37,11 +46,6 @@ lazy_static! {
 
         // Skip check for default browser on startup
         ("browser.shell.checkDefaultBrowser", Pref::new(false)),
-
-        // Disable Android snippets
-        ("browser.snippets.enabled", Pref::new(false)),
-        ("browser.snippets.syncPromo.enabled", Pref::new(false)),
-        ("browser.snippets.firstrunHomepage.enabled", Pref::new(false)),
 
         // Do not redirect user when a milestone upgrade of Firefox
         // is detected
@@ -136,6 +140,9 @@ lazy_static! {
         // causing problems when quitting Firefox from geckodriver,
         // c.f. https://github.com/mozilla/geckodriver/issues/225.
         ("plugin.state.flash", Pref::new(0)),
+
+        // Don't do network connections for mitm priming
+        ("security.certerrors.mitm.priming.enabled", Pref::new(false)),
 
         // Ensure blocklist updates don't hit the network
         ("services.settings.server", Pref::new("http://%(server)s/dummy/blocklist/")),

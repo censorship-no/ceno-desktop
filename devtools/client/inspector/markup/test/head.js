@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
+/* import-globals-from ../../../shared/test/telemetry-test-helpers.js */
 /* import-globals-from ../../test/head.js */
 "use strict";
 
@@ -32,7 +33,6 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.inspector.htmlPanelOpen");
   Services.prefs.clearUserPref("devtools.inspector.sidebarOpen");
   Services.prefs.clearUserPref("devtools.markup.pagesize");
-  Services.prefs.clearUserPref("dom.webcomponents.shadowdom.enabled");
   Services.prefs.clearUserPref("devtools.inspector.showAllAnonymousContent");
 });
 
@@ -354,6 +354,36 @@ function promiseNextTick() {
 }
 
 /**
+ * `await` with timeout.
+ *
+ * Usage:
+ *   const badgeEventAdded = inspector.markup.once("badge-added-event");
+ *   ...
+ *   const result = await awaitWithTimeout(badgeEventAdded, 3000);
+ *   is(result, "timeout", "Ensure that no event badges were added");
+ *
+ * @param  {Promise} promise
+ *         Promise to resolve
+ * @param  {Number} ms
+ *         Milliseconds to wait.
+ * @return "timeout" on timeout, otherwise the result of the fulfilled promise.
+ */
+async function awaitWithTimeout(promise, ms) {
+  const timeout = new Promise(resolve => {
+    // eslint-disable-next-line
+    const wait = setTimeout(() => {
+      clearTimeout(wait);
+      resolve("timeout");
+    }, ms);
+  });
+
+  return Promise.race([
+    promise,
+    timeout,
+  ]);
+}
+
+/**
  * Collapses the current text selection in an input field and tabs to the next
  * field.
  */
@@ -437,7 +467,7 @@ async function simulateNodeDrag(inspector, selector, xOffset = 10, yOffset = 10)
     pageX: scrollX + rect.x,
     pageY: scrollY + rect.y,
     stopPropagation: () => {},
-    preventDefault: () => {}
+    preventDefault: () => {},
   });
 
   // _onMouseDown selects the node, so make sure to wait for the
@@ -449,7 +479,7 @@ async function simulateNodeDrag(inspector, selector, xOffset = 10, yOffset = 10)
   info("Simulate mouseMove on element " + selector);
   container.onMouseMove({
     pageX: scrollX + rect.x + xOffset,
-    pageY: scrollY + rect.y + yOffset
+    pageY: scrollY + rect.y + yOffset,
   });
 }
 
@@ -589,7 +619,12 @@ function assertContainerHasText(container, expectedText) {
  *             subchild2
  *           child2
  *             subchild3!slotted`
+ *           child3!ignore-children
  *        Each sub level should be indented by 2 spaces.
+ *        Each line contains text expected to match with the text of the corresponding
+ *        node in the markup view. Some suffixes are supported:
+ *        - !slotted -> indicates that the line corresponds to the slotted version
+ *        - !ignore-children -> the node might have children but do not assert them
  * @param {String} selector
  *        A CSS selector that will uniquely match the "root" element from the tree
  * @param {Inspector} inspector
@@ -612,13 +647,21 @@ async function _checkMarkupViewNode(treeNode, container, inspector) {
   info("Checking [" + path + "]");
   info("Checking node: " + node);
 
+  const ignoreChildren = node.includes("!ignore-children");
   const slotted = node.includes("!slotted");
+
+  // Remove optional suffixes.
+  const nodeText = node.replace("!slotted", "")
+                       .replace("!ignore-children", "");
+
+  assertContainerHasText(container, nodeText);
+
   if (slotted) {
-    const nodeName = node.replace("!slotted", "");
-    assertContainerHasText(container, nodeName);
     assertContainerSlotted(container);
-  } else {
-    assertContainerHasText(container, node);
+  }
+
+  if (ignoreChildren) {
+    return;
   }
 
   if (!children.length) {
@@ -656,7 +699,7 @@ async function _checkMarkupViewNode(treeNode, container, inspector) {
 function _parseMarkupViewTree(inputString) {
   const tree = {
     level: 0,
-    children: []
+    children: [],
   };
   let lines = inputString.split("\n");
   lines = lines.filter(l => l.trim());
@@ -681,7 +724,7 @@ function _parseMarkupViewTree(inputString) {
       children: [],
       parent,
       level,
-      path: parent.path + " " + nodeString
+      path: parent.path + " " + nodeString,
     };
 
     parent.children.push(node);

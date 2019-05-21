@@ -8,44 +8,97 @@
 #include "mozilla/dom/DocumentL10n.h"
 #include "mozilla/dom/DocumentL10nBinding.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/Event.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "nsQueryObject.h"
 #include "nsISupports.h"
+#include "nsImportModule.h"
 #include "nsContentUtils.h"
+#include "xpcprivate.h"
+
+#define INTL_APP_LOCALES_CHANGED "intl:app-locales-changed"
+
+#define L10N_PSEUDO_PREF "intl.l10n.pseudo"
+
+static const char* kObservedPrefs[] = {L10N_PSEUDO_PREF, nullptr};
 
 namespace mozilla {
 namespace dom {
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DocumentL10n)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+NS_INTERFACE_MAP_BEGIN(PromiseResolver)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMEventListener)
 NS_INTERFACE_MAP_END
+
+NS_IMPL_ADDREF(PromiseResolver)
+NS_IMPL_RELEASE(PromiseResolver)
+
+PromiseResolver::PromiseResolver(Promise* aPromise) { mPromise = aPromise; }
+
+void PromiseResolver::ResolvedCallback(JSContext* aCx,
+                                       JS::Handle<JS::Value> aValue) {
+  JS::RootedObject sourceScope(aCx, JS::CurrentGlobalOrNull(aCx));
+
+  AutoEntryScript aes(mPromise->GetParentObject(), "Promise resolution");
+  JSContext* cx = aes.cx();
+  JS::Rooted<JS::Value> value(cx, aValue);
+
+  xpc::StackScopedCloneOptions options;
+  StackScopedClone(cx, options, sourceScope, &value);
+
+  mPromise->MaybeResolve(cx, value);
+  mPromise = nullptr;
+}
+
+void PromiseResolver::RejectedCallback(JSContext* aCx,
+                                       JS::Handle<JS::Value> aValue) {
+  JS::RootedObject sourceScope(aCx, JS::CurrentGlobalOrNull(aCx));
+
+  AutoEntryScript aes(mPromise->GetParentObject(), "Promise rejection");
+  JSContext* cx = aes.cx();
+  JS::Rooted<JS::Value> value(cx, aValue);
+
+  xpc::StackScopedCloneOptions options;
+  StackScopedClone(cx, options, sourceScope, &value);
+
+  mPromise->MaybeReject(cx, value);
+  mPromise = nullptr;
+}
+
+PromiseResolver::~PromiseResolver() { mPromise = nullptr; }
+
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DocumentL10n, mDocument, mDOMLocalization,
+                                      mContentSink, mReady)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DocumentL10n)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(DocumentL10n)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DocumentL10n)
+  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIObserver)
+  NS_INTERFACE_MAP_ENTRY(nsIObserver)
+  NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
+NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DocumentL10n, mDocument, mDOMLocalization, mReady)
-
-DocumentL10n::DocumentL10n(nsIDocument* aDocument)
-  : mDocument(aDocument),
-    mState(DocumentL10nState::Initialized)
-{
+DocumentL10n::DocumentL10n(Document* aDocument)
+    : mDocument(aDocument), mState(DocumentL10nState::Initialized) {
+  mContentSink = do_QueryInterface(aDocument->GetCurrentContentSink());
 }
 
-DocumentL10n::~DocumentL10n()
-{
-}
-
-bool
-DocumentL10n::Init(nsTArray<nsString>& aResourceIds)
-{
-  nsCOMPtr<mozIDOMLocalization> domL10n = do_CreateInstance("@mozilla.org/intl/domlocalization;1");
-  if (NS_WARN_IF(!domL10n)) {
-    return false;
+DocumentL10n::~DocumentL10n() {
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->RemoveObserver(this, INTL_APP_LOCALES_CHANGED);
   }
+
+  Preferences::RemoveObservers(this, kObservedPrefs);
+}
+
+bool DocumentL10n::Init(nsTArray<nsString>& aResourceIds) {
+  nsCOMPtr<mozIDOMLocalizationJSM> jsm =
+      do_ImportModule("resource://gre/modules/DOMLocalization.jsm");
+  MOZ_RELEASE_ASSERT(jsm);
+
+  Unused << jsm->GetDOMLocalization(getter_AddRefs(mDOMLocalization));
+  MOZ_RELEASE_ASSERT(mDOMLocalization);
 
   nsIGlobalObject* global = mDocument->GetScopeObject();
   if (!global) {
@@ -57,54 +110,100 @@ DocumentL10n::Init(nsTArray<nsString>& aResourceIds)
   if (rv.Failed()) {
     return false;
   }
-  mDOMLocalization = domL10n;
 
   // The `aEager = true` here allows us to eagerly trigger
   // resource fetching to increase the chance that the l10n
   // resources will be ready by the time the document
   // is ready for localization.
   uint32_t ret;
-  mDOMLocalization->AddResourceIds(aResourceIds, true, &ret);
+  if (NS_FAILED(mDOMLocalization->AddResourceIds(aResourceIds, true, &ret))) {
+    return false;
+  }
 
   // Register observers for this instance of
-  // mozDOMLocalization to allow it to retranslate
+  // DOMLocalization to allow it to retranslate
   // the document when locale changes or pseudolocalization
   // gets turned on.
-  mDOMLocalization->RegisterObservers();
+  RegisterObservers();
+
   return true;
 }
 
-JSObject*
-DocumentL10n::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return DocumentL10n_Binding::Wrap(aCx, this, aGivenProto);
+void DocumentL10n::RegisterObservers() {
+  DebugOnly<nsresult> rv = Preferences::AddWeakObservers(this, kObservedPrefs);
+  MOZ_ASSERT(NS_SUCCEEDED(rv), "Adding observers failed.");
+
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->AddObserver(this, INTL_APP_LOCALES_CHANGED, true);
+  }
 }
 
 NS_IMETHODIMP
-DocumentL10n::HandleEvent(Event* aEvent)
-{
-#ifdef DEBUG
-  nsAutoString eventType;
-  aEvent->GetType(eventType);
-  MOZ_ASSERT(eventType.EqualsLiteral("MozBeforeInitialXULLayout"));
-#endif
-
-  TriggerInitialDocumentTranslation();
+DocumentL10n::Observe(nsISupports* aSubject, const char* aTopic,
+                      const char16_t* aData) {
+  if (!strcmp(aTopic, INTL_APP_LOCALES_CHANGED)) {
+    if (mDOMLocalization) {
+      mDOMLocalization->OnChange();
+    }
+  } else {
+    MOZ_ASSERT(!strcmp("nsPref:changed", aTopic));
+    nsDependentString pref(aData);
+    if (pref.EqualsLiteral(L10N_PSEUDO_PREF)) {
+      if (mDOMLocalization) {
+        mDOMLocalization->OnChange();
+      }
+    }
+  }
 
   return NS_OK;
 }
 
-uint32_t
-DocumentL10n::AddResourceIds(nsTArray<nsString>& aResourceIds)
-{
+void DocumentL10n::Destroy() {
+  if (mDOMLocalization) {
+    Element* elem = mDocument->GetDocumentElement();
+    if (elem) {
+      mDOMLocalization->DisconnectRoot(elem);
+    }
+  }
+}
+
+JSObject* DocumentL10n::WrapObject(JSContext* aCx,
+                                   JS::Handle<JSObject*> aGivenProto) {
+  return DocumentL10n_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+already_AddRefed<Promise> DocumentL10n::MaybeWrapPromise(
+    Promise* aInnerPromise) {
+  // For system principal we don't need to wrap the
+  // result promise at all.
+  if (nsContentUtils::IsSystemPrincipal(mDocument->NodePrincipal())) {
+    return RefPtr<Promise>(aInnerPromise).forget();
+  }
+
+  nsIGlobalObject* global = mDocument->GetScopeObject();
+  if (!global) {
+    return nullptr;
+  }
+
+  ErrorResult result;
+  RefPtr<Promise> docPromise = Promise::Create(global, result);
+  if (result.Failed()) {
+    return nullptr;
+  }
+
+  RefPtr<PromiseResolver> resolver = new PromiseResolver(docPromise);
+  aInnerPromise->AppendNativeHandler(resolver);
+  return docPromise.forget();
+}
+
+uint32_t DocumentL10n::AddResourceIds(nsTArray<nsString>& aResourceIds) {
   uint32_t ret = 0;
   mDOMLocalization->AddResourceIds(aResourceIds, false, &ret);
   return ret;
 }
 
-uint32_t
-DocumentL10n::RemoveResourceIds(nsTArray<nsString>& aResourceIds)
-{
+uint32_t DocumentL10n::RemoveResourceIds(nsTArray<nsString>& aResourceIds) {
   // We need to guard against a scenario where the
   // mDOMLocalization has been unlinked, but the elements
   // are only now removed from DOM.
@@ -116,9 +215,8 @@ DocumentL10n::RemoveResourceIds(nsTArray<nsString>& aResourceIds)
   return ret;
 }
 
-already_AddRefed<Promise>
-DocumentL10n::FormatMessages(JSContext* aCx, const Sequence<L10nKey>& aKeys, ErrorResult& aRv)
-{
+already_AddRefed<Promise> DocumentL10n::FormatMessages(
+    JSContext* aCx, const Sequence<L10nKey>& aKeys, ErrorResult& aRv) {
   nsTArray<JS::Value> jsKeys;
   SequenceRooter<JS::Value> rooter(aCx, &jsKeys);
   for (auto& key : aKeys) {
@@ -136,12 +234,11 @@ DocumentL10n::FormatMessages(JSContext* aCx, const Sequence<L10nKey>& aKeys, Err
     return nullptr;
   }
 
-  return promise.forget();
+  return MaybeWrapPromise(promise);
 }
 
-already_AddRefed<Promise>
-DocumentL10n::FormatValues(JSContext* aCx, const Sequence<L10nKey>& aKeys, ErrorResult& aRv)
-{
+already_AddRefed<Promise> DocumentL10n::FormatValues(
+    JSContext* aCx, const Sequence<L10nKey>& aKeys, ErrorResult& aRv) {
   nsTArray<JS::Value> jsKeys;
   SequenceRooter<JS::Value> rooter(aCx, &jsKeys);
   for (auto& key : aKeys) {
@@ -159,12 +256,12 @@ DocumentL10n::FormatValues(JSContext* aCx, const Sequence<L10nKey>& aKeys, Error
     return nullptr;
   }
 
-  return promise.forget();
+  return MaybeWrapPromise(promise);
 }
 
-already_AddRefed<Promise>
-DocumentL10n::FormatValue(JSContext* aCx, const nsAString& aId, const Optional<JS::Handle<JSObject*>>& aArgs, ErrorResult& aRv)
-{
+already_AddRefed<Promise> DocumentL10n::FormatValue(
+    JSContext* aCx, const nsAString& aId,
+    const Optional<JS::Handle<JSObject*>>& aArgs, ErrorResult& aRv) {
   JS::Rooted<JS::Value> args(aCx);
 
   if (aArgs.WasPassed()) {
@@ -174,17 +271,19 @@ DocumentL10n::FormatValue(JSContext* aCx, const nsAString& aId, const Optional<J
   }
 
   RefPtr<Promise> promise;
-  nsresult rv = mDOMLocalization->FormatValue(aId, args, getter_AddRefs(promise));
+  nsresult rv =
+      mDOMLocalization->FormatValue(aId, args, getter_AddRefs(promise));
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
     return nullptr;
   }
-  return promise.forget();
+  return MaybeWrapPromise(promise);
 }
 
-void
-DocumentL10n::SetAttributes(JSContext* aCx, Element& aElement, const nsAString& aId, const Optional<JS::Handle<JSObject*>>& aArgs, ErrorResult& aRv)
-{
+void DocumentL10n::SetAttributes(JSContext* aCx, Element& aElement,
+                                 const nsAString& aId,
+                                 const Optional<JS::Handle<JSObject*>>& aArgs,
+                                 ErrorResult& aRv) {
   aElement.SetAttribute(NS_LITERAL_STRING("data-l10n-id"), aId, aRv);
   if (aRv.Failed()) {
     return;
@@ -202,9 +301,8 @@ DocumentL10n::SetAttributes(JSContext* aCx, Element& aElement, const nsAString& 
   }
 }
 
-void
-DocumentL10n::GetAttributes(JSContext* aCx, Element& aElement, L10nKey& aResult, ErrorResult& aRv)
-{
+void DocumentL10n::GetAttributes(JSContext* aCx, Element& aElement,
+                                 L10nKey& aResult, ErrorResult& aRv) {
   nsAutoString l10nId;
   nsAutoString l10nArgs;
 
@@ -226,65 +324,67 @@ DocumentL10n::GetAttributes(JSContext* aCx, Element& aElement, L10nKey& aResult,
   }
 }
 
-already_AddRefed<Promise>
-DocumentL10n::TranslateFragment(nsINode& aNode, ErrorResult& aRv)
-{
+already_AddRefed<Promise> DocumentL10n::TranslateFragment(nsINode& aNode,
+                                                          ErrorResult& aRv) {
   RefPtr<Promise> promise;
-  nsresult rv = mDOMLocalization->TranslateFragment(&aNode, getter_AddRefs(promise));
+  nsresult rv =
+      mDOMLocalization->TranslateFragment(&aNode, getter_AddRefs(promise));
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
     return nullptr;
   }
-  return promise.forget();
+  return MaybeWrapPromise(promise);
 }
 
-already_AddRefed<Promise>
-DocumentL10n::TranslateElements(const Sequence<OwningNonNull<Element>>& aElements, ErrorResult& aRv)
-{
+already_AddRefed<Promise> DocumentL10n::TranslateElements(
+    const Sequence<OwningNonNull<Element>>& aElements, ErrorResult& aRv) {
   AutoTArray<RefPtr<Element>, 10> elements;
   elements.SetCapacity(aElements.Length());
   for (auto& element : aElements) {
     elements.AppendElement(element);
   }
   RefPtr<Promise> promise;
-  aRv = mDOMLocalization->TranslateElements(
-      elements, getter_AddRefs(promise));
+  aRv = mDOMLocalization->TranslateElements(elements, getter_AddRefs(promise));
   if (aRv.Failed()) {
     return nullptr;
   }
-  return promise.forget();
+  return MaybeWrapPromise(promise);
 }
 
-class L10nReadyHandler final : public PromiseNativeHandler
-{
-public:
+void DocumentL10n::PauseObserving(ErrorResult& aRv) {
+  aRv = mDOMLocalization->PauseObserving();
+}
+
+void DocumentL10n::ResumeObserving(ErrorResult& aRv) {
+  aRv = mDOMLocalization->ResumeObserving();
+}
+
+class L10nReadyHandler final : public PromiseNativeHandler {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(L10nReadyHandler)
 
-  explicit L10nReadyHandler(Promise* aPromise)
-    : mPromise(aPromise)
-  {
-  }
+  explicit L10nReadyHandler(Promise* aPromise, DocumentL10n* aDocumentL10n)
+      : mPromise(aPromise), mDocumentL10n(aDocumentL10n) {}
 
-  void
-  ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override
-  {
+  void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
+    mDocumentL10n->InitialDocumentTranslationCompleted();
     mPromise->MaybeResolveWithUndefined();
   }
 
-  void
-  RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override
-  {
+  void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
+    mDocumentL10n->InitialDocumentTranslationCompleted();
     mPromise->MaybeRejectWithUndefined();
   }
 
-private:
+ private:
   ~L10nReadyHandler() = default;
 
   RefPtr<Promise> mPromise;
+  RefPtr<DocumentL10n> mDocumentL10n;
 };
 
-NS_IMPL_CYCLE_COLLECTION(L10nReadyHandler, mPromise)
+NS_IMPL_CYCLE_COLLECTION(L10nReadyHandler, mPromise, mDocumentL10n)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(L10nReadyHandler)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
@@ -293,10 +393,8 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(L10nReadyHandler)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(L10nReadyHandler)
 
-void
-DocumentL10n::TriggerInitialDocumentTranslation()
-{
-  if (mState == DocumentL10nState::InitialTranslationTriggered) {
+void DocumentL10n::TriggerInitialDocumentTranslation() {
+  if (mState >= DocumentL10nState::InitialTranslationTriggered) {
     return;
   }
 
@@ -309,15 +407,32 @@ DocumentL10n::TriggerInitialDocumentTranslation()
 
   RefPtr<Promise> promise;
   mDOMLocalization->TranslateRoots(getter_AddRefs(promise));
-  RefPtr<PromiseNativeHandler> l10nReadyHandler = new L10nReadyHandler(mReady);
+  if (!promise) {
+    return;
+  }
+
+  RefPtr<PromiseNativeHandler> l10nReadyHandler =
+      new L10nReadyHandler(mReady, this);
   promise->AppendNativeHandler(l10nReadyHandler);
 }
 
-Promise*
-DocumentL10n::Ready()
-{
-  return mReady;
+void DocumentL10n::InitialDocumentTranslationCompleted() {
+  if (mState >= DocumentL10nState::InitialTranslationCompleted) {
+    return;
+  }
+
+  mState = DocumentL10nState::InitialTranslationCompleted;
+
+  mDocument->InitialDocumentTranslationCompleted();
+
+  // In XUL scenario mContentSink is nullptr.
+  if (mContentSink) {
+    mContentSink->InitialDocumentTranslationCompleted();
+    mContentSink = nullptr;
+  }
 }
 
-} // namespace dom
-} // namespace mozilla
+Promise* DocumentL10n::Ready() { return mReady; }
+
+}  // namespace dom
+}  // namespace mozilla

@@ -99,7 +99,7 @@ use std::sync::Arc;
 fn args_are_cpp(clang_args: &[String]) -> bool {
     return clang_args
         .windows(2)
-        .any(|w| w[0] == "-x=c++" || w[1] == "-x=c++" || w == &["-x", "c++"]);
+        .any(|w| w[0] == "-xc++" || w[1] == "-xc++" || w == &["-x", "c++"]);
 }
 
 bitflags! {
@@ -311,6 +311,20 @@ impl Builder {
             })
             .count();
 
+        self.options
+            .blacklisted_items
+            .get_items()
+            .iter()
+            .map(|item| {
+                output_vector.push("--blacklist-item".into());
+                output_vector.push(
+                    item.trim_left_matches("^")
+                        .trim_right_matches("$")
+                        .into(),
+                );
+            })
+            .count();
+
         if !self.options.layout_tests {
             output_vector.push("--no-layout-tests".into());
         }
@@ -373,6 +387,14 @@ impl Builder {
             output_vector.push("--objc-extern-crate".into());
         }
 
+        if self.options.generate_block {
+            output_vector.push("--generate-block".into());
+        }
+
+        if self.options.block_extern_crate {
+            output_vector.push("--block-extern-crate".into());
+        }
+
         if self.options.builtins {
             output_vector.push("--builtins".into());
         }
@@ -409,7 +431,7 @@ impl Builder {
         //Temporary placeholder for below 4 options
         let mut options: Vec<String> = Vec::new();
         if self.options.codegen_config.functions() {
-            options.push("function".into());
+            options.push("functions".into());
         }
         if self.options.codegen_config.types() {
             options.push("types".into());
@@ -700,6 +722,19 @@ impl Builder {
         self
     }
 
+    /// Generate proper block signatures instead of void pointers.
+    pub fn generate_block(mut self, doit: bool) -> Self {
+        self.options.generate_block = doit;
+        self
+    }
+
+    /// Generate `#[macro_use] extern crate block;` instead of `use block;`
+    /// in the prologue of the files generated from apple block files
+    pub fn block_extern_crate(mut self, doit: bool) -> Self {
+        self.options.block_extern_crate = doit;
+        self
+    }
+
     /// Whether to use the clang-provided name mangling. This is true by default
     /// and probably needed for C++ features.
     ///
@@ -730,6 +765,14 @@ impl Builder {
     /// are supported.
     pub fn blacklist_function<T: AsRef<str>>(mut self, arg: T) -> Builder {
         self.options.blacklisted_functions.insert(arg);
+        self
+    }
+
+    /// Hide the given item from the generated bindings, regardless of
+    /// whether it's a type, function, module, etc. Regular
+    /// expressions are supported.
+    pub fn blacklist_item<T: AsRef<str>>(mut self, arg: T) -> Builder {
+        self.options.blacklisted_items.insert(arg);
         self
     }
 
@@ -1292,6 +1335,10 @@ struct BindgenOptions {
     /// in the generated code.
     blacklisted_functions: RegexSet,
 
+    /// The set of items, regardless of item-type, that have been
+    /// blacklisted and should not appear in the generated code.
+    blacklisted_items: RegexSet,
+
     /// The set of types that should be treated as opaque structures in the
     /// generated code.
     opaque_types: RegexSet,
@@ -1454,6 +1501,14 @@ struct BindgenOptions {
     /// generate '#[macro_use] extern crate objc;'
     objc_extern_crate: bool,
 
+    /// Instead of emitting 'use block;' to files generated from objective c files,
+    /// generate '#[macro_use] extern crate block;'
+    generate_block: bool,
+
+    /// Instead of emitting 'use block;' to files generated from objective c files,
+    /// generate '#[macro_use] extern crate block;'
+    block_extern_crate: bool,
+
     /// Whether to use the clang-provided name mangling. This is true and
     /// probably needed for C++ features.
     ///
@@ -1502,6 +1557,7 @@ impl BindgenOptions {
         self.whitelisted_functions.build();
         self.blacklisted_types.build();
         self.blacklisted_functions.build();
+        self.blacklisted_items.build();
         self.opaque_types.build();
         self.bitfield_enums.build();
         self.constified_enums.build();
@@ -1535,6 +1591,7 @@ impl Default for BindgenOptions {
             rust_features: rust_target.into(),
             blacklisted_types: Default::default(),
             blacklisted_functions: Default::default(),
+            blacklisted_items: Default::default(),
             opaque_types: Default::default(),
             rustfmt_path: Default::default(),
             whitelisted_types: Default::default(),
@@ -1578,7 +1635,9 @@ impl Default for BindgenOptions {
             generate_comments: true,
             generate_inline_functions: false,
             whitelist_recursively: true,
+            generate_block: false,
             objc_extern_crate: false,
+            block_extern_crate: false,
             enable_mangling: true,
             prepend_enum_name: true,
             time_phases: false,
@@ -1994,7 +2053,7 @@ fn commandline_flag_unit_test_function() {
         "--rust-target",
         "--no-derive-default",
         "--generate",
-        "function,types,vars,methods,constructors,destructors",
+        "functions,types,vars,methods,constructors,destructors",
     ].iter()
         .map(|&x| x.into())
         .collect::<Vec<String>>();
@@ -2015,7 +2074,7 @@ fn commandline_flag_unit_test_function() {
         "input_header",
         "--no-derive-default",
         "--generate",
-        "function,types,vars,methods,constructors,destructors",
+        "functions,types,vars,methods,constructors,destructors",
         "--whitelist-type",
         "Distinct_Type",
         "--whitelist-function",

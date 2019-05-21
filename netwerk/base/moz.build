@@ -63,12 +63,12 @@ XPIDL_SOURCES += [
     'nsINestedURI.idl',
     'nsINetAddr.idl',
     'nsINetUtil.idl',
+    'nsINetworkConnectivityService.idl',
     'nsINetworkInfoService.idl',
     'nsINetworkInterceptController.idl',
     'nsINetworkLinkService.idl',
     'nsINetworkPredictor.idl',
     'nsINetworkPredictorVerifier.idl',
-    'nsINetworkProperties.idl',
     'nsINullChannel.idl',
     'nsIParentChannel.idl',
     'nsIParentRedirectingChannel.idl',
@@ -96,7 +96,6 @@ XPIDL_SOURCES += [
     'nsIResumableChannel.idl',
     'nsISecCheckWrapChannel.idl',
     'nsISecureBrowserUI.idl',
-    'nsISecurityEventSink.idl',
     'nsISensitiveInfoHiddenURI.idl',
     'nsISerializationHelper.idl',
     'nsIServerSocket.idl',
@@ -123,19 +122,12 @@ XPIDL_SOURCES += [
     'nsIUploadChannel.idl',
     'nsIUploadChannel2.idl',
     'nsIURI.idl',
-    'nsIURIClassifier.idl',
     'nsIURIMutator.idl',
     'nsIURIWithSpecialOrigin.idl',
     'nsIURL.idl',
     'nsIURLParser.idl',
-    'nsPILoadGroupInternal.idl',
     'nsPISocketTransportService.idl',
 ]
-
-if CONFIG['MOZ_TOOLKIT_SEARCH']:
-    XPIDL_SOURCES += [
-        'nsIBrowserSearchService.idl',
-    ]
 
 XPIDL_MODULE = 'necko'
 
@@ -151,6 +143,7 @@ EXPORTS += [
     'nsSerializationHelper.h',
     'nsSimpleNestedURI.h',
     'nsSimpleURI.h',
+    'nsStandardURL.h',
     'nsStreamListenerWrapper.h',
     'nsURIHashKey.h',
     'nsURLHelper.h',
@@ -173,10 +166,12 @@ EXPORTS.mozilla.net += [
     'DashboardTypes.h',
     'IOActivityMonitor.h',
     'MemoryDownloader.h',
+    'NetworkConnectivityService.h',
     'PartiallySeekableInputStream.h',
     'Predictor.h',
     'RedirectChannelRegistrar.h',
     'ReferrerPolicy.h',
+    'RequestContextService.h',
     'SimpleChannelParent.h',
     'TCPFastOpen.h',
 ]
@@ -193,6 +188,7 @@ UNIFIED_SOURCES += [
     'LoadContextInfo.cpp',
     'LoadInfo.cpp',
     'MemoryDownloader.cpp',
+    'NetworkConnectivityService.cpp',
     'nsAsyncRedirectVerifyHelper.cpp',
     'nsAsyncStreamCopier.cpp',
     'nsAuthInformationHolder.cpp',
@@ -200,7 +196,6 @@ UNIFIED_SOURCES += [
     'nsBaseChannel.cpp',
     'nsBaseContentStream.cpp',
     'nsBufferedStreams.cpp',
-    'nsChannelClassifier.cpp',
     'nsDirectoryIndexStream.cpp',
     'nsDNSPrefetch.cpp',
     'nsDownloader.cpp',
@@ -222,7 +217,6 @@ UNIFIED_SOURCES += [
     'nsProxyInfo.cpp',
     'nsRedirectHistoryEntry.cpp',
     'nsRequestObserverProxy.cpp',
-    'nsSecCheckWrapChannel.cpp',
     'nsSerializationHelper.cpp',
     'nsServerSocket.cpp',
     'nsSimpleNestedURI.cpp',
@@ -301,10 +295,13 @@ LOCAL_INCLUDES += [
     '/dom/base',
     '/netwerk/protocol/http',
     '/netwerk/socket',
+    '/netwerk/url-classifier',
 ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
+    LOCAL_INCLUDES += [
+        '/xpcom/base',
+    ]
 
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
-
-if CONFIG['CC_TYPE'] == 'clang-cl':
-    AllowCompilerWarnings()  # workaround for bug 1090497

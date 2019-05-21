@@ -34,15 +34,14 @@ const TEST_GLOBAL = {
   },
   AppConstants: {MOZILLA_OFFICIAL: true},
   UpdateUtils: {getUpdateChannel() {}},
+  BrowserWindowTracker: {getTopWindow() {}},
   ChromeUtils: {
     defineModuleGetter() {},
     generateQI() { return {}; },
-    import(str) {
-      if (str === "resource://services-settings/remote-settings.js") {
-        return {RemoteSettings: TEST_GLOBAL.RemoteSettings};
-      }
-      return {};
-    },
+    import() { return global; },
+  },
+  ClientEnvironment: {
+    get userId() { return "foo123"; },
   },
   Components: {isSuccessCode: () => true},
   // eslint-disable-next-line object-shorthand
@@ -92,6 +91,7 @@ const TEST_GLOBAL = {
     nsIHttpChannel: {REFERRER_POLICY_UNSAFE_URL: 5},
     nsITimer: {TYPE_ONE_SHOT: 1},
     nsIWebProgressListener: {LOCATION_CHANGE_SAME_DOCUMENT: 1},
+    nsIDOMWindow: Object,
   },
   Cu: {
     importGlobalProperties() {},
@@ -152,6 +152,9 @@ const TEST_GLOBAL = {
     File: function() {}, // NB: This is a function/constructor
   },
   Services: {
+    dirsvc: {
+      get: () => ({parent: {parent: {path: "appPath"}}}),
+    },
     locale: {
       get appLocaleAsLangTag() { return "en-US"; },
       negotiateLanguages() {},
@@ -220,9 +223,15 @@ const TEST_GLOBAL = {
       }),
     },
     search: {
-      init(cb) { cb(); },
-      getVisibleEngines: () => [{identifier: "google"}, {identifier: "bing"}],
-      defaultEngine: {identifier: "google"},
+      init() { return Promise.resolve(); },
+      getVisibleEngines: () => Promise.resolve([{identifier: "google"}, {identifier: "bing"}]),
+      defaultEngine: {
+        identifier: "google",
+        searchForm: "https://www.google.com/search?q=&ie=utf-8&oe=utf-8&client=firefox-b",
+        wrappedJSObject: {
+          __internalAliases: ["@google"],
+        },
+      },
       currentEngine: {identifier: "google", searchForm: "https://www.google.com/search?q=&ie=utf-8&oe=utf-8&client=firefox-b"},
     },
     scriptSecurityManager: {
@@ -262,7 +271,24 @@ const TEST_GLOBAL = {
       on() {},
     };
   },
-  Localization: class {},
+  Localization: class {
+    async formatMessages(stringsIds) {
+      return Promise.resolve(stringsIds.map(({id, args}) => ({value: {string_id: id, args}})));
+    }
+  },
+  FxAccountsConfig: {
+    promiseEmailFirstURI(id) {
+      return Promise.resolve(id);
+    },
+  },
+  TelemetryEnvironment: {
+    setExperimentActive() {},
+  },
+  Sampling: {
+    ratioSample(seed, ratios) {
+      return Promise.resolve(0);
+    },
+  },
 };
 overrider.set(TEST_GLOBAL);
 

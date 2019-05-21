@@ -12,9 +12,8 @@
  * For more documentation, please see
  * https://hg.mozilla.org/projects/htmlparser/file/tip/src/nu/validator/htmlparser/impl/StateSnapshot.java
  */
-class nsAHtml5TreeBuilderState
-{
-public:
+class nsAHtml5TreeBuilderState {
+ public:
   virtual jArray<nsHtml5StackNode*, int32_t> getStack() = 0;
 
   virtual jArray<nsHtml5StackNode*, int32_t>
@@ -31,8 +30,6 @@ public:
   virtual nsIContentHandle* getFormPointer() = 0;
 
   virtual nsIContentHandle* getHeadPointer() = 0;
-
-  virtual nsIContentHandle* getDeepTreeSurrogateParent() = 0;
 
   virtual int32_t getMode() = 0;
 

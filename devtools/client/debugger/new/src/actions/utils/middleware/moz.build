@@ -7,7 +7,7 @@ DIRS += [
 
 ]
 
-DevToolsModules(
+CompiledModules(
     'history.js',
     'log.js',
     'promise.js',

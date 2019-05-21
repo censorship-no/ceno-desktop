@@ -8,17 +8,17 @@
 #include <unistd.h>
 
 #ifndef __WakeLockListener_h__
-#define __WakeLockListener_h__
+#  define __WakeLockListener_h__
 
-#include "mozilla/StaticPtr.h"
-#include "nsHashKeys.h"
-#include "nsClassHashtable.h"
+#  include "mozilla/StaticPtr.h"
+#  include "nsHashKeys.h"
+#  include "nsClassHashtable.h"
 
-#include "nsIDOMWakeLockListener.h"
+#  include "nsIDOMWakeLockListener.h"
 
-#ifdef MOZ_ENABLE_DBUS
-#include "mozilla/DBusHelpers.h"
-#endif
+#  ifdef MOZ_ENABLE_DBUS
+#    include "mozilla/DBusHelpers.h"
+#  endif
 
 class WakeLockTopic;
 
@@ -26,9 +26,8 @@ class WakeLockTopic;
  * Receives WakeLock events and simply passes it on to the right WakeLockTopic
  * to inhibit the screensaver.
  */
-class WakeLockListener final : public nsIDOMMozWakeLockListener
-{
-public:
+class WakeLockListener final : public nsIDOMMozWakeLockListener {
+ public:
   NS_DECL_ISUPPORTS;
 
   static WakeLockListener* GetSingleton(bool aCreate = true);
@@ -37,7 +36,7 @@ public:
   virtual nsresult Callback(const nsAString& topic,
                             const nsAString& state) override;
 
-private:
+ private:
   WakeLockListener();
   ~WakeLockListener() = default;
 
@@ -45,12 +44,12 @@ private:
 
   static mozilla::StaticRefPtr<WakeLockListener> sSingleton;
 
-#ifdef MOZ_ENABLE_DBUS
+#  ifdef MOZ_ENABLE_DBUS
   RefPtr<DBusConnection> mConnection;
-#endif
+#  endif
   // Map of topic names to |WakeLockTopic|s.
   // We assume a small, finite-sized set of topics.
   nsClassHashtable<nsStringHashKey, WakeLockTopic> mTopics;
 };
 
-#endif // __WakeLockListener_h__
+#endif  // __WakeLockListener_h__

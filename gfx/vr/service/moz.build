@@ -15,12 +15,16 @@ if CONFIG['OS_TARGET'] != 'Android':
     UNIFIED_SOURCES += [
         'OSVRSession.cpp',
         'VRService.cpp',
+        'VRServiceManager.cpp',
         'VRSession.cpp',
     ]
     include('/ipc/chromium/chromium-config.mozbuild')
 
 # Build OpenVR on Windows, Linux, and macOS desktop targets
 if CONFIG['OS_TARGET'] in ('WINNT', 'Linux', 'Darwin'):
+    DIRS += [
+        'openvr',
+    ]
     LOCAL_INCLUDES += [
         '/dom/base',
         '/gfx/layers/d3d11'
@@ -34,9 +38,3 @@ if CONFIG['OS_TARGET'] in ('WINNT', 'Linux', 'Darwin'):
     ]
 
 FINAL_LIBRARY = 'xul'
-
-# This is intended as a temporary hack to enable VS2015 builds.
-if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
-    # ovr_capi_dynamic.h '<unnamed-tag>': Alignment specifier is less than
-    # actual alignment (8), and will be ignored
-    CXXFLAGS += ['-wd4359']

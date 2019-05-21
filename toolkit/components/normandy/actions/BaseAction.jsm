@@ -22,6 +22,19 @@ class BaseAction {
   constructor() {
     this.state = BaseAction.STATE_PREPARING;
     this.log = LogManager.getLogger(`action.${this.name}`);
+    this.lastError = null;
+  }
+
+  /**
+   * Be sure to run the _preExecution() hook once during its
+   * lifecycle.
+   *
+   * This is not intended for overriding by subclasses.
+   */
+  _ensurePreExecution() {
+    if (this.state !== BaseAction.STATE_PREPARING) {
+      return;
+    }
 
     try {
       this._preExecution();
@@ -30,9 +43,14 @@ class BaseAction {
         this.state = BaseAction.STATE_READY;
       }
     } catch (err) {
-      err.message = `Could not initialize action ${this.name}: ${err.message}`;
-      Cu.reportError(err);
-      this.fail(Uptake.ACTION_PRE_EXECUTION_ERROR);
+      // Sometimes err.message is editable. If it is, add helpful details.
+      // Otherwise log the helpful details and move on.
+      try {
+        err.message = `Could not initialize action ${this.name}: ${err.message}`;
+      } catch (_e) {
+        this.log.error(`Could not initialize action ${this.name}, error follows.`);
+      }
+      this.fail(err);
     }
   }
 
@@ -51,7 +69,7 @@ class BaseAction {
     this.state = BaseAction.STATE_DISABLED;
   }
 
-  fail() {
+  fail(err) {
     switch (this.state) {
       case BaseAction.STATE_PREPARING: {
         Uptake.reportAction(this.name, Uptake.ACTION_PRE_EXECUTION_ERROR);
@@ -62,6 +80,8 @@ class BaseAction {
       }
     }
     this.state = BaseAction.STATE_FAILED;
+    this.lastError = err;
+    Cu.reportError(err);
   }
 
   // Gets the name of the action. Does not necessarily match the
@@ -86,12 +106,14 @@ class BaseAction {
    * @throws If this action has already been finalized.
    */
   async runRecipe(recipe) {
+    this._ensurePreExecution();
+
     if (this.state === BaseAction.STATE_FINALIZED) {
       throw new Error("Action has already been finalized");
     }
 
     if (this.state !== BaseAction.STATE_READY) {
-      Uptake.reportRecipe(recipe.id, Uptake.RECIPE_ACTION_DISABLED);
+      Uptake.reportRecipe(recipe, Uptake.RECIPE_ACTION_DISABLED);
       this.log.warn(`Skipping recipe ${recipe.name} because ${this.name} was disabled during preExecution.`);
       return;
     }
@@ -99,7 +121,7 @@ class BaseAction {
     let [valid, validatedArguments] = JsonSchemaValidator.validateAndParseParameters(recipe.arguments, this.schema);
     if (!valid) {
       Cu.reportError(new Error(`Arguments do not match schema. arguments: ${JSON.stringify(recipe.arguments)}. schema: ${JSON.stringify(this.schema)}`));
-      Uptake.reportRecipe(recipe.id, Uptake.RECIPE_EXECUTION_ERROR);
+      Uptake.reportRecipe(recipe, Uptake.RECIPE_EXECUTION_ERROR);
       return;
     }
 
@@ -112,7 +134,7 @@ class BaseAction {
       Cu.reportError(err);
       status = Uptake.RECIPE_EXECUTION_ERROR;
     }
-    Uptake.reportRecipe(recipe.id, status);
+    Uptake.reportRecipe(recipe, status);
   }
 
   /**
@@ -130,6 +152,11 @@ class BaseAction {
    * recipes will be assumed to have been seen.
    */
   async finalize() {
+    // It's possible that no recipes matched us, so runRecipe() was
+    // never called. In that case, we should ensure that we call
+    // _preExecute() here.
+    this._ensurePreExecution();
+
     let status;
     switch (this.state) {
       case BaseAction.STATE_FINALIZED: {
@@ -141,7 +168,7 @@ class BaseAction {
           status = Uptake.ACTION_SUCCESS;
         } catch (err) {
           status = Uptake.ACTION_POST_EXECUTION_ERROR;
-            // Sometimes Error.message can be updated in place. This gives better messages when debugging errors.
+          // Sometimes Error.message can be updated in place. This gives better messages when debugging errors.
           try {
             err.message = `Could not run postExecution hook for ${this.name}: ${err.message}`;
           } catch (err) {
@@ -149,6 +176,7 @@ class BaseAction {
             this.log.debug(`Could not run postExecution hook for ${this.name}`);
           }
 
+          this.lastError = err;
           Cu.reportError(err);
         }
         break;

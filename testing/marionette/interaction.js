@@ -3,22 +3,23 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
+/* eslint-disable no-restricted-globals */
 
-ChromeUtils.import("resource://gre/modules/Preferences.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Preferences} = ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-ChromeUtils.import("chrome://marionette/content/accessibility.js");
-ChromeUtils.import("chrome://marionette/content/atom.js");
-ChromeUtils.import("chrome://marionette/content/element.js");
+const {accessibility} = ChromeUtils.import("chrome://marionette/content/accessibility.js");
+const {atom} = ChromeUtils.import("chrome://marionette/content/atom.js");
+const {element} = ChromeUtils.import("chrome://marionette/content/element.js");
 const {
   ElementClickInterceptedError,
   ElementNotInteractableError,
   InvalidArgumentError,
   InvalidElementStateError,
-} = ChromeUtils.import("chrome://marionette/content/error.js", {});
-ChromeUtils.import("chrome://marionette/content/event.js");
-const {pprint} = ChromeUtils.import("chrome://marionette/content/format.js", {});
-const {TimedPromise} = ChromeUtils.import("chrome://marionette/content/sync.js", {});
+} = ChromeUtils.import("chrome://marionette/content/error.js");
+const {event} = ChromeUtils.import("chrome://marionette/content/event.js");
+const {pprint} = ChromeUtils.import("chrome://marionette/content/format.js");
+const {TimedPromise} = ChromeUtils.import("chrome://marionette/content/sync.js");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["File"]);
 
@@ -486,7 +487,6 @@ interaction.uploadFiles = async function(el, paths) {
   if (el.hasAttribute("multiple")) {
     // for multiple file uploads new files will be appended
     files = Array.prototype.slice.call(el.files);
-
   } else if (paths.length > 1) {
     throw new InvalidArgumentError(
         pprint`Element ${el} doesn't accept multiple files`);
@@ -540,31 +540,41 @@ interaction.setFormControlValue = function(el, value) {
  *     Element to send key events to.
  * @param {Array.<string>} value
  *     Sequence of keystrokes to send to the element.
- * @param {boolean=} [strict=false] strict
+ * @param {boolean=} strictFileInteractability
+ *     Run interactability checks on `<input type=file>` elements.
+ * @param {boolean=} accessibilityChecks
  *     Enforce strict accessibility tests.
- * @param {boolean=} [specCompat=false] specCompat
+ * @param {boolean=} webdriverClick
  *     Use WebDriver specification compatible interactability definition.
  */
-interaction.sendKeysToElement = async function(
-    el, value, strict = false, specCompat = false) {
-  const a11y = accessibility.get(strict);
+interaction.sendKeysToElement = async function(el, value,
+    {
+      strictFileInteractability = false,
+      accessibilityChecks = false,
+      webdriverClick = false,
+    } = {}) {
+  const a11y = accessibility.get(accessibilityChecks);
 
-  if (specCompat) {
-    await webdriverSendKeysToElement(el, value, a11y);
+  if (webdriverClick) {
+    await webdriverSendKeysToElement(
+        el, value, a11y, strictFileInteractability);
   } else {
     await legacySendKeysToElement(el, value, a11y);
   }
 };
 
-async function webdriverSendKeysToElement(el, value, a11y) {
+async function webdriverSendKeysToElement(el, value,
+    a11y, strictFileInteractability) {
   const win = getWindow(el);
 
-  let containerEl = element.getContainer(el);
+  if (el.type != "file" || strictFileInteractability) {
+    let containerEl = element.getContainer(el);
 
-  // TODO: Wait for element to be keyboard-interactible
-  if (!interaction.isKeyboardInteractable(containerEl)) {
-    throw new ElementNotInteractableError(
-        pprint`Element ${el} is not reachable by keyboard`);
+    // TODO: Wait for element to be keyboard-interactible
+    if (!interaction.isKeyboardInteractable(containerEl)) {
+      throw new ElementNotInteractableError(
+          pprint`Element ${el} is not reachable by keyboard`);
+    }
   }
 
   let acc = await a11y.getAccessible(el, true);

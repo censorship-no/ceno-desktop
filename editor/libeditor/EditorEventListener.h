@@ -16,46 +16,45 @@
 
 class nsCaret;
 class nsIContent;
-class nsIPresShell;
 class nsPresContext;
 
 // X.h defines KeyPress
 #ifdef KeyPress
-#undef KeyPress
+#  undef KeyPress
 #endif
 
 #ifdef XP_WIN
 // On Windows, we support switching the text direction by pressing Ctrl+Shift
-#define HANDLE_NATIVE_TEXT_DIRECTION_SWITCH
+#  define HANDLE_NATIVE_TEXT_DIRECTION_SWITCH
 #endif
 
 namespace mozilla {
 
 class EditorBase;
+class PresShell;
 
 namespace dom {
 class DragEvent;
 class MouseEvent;
-} // namespace dom
+}  // namespace dom
 
-class EditorEventListener : public nsIDOMEventListener
-{
-public:
+class EditorEventListener : public nsIDOMEventListener {
+ public:
   EditorEventListener();
 
   virtual nsresult Connect(EditorBase* aEditorBase);
 
-  void Disconnect();
+  virtual void Disconnect();
 
   NS_DECL_ISUPPORTS
 
   // nsIDOMEventListener
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  NS_IMETHOD HandleEvent(dom::Event *aEvent) override;
+  MOZ_CAN_RUN_SCRIPT
+  NS_IMETHOD HandleEvent(dom::Event* aEvent) override;
 
   void SpellCheckIfNeeded();
 
-protected:
+ protected:
   virtual ~EditorEventListener();
 
   nsresult InstallToEditor();
@@ -63,11 +62,15 @@ protected:
 
 #ifdef HANDLE_NATIVE_TEXT_DIRECTION_SWITCH
   nsresult KeyDown(const WidgetKeyboardEvent* aKeyboardEvent);
+  MOZ_CAN_RUN_SCRIPT
   nsresult KeyUp(const WidgetKeyboardEvent* aKeyboardEvent);
 #endif
+  MOZ_CAN_RUN_SCRIPT
   nsresult KeyPress(WidgetKeyboardEvent* aKeyboardEvent);
+  MOZ_CAN_RUN_SCRIPT
   nsresult HandleChangeComposition(WidgetCompositionEvent* aCompositionEvent);
   nsresult HandleStartComposition(WidgetCompositionEvent* aCompositionEvent);
+  MOZ_CAN_RUN_SCRIPT
   void HandleEndComposition(WidgetCompositionEvent* aCompositionEvent);
   MOZ_CAN_RUN_SCRIPT
   virtual nsresult MouseDown(dom::MouseEvent* aMouseEvent);
@@ -83,7 +86,7 @@ protected:
 
   MOZ_CAN_RUN_SCRIPT bool CanDrop(dom::DragEvent* aEvent);
   void CleanupDragDropCaret();
-  nsIPresShell* GetPresShell() const;
+  PresShell* GetPresShell() const;
   nsPresContext* GetPresContext() const;
   nsIContent* GetFocusedRootContent();
   // Returns true if IME consumes the mouse event.
@@ -112,7 +115,7 @@ protected:
    */
   MOZ_MUST_USE bool EnsureCommitComposition();
 
-  EditorBase* mEditorBase; // weak
+  EditorBase* mEditorBase;  // weak
   RefPtr<nsCaret> mCaret;
   bool mCommitText;
   bool mInTransaction;
@@ -124,6 +127,6 @@ protected:
 #endif
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // #ifndef EditorEventListener_h
+#endif  // #ifndef EditorEventListener_h

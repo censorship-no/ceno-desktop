@@ -1,6 +1,6 @@
 use base64;
+use crate::logging;
 use hyper::Method;
-use logging;
 use regex::Captures;
 use serde::de::{self, Deserialize, Deserializer};
 use serde_json::{self, Value};
@@ -14,7 +14,6 @@ use webdriver::error::{ErrorStatus, WebDriverError, WebDriverResult};
 use webdriver::httpapi::WebDriverExtensionRoute;
 
 pub const CHROME_ELEMENT_KEY: &'static str = "chromeelement-9fc5-4b51-a3c8-01716eedeb04";
-pub const LEGACY_ELEMENT_KEY: &'static str = "ELEMENT";
 
 pub fn extension_routes() -> Vec<(Method, &'static str, GeckoExtensionRoute)> {
     return vec![
@@ -48,6 +47,11 @@ pub fn extension_routes() -> Vec<(Method, &'static str, GeckoExtensionRoute)> {
             "/session/{sessionId}/moz/addon/uninstall",
             GeckoExtensionRoute::UninstallAddon,
         ),
+        (
+            Method::GET,
+            "/session/{sessionId}/moz/screenshot/full",
+            GeckoExtensionRoute::TakeFullScreenshot,
+        ),
     ];
 }
 
@@ -59,6 +63,7 @@ pub enum GeckoExtensionRoute {
     XblAnonymousByAttribute,
     InstallAddon,
     UninstallAddon,
+    TakeFullScreenshot,
 }
 
 impl WebDriverExtensionRoute for GeckoExtensionRoute {
@@ -69,38 +74,42 @@ impl WebDriverExtensionRoute for GeckoExtensionRoute {
         params: &Captures,
         body_data: &Value,
     ) -> WebDriverResult<WebDriverCommand<GeckoExtensionCommand>> {
-        let command = match self {
-            &GeckoExtensionRoute::GetContext => GeckoExtensionCommand::GetContext,
-            &GeckoExtensionRoute::SetContext => {
+        use self::GeckoExtensionRoute::*;
+
+        let command = match *self {
+            GetContext => GeckoExtensionCommand::GetContext,
+            SetContext => {
                 GeckoExtensionCommand::SetContext(serde_json::from_value(body_data.clone())?)
             }
-            &GeckoExtensionRoute::XblAnonymousChildren => {
+            XblAnonymousChildren => {
                 let element_id = try_opt!(
                     params.name("elementId"),
                     ErrorStatus::InvalidArgument,
                     "Missing elementId parameter"
                 );
-                let element = WebElement::new(element_id.as_str().to_string());
+                let element = WebElement(element_id.as_str().to_string());
                 GeckoExtensionCommand::XblAnonymousChildren(element)
             }
-            &GeckoExtensionRoute::XblAnonymousByAttribute => {
+            XblAnonymousByAttribute => {
                 let element_id = try_opt!(
                     params.name("elementId"),
                     ErrorStatus::InvalidArgument,
                     "Missing elementId parameter"
                 );
                 GeckoExtensionCommand::XblAnonymousByAttribute(
-                    WebElement::new(element_id.as_str().into()),
+                    WebElement(element_id.as_str().into()),
                     serde_json::from_value(body_data.clone())?,
                 )
             }
-            &GeckoExtensionRoute::InstallAddon => {
+            InstallAddon => {
                 GeckoExtensionCommand::InstallAddon(serde_json::from_value(body_data.clone())?)
             }
-            &GeckoExtensionRoute::UninstallAddon => {
+            UninstallAddon => {
                 GeckoExtensionCommand::UninstallAddon(serde_json::from_value(body_data.clone())?)
             }
+            TakeFullScreenshot => GeckoExtensionCommand::TakeFullScreenshot,
         };
+
         Ok(WebDriverCommand::Extension(command))
     }
 }
@@ -113,25 +122,20 @@ pub enum GeckoExtensionCommand {
     XblAnonymousByAttribute(WebElement, XblLocatorParameters),
     InstallAddon(AddonInstallParameters),
     UninstallAddon(AddonUninstallParameters),
+    TakeFullScreenshot,
 }
 
 impl WebDriverExtensionCommand for GeckoExtensionCommand {
     fn parameters_json(&self) -> Option<Value> {
+        use self::GeckoExtensionCommand::*;
         match self {
-            &GeckoExtensionCommand::GetContext => None,
-            &GeckoExtensionCommand::InstallAddon(ref x) => {
-                Some(serde_json::to_value(x.clone()).unwrap())
-            }
-            &GeckoExtensionCommand::SetContext(ref x) => {
-                Some(serde_json::to_value(x.clone()).unwrap())
-            }
-            &GeckoExtensionCommand::UninstallAddon(ref x) => {
-                Some(serde_json::to_value(x.clone()).unwrap())
-            }
-            &GeckoExtensionCommand::XblAnonymousByAttribute(_, ref x) => {
-                Some(serde_json::to_value(x.clone()).unwrap())
-            }
-            &GeckoExtensionCommand::XblAnonymousChildren(_) => None,
+            GetContext => None,
+            InstallAddon(x) => Some(serde_json::to_value(x).unwrap()),
+            SetContext(x) => Some(serde_json::to_value(x).unwrap()),
+            UninstallAddon(x) => Some(serde_json::to_value(x).unwrap()),
+            XblAnonymousByAttribute(_, x) => Some(serde_json::to_value(x).unwrap()),
+            XblAnonymousChildren(_) => None,
+            TakeFullScreenshot => None,
         }
     }
 }
@@ -231,9 +235,9 @@ pub struct LogOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::check_deserialize;
     use std::fs::File;
     use std::io::Read;
-    use test::check_deserialize;
 
     #[test]
     fn test_json_addon_install_parameters_null() {

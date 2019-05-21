@@ -10,13 +10,11 @@ add_task(async function() {
   // NOTE: the CORS call makes the test run times inconsistent
   await pushPref("devtools.debugger.features.map-scopes", true);
 
-  const dbg = await initDebugger("doc-sourcemaps3.html");
+  const dbg = await initDebugger("doc-sourcemaps3.html", "bundle.js", "sorted.js", "test.js");
   const {
-    selectors: { getBreakpoint, getBreakpoints },
+    selectors: { getBreakpoint, getBreakpointCount },
     getState
   } = dbg;
-
-  await waitForSources(dbg, "bundle.js", "sorted.js", "test.js");
 
   ok(true, "Original sources exist");
   const sortedSrc = findSource(dbg, "sorted.js");
@@ -24,8 +22,8 @@ add_task(async function() {
   await selectSource(dbg, sortedSrc);
 
   // Test that breakpoint is not off by a line.
-  await addBreakpoint(dbg, sortedSrc, 9);
-  is(getBreakpoints(getState()).size, 1, "One breakpoint exists");
+  await addBreakpoint(dbg, sortedSrc, 9, 4);
+  is(getBreakpointCount(getState()), 1, "One breakpoint exists");
   ok(
     getBreakpoint(getState(), { sourceId: sortedSrc.id, line: 9, column: 4 }),
     "Breakpoint has correct line"

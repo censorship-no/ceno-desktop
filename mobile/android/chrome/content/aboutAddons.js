@@ -6,9 +6,10 @@
 
 /* globals gChromeWin */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {AddonManager} = ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {EventDispatcher} = ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 
 const AMO_ICON = "chrome://browser/skin/images/amo-logo.png";
 const UPDATE_INDICATOR = "chrome://browser/skin/images/extension-update.svg";
@@ -261,11 +262,32 @@ var Addons = {
     let title = document.createElement("div");
     title.id = "browse-title";
     title.className = "title";
-    title.textContent = gStringBundle.GetStringFromName("addons.browseAll");
+    title.textContent = this._getAmoTitle();
     inner.appendChild(title);
 
     outer.appendChild(inner);
     return outer;
+  },
+
+  // Ensure we get a localized string by using the previous title as a fallback
+  // if the new one has not yet been translated.
+  _getAmoTitle: function _getAmoTitle() {
+    const initialTitleUS = "Browse all Firefox Add-ons";
+    const updatedTitleUS = "Browse Firefox’s Recommended Extensions";
+    const initialTitleLocalized = gStringBundle.GetStringFromName("addons.browseAll");
+    const updatedTitleLocalized = gStringBundle.GetStringFromName("addons.browseRecommended");
+    let title = initialTitleLocalized;
+
+    const titleWasLocalized = updatedTitleLocalized !== updatedTitleUS;
+    const localeIsDefaultUS = updatedTitleLocalized === updatedTitleUS &&
+                              initialTitleLocalized === initialTitleUS;
+
+    if (titleWasLocalized || localeIsDefaultUS) {
+        title = updatedTitleLocalized;
+    }
+
+    EventDispatcher.instance.dispatch("about:addons", {amoTitle: title} );
+    return title;
   },
 
   _createItemForAddon: function _createItemForAddon(aAddon) {
@@ -521,20 +543,33 @@ var Addons = {
       return addon.enable();
     }
 
+    function updateOtherThemeStateInUI(item) {
+      if (aValue) {
+        // Mark the previously enabled theme as disabled.
+        if (item.addon.isActive) {
+          item.setAttribute("isDisabled", true);
+          return true;
+        }
+      // The current theme is being disabled - enable the default theme.
+      } else if (item.addon.id == "default-theme@mozilla.org") {
+        item.removeAttribute("isDisabled");
+        return true;
+      }
+      return false;
+    }
+
     let opType;
     if (addon.type == "theme") {
-      if (aValue) {
-        // We can have only one theme enabled, so disable the current one if any
-        let list = document.getElementById("addons-list");
-        let item = list.firstElementChild;
-        while (item) {
-          if (item.addon && (item.addon.type == "theme") && (item.addon.isActive)) {
-            item.addon.disable();
-            item.setAttribute("isDisabled", true);
-            break;
-          }
-          item = item.nextSibling;
+      // Themes take care of themselves to make sure only one is active at the
+      // same time, but we need to fix up the state of other themes in the UI.
+      let list = document.getElementById("addons-list");
+      let item = list.firstElementChild;
+      while (item) {
+        if (item.addon && (item.addon.type == "theme") &&
+            updateOtherThemeStateInUI(item)) {
+          break;
         }
+        item = item.nextSibling;
       }
       setDisabled(addon, !aValue);
     } else if (addon.type == "locale") {

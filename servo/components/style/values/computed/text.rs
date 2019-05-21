@@ -1,33 +1,103 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Computed types for text properties.
 
 #[cfg(feature = "servo")]
-use properties::StyleBuilder;
+use crate::properties::StyleBuilder;
+use crate::values::computed::length::{Length, LengthPercentage};
+use crate::values::computed::{Context, NonNegativeLength, NonNegativeNumber, ToComputedValue};
+use crate::values::generics::text::InitialLetter as GenericInitialLetter;
+use crate::values::generics::text::LineHeight as GenericLineHeight;
+use crate::values::generics::text::Spacing;
+use crate::values::specified::text::{self as specified, TextOverflowSide};
+use crate::values::specified::text::{TextEmphasisFillMode, TextEmphasisShapeKeyword};
+use crate::values::{CSSFloat, CSSInteger};
+use crate::Zero;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
-use values::{CSSFloat, CSSInteger};
-use values::computed::{NonNegativeLength, NonNegativeNumber};
-use values::computed::length::{Length, LengthOrPercentage};
-use values::generics::text::InitialLetter as GenericInitialLetter;
-use values::generics::text::LineHeight as GenericLineHeight;
-use values::generics::text::MozTabSize as GenericMozTabSize;
-use values::generics::text::Spacing;
-use values::specified::text::{TextEmphasisFillMode, TextEmphasisShapeKeyword, TextOverflowSide};
 
-pub use values::specified::TextAlignKeyword as TextAlign;
-pub use values::specified::TextEmphasisPosition;
+pub use crate::values::specified::TextAlignKeyword as TextAlign;
+pub use crate::values::specified::TextEmphasisPosition;
+pub use crate::values::specified::{OverflowWrap, WordBreak};
 
 /// A computed value for the `initial-letter` property.
 pub type InitialLetter = GenericInitialLetter<CSSFloat, CSSInteger>;
 
 /// A computed value for the `letter-spacing` property.
-pub type LetterSpacing = Spacing<Length>;
+#[repr(transparent)]
+#[derive(
+    Animate,
+    Clone,
+    ComputeSquaredDistance,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    ToAnimatedValue,
+    ToAnimatedZero,
+)]
+pub struct LetterSpacing(pub Length);
+
+impl LetterSpacing {
+    /// Return the `normal` computed value, which is just zero.
+    #[inline]
+    pub fn normal() -> Self {
+        LetterSpacing(Length::zero())
+    }
+}
+
+impl ToCss for LetterSpacing {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        // https://drafts.csswg.org/css-text/#propdef-letter-spacing
+        //
+        // For legacy reasons, a computed letter-spacing of zero yields a
+        // resolved value (getComputedStyle() return value) of normal.
+        if self.0.is_zero() {
+            return dest.write_str("normal");
+        }
+        self.0.to_css(dest)
+    }
+}
+
+impl ToComputedValue for specified::LetterSpacing {
+    type ComputedValue = LetterSpacing;
+    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+        match *self {
+            Spacing::Normal => LetterSpacing(Length::zero()),
+            Spacing::Value(ref v) => LetterSpacing(v.to_computed_value(context)),
+        }
+    }
+
+    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
+        if computed.0.is_zero() {
+            return Spacing::Normal;
+        }
+        Spacing::Value(ToComputedValue::from_computed_value(&computed.0))
+    }
+}
 
 /// A computed value for the `word-spacing` property.
-pub type WordSpacing = Spacing<LengthOrPercentage>;
+pub type WordSpacing = LengthPercentage;
+
+impl ToComputedValue for specified::WordSpacing {
+    type ComputedValue = WordSpacing;
+
+    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+        match *self {
+            Spacing::Normal => LengthPercentage::zero(),
+            Spacing::Value(ref v) => v.to_computed_value(context),
+        }
+    }
+
+    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
+        Spacing::Value(ToComputedValue::from_computed_value(computed))
+    }
+}
 
 /// A computed value for the `line-height` property.
 pub type LineHeight = GenericLineHeight<NonNegativeNumber, NonNegativeLength>;
@@ -99,7 +169,7 @@ impl TextDecorationsInEffect {
     /// Computes the text-decorations in effect for a given style.
     #[cfg(feature = "servo")]
     pub fn from_style(style: &StyleBuilder) -> Self {
-        use values::computed::Display;
+        use crate::values::computed::Display;
 
         // Start with no declarations if this is an atomic inline-level box;
         // otherwise, start with the declarations in effect and add in the text
@@ -121,9 +191,6 @@ impl TextDecorationsInEffect {
         result
     }
 }
-
-/// A specified value for the `-moz-tab-size` property.
-pub type MozTabSize = GenericMozTabSize<NonNegativeNumber, NonNegativeLength>;
 
 /// computed value for the text-emphasis-style property
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss)]

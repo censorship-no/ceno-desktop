@@ -10,10 +10,13 @@ const Services = require("Services");
 const EventEmitter = require("devtools/shared/event-emitter");
 const {
   VIEW_NODE_VALUE_TYPE,
-  VIEW_NODE_SHAPE_POINT_TYPE
+  VIEW_NODE_SHAPE_POINT_TYPE,
 } = require("devtools/client/inspector/shared/node-types");
 
-const DEFAULT_GRID_COLOR = "#4B0082";
+loader.lazyRequireGetter(this, "parseURL", "devtools/client/shared/source-utils", true);
+loader.lazyRequireGetter(this, "asyncStorage", "devtools/shared/async-storage");
+
+const DEFAULT_HIGHLIGHTER_COLOR = "#9400FF";
 
 /**
  * Highlighters overlay is a singleton managing all highlighters in the Inspector.
@@ -25,7 +28,7 @@ class HighlightersOverlay {
    */
   constructor(inspector) {
     this.inspector = inspector;
-    this.highlighterUtils = this.inspector.toolbox.highlighterUtils;
+    this.inspectorFront = this.inspector.inspector;
     this.store = this.inspector.store;
     this.telemetry = inspector.telemetry;
     this.maxGridHighlighters =
@@ -39,6 +42,11 @@ class HighlightersOverlay {
     // Array of reusable grid highlighters that have been instantiated and are not
     // associated with any NodeFront.
     this.extraGridHighlighterPool = [];
+
+    // Boolean flag to keep track of whether or not the telemetry timer for the grid
+    // highlighter active time is active. We keep track of this to avoid re-starting a
+    // new timer when an additional grid highlighter is turned on.
+    this.isGridHighlighterTimerActive = false;
 
     // Collection of instantiated in-context editors, like ShapesInContextEditor, which
     // behave like highlighters but with added editing capabilities that need to map value
@@ -67,6 +75,7 @@ class HighlightersOverlay {
     this.shapesHighlighterShown = null;
 
     this.onClick = this.onClick.bind(this);
+    this.onDisplayChange = this.onDisplayChange.bind(this);
     this.onMarkupMutation = this.onMarkupMutation.bind(this);
     this.onMouseMove = this.onMouseMove.bind(this);
     this.onMouseOut = this.onMouseOut.bind(this);
@@ -85,6 +94,7 @@ class HighlightersOverlay {
 
     // Add inspector events, not specific to a given view.
     this.inspector.on("markupmutation", this.onMarkupMutation);
+    this.inspector.walker.on("display-change", this.onDisplayChange);
     this.inspector.target.on("will-navigate", this.onWillNavigate);
 
     EventEmitter.decorate(this);
@@ -244,13 +254,34 @@ class HighlightersOverlay {
   }
 
   /**
-   * Create a flexbox highlighter settings object from the Redux store containing any
-   * highlighter options that should be passed into the highlighter.
+   * Returns the flexbox highlighter color for the given node.
    */
-  getFlexboxHighlighterSettings() {
+  async getFlexboxHighlighterColor() {
+    // Attempt to get the flexbox highlighter color from the Redux store.
     const { flexbox } = this.store.getState();
     const color = flexbox.color;
-    return { color };
+
+    if (color) {
+      return color;
+    }
+
+    // If the flexbox inspector has not been initialized, attempt to get the flexbox
+    // highlighter from the async storage.
+    const customHostColors = await asyncStorage.getItem("flexboxInspectorHostColors") ||
+      {};
+
+    // Get the hostname, if there is no hostname, fall back on protocol
+    // ex: `data:` uri, and `about:` pages
+    let hostname;
+    try {
+      hostname = parseURL(this.inspector.target.url).hostname ||
+        parseURL(this.inspector.target.url).protocol;
+    } catch (e) {
+      this._handleRejection(e);
+    }
+
+    return hostname && customHostColors[hostname] ?
+      customHostColors[hostname] : DEFAULT_HIGHLIGHTER_COLOR;
   }
 
   /**
@@ -258,16 +289,18 @@ class HighlightersOverlay {
    *
    * @param  {NodeFront} node
    *         The NodeFront of the flexbox container element to highlight.
-   * @param  {Object} options
-   *         Object used for passing options to the flexbox highlighter.
+   * @param. {String} trigger
+   *         String name matching "layout", "markup" or "rule" to indicate where the
+   *         flexbox highlighter was toggled on from. "layout" represents the layout view.
+   *         "markup" represents the markup view. "rule" represents the rule view.
    */
-  async toggleFlexboxHighlighter(node, options = {}) {
+  async toggleFlexboxHighlighter(node, trigger) {
     if (node == this.flexboxHighlighterShown) {
       await this.hideFlexboxHighlighter(node);
       return;
     }
 
-    await this.showFlexboxHighlighter(node, options);
+    await this.showFlexboxHighlighter(node, {}, trigger);
   }
 
   /**
@@ -277,21 +310,46 @@ class HighlightersOverlay {
    *         The NodeFront of the flexbox container element to highlight.
    * @param  {Object} options
    *         Object used for passing options to the flexbox highlighter.
+   * @param. {String} trigger
+   *         String name matching "layout", "markup" or "rule" to indicate where the
+   *         flexbox highlighter was toggled on from. "layout" represents the layout view.
+   *         "markup" represents the markup view. "rule" represents the rule view.
    */
-  async showFlexboxHighlighter(node, options) {
+  async showFlexboxHighlighter(node, options, trigger) {
     const highlighter = await this._getHighlighter("FlexboxHighlighter");
     if (!highlighter) {
       return;
     }
 
-    options = Object.assign({}, options, this.getFlexboxHighlighterSettings(node));
+    const color = await this.getFlexboxHighlighterColor(node);
+    options = Object.assign({}, options, { color });
 
-    const isShown = await highlighter.show(node, options);
+    let isShown;
+
+    try {
+      isShown = await highlighter.show(node, options);
+    } catch (e) {
+      // This call might fail if called asynchrously after the toolbox is finished
+      // closing.
+      this._handleRejection(e);
+    }
+
     if (!isShown) {
       return;
     }
 
     this._toggleRuleViewIcon(node, true, ".ruleview-flex");
+
+    this.telemetry.toolOpened("flexbox_highlighter", this.inspector.toolbox.sessionId,
+      this);
+
+    if (trigger === "layout") {
+      this.telemetry.scalarAdd("devtools.layout.flexboxhighlighter.opened", 1);
+    } else if (trigger === "markup") {
+      this.telemetry.scalarAdd("devtools.markup.flexboxhighlighter.opened", 1);
+    } else if (trigger === "rule") {
+      this.telemetry.scalarAdd("devtools.rules.flexboxhighlighter.opened", 1);
+    }
 
     try {
       // Save flexbox highlighter state.
@@ -318,6 +376,9 @@ class HighlightersOverlay {
     if (!this.flexboxHighlighterShown || !this.highlighters.FlexboxHighlighter) {
       return;
     }
+
+    this.telemetry.toolClosed("flexbox_highlighter", this.inspector.toolbox.sessionId,
+      this);
 
     this._toggleRuleViewIcon(node, false, ".ruleview-flex");
 
@@ -364,8 +425,6 @@ class HighlightersOverlay {
       return;
     }
 
-    options = Object.assign({}, options, this.getFlexboxHighlighterSettings());
-
     const isShown = await highlighter.show(node, options);
     if (!isShown) {
       return;
@@ -398,7 +457,7 @@ class HighlightersOverlay {
   getGridHighlighterSettings(nodeFront) {
     const { grids, highlighterSettings } = this.store.getState();
     const grid = grids.find(g => g.nodeFront === nodeFront);
-    const color = grid ? grid.color : DEFAULT_GRID_COLOR;
+    const color = grid ? grid.color : DEFAULT_HIGHLIGHTER_COLOR;
     return Object.assign({}, highlighterSettings, { color });
   }
 
@@ -407,10 +466,10 @@ class HighlightersOverlay {
    *
    * @param  {NodeFront} node
    *         The NodeFront of the grid container element to highlight.
-   * @param. {String|null} trigger
-   *         String name matching "grid" or "rule" to indicate where the
-   *         grid highlighter was toggled on from. "grid" represents the grid view
-   *         "rule" represents the rule view.
+   * @param. {String} trigger
+   *         String name matching "grid", "markup" or "rule" to indicate where the
+   *         grid highlighter was toggled on from. "grid" represents the grid view.
+   *         "markup" represents the markup view. "rule" represents the rule view.
    */
   async toggleGridHighlighter(node, trigger) {
     if (this.gridHighlighters.has(node)) {
@@ -428,10 +487,10 @@ class HighlightersOverlay {
    *         The NodeFront of the grid container element to highlight.
    * @param  {Object} options
    *         Object used for passing options to the grid highlighter.
-   * @param. {String|null} trigger
-   *         String name matching "grid" or "rule" to indicate where the
-   *         grid highlighter was toggled on from. "grid" represents the grid view
-   *         "rule" represents the rule view.
+   * @param. {String} trigger
+   *         String name matching "grid", "markup" or "rule" to indicate where the
+   *         grid highlighter was toggled on from. "grid" represents the grid view.
+   *         "markup" represents the markup view. "rule" represents the rule view.
    */
   async showGridHighlighter(node, options, trigger) {
     // When the grid highlighter has the given node, it is probably called with new
@@ -464,9 +523,17 @@ class HighlightersOverlay {
 
     this._toggleRuleViewIcon(node, true, ".ruleview-grid");
 
-    if (trigger == "grid") {
+    if (!this.isGridHighlighterTimerActive) {
+      this.telemetry.toolOpened("grid_highlighter", this.inspector.toolbox.sessionId,
+        this);
+      this.isGridHighlighterTimerActive = true;
+    }
+
+    if (trigger === "grid") {
       this.telemetry.scalarAdd("devtools.grid.gridinspector.opened", 1);
-    } else if (trigger == "rule") {
+    } else if (trigger === "markup") {
+      this.telemetry.scalarAdd("devtools.markup.gridinspector.opened", 1);
+    } else if (trigger === "rule") {
       this.telemetry.scalarAdd("devtools.rules.gridinspector.opened", 1);
     }
 
@@ -505,6 +572,12 @@ class HighlightersOverlay {
     this.gridHighlighters.delete(node);
 
     this._toggleRuleViewIcon(node, false, ".ruleview-grid");
+
+    if (this.isGridHighlighterTimerActive && !this.gridHighlighters.size) {
+      this.telemetry.toolClosed("grid_highlighter", this.inspector.toolbox.sessionId,
+        this);
+      this.isGridHighlighterTimerActive = false;
+    }
 
     // Emit the NodeFront of the grid container element that the grid highlighter was
     // hidden for.
@@ -723,7 +796,7 @@ class HighlightersOverlay {
     let highlighter;
 
     try {
-      highlighter = await this.highlighterUtils.getHighlighterByType(type);
+      highlighter = await this.inspectorFront.getHighlighterByType(type);
     } catch (e) {
       this._handleRejection(e);
     }
@@ -756,7 +829,7 @@ class HighlightersOverlay {
       highlighter = this.extraGridHighlighterPool.pop();
     } else {
       try {
-        highlighter = await this.highlighterUtils.getHighlighterByType(
+        highlighter = await this.inspectorFront.getHighlighterByType(
           "CssGridHighlighter");
       } catch (e) {
         this._handleRejection(e);
@@ -968,7 +1041,7 @@ class HighlightersOverlay {
 
     if (this._isRuleViewDisplayFlex(event.target)) {
       event.stopPropagation();
-      this.toggleFlexboxHighlighter(this.inspector.selection.nodeFront);
+      this.toggleFlexboxHighlighter(this.inspector.selection.nodeFront, "rule");
     }
 
     if (this._isRuleViewShapeSwatch(event.target)) {
@@ -979,8 +1052,37 @@ class HighlightersOverlay {
 
       this.toggleShapesHighlighter(this.inspector.selection.nodeFront, {
         mode: event.target.dataset.mode,
-        transformMode: event.metaKey || event.ctrlKey
+        transformMode: event.metaKey || event.ctrlKey,
       }, nodeInfo.value.textProperty);
+    }
+  }
+
+  /**
+   * Handler for "display-change" events from the walker. Hides the flexbox or
+   * grid highlighter if their respective node is no longer a flex container or
+   * grid container.
+   *
+   * @param  {Array} nodes
+   *         An array of nodeFronts
+   */
+  async onDisplayChange(nodes) {
+    for (const node of nodes) {
+      const display = node.displayType;
+
+      // Hide the flexbox highlighter if the node is no longer a flexbox
+      // container.
+      if (display !== "flex" && display !== "inline-flex" &&
+          node == this.flexboxHighlighterShown) {
+        await this.hideFlexboxHighlighter(node);
+        return;
+      }
+
+      // Hide the grid highlighter if the node is no longer a grid container.
+      if (display !== "grid" && display !== "inline-grid" &&
+          this.gridHighlighters.has(node)) {
+        await this.hideGridHighlighter(node);
+        return;
+      }
     }
   }
 
@@ -1155,7 +1257,7 @@ class HighlightersOverlay {
     this._lastHovered = null;
 
     this.inspector = null;
-    this.highlighterUtils = null;
+    this.inspectorFront = null;
     this.state = null;
     this.store = null;
 

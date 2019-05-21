@@ -9,7 +9,7 @@ members = [
   "js/src/rust",
   "js/src/wasm/cranelift",
   "js/rust",
-  "js/src/frontend/binsource", # Code generator.
+  "js/src/frontend/binast", # Code generator.
   "testing/geckodriver",
   "toolkit/crashreporter/rust",
   "toolkit/library/gtest/rust",
@@ -20,27 +20,23 @@ members = [
 # of the workspace and their dev-dependencies won't be included.
 exclude = [
   # Exclude third-party code vendored into mozilla-central.
-  "gfx/webrender",
-  "gfx/webrender_api",
-  "gfx/webrender_bindings",
   "servo",
   "third_party/rust",
 
-  # Excluded because this is a standalone tool for developers and not intended
-  # to be built as part of mozilla-central and is not shipped to users.
-  "gfx/wrench",
-
   # Excluded because these crates have their own Cargo workspaces so they can't
   # be included in the top-level one.
+  "gfx/wr",
   "media/audioipc",
   "media/cubeb-rs",
 
   # Excluded because they are used only as dependencies, not top-level targets,
   # so we don't need to vendor their dev-dependencies.
   "dom/webauthn/u2f-hid-rs",
+  "gfx/webrender_bindings",
   "media/mp4parse-rust/mp4parse",
   "media/mp4parse-rust/mp4parse_capi",
   "media/mp4parse-rust/mp4parse_fallible",
+  "xpcom/rust/gkrust_utils",
 ]
 
 # Explicitly specify what our profiles use.  The opt-level setting here is
@@ -62,4 +58,6 @@ codegen-units = 1
 
 [patch.crates-io]
 libudev-sys = { path = "dom/webauthn/libudev-sys" }
-serde_derive = { git = "https://github.com/servo/serde", branch = "deserialize_from_enums8" }
+serde_derive = { git = "https://github.com/servo/serde", branch = "deserialize_from_enums9" }
+winapi = { git = "https://github.com/froydnj/winapi-rs", branch = "aarch64" }
+cc = { git = "https://github.com/glandium/cc-rs", branch = "1.0.23-clang-cl-aarch64" }

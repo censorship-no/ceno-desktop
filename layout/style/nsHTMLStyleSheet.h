@@ -20,16 +20,19 @@
 #include "mozilla/MemoryReporting.h"
 #include "nsString.h"
 
-class nsIDocument;
 class nsMappedAttributes;
 struct RawServoDeclarationBlock;
+namespace mozilla {
+namespace dom {
+class Document;
+}  // namespace dom
+}  // namespace mozilla
 
-class nsHTMLStyleSheet final
-{
-public:
-  explicit nsHTMLStyleSheet(nsIDocument* aDocument);
+class nsHTMLStyleSheet final {
+ public:
+  explicit nsHTMLStyleSheet(mozilla::dom::Document* aDocument);
 
-  void SetOwningDocument(nsIDocument* aDocument);
+  void SetOwningDocument(mozilla::dom::Document* aDocument);
 
   NS_INLINE_DECL_REFCOUNTING(nsHTMLStyleSheet)
 
@@ -51,40 +54,36 @@ public:
   }
 
   // Mapped Attribute management methods
-  already_AddRefed<nsMappedAttributes>
-    UniqueMappedAttributes(nsMappedAttributes* aMapped);
+  already_AddRefed<nsMappedAttributes> UniqueMappedAttributes(
+      nsMappedAttributes* aMapped);
   void DropMappedAttributes(nsMappedAttributes* aMapped);
   // For each mapped presentation attribute in the cache, resolve
   // the attached DeclarationBlock by running the mapping
   // and converting the ruledata to Servo specified values.
   void CalculateMappedServoDeclarations();
 
-private:
+ private:
   nsHTMLStyleSheet(const nsHTMLStyleSheet& aCopy) = delete;
   nsHTMLStyleSheet& operator=(const nsHTMLStyleSheet& aCopy) = delete;
 
   ~nsHTMLStyleSheet() {}
 
-
   // Implementation of SetLink/VisitedLink/ActiveLinkColor
-  nsresult ImplLinkColorSetter(
-      RefPtr<RawServoDeclarationBlock>& aDecl,
-      nscolor aColor);
+  nsresult ImplLinkColorSetter(RefPtr<RawServoDeclarationBlock>& aDecl,
+                               nscolor aColor);
 
-public: // for mLangRuleTable structures only
-
-
-private:
-  nsIDocument*            mDocument;
+ public:  // for mLangRuleTable structures only
+ private:
+  mozilla::dom::Document* mDocument;
   RefPtr<RawServoDeclarationBlock> mServoUnvisitedLinkDecl;
   RefPtr<RawServoDeclarationBlock> mServoVisitedLinkDecl;
   RefPtr<RawServoDeclarationBlock> mServoActiveLinkDecl;
 
-  PLDHashTable            mMappedAttrTable;
+  PLDHashTable mMappedAttrTable;
   // Whether or not the mapped attributes table
   // has been changed since the last call to
   // CalculateMappedServoDeclarations()
-  bool                    mMappedAttrsDirty;
+  bool mMappedAttrsDirty;
 };
 
 #endif /* !defined(nsHTMLStyleSheet_h_) */

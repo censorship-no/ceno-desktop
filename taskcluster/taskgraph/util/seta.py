@@ -10,6 +10,7 @@ import requests
 from collections import defaultdict
 from redo import retry
 from requests import exceptions
+import attr
 
 logger = logging.getLogger(__name__)
 
@@ -17,25 +18,28 @@ logger = logging.getLogger(__name__)
 SETA_PROJECTS = ['mozilla-inbound', 'autoland']
 PROJECT_SCHEDULE_ALL_EVERY_PUSHES = {'mozilla-inbound': 5, 'autoland': 5}
 PROJECT_SCHEDULE_ALL_EVERY_MINUTES = {'mozilla-inbound': 60, 'autoland': 60}
+SETA_HIGH_PRIORITY = 1
+SETA_LOW_PRIORITY = 5
 
 SETA_ENDPOINT = "https://treeherder.mozilla.org/api/project/%s/seta/" \
-                "job-priorities/?build_system_type=%s"
+                "job-priorities/?build_system_type=%s&priority=%s"
 PUSH_ENDPOINT = "https://hg.mozilla.org/integration/%s/json-pushes/?startID=%d&endID=%d"
 
 
+@attr.s(frozen=True)
 class SETA(object):
     """
     Interface to the SETA service, which defines low-value tasks that can be optimized out
     of the taskgraph.
     """
-    def __init__(self):
-        # cached low value tasks, by project
-        self.low_value_tasks = {}
-        self.low_value_bb_tasks = {}
-        # cached push dates by project
-        self.push_dates = defaultdict(dict)
-        # cached push_ids that failed to retrieve datetime for
-        self.failed_json_push_calls = []
+
+    # cached low value tasks, by project
+    low_value_tasks = attr.ib(factory=dict, init=False)
+    low_value_bb_tasks = attr.ib(factory=dict, init=False)
+    # cached push dates by project
+    push_dates = attr.ib(factory=lambda: defaultdict(dict), init=False)
+    # cached push_ids that failed to retrieve datetime for
+    failed_json_push_calls = attr.ib(factory=list, init=False)
 
     def _get_task_string(self, task_tuple):
         # convert task tuple to single task string, so the task label sent in can match
@@ -55,14 +59,15 @@ class SETA(object):
         low_value_tasks = []
 
         # we want to get low priority taskcluster jobs
-        url = SETA_ENDPOINT % (project, 'taskcluster')
+        url_low = SETA_ENDPOINT % (project, 'taskcluster', SETA_LOW_PRIORITY)
+        url_high = SETA_ENDPOINT % (project, 'taskcluster', SETA_HIGH_PRIORITY)
 
         # Try to fetch the SETA data twice, falling back to an empty list of low value tasks.
         # There are 10 seconds between each try.
         try:
             logger.debug("Retrieving low-value jobs list from SETA")
             response = retry(requests.get, attempts=2, sleeptime=10,
-                             args=(url, ),
+                             args=(url_low, ),
                              kwargs={'timeout': 60, 'headers': ''})
             task_list = json.loads(response.content).get('jobtypes', '')
 
@@ -74,8 +79,55 @@ class SETA(object):
                     if type(low_value_tasks[0]) == list:
                         low_value_tasks = [self._get_task_string(x) for x in low_value_tasks]
 
+            # hack seta tasks to run 'opt' jobs on 'pgo' builds - see Bug 1522111
+            logger.debug("Retrieving high-value jobs list from SETA")
+            response = retry(requests.get, attempts=2, sleeptime=10,
+                             args=(url_high, ),
+                             kwargs={'timeout': 60, 'headers': ''})
+            task_list = json.loads(response.content).get('jobtypes', '')
+
+            if type(task_list) == dict and len(task_list) > 0:
+                if type(task_list.values()[0]) == list and len(task_list.values()[0]) > 0:
+                    high_value_tasks = task_list.values()[0]
+
+            opt = ['test-windows10-64/opt',
+                   'test-windows7-32/opt',
+                   'test-linux64/opt',
+                   'test-windows10-64-qr/opt',
+                   'test-windows7-32-qr/opt',
+                   'test-linux64-qr/opt']
+            pgo = ['test-windows10-64-pgo/opt',
+                   'test-windows7-32-pgo/opt',
+                   'test-linux64-pgo/opt',
+                   'test-windows10-64-pgo-qr/opt',
+                   'test-windows7-32-pgo-qr/opt',
+                   'test-linux64-pgo-qr/opt']
+            # Now add pgo variants to the low-value set
+            for iter in range(0, len(opt)):
+                if any(t.startswith(opt[iter]) for t in low_value_tasks):
+                    low_value_tasks.extend(
+                        [t.replace(opt[iter], pgo[iter]) for t in low_value_tasks]
+                    )
+            # ... and the high value list
+            for iter in range(0, len(opt)):
+                if any(t.startswith(opt[iter]) for t in high_value_tasks):
+                    high_value_tasks.extend(
+                        [t.replace(opt[iter], pgo[iter]) for t in high_value_tasks]
+                    )
+
+            def pgo_as_opt_is_high_value(label):
+                for iter in range(0, len(opt)):
+                    if label.startswith(pgo[iter]):
+                        opt_label = label.replace(pgo[iter], opt[iter])
+                        if opt_label in high_value_tasks:
+                            return True
+                return False
+
+            # Now rip out from low value things that were high value in opt
+            low_value_tasks = [x for x in low_value_tasks if not pgo_as_opt_is_high_value(x)]
+
             # ensure no build tasks slipped in, we never want to optimize out those
-            low_value_tasks = [x for x in low_value_tasks if 'build' not in x.lower()]
+            low_value_tasks = [x for x in low_value_tasks if 'build' not in x]
 
         # In the event of request times out, requests will raise a TimeoutError.
         except exceptions.Timeout:

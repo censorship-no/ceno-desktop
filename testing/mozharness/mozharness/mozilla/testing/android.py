@@ -8,13 +8,15 @@
 import datetime
 import glob
 import os
+import posixpath
 import re
 import signal
 import subprocess
 import time
 import tempfile
+from threading import Timer
 from mozharness.mozilla.automation import TBPL_RETRY, EXIT_STATUS_DICT
-from mozharness.base.script import PostScriptAction
+from mozharness.base.script import PreScriptAction, PostScriptAction
 
 
 class AndroidMixin(object):
@@ -58,9 +60,9 @@ class AndroidMixin(object):
         if not self._device and self.adb_path:
             try:
                 import mozdevice
-                self._device = mozdevice.ADBAndroid(adb=self.adb_path,
-                                                    device=self.device_serial,
-                                                    verbose=True)
+                self._device = mozdevice.ADBDevice(adb=self.adb_path,
+                                                   device=self.device_serial,
+                                                   verbose=True)
                 self.info("New mozdevice with adb=%s, device=%s" %
                           (self.adb_path, self.device_serial))
             except AttributeError:
@@ -194,7 +196,7 @@ class AndroidMixin(object):
     def _verify_emulator_and_restart_on_fail(self):
         emulator_ok = self._verify_emulator()
         if not emulator_ok:
-            self.screenshot("emulator-startup-screenshot-")
+            self.device_screenshot("screenshot-emulator-start")
             self.kill_processes(self.config["emulator_process_name"])
             subprocess.check_call(['ps', '-ef'])
             # remove emulator tmp files
@@ -321,37 +323,45 @@ class AndroidMixin(object):
         import mozdevice
         try:
             self.device.install_app(apk)
-        except mozdevice.ADBError:
-            self.fatal('INFRA-ERROR: Failed to install %s on %s' %
-                       (self.installer_path, self.device_name),
+        except (mozdevice.ADBError, mozdevice.ADBTimeoutError):
+            self.info('Failed to install %s on %s' %
+                      (self.installer_path, self.device_name))
+            self.fatal('INFRA-ERROR: Failed to install %s' %
+                       self.installer_path,
                        EXIT_STATUS_DICT[TBPL_RETRY])
 
     def is_boot_completed(self):
-        out = self.device.get_prop('sys.boot_completed', timeout=30)
-        if out.strip() == '1':
-            return True
+        import mozdevice
+        try:
+            out = self.device.get_prop('sys.boot_completed', timeout=30)
+            if out.strip() == '1':
+                return True
+        except (ValueError, mozdevice.ADBError, mozdevice.ADBTimeoutError):
+            pass
         return False
 
     def shell_output(self, cmd):
         return self.device.shell_output(cmd, timeout=30)
 
-    def screenshot(self, prefix):
+    def device_screenshot(self, prefix):
         """
-           Save a screenshot of the entire screen to the blob upload directory.
+           On emulator, save a screenshot of the entire screen to the upload directory;
+           otherwise, save a screenshot of the device to the upload directory.
+
+           :param prefix specifies a filename prefix for the screenshot
         """
-        dirs = self.query_abs_dirs()
-        utility = os.path.join(self.xre_path, "screentopng")
-        if not os.path.exists(utility):
-            self.warning("Unable to take screenshot: %s does not exist" % utility)
-            return
-        try:
-            tmpfd, filename = tempfile.mkstemp(prefix=prefix, suffix='.png',
-                                               dir=dirs['abs_blob_upload_dir'])
-            os.close(tmpfd)
-            self.info("Taking screenshot with %s; saving to %s" % (utility, filename))
-            subprocess.call([utility, filename], env=self.query_env())
-        except OSError, err:
-            self.warning("Failed to take screenshot: %s" % err.strerror)
+        from mozscreenshot import dump_screen, dump_device_screen
+        reset_dir = False
+        if not os.environ.get("MOZ_UPLOAD_DIR", None):
+            dirs = self.query_abs_dirs()
+            os.environ["MOZ_UPLOAD_DIR"] = dirs['abs_blob_upload_dir']
+            reset_dir = True
+        if self.is_emulator:
+            dump_screen(self.xre_path, self, prefix=prefix)
+        else:
+            dump_device_screen(self.device, self, prefix=prefix)
+        if reset_dir:
+            del os.environ["MOZ_UPLOAD_DIR"]
 
     def download_hostutils(self, xre_dir):
         """
@@ -405,6 +415,70 @@ class AndroidMixin(object):
                 pid = int(line.split(None, 1)[0])
                 self.info("Killing pid %d." % pid)
                 os.kill(pid, signal.SIGKILL)
+
+    def delete_ANRs(self):
+        remote_dir = self.device.stack_trace_dir
+        try:
+            if not self.device.is_dir(remote_dir, root=True):
+                self.mkdir(remote_dir, root=True)
+                self.chmod(remote_dir, root=True)
+                self.info("%s created" % remote_dir)
+                return
+            for trace_file in self.device.ls(remote_dir, root=True):
+                trace_path = posixpath.join(remote_dir, trace_file)
+                self.device.chmod(trace_path, root=True)
+                self.device.rm(trace_path, root=True)
+                self.info("%s deleted" % trace_path)
+        except Exception as e:
+            self.info("failed to delete %s: %s %s" % (remote_dir, type(e).__name__, str(e)))
+
+    def check_for_ANRs(self):
+        """
+        Copy ANR (stack trace) files from device to upload directory.
+        """
+        dirs = self.query_abs_dirs()
+        remote_dir = self.device.stack_trace_dir
+        try:
+            if not self.device.is_dir(remote_dir):
+                self.info("%s not found; ANR check skipped" % remote_dir)
+                return
+            self.device.chmod(remote_dir, recursive=True, root=True)
+            self.device.pull(remote_dir, dirs['abs_blob_upload_dir'])
+            self.delete_ANRs()
+        except Exception as e:
+            self.info("failed to pull %s: %s %s" % (remote_dir, type(e).__name__, str(e)))
+
+    def delete_tombstones(self):
+        remote_dir = "/data/tombstones"
+        try:
+            if not self.device.is_dir(remote_dir, root=True):
+                self.mkdir(remote_dir, root=True)
+                self.chmod(remote_dir, root=True)
+                self.info("%s created" % remote_dir)
+                return
+            for trace_file in self.device.ls(remote_dir, root=True):
+                trace_path = posixpath.join(remote_dir, trace_file)
+                self.device.chmod(trace_path, root=True)
+                self.device.rm(trace_path, root=True)
+                self.info("%s deleted" % trace_path)
+        except Exception as e:
+            self.info("failed to delete %s: %s %s" % (remote_dir, type(e).__name__, str(e)))
+
+    def check_for_tombstones(self):
+        """
+        Copy tombstone files from device to upload directory.
+        """
+        dirs = self.query_abs_dirs()
+        remote_dir = "/data/tombstones"
+        try:
+            if not self.device.is_dir(remote_dir):
+                self.info("%s not found; tombstone check skipped" % remote_dir)
+                return
+            self.device.chmod(remote_dir, recursive=True, root=True)
+            self.device.pull(remote_dir, dirs['abs_blob_upload_dir'])
+            self.delete_tombstones()
+        except Exception as e:
+            self.info("failed to pull %s: %s %s" % (remote_dir, type(e).__name__, str(e)))
 
     # Script actions
 
@@ -491,8 +565,29 @@ class AndroidMixin(object):
         self.mkdir_p(self.query_abs_dirs()['abs_blob_upload_dir'])
         self.dump_perf_info()
         self.logcat_start()
+        self.delete_ANRs()
+        self.delete_tombstones()
         # Get a post-boot device process list for diagnostics
         self.info(self.shell_output('ps'))
+
+    @PreScriptAction('run-tests')
+    def timed_screenshots(self, action, success=None):
+        """
+        If configured, start screenshot timers.
+        """
+        if not self.is_android:
+            return
+
+        def take_screenshot(seconds):
+            self.device_screenshot("screenshot-%ss-" % str(seconds))
+            self.info("timed (%ss) screenshot complete" % str(seconds))
+
+        self.timers = []
+        for seconds in self.config.get("screenshot_times", []):
+            self.info("screenshot requested %s seconds from now" % str(seconds))
+            t = Timer(int(seconds), take_screenshot, [seconds])
+            t.start()
+            self.timers.append(t)
 
     @PostScriptAction('run-tests')
     def stop_device(self, action, success=None):
@@ -502,6 +597,13 @@ class AndroidMixin(object):
         if not self.is_android:
             return
 
+        for t in self.timers:
+            t.cancel()
+        if self.worst_status != TBPL_RETRY:
+            self.check_for_ANRs()
+            self.check_for_tombstones()
+        else:
+            self.info("ANR and tombstone checks skipped due to TBPL_RETRY")
         self.logcat_stop()
         if self.is_emulator:
             self.kill_processes(self.config["emulator_process_name"])

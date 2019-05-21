@@ -9,18 +9,18 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/SandboxSettings.h"
 #include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/ContentParent.h" // for FILE_REMOTE_TYPE
+#include "mozilla/dom/ContentParent.h"  // for FILE_REMOTE_TYPE
 
 namespace mozilla {
 
 /* static */ ContentProcessSandboxParams
-ContentProcessSandboxParams::ForThisProcess(const dom::MaybeFileDesc& aBroker)
-{
+ContentProcessSandboxParams::ForThisProcess(
+    const Maybe<ipc::FileDescriptor>& aBroker) {
   ContentProcessSandboxParams params;
   params.mLevel = GetEffectiveContentSandboxLevel();
 
-  if (aBroker.type() == dom::MaybeFileDesc::TFileDescriptor) {
-    auto fd = aBroker.get_FileDescriptor().ClonePlatformHandle();
+  if (aBroker.isSome()) {
+    auto fd = aBroker.value().ClonePlatformHandle();
     params.mBrokerFd = fd.release();
     // brokerFd < 0 means to allow direct filesystem access, so
     // make absolutely sure that doesn't happen if the parent
@@ -33,9 +33,8 @@ ContentProcessSandboxParams::ForThisProcess(const dom::MaybeFileDesc& aBroker)
   params.mFileProcess = cc->GetRemoteType().EqualsLiteral(FILE_REMOTE_TYPE);
 
   nsAutoCString extraSyscalls;
-  nsresult rv =
-    Preferences::GetCString("security.sandbox.content.syscall_whitelist",
-                            extraSyscalls);
+  nsresult rv = Preferences::GetCString(
+      "security.sandbox.content.syscall_whitelist", extraSyscalls);
   if (NS_SUCCEEDED(rv)) {
     for (const nsACString& callNrString : extraSyscalls.Split(',')) {
       int callNr = PromiseFlatCString(callNrString).ToInteger(&rv);
@@ -48,4 +47,4 @@ ContentProcessSandboxParams::ForThisProcess(const dom::MaybeFileDesc& aBroker)
   return params;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

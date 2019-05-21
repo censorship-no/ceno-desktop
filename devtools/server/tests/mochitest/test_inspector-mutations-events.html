@@ -15,6 +15,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1157469
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();
 
+  const prevPrefValue = Services.prefs.getBoolPref("devtools.chrome.enabled");
+  Services.prefs.setBoolPref("devtools.chrome.enabled", true);
+
   let inspectee = null;
   let inspector = null;
   let walker = null;
@@ -30,9 +33,8 @@ window.onload = function() {
     const url = document.getElementById("inspectorContent").href;
     const { target, doc } = await attachURL(url);
     inspectee = doc;
-    inspector = target.getInspector();
-    walker = await inspector.getWalker();
-    ok(walker, "getWalker() should return an actor.");
+    inspector = await target.getInspector();
+    walker = inspector.walker;
 
     runNextTest();
   });
@@ -149,6 +151,7 @@ window.onload = function() {
     is(mutations.length, 1, "expect only one mutation");
     isnot(mutations.type, "events", "mutation type should not be events");
 
+    Services.prefs.setBoolPref("devtools.chrome.enabled", prevPrefValue);
     runNextTest();
   });
 

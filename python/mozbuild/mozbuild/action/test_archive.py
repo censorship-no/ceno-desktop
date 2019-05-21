@@ -139,6 +139,7 @@ ARCHIVE_FILES = {
             'base': '',
             'manifests': [
                 'testing/marionette/harness/marionette_harness/tests/unit-tests.ini',
+                'gfx/tests/marionette/manifest.ini',
             ],
             # We also need the manifests and harness_unit tests
             'pattern': 'testing/marionette/harness/marionette_harness/tests/**',
@@ -162,6 +163,12 @@ ARCHIVE_FILES = {
             'base': '',
             'pattern': 'testing/firefox-ui/tests',
             'dest': 'firefox-ui/tests',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'toolkit/components/telemetry/tests/marionette',
+            'pattern': '/**',
+            'dest': 'telemetry/marionette',
         },
         {
             'source': buildconfig.topsrcdir,
@@ -539,6 +546,12 @@ ARCHIVE_FILES = {
             'pattern': 'automation.py',
             'dest': 'xpcshell',
         },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'testing/profiles',
+            'pattern': '**',
+            'dest': 'xpcshell/profile_data',
+        },
     ],
     'updater-dep': [
         {
@@ -576,6 +589,17 @@ if buildconfig.substs.get('MOZ_ASAN') and buildconfig.substs.get('CLANG_CL'):
         'dest': 'bin'
     }
     ARCHIVE_FILES['common'].append(asan_dll)
+
+
+if buildconfig.substs.get('commtopsrcdir'):
+    commtopsrcdir = buildconfig.substs.get('commtopsrcdir')
+    mozharness_comm = {
+        'source': commtopsrcdir,
+        'base': 'mozharness',
+        'pattern': '**',
+        'dest': 'mozharness/configs'
+    }
+    ARCHIVE_FILES['mozharness'].append(mozharness_comm)
 
 
 # "common" is our catch all archive and it ignores things from other archives.
@@ -751,7 +775,7 @@ def main(argv):
             create_tar_gz_from_files(fh, files, compresslevel=5)
             file_count = len(files)
         elif out_file.endswith('.zip'):
-            with JarWriter(fileobj=fh, optimize=False, compress_level=5) as writer:
+            with JarWriter(fileobj=fh, compress_level=5) as writer:
                 for p, f in res:
                     writer.add(p.encode('utf-8'), f.read(), mode=f.mode,
                                skip_duplicates=True)

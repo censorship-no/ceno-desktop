@@ -60,71 +60,88 @@ def method(prop):
         return prop.camel_case[1:]
     return prop.camel_case
 
-# Colors, integers and lengths are easy as well.
-#
-# TODO(emilio): This will go away once the rest of the longhands have been
-# moved or perhaps using a blacklist for the ones with non-layout-dependence
-# but other non-trivial dependence like scrollbar colors.
-SERIALIZED_PREDEFINED_TYPES = [
-    "Appearance",
-    "BackgroundRepeat",
-    "BackgroundSize",
-    "Clear",
-    "ClipRectOrAuto",
-    "Color",
-    "Content",
-    "CounterIncrement",
-    "CounterReset",
-    "Float",
-    "FontFamily",
-    "FontFeatureSettings",
-    "FontLanguageOverride",
-    "FontSize",
-    "FontSizeAdjust",
-    "FontStretch",
-    "FontStyle",
-    "FontSynthesis",
-    "FontVariant",
-    "FontVariantAlternates",
-    "FontVariantEastAsian",
-    "FontVariantLigatures",
-    "FontVariantNumeric",
-    "FontVariationSettings",
-    "FontWeight",
-    "Integer",
-    "ImageLayer",
-    "Length",
-    "LengthOrPercentage",
-    "NonNegativeLength",
-    "NonNegativeLengthOrPercentage",
-    "ListStyleType",
-    "OffsetPath",
-    "Opacity",
-    "Resize",
-    "TransformStyle",
-    "background::BackgroundSize",
-    "basic_shape::ClippingShape",
-    "basic_shape::FloatAreaShape",
-    "position::HorizontalPosition",
-    "position::VerticalPosition",
-    "url::ImageUrlOrNone",
+# TODO(emilio): Get this to zero.
+LONGHANDS_NOT_SERIALIZED_WITH_SERVO = [
+    "animation-delay",
+    "animation-duration",
+    "animation-iteration-count",
+    "animation-name",
+    "border-image-width",
+    "border-spacing",
+    "border-image-width",
+    "border-spacing",
+    "box-shadow",
+    "caret-color",
+    "color",
+    "column-count",
+    "column-gap",
+    "column-rule-width",
+    "column-width",
+    "display",
+    "fill",
+    "filter",
+    "flex-basis",
+    "flex-grow",
+    "flex-shrink",
+    "grid-auto-columns",
+    "grid-auto-flow",
+    "grid-auto-rows",
+    "grid-column-end",
+    "grid-column-start",
+    "grid-row-end",
+    "grid-row-start",
+    "grid-template-areas",
+    "initial-letter",
+    "marker-end",
+    "marker-mid",
+    "marker-start",
+    "max-block-size",
+    "max-height",
+    "max-inline-size",
+    "max-width",
+    "min-block-size",
+    "min-height",
+    "min-inline-size",
+    "min-width",
+    "-moz-binding",
+    "-moz-box-flex",
+    "-moz-force-broken-image-icon",
+    "-moz-osx-font-smoothing",
+    "outline-width",
+    "paint-order",
+    "row-gap",
+    "scrollbar-color",
+    "scroll-snap-points-x",
+    "scroll-snap-points-y",
+    "stroke",
+    "text-decoration-line",
+    "text-emphasis-position",
+    "text-emphasis-style",
+    "text-overflow",
+    "text-shadow",
+    "touch-action",
+    "transition-delay",
+    "transition-duration",
+    "transition-property",
+    "vertical-align",
+    "-webkit-text-stroke-width",
+    "will-change",
 ]
 
 def serialized_by_servo(prop):
     # If the property requires layout information, no such luck.
     if "GETCS_NEEDS_LAYOUT_FLUSH" in prop.flags:
         return False
-    # No shorthands yet.
     if prop.type() == "shorthand":
-        return False
+        # FIXME: Need to serialize a value interpolated with currentcolor
+        # properly to be able to use text-decoration, and figure out what to do
+        # with relative mask urls.
+        return prop.name != "text-decoration" and prop.name != "mask"
     # Keywords are all fine, except -moz-osx-font-smoothing, which does
     # resistfingerprinting stuff.
     if prop.keyword and prop.name != "-moz-osx-font-smoothing":
         return True
-    if prop.predefined_type in SERIALIZED_PREDEFINED_TYPES:
-        return True
-    # TODO(emilio): Enable the rest of the longhands.
-    return False
+    return prop.name not in LONGHANDS_NOT_SERIALIZED_WITH_SERVO
 
 def exposed_on_getcs(prop):
     if prop.type() == "longhand":
@@ -149,8 +166,8 @@ def flags(prop):
         result.append("CanAnimateOnCompositor")
     if exposed_on_getcs(prop):
         result.append("ExposedOnGetCS")
-    if serialized_by_servo(prop):
-        result.append("SerializedByServo")
+        if serialized_by_servo(prop):
+            result.append("SerializedByServo")
     if prop.type() == "longhand" and prop.logical:
         result.append("IsLogical")
     return ", ".join('"{}"'.format(flag) for flag in result)

@@ -3,21 +3,17 @@
 // META: script=/wasm/jsapi/wasm-module-builder.js
 // META: script=assertions.js
 
-let functions;
+let functions = {};
 setup(() => {
   const builder = new WasmModuleBuilder();
 
   builder
     .addFunction("fn", kSig_v_d)
-    .addBody([
-        kExprEnd
-    ])
+    .addBody([])
     .exportFunc();
   builder
     .addFunction("fn2", kSig_v_v)
-    .addBody([
-        kExprEnd
-    ])
+    .addBody([])
     .exportFunc();
 
   const buffer = builder.toBuffer()

@@ -4,19 +4,19 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const {
   error,
   WebDriverError,
-} = ChromeUtils.import("chrome://marionette/content/error.js", {});
-ChromeUtils.import("chrome://marionette/content/evaluate.js");
-const {Log} = ChromeUtils.import("chrome://marionette/content/log.js", {});
-ChromeUtils.import("chrome://marionette/content/modal.js");
+} = ChromeUtils.import("chrome://marionette/content/error.js");
+const {evaluate} = ChromeUtils.import("chrome://marionette/content/evaluate.js");
+const {Log} = ChromeUtils.import("chrome://marionette/content/log.js");
+const {modal} = ChromeUtils.import("chrome://marionette/content/modal.js");
 const {
   MessageManagerDestroyedPromise,
-} = ChromeUtils.import("chrome://marionette/content/sync.js", {});
+} = ChromeUtils.import("chrome://marionette/content/sync.js");
 
 this.EXPORTED_SYMBOLS = ["proxy"];
 
@@ -144,7 +144,7 @@ proxy.AsyncMessageChannel = class {
       // The currently selected tab or window is closing. Make sure to wait
       // until it's fully gone.
       this.closeHandler = async ({type, target}) => {
-        log.debug(`Received DOM event ${type} for ${target}`);
+        log.trace(`Received DOM event ${type} for ${target}`);
 
         let messageManager;
         switch (type) {
@@ -165,7 +165,7 @@ proxy.AsyncMessageChannel = class {
       // the active command has to be aborted. Therefore remove all handlers,
       // and cancel any ongoing requests in the listener.
       this.dialogueObserver_ = (subject, topic) => {
-        log.debug(`Received observer notification ${topic}`);
+        log.trace(`Received observer notification ${topic}`);
 
         this.removeAllListeners_();
         // TODO(ato): It's not ideal to have listener specific behaviour here:

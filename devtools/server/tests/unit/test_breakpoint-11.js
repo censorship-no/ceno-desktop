@@ -9,79 +9,67 @@
  * scripts, sets the breakpoint in all of them (bug 793214).
  */
 
-var gDebuggee;
-var gClient;
-var gThreadClient;
-var gCallback;
+add_task(threadClientTest(({ threadClient, debuggee }) => {
+  return new Promise(resolve => {
+    threadClient.addOneTimeListener("paused", async function(event, packet) {
+      const source = await getSourceById(
+        threadClient,
+        packet.frame.where.actor
+      );
+      const location = {
+        sourceUrl: source.url,
+        line: debuggee.line0 + 2,
+        column: 8,
+      };
 
-function run_test() {
-  run_test_with_server(DebuggerServer, function() {
-    run_test_with_server(WorkerDebuggerServer, do_test_finished);
-  });
-  do_test_pending();
-}
+      threadClient.setBreakpoint(location, {});
 
-function run_test_with_server(server, callback) {
-  gCallback = callback;
-  initTestDebuggerServer(server);
-  gDebuggee = addTestGlobal("test-stack", server);
-  gClient = new DebuggerClient(server.connectPipe());
-  gClient.connect().then(function() {
-    attachTestTabAndResume(gClient, "test-stack",
-                           function(response, targetFront, threadClient) {
-                             gThreadClient = threadClient;
-                             test_child_breakpoint();
-                           });
-  });
-}
-
-function test_child_breakpoint() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
-    const source = gThreadClient.source(packet.frame.where.source);
-    const location = { line: gDebuggee.line0 + 2 };
-
-    source.setBreakpoint(location).then(function([response, bpClient]) {
-      // actualLocation is not returned when breakpoints don't skip forward.
-      Assert.equal(response.actualLocation, undefined);
-
-      gThreadClient.addOneTimeListener("paused", function(event, packet) {
+      threadClient.addOneTimeListener("paused", function(event, packet) {
         // Check the return value.
         Assert.equal(packet.type, "paused");
         Assert.equal(packet.why.type, "breakpoint");
-        Assert.equal(packet.why.actors[0], bpClient.actor);
         // Check that the breakpoint worked.
-        Assert.equal(gDebuggee.a, undefined);
+        Assert.equal(debuggee.a, undefined);
 
-        gThreadClient.addOneTimeListener("paused", function(event, packet) {
+        // Remove the breakpoint.
+        threadClient.removeBreakpoint(location);
+
+        const location2 = {
+          sourceUrl: source.url,
+          line: debuggee.line0 + 2,
+          column: 32,
+        };
+
+        threadClient.setBreakpoint(location2, {});
+
+        threadClient.addOneTimeListener("paused", function(event, packet) {
           // Check the return value.
           Assert.equal(packet.type, "paused");
           Assert.equal(packet.why.type, "breakpoint");
-          Assert.equal(packet.why.actors[0], bpClient.actor);
           // Check that the breakpoint worked.
-          Assert.equal(gDebuggee.a.b, 1);
-          Assert.equal(gDebuggee.res, undefined);
+          Assert.equal(debuggee.a.b, 1);
+          Assert.equal(debuggee.res, undefined);
 
           // Remove the breakpoint.
-          bpClient.remove(function(response) {
-            gThreadClient.resume(function() {
-              gClient.close().then(gCallback);
-            });
-          });
+          threadClient.removeBreakpoint(location2);
+
+          threadClient.resume(resolve);
         });
 
         // Continue until the breakpoint is hit again.
-        gThreadClient.resume();
+        threadClient.resume();
       });
-      // Continue until the breakpoint is hit.
-      gThreadClient.resume();
-    });
-  });
 
-  /* eslint-disable */
-  Cu.evalInSandbox("var line0 = Error().lineNumber;\n" +
-                   "debugger;\n" +                      // line0 + 1
-                   "var a = { b: 1, f: function() { return 2; } };\n" + // line0+2
-                   "var res = a.f();\n",               // line0 + 3
-                   gDebuggee);
-  /* eslint-enable */
-}
+      // Continue until the breakpoint is hit.
+      threadClient.resume();
+    });
+
+    /* eslint-disable */
+    Cu.evalInSandbox("var line0 = Error().lineNumber;\n" +
+                     "debugger;\n" +                      // line0 + 1
+                     "var a = { b: 1, f: function() { return 2; } };\n" + // line0+2
+                     "var res = a.f();\n",               // line0 + 3
+                     debuggee);
+    /* eslint-enable */
+  });
+}));

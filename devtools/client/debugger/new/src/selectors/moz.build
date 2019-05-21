@@ -7,13 +7,15 @@ DIRS += [
 
 ]
 
-DevToolsModules(
+CompiledModules(
     'breakpointAtLocation.js',
+    'breakpoints.js',
     'breakpointSources.js',
     'getCallStackFrames.js',
     'inComponent.js',
     'index.js',
     'isSelectedFrameVisible.js',
+    'pause.js',
     'visibleBreakpoints.js',
-    'visibleSelectedFrame.js',
+    'visibleColumnBreakpoints.js',
 )

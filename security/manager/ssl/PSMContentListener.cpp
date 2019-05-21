@@ -9,7 +9,6 @@
 
 #include "mozilla/Casting.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Services.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/net/ChannelDiverterChild.h"
@@ -28,7 +27,8 @@
 
 extern mozilla::LazyLogModule gPIPNSSLog;
 
-namespace mozilla { namespace psm {
+namespace mozilla {
+namespace psm {
 
 namespace {
 
@@ -50,11 +50,9 @@ enum {
 
 */
 
-uint32_t
-getPSMContentType(const nsCString& aContentType)
-{
-  // Don't forget to update the registration of content listeners in nsNSSModule.cpp
-  // for every supported content type.
+uint32_t getPSMContentType(const nsCString& aContentType) {
+  // Don't forget to update the registration of content listeners in
+  // nsNSSModule.cpp for every supported content type.
 
   if (aContentType.EqualsIgnoreCase("application/x-x509-ca-cert")) {
     return X509_CA_CERT;
@@ -72,9 +70,7 @@ getPSMContentType(const nsCString& aContentType)
   return UNKNOWN_TYPE;
 }
 
-int64_t
-ComputeContentLength(nsIRequest* request)
-{
+int64_t ComputeContentLength(nsIRequest* request) {
   nsCOMPtr<nsIChannel> channel(do_QueryInterface(request));
   if (!channel) {
     return -1;
@@ -93,26 +89,22 @@ ComputeContentLength(nsIRequest* request)
   return contentLength;
 }
 
-} // unnamed namespace
+}  // unnamed namespace
 
 /* ------------------------
  * PSMContentStreamListener
  * ------------------------ */
 
 PSMContentStreamListener::PSMContentStreamListener(uint32_t type)
-  : mType(type)
-{
-}
+    : mType(type) {}
 
-PSMContentStreamListener::~PSMContentStreamListener()
-{
-}
+PSMContentStreamListener::~PSMContentStreamListener() {}
 
-NS_IMPL_ISUPPORTS(PSMContentStreamListener, nsIStreamListener, nsIRequestObserver)
+NS_IMPL_ISUPPORTS(PSMContentStreamListener, nsIStreamListener,
+                  nsIRequestObserver)
 
 NS_IMETHODIMP
-PSMContentStreamListener::OnStartRequest(nsIRequest* request, nsISupports* context)
-{
+PSMContentStreamListener::OnStartRequest(nsIRequest* request) {
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("CertDownloader::OnStartRequest\n"));
 
   int64_t contentLength = ComputeContentLength(request);
@@ -126,11 +118,9 @@ PSMContentStreamListener::OnStartRequest(nsIRequest* request, nsISupports* conte
 
 NS_IMETHODIMP
 PSMContentStreamListener::OnDataAvailable(nsIRequest* request,
-                                          nsISupports* context,
                                           nsIInputStream* aIStream,
                                           uint64_t aSourceOffset,
-                                          uint32_t aLength)
-{
+                                          uint32_t aLength) {
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("CertDownloader::OnDataAvailable\n"));
 
   nsCString chunk;
@@ -144,39 +134,33 @@ PSMContentStreamListener::OnDataAvailable(nsIRequest* request,
 }
 
 NS_IMETHODIMP
-PSMContentStreamListener::OnStopRequest(nsIRequest* request,
-                                        nsISupports* context,
-                                        nsresult aStatus)
-{
+PSMContentStreamListener::OnStopRequest(nsIRequest* request, nsresult aStatus) {
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("CertDownloader::OnStopRequest\n"));
 
   // Because importing the cert can spin the event loop (via alerts), we can't
   // do it here. Do it off the event loop instead.
   nsCOMPtr<nsIRunnable> r =
-    NewRunnableMethod("psm::PSMContentStreamListener::ImportCertificate",
-                      this,
-                      &PSMContentStreamListener::ImportCertificate);
+      NewRunnableMethod("psm::PSMContentStreamListener::ImportCertificate",
+                        this, &PSMContentStreamListener::ImportCertificate);
   MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(r));
 
   return NS_OK;
 }
 
-void
-PSMContentStreamListener::ImportCertificate()
-{
+void PSMContentStreamListener::ImportCertificate() {
   nsCOMPtr<nsIX509CertDB> certdb;
 
   nsCOMPtr<nsIInterfaceRequestor> ctx = new PipUIContext();
 
   switch (mType) {
-  case X509_CA_CERT:
-  case X509_USER_CERT:
-  case X509_EMAIL_CERT:
-    certdb = do_GetService(NS_X509CERTDB_CONTRACTID);
-    break;
+    case X509_CA_CERT:
+    case X509_USER_CERT:
+    case X509_EMAIL_CERT:
+      certdb = do_GetService(NS_X509CERTDB_CONTRACTID);
+      break;
 
-  default:
-    break;
+    default:
+      break;
   }
 
   if (!certdb) {
@@ -184,26 +168,26 @@ PSMContentStreamListener::ImportCertificate()
   }
 
   switch (mType) {
-  case X509_CA_CERT:
-    certdb->ImportCertificates(BitwiseCast<uint8_t*, char*>(
-                                 mByteData.BeginWriting()),
-                               mByteData.Length(), mType, ctx);
-    break;
+    case X509_CA_CERT:
+      certdb->ImportCertificates(
+          BitwiseCast<uint8_t*, char*>(mByteData.BeginWriting()),
+          mByteData.Length(), mType, ctx);
+      break;
 
-  case X509_USER_CERT:
-    certdb->ImportUserCertificate(BitwiseCast<uint8_t*, char*>(
-                                    mByteData.BeginWriting()),
-                                  mByteData.Length(), ctx);
-    break;
+    case X509_USER_CERT:
+      certdb->ImportUserCertificate(
+          BitwiseCast<uint8_t*, char*>(mByteData.BeginWriting()),
+          mByteData.Length(), ctx);
+      break;
 
-  case X509_EMAIL_CERT:
-    certdb->ImportEmailCertificate(BitwiseCast<uint8_t*, char*>(
-                                     mByteData.BeginWriting()),
-                                   mByteData.Length(), ctx);
-    break;
+    case X509_EMAIL_CERT:
+      certdb->ImportEmailCertificate(
+          BitwiseCast<uint8_t*, char*>(mByteData.BeginWriting()),
+          mByteData.Length(), ctx);
+      break;
 
-  default:
-    break;
+    default:
+      break;
   }
 }
 
@@ -212,34 +196,24 @@ PSMContentStreamListener::ImportCertificate()
  * ------------------------ */
 
 PSMContentDownloaderParent::PSMContentDownloaderParent(uint32_t type)
-  : PSMContentStreamListener(type)
-  , mIPCOpen(true)
-{
-}
+    : PSMContentStreamListener(type), mIPCOpen(true) {}
 
-PSMContentDownloaderParent::~PSMContentDownloaderParent()
-{
-}
+PSMContentDownloaderParent::~PSMContentDownloaderParent() {}
 
-mozilla::ipc::IPCResult
-PSMContentDownloaderParent::RecvOnStartRequest(const uint32_t& contentLength)
-{
+mozilla::ipc::IPCResult PSMContentDownloaderParent::RecvOnStartRequest(
+    const uint32_t& contentLength) {
   mByteData.SetCapacity(contentLength);
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-PSMContentDownloaderParent::RecvOnDataAvailable(const nsCString& data,
-                                                const uint64_t& offset,
-                                                const uint32_t& count)
-{
+mozilla::ipc::IPCResult PSMContentDownloaderParent::RecvOnDataAvailable(
+    const nsCString& data, const uint64_t& offset, const uint32_t& count) {
   mByteData.Append(data);
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-PSMContentDownloaderParent::RecvOnStopRequest(const nsresult& code)
-{
+mozilla::ipc::IPCResult PSMContentDownloaderParent::RecvOnStopRequest(
+    const nsresult& code) {
   if (NS_SUCCEEDED(code)) {
     // See also PSMContentStreamListener::OnStopRequest. In this case, we don't
     // have to dispatch ImportCertificate off of an event because we don't have
@@ -255,9 +229,8 @@ PSMContentDownloaderParent::RecvOnStopRequest(const nsresult& code)
 }
 
 NS_IMETHODIMP
-PSMContentDownloaderParent::OnStopRequest(nsIRequest* request, nsISupports* context, nsresult code)
-{
-  nsresult rv = PSMContentStreamListener::OnStopRequest(request, context, code);
+PSMContentDownloaderParent::OnStopRequest(nsIRequest* request, nsresult code) {
+  nsresult rv = PSMContentStreamListener::OnStopRequest(request, code);
 
   if (mIPCOpen) {
     mozilla::Unused << Send__delete__(this);
@@ -265,9 +238,8 @@ PSMContentDownloaderParent::OnStopRequest(nsIRequest* request, nsISupports* cont
   return rv;
 }
 
-mozilla::ipc::IPCResult
-PSMContentDownloaderParent::RecvDivertToParentUsing(mozilla::net::PChannelDiverterParent* diverter)
-{
+mozilla::ipc::IPCResult PSMContentDownloaderParent::RecvDivertToParentUsing(
+    mozilla::net::PChannelDiverterParent* diverter) {
   MOZ_ASSERT(diverter);
   auto p = static_cast<mozilla::net::ChannelDiverterParent*>(diverter);
   p->DivertTo(this);
@@ -275,9 +247,7 @@ PSMContentDownloaderParent::RecvDivertToParentUsing(mozilla::net::PChannelDivert
   return IPC_OK();
 }
 
-void
-PSMContentDownloaderParent::ActorDestroy(ActorDestroyReason why)
-{
+void PSMContentDownloaderParent::ActorDestroy(ActorDestroyReason why) {
   mIPCOpen = false;
 }
 
@@ -287,17 +257,12 @@ PSMContentDownloaderParent::ActorDestroy(ActorDestroyReason why)
 
 NS_IMPL_ISUPPORTS(PSMContentDownloaderChild, nsIStreamListener)
 
-PSMContentDownloaderChild::PSMContentDownloaderChild()
-{
-}
+PSMContentDownloaderChild::PSMContentDownloaderChild() {}
 
-PSMContentDownloaderChild::~PSMContentDownloaderChild()
-{
-}
+PSMContentDownloaderChild::~PSMContentDownloaderChild() {}
 
 NS_IMETHODIMP
-PSMContentDownloaderChild::OnStartRequest(nsIRequest* request, nsISupports* context)
-{
+PSMContentDownloaderChild::OnStartRequest(nsIRequest* request) {
   nsCOMPtr<nsIDivertableChannel> divertable = do_QueryInterface(request);
   if (divertable) {
     mozilla::net::ChannelDiverterChild* diverter = nullptr;
@@ -321,11 +286,9 @@ PSMContentDownloaderChild::OnStartRequest(nsIRequest* request, nsISupports* cont
 
 NS_IMETHODIMP
 PSMContentDownloaderChild::OnDataAvailable(nsIRequest* request,
-                                           nsISupports* context,
                                            nsIInputStream* aIStream,
                                            uint64_t aSourceOffset,
-                                           uint32_t aLength)
-{
+                                           uint32_t aLength) {
   nsCString chunk;
   nsresult rv = NS_ReadInputStreamToString(aIStream, chunk, aLength);
   if (NS_FAILED(rv)) {
@@ -338,9 +301,7 @@ PSMContentDownloaderChild::OnDataAvailable(nsIRequest* request,
 
 NS_IMETHODIMP
 PSMContentDownloaderChild::OnStopRequest(nsIRequest* request,
-                                         nsISupports* context,
-                                         nsresult aStatus)
-{
+                                         nsresult aStatus) {
   mozilla::Unused << SendOnStopRequest(aStatus);
   return NS_OK;
 }
@@ -349,49 +310,38 @@ PSMContentDownloaderChild::OnStopRequest(nsIRequest* request,
  * PSMContentListener
  * ------------------------ */
 
-NS_IMPL_ISUPPORTS(PSMContentListener,
-                  nsIURIContentListener,
+NS_IMPL_ISUPPORTS(PSMContentListener, nsIURIContentListener,
                   nsISupportsWeakReference)
 
-PSMContentListener::PSMContentListener()
-{
+PSMContentListener::PSMContentListener() {
   mLoadCookie = nullptr;
   mParentContentListener = nullptr;
 }
 
-PSMContentListener::~PSMContentListener()
-{
-}
+PSMContentListener::~PSMContentListener() {}
 
-nsresult
-PSMContentListener::init()
-{
-  return NS_OK;
-}
+nsresult PSMContentListener::init() { return NS_OK; }
 
 NS_IMETHODIMP
-PSMContentListener::OnStartURIOpen(nsIURI* aURI, bool* aAbortOpen)
-{
-  //if we don't want to handle the URI, return true in
+PSMContentListener::OnStartURIOpen(nsIURI* aURI, bool* aAbortOpen) {
+  // if we don't want to handle the URI, return true in
   //*aAbortOpen
   return NS_OK;
 }
 
 NS_IMETHODIMP
 PSMContentListener::IsPreferred(const char* aContentType,
-                                 char** aDesiredContentType,
-                                 bool* aCanHandleContent)
-{
-  return CanHandleContent(aContentType, true,
-                          aDesiredContentType, aCanHandleContent);
+                                char** aDesiredContentType,
+                                bool* aCanHandleContent) {
+  return CanHandleContent(aContentType, true, aDesiredContentType,
+                          aCanHandleContent);
 }
 
 NS_IMETHODIMP
 PSMContentListener::CanHandleContent(const char* aContentType,
                                      bool /*aIsContentPreferred*/,
-                             /*out*/ char** aDesiredContentType,
-                             /*out*/ bool* aCanHandleContent)
-{
+                                     /*out*/ char** aDesiredContentType,
+                                     /*out*/ bool* aCanHandleContent) {
   NS_ENSURE_ARG(aDesiredContentType);
   NS_ENSURE_ARG(aCanHandleContent);
 
@@ -406,9 +356,8 @@ NS_IMETHODIMP
 PSMContentListener::DoContent(const nsACString& aContentType,
                               bool /*aIsContentPreferred*/,
                               nsIRequest* /*aRequest*/,
-                      /*out*/ nsIStreamListener** aContentHandler,
-                      /*out*/ bool* aAbortProcess)
-{
+                              /*out*/ nsIStreamListener** aContentHandler,
+                              /*out*/ bool* aAbortProcess) {
   NS_ENSURE_ARG(aContentHandler);
   NS_ENSURE_ARG(aAbortProcess);
 
@@ -424,7 +373,8 @@ PSMContentListener::DoContent(const nsACString& aContentType,
       downloader = new PSMContentStreamListener(type);
     } else {
       downloader = static_cast<PSMContentDownloaderChild*>(
-          dom::ContentChild::GetSingleton()->SendPPSMContentDownloaderConstructor(type));
+          dom::ContentChild::GetSingleton()
+              ->SendPPSMContentDownloaderConstructor(type));
     }
 
     downloader.forget(aContentHandler);
@@ -434,33 +384,32 @@ PSMContentListener::DoContent(const nsACString& aContentType,
 }
 
 NS_IMETHODIMP
-PSMContentListener::GetLoadCookie(nsISupports** aLoadCookie)
-{
+PSMContentListener::GetLoadCookie(nsISupports** aLoadCookie) {
   nsCOMPtr<nsISupports> loadCookie(mLoadCookie);
   loadCookie.forget(aLoadCookie);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-PSMContentListener::SetLoadCookie(nsISupports* aLoadCookie)
-{
+PSMContentListener::SetLoadCookie(nsISupports* aLoadCookie) {
   mLoadCookie = aLoadCookie;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-PSMContentListener::GetParentContentListener(nsIURIContentListener** aContentListener)
-{
+PSMContentListener::GetParentContentListener(
+    nsIURIContentListener** aContentListener) {
   nsCOMPtr<nsIURIContentListener> listener(mParentContentListener);
   listener.forget(aContentListener);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-PSMContentListener::SetParentContentListener(nsIURIContentListener* aContentListener)
-{
+PSMContentListener::SetParentContentListener(
+    nsIURIContentListener* aContentListener) {
   mParentContentListener = aContentListener;
   return NS_OK;
 }
 
-} } // namespace mozilla::psm
+}  // namespace psm
+}  // namespace mozilla

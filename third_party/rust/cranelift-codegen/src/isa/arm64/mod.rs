@@ -7,14 +7,16 @@ mod registers;
 pub mod settings;
 
 use super::super::settings as shared_settings;
-use binemit::{emit_function, CodeSink, MemoryCodeSink};
-use ir;
-use isa::enc_tables::{lookup_enclist, Encodings};
-use isa::Builder as IsaBuilder;
-use isa::{EncInfo, RegClass, RegInfo, TargetIsa};
-use regalloc;
+#[cfg(feature = "testing_hooks")]
+use crate::binemit::CodeSink;
+use crate::binemit::{emit_function, MemoryCodeSink};
+use crate::ir;
+use crate::isa::enc_tables::{lookup_enclist, Encodings};
+use crate::isa::Builder as IsaBuilder;
+use crate::isa::{EncInfo, RegClass, RegInfo, TargetIsa};
+use crate::regalloc;
+use core::fmt;
 use std::boxed::Box;
-use std::fmt;
 use target_lexicon::Triple;
 
 #[allow(dead_code)]
@@ -98,6 +100,7 @@ impl TargetIsa for Isa {
         abi::allocatable_registers(func)
     }
 
+    #[cfg(feature = "testing_hooks")]
     fn emit_inst(
         &self,
         func: &ir::Function,

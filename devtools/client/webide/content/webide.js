@@ -6,7 +6,7 @@
 /* import-globals-from project-panel.js */
 /* import-globals-from runtime-panel.js */
 
-const {loader, require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+const {loader, require} = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 const {gDevTools} = require("devtools/client/framework/devtools");
 const {gDevToolsBrowser} = require("devtools/client/framework/devtools-browser");
 const {Toolbox} = require("devtools/client/framework/toolbox");
@@ -20,6 +20,10 @@ const {getJSON} = require("devtools/client/shared/getjson");
 const Telemetry = require("devtools/client/shared/telemetry");
 const {RuntimeScanners} = require("devtools/client/webide/modules/runtimes");
 const {openContentLink} = require("devtools/client/shared/link");
+const {
+  checkVersionCompatibility,
+  COMPATIBILITY_STATUS,
+} = require("devtools/client/shared/remote-debugging/version-checker");
 
 loader.lazyRequireGetter(this, "adbAddon", "devtools/shared/adb/adb-addon", true);
 
@@ -63,6 +67,10 @@ var UI = {
     // toolbox session id.
     this._telemetry.toolOpened("webide", -1, this);
 
+    this.notificationBox = new window.MozElements.NotificationBox(element => {
+      document.getElementById("containerbox")
+              .insertAdjacentElement("afterbegin", element);
+    });
     AppManager.init();
 
     this.appManagerUpdate = this.appManagerUpdate.bind(this);
@@ -89,6 +97,9 @@ var UI = {
     if (autoinstallADBExtension) {
       adbAddon.install("webide");
     }
+
+    // Remove deprecated remote debugging extensions.
+    adbAddon.uninstallUnsupportedExtensions();
 
     Services.prefs.setBoolPref("devtools.webide.autoinstallADBExtension", false);
 
@@ -288,15 +299,14 @@ var UI = {
       },
     }];
 
-    const nbox = document.querySelector("#notificationbox");
+    const nbox = this.notificationBox;
     nbox.removeAllNotifications(true);
     nbox.appendNotification(text, "webide:errornotification", null,
                             nbox.PRIORITY_WARNING_LOW, buttons);
   },
 
   dismissErrorNotification: function() {
-    const nbox = document.querySelector("#notificationbox");
-    nbox.removeAllNotifications(true);
+    this.notificationBox.removeAllNotifications(true);
   },
 
   /** ******** COMMANDS **********/
@@ -731,14 +741,19 @@ var UI = {
   async checkRuntimeVersion() {
     if (AppManager.connected) {
       const { client } = AppManager.connection;
-      const report = await client.checkRuntimeVersion();
-      if (report.incompatible == "too-recent") {
+      const report = await checkVersionCompatibility(client);
+
+      if (report.status == COMPATIBILITY_STATUS.TOO_RECENT) {
         this.reportError("error_runtimeVersionTooRecent", report.runtimeID,
           report.localID);
       }
-      if (report.incompatible == "too-old") {
+      if (report.status == COMPATIBILITY_STATUS.TOO_OLD) {
         this.reportError("error_runtimeVersionTooOld", report.runtimeVersion,
           report.minVersion);
+      }
+      if (report.status == COMPATIBILITY_STATUS.TOO_OLD_67_DEBUGGER) {
+        this.reportError("error_runtimeVersionTooOld67Debugger",
+          report.runtimeVersion);
       }
     }
   },
@@ -819,7 +834,7 @@ var UI = {
     const splitter = document.querySelector(".devtools-horizontal-splitter");
     splitter.removeAttribute("hidden");
 
-    document.querySelector("notificationbox").insertBefore(iframe, splitter.nextSibling);
+    document.getElementById("containerbox").insertBefore(iframe, splitter.nextSibling);
     const host = Toolbox.HostType.CUSTOM;
     const options = { customIframe: iframe, zoom: false, uid: iframe.uid };
 
@@ -877,7 +892,8 @@ var Cmds = {
     const iframe = document.getElementById("deck-panel-performance");
 
     iframe.addEventListener("DOMContentLoaded", () => {
-      iframe.contentWindow.gInit(AppManager.perfFront, AppManager.preferenceFront);
+      iframe.contentWindow.gInit(AppManager.perfFront,
+                                 AppManager.preferenceFront);
     }, { once: true });
   },
 

@@ -30,12 +30,8 @@ async function test_opensearch(shouldWork) {
 
   searchBarButton.click();
   await promiseSearchPopupShown;
-  let oneOffsContainer = document.getAnonymousElementByAttribute(searchPopup,
-                                                                 "anonid",
-                                                                 "search-one-off-buttons");
-  let engineListElement = document.getAnonymousElementByAttribute(oneOffsContainer,
-                                                                  "anonid",
-                                                                  "add-engines");
+  let oneOffsContainer = searchPopup.searchOneOffsContainer;
+  let engineListElement = oneOffsContainer.querySelector(".search-add-engines");
   if (shouldWork) {
     ok(engineListElement.firstElementChild,
        "There should be search engines available to add");
@@ -53,7 +49,7 @@ async function test_opensearch(shouldWork) {
 add_task(async function test_install_and_set_default() {
   // Make sure we are starting in an expected state to avoid false positive
   // test results.
-  isnot(Services.search.currentEngine.name, "MozSearch",
+  isnot((await Services.search.getDefault()).name, "MozSearch",
         "Default search engine should not be MozSearch when test starts");
   is(Services.search.getEngineByName("Foo"), null,
      "Engine \"Foo\" should not be present when test starts");
@@ -71,21 +67,23 @@ add_task(async function test_install_and_set_default() {
       },
     },
   });
+  // Get in line, because the Search policy callbacks are async.
+  await TestUtils.waitForTick();
 
   // If this passes, it means that the new search engine was properly installed
   // *and* was properly set as the default.
-  is(Services.search.currentEngine.name, "MozSearch",
+  is((await Services.search.getDefault()).name, "MozSearch",
      "Specified search engine should be the default");
 
   // Clean up
-  Services.search.removeEngine(Services.search.currentEngine);
+  await Services.search.removeEngine(await Services.search.getDefault());
   EnterprisePolicyTesting.resetRunOnceState();
 });
 
 // Same as the last test, but with "PreventInstalls" set to true to make sure
 // it does not prevent search engines from being installed properly
 add_task(async function test_install_and_set_default_prevent_installs() {
-  isnot(Services.search.currentEngine.name, "MozSearch",
+  isnot((await Services.search.getDefault()).name, "MozSearch",
         "Default search engine should not be MozSearch when test starts");
   is(Services.search.getEngineByName("Foo"), null,
      "Engine \"Foo\" should not be present when test starts");
@@ -104,12 +102,14 @@ add_task(async function test_install_and_set_default_prevent_installs() {
       },
     },
   });
+  // Get in line, because the Search policy callbacks are async.
+  await TestUtils.waitForTick();
 
-  is(Services.search.currentEngine.name, "MozSearch",
+  is((await Services.search.getDefault()).name, "MozSearch",
      "Specified search engine should be the default");
 
   // Clean up
-  Services.search.removeEngine(Services.search.currentEngine);
+  await Services.search.removeEngine(await Services.search.getDefault());
   EnterprisePolicyTesting.resetRunOnceState();
 });
 
@@ -137,7 +137,7 @@ add_task(async function setup_prevent_installs() {
 add_task(async function test_prevent_install_ui() {
   // Check that about:preferences does not prompt user to install search engines
   // if that feature is disabled
-  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:preferences");
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:preferences#search");
   await ContentTask.spawn(tab.linkedBrowser, null, async function() {
     let linkContainer = content.document.getElementById("addEnginesBox");
     if (!linkContainer.hidden) {
@@ -161,6 +161,10 @@ add_task(async function test_opensearch_disabled() {
 });
 
 add_task(async function test_AddSearchProvider() {
+  if (!Services.prefs.getBoolPref("dom.sidebar.enabled", false)) {
+    return;
+  }
+
   // Mock the modal error dialog
   let mockPrompter = {
     promptCount: 0,
@@ -211,6 +215,8 @@ add_task(async function test_install_and_remove() {
       },
     },
   });
+  // Get in line, because the Search policy callbacks are async.
+  await TestUtils.waitForTick();
 
   // If this passes, it means that the new search engine was properly installed
 
@@ -228,10 +234,57 @@ add_task(async function test_install_and_remove() {
       },
     },
   });
+  // Get in line, because the Search policy callbacks are async.
+  await TestUtils.waitForTick();
 
   // If this passes, it means that the specified engine was properly removed
   is(Services.search.getEngineByName("Foo"), null,
      "Specified search engine should not be installed");
 
+  EnterprisePolicyTesting.resetRunOnceState();
+});
+
+add_task(async function test_install_post_method_engine() {
+  is(Services.search.getEngineByName("Post"), null,
+     "Engine \"Post\" should not be present when test starts");
+
+  await setupPolicyEngineWithJson({
+  "policies": {
+      "SearchEngines": {
+        "Add": [
+          {
+            "Name": "Post",
+            "Method": "POST",
+            "PostData": "q={searchTerms}&anotherParam=yes",
+            "URLTemplate": "http://example.com/",
+          },
+        ],
+      },
+    },
+  });
+  // Get in line, because the Search policy callbacks are async.
+  await TestUtils.waitForTick();
+
+  let engine = Services.search.getEngineByName("Post");
+  isnot(engine, null, "Specified search engine should be installed");
+
+  is(engine.wrappedJSObject._urls[0].method, "POST", "Method should be POST");
+
+  let submission = engine.getSubmission("term", "text/html");
+  isnot(submission.postData, null, "Post data should not be null");
+
+  let scriptableInputStream = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(Ci.nsIScriptableInputStream);
+  scriptableInputStream.init(submission.postData);
+  is(scriptableInputStream.read(scriptableInputStream.available()),
+     "q=term&anotherParam=yes",
+     "Post data should be present");
+
+  await setupPolicyEngineWithJson({
+  "policies": {
+      "SearchEngines": {
+        "Remove": ["Post"],
+      },
+    },
+  });
   EnterprisePolicyTesting.resetRunOnceState();
 });

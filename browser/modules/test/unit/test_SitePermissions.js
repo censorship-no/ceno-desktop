@@ -3,8 +3,8 @@
  */
 "use strict";
 
-ChromeUtils.import("resource:///modules/SitePermissions.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {SitePermissions} = ChromeUtils.import("resource:///modules/SitePermissions.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const RESIST_FINGERPRINTING_ENABLED = Services.prefs.getBoolPref("privacy.resistFingerprinting");
 const MIDI_ENABLED = Services.prefs.getBoolPref("dom.webmidi.enabled");
@@ -12,7 +12,7 @@ const MIDI_ENABLED = Services.prefs.getBoolPref("dom.webmidi.enabled");
 add_task(async function testPermissionsListing() {
   let expectedPermissions = ["autoplay-media", "camera", "cookie", "desktop-notification", "focus-tab-by-prompt",
      "geo", "image", "install", "microphone", "plugin:flash", "popup", "screen", "shortcuts",
-     "persistent-storage"];
+     "persistent-storage", "storage-access"];
   if (RESIST_FINGERPRINTING_ENABLED) {
     // Canvas permission should be hidden unless privacy.resistFingerprinting
     // is true.
@@ -119,7 +119,8 @@ add_task(async function testExactHostMatch() {
     exactHostMatched.push("midi");
     exactHostMatched.push("midi-sysex");
   }
-  let nonExactHostMatched = ["image", "cookie", "plugin:flash", "popup", "install", "shortcuts"];
+  let nonExactHostMatched = ["image", "cookie", "plugin:flash", "popup", "install", "shortcuts",
+                             "storage-access"];
 
   let permissions = SitePermissions.listPermissions();
   for (let permission of permissions) {

@@ -72,7 +72,7 @@ var openInspectorSidebarTab = async function(id) {
   return {
     toolbox,
     inspector,
-    testActor
+    testActor,
   };
 };
 
@@ -121,6 +121,24 @@ function openComputedView() {
 }
 
 /**
+ * Open the toolbox, with the inspector tool visible, and the changes view
+ * sidebar tab selected.
+ *
+ * @return a promise that resolves when the inspector is ready and the changes
+ * view is visible and ready
+ */
+function openChangesView() {
+  return openInspectorSidebarTab("changesview").then(data => {
+    return {
+      toolbox: data.toolbox,
+      inspector: data.inspector,
+      testActor: data.testActor,
+      view: data.inspector.getPanel("changesview"),
+    };
+  });
+}
+
+/**
  * Open the toolbox, with the inspector tool visible, and the layout view
  * sidebar tab selected to display the box model view with properties.
  *
@@ -145,10 +163,10 @@ function openLayoutView() {
       toolbox: data.toolbox,
       inspector: data.inspector,
       boxmodel: data.inspector.getPanel("boxmodel"),
-      gridInspector: data.inspector.layoutview.gridInspector,
-      flexboxInspector: data.inspector.layoutview.flexboxInspector,
-      layoutView: data.inspector.layoutview,
-      testActor: data.testActor
+      gridInspector: data.inspector.getPanel("layoutview").gridInspector,
+      flexboxInspector: data.inspector.getPanel("layoutview").flexboxInspector,
+      layoutView: data.inspector.getPanel("layoutview"),
+      testActor: data.testActor,
     };
   });
 }
@@ -174,6 +192,18 @@ function selectRuleView(inspector) {
 function selectComputedView(inspector) {
   inspector.sidebar.select("computedview");
   return inspector.getPanel("computedview").computedView;
+}
+
+/**
+ * Select the changes view sidebar tab on an already opened inspector panel.
+ *
+ * @param {InspectorPanel} inspector
+ *        The opened inspector panel
+ * @return {ChangesView} the changes view
+ */
+function selectChangesView(inspector) {
+  inspector.sidebar.select("changesview");
+  return inspector.getPanel("changesview");
 }
 
 /**
@@ -353,8 +383,22 @@ var focusEditableField = async function(ruleView, editable, xOffset = 1,
     yOffset = 1, options = {}) {
   const onFocus = once(editable.parentNode, "focus", true);
   info("Clicking on editable field to turn to edit mode");
-  EventUtils.synthesizeMouse(editable, xOffset, yOffset, options,
-    editable.ownerDocument.defaultView);
+  if (options.type === undefined) {
+    // "mousedown" and "mouseup" flushes any pending layout.  Therefore,
+    // if the caller wants to click an element, e.g., closebrace to add new
+    // property, we need to guarantee that the element is clicked here even
+    // if it's moved by flushing the layout because whether the UI is useful
+    // or not when there is pending reflow is not scope of the tests.
+    options.type = "mousedown";
+    EventUtils.synthesizeMouse(editable, xOffset, yOffset, options,
+      editable.ownerGlobal);
+    options.type = "mouseup";
+    EventUtils.synthesizeMouse(editable, xOffset, yOffset, options,
+      editable.ownerGlobal);
+  } else {
+    EventUtils.synthesizeMouse(editable, xOffset, yOffset, options,
+      editable.ownerGlobal);
+  }
   await onFocus;
 
   info("Editable field gained focus, returning the input field now");
@@ -616,6 +660,6 @@ function openStyleContextMenuAndGetAllItems(view, target) {
  * @return An array of MenuItems
  */
 function openContextMenuAndGetAllItems(inspector, options) {
-  const menu = inspector._openMenu(options);
+  const menu = inspector.markup.contextMenu._openMenu(options);
   return buildContextMenuItems(menu);
 }

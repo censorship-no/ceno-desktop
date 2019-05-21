@@ -13,8 +13,7 @@ add_task(async function() {
     gBrowser.getNotificationBox().getNotificationWithValue(notificationValue);
   await BrowserTestUtils.waitForCondition(getNotification);
   let notification = getNotification();
-  let button =
-    notification.getElementsByClassName("notification-button-default")[0];
+  let button = notification.querySelector("button");
   ok(button, "got registration button");
   button.click();
 
@@ -30,7 +29,7 @@ add_task(async function() {
   let handler = handlers.queryElementAt(0, Ci.nsIHandlerApp);
   ok(handler instanceof Ci.nsIWebHandlerApp, "the handler is a web handler");
   is(handler.uriTemplate, "https://example.com/foobar?uri=%s",
-     "correct url template")
+     "correct url template");
   protoInfo.preferredApplicationHandler = handler;
   protoInfo.alwaysAskBeforeHandling = false;
   const handlerSvc = Cc["@mozilla.org/uriloader/handler-service;1"].
@@ -51,11 +50,10 @@ add_task(async function() {
   BrowserTestUtils.removeTab(tab);
 
   // Shift-click the testprotocol link and check the new window.
-  let newWindowPromise = BrowserTestUtils.waitForNewWindow();
+  let newWindowPromise = BrowserTestUtils.waitForNewWindow({url: expectedURL});
   await BrowserTestUtils.synthesizeMouseAtCenter(link, {shiftKey: true},
                                                  browser);
   let win = await newWindowPromise;
-  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
   await BrowserTestUtils.waitForCondition(() => win.gBrowser.currentURI.spec == expectedURL);
   is(win.gURLBar.value, expectedURL,
      "the expected URL is displayed in the location bar");

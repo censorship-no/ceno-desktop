@@ -5,7 +5,6 @@
 "use strict";
 
 this.ContentSearchUIController = (function() {
-
 const MAX_DISPLAYED_SUGGESTIONS = 6;
 const SUGGESTION_ID_PREFIX = "searchSuggestion";
 const ONE_OFF_ID_PREFIX = "oneOff";
@@ -82,8 +81,8 @@ ContentSearchUIController.prototype = {
       URL.revokeObjectURL(this._defaultEngine.icon);
     }
     let icon;
-    if (engine.iconBuffer) {
-      icon = this._getFaviconURIFromBuffer(engine.iconBuffer);
+    if (engine.iconData) {
+      icon = this._getFaviconURIFromIconData(engine.iconData);
     } else {
       icon = "chrome://mozapps/skin/places/defaultFavicon.svg";
     }
@@ -223,6 +222,11 @@ ContentSearchUIController.prototype = {
   },
 
   handleEvent(event) {
+    // The event handler is triggered by external events while the search
+    // element may no longer be present
+    if (!document.contains(this.input)) {
+      return;
+    }
     this["_on" + event.type[0].toUpperCase() + event.type.substr(1)](event);
   },
 
@@ -694,9 +698,15 @@ ContentSearchUIController.prototype = {
     return row;
   },
 
-  // Converts favicon array buffer into a data URI.
-  _getFaviconURIFromBuffer(buffer) {
-    let blob = new Blob([buffer]);
+  // If the favicon is an array buffer, convert it into a Blob URI.
+  // Otherwise just return the plain URI.
+  _getFaviconURIFromIconData(data) {
+    if (typeof(data) == "string") {
+      return data;
+    }
+
+    // If typeof(data) != "string", we assume it's an ArrayBuffer
+    let blob = new Blob([data]);
     return URL.createObjectURL(blob);
   },
 
@@ -871,8 +881,8 @@ ContentSearchUIController.prototype = {
       button.setAttribute("class", "contentSearchOneOffItem");
       let img = document.createElementNS(HTML_NS, "img");
       let uri;
-      if (engine.iconBuffer) {
-        uri = this._getFaviconURIFromBuffer(engine.iconBuffer);
+      if (engine.iconData) {
+        uri = this._getFaviconURIFromIconData(engine.iconData);
       } else {
         uri = this._getImageURIForCurrentResolution(
           "chrome://browser/skin/search-engine-placeholder.png");

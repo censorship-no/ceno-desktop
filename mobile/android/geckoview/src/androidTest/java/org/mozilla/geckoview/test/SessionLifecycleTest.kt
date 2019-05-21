@@ -4,15 +4,19 @@
 
 package org.mozilla.geckoview.test
 
+import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ClosedSessionAtStart
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.NullDelegate
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ReuseSession
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDevToolsAPI
 import org.mozilla.geckoview.test.util.Callbacks
 import org.mozilla.geckoview.test.util.UiThreadUtils
 
+import android.os.Bundle
 import android.os.Debug
 import android.os.Parcelable
 import android.os.SystemClock
@@ -23,6 +27,7 @@ import android.util.Log
 import android.util.SparseArray
 
 import org.hamcrest.Matchers.*
+import org.junit.Assume.assumeThat
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -73,28 +78,6 @@ class SessionLifecycleTest : BaseSessionTest() {
     fun open_throwOnAlreadyOpen() {
         // Throw exception if retrying to open again; otherwise we would leak the old open window.
         sessionRule.session.open()
-    }
-
-    @Test(expected = IllegalStateException::class)
-    fun setChromeURI_throwOnOpenSession() {
-        sessionRule.session.settings.setString(GeckoSessionSettings.CHROME_URI, "chrome://invalid/path/to.xul")
-    }
-
-    @Test(expected = IllegalStateException::class)
-    fun setScreenID_throwOnOpenSession() {
-        sessionRule.session.settings.setInt(GeckoSessionSettings.SCREEN_ID, 42)
-    }
-
-    @Test(expected = IllegalStateException::class)
-    fun setUsePrivateMode_throwOnOpenSession() {
-        sessionRule.session.settings.setBoolean(GeckoSessionSettings.USE_PRIVATE_MODE, true)
-    }
-
-    @Test(expected = IllegalStateException::class)
-    fun setUseMultiprocess_throwOnOpenSession() {
-        sessionRule.session.settings.setBoolean(
-                GeckoSessionSettings.USE_MULTIPROCESS,
-                !sessionRule.session.settings.getBoolean(GeckoSessionSettings.USE_MULTIPROCESS))
     }
 
     @Test fun readFromParcel() {
@@ -167,6 +150,8 @@ class SessionLifecycleTest : BaseSessionTest() {
     }
 
     @Test fun readFromParcel_closedSessionAfterReadParcel() {
+        // disable test on opt for frequently failing Bug 1519591
+        assumeThat(sessionRule.env.isDebugBuild, equalTo(true))
         val session = sessionRule.createOpenSession()
 
         session.toParcel { parcel ->
@@ -240,7 +225,7 @@ class SessionLifecycleTest : BaseSessionTest() {
         // Enable navigation notifications on the new, closed session.
         var onLocationCount = 0
         sessionRule.session.navigationDelegate = object : Callbacks.NavigationDelegate {
-            override fun onLocationChange(session: GeckoSession, url: String) {
+            override fun onLocationChange(session: GeckoSession, url: String?) {
                 onLocationCount++
             }
         }
@@ -256,6 +241,46 @@ class SessionLifecycleTest : BaseSessionTest() {
 
         assertThat("New session should receive navigation notifications",
                    onLocationCount, equalTo(1))
+    }
+
+    @WithDevToolsAPI
+    @Test fun readFromParcel_focusedInput() {
+        // When an input is focused, make sure SessionTextInput is still active after transferring.
+        mainSession.loadTestPath(INPUTS_PATH)
+        mainSession.waitForPageStop()
+
+        mainSession.evaluateJS("$('#input').focus()")
+        mainSession.waitUntilCalled(object : Callbacks.TextInputDelegate {
+            @AssertCalled(count = 1)
+            override fun restartInput(session: GeckoSession, reason: Int) {
+                assertThat("Reason should be correct",
+                           reason, equalTo(GeckoSession.TextInputDelegate.RESTART_REASON_FOCUS))
+            }
+        })
+
+        val newSession = sessionRule.createClosedSession()
+        mainSession.toParcel { parcel ->
+            newSession.readFromParcel(parcel)
+        }
+
+        // We generate an extra focus event during transfer.
+        newSession.waitUntilCalled(object : Callbacks.TextInputDelegate {
+            @AssertCalled(count = 1)
+            override fun restartInput(session: GeckoSession, reason: Int) {
+                assertThat("Reason should be correct",
+                           reason, equalTo(GeckoSession.TextInputDelegate.RESTART_REASON_FOCUS))
+            }
+        })
+
+        newSession.evaluateJS("$('#input').blur()")
+        newSession.waitUntilCalled(object : Callbacks.TextInputDelegate {
+            @AssertCalled(count = 1)
+            override fun restartInput(session: GeckoSession, reason: Int) {
+                // We generate an extra focus event during transfer.
+                assertThat("Reason should be correct",
+                           reason, equalTo(GeckoSession.TextInputDelegate.RESTART_REASON_BLUR))
+            }
+        })
     }
 
     private fun testRestoreInstanceState(fromSession: GeckoSession?,
@@ -277,6 +302,33 @@ class SessionLifecycleTest : BaseSessionTest() {
                 }
                 restoreHierarchyState(state)
             }
+
+    @ClosedSessionAtStart
+    @Test fun restoreRuntimeSettings_noSession() {
+        val extrasSetting = Bundle(2)
+        extrasSetting.putInt("test1", 10)
+        extrasSetting.putBoolean("test2", true)
+
+        val settings = GeckoRuntimeSettings.Builder()
+                       .javaScriptEnabled(false)
+                       .extras(extrasSetting)
+                       .build()
+
+        settings.toParcel { parcel ->
+            val newSettings = GeckoRuntimeSettings.Builder().build()
+            newSettings.readFromParcel(parcel)
+
+            assertThat("Parceled settings must match",
+                       newSettings.javaScriptEnabled,
+                       equalTo(settings.javaScriptEnabled))
+            assertThat("Parceled settings must match",
+                       newSettings.extras.getInt("test1"),
+                       equalTo(settings.extras.getInt("test1")))
+            assertThat("Parceled settings must match",
+                       newSettings.extras.getBoolean("test2"),
+                       equalTo(settings.extras.getBoolean("test2")))
+        }
+    }
 
     @ClosedSessionAtStart
     @Test fun restoreInstanceState_noSessionOntoNoSession() {
@@ -351,15 +403,15 @@ class SessionLifecycleTest : BaseSessionTest() {
     @Test fun restoreInstanceState_sameClosedSession() {
         val view = testRestoreInstanceState(mainSession, mainSession)
         assertThat("View session is unchanged", view.session, equalTo(mainSession))
-        assertThat("View session is closed", view.session.isOpen, equalTo(false))
+        assertThat("View session is closed", view.session!!.isOpen, equalTo(false))
     }
 
     @Test fun restoreInstanceState_sameOpenSession() {
         // We should keep the session open when restoring the same open session.
         val view = testRestoreInstanceState(mainSession, mainSession)
         assertThat("View session is unchanged", view.session, equalTo(mainSession))
-        assertThat("View session is open", view.session.isOpen, equalTo(true))
-        view.session.reload()
+        assertThat("View session is open", view.session!!.isOpen, equalTo(true))
+        view.session!!.reload()
         sessionRule.waitForPageStop()
     }
 

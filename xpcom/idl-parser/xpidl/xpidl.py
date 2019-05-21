@@ -164,7 +164,7 @@ class Builtin(object):
 builtinNames = [
     Builtin('boolean', 'bool', 'bool'),
     Builtin('void', 'void', 'libc::c_void'),
-    Builtin('octet', 'uint8_t', 'libc::uint8_t'),
+    Builtin('octet', 'uint8_t', 'libc::uint8_t', False, True),
     Builtin('short', 'int16_t', 'libc::int16_t', True, True),
     Builtin('long', 'int32_t', 'libc::int32_t', True, True),
     Builtin('long long', 'int64_t', 'libc::int64_t', True, False),
@@ -422,8 +422,10 @@ class Typedef(object):
         return "%s %s" % (self.name, '*' if 'out' in calltype else '')
 
     def rustType(self, calltype):
-        return "%s%s" % (calltype != 'in' and '*mut ' or '',
-                         self.name)
+        if self.name == 'nsresult':
+            return "%s::nserror::nsresult" % ('*mut ' if 'out' in calltype else '')
+
+        return "%s%s" % ('*mut ' if 'out' in calltype else '', self.name)
 
     def __str__(self):
         return "typedef %s %s\n" % (self.type, self.name)
@@ -465,6 +467,8 @@ class Forward(object):
     def rustType(self, calltype):
         if rustBlacklistedForward(self.name):
             raise RustNoncompat("forward declaration %s is unsupported" % self.name)
+        if calltype == 'element':
+            return 'RefPtr<%s>' % self.name
         return "%s*const %s" % (calltype != 'in' and '*mut ' or '',
                                 self.name)
 
@@ -557,19 +561,20 @@ class Native(object):
             const = True
 
         if calltype == 'element':
+            if self.specialtype == 'nsid':
+                if self.isPtr(calltype):
+                    raise IDLError("Array<nsIDPtr> not yet supported. "
+                                   "File an XPConnect bug if you need it.", self.location)
+
+                # ns[CI]?IDs should be held directly in Array<T>s
+                return self.nativename
+
             if self.isRef(calltype):
                 raise IDLError("[ref] qualified type unsupported in Array<T>", self.location)
 
             # Promises should be held in RefPtr<T> in Array<T>s
             if self.specialtype == 'promise':
                 return 'RefPtr<mozilla::dom::Promise>'
-
-            # We don't support nsIDPtr, in Array<T> currently, although
-            # this or support for Array<nsID> will be needed to replace
-            # [array] completely.
-            if self.specialtype == 'nsid':
-                raise IDLError("Array<nsIDPtr> not yet supported. "
-                               "File an XPConnect bug if you need it.", self.location)
 
         if self.isRef(calltype):
             m = '& '  # [ref] is always passed with a single indirection
@@ -595,6 +600,11 @@ class Native(object):
             prefix += '*mut '
 
         if self.specialtype == 'nsid':
+            if 'element' in calltype:
+                if self.isPtr(calltype):
+                    raise IDLError("Array<nsIDPtr> not yet supported. "
+                                   "File an XPConnect bug if you need it.", self.location)
+                return self.nativename
             return prefix + self.nativename
         if self.specialtype in ['cstring', 'utf8string']:
             if 'element' in calltype:
@@ -679,9 +689,10 @@ class Interface(object):
             if not isinstance(m, CDATA):
                 self.namemap.set(m)
 
-            if m.kind == 'method' and m.notxpcom and name != 'nsISupports':
-                # An interface cannot be implemented by JS if it has a
-                # notxpcom method. Such a type is an "implicit builtinclass".
+            if ((m.kind == 'method' or m.kind == 'attribute') and
+                m.notxpcom and name != 'nsISupports'):
+                # An interface cannot be implemented by JS if it has a notxpcom
+                # method or attribute. Such a type is an "implicit builtinclass".
                 #
                 # XXX(nika): Why does nostdcall not imply builtinclass?
                 # It could screw up the shims as well...
@@ -757,6 +768,8 @@ class Interface(object):
                              '*' if 'out' in calltype else '')
 
     def rustType(self, calltype, const=False):
+        if calltype == 'element':
+            return 'RefPtr<%s>' % self.name
         return "%s*const %s" % ('*mut ' if 'out' in calltype else '',
                                 self.name)
 
@@ -907,9 +920,89 @@ class ConstMember(object):
         return 0
 
 
+# Represents a single name/value pair in a CEnum
+class CEnumVariant(object):
+    # Treat CEnumVariants as consts in terms of value resolution, so we can
+    # do things like binary operation values for enum members.
+    kind = 'const'
+
+    def __init__(self, name, value, location):
+        self.name = name
+        self.value = value
+        self.location = location
+
+    def getValue(self):
+        return self.value
+
+
+class CEnum(object):
+    kind = 'cenum'
+
+    def __init__(self, width, name, variants, location, doccomments):
+        # We have to set a name here, otherwise we won't pass namemap checks on
+        # the interface. This name will change it in resolve(), in order to
+        # namespace the enum within the interface.
+        self.name = name
+        self.basename = name
+        self.width = width
+        self.location = location
+        self.namemap = NameMap()
+        self.doccomments = doccomments
+        self.variants = variants
+        if self.width not in (8, 16, 32):
+            raise IDLError("Width must be one of {8, 16, 32}", self.location)
+
+    def getValue(self):
+        return self.value(self.iface)
+
+    def resolve(self, iface):
+        self.iface = iface
+        # Renaming enum to faux-namespace the enum type to the interface in JS
+        # so we don't collide in the global namespace. Hacky/ugly but it does
+        # the job well enough, and the name will still be interface::variant in
+        # C++.
+        self.name = '%s_%s' % (self.iface.name, self.basename)
+        self.iface.idl.setName(self)
+
+        # Compute the value for each enum variant that doesn't set its own
+        # value
+        next_value = 0
+        for variant in self.variants:
+            # CEnum variants resolve to interface level consts in javascript,
+            # meaning their names could collide with other interface members.
+            # Iterate through all CEnum variants to make sure there are no
+            # collisions.
+            self.iface.namemap.set(variant)
+            # Value may be a lambda. If it is, resolve it.
+            if variant.value:
+                next_value = variant.value = variant.value(self.iface)
+            else:
+                variant.value = next_value
+            next_value += 1
+
+    def count(self):
+        return 0
+
+    def isScriptable(self):
+        return True
+
+    def nativeType(self, calltype):
+        if 'out' in calltype:
+            return "%s::%s *" % (self.iface.name, self.basename)
+        return "%s::%s " % (self.iface.name, self.basename)
+
+    def rustType(self, calltype):
+        raise RustNoncompat('cenums unimplemented')
+
+    def __str__(self):
+        body = ', '.join('%s = %s' % v for v in self.variants)
+        return "\tcenum %s : %d { %s };\n" % (self.name, self.width, body)
+
+
 class Attribute(object):
     kind = 'attribute'
     noscript = False
+    notxpcom = False
     readonly = False
     symbol = False
     implicit_jscontext = False
@@ -917,6 +1010,9 @@ class Attribute(object):
     must_use = False
     binaryname = None
     infallible = False
+    # explicit_can_run_script is true if the attribute is explicitly annotated
+    # as being able to cause script to run.
+    explicit_can_run_script = False
 
     def __init__(self, type, name, attlist, readonly, location, doccomments):
         self.type = type
@@ -940,6 +1036,8 @@ class Attribute(object):
 
             if name == 'noscript':
                 self.noscript = True
+            elif name == 'notxpcom':
+                self.notxpcom = True
             elif name == 'symbol':
                 self.symbol = True
             elif name == 'implicit_jscontext':
@@ -950,6 +1048,8 @@ class Attribute(object):
                 self.must_use = True
             elif name == 'infallible':
                 self.infallible = True
+            elif name == 'can_run_script':
+                self.explicit_can_run_script = True
             else:
                 raise IDLError("Unexpected attribute '%s'" % name, aloc)
 
@@ -959,9 +1059,10 @@ class Attribute(object):
         if self.infallible and self.realtype.kind not in ['builtin',
                                                           'interface',
                                                           'forward',
-                                                          'webidl']:
+                                                          'webidl',
+                                                          'cenum']:
             raise IDLError('[infallible] only works on interfaces, domobjects, and builtin types '
-                           '(numbers, booleans, and raw char types)',
+                           '(numbers, booleans, cenum, and raw char types)',
                            self.location)
         if self.infallible and not iface.attributes.builtinclass:
             raise IDLError('[infallible] attributes are only allowed on '
@@ -976,7 +1077,7 @@ class Attribute(object):
     def isScriptable(self):
         if not self.iface.attributes.scriptable:
             return False
-        return not self.noscript
+        return not (self.noscript or self.notxpcom)
 
     def __str__(self):
         return "\t%sattribute %s %s\n" % (self.readonly and 'readonly ' or '',
@@ -996,6 +1097,9 @@ class Method(object):
     nostdcall = False
     must_use = False
     optional_argc = False
+    # explicit_can_run_script is true if the method is explicitly annotated
+    # as being able to cause script to run.
+    explicit_can_run_script = False
 
     def __init__(self, type, name, attlist, paramlist, location, doccomments, raises):
         self.type = type
@@ -1032,6 +1136,8 @@ class Method(object):
                 self.nostdcall = True
             elif name == 'must_use':
                 self.must_use = True
+            elif name == 'can_run_script':
+                self.explicit_can_run_script = True
             else:
                 raise IDLError("Unexpected attribute '%s'" % name, aloc)
 
@@ -1243,9 +1349,16 @@ class Array(object):
             return base
 
     def rustType(self, calltype):
-        # NOTE: To add Rust support, ensure 'element' is handled correctly in
-        # all rustType callees.
-        raise RustNoncompat("Array<...> types")
+        if calltype == 'legacyelement':
+            raise IDLError("[array] Array<T> is unsupported", self.location)
+
+        base = 'thin_vec::ThinVec<%s>' % self.type.rustType('element')
+        if 'out' in calltype:
+            return '*mut %s' % base
+        elif 'in' == calltype:
+            return '*const %s' % base
+        else:
+            return base
 
 
 TypeId = namedtuple('TypeId', 'name params')
@@ -1264,6 +1377,7 @@ TypeId.__new__.__defaults__ = (None,)
 
 class IDLParser(object):
     keywords = {
+        'cenum': 'CENUM',
         'const': 'CONST',
         'interface': 'INTERFACE',
         'in': 'IN',
@@ -1568,6 +1682,34 @@ class IDLParser(object):
         n1 = p[1]
         n2 = p[3]
         p[0] = lambda i: n1(i) | n2(i)
+
+    def p_member_cenum(self, p):
+        """member : CENUM IDENTIFIER ':' NUMBER '{' variants '}' ';'"""
+        p[0] = CEnum(name=p[2],
+                     width=int(p[4]),
+                     variants=p[6],
+                     location=self.getLocation(p, 1),
+                     doccomments=p.slice[1].doccomments)
+
+    def p_variants_start(self, p):
+        """variants : """
+        p[0] = []
+
+    def p_variants_single(self, p):
+        """variants : variant"""
+        p[0] = [p[1]]
+
+    def p_variants_continue(self, p):
+        """variants : variant ',' variants"""
+        p[0] = [p[1]] + p[3]
+
+    def p_variant_implicit(self, p):
+        """variant : IDENTIFIER"""
+        p[0] = CEnumVariant(p[1], None, self.getLocation(p, 1))
+
+    def p_variant_explicit(self, p):
+        """variant : IDENTIFIER '=' number"""
+        p[0] = CEnumVariant(p[1], p[3], self.getLocation(p, 1))
 
     def p_member_att(self, p):
         """member : attributes optreadonly ATTRIBUTE type IDENTIFIER ';'"""

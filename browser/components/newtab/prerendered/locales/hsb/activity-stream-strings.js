@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "W porjadku, sym zrozumił",
   "prefs_home_header": "Wobsah startoweje strony Firefox",
   "prefs_home_description": "Wubjerće, kotry wobsah chceće na swojej startowej wobrazowce Firefox měć.",
+  "prefs_content_discovery_header": "Startowa strona Firefox",
+  "prefs_content_discovery_description": "Content Discovery na startowej stronje Firefox wam zmóžnja, w interneće relewantne nastawki wysokeje kwality namakać.",
+  "prefs_content_discovery_button": "Content Discovery znjemóžnić",
   "prefs_section_rows_option": "{num} linka;{num} lince;{num} linki;{num} linkow",
   "prefs_search_header": "Webpytanje",
   "prefs_topsites_description": "Sydła, kotrež najhusćišo wopytujeće",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Składujće stawizny, kotrež so wam spodobuja, w Pocket a žiwće swój duch z fascinowacymi čitančkami.",
   "highlights_empty_state": "Započńće přehladować, a pokazamy někotre wulkotne nastawki, wideja a druhe strony, kotrež sće njedawno wopytał abo tu jako zapołožki składował.",
   "topstories_empty_state": "To je nachwilu wšitko. Wróćće so pozdźišo dalšich wulkotnych stawiznow dla wot {provider}. Njemóžeće čakać? Wubjerće woblubowanu temu, zo byšće dalše wulkotne stawizny z weba namakał.",
-  "manual_migration_explanation2": "Wupruwujće Firefox ze zapołožkami, historiju a hesłami z druheho wobhladowaka.",
-  "manual_migration_cancel_button": "Ně, dźakuju so",
-  "manual_migration_import_button": "Nětko importować",
   "error_fallback_default_info": "Hopla, při čitanju tutoho wobsaha je so něšto nimokuliło.",
   "error_fallback_default_refresh_suggestion": "Aktualizujće stronu, zo byšće hišće raz spytał.",
   "section_menu_action_remove_section": "Wotrězk wotstronić",
@@ -108,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Pokročować",
   "firstrun_skip_login": "Tutón krok přeskočić",
   "context_menu_title": "Meni wočinić",
-  "pocket_learn_more": "Dalše informacije"
+  "manual_migration_explanation2": "Wupruwujće Firefox ze zapołožkami, historiju a hesłami z druheho wobhladowaka.",
+  "manual_migration_cancel_button": "Ně, dźakuju so",
+  "manual_migration_import_button": "Nětko importować"
 };

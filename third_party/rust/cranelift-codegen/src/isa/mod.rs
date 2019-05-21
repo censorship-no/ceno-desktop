@@ -46,36 +46,41 @@
 //! The configured target ISA trait object is a `Box<TargetIsa>` which can be used for multiple
 //! concurrent function compilations.
 
-pub use isa::constraints::{BranchRange, ConstraintKind, OperandConstraint, RecipeConstraints};
-pub use isa::encoding::{EncInfo, Encoding};
-pub use isa::registers::{regs_overlap, RegClass, RegClassIndex, RegInfo, RegUnit};
-pub use isa::stack::{StackBase, StackBaseMask, StackRef};
+pub use crate::isa::call_conv::CallConv;
+pub use crate::isa::constraints::{
+    BranchRange, ConstraintKind, OperandConstraint, RecipeConstraints,
+};
+pub use crate::isa::encoding::{base_size, EncInfo, Encoding};
+pub use crate::isa::registers::{regs_overlap, RegClass, RegClassIndex, RegInfo, RegUnit};
+pub use crate::isa::stack::{StackBase, StackBaseMask, StackRef};
 
-use binemit;
-use flowgraph;
-use ir;
-use isa::enc_tables::Encodings;
-use regalloc;
-use result::CodegenResult;
-use settings;
-use settings::{CallConv, SetResult};
+use crate::binemit;
+use crate::flowgraph;
+use crate::ir;
+use crate::isa::enc_tables::Encodings;
+use crate::regalloc;
+use crate::result::CodegenResult;
+use crate::settings;
+use crate::settings::SetResult;
+use crate::timing;
+use core::fmt;
+use failure_derive::Fail;
 use std::boxed::Box;
-use std::fmt;
-use target_lexicon::{Architecture, Triple};
-use timing;
+use target_lexicon::{Architecture, PointerWidth, Triple};
 
-#[cfg(build_riscv)]
+#[cfg(feature = "riscv")]
 mod riscv;
 
-#[cfg(build_x86)]
+#[cfg(feature = "x86")]
 mod x86;
 
-#[cfg(build_arm32)]
+#[cfg(feature = "arm32")]
 mod arm32;
 
-#[cfg(build_arm64)]
+#[cfg(feature = "arm64")]
 mod arm64;
 
+mod call_conv;
 mod constraints;
 mod enc_tables;
 mod encoding;
@@ -85,12 +90,12 @@ mod stack;
 /// Returns a builder that can create a corresponding `TargetIsa`
 /// or `Err(LookupError::Unsupported)` if not enabled.
 macro_rules! isa_builder {
-    ($module:ident, $name:ident) => {{
-        #[cfg($name)]
+    ($name:ident, $feature:tt) => {{
+        #[cfg(feature = $feature)]
         fn $name(triple: Triple) -> Result<Builder, LookupError> {
-            Ok($module::isa_builder(triple))
+            Ok($name::isa_builder(triple))
         };
-        #[cfg(not($name))]
+        #[cfg(not(feature = $feature))]
         fn $name(_triple: Triple) -> Result<Builder, LookupError> {
             Err(LookupError::Unsupported)
         }
@@ -102,9 +107,9 @@ macro_rules! isa_builder {
 /// Return a builder that can create a corresponding `TargetIsa`.
 pub fn lookup(triple: Triple) -> Result<Builder, LookupError> {
     match triple.architecture {
-        Architecture::Riscv32 | Architecture::Riscv64 => isa_builder!(riscv, build_riscv)(triple),
+        Architecture::Riscv32 | Architecture::Riscv64 => isa_builder!(riscv, "riscv")(triple),
         Architecture::I386 | Architecture::I586 | Architecture::I686 | Architecture::X86_64 => {
-            isa_builder!(x86, build_x86)(triple)
+            isa_builder!(x86, "x86")(triple)
         }
         Architecture::Thumbv6m
         | Architecture::Thumbv7em
@@ -113,19 +118,21 @@ pub fn lookup(triple: Triple) -> Result<Builder, LookupError> {
         | Architecture::Armv4t
         | Architecture::Armv5te
         | Architecture::Armv7
-        | Architecture::Armv7s => isa_builder!(arm32, build_arm32)(triple),
-        Architecture::Aarch64 => isa_builder!(arm64, build_arm64)(triple),
+        | Architecture::Armv7s => isa_builder!(arm32, "arm32")(triple),
+        Architecture::Aarch64 => isa_builder!(arm64, "arm64")(triple),
         _ => Err(LookupError::Unsupported),
     }
 }
 
 /// Describes reason for target lookup failure
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
+#[derive(Fail, PartialEq, Eq, Copy, Clone, Debug)]
 pub enum LookupError {
     /// Support for this target was disabled in the current build.
+    #[fail(display = "Support for this target is disabled")]
     SupportDisabled,
 
     /// Support for this target has not yet been implemented.
+    #[fail(display = "Support for this target has not been implemented yet")]
     Unsupported,
 }
 
@@ -162,9 +169,37 @@ impl settings::Configurable for Builder {
 pub type Legalize =
     fn(ir::Inst, &mut ir::Function, &mut flowgraph::ControlFlowGraph, &TargetIsa) -> bool;
 
+/// This struct provides information that a frontend may need to know about a target to
+/// produce Cranelift IR for the target.
+#[derive(Clone, Copy)]
+pub struct TargetFrontendConfig {
+    /// The default calling convention of the target.
+    pub default_call_conv: CallConv,
+
+    /// The pointer width of the target.
+    pub pointer_width: PointerWidth,
+}
+
+impl TargetFrontendConfig {
+    /// Get the pointer type of this target.
+    pub fn pointer_type(self) -> ir::Type {
+        ir::Type::int(u16::from(self.pointer_bits())).unwrap()
+    }
+
+    /// Get the width of pointers on this target, in units of bits.
+    pub fn pointer_bits(self) -> u8 {
+        self.pointer_width.bits()
+    }
+
+    /// Get the width of pointers on this target, in units of bytes.
+    pub fn pointer_bytes(self) -> u8 {
+        self.pointer_width.bytes()
+    }
+}
+
 /// Methods that are specialized to a target ISA. Implies a Display trait that shows the
 /// shared flags, as well as any isa-specific flags.
-pub trait TargetIsa: fmt::Display {
+pub trait TargetIsa: fmt::Display + Sync {
     /// Get the name of this ISA.
     fn name(&self) -> &'static str;
 
@@ -174,19 +209,37 @@ pub trait TargetIsa: fmt::Display {
     /// Get the ISA-independent flags that were used to make this trait object.
     fn flags(&self) -> &settings::Flags;
 
+    /// Get the default calling convention of this target.
+    fn default_call_conv(&self) -> CallConv {
+        CallConv::triple_default(self.triple())
+    }
+
     /// Get the pointer type of this ISA.
     fn pointer_type(&self) -> ir::Type {
         ir::Type::int(u16::from(self.pointer_bits())).unwrap()
     }
 
+    /// Get the width of pointers on this ISA.
+    fn pointer_width(&self) -> PointerWidth {
+        self.triple().pointer_width().unwrap()
+    }
+
     /// Get the width of pointers on this ISA, in units of bits.
     fn pointer_bits(&self) -> u8 {
-        self.triple().pointer_width().unwrap().bits()
+        self.pointer_width().bits()
     }
 
     /// Get the width of pointers on this ISA, in units of bytes.
     fn pointer_bytes(&self) -> u8 {
-        self.triple().pointer_width().unwrap().bytes()
+        self.pointer_width().bytes()
+    }
+
+    /// Get the information needed by frontends producing Cranelift IR.
+    fn frontend_config(&self) -> TargetFrontendConfig {
+        TargetFrontendConfig {
+            default_call_conv: self.default_call_conv(),
+            pointer_width: self.pointer_width(),
+        }
     }
 
     /// Does the CPU implement scalar comparisons using a CPU flags register?
@@ -202,7 +255,7 @@ pub trait TargetIsa: fmt::Display {
     /// Get a data structure describing the registers in this ISA.
     fn register_info(&self) -> RegInfo;
 
-    /// Returns an iterartor over legal encodings for the instruction.
+    /// Returns an iterator over legal encodings for the instruction.
     fn legal_encodings<'a>(
         &'a self,
         func: &'a ir::Function,
@@ -284,8 +337,8 @@ pub trait TargetIsa: fmt::Display {
     fn prologue_epilogue(&self, func: &mut ir::Function) -> CodegenResult<()> {
         let _tt = timing::prologue_epilogue();
         // This default implementation is unlikely to be good enough.
-        use ir::stackslot::{StackOffset, StackSize};
-        use stack_layout::layout_stack;
+        use crate::ir::stackslot::{StackOffset, StackSize};
+        use crate::stack_layout::layout_stack;
 
         let word_size = StackSize::from(self.pointer_bytes());
 
@@ -305,6 +358,10 @@ pub trait TargetIsa: fmt::Display {
     ///
     /// Note that this will call `put*` methods on the `sink` trait object via its vtable which
     /// is not the fastest way of emitting code.
+    ///
+    /// This function is under the "testing_hooks" feature, and is only suitable for use by
+    /// test harnesses. It increases code size, and is inefficient.
+    #[cfg(feature = "testing_hooks")]
     fn emit_inst(
         &self,
         func: &ir::Function,
@@ -314,7 +371,5 @@ pub trait TargetIsa: fmt::Display {
     );
 
     /// Emit a whole function into memory.
-    ///
-    /// This is more performant than calling `emit_inst` for each instruction.
     fn emit_function_to_memory(&self, func: &ir::Function, sink: &mut binemit::MemoryCodeSink);
 }

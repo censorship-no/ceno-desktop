@@ -8,7 +8,6 @@ import errno
 import json
 import os
 import platform
-import random
 import subprocess
 import sys
 import uuid
@@ -61,6 +60,7 @@ MACH_MODULES = [
     'testing/talos/mach_commands.py',
     'testing/web-platform/mach_commands.py',
     'testing/xpcshell/mach_commands.py',
+    'toolkit/components/telemetry/tests/marionette/mach_commands.py',
     'tools/compare-locales/mach_commands.py',
     'tools/docs/mach_commands.py',
     'tools/lint/mach_commands.py',
@@ -120,10 +120,6 @@ CATEGORIES = {
         'priority': 0,
     },
 }
-
-
-# We submit data to telemetry approximately every this many mach invocations
-TELEMETRY_SUBMISSION_FREQUENCY = 10
 
 
 def search_path(mozilla_dir, packages_txt):
@@ -208,29 +204,7 @@ def bootstrap(topsrcdir, mozilla_dir=None):
                 mozversioncontrol.MissingVCSTool):
             return None
 
-    def telemetry_handler(context, data):
-        # We have not opted-in to telemetry
-        if not context.settings.build.telemetry:
-            return
-
-        telemetry_dir = os.path.join(get_state_dir()[0], 'telemetry')
-        try:
-            os.mkdir(telemetry_dir)
-        except OSError as e:
-            if e.errno != errno.EEXIST:
-                raise
-        outgoing_dir = os.path.join(telemetry_dir, 'outgoing')
-        try:
-            os.mkdir(outgoing_dir)
-        except OSError as e:
-            if e.errno != errno.EEXIST:
-                raise
-
-        with open(os.path.join(outgoing_dir, str(uuid.uuid4()) + '.json'),
-                  'w') as f:
-            json.dump(data, f, sort_keys=True)
-
-    def should_skip_dispatch(context, handler):
+    def should_skip_telemetry_submission(handler):
         # The user is performing a maintenance command.
         if handler.name in ('bootstrap', 'doctor', 'mach-commands', 'vcs-setup',
                             # We call mach environment in client.mk which would cause the
@@ -238,47 +212,96 @@ def bootstrap(topsrcdir, mozilla_dir=None):
                             'environment'):
             return True
 
-        # We are running in automation.
-        if 'MOZ_AUTOMATION' in os.environ or 'TASK_ID' in os.environ:
-            return True
-
-        # The environment is likely a machine invocation.
-        if sys.stdin.closed or not sys.stdin.isatty():
+        # Never submit data when running in automation or when running tests.
+        if any(e in os.environ for e in ('MOZ_AUTOMATION', 'TASK_ID', 'MACH_TELEMETRY_NO_SUBMIT')):
             return True
 
         return False
 
-    def post_dispatch_handler(context, handler, args):
+    def post_dispatch_handler(context, handler, instance, result,
+                              start_time, end_time, depth, args):
         """Perform global operations after command dispatch.
 
 
         For now,  we will use this to handle build system telemetry.
         """
-        # Don't do anything when...
-        if should_skip_dispatch(context, handler):
+        # Don't write telemetry data if this mach command was invoked as part of another
+        # mach command.
+        if depth != 1 or os.environ.get('MACH_MAIN_PID') != str(os.getpid()):
+            return
+
+        # Don't write telemetry data for 'mach' when 'DISABLE_TELEMETRY' is set.
+        if os.environ.get('DISABLE_TELEMETRY') == '1':
             return
 
         # We have not opted-in to telemetry
         if not context.settings.build.telemetry:
             return
 
-        # Every n-th operation
-        if random.randint(1, TELEMETRY_SUBMISSION_FREQUENCY) != 1:
-            return
+        from mozbuild.telemetry import gather_telemetry
+        from mozbuild.base import MozbuildObject
+        import mozpack.path as mozpath
 
+        if not isinstance(instance, MozbuildObject):
+            instance = MozbuildObject.from_environment()
+
+        try:
+            substs = instance.substs
+        except Exception:
+            substs = {}
+
+        # We gather telemetry for every operation.
+        paths = {
+            instance.topsrcdir: '$topsrcdir/',
+            instance.topobjdir: '$topobjdir/',
+            mozpath.normpath(os.path.expanduser('~')): '$HOME/',
+        }
+        # This might override one of the existing entries, that's OK.
+        # We don't use a sigil here because we treat all arguments as potentially relative
+        # paths, so we'd like to get them back as they were specified.
+        paths[mozpath.normpath(os.getcwd())] = ''
+        data = gather_telemetry(command=handler.name, success=(result == 0),
+                                start_time=start_time, end_time=end_time,
+                                mach_context=context, substs=substs,
+                                paths=paths)
+        if data:
+            telemetry_dir = os.path.join(get_state_dir(), 'telemetry')
+            try:
+                os.mkdir(telemetry_dir)
+            except OSError as e:
+                if e.errno != errno.EEXIST:
+                    raise
+            outgoing_dir = os.path.join(telemetry_dir, 'outgoing')
+            try:
+                os.mkdir(outgoing_dir)
+            except OSError as e:
+                if e.errno != errno.EEXIST:
+                    raise
+
+            with open(os.path.join(outgoing_dir, str(uuid.uuid4()) + '.json'),
+                      'w') as f:
+                json.dump(data, f, sort_keys=True)
+
+        if should_skip_telemetry_submission(handler):
+            return True
+
+        state_dir = get_state_dir()
+
+        machpath = os.path.join(instance.topsrcdir, 'mach')
         with open(os.devnull, 'wb') as devnull:
-            subprocess.Popen([sys.executable,
+            subprocess.Popen([sys.executable, machpath, 'python',
+                              '--no-virtualenv',
                               os.path.join(topsrcdir, 'build',
                                            'submit_telemetry_data.py'),
-                              get_state_dir()[0]],
+                              state_dir],
                              stdout=devnull, stderr=devnull)
 
     def populate_context(context, key=None):
         if key is None:
             return
         if key == 'state_dir':
-            state_dir, is_environ = get_state_dir()
-            if is_environ:
+            state_dir = get_state_dir()
+            if state_dir == os.environ.get('MOZBUILD_STATE_PATH'):
                 if not os.path.exists(state_dir):
                     print('Creating global state directory from environment variable: %s'
                           % state_dir)
@@ -297,11 +320,11 @@ def bootstrap(topsrcdir, mozilla_dir=None):
 
             return state_dir
 
+        if key == 'local_state_dir':
+            return get_state_dir(srcdir=True)
+
         if key == 'topdir':
             return topsrcdir
-
-        if key == 'telemetry_handler':
-            return telemetry_handler
 
         if key == 'post_dispatch_handler':
             return post_dispatch_handler
@@ -311,12 +334,17 @@ def bootstrap(topsrcdir, mozilla_dir=None):
 
         raise AttributeError(key)
 
+    # Note which process is top-level so that recursive mach invocations can avoid writing
+    # telemetry data.
+    if 'MACH_MAIN_PID' not in os.environ:
+        os.environ[b'MACH_MAIN_PID'] = str(os.getpid()).encode('ascii')
+
     driver = mach.main.Mach(os.getcwd())
     driver.populate_context_handler = populate_context
 
     if not driver.settings_paths:
         # default global machrc location
-        driver.settings_paths.append(get_state_dir()[0])
+        driver.settings_paths.append(get_state_dir())
     # always load local repository configuration
     driver.settings_paths.append(mozilla_dir)
 

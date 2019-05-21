@@ -4,7 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 using LayoutDeviceIntPoint from "Units.h";
-using struct mozilla::layers::ScrollableLayerGuid from "FrameMetrics.h";
+using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
 
 using nsEventStatus from "mozilla/EventForwards.h";
 using EventMessage from "mozilla/EventForwards.h";
@@ -15,6 +15,8 @@ using class mozilla::PinchGestureInput from "InputData.h";
 using class mozilla::TapGestureInput from "InputData.h";
 using class mozilla::ScrollWheelInput from "InputData.h";
 using class mozilla::KeyboardInput from "InputData.h";
+
+using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
 
 include protocol PGPU;
 
@@ -84,7 +86,8 @@ parent:
   sync ProcessUnhandledEvent(LayoutDeviceIntPoint aRefPoint)
     returns (LayoutDeviceIntPoint   aOutRefPoint,
              ScrollableLayerGuid    aOutTargetGuid,
-             uint64_t               aOutFocusSequenceNumber);
+             uint64_t               aOutFocusSequenceNumber,
+             LayersId               aOutLayersId);
 
   async __delete__();
 };

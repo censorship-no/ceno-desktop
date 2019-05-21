@@ -1,8 +1,7 @@
 "use strict";
 
 (function() {
-
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function startProfiler(settings) {
   Services.profiler.StartProfiler(
@@ -11,7 +10,8 @@ function startProfiler(settings) {
     settings.features,
     settings.features.length,
     settings.threads,
-    settings.threads.length
+    settings.threads.length,
+    settings.duration
   );
 
   info("Profiler has started");
@@ -58,5 +58,4 @@ async function runTest(settings, workload) {
 }
 
 window.runTest = runTest;
-
 })();

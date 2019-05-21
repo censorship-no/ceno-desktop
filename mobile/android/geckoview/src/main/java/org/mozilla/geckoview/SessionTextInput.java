@@ -7,7 +7,6 @@ package org.mozilla.geckoview;
 
 import org.mozilla.gecko.InputMethods;
 import org.mozilla.gecko.annotation.WrapForJNI;
-import org.mozilla.gecko.GeckoEditableChild;
 import org.mozilla.gecko.IGeckoEditableParent;
 import org.mozilla.gecko.NativeQueue;
 import org.mozilla.gecko.util.ActivityUtils;
@@ -23,8 +22,10 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Build;
 import android.os.Handler;
+import android.support.annotation.AnyThread;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.annotation.UiThread;
 import android.text.Editable;
 import android.text.InputType;
 import android.util.Log;
@@ -111,6 +112,7 @@ public final class SessionTextInput {
                               String actionHint, int flag);
         void onSelectionChange();
         void onTextChange();
+        void onDiscardComposition();
         void onDefaultKeyEvent(KeyEvent event);
         void updateCompositionRects(final RectF[] aRects);
     }
@@ -203,6 +205,10 @@ public final class SessionTextInput {
             final View view = session.getTextInput().getView();
             final InputMethodManager imm = getInputMethodManager(view);
             if (imm != null) {
+                // When composition start and end is -1,
+                // InputMethodManager.updateSelection will remove composition
+                // on most IMEs. If not working, we have to add a workaround
+                // to EditableListener.onDiscardComposition.
                 imm.updateSelection(view, selStart, selEnd, compositionStart, compositionEnd);
             }
         }
@@ -273,7 +279,6 @@ public final class SessionTextInput {
     private final GeckoSession mSession;
     private final NativeQueue mQueue;
     private final GeckoEditable mEditable;
-    private final GeckoEditableChild mEditableChild;
     private InputConnectionClient mInputConnection;
     private GeckoSession.TextInputDelegate mDelegate;
     // Auto-fill nodes.
@@ -287,8 +292,6 @@ public final class SessionTextInput {
         mSession = session;
         mQueue = queue;
         mEditable = new GeckoEditable(session);
-        mEditableChild = new GeckoEditableChild(mEditable);
-        mEditable.setDefaultEditableChild(mEditableChild);
 
         session.getEventDispatcher().registerUiThreadListener(
                 new BundleEventListener() {
@@ -312,11 +315,10 @@ public final class SessionTextInput {
 
     /* package */ void onWindowChanged(final GeckoSession.Window window) {
         if (mQueue.isReady()) {
-            window.attachEditable(mEditable, mEditableChild);
+            window.attachEditable(mEditable);
         } else {
             mQueue.queueUntilReady(window, "attachEditable",
-                                   IGeckoEditableParent.class, mEditable,
-                                   GeckoEditableChild.class, mEditableChild);
+                                   IGeckoEditableParent.class, mEditable);
         }
     }
 
@@ -338,6 +340,7 @@ public final class SessionTextInput {
      * @param defHandler Handler returned by the system {@code getHandler} implementation.
      * @return Handler to return to the system through {@code getHandler}.
      */
+    @AnyThread
     public synchronized @NonNull Handler getHandler(final @NonNull Handler defHandler) {
         // May be called on any thread.
         if (mInputConnection != null) {
@@ -352,6 +355,7 @@ public final class SessionTextInput {
      * @return Current text input View or null if not set.
      * @see #setView(View)
      */
+    @UiThread
     public @Nullable View getView() {
         ThreadUtils.assertOnUiThread();
         return mInputConnection != null ? mInputConnection.getView() : null;
@@ -366,6 +370,7 @@ public final class SessionTextInput {
      * @param view Text input View or null to clear current View.
      * @see #getView()
      */
+    @UiThread
     public synchronized void setView(final @Nullable View view) {
         ThreadUtils.assertOnUiThread();
 
@@ -386,6 +391,7 @@ public final class SessionTextInput {
      * @return InputConnection instance, or null if there is no active input
      *         (or if in viewless mode).
      */
+    @AnyThread
     public synchronized @Nullable InputConnection onCreateInputConnection(
             final @NonNull EditorInfo attrs) {
         // May be called on any thread.
@@ -404,6 +410,7 @@ public final class SessionTextInput {
      * @param event KeyEvent instance.
      * @return True if the event was handled.
      */
+    @UiThread
     public boolean onKeyPreIme(final int keyCode, final @NonNull KeyEvent event) {
         ThreadUtils.assertOnUiThread();
         return mEditable.onKeyPreIme(getView(), keyCode, event);
@@ -416,6 +423,7 @@ public final class SessionTextInput {
      * @param event KeyEvent instance.
      * @return True if the event was handled.
      */
+    @UiThread
     public boolean onKeyDown(final int keyCode, final @NonNull KeyEvent event) {
         ThreadUtils.assertOnUiThread();
         return mEditable.onKeyDown(getView(), keyCode, event);
@@ -428,6 +436,7 @@ public final class SessionTextInput {
      * @param event KeyEvent instance.
      * @return True if the event was handled.
      */
+    @UiThread
     public boolean onKeyUp(final int keyCode, final @NonNull KeyEvent event) {
         ThreadUtils.assertOnUiThread();
         return mEditable.onKeyUp(getView(), keyCode, event);
@@ -440,6 +449,7 @@ public final class SessionTextInput {
      * @param event KeyEvent instance.
      * @return True if the event was handled.
      */
+    @UiThread
     public boolean onKeyLongPress(final int keyCode, final @NonNull KeyEvent event) {
         ThreadUtils.assertOnUiThread();
         return mEditable.onKeyLongPress(getView(), keyCode, event);
@@ -453,6 +463,7 @@ public final class SessionTextInput {
      * @param event KeyEvent instance.
      * @return True if the event was handled.
      */
+    @UiThread
     public boolean onKeyMultiple(final int keyCode, final int repeatCount,
                                  final @NonNull KeyEvent event) {
         ThreadUtils.assertOnUiThread();
@@ -464,6 +475,7 @@ public final class SessionTextInput {
      *
      * @param delegate TextInputDelegate instance or null to restore to default.
      */
+    @UiThread
     public void setDelegate(@Nullable final GeckoSession.TextInputDelegate delegate) {
         ThreadUtils.assertOnUiThread();
         mDelegate = delegate;
@@ -474,7 +486,8 @@ public final class SessionTextInput {
      *
      * @return TextInputDelegate instance or a default instance if no delegate has been set.
      */
-    public GeckoSession.TextInputDelegate getDelegate() {
+    @UiThread
+    public @NonNull GeckoSession.TextInputDelegate getDelegate() {
         ThreadUtils.assertOnUiThread();
         if (mDelegate == null) {
             mDelegate = DefaultDelegate.INSTANCE;
@@ -490,6 +503,7 @@ public final class SessionTextInput {
      *              AUTOFILL_FLAG_*} constants.
      */
     @TargetApi(23)
+    @UiThread
     public void onProvideAutofillVirtualStructure(@NonNull final ViewStructure structure,
                                                   final int flags) {
         final View view = getView();
@@ -523,7 +537,8 @@ public final class SessionTextInput {
      *
      * @param values Map of auto-fill IDs to values.
      */
-    public void autofill(final SparseArray<CharSequence> values) {
+    @UiThread
+    public void autofill(final @NonNull SparseArray<CharSequence> values) {
         if (mAutoFillRoots == null) {
             return;
         }
@@ -643,6 +658,7 @@ public final class SessionTextInput {
         }
 
         if (Build.VERSION.SDK_INT >= 26 && "INPUT".equals(tag)) {
+            // LastPass will fill password to the feild that setAutofillHints is unset and setInputType is set.
             switch (type) {
                 case "email":
                     structure.setAutofillHints(new String[] { View.AUTOFILL_HINT_EMAIL_ADDRESS });
@@ -661,13 +677,17 @@ public final class SessionTextInput {
                     structure.setAutofillHints(new String[] { View.AUTOFILL_HINT_PHONE });
                     structure.setInputType(InputType.TYPE_CLASS_PHONE);
                     break;
-                case "text":
-                    structure.setInputType(InputType.TYPE_CLASS_TEXT |
-                                           InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT);
-                    break;
                 case "url":
                     structure.setInputType(InputType.TYPE_CLASS_TEXT |
                                            InputType.TYPE_TEXT_VARIATION_URI);
+                    break;
+                case "text":
+                    final String autofillhint = bundle.getString("autofillhint", "");
+                    if (autofillhint.equals("username")) {
+                        structure.setAutofillHints(new String[] { View.AUTOFILL_HINT_USERNAME });
+                        structure.setInputType(InputType.TYPE_CLASS_TEXT |
+                                               InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT);
+                    }
                     break;
             }
         }

@@ -10,3 +10,7 @@ with Files('**'):
 DIRS += [
     'webcompat', 'ceno',
 ]
+if not CONFIG['MOZ_UPDATE_CHANNEL'] in ('release', 'esr'):
+    DIRS += [
+        'report-site-issue'
+    ]

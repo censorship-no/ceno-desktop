@@ -1,5 +1,3 @@
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 AntiTracking.runTest("Storage Access is removed when subframe navigates",
   // blocking callback
   async _ => {
@@ -10,7 +8,11 @@ AntiTracking.runTest("Storage Access is removed when subframe navigates",
   // non-blocking callback
   async _ => {
     /* import-globals-from storageAccessAPIHelpers.js */
-    await noStorageAccessInitially();
+    if (allowListed) {
+      await hasStorageAccessInitially();
+    } else {
+      await noStorageAccessInitially();
+    }
 
     /* import-globals-from storageAccessAPIHelpers.js */
     let [threw, rejected] = await callRequestStorageAccess();
@@ -26,7 +28,7 @@ AntiTracking.runTest("Storage Access is removed when subframe navigates",
   null, // extra prefs
   false, // no window open test
   false, // no user-interaction test
-  false, // no blocking notifications
+  0, // no blocking notifications
   false, // run in normal window
   null, // no iframe sandbox
   "navigate-subframe", // access removal type

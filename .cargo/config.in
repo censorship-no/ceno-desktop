@@ -9,7 +9,17 @@ replace-with = 'vendored-sources'
 
 [source."https://github.com/servo/serde"]
 git = "https://github.com/servo/serde"
-branch = "deserialize_from_enums8"
+branch = "deserialize_from_enums9"
+replace-with = "vendored-sources"
+
+[source."https://github.com/retep998/winapi-rs"]
+git = "https://github.com/froydnj/winapi-rs"
+branch = "aarch64"
+replace-with = "vendored-sources"
+
+[source."https://github.com/alexcrichton/cc-rs"]
+git = "https://github.com/glandium/cc-rs"
+branch = "1.0.23-clang-cl-aarch64"
 replace-with = "vendored-sources"
 
 [source.vendored-sources]

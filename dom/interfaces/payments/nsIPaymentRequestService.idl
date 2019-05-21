@@ -41,7 +41,7 @@ interface nsIPaymentRequestService : nsISupports
   void respondPayment(in nsIPaymentActionResponse aResponse);
 
   /**
-   *  Inform the merchant the shipping addres has changed.
+   *  Inform the merchant the shipping address has changed.
    *  @param requestId - the request identifier of the payment request.
    *  @param aAddress - the new payment address.
    */
@@ -65,6 +65,17 @@ interface nsIPaymentRequestService : nsISupports
                          in AString aPayerName,
                          in AString aPayerEmail,
                          in AString aPayerPhone);
+
+  /**
+   *  Inform the merchant the payment method has changed.
+   *  @param requestId - the request identifier of the payment request.
+   *  @param aMethodName - the changed payment method's name.
+   *  @param aMethodDetails - the changed payment method's details.
+   */
+  void changePaymentMethod(in AString requestId,
+                           in AString aMethodName,
+                           in nsIMethodChangeDetails aMethodDetails);
+
 
   /**
    *  Following APIs are for testing or platform code only. UI implementation

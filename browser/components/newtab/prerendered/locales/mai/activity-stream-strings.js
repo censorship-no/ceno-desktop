@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "ठीक अछि, बुझि गेलहुँ.",
   "prefs_home_header": "Firefox होम सामग्री",
   "prefs_home_description": "चुनू, Firefox होम स्क्रीन पर जे सामग्री चाहैत छी.",
+  "prefs_content_discovery_header": "Firefox Home",
+  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
+  "prefs_content_discovery_button": "Turn Off Content Discovery",
   "prefs_section_rows_option": "{num} पंक्ति;{num} पंक्ति सभ",
   "prefs_search_header": "वेब खोज",
   "prefs_topsites_description": "जे साइट अहाँ सबसँ बेसी विजिट कएलहुँ",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "ब्राउजिंग आरंभ करू, आओर हम अहाँक किछु बढियाँ नवीन आर्टिकिल, वीडियो, आओर आन पेज देखाएब, जकरा अङाँ हाले में विजिट कएलहुँ अथवा एतय बुकमार्क कएलहुँ.",
   "topstories_empty_state": "अहाँ आखिर धरि पहुँचि गेलहु, {provider} सँ बाद में फिनु टॉप स्टोरी देखू. इंतजार नहि कए सकब? अधिक बढिया स्टोरी वेब सँ पाबै लेल एकटा लेकप्रिय टॉपिक चुनू.",
-  "manual_migration_explanation2": "बुकमार्क, इतिहास आओर पासवर्ड सँग Firefox केँ आन ब्राउजर सँग आजमाबू. ",
-  "manual_migration_cancel_button": "नहि धन्यवाद",
-  "manual_migration_import_button": "आब आयात करू",
   "error_fallback_default_info": "ओह, बुझाय अछि जे कंटेंट लोड हए मे किछु गलत भ गेल.",
   "error_fallback_default_refresh_suggestion": "फेनु प्रयास करए लेल पेज रीफ्रेश करू.",
   "section_menu_action_remove_section": "खंड हटाबू",
@@ -107,5 +107,8 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "Privacy Notice",
   "firstrun_continue_to_login": "Continue",
   "firstrun_skip_login": "Skip this step",
-  "context_menu_title": "Open menu"
+  "context_menu_title": "Open menu",
+  "manual_migration_explanation2": "बुकमार्क, इतिहास आओर पासवर्ड सँग Firefox केँ आन ब्राउजर सँग आजमाबू. ",
+  "manual_migration_cancel_button": "नहि धन्यवाद",
+  "manual_migration_import_button": "आब आयात करू"
 };

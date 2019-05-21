@@ -16,7 +16,7 @@ var EXPORTED_SYMBOLS = [
   "Assert",
 ];
 
-ChromeUtils.import("resource://gre/modules/ObjectUtils.jsm");
+const {ObjectUtils} = ChromeUtils.import("resource://gre/modules/ObjectUtils.jsm");
 
 ChromeUtils.defineModuleGetter(this, "Promise",
                                "resource://gre/modules/Promise.jsm");
@@ -67,7 +67,6 @@ function truncate(text, newLength = kTruncateLength) {
     return text.length < newLength ? text : text.slice(0, newLength);
   }
     return text;
-
 }
 
 function getMessage(error, prefix = "") {
@@ -228,7 +227,11 @@ proto.report = function(failed, actual, expected, message, operator, truncate = 
  *        (string) Short explanation of the expected result
  */
 proto.ok = function(value, message) {
-  this.report(!value, value, true, message, "==");
+  if (arguments.length > 2) {
+    this.report(true, false, true, "Too many arguments passed to `Assert.ok()`", "==");
+  } else {
+    this.report(!value, value, true, message, "==");
+  }
 };
 
 /**

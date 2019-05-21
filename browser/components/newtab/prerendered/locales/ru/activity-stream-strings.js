@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Ок, понятно",
   "prefs_home_header": "Домашняя страница Firefox",
   "prefs_home_description": "Выберите, какое содержимое вы хотите видеть на домашней странице Firefox.",
+  "prefs_content_discovery_header": "Домашняя страница Firefox",
+  "prefs_content_discovery_description": "Обнаружение содержимого на домашней странице Firefox позволит вам находить высококачественные релевантные статьи со всего Интернета.",
+  "prefs_content_discovery_button": "Отключить обнаружение содержимого",
   "prefs_section_rows_option": "{num} строка;{num} строки;{num} строк",
   "prefs_search_header": "Поиск в Интернете",
   "prefs_topsites_description": "Сайты, которые вы чаще всего посещаете",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Сохраняйте интересные статьи в Pocket и подпитывайте свой ум увлекательным чтением.",
   "highlights_empty_state": "Начните веб-сёрфинг, и мы покажем вам здесь некоторые из интересных статей, видеороликов и других страниц, которые вы недавно посетили или добавили в закладки.",
   "topstories_empty_state": "Вы всё прочитали. Зайдите попозже, чтобы увидеть больше лучших статей от {provider}. Не можете ждать? Выберите популярную тему, чтобы найти больше интересных статей со всего Интернета.",
-  "manual_migration_explanation2": "Попробуйте Firefox с закладками, историей и паролями из другого браузера.",
-  "manual_migration_cancel_button": "Нет, спасибо",
-  "manual_migration_import_button": "Импортировать сейчас",
   "error_fallback_default_info": "К сожалению что-то пошло не так при загрузке этого содержимого.",
   "error_fallback_default_refresh_suggestion": "Обновить страницу, чтобы попробовать ещё раз.",
   "section_menu_action_remove_section": "Удалить раздел",
@@ -108,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Продолжить",
   "firstrun_skip_login": "Пропустить этот шаг",
   "context_menu_title": "Открыть меню",
-  "pocket_learn_more": "Подробнее"
+  "manual_migration_explanation2": "Попробуйте Firefox с закладками, историей и паролями из другого браузера.",
+  "manual_migration_cancel_button": "Нет, спасибо",
+  "manual_migration_import_button": "Импортировать сейчас"
 };

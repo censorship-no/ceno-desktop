@@ -7,7 +7,7 @@ DIRS += [
 
 ]
 
-DevToolsModules(
+CompiledModules(
     'getScope.js',
     'getVariables.js',
     'index.js',

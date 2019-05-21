@@ -123,8 +123,7 @@ function checkContentScalars(processData) {
  */
 async function waitForContentScalars() {
   await ContentTaskUtils.waitForCondition(() => {
-    const scalars =
-      Telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+    const scalars = Telemetry.getSnapshotForScalars("main", false);
     return Object.keys(scalars).includes("content");
   });
 }
@@ -141,6 +140,7 @@ add_task(async function() {
   do_get_profile(true);
   loadAddonManager(APP_ID, APP_NAME, APP_VERSION, PLATFORM_VERSION);
   finishAddonManagerStartup();
+  fakeIntlReady();
   await TelemetryController.testSetup();
   if (runningInParent) {
     setParentScalars();

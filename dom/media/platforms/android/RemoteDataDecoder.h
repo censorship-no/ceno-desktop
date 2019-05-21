@@ -16,47 +16,49 @@ namespace mozilla {
 
 DDLoggedTypeDeclNameAndBase(RemoteDataDecoder, MediaDataDecoder);
 
-class RemoteDataDecoder
-  : public MediaDataDecoder
-  , public DecoderDoctorLifeLogger<RemoteDataDecoder>
-{
-public:
-  static already_AddRefed<MediaDataDecoder>
-  CreateAudioDecoder(const CreateDecoderParams& aParams,
-                     const nsString& aDrmStubId,
-                     CDMProxy* aProxy);
+class RemoteDataDecoder : public MediaDataDecoder,
+                          public DecoderDoctorLifeLogger<RemoteDataDecoder> {
+ public:
+  static already_AddRefed<MediaDataDecoder> CreateAudioDecoder(
+      const CreateDecoderParams& aParams, const nsString& aDrmStubId,
+      CDMProxy* aProxy);
 
-  static already_AddRefed<MediaDataDecoder>
-  CreateVideoDecoder(const CreateDecoderParams& aParams,
-                     const nsString& aDrmStubId,
-                     CDMProxy* aProxy);
+  static already_AddRefed<MediaDataDecoder> CreateVideoDecoder(
+      const CreateDecoderParams& aParams, const nsString& aDrmStubId,
+      CDMProxy* aProxy);
 
   RefPtr<DecodePromise> Decode(MediaRawData* aSample) override;
   RefPtr<DecodePromise> Drain() override;
   RefPtr<FlushPromise> Flush() override;
   RefPtr<ShutdownPromise> Shutdown() override;
-  nsCString GetDescriptionName() const override
-  {
+  nsCString GetDescriptionName() const override {
     return NS_LITERAL_CSTRING("android decoder (remote)");
   }
 
-protected:
-  virtual ~RemoteDataDecoder() { }
-  RemoteDataDecoder(MediaData::Type aType,
-                    const nsACString& aMimeType,
+ protected:
+  virtual ~RemoteDataDecoder() {}
+  RemoteDataDecoder(MediaData::Type aType, const nsACString& aMimeType,
                     java::sdk::MediaFormat::Param aFormat,
                     const nsString& aDrmStubId, TaskQueue* aTaskQueue);
 
   // Methods only called on mTaskQueue.
+  RefPtr<FlushPromise> ProcessFlush();
   RefPtr<ShutdownPromise> ProcessShutdown();
   void UpdateInputStatus(int64_t aTimestamp, bool aProcessed);
   void UpdateOutputStatus(RefPtr<MediaData>&& aSample);
   void ReturnDecodedData();
   void DrainComplete();
   void Error(const MediaResult& aError);
-  void AssertOnTaskQueue()
-  {
-    MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
+  void AssertOnTaskQueue() { MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn()); }
+
+  enum class State { DRAINED, DRAINABLE, DRAINING, SHUTDOWN };
+  void SetState(State aState) {
+    AssertOnTaskQueue();
+    mState = aState;
+  }
+  State GetState() {
+    AssertOnTaskQueue();
+    return mState;
   }
 
   // Whether the sample will be used.
@@ -72,21 +74,23 @@ protected:
   nsString mDrmStubId;
 
   RefPtr<TaskQueue> mTaskQueue;
-  // Only ever accessed on mTaskqueue.
-  bool mShutdown = false;
+
+ private:
+  enum class PendingOp { INCREASE, DECREASE, CLEAR };
+  void UpdatePendingInputStatus(PendingOp aOp);
+  size_t HasPendingInputs() {
+    AssertOnTaskQueue();
+    return mNumPendingInputs > 0;
+  }
+
+  // The following members must only be accessed on mTaskqueue.
   MozPromiseHolder<DecodePromise> mDecodePromise;
   MozPromiseHolder<DecodePromise> mDrainPromise;
-  enum class DrainStatus
-  {
-    DRAINED,
-    DRAINABLE,
-    DRAINING,
-  };
-  DrainStatus mDrainStatus = DrainStatus::DRAINED;
   DecodedData mDecodedData;
+  State mState = State::DRAINED;
   size_t mNumPendingInputs;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

@@ -5,17 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGNumberPairSMILType.h"
-#include "nsSMILValue.h"
+
+#include "mozilla/SMILValue.h"
 #include "nsMathUtils.h"
 #include "nsDebug.h"
 
 namespace mozilla {
 
-/*static*/ SVGNumberPairSMILType SVGNumberPairSMILType::sSingleton;
+/*static*/
+SVGNumberPairSMILType SVGNumberPairSMILType::sSingleton;
 
-void
-SVGNumberPairSMILType::Init(nsSMILValue& aValue) const
-{
+void SVGNumberPairSMILType::Init(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.IsNull(), "Unexpected value type");
 
   aValue.mU.mNumberPair[0] = 0;
@@ -23,18 +23,15 @@ SVGNumberPairSMILType::Init(nsSMILValue& aValue) const
   aValue.mType = this;
 }
 
-void
-SVGNumberPairSMILType::Destroy(nsSMILValue& aValue) const
-{
+void SVGNumberPairSMILType::Destroy(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.mType == this, "Unexpected SMIL value");
   aValue.mU.mNumberPair[0] = 0;
   aValue.mU.mNumberPair[1] = 0;
-  aValue.mType = nsSMILNullType::Singleton();
+  aValue.mType = SMILNullType::Singleton();
 }
 
-nsresult
-SVGNumberPairSMILType::Assign(nsSMILValue& aDest, const nsSMILValue& aSrc) const
-{
+nsresult SVGNumberPairSMILType::Assign(SMILValue& aDest,
+                                       const SMILValue& aSrc) const {
   MOZ_ASSERT(aDest.mType == aSrc.mType, "Incompatible SMIL types");
   MOZ_ASSERT(aDest.mType == this, "Unexpected SMIL value");
 
@@ -43,10 +40,8 @@ SVGNumberPairSMILType::Assign(nsSMILValue& aDest, const nsSMILValue& aSrc) const
   return NS_OK;
 }
 
-bool
-SVGNumberPairSMILType::IsEqual(const nsSMILValue& aLeft,
-                               const nsSMILValue& aRight) const
-{
+bool SVGNumberPairSMILType::IsEqual(const SMILValue& aLeft,
+                                    const SMILValue& aRight) const {
   MOZ_ASSERT(aLeft.mType == aRight.mType, "Incompatible SMIL types");
   MOZ_ASSERT(aLeft.mType == this, "Unexpected type for SMIL value");
 
@@ -54,12 +49,10 @@ SVGNumberPairSMILType::IsEqual(const nsSMILValue& aLeft,
          aLeft.mU.mNumberPair[1] == aRight.mU.mNumberPair[1];
 }
 
-nsresult
-SVGNumberPairSMILType::Add(nsSMILValue& aDest, const nsSMILValue& aValueToAdd,
-                           uint32_t aCount) const
-{
-  MOZ_ASSERT(aValueToAdd.mType == aDest.mType,
-                  "Trying to add invalid types");
+nsresult SVGNumberPairSMILType::Add(SMILValue& aDest,
+                                    const SMILValue& aValueToAdd,
+                                    uint32_t aCount) const {
+  MOZ_ASSERT(aValueToAdd.mType == aDest.mType, "Trying to add invalid types");
   MOZ_ASSERT(aValueToAdd.mType == this, "Unexpected source type");
 
   aDest.mU.mNumberPair[0] += aValueToAdd.mU.mNumberPair[0] * aCount;
@@ -68,12 +61,10 @@ SVGNumberPairSMILType::Add(nsSMILValue& aDest, const nsSMILValue& aValueToAdd,
   return NS_OK;
 }
 
-nsresult
-SVGNumberPairSMILType::ComputeDistance(const nsSMILValue& aFrom,
-                                       const nsSMILValue& aTo,
-                                       double& aDistance) const
-{
-  MOZ_ASSERT(aFrom.mType == aTo.mType,"Trying to compare different types");
+nsresult SVGNumberPairSMILType::ComputeDistance(const SMILValue& aFrom,
+                                                const SMILValue& aTo,
+                                                double& aDistance) const {
+  MOZ_ASSERT(aFrom.mType == aTo.mType, "Trying to compare different types");
   MOZ_ASSERT(aFrom.mType == this, "Unexpected source type");
 
   double delta[2];
@@ -84,24 +75,24 @@ SVGNumberPairSMILType::ComputeDistance(const nsSMILValue& aFrom,
   return NS_OK;
 }
 
-nsresult
-SVGNumberPairSMILType::Interpolate(const nsSMILValue& aStartVal,
-                                   const nsSMILValue& aEndVal,
-                                   double aUnitDistance,
-                                   nsSMILValue& aResult) const
-{
+nsresult SVGNumberPairSMILType::Interpolate(const SMILValue& aStartVal,
+                                            const SMILValue& aEndVal,
+                                            double aUnitDistance,
+                                            SMILValue& aResult) const {
   MOZ_ASSERT(aStartVal.mType == aEndVal.mType,
              "Trying to interpolate different types");
   MOZ_ASSERT(aStartVal.mType == this, "Unexpected types for interpolation");
   MOZ_ASSERT(aResult.mType == this, "Unexpected result type");
 
   aResult.mU.mNumberPair[0] =
-    float(aStartVal.mU.mNumberPair[0] +
-          (aEndVal.mU.mNumberPair[0] - aStartVal.mU.mNumberPair[0]) * aUnitDistance);
+      float(aStartVal.mU.mNumberPair[0] +
+            (aEndVal.mU.mNumberPair[0] - aStartVal.mU.mNumberPair[0]) *
+                aUnitDistance);
   aResult.mU.mNumberPair[1] =
-    float(aStartVal.mU.mNumberPair[1] +
-          (aEndVal.mU.mNumberPair[1] - aStartVal.mU.mNumberPair[1]) * aUnitDistance);
+      float(aStartVal.mU.mNumberPair[1] +
+            (aEndVal.mU.mNumberPair[1] - aStartVal.mU.mNumberPair[1]) *
+                aUnitDistance);
   return NS_OK;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

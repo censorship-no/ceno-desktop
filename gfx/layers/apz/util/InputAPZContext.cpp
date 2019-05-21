@@ -15,33 +15,20 @@ nsEventStatus InputAPZContext::sApzResponse = nsEventStatus_eIgnore;
 bool InputAPZContext::sPendingLayerization = false;
 bool InputAPZContext::sRoutedToChildProcess = false;
 
-/*static*/ ScrollableLayerGuid
-InputAPZContext::GetTargetLayerGuid()
-{
-  return sGuid;
-}
+/*static*/
+ScrollableLayerGuid InputAPZContext::GetTargetLayerGuid() { return sGuid; }
 
-/*static*/ uint64_t
-InputAPZContext::GetInputBlockId()
-{
-  return sBlockId;
-}
+/*static*/
+uint64_t InputAPZContext::GetInputBlockId() { return sBlockId; }
 
-/*static*/ nsEventStatus
-InputAPZContext::GetApzResponse()
-{
-  return sApzResponse;
-}
+/*static*/
+nsEventStatus InputAPZContext::GetApzResponse() { return sApzResponse; }
 
-/*static*/ bool
-InputAPZContext::HavePendingLayerization()
-{
-  return sPendingLayerization;
-}
+/*static*/
+bool InputAPZContext::HavePendingLayerization() { return sPendingLayerization; }
 
-/*static*/ bool
-InputAPZContext::WasRoutedToChildProcess()
-{
+/*static*/
+bool InputAPZContext::WasRoutedToChildProcess() {
   return sRoutedToChildProcess;
 }
 
@@ -49,12 +36,11 @@ InputAPZContext::InputAPZContext(const ScrollableLayerGuid& aGuid,
                                  const uint64_t& aBlockId,
                                  const nsEventStatus& aApzResponse,
                                  bool aPendingLayerization)
-  : mOldGuid(sGuid)
-  , mOldBlockId(sBlockId)
-  , mOldApzResponse(sApzResponse)
-  , mOldPendingLayerization(sPendingLayerization)
-  , mOldRoutedToChildProcess(sRoutedToChildProcess)
-{
+    : mOldGuid(sGuid),
+      mOldBlockId(sBlockId),
+      mOldApzResponse(sApzResponse),
+      mOldPendingLayerization(sPendingLayerization),
+      mOldRoutedToChildProcess(sRoutedToChildProcess) {
   sGuid = aGuid;
   sBlockId = aBlockId;
   sApzResponse = aApzResponse;
@@ -62,8 +48,7 @@ InputAPZContext::InputAPZContext(const ScrollableLayerGuid& aGuid,
   sRoutedToChildProcess = false;
 }
 
-InputAPZContext::~InputAPZContext()
-{
+InputAPZContext::~InputAPZContext() {
   sGuid = mOldGuid;
   sBlockId = mOldBlockId;
   sApzResponse = mOldApzResponse;
@@ -71,11 +56,10 @@ InputAPZContext::~InputAPZContext()
   sRoutedToChildProcess = mOldRoutedToChildProcess;
 }
 
-/*static*/ void
-InputAPZContext::SetRoutedToChildProcess()
-{
+/*static*/
+void InputAPZContext::SetRoutedToChildProcess() {
   sRoutedToChildProcess = true;
 }
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla

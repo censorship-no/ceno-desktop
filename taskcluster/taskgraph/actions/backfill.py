@@ -6,6 +6,7 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import json
 import logging
 
 import requests
@@ -15,6 +16,7 @@ from .registry import register_callback_action
 from .util import find_decision_task, create_tasks, combine_task_graph_files
 from taskgraph.util.taskcluster import get_artifact_from_index
 from taskgraph.taskgraph import TaskGraph
+from taskgraph.util import taskcluster
 
 PUSHLOG_TMPL = '{}/json-pushes?version=2&startID={}&endID={}'
 INDEX_TMPL = 'gecko.v2.{}.pushlog-id.{}.decision'
@@ -25,7 +27,6 @@ logger = logging.getLogger(__name__)
 @register_callback_action(
     title='Backfill',
     name='backfill',
-    kind='hook',
     generic=True,
     symbol='Bk',
     description=('Take the label of the current task, '
@@ -52,22 +53,26 @@ logger = logging.getLogger(__name__)
                 'description': ('If true, the backfill will also retrigger the task '
                                 'on the selected push.')
             },
-            'addGeckoProfile': {
-                'type': 'boolean',
-                'default': False,
-                'title': 'Add Gecko Profile',
-                'description': 'If true, appends --geckoProfile to mozharness options.'
-            },
             'testPath': {
                 'type': 'string',
                 'title': 'Test Path',
+            },
+            'times': {
+                'type': 'integer',
+                'default': 1,
+                'minimum': 1,
+                'maximum': 10,
+                'title': 'Times',
+                'description': ('The number of times to execute each job '
+                                'you are backfilling.')
             }
         },
         'additionalProperties': False
     },
     available=lambda parameters: True
 )
-def backfill_action(parameters, graph_config, input, task_group_id, task_id, task):
+def backfill_action(parameters, graph_config, input, task_group_id, task_id):
+    task = taskcluster.get_task_definition(task_id)
     label = task['metadata']['name']
     pushes = []
     inclusive_tweak = 1 if input.get('inclusive') else 0
@@ -112,10 +117,6 @@ def backfill_action(parameters, graph_config, input, task_group_id, task_id, tas
             def modifier(task):
                 if task.label != label:
                     return task
-                if input.get('addGeckoProfile'):
-                    cmd = task.task['payload']['command']
-                    task.task['payload']['command'] = add_args_to_command(cmd, ['--geckoProfile'])
-                    task.task['extra']['treeherder']['symbol'] += '-p'
 
                 if input.get('testPath', ''):
                     is_wpttest = 'web-platform' in task.task['metadata']['name']
@@ -141,7 +142,10 @@ def backfill_action(parameters, graph_config, input, task_group_id, task_id, tas
                     if gpu_required:
                         verify_args.append('--gpu-required')
 
-                    task.task['payload']['env']['MOZHARNESS_TEST_PATHS'] = input.get('testPath')
+                    if 'testPath' in input:
+                        task.task['payload']['env']['MOZHARNESS_TEST_PATHS'] = json.dumps({
+                            task.task['extra']['suite']['flavor']: [input['testPath']]
+                        })
 
                     cmd_parts = task.task['payload']['command']
                     keep_args = ['--installer-url', '--download-symbols', '--test-packages-url']
@@ -177,8 +181,10 @@ def backfill_action(parameters, graph_config, input, task_group_id, task_id, tas
                     del task.task['extra']['treeherder']['groupSymbol']
                 return task
 
-            create_tasks([label], full_task_graph, label_to_taskid,
-                         push_params, push_decision_task_id, push, modifier=modifier)
+            times = input.get('times', 1)
+            for i in xrange(times):
+                create_tasks(graph_config, [label], full_task_graph, label_to_taskid,
+                             push_params, push_decision_task_id, push, modifier=modifier)
             backfill_pushes.append(push)
         else:
             logging.info('Could not find {} on {}. Skipping.'.format(label, push))

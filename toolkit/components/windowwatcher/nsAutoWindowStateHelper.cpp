@@ -7,7 +7,7 @@
 #include "nsAutoWindowStateHelper.h"
 
 #include "mozilla/dom/Event.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsString.h"
@@ -20,16 +20,14 @@ using namespace mozilla::dom;
  ****************************************************************/
 
 nsAutoWindowStateHelper::nsAutoWindowStateHelper(nsPIDOMWindowOuter* aWindow)
-  : mWindow(aWindow)
-  , mDefaultEnabled(DispatchEventToChrome("DOMWillOpenModalDialog"))
-{
+    : mWindow(aWindow),
+      mDefaultEnabled(DispatchEventToChrome("DOMWillOpenModalDialog")) {
   if (mWindow) {
     mWindow->EnterModalState();
   }
 }
 
-nsAutoWindowStateHelper::~nsAutoWindowStateHelper()
-{
+nsAutoWindowStateHelper::~nsAutoWindowStateHelper() {
   if (mWindow) {
     mWindow->LeaveModalState();
   }
@@ -39,9 +37,7 @@ nsAutoWindowStateHelper::~nsAutoWindowStateHelper()
   }
 }
 
-bool
-nsAutoWindowStateHelper::DispatchEventToChrome(const char* aEventName)
-{
+bool nsAutoWindowStateHelper::DispatchEventToChrome(const char* aEventName) {
   // XXXbz should we skip dispatching the event if the inner changed?
   // That is, should we store both the inner and the outer?
   if (!mWindow) {
@@ -50,14 +46,14 @@ nsAutoWindowStateHelper::DispatchEventToChrome(const char* aEventName)
 
   // The functions of nsContentUtils do not provide the required behavior,
   // so the following is inlined.
-  nsIDocument* doc = mWindow->GetExtantDoc();
+  Document* doc = mWindow->GetExtantDoc();
   if (!doc) {
     return true;
   }
 
   ErrorResult rv;
-  RefPtr<Event> event = doc->CreateEvent(NS_LITERAL_STRING("Events"),
-                                         CallerType::System, rv);
+  RefPtr<Event> event =
+      doc->CreateEvent(NS_LITERAL_STRING("Events"), CallerType::System, rv);
   if (rv.Failed()) {
     rv.SuppressException();
     return false;
@@ -68,6 +64,6 @@ nsAutoWindowStateHelper::DispatchEventToChrome(const char* aEventName)
 
   nsCOMPtr<EventTarget> target = do_QueryInterface(mWindow);
   bool defaultActionEnabled =
-    target->DispatchEvent(*event, CallerType::System, IgnoreErrors());
+      target->DispatchEvent(*event, CallerType::System, IgnoreErrors());
   return defaultActionEnabled;
 }

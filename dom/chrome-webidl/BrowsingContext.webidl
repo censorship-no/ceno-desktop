@@ -3,11 +3,38 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-[Exposed=(Window, System), ChromeOnly]
+interface nsIDocShell;
+
+[Exposed=Window, ChromeOnly]
 interface BrowsingContext {
+  static BrowsingContext? get(unsigned long long aId);
+
+  BrowsingContext? findChildWithName(DOMString name);
+  BrowsingContext? findWithName(DOMString name);
+
+  readonly attribute DOMString name;
+
   readonly attribute BrowsingContext? parent;
 
   sequence<BrowsingContext> getChildren();
 
+  readonly attribute nsIDocShell? docShell;
+
   readonly attribute unsigned long long id;
+
+  readonly attribute BrowsingContext? opener;
+
+  readonly attribute BrowsingContextGroup group;
+};
+
+[Exposed=Window, ChromeOnly]
+interface CanonicalBrowsingContext : BrowsingContext {
+  sequence<WindowGlobalParent> getWindowGlobals();
+
+  readonly attribute WindowGlobalParent? currentWindowGlobal;
+};
+
+[Exposed=Window, ChromeOnly]
+interface BrowsingContextGroup {
+  sequence<BrowsingContext> getToplevels();
 };

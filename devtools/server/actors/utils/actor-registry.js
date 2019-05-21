@@ -163,21 +163,6 @@ const ActorRegistry = {
       constructor: "InspectorActor",
       type: { target: true },
     });
-    this.registerModule("devtools/server/actors/canvas", {
-      prefix: "canvas",
-      constructor: "CanvasActor",
-      type: { target: true },
-    });
-    this.registerModule("devtools/server/actors/webgl", {
-      prefix: "webgl",
-      constructor: "WebGLActor",
-      type: { target: true },
-    });
-    this.registerModule("devtools/server/actors/webaudio", {
-      prefix: "webaudio",
-      constructor: "WebAudioActor",
-      type: { target: true },
-    });
     this.registerModule("devtools/server/actors/stylesheets", {
       prefix: "styleSheets",
       constructor: "StyleSheetsActor",
@@ -213,11 +198,6 @@ const ActorRegistry = {
       constructor: "CSSUsageActor",
       type: { target: true },
     });
-    this.registerModule("devtools/server/actors/timeline", {
-      prefix: "timeline",
-      constructor: "TimelineActor",
-      type: { target: true },
-    });
     if ("nsIProfiler" in Ci &&
         !Services.prefs.getBoolPref("devtools.performance.new-panel-enabled", false)) {
       this.registerModule("devtools/server/actors/performance", {
@@ -246,7 +226,7 @@ const ActorRegistry = {
       constructor: "WebExtensionInspectedWindowActor",
       type: { target: true },
     });
-    this.registerModule("devtools/server/actors/accessibility", {
+    this.registerModule("devtools/server/actors/accessibility/accessibility", {
       prefix: "accessibility",
       constructor: "AccessibilityActor",
       type: { target: true },
@@ -254,6 +234,11 @@ const ActorRegistry = {
     this.registerModule("devtools/server/actors/screenshot", {
       prefix: "screenshot",
       constructor: "ScreenshotActor",
+      type: { target: true },
+    });
+    this.registerModule("devtools/server/actors/changes", {
+      prefix: "changes",
+      constructor: "ChangesActor",
       type: { target: true },
     });
   },

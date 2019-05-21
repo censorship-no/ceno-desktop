@@ -23,6 +23,11 @@
 // same time that we are preventing reentrancy into debuggeree's
 // onGarbageCollection hook.
 
+Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+});
+
 function run_test() {
   do_test_pending();
 

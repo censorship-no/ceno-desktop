@@ -125,42 +125,42 @@ var paymentRequest = {
     log.debug("onShowPaymentRequest, isPrivate?", detail.isPrivate);
 
     let paymentDialog = document.querySelector("payment-dialog");
-    let hasSavedAddresses = Object.keys(detail.savedAddresses).length != 0;
-    let hasSavedCards = Object.keys(detail.savedBasicCards).length != 0;
-    let shippingRequested = detail.request.paymentOptions.requestShipping;
     let state = {
       request: detail.request,
       savedAddresses: detail.savedAddresses,
       savedBasicCards: detail.savedBasicCards,
+      // Temp records can exist upon a reload during development.
+      tempAddresses: detail.tempAddresses,
+      tempBasicCards: detail.tempBasicCards,
       isPrivate: detail.isPrivate,
       page: {
         id: "payment-summary",
       },
     };
 
+    let hasSavedAddresses = Object.keys(this.getAddresses(state)).length != 0;
+    let hasSavedCards = Object.keys(this.getBasicCards(state)).length != 0;
+    let shippingRequested = state.request.paymentOptions.requestShipping;
+
     // Onboarding wizard flow.
-    if (!hasSavedAddresses && (shippingRequested || !hasSavedCards)) {
+    if (!hasSavedAddresses && shippingRequested) {
       state.page = {
-        id: "address-page",
+        id: "shipping-address-page",
         onboardingWizard: true,
       };
 
-      state["address-page"] = {
-        addressFields: null,
+      state["shipping-address-page"] = {
         guid: null,
       };
+    } else if (!hasSavedAddresses && !hasSavedCards) {
+      state.page = {
+        id: "billing-address-page",
+        onboardingWizard: true,
+      };
 
-      if (shippingRequested) {
-        Object.assign(state["address-page"], {
-          selectedStateKey: ["selectedShippingAddress"],
-          title: paymentDialog.dataset.shippingAddressTitleAdd,
-        });
-      } else {
-        Object.assign(state["address-page"], {
-          selectedStateKey: ["basic-card-page", "billingAddressGUID"],
-          title: paymentDialog.dataset.billingAddressTitleAdd,
-        });
-      }
+      state["billing-address-page"] = {
+        guid: null,
+      };
     } else if (!hasSavedCards) {
       state.page = {
         id: "basic-card-page",
@@ -192,12 +192,20 @@ var paymentRequest = {
     this.sendMessageToChrome("closeDialog");
   },
 
+  changePaymentMethod(data) {
+    this.sendMessageToChrome("changePaymentMethod", data);
+  },
+
   changeShippingAddress(data) {
     this.sendMessageToChrome("changeShippingAddress", data);
   },
 
   changeShippingOption(data) {
     this.sendMessageToChrome("changeShippingOption", data);
+  },
+
+  changePayerAddress(data) {
+    this.sendMessageToChrome("changePayerAddress", data);
   },
 
   /**
@@ -236,24 +244,29 @@ var paymentRequest = {
 
   /**
    * @param {object} state object representing the UI state
-   * @param {string} methodID (GUID) uniquely identifying the selected payment method
+   * @param {string} selectedMethodID (GUID) uniquely identifying the selected payment method
    * @returns {object?} the applicable modifier for the payment method
    */
-  getModifierForPaymentMethod(state, methodID) {
-    let method = state.savedBasicCards[methodID] || null;
-    if (method && method.methodName !== "basic-card") {
-      throw new Error(`${method.methodName} (${methodID}) is not a supported payment method`);
+  getModifierForPaymentMethod(state, selectedMethodID) {
+    let basicCards = this.getBasicCards(state);
+    let selectedMethod = basicCards[selectedMethodID] || null;
+    if (selectedMethod && selectedMethod.methodName !== "basic-card") {
+      throw new Error(`${selectedMethod.methodName} (${selectedMethodID}) ` +
+                      `is not a supported payment method`);
     }
     let modifiers = state.request.paymentDetails.modifiers;
-    if (!modifiers || !modifiers.length) {
+    if (!selectedMethod || !modifiers || !modifiers.length) {
       return null;
     }
-    let modifier = modifiers.find(m => {
+    let appliedModifier = modifiers.find(modifier => {
       // take the first matching modifier
-      // TODO (bug 1429198): match on supportedTypes and supportedNetworks
-      return m.supportedMethods == "basic-card";
+      if (modifier.supportedMethods && modifier.supportedMethods != selectedMethod.methodName) {
+        return false;
+      }
+      let supportedNetworks = modifier.data && modifier.data.supportedNetworks || [];
+      return supportedNetworks.length == 0 || supportedNetworks.includes(selectedMethod["cc-type"]);
     });
-    return modifier || null;
+    return appliedModifier || null;
   },
 
   /**
@@ -298,6 +311,16 @@ var paymentRequest = {
   getBasicCards(state) {
     let cards = Object.assign({}, state.savedBasicCards, state.tempBasicCards);
     return this._sortObjectsByTimeLastUsed(cards);
+  },
+
+  maybeCreateFieldErrorElement(container) {
+    let span = container.querySelector(".error-text");
+    if (!span) {
+      span = document.createElement("span");
+      span.className = "error-text";
+      container.appendChild(span);
+    }
+    return span;
   },
 };
 

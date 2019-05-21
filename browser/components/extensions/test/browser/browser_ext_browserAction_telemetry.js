@@ -32,11 +32,11 @@ const CATEGORIES = [
  */
 function assertOnlyOneTypeSet(snapshot, category) {
   let categoryIndex = CATEGORIES.indexOf(category);
-  Assert.equal(snapshot.counts[categoryIndex], 1,
+  Assert.equal(snapshot.values[categoryIndex], 1,
                `Should have seen the ${category} count increment.`);
   // Use Array.prototype.reduce to sum up all of the
   // snapshot.count entries
-  Assert.equal(snapshot.counts.reduce((a, b) => a + b), 1,
+  Assert.equal(Object.values(snapshot.values).reduce((a, b) => a + b, 0), 1,
                "Should only be 1 collected value.");
 }
 
@@ -189,7 +189,7 @@ add_task(async function testBrowserActionTelemetryResults() {
   await extension.startup();
 
   // Make sure the mouse isn't hovering over the browserAction widget to start.
-  EventUtils.synthesizeMouseAtCenter(gURLBar, {type: "mouseover"}, window);
+  EventUtils.synthesizeMouseAtCenter(gURLBar.textbox, {type: "mouseover"}, window);
 
   let widget = getBrowserActionWidget(extension).forWindow(window);
 

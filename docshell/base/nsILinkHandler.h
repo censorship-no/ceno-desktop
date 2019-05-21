@@ -10,20 +10,23 @@
 #include "mozilla/EventForwards.h"
 
 class nsIContent;
+class nsIContentSecurityPolicy;
 class nsIDocShell;
 class nsIInputStream;
 class nsIRequest;
 
-#define NS_ILINKHANDLER_IID \
-  { 0xceb9aade, 0x43da, 0x4f1a, \
-    { 0xac, 0x8a, 0xc7, 0x09, 0xfb, 0x22, 0x46, 0x64 } }
+#define NS_ILINKHANDLER_IID                          \
+  {                                                  \
+    0xceb9aade, 0x43da, 0x4f1a, {                    \
+      0xac, 0x8a, 0xc7, 0x09, 0xfb, 0x22, 0x46, 0x64 \
+    }                                                \
+  }
 
 /**
  * Interface used for handling clicks on links
  */
-class nsILinkHandler : public nsISupports
-{
-public:
+class nsILinkHandler : public nsISupports {
+ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_ILINKHANDLER_IID)
 
   /**
@@ -33,22 +36,27 @@ public:
    * @param aURI a URI object that defines the destination for the link
    * @param aTargetSpec indicates where the link is targeted (may be an empty
    *        string)
-   * @param aFileName non-null when the link should be downloaded as the given file
+   * @param aFileName non-null when the link should be downloaded as the given
+   * file
    * @param aPostDataStream the POST data to send
    * @param aHeadersDataStream ???
    * @param aIsTrusted false if the triggerer is an untrusted DOM event.
    * @param aTriggeringPrincipal, if not passed explicitly we fall back to
    *        the document's principal.
+   * @param aCsp, the CSP to be used for the load, that is the CSP of the
+   *        entity responsible for causing the load to occur. Most likely
+   *        this is the CSP of the document that started the load. In case
+   *        aCsp was not passed explicitly we fall back to using
+   *        aContent's document's CSP if that document holds any.
    */
-  NS_IMETHOD OnLinkClick(nsIContent* aContent,
-                         nsIURI* aURI,
-                         const char16_t* aTargetSpec,
+  NS_IMETHOD OnLinkClick(nsIContent* aContent, nsIURI* aURI,
+                         const nsAString& aTargetSpec,
                          const nsAString& aFileName,
                          nsIInputStream* aPostDataStream,
                          nsIInputStream* aHeadersDataStream,
-                         bool aIsUserTriggered,
-                         bool aIsTrusted,
-                         nsIPrincipal* aTriggeringPrincipal) = 0;
+                         bool aIsUserTriggered, bool aIsTrusted,
+                         nsIPrincipal* aTriggeringPrincipal,
+                         nsIContentSecurityPolicy* aCsp) = 0;
 
   /**
    * Process a click on a link.
@@ -60,7 +68,8 @@ public:
    * @param aURI a URI obect that defines the destination for the link
    * @param aTargetSpec indicates where the link is targeted (may be an empty
    *        string)
-   * @param aFileName non-null when the link should be downloaded as the given file
+   * @param aFileName non-null when the link should be downloaded as the given
+   * file
    * @param aPostDataStream the POST data to send
    * @param aHeadersDataStream ???
    * @param aNoOpenerImplied if the link implies "noopener"
@@ -68,18 +77,20 @@ public:
    * @param aRequest the request that was opened
    * @param aTriggeringPrincipal, if not passed explicitly we fall back to
    *        the document's principal.
+   * @param aCsp, the CSP to be used for the load, that is the CSP of the
+   *        entity responsible for causing the load to occur. Most likely
+   *        this is the CSP of the document that started the load. In case
+   *        aCsp was not passed explicitly we fall back to using
+   *        aContent's document's CSP if that document holds any.
    */
-  NS_IMETHOD OnLinkClickSync(nsIContent* aContent,
-                             nsIURI* aURI,
-                             const char16_t* aTargetSpec,
-                             const nsAString& aFileName,
-                             nsIInputStream* aPostDataStream = 0,
-                             nsIInputStream* aHeadersDataStream = 0,
-                             bool aNoOpenerImplied = false,
-                             nsIDocShell** aDocShell = 0,
-                             nsIRequest** aRequest = 0,
-                             bool aIsUserTriggered = false,
-                             nsIPrincipal* aTriggeringPrincipal = nullptr) = 0;
+  NS_IMETHOD OnLinkClickSync(
+      nsIContent* aContent, nsIURI* aURI, const nsAString& aTargetSpec,
+      const nsAString& aFileName, nsIInputStream* aPostDataStream = 0,
+      nsIInputStream* aHeadersDataStream = 0, bool aNoOpenerImplied = false,
+      nsIDocShell** aDocShell = 0, nsIRequest** aRequest = 0,
+      bool aIsUserTriggered = false,
+      nsIPrincipal* aTriggeringPrincipal = nullptr,
+      nsIContentSecurityPolicy* aCsp = nullptr) = 0;
 
   /**
    * Process a mouse-over a link.
@@ -89,9 +100,8 @@ public:
    * @param aTargetSpec indicates where the link is targeted (it may be an empty
    *        string)
    */
-  NS_IMETHOD OnOverLink(nsIContent* aContent,
-                        nsIURI* aURLSpec,
-                        const char16_t* aTargetSpec) = 0;
+  NS_IMETHOD OnOverLink(nsIContent* aContent, nsIURI* aURLSpec,
+                        const nsAString& aTargetSpec) = 0;
 
   /**
    * Process the mouse leaving a link.

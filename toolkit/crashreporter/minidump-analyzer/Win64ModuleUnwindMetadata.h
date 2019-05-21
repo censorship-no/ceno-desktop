@@ -8,18 +8,17 @@
 
 #if XP_WIN && HAVE_64BIT_BUILD
 
-#include <functional>
-#include <map>
-#include <string>
+#  include <functional>
+#  include <map>
+#  include <string>
 
-#include <windows.h>
-#include <winnt.h>
-#include <imagehlp.h>
+#  include <windows.h>
+#  include <winnt.h>
+#  include <imagehlp.h>
 
 namespace CrashReporter {
 
-struct UnwindCFI
-{
+struct UnwindCFI {
   uint32_t beginAddress;
   uint32_t size;
   uint32_t stackSize;
@@ -43,15 +42,15 @@ class ModuleUnwindParser {
                               UnwindCFI& aRet);
   void* RvaToVa(ULONG aRva);
 
-public:
+ public:
   explicit ModuleUnwindParser(const std::string& aPath);
   ~ModuleUnwindParser();
   bool GetCFI(DWORD aAddress, UnwindCFI& aRet);
   DWORD GetAnyOffsetAddr() const;
 };
 
-} // namespace
+}  // namespace CrashReporter
 
-#endif // XP_WIN && HAVE_64BIT_BUILD
+#endif  // XP_WIN && HAVE_64BIT_BUILD
 
-#endif // Win64ModuleUnwindMetadata_h
+#endif  // Win64ModuleUnwindMetadata_h

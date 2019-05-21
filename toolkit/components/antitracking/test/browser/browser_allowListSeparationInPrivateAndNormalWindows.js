@@ -1,5 +1,3 @@
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 // This test works by setting up an exception for the private window allow list
 // manually, and it then expects to see some blocking notifications (note the
 // document.cookie setter in the blocking callback.)
@@ -42,6 +40,6 @@ AntiTracking.runTest("Test that we don't honour a private allow list exception i
   null, // no extra prefs
   false, // run the window.open() test
   false, // run the user interaction test
-  true, // expect blocking notifications
+  Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER, // expect blocking notifications
   false); // run in a normal window
 

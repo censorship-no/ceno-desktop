@@ -39,12 +39,23 @@ for (const type of [
   "DELETE_HISTORY_URL",
   "DIALOG_CANCEL",
   "DIALOG_OPEN",
+  "DISCOVERY_STREAM_CONFIG_CHANGE",
+  "DISCOVERY_STREAM_CONFIG_SETUP",
+  "DISCOVERY_STREAM_CONFIG_SET_VALUE",
+  "DISCOVERY_STREAM_FEEDS_UPDATE",
+  "DISCOVERY_STREAM_IMPRESSION_STATS",
+  "DISCOVERY_STREAM_LAYOUT_RESET",
+  "DISCOVERY_STREAM_LAYOUT_UPDATE",
+  "DISCOVERY_STREAM_OPT_OUT",
+  "DISCOVERY_STREAM_SPOCS_ENDPOINT",
+  "DISCOVERY_STREAM_SPOCS_UPDATE",
+  "DISCOVERY_STREAM_SPOC_IMPRESSION",
   "DOWNLOAD_CHANGED",
+  "FAKE_FOCUS_SEARCH",
   "FILL_SEARCH_TERM",
+  "HANDOFF_SEARCH_TO_AWESOMEBAR",
+  "HIDE_SEARCH",
   "INIT",
-  "MIGRATION_CANCEL",
-  "MIGRATION_COMPLETED",
-  "MIGRATION_START",
   "NEW_TAB_INIT",
   "NEW_TAB_INITIAL_STATE",
   "NEW_TAB_LOAD",
@@ -90,6 +101,7 @@ for (const type of [
   "SET_PREF",
   "SHOW_DOWNLOAD_FILE",
   "SHOW_FIREFOX_ACCOUNTS",
+  "SHOW_SEARCH",
   "SKIPPED_SIGNIN",
   "SNIPPETS_BLOCKLIST_CLEARED",
   "SNIPPETS_BLOCKLIST_UPDATED",
@@ -114,6 +126,7 @@ for (const type of [
   "TOP_SITES_UPDATED",
   "TOTAL_BOOKMARKS_REQUEST",
   "TOTAL_BOOKMARKS_RESPONSE",
+  "TRAILHEAD_ENROLL_EVENT",
   "UNINIT",
   "UPDATE_PINNED_SEARCH_SHORTCUTS",
   "UPDATE_SEARCH_SHORTCUTS",
@@ -135,6 +148,7 @@ for (const type of [
   "OPEN_ABOUT_PAGE",
   "OPEN_PREFERENCES_PAGE",
   "SHOW_FIREFOX_ACCOUNTS",
+  "PIN_CURRENT_TAB",
 ]) {
   ASRouterActions[type] = type;
 }
@@ -320,6 +334,21 @@ function ImpressionStats(data, importContext = globalImportContext) {
   return importContext === UI_CODE ? AlsoToMain(action) : action;
 }
 
+/**
+ * DiscoveryStreamImpressionStats - A telemetry ping indicating an impression stats in Discovery Stream.
+ *
+ * @param  {object} data Fields to include in the ping
+ * @param  {int} importContext (For testing) Override the import context for testing.
+ * #return {object} An action. For UI code, a AlsoToMain action.
+ */
+function DiscoveryStreamImpressionStats(data, importContext = globalImportContext) {
+  const action = {
+    type: actionTypes.DISCOVERY_STREAM_IMPRESSION_STATS,
+    data,
+  };
+  return importContext === UI_CODE ? AlsoToMain(action) : action;
+}
+
 function SetPref(name, value, importContext = globalImportContext) {
   const action = {type: actionTypes.SET_PREF, data: {name, value}};
   return importContext === UI_CODE ? AlsoToMain(action) : action;
@@ -350,6 +379,7 @@ this.actionCreators = {
   AlsoToPreloaded,
   SetPref,
   WebExtEvent,
+  DiscoveryStreamImpressionStats,
 };
 
 // These are helpers to test for certain kinds of actions

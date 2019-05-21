@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewUtils} = ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   ActorManagerParent: "resource://gre/modules/ActorManagerParent.jsm",
@@ -11,11 +11,11 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   FileSource: "resource://gre/modules/L10nRegistry.jsm",
   GeckoViewTelemetryController: "resource://gre/modules/GeckoViewTelemetryController.jsm",
   L10nRegistry: "resource://gre/modules/L10nRegistry.jsm",
+  Preferences: "resource://gre/modules/Preferences.jsm",
   Services: "resource://gre/modules/Services.jsm",
 });
 
-/* global debug:false, warn:false */
-GeckoViewUtils.initLogging("Startup", this);
+const {debug, warn} = GeckoViewUtils.initLogging("Startup"); // eslint-disable-line no-unused-vars
 
 function GeckoViewStartup() {
 }
@@ -24,22 +24,6 @@ GeckoViewStartup.prototype = {
   classID: Components.ID("{8e993c34-fdd6-432c-967e-f995d888777f}"),
 
   QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
-
-  /**
-   * Register resource://android as the APK root.
-   *
-   * Consumers can access Android assets using resource://android/assets/FILENAME.
-   */
-  setResourceSubstitutions: function() {
-    let registry = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(Ci.nsIChromeRegistry);
-    // Like jar:jar:file:///data/app/org.mozilla.geckoview.test.apk!/assets/omni.ja!/chrome/geckoview/content/geckoview.js
-    let url = registry.convertChromeURL(Services.io.newURI("chrome://geckoview/content/geckoview.js")).spec;
-    // Like jar:file:///data/app/org.mozilla.geckoview.test.apk!/
-    url = url.substring(4, url.indexOf("!/") + 2);
-
-    let protocolHandler = Services.io.getProtocolHandler("resource").QueryInterface(Ci.nsIResProtocolHandler);
-    protocolHandler.setSubstitution("android", Services.io.newURI(url));
-  },
 
   /* ----------  nsIObserver  ---------- */
   observe: function(aSubject, aTopic, aData) {
@@ -63,6 +47,13 @@ GeckoViewStartup.prototype = {
           module: "resource://gre/modules/GeckoViewConsole.jsm",
         });
 
+        GeckoViewUtils.addLazyGetter(this, "GeckoViewWebExtension", {
+          module: "resource://gre/modules/GeckoViewWebExtension.jsm",
+          ged: [
+            "GeckoView:RegisterWebExtension",
+          ],
+        });
+
         GeckoViewUtils.addLazyPrefObserver({
           name: "geckoview.console.enabled",
           default: false,
@@ -70,14 +61,22 @@ GeckoViewStartup.prototype = {
           handler: _ => this.GeckoViewConsole,
         });
 
+        // Handle invalid form submission. If we don't hook up to this,
+        // invalid forms are allowed to be submitted!
+        Services.obs.addObserver({
+          QueryInterface: ChromeUtils.generateQI([
+            Ci.nsIObserver, Ci.nsIFormSubmitObserver,
+          ]),
+          notifyInvalidSubmit: (form, element) => {
+            // We should show the validation message here, bug 1510450.
+          },
+        }, "invalidformsubmit");
+
         if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_DEFAULT) {
           ActorManagerParent.flush();
 
-          // Parent process only.
-          this.setResourceSubstitutions();
-
           Services.mm.loadFrameScript(
-              "chrome://geckoview/content/GeckoViewPromptContent.js", true);
+              "chrome://geckoview/content/GeckoViewPromptChild.js", true);
 
           GeckoViewUtils.addLazyGetter(this, "ContentCrashHandler", {
             module: "resource://gre/modules/ContentCrashHandler.jsm",
@@ -124,12 +123,41 @@ GeckoViewStartup.prototype = {
         const greSource = new FileSource("toolkit", locales, "resource://gre/localization/{locale}/");
         L10nRegistry.registerSource(greSource);
 
+        ChromeUtils.import("resource://gre/modules/NotificationDB.jsm");
+
         // Listen for global EventDispatcher messages
-        EventDispatcher.instance.registerListener(
-          (aEvent, aData, aCallback) => Services.locale.requestedLocales = [aData.languageTag],
-          "GeckoView:SetLocale");
+        EventDispatcher.instance.registerListener(this,
+          ["GeckoView:ResetUserPrefs",
+           "GeckoView:SetDefaultPrefs",
+           "GeckoView:SetLocale"]);
         break;
       }
+    }
+  },
+
+  onEvent(aEvent, aData, aCallback) {
+    debug `onEvent ${aEvent}`;
+
+    switch (aEvent) {
+      case "GeckoView:ResetUserPrefs": {
+        const prefs = new Preferences();
+        prefs.reset(aData.names);
+        break;
+      }
+      case "GeckoView:SetDefaultPrefs": {
+        const prefs = new Preferences({ defaultBranch: true });
+        for (const name of Object.keys(aData)) {
+          try {
+            prefs.set(name, aData[name]);
+          } catch (e) {
+            warn `Failed to set preference ${name}: ${e}`;
+          }
+        }
+        break;
+      }
+      case "GeckoView:SetLocale":
+        Services.locale.requestedLocales = aData.requestedLocales;
+        break;
     }
   },
 };

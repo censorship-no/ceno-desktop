@@ -14,10 +14,10 @@
  * C++ callers use a fast path, and never call the JSAPI or WebIDL methods of
  * this object.
  */
-[ChromeOnly, Exposed=(Window,System)]
+[ChromeOnly, Exposed=Window]
 interface MozQueryInterface {
   [Throws]
-  legacycaller any (IID aIID);
+  legacycaller any (any aIID);
 };
 
 /**
@@ -25,7 +25,7 @@ interface MozQueryInterface {
  * This is exposed in all the system globals where we can expose stuff by
  * default, so should only include methods that are **thread-safe**.
  */
-[ChromeOnly, Exposed=(Window,System,Worker)]
+[ChromeOnly, Exposed=(Window,Worker)]
 namespace ChromeUtils {
   /**
    * Serialize a snapshot of the heap graph, as seen by |JS::ubi::Node| and
@@ -105,6 +105,18 @@ namespace ChromeUtils {
   ArrayBuffer base64URLDecode(ByteString string,
                               Base64URLDecodeOptions options);
 
+  /**
+   * Cause the current process to fatally crash unless the given condition is
+   * true. This is similar to MOZ_RELEASE_ASSERT in C++ code.
+   *
+   * WARNING: This message is included publicly in the crash report, and must
+   * not contain private information.
+   *
+   * Crash report will be augmented with the current JS stack information.
+   */
+  void releaseAssert(boolean condition,
+                     optional DOMString message = "<no message>");
+
 #ifdef NIGHTLY_BUILD
 
   /**
@@ -148,7 +160,7 @@ namespace ChromeUtils {
  * Additional ChromeUtils methods that are _not_ thread-safe, and hence not
  * exposed in workers.
  */
-[Exposed=(Window,System)]
+[Exposed=Window]
 partial namespace ChromeUtils {
   /**
    * A helper that converts OriginAttributesDictionary to a opaque suffix string.
@@ -215,17 +227,14 @@ partial namespace ChromeUtils {
    * JavaScript, acts as an ordinary QueryInterface function call, and when
    * called from XPConnect, circumvents JSAPI entirely.
    *
-   * The list of interfaces may include a mix of nsIJSID objects and interface
-   * name strings. Strings for nonexistent interface names are silently
-   * ignored, as long as they don't refer to any non-IID property of the Ci
-   * global. Any non-IID value is implicitly coerced to a string, and treated
-   * as an interface name.
+   * The list of interfaces may include a mix of JS ID objects and interface
+   * name strings.
    *
    * nsISupports is implicitly supported, and must not be included in the
    * interface list.
    */
   [Affects=Nothing, NewObject, Throws]
-  MozQueryInterface generateQI(sequence<(DOMString or IID)> interfaces);
+  MozQueryInterface generateQI(sequence<any> interfaces);
 
   /**
    * Waive Xray on a given value. Identity op for primitives.
@@ -272,15 +281,18 @@ partial namespace ChromeUtils {
    * Synchronously loads and evaluates the js file located at
    * 'aResourceURI' with a new, fully privileged global object.
    *
-   * If 'aTargetObj' is specified and null, this method just returns
-   * the module's global object. Otherwise (if 'aTargetObj' is not
-   * specified, or 'aTargetObj' is != null) looks for a property
-   * 'EXPORTED_SYMBOLS' on the new global object. 'EXPORTED_SYMBOLS'
-   * is expected to be an array of strings identifying properties on
-   * the global object.  These properties will be installed as
-   * properties on 'targetObj', or, if 'aTargetObj' is not specified,
-   * on the caller's global object. If 'EXPORTED_SYMBOLS' is not
-   * found, an error is thrown.
+   * If `aTargetObj` is specified, and non-null, all properties exported by
+   * the module are copied to that object.
+   *
+   * If `aTargetObj` is not specified, or is non-null, an object is returned
+   * containing all of the module's exported properties. The same object is
+   * returned for every call.
+   *
+   * If `aTargetObj` is specified and null, the module's global object is
+   * returned, rather than its explicit exports. This behavior is deprecated,
+   * and will removed in the near future, since it is incompatible with the
+   * ES6 module semanitcs we intend to migrate to. It should not be used in
+   * new code.
    *
    * @param aResourceURI A resource:// URI string to load the module from.
    * @param aTargetObj the object to install the exported properties on or null.
@@ -347,7 +359,7 @@ partial namespace ChromeUtils {
   /**
    * Request performance metrics to the current process & all content processes.
    */
-  [Throws, Func="DOMPrefs::dom_performance_enable_scheduler_timing"]
+  [Throws]
   Promise<sequence<PerformanceInfoDictionary>> requestPerformanceMetrics();
 
   /**
@@ -356,14 +368,115 @@ partial namespace ChromeUtils {
   [Throws]
   Promise<sequence<IOActivityDataDictionary>> requestIOActivity();
 
+  /**
+  * Returns a Promise containing all processes info
+  */
+  [Throws]
+  Promise<ParentProcInfoDictionary> requestProcInfo();
+
+  [ChromeOnly, Throws]
+  boolean hasReportingHeaderForOrigin(DOMString aOrigin);
+
   [ChromeOnly]
-  sequence<BrowsingContext> getRootBrowsingContexts();
+  PopupBlockerState getPopupControlState();
+
+  [ChromeOnly]
+  boolean isPopupTokenUnused();
+
+  /**
+   * Milliseconds from the last iframe loading an external protocol.
+   */
+  [ChromeOnly]
+  double lastExternalProtocolIframeAllowed();
+
+  /**
+   * For testing purpose we need to reset this value.
+   */
+  [ChromeOnly]
+  void resetLastExternalProtocolIframeAllowed();
+
+  [ChromeOnly, Throws]
+  void registerWindowActor(DOMString aName, WindowActorOptions aOptions);
+
+  [ChromeOnly]
+  void unregisterWindowActor(DOMString aName);
+
+  [ChromeOnly]
+  // aError should a nsresult.
+  boolean isClassifierBlockingErrorCode(unsigned long aError);
+};
+
+/**
+ * Holds information about Firefox running processes & threads.
+ *
+ * See widget/ProcInfo.h for fields documentation.
+ */
+enum ProcType {
+ "web",
+ "file",
+ "extension",
+ "privileged",
+ "webLargeAllocation",
+ "gpu",
+ "rdd",
+ "socket",
+ "browser",
+ "unknown"
+};
+
+dictionary ThreadInfoDictionary {
+  long long tid = 0;
+  DOMString name = "";
+  unsigned long long cpuUser = 0;
+  unsigned long long cpuKernel = 0;
+};
+
+dictionary ChildProcInfoDictionary {
+  // System info
+  long long pid = 0;
+  DOMString filename = "";
+  unsigned long long virtualMemorySize = 0;
+  long long residentSetSize = 0;
+  unsigned long long cpuUser = 0;
+  unsigned long long cpuKernel = 0;
+  sequence<ThreadInfoDictionary> threads = [];
+  // Firefox info
+  unsigned long long ChildID = 0;
+  ProcType type = "web";
+};
+
+dictionary ParentProcInfoDictionary {
+  // System info
+  long long pid = 0;
+  DOMString filename = "";
+  unsigned long long virtualMemorySize = 0;
+  long long residentSetSize = 0;
+  unsigned long long cpuUser = 0;
+  unsigned long long cpuKernel = 0;
+  sequence<ThreadInfoDictionary> threads = [];
+  sequence<ChildProcInfoDictionary> children = [];
+  // Firefox info
+  ProcType type = "browser";
 };
 
 /**
  * Dictionaries duplicating IPDL types in dom/ipc/DOMTypes.ipdlh
  * Used by requestPerformanceMetrics
  */
+dictionary MediaMemoryInfoDictionary {
+  unsigned long long audioSize = 0;
+  unsigned long long videoSize = 0;
+  unsigned long long resourcesSize = 0;
+};
+
+dictionary MemoryInfoDictionary {
+  unsigned long long domDom = 0;
+  unsigned long long domStyle = 0;
+  unsigned long long domOther = 0;
+  unsigned long long GCHeapUsage = 0;
+  required MediaMemoryInfoDictionary media;
+};
+
 dictionary CategoryDispatchDictionary
 {
   unsigned short category = 0;
@@ -378,6 +491,7 @@ dictionary PerformanceInfoDictionary {
   unsigned long long counterId = 0;
   boolean isWorker = false;
   boolean isTopLevel = false;
+  required MemoryInfoDictionary memoryInfo;
   sequence<CategoryDispatchDictionary> items = [];
 };
 
@@ -478,6 +592,50 @@ dictionary Base64URLEncodeOptions {
   required boolean pad;
 };
 
+dictionary WindowActorOptions {
+  /**
+   * If this is set to `true`, allow this actor to be created for subframes,
+   * and not just toplevel window globals.
+   */
+  boolean allFrames = false;
+
+  /**
+   * If this is set to `true`, allow this actor to be created for window
+   * globals loaded in chrome browsing contexts, such as those used to load the
+   * tabbrowser.
+   */
+  boolean includeChrome = false;
+
+  /** This fields are used for configuring individual sides of the actor. */
+  required WindowActorSidedOptions parent;
+  required WindowActorChildOptions child;
+};
+
+dictionary WindowActorSidedOptions {
+  /** The module path which should be loaded for the actor on this side. */
+  required ByteString moduleURI;
+};
+
+dictionary WindowActorChildOptions : WindowActorSidedOptions {
+  /**
+   * Events which this actor wants to be listening to. When these events fire,
+   * it will trigger actor creation, and then forward the event to the actor.
+   */
+  record<DOMString, AddEventListenerOptions> events;
+
+ /**
+  * Array of observer topics to listen to. A observer will be added for each
+  * topic in the list.
+  *
+  * Observers in the list much use the nsGlobalWindowInner object as their topic,
+  * and the events will only be dispatched to the corresponding window actor. If
+  * additional observer notifications are needed with different listening
+  * conditions, please file a bug in DOM requesting support for the subject
+  * required to be added to JS WindowActor objects.
+  **/
+  sequence<ByteString> observers;
+};
+
 enum Base64URLDecodePadding {
   /**
    * Fails decoding if the input is unpadded. RFC 4648, section 3.2 requires
@@ -499,4 +657,13 @@ enum Base64URLDecodePadding {
 dictionary Base64URLDecodeOptions {
   /** Specifies the padding mode for decoding the input. */
   required Base64URLDecodePadding padding;
+};
+
+// Keep this in sync with PopupBlocker::PopupControlState!
+enum PopupBlockerState {
+  "openAllowed",
+  "openControlled",
+  "openBlocked",
+  "openAbused",
+  "openOverridden",
 };

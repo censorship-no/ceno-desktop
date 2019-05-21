@@ -8,16 +8,17 @@
 <?xml-stylesheet href="chrome://global/skin/"?>
 <?xml-stylesheet href="chrome://browser/skin/preferences/in-content/syncDisconnect.css" type="text/css"?>
 
-<window id="syncDisconnectDialog" class="windowDialog"
+<window id="syncDisconnectDialog"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
         role="dialog"
         onload="gSyncDisconnectDialog.init();"
         data-l10n-id="sync-disconnect-dialog"
         data-l10n-attrs="title, style">
 
   <linkset>
-    <link rel="localization" href="browser/branding/sync-brand.ftl"/>
-    <link rel="localization" href="browser/preferences/syncDisconnect.ftl"/>
+    <html:link rel="localization" href="browser/branding/sync-brand.ftl"/>
+    <html:link rel="localization" href="browser/preferences/syncDisconnect.ftl"/>
   </linkset>
   <script src="chrome://browser/content/preferences/in-content/syncDisconnect.js"/>
 

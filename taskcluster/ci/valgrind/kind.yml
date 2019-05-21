@@ -14,6 +14,10 @@ transforms:
     - taskgraph.transforms.job:transforms
     - taskgraph.transforms.task:transforms
 
+job-defaults:
+    attributes:
+        retrigger: true
+
 jobs:
     linux64-valgrind/opt:
         description: "Linux64 Valgrind Opt"
@@ -33,7 +37,7 @@ jobs:
                 PERFHERDER_EXTRA_OPTIONS: valgrind
         run:
             using: mozharness
-            actions: [get-secrets build valgrind-test]
+            actions: [get-secrets, build, valgrind-test]
             custom-build-variant-cfg: valgrind
             config:
                 - builds/releng_base_firefox.py
@@ -48,4 +52,5 @@ jobs:
             - linux64-rust
             - linux64-cbindgen
             - linux64-sccache
+            - linux64-nasm
             - linux64-node

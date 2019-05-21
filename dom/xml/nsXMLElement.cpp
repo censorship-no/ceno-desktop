@@ -7,37 +7,33 @@
 #include "nsXMLElement.h"
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/ElementInlines.h"
-#include "nsContentUtils.h" // nsAutoScriptBlocker
+#include "nsContentUtils.h"  // nsAutoScriptBlocker
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsresult
-NS_NewXMLElement(Element** aInstancePtrResult,
-                 already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
-{
+nsresult NS_NewXMLElement(
+    Element** aInstancePtrResult,
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo) {
   RefPtr<nsXMLElement> it = new nsXMLElement(std::move(aNodeInfo));
   it.forget(aInstancePtrResult);
   return NS_OK;
 }
 
-JSObject*
-nsXMLElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
+JSObject* nsXMLElement::WrapNode(JSContext* aCx,
+                                 JS::Handle<JSObject*> aGivenProto) {
   return Element_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void
-nsXMLElement::UnbindFromTree(bool aDeep, bool aNullParent)
-{
-  CSSPseudoElementType pseudoType = GetPseudoElementType();
-  bool isBefore = pseudoType == CSSPseudoElementType::before;
-  nsAtom* property = isBefore
-    ? nsGkAtoms::beforePseudoProperty : nsGkAtoms::afterPseudoProperty;
+void nsXMLElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+  PseudoStyleType pseudoType = GetPseudoElementType();
+  bool isBefore = pseudoType == PseudoStyleType::before;
+  nsAtom* property = isBefore ? nsGkAtoms::beforePseudoProperty
+                              : nsGkAtoms::afterPseudoProperty;
 
   switch (pseudoType) {
-    case CSSPseudoElementType::before:
-    case CSSPseudoElementType::after: {
+    case PseudoStyleType::before:
+    case PseudoStyleType::after: {
       MOZ_ASSERT(GetParent());
       MOZ_ASSERT(GetParent()->IsElement());
       GetParent()->DeleteProperty(property);

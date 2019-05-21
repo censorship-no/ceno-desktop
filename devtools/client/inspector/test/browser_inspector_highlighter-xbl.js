@@ -12,18 +12,18 @@ add_task(async function() {
 
   await startPicker(toolbox);
 
-  info("Selecting the tree");
-  await moveMouseOver("#tree");
+  info("Selecting the host element");
+  await moveMouseOver("#xbl-host");
   await doKeyPick({key: "VK_RETURN", options: {}});
-  is(inspector.selection.nodeFront.className, "tree-bodybox",
-     "The .tree-bodybox inside the tree was selected");
+  is(inspector.selection.nodeFront.className, "xbl-anon",
+     "The .xbl-anon inside the box was selected");
 
   function doKeyPick(msg) {
     info("Key pressed. Waiting for element to be picked");
     testActor.synthesizeKey(msg);
     return promise.all([
       inspector.selection.once("new-node-front"),
-      inspector.once("inspector-updated")
+      inspector.once("inspector-updated"),
     ]);
   }
 
@@ -32,8 +32,8 @@ add_task(async function() {
     testActor.synthesizeMouse({
       options: {type: "mousemove"},
       center: true,
-      selector: selector
+      selector: selector,
     });
-    return inspector.toolbox.once("picker-node-hovered");
+    return inspector.inspector.nodePicker.once("picker-node-hovered");
   }
 });

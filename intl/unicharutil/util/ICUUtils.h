@@ -10,33 +10,21 @@
 // nsGkAtom, so we only build when included into internal libs:
 #ifdef MOZILLA_INTERNAL_API
 
-#include "mozilla/Scoped.h"
-#include "nsString.h"
-#include "unicode/unum.h" // for UNumberFormat
+#  include "nsString.h"
+#  include "unicode/unum.h"  // for UNumberFormat
 
 class nsIContent;
 
-struct ScopedUNumberFormatTraits {
-  typedef UNumberFormat* type;
-  static type empty() { return nullptr; }
-  static void release(type handle) { if (handle) unum_close(handle); }
-};
-typedef mozilla::Scoped<ScopedUNumberFormatTraits> AutoCloseUNumberFormat;
-
-class ICUUtils
-{
-public:
-
+class ICUUtils {
+ public:
   /**
    * This class is used to encapsulate an nsIContent object to allow lazy
    * iteration over its primary and fallback BCP 47 language tags.
    */
   class LanguageTagIterForContent {
-  public:
+   public:
     explicit LanguageTagIterForContent(nsIContent* aContent)
-      : mContent(aContent)
-      , mCurrentFallbackIndex(-1)
-    {}
+        : mContent(aContent), mCurrentFallbackIndex(-1) {}
 
     /**
      * Used to iterate over the nsIContent object's primary language tag and
@@ -54,11 +42,9 @@ public:
      */
     void GetNext(nsACString& aBCP47LangTag);
 
-    bool IsAtStart() const {
-      return mCurrentFallbackIndex < 0;
-    }
+    bool IsAtStart() const { return mCurrentFallbackIndex < 0; }
 
-  private:
+   private:
     nsIContent* mContent;
     int8_t mCurrentFallbackIndex;
   };
@@ -79,8 +65,7 @@ public:
   static double ParseNumber(nsAString& aValue,
                             LanguageTagIterForContent& aLangTags);
 
-  static void AssignUCharArrayToString(UChar* aICUString,
-                                       int32_t aLength,
+  static void AssignUCharArrayToString(UChar* aICUString, int32_t aLength,
                                        nsAString& aMozString);
 
   /**
@@ -88,7 +73,7 @@ public:
    */
   static nsresult UErrorToNsResult(const UErrorCode aErrorCode);
 
-#if 0
+#  if 0
   // Currently disabled because using C++ API doesn't play nicely with enabling
   // system ICU.
 
@@ -99,7 +84,7 @@ public:
 
   static void ToMozString(UnicodeString& aICUString, nsAString& aMozString);
   static void ToICUString(nsAString& aMozString, UnicodeString& aICUString);
-#endif
+#  endif
 };
 
 #endif /* MOZILLA_INTERNAL_API */

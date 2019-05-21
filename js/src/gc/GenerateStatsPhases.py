@@ -89,7 +89,7 @@ PhaseKindGraphRoots = [
         PhaseKind("MARK_DISCARD_CODE", "Mark Discard Code", 3),
         PhaseKind("RELAZIFY_FUNCTIONS", "Relazify Functions", 4),
         PhaseKind("PURGE", "Purge", 5),
-        PhaseKind("PURGE_SHAPE_TABLES", "Purge ShapeTables", 60),
+        PhaseKind("PURGE_SHAPE_CACHES", "Purge ShapeCaches", 60),
         JoinParallelTasksPhaseKind
     ]),
     PhaseKind("MARK", "Mark", 6, [
@@ -307,7 +307,7 @@ def generateCpp(out):
     #
     # Generate the PhaseKindInfo table.
     #
-    out.write("static const PhaseKindTable phaseKinds = {\n")
+    out.write("static constexpr PhaseKindTable phaseKinds = {\n")
     for phaseKind in AllPhaseKinds:
         phase = PhasesForPhaseKind[phaseKind][0]
         out.write("    /* PhaseKind::%s */ PhaseKindInfo { Phase::%s, %d },\n" %
@@ -321,7 +321,7 @@ def generateCpp(out):
     def name(phase):
         return "Phase::" + phase.name if phase else "Phase::NONE"
 
-    out.write("static const PhaseTable phases = {\n")
+    out.write("static constexpr PhaseTable phases = {\n")
     for phase in AllPhases:
         firstChild = phase.children[0] if phase.children else None
         phaseKind = phase.phaseKind

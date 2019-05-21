@@ -13,84 +13,72 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(CSSPseudoElement, mParentElement)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(CSSPseudoElement, mOriginatingElement)
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(CSSPseudoElement, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(CSSPseudoElement, Release)
 
-CSSPseudoElement::CSSPseudoElement(Element* aElement,
-                                   CSSPseudoElementType aType)
-  : mParentElement(aElement)
-  , mPseudoType(aType)
-{
+CSSPseudoElement::CSSPseudoElement(dom::Element* aElement,
+                                   PseudoStyleType aType)
+    : mOriginatingElement(aElement), mPseudoType(aType) {
   MOZ_ASSERT(aElement);
-  MOZ_ASSERT(aType == CSSPseudoElementType::after ||
-             aType == CSSPseudoElementType::before,
-             "Unexpected Pseudo Type");
+  MOZ_ASSERT(
+      aType == PseudoStyleType::after || aType == PseudoStyleType::before,
+      "Unexpected Pseudo Type");
 }
 
-CSSPseudoElement::~CSSPseudoElement()
-{
+CSSPseudoElement::~CSSPseudoElement() {
   // Element might have been unlinked already, so we have to do null check.
-  if (mParentElement) {
-    mParentElement->DeleteProperty(
-      GetCSSPseudoElementPropertyAtom(mPseudoType));
+  if (mOriginatingElement) {
+    mOriginatingElement->DeleteProperty(
+        GetCSSPseudoElementPropertyAtom(mPseudoType));
   }
 }
 
-ParentObject
-CSSPseudoElement::GetParentObject() const
-{
-  return mParentElement->GetParentObject();
+ParentObject CSSPseudoElement::GetParentObject() const {
+  return mOriginatingElement->GetParentObject();
 }
 
-JSObject*
-CSSPseudoElement::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
+JSObject* CSSPseudoElement::WrapObject(JSContext* aCx,
+                                       JS::Handle<JSObject*> aGivenProto) {
   return CSSPseudoElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void
-CSSPseudoElement::GetAnimations(const AnimationFilter& filter,
-                                nsTArray<RefPtr<Animation>>& aRetVal)
-{
-  nsIDocument* doc = mParentElement->GetComposedDoc();
+void CSSPseudoElement::GetAnimations(const AnimationFilter& filter,
+                                     nsTArray<RefPtr<Animation>>& aRetVal) {
+  Document* doc = mOriginatingElement->GetComposedDoc();
   if (doc) {
     // We don't need to explicitly flush throttled animations here, since
     // updating the animation style of (pseudo-)elements will never affect the
     // set of running animations and it's only the set of running animations
     // that is important here.
     doc->FlushPendingNotifications(
-      ChangesToFlush(FlushType::Style, false /* flush animations */));
+        ChangesToFlush(FlushType::Style, false /* flush animations */));
   }
 
-  Element::GetAnimationsUnsorted(mParentElement, mPseudoType, aRetVal);
+  Element::GetAnimationsUnsorted(mOriginatingElement, mPseudoType, aRetVal);
   aRetVal.Sort(AnimationPtrComparator<RefPtr<Animation>>());
 }
 
-already_AddRefed<Animation>
-CSSPseudoElement::Animate(
-    JSContext* aContext,
-    JS::Handle<JSObject*> aKeyframes,
+already_AddRefed<Animation> CSSPseudoElement::Animate(
+    JSContext* aContext, JS::Handle<JSObject*> aKeyframes,
     const UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions,
-    ErrorResult& aError)
-{
+    ErrorResult& aError) {
   Nullable<ElementOrCSSPseudoElement> target;
   target.SetValue().SetAsCSSPseudoElement() = this;
   return Element::Animate(target, aContext, aKeyframes, aOptions, aError);
 }
 
-/* static */ already_AddRefed<CSSPseudoElement>
-CSSPseudoElement::GetCSSPseudoElement(Element* aElement,
-                                      CSSPseudoElementType aType)
-{
+/* static */
+already_AddRefed<CSSPseudoElement> CSSPseudoElement::GetCSSPseudoElement(
+    dom::Element* aElement, PseudoStyleType aType) {
   if (!aElement) {
     return nullptr;
   }
 
   nsAtom* propName = CSSPseudoElement::GetCSSPseudoElementPropertyAtom(aType);
   RefPtr<CSSPseudoElement> pseudo =
-    static_cast<CSSPseudoElement*>(aElement->GetProperty(propName));
+      static_cast<CSSPseudoElement*>(aElement->GetProperty(propName));
   if (pseudo) {
     return pseudo.forget();
   }
@@ -108,22 +96,23 @@ CSSPseudoElement::GetCSSPseudoElement(Element* aElement,
   return pseudo.forget();
 }
 
-/* static */ nsAtom*
-CSSPseudoElement::GetCSSPseudoElementPropertyAtom(CSSPseudoElementType aType)
-{
+/* static */
+nsAtom* CSSPseudoElement::GetCSSPseudoElementPropertyAtom(
+    PseudoStyleType aType) {
   switch (aType) {
-    case CSSPseudoElementType::before:
+    case PseudoStyleType::before:
       return nsGkAtoms::cssPseudoElementBeforeProperty;
 
-    case CSSPseudoElementType::after:
+    case PseudoStyleType::after:
       return nsGkAtoms::cssPseudoElementAfterProperty;
 
     default:
-      MOZ_ASSERT_UNREACHABLE("Should not try to get CSSPseudoElement "
-                             "other than ::before or ::after");
+      MOZ_ASSERT_UNREACHABLE(
+          "Should not try to get CSSPseudoElement "
+          "other than ::before or ::after");
       return nullptr;
   }
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

@@ -20,9 +20,17 @@ if CONFIG['MOZ_WEBRTC']:
         'VideoFrameUtils.cpp'
     ]
     LOCAL_INCLUDES += [
+        '/media/libyuv/libyuv/include',
         '/media/webrtc/signaling',
         '/media/webrtc/trunk',
+        '/media/webrtc/trunk/webrtc',
     ]
+
+    if CONFIG['OS_TARGET'] != 'Android':
+        UNIFIED_SOURCES += [
+            'video_engine/desktop_capture_impl.cc',
+            'video_engine/platform_uithread.cc',
+        ]
 
 if CONFIG['OS_TARGET'] == 'Android':
     DEFINES['WEBRTC_ANDROID'] = True
@@ -39,14 +47,6 @@ if CONFIG['OS_TARGET'] == 'Android':
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
   UNIFIED_SOURCES += ['OSXRunLoopSingleton.cpp']
   EXPORTS += ['OSXRunLoopSingleton.h']
-
-if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
-    DEFINES['__PRETTY_FUNCTION__'] = '__FUNCSIG__'
-
-    # This is intended as a temporary workaround to enable building with VS2015.
-    # media\webrtc\trunk\webrtc/base/criticalsection.h(59): warning C4312:
-    # 'reinterpret_cast': conversion from 'DWORD' to 'HANDLE' of greater size
-    CXXFLAGS += ['-wd4312']
 
 EXPORTS.mozilla += ['ShmemPool.h',]
 

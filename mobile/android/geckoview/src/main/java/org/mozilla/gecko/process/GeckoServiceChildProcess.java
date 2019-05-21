@@ -7,10 +7,8 @@ package org.mozilla.gecko.process;
 
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.GeckoAppShell;
-import org.mozilla.gecko.IGeckoEditableParent;
-import org.mozilla.gecko.mozglue.GeckoLoader;
+import org.mozilla.gecko.IGeckoEditableChild;
 import org.mozilla.gecko.GeckoThread;
-import org.mozilla.gecko.mozglue.SafeIntent;
 import org.mozilla.gecko.util.ThreadUtils;
 
 import android.app.Service;
@@ -28,13 +26,13 @@ public class GeckoServiceChildProcess extends Service {
     private static IProcessManager sProcessManager;
 
     @WrapForJNI(calledFrom = "gecko")
-    private static IGeckoEditableParent getEditableParent(final long contentId,
-                                                          final long tabId) {
+    private static void getEditableParent(final IGeckoEditableChild child,
+                                          final long contentId,
+                                          final long tabId) {
         try {
-            return sProcessManager.getEditableParent(contentId, tabId);
+            sProcessManager.getEditableParent(child, contentId, tabId);
         } catch (final RemoteException e) {
             Log.e(LOGTAG, "Cannot get editable", e);
-            return null;
         }
     }
 
@@ -102,8 +100,17 @@ public class GeckoServiceChildProcess extends Service {
                         }
                     }
 
-                    if (GeckoThread.initChildProcess(args, extras, flags, prefsFd, prefMapFd, ipcFd,
-                                                     crashReporterFd, crashAnnotationFd)) {
+                    final GeckoThread.InitInfo info = new GeckoThread.InitInfo();
+                    info.args = args;
+                    info.extras = extras;
+                    info.flags = flags;
+                    info.prefsFd = prefsFd;
+                    info.prefMapFd = prefMapFd;
+                    info.ipcFd = ipcFd;
+                    info.crashFd = crashReporterFd;
+                    info.crashAnnotationFd = crashAnnotationFd;
+
+                    if (GeckoThread.init(info)) {
                         GeckoThread.launch();
                     }
                 }
@@ -124,14 +131,14 @@ public class GeckoServiceChildProcess extends Service {
     }
 
     @Override
-    public boolean onUnbind(Intent intent) {
+    public boolean onUnbind(final Intent intent) {
         Log.i(LOGTAG, "Service has been unbound. Stopping.");
         stopSelf();
         Process.killProcess(Process.myPid());
         return false;
     }
 
-    public static final class geckomediaplugin extends GeckoServiceChildProcess {}
+    public static final class gmplugin extends GeckoServiceChildProcess {}
 
     public static final class tab extends GeckoServiceChildProcess {}
 }

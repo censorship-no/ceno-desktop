@@ -3,20 +3,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   UITour: "resource:///modules/UITour.jsm",
   FxAccounts: "resource://gre/modules/FxAccounts.jsm",
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
+  OS: "resource://gre/modules/osfile.jsm",
 });
-const {ASRouterActions: ra, actionTypes: at, actionCreators: ac} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm", {});
-const {CFRMessageProvider} = ChromeUtils.import("resource://activity-stream/lib/CFRMessageProvider.jsm", {});
-const {OnboardingMessageProvider} = ChromeUtils.import("resource://activity-stream/lib/OnboardingMessageProvider.jsm", {});
-const {SnippetsTestMessageProvider} = ChromeUtils.import("resource://activity-stream/lib/SnippetsTestMessageProvider.jsm", {});
-const {RemoteSettings} = ChromeUtils.import("resource://services-settings/remote-settings.js", {});
-const {CFRPageActions} = ChromeUtils.import("resource://activity-stream/lib/CFRPageActions.jsm", {});
+const {ASRouterActions: ra, actionTypes: at, actionCreators: ac} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm");
+const {CFRMessageProvider} = ChromeUtils.import("resource://activity-stream/lib/CFRMessageProvider.jsm");
+const {OnboardingMessageProvider} = ChromeUtils.import("resource://activity-stream/lib/OnboardingMessageProvider.jsm");
+const {SnippetsTestMessageProvider} = ChromeUtils.import("resource://activity-stream/lib/SnippetsTestMessageProvider.jsm");
+const {RemoteSettings} = ChromeUtils.import("resource://services-settings/remote-settings.js");
+const {CFRPageActions} = ChromeUtils.import("resource://activity-stream/lib/CFRPageActions.jsm");
+const {AttributionCode} = ChromeUtils.import("resource:///modules/AttributionCode.jsm");
 
 ChromeUtils.defineModuleGetter(this, "ASRouterPreferences",
   "resource://activity-stream/lib/ASRouterPreferences.jsm");
@@ -26,6 +29,40 @@ ChromeUtils.defineModuleGetter(this, "QueryCache",
   "resource://activity-stream/lib/ASRouterTargeting.jsm");
 ChromeUtils.defineModuleGetter(this, "ASRouterTriggerListeners",
   "resource://activity-stream/lib/ASRouterTriggerListeners.jsm");
+ChromeUtils.defineModuleGetter(this, "TelemetryEnvironment",
+  "resource://gre/modules/TelemetryEnvironment.jsm");
+ChromeUtils.defineModuleGetter(this, "ClientEnvironment",
+  "resource://normandy/lib/ClientEnvironment.jsm");
+ChromeUtils.defineModuleGetter(this, "Sampling",
+  "resource://gre/modules/components-utils/Sampling.jsm");
+
+const TRAILHEAD_CONFIG = {
+  OVERRIDE_PREF: "trailhead.firstrun.branches",
+  DID_SEE_ABOUT_WELCOME_PREF: "trailhead.firstrun.didSeeAboutWelcome",
+  INTERRUPTS_EXPERIMENT_PREF: "trailhead.firstrun.interruptsExperiment",
+  TRIPLETS_ENROLLED_PREF: "trailhead.firstrun.tripletsEnrolled",
+  BRANCHES: {
+    interrupts: [
+      ["control"],
+      ["join"],
+      ["sync"],
+      ["nofirstrun"],
+      ["cards"],
+    ],
+    triplets: [
+      ["supercharge"],
+      ["payoff"],
+      ["multidevice"],
+      ["privacy"],
+    ],
+  },
+  LOCALES: ["en-US", "en-GB", "en-CA", "de", "de-DE", "fr", "fr-FR"],
+  EXPERIMENT_RATIOS: [
+    ["", 1],
+    ["interrupts", 1],
+    ["triplets", 1],
+  ],
+};
 
 const INCOMING_MESSAGE_NAME = "ASRouter:child-to-parent";
 const OUTGOING_MESSAGE_NAME = "ASRouter:parent-to-child";
@@ -42,6 +79,17 @@ const MAX_MESSAGE_LIFETIME_CAP = 100;
 
 const LOCAL_MESSAGE_PROVIDERS = {OnboardingMessageProvider, CFRMessageProvider, SnippetsTestMessageProvider};
 const STARTPAGE_VERSION = "6";
+
+/**
+ * chooseBranch<T> -  Choose an item from a list of "branches" pseudorandomly using a seed / ratio configuration
+ * @param seed {string} A unique seed for the randomizer
+ * @param branches {Array<[T, number?]>} A list of branches, where branch[0] is any item and branch[1] is the ratio
+ * @returns {T} An randomly chosen item in a branch
+ */
+async function chooseBranch(seed, branches) {
+  const ratios = branches.map(([item, ratio]) => ((typeof ratio !== "undefined") ? ratio : 1));
+  return branches[await Sampling.ratioSample(seed, ratios)][0];
+}
 
 const MessageLoaderUtils = {
   STARTPAGE_VERSION,
@@ -204,6 +252,10 @@ const MessageLoaderUtils = {
       messages = [];
       Cu.reportError(new Error(`Tried to load messages for ${provider.id} but the result was not an Array.`));
     }
+    // Filter out messages we temporarily want to exclude
+    if (provider.exclude && provider.exclude.length) {
+      messages = messages.filter(message => !provider.exclude.includes(message.id));
+    }
     const lastUpdated = Date.now();
     return {
       messages: messages.map(msg => ({weight: 100, ...msg, provider: provider.id}))
@@ -212,19 +264,41 @@ const MessageLoaderUtils = {
     };
   },
 
+  /**
+   * _loadAddonIconInURLBar - load addons-notification icon by displaying
+   * box containing addons icon in urlbar. See Bug 1513882
+   *
+   * @param  {XULElement} Target browser element for showing addons icon
+   */
+  _loadAddonIconInURLBar(browser) {
+    if (!browser) {
+      return;
+    }
+    const chromeDoc = browser.ownerDocument;
+    let notificationPopupBox = chromeDoc.getElementById("notification-popup-box");
+    if (!notificationPopupBox) {
+      return;
+    }
+    if (notificationPopupBox.style.display === "none" ||
+        notificationPopupBox.style.display === "") {
+      notificationPopupBox.style.display = "block";
+    }
+  },
+
   async installAddonFromURL(browser, url) {
     try {
+      MessageLoaderUtils._loadAddonIconInURLBar(browser);
       const aUri = Services.io.newURI(url);
       const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
 
-      // AddonManager installation source associated to the addons installed from activitystream
-      // (See Bug 1496167 for a rationale).
-      const amTelemetryInfo = {source: "activitystream"};
-      const install = await AddonManager.getInstallForURL(aUri.spec, "application/x-xpinstall", null,
-                                                          null, null, null, null, amTelemetryInfo);
+      // AddonManager installation source associated to the addons installed from activitystream's CFR
+      const telemetryInfo = {source: "amo"};
+      const install = await AddonManager.getInstallForURL(aUri.spec, {telemetryInfo});
       await AddonManager.installAddonFromWebpage("application/x-xpinstall", browser,
         systemPrincipal, install);
-    } catch (e) {}
+    } catch (e) {
+      Cu.reportError(e);
+    }
   },
 
   /**
@@ -272,6 +346,9 @@ class _ASRouter {
       providerBlockList: [],
       messageImpressions: {},
       providerImpressions: {},
+      trailheadInitialized: false,
+      trailheadInterrupt: "",
+      trailheadTriplet: "",
       messages: [],
     };
     this._triggerHandler = this._triggerHandler.bind(this);
@@ -309,8 +386,13 @@ class _ASRouter {
       // The provider should be enabled and not have a user preference set to false
       ...ASRouterPreferences.providers.filter(p => (
         p.enabled &&
-        ASRouterPreferences.getUserPreference(p.id) !== false)
-      ),
+        (
+          ASRouterPreferences.getUserPreference(p.id) !== false &&
+          // Provider is enabled or if provider has multiple categories
+          // check that at least one category is enabled
+          (!p.categories || p.categories.some(c => ASRouterPreferences.getUserPreference(c) !== false))
+        )
+      )),
     ].map(_provider => {
       // make a copy so we don't modify the source of the pref
       const provider = {..._provider};
@@ -384,7 +466,8 @@ class _ASRouter {
       let newState = {messages: [], providers: []};
       for (const provider of this.state.providers) {
         if (needsUpdate.includes(provider)) {
-          const {messages, lastUpdated} = await MessageLoaderUtils.loadMessagesForProvider(provider, this._storage);
+          let {messages, lastUpdated} = await MessageLoaderUtils.loadMessagesForProvider(provider, this._storage);
+          messages = messages.filter(({content}) => !content || !content.category || ASRouterPreferences.getUserPreference(content.category));
           newState.providers.push({...provider, lastUpdated});
           newState.messages = [...newState.messages, ...messages];
         } else {
@@ -403,7 +486,7 @@ class _ASRouter {
       const unseenListeners = new Set(ASRouterTriggerListeners.keys());
       for (const {trigger} of newState.messages) {
         if (trigger && ASRouterTriggerListeners.has(trigger.id)) {
-          ASRouterTriggerListeners.get(trigger.id).init(this._triggerHandler, trigger.params);
+          await ASRouterTriggerListeners.get(trigger.id).init(this._triggerHandler, trigger.params);
           unseenListeners.delete(trigger.id);
         }
       }
@@ -438,6 +521,9 @@ class _ASRouter {
 
     ASRouterPreferences.init();
     ASRouterPreferences.addListener(this.onPrefChange);
+
+    // We need to check whether to set up telemetry for trailhead
+    await this.setupTrailhead();
 
     const messageBlockList = await this._storage.get("messageBlockList") || [];
     const providerBlockList = await this._storage.get("providerBlockList") || [];
@@ -495,13 +581,31 @@ class _ASRouter {
     }
   }
 
-  _updateAdminState(target) {
+  /**
+   * Used by ASRouter Admin returns all ASRouterTargeting.Environment
+   * and ASRouter._getMessagesContext parameters and values
+   */
+  async getTargetingParameters(environment, localContext) {
+    const targetingParameters = {};
+    for (const param of Object.keys(environment)) {
+      targetingParameters[param] = await environment[param];
+    }
+    for (const param of Object.keys(localContext)) {
+      targetingParameters[param] = await localContext[param];
+    }
+
+    return targetingParameters;
+  }
+
+  async _updateAdminState(target) {
     const channel = target || this.messageChannel;
     channel.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {
       type: "ADMIN_SET_STATE",
       data: {
         ...this.state,
         providerPrefs: ASRouterPreferences.providers,
+        userPrefs: ASRouterPreferences.getAllUserPreferences(),
+        targetingParameters: await this.getTargetingParameters(ASRouterTargeting.Environment, this._getMessagesContext()),
       },
     });
   }
@@ -518,12 +622,108 @@ class _ASRouter {
     }
   }
 
+  /**
+   * _generateTrailheadBranches - Generates and returns Trailhead configuration and chooses an experiment
+   *                             based on clientID and locale.
+   * @returns {{experiment: string, interrupt: string, triplet: string}}
+   */
+  async _generateTrailheadBranches() {
+    let experiment = "";
+    let interrupt;
+    let triplet;
+
+    // If a value is set in TRAILHEAD_OVERRIDE_PREF, it will be returned and no experiment will be set.
+    const overrideValue = Services.prefs.getStringPref(TRAILHEAD_CONFIG.OVERRIDE_PREF, "");
+    if (overrideValue) {
+      [interrupt, triplet] = overrideValue.split("-");
+      return {experiment, interrupt, triplet: triplet || ""};
+    }
+
+    const locale = Services.locale.appLocaleAsLangTag;
+
+    if (TRAILHEAD_CONFIG.LOCALES.includes(locale)) {
+      const {userId} = ClientEnvironment;
+      experiment = await chooseBranch(`${userId}-trailhead-experiments`, TRAILHEAD_CONFIG.EXPERIMENT_RATIOS);
+
+      // For the interrupts experiment,
+      // we randomly assign an interrupt and always use the "supercharge" triplet.
+      if (experiment === "interrupts") {
+        interrupt =  await chooseBranch(`${userId}-interrupts-branch`, TRAILHEAD_CONFIG.BRANCHES.interrupts);
+        if (["join", "sync", "cards"].includes(interrupt)) {
+          triplet = "supercharge";
+        }
+
+      // For the triplets experiment or non-experiment experience,
+      // we randomly assign a triplet and always use the "join" interrupt.
+      } else {
+        interrupt = "join";
+        triplet = await chooseBranch(`${userId}-triplets-branch`, TRAILHEAD_CONFIG.BRANCHES.triplets);
+      }
+    } else {
+      // If the user is not in a trailhead-compabtible locale, return the control experience and no experiment.
+      interrupt = "control";
+    }
+
+    return {experiment, interrupt, triplet};
+  }
+
+  // Dispatch a TRAILHEAD_ENROLL_EVENT action
+  _sendTrailheadEnrollEvent(data) {
+    this.dispatchToAS({
+      type: at.TRAILHEAD_ENROLL_EVENT,
+      data,
+    });
+  }
+
+  async setupTrailhead() {
+    // Don't initialize
+    if (this.state.trailheadInitialized || !Services.prefs.getBoolPref(TRAILHEAD_CONFIG.DID_SEE_ABOUT_WELCOME_PREF, false)) {
+      return;
+    }
+
+    const {experiment, interrupt, triplet} = await this._generateTrailheadBranches();
+    await this.setState({trailheadInitialized: true, trailheadInterrupt: interrupt, trailheadTriplet: triplet});
+
+    if (experiment) {
+      // In order for ping centre to pick this up, it MUST contain a substring activity-stream
+      const experimentName = `activity-stream-firstrun-trailhead-${experiment}`;
+
+      TelemetryEnvironment.setExperimentActive(
+        experimentName,
+        experiment === "interrupts" ? interrupt : triplet,
+        {type: "as-firstrun"}
+      );
+
+      // On the first time setting the interrupts experiment, expose the branch
+      // for normandy to target for survey study, and send out the enrollment ping.
+      if (experiment === "interrupts" &&
+          !Services.prefs.prefHasUserValue(TRAILHEAD_CONFIG.INTERRUPTS_EXPERIMENT_PREF)) {
+        Services.prefs.setStringPref(TRAILHEAD_CONFIG.INTERRUPTS_EXPERIMENT_PREF, interrupt);
+        this._sendTrailheadEnrollEvent({experiment: experimentName, type: "as-firstrun", branch: interrupt});
+      }
+
+      // On the first time setting the triplets experiment, send out the enrollment ping.
+      if (experiment === "triplets" &&
+          !Services.prefs.getBoolPref(TRAILHEAD_CONFIG.TRIPLETS_ENROLLED_PREF, false)) {
+        Services.prefs.setBoolPref(TRAILHEAD_CONFIG.TRIPLETS_ENROLLED_PREF, true);
+        this._sendTrailheadEnrollEvent({experiment: experimentName, type: "as-firstrun", branch: triplet});
+      }
+    }
+  }
+
   // Return an object containing targeting parameters used to select messages
   _getMessagesContext() {
-    const {previousSessionEnd} = this.state;
+    const {previousSessionEnd, trailheadInterrupt, trailheadTriplet} = this.state;
+
     return {
       get previousSessionEnd() {
         return previousSessionEnd;
+      },
+      get trailheadInterrupt() {
+        return trailheadInterrupt;
+      },
+      get trailheadTriplet() {
+        return trailheadTriplet;
       },
     };
   }
@@ -535,6 +735,18 @@ class _ASRouter {
      // Find a message that matches the targeting context as well as the trigger context (if one is provided)
      // If no trigger is provided, we should find a message WITHOUT a trigger property defined.
     return ASRouterTargeting.findMatchingMessage({messages, trigger, context, onError: this._handleTargetingError});
+  }
+
+  async evaluateExpression(target, {expression, context}) {
+    const channel = target || this.messageChannel;
+    let evaluationStatus;
+    try {
+      evaluationStatus = {result: await ASRouterTargeting.isMatch(expression, context), success: true};
+    } catch (e) {
+      evaluationStatus = {result: e.message, success: false};
+    }
+
+    channel.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "ADMIN_SET_STATE", data: {...this.state, evaluationStatus}});
   }
 
   _orderBundle(bundle) {
@@ -578,18 +790,34 @@ class _ASRouter {
   }
 
   async _getBundledMessages(originalMessage, target, trigger, force = false) {
-    let result = [{content: originalMessage.content, id: originalMessage.id, order: originalMessage.order || 0}];
+    let result = [];
+    let bundleLength;
+    let bundleTemplate;
+    let originalId;
+
+    if (originalMessage.includeBundle) {
+      // The original message is not part of the bundle, so don't include it
+      bundleLength = originalMessage.includeBundle.length;
+      bundleTemplate =  originalMessage.includeBundle.template;
+    } else {
+      // The original message is part of the bundle
+      bundleLength = originalMessage.bundled;
+      bundleTemplate =  originalMessage.template;
+      originalId = originalMessage.id;
+      // Add in a copy of the first message
+      result.push({content: originalMessage.content, id: originalMessage.id, order: originalMessage.order || 0});
+    }
 
     // First, find all messages of same template. These are potential matching targeting candidates
     let bundledMessagesOfSameTemplate = this._getUnblockedMessages()
-                                          .filter(msg => msg.bundled && msg.template === originalMessage.template && msg.id !== originalMessage.id);
+      .filter(msg => msg.bundled && msg.template === bundleTemplate && msg.id !== originalId);
 
     if (force) {
       // Forcefully show the messages without targeting matching - this is for about:newtab#asrouter to show the messages
       for (const message of bundledMessagesOfSameTemplate) {
         result.push({content: message.content, id: message.id});
         // Stop once we have enough messages to fill a bundle
-        if (result.length === originalMessage.bundled) {
+        if (result.length === bundleLength) {
           break;
         }
       }
@@ -606,14 +834,14 @@ class _ASRouter {
         result.push({content: message.content, id: message.id, order: message.order || 0});
         bundledMessagesOfSameTemplate.splice(bundledMessagesOfSameTemplate.findIndex(msg => msg.id === message.id), 1);
         // Stop once we have enough messages to fill a bundle
-        if (result.length === originalMessage.bundled) {
+        if (result.length === bundleLength) {
           break;
         }
       }
     }
 
     // If we did not find enough messages to fill the bundle, do not send the bundle down
-    if (result.length < originalMessage.bundled) {
+    if (result.length < bundleLength) {
       return null;
     }
 
@@ -622,7 +850,12 @@ class _ASRouter {
     // handle finding these strings on its own. See bug 1488973
     const extraTemplateStrings = await this._extraTemplateStrings(originalMessage);
 
-    return {bundle: this._orderBundle(result), ...(extraTemplateStrings && {extraTemplateStrings}), provider: originalMessage.provider, template: originalMessage.template};
+    return {
+      bundle: this._orderBundle(result),
+      ...(extraTemplateStrings && {extraTemplateStrings}),
+      provider: originalMessage.provider,
+      template: originalMessage.template,
+    };
   }
 
   async _extraTemplateStrings(originalMessage) {
@@ -659,7 +892,16 @@ class _ASRouter {
     } else if (message.bundled) {
       const bundledMessages = await this._getBundledMessages(message, target, trigger, force);
       const action = bundledMessages ? {type: "SET_BUNDLED_MESSAGES", data: bundledMessages} : {type: "CLEAR_ALL"};
-      target.sendAsyncMessage(OUTGOING_MESSAGE_NAME, action);
+      try {
+        target.sendAsyncMessage(OUTGOING_MESSAGE_NAME, action);
+      } catch (e) {}
+
+    // For nested bundled messages, look for the desired bundle
+    } else if (message.includeBundle) {
+      const bundledMessages = await this._getBundledMessages(message, target, message.includeBundle.trigger, force);
+      try {
+        target.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "SET_MESSAGE", data: {...message, bundle: bundledMessages && bundledMessages.bundle}});
+      } catch (e) {}
 
     // CFR doorhanger
     } else if (message.template === "cfr_doorhanger") {
@@ -671,7 +913,9 @@ class _ASRouter {
 
     // New tab single messages
     } else {
-      target.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "SET_MESSAGE", data: message});
+      try {
+        target.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "SET_MESSAGE", data: message});
+      } catch (e) {}
     }
   }
 
@@ -815,6 +1059,7 @@ class _ASRouter {
       });
 
       this._storage.set("messageBlockList", messageBlockList);
+      this._storage.set("messageImpressions", messageImpressions);
       return {messageBlockList, messageImpressions};
     });
   }
@@ -845,6 +1090,16 @@ class _ASRouter {
     } catch (e) {
       return false;
     }
+  }
+
+  // Ensure we switch to the Onboarding message after RTAMO addon was installed
+  _updateOnboardingState() {
+    let addonInstallObs = (subject, topic) => {
+      Services.obs.removeObserver(addonInstallObs, "webextension-install-notify");
+      this.messageChannel.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "CLEAR_MESSAGE", data: {id: "RETURN_TO_AMO_1"}});
+      this.blockMessageById("RETURN_TO_AMO_1");
+    };
+    Services.obs.addObserver(addonInstallObs, "webextension-install-notify");
   }
 
   _loadSnippetsWhitelistHosts() {
@@ -891,6 +1146,59 @@ class _ASRouter {
     }
   }
 
+  // Windows specific calls to write attribution data
+  // Used by `forceAttribution` to set required targeting attributes for
+  // RTAMO messages. This should only be called from within about:newtab#asrouter
+  /* istanbul ignore next */
+  async _writeAttributionFile(data) {
+    let appDir = Services.dirsvc.get("LocalAppData", Ci.nsIFile);
+    let file = appDir.clone();
+    file.append(Services.appinfo.vendor || "mozilla");
+    file.append(AppConstants.MOZ_APP_NAME);
+
+    await OS.File.makeDir(file.path,
+        {from: appDir.path, ignoreExisting: true});
+
+    file.append("postSigningData");
+    await OS.File.writeAtomic(file.path, data);
+  }
+
+  /**
+   * forceAttribution - this function should only be called from within about:newtab#asrouter.
+   * It forces the browser attribution to be set to something specified in asrouter admin
+   * tools, and reloads the providers in order to get messages that are dependant on this
+   * attribution data (see Return to AMO flow in bug 1475354 for example). Note - OSX and Windows only
+   * @param {data} Object an object containing the attribtion data that came from asrouter admin page
+   */
+  /* istanbul ignore next */
+  async forceAttribution(data) {
+    // Extract the parameters from data that will make up the referrer url
+    const {source, campaign, content} = data;
+    if (AppConstants.platform === "win") {
+      const attributionData = `source=${source}&campaign=${campaign}&content=${content}`;
+      this._writeAttributionFile(encodeURIComponent(attributionData));
+    } else if (AppConstants.platform === "macosx") {
+      let appPath = Services.dirsvc.get("GreD", Ci.nsIFile).parent.parent.path;
+      let attributionSvc = Cc["@mozilla.org/mac-attribution;1"]
+        .getService(Ci.nsIMacAttributionService);
+
+      let referrer = `https://www.mozilla.org/anything/?utm_campaign=${campaign}&utm_source=${source}&utm_content=${encodeURIComponent(content)}`;
+
+      // This sets the Attribution to be the referrer
+      attributionSvc.setReferrerUrl(appPath, referrer, true);
+    }
+
+    // Clear cache call is only possible in a testing environment
+    let env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
+    env.set("XPCSHELL_TEST_PROFILE_DIR", "testing");
+
+    // Clear and refresh Attribution, and then fetch the messages again to update
+    AttributionCode._clearCache();
+    AttributionCode.getAttrDataAsync();
+    this._updateMessageProviders();
+    await this.loadMessagesFromAllProviders();
+  }
+
   async handleUserAction({data: action, target}) {
     switch (action.type) {
       case ra.OPEN_PRIVATE_BROWSER_WINDOW:
@@ -898,7 +1206,7 @@ class _ASRouter {
         target.browser.ownerGlobal.OpenBrowserWindow({private: true});
         break;
       case ra.OPEN_URL:
-        target.browser.ownerGlobal.openLinkIn(action.data.args, "tabshifted", {
+        target.browser.ownerGlobal.openLinkIn(action.data.args, action.data.where || "current", {
           private: false,
           triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
         });
@@ -913,12 +1221,18 @@ class _ASRouter {
         UITour.showMenu(target.browser.ownerGlobal, action.data.args);
         break;
       case ra.INSTALL_ADDON_FROM_URL:
+        this._updateOnboardingState();
         await MessageLoaderUtils.installAddonFromURL(target.browser, action.data.url);
+        break;
+      case ra.PIN_CURRENT_TAB:
+        let tab = target.browser.ownerGlobal.gBrowser.selectedTab;
+        target.browser.ownerGlobal.gBrowser.pinTab(tab);
+        target.browser.ownerGlobal.ConfirmationHint.show(tab, "pinTab", {showDescription: true});
         break;
       case ra.SHOW_FIREFOX_ACCOUNTS:
         const url = await FxAccounts.config.promiseSignUpURI("snippets");
         // We want to replace the current tab.
-        target.browser.ownerGlobal.openLinkIn(url, "tabshifted", {
+        target.browser.ownerGlobal.openLinkIn(url, "current", {
           private: false,
           triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
         });
@@ -930,6 +1244,7 @@ class _ASRouter {
     this.onMessage({data: action, target});
   }
 
+  /* eslint-disable complexity */
   async onMessage({data: action, target}) {
     switch (action.type) {
       case "USER_ACTION":
@@ -944,6 +1259,13 @@ class _ASRouter {
         if (action.data && action.data.endpoint) {
           await this._addPreviewEndpoint(action.data.endpoint.url, target.portID);
         }
+
+        // Special experiment intialization for trailhead
+        if (action.data && action.data.trigger && action.data.trigger.id === "firstRun") {
+          Services.prefs.setBoolPref(TRAILHEAD_CONFIG.DID_SEE_ABOUT_WELCOME_PREF, true);
+          await this.setupTrailhead();
+        }
+
         // Check if any updates are needed first
         await this.loadMessagesFromAllProviders();
         await this.sendNextMessage(target, (action.data && action.data.trigger) || {});
@@ -963,6 +1285,9 @@ class _ASRouter {
       case "BLOCK_PROVIDER_BY_ID":
         await this.blockProviderById(action.data.id);
         this.messageChannel.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "CLEAR_PROVIDER", data: {id: action.data.id}});
+        break;
+      case "DISMISS_BUNDLE":
+        this.messageChannel.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {type: "CLEAR_BUNDLE"});
         break;
       case "BLOCK_BUNDLE":
         await this.blockMessageById(action.data.bundle.map(b => b.id));
@@ -1004,7 +1329,7 @@ class _ASRouter {
           this._addPreviewEndpoint(action.data.endpoint.url, target.portID);
           await this.loadMessagesFromAllProviders();
         } else {
-          this._updateAdminState(target);
+          await this._updateAdminState(target);
         }
         break;
       case "IMPRESSION":
@@ -1027,10 +1352,20 @@ class _ASRouter {
       case "RESET_PROVIDER_PREF":
         ASRouterPreferences.resetProviderPref();
         break;
+      case "SET_PROVIDER_USER_PREF":
+        ASRouterPreferences.setUserPreference(action.data.id, action.data.value);
+        break;
+      case "EVALUATE_JEXL_EXPRESSION":
+        this.evaluateExpression(target, action.data);
+        break;
+      case "FORCE_ATTRIBUTION":
+        this.forceAttribution(action.data);
     }
   }
 }
 this._ASRouter = _ASRouter;
+this.chooseBranch = chooseBranch;
+this.TRAILHEAD_CONFIG = TRAILHEAD_CONFIG;
 
 /**
  * ASRouter - singleton instance of _ASRouter that controls all messages
@@ -1038,4 +1373,4 @@ this._ASRouter = _ASRouter;
  */
 this.ASRouter = new _ASRouter();
 
-const EXPORTED_SYMBOLS = ["_ASRouter", "ASRouter", "MessageLoaderUtils"];
+const EXPORTED_SYMBOLS = ["_ASRouter", "ASRouter", "MessageLoaderUtils", "chooseBranch", "TRAILHEAD_CONFIG"];

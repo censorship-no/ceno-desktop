@@ -34,10 +34,11 @@ class EditAutofillForm {
     if (!record.guid) {
       // Reset the dirty value flag and validity state.
       this._elements.form.reset();
-    }
-
-    for (let field of this._elements.form.elements) {
-      this.updatePopulatedState(field);
+    } else {
+      for (let field of this._elements.form.elements) {
+        this.updatePopulatedState(field);
+        this.updateCustomValidity(field);
+      }
     }
   }
 
@@ -48,16 +49,29 @@ class EditAutofillForm {
   }
 
   /**
-   * Get inputs from the form.
+   * Get a record from the form suitable for a save/update in storage.
    * @returns {object}
    */
   buildFormObject() {
+    let initialObject = {};
+    if (this.hasMailingAddressFields) {
+      // Start with an empty string for each mailing-address field so that any
+      // fields hidden for the current country are blanked in the return value.
+      initialObject = {
+        "street-address": "",
+        "address-level3": "",
+        "address-level2": "",
+        "address-level1": "",
+        "postal-code": "",
+      };
+    }
+
     return Array.from(this._elements.form.elements).reduce((obj, input) => {
       if (!input.disabled) {
         obj[input.id] = input.value;
       }
       return obj;
-    }, {});
+    }, initialObject);
   }
 
   /**
@@ -113,6 +127,13 @@ class EditAutofillForm {
     }
     span.toggleAttribute("field-populated", !!field.value.trim());
   }
+
+  /**
+   * Run custom validity routines specific to the field and type of form.
+   *
+   * @param {DOMElement} field The field that will be validated.
+   */
+  updateCustomValidity(field) {}
 }
 
 class EditAddress extends EditAutofillForm {
@@ -122,6 +143,8 @@ class EditAddress extends EditAutofillForm {
    * @param {object} config
    * @param {string[]} config.DEFAULT_REGION
    * @param {function} config.getFormFormat Function to return form layout info for a given country.
+   * @param {function} config.findAddressSelectOption Finds the matching select option for a given
+                                                      select element, address, and fieldName.
    * @param {string[]} config.countries
    * @param {boolean} [config.noValidate=undefined] Whether to validate the form
    */
@@ -154,8 +177,18 @@ class EditAddress extends EditAutofillForm {
         country: this.DEFAULT_REGION,
       };
     }
+
+    let {addressLevel1Options} = this.getFormFormat(record.country);
+    this.populateAddressLevel1(addressLevel1Options, record.country);
+
     super.loadRecord(record);
+    this.loadAddressLevel1(record["address-level1"], record.country);
     this.formatForm(record.country);
+  }
+
+  get hasMailingAddressFields() {
+    let {addressFields} = this._elements.form.dataset;
+    return !addressFields || addressFields.trim().split(/\s+/).includes("mailing-address");
   }
 
   /**
@@ -210,27 +243,42 @@ class EditAddress extends EditAutofillForm {
       addressLevel3Label,
       addressLevel2Label,
       addressLevel1Label,
+      addressLevel1Options,
       postalCodeLabel,
       fieldsOrder: mailingFieldsOrder,
       postalCodePattern,
+      countryRequiredFields,
     } = this.getFormFormat(country);
     this._elements.addressLevel3Label.dataset.localization = addressLevel3Label;
     this._elements.addressLevel2Label.dataset.localization = addressLevel2Label;
     this._elements.addressLevel1Label.dataset.localization = addressLevel1Label;
     this._elements.postalCodeLabel.dataset.localization = postalCodeLabel;
     let addressFields = this._elements.form.dataset.addressFields;
+    let extraRequiredFields = this._elements.form.dataset.extraRequiredFields;
     let fieldClasses = EditAddress.computeVisibleFields(mailingFieldsOrder, addressFields);
-    this.arrangeFields(fieldClasses);
+    let requiredFields = new Set(countryRequiredFields);
+    if (extraRequiredFields) {
+      for (let extraRequiredField of extraRequiredFields.trim().split(/\s+/)) {
+        requiredFields.add(extraRequiredField);
+      }
+    }
+    this.arrangeFields(fieldClasses, requiredFields);
     this.updatePostalCodeValidation(postalCodePattern);
+    this.populateAddressLevel1(addressLevel1Options, country);
   }
 
   /**
    * Update address field visibility and order based on libaddressinput data.
    *
    * @param {object[]} fieldsOrder array of objects with `fieldId` and optional `newLine` properties
+   * @param {Set} requiredFields Set of `fieldId` strings that mark which fields are required
    */
-  arrangeFields(fieldsOrder) {
+  arrangeFields(fieldsOrder, requiredFields) {
+    /**
+     * @see FormAutofillStorage.VALID_ADDRESS_FIELDS
+     */
     let fields = [
+      // `name` is a wrapper for the 3 name fields.
       "name",
       "organization",
       "street-address",
@@ -245,9 +293,18 @@ class EditAddress extends EditAutofillForm {
     let inputs = [];
     for (let i = 0; i < fieldsOrder.length; i++) {
       let {fieldId, newLine} = fieldsOrder[i];
+
       let container = this._elements.form.querySelector(`#${fieldId}-container`);
       let containerInputs = [...container.querySelectorAll("input, textarea, select")];
-      containerInputs.forEach(function(input) { input.disabled = false; });
+      containerInputs.forEach(function(input) {
+        input.disabled = false;
+        // libaddressinput doesn't list 'country' or 'name' as required.
+        // The additional-name field should never get marked as required.
+        input.required = (fieldId == "country" ||
+                          fieldId == "name" ||
+                          requiredFields.has(fieldId)) &&
+                         input.id != "additional-name";
+      });
       inputs.push(...containerInputs);
       container.style.display = "flex";
       container.style.order = i;
@@ -276,6 +333,85 @@ class EditAddress extends EditAutofillForm {
     } else {
       postalCodeInput.removeAttribute("pattern");
     }
+  }
+
+  /**
+   * Set the address-level1 value on the form field (input or select, whichever is present).
+   *
+   * @param {string} addressLevel1Value Value of the address-level1 from the autofill record
+   * @param {string} country The corresponding country
+   */
+  loadAddressLevel1(addressLevel1Value, country) {
+    let field = this._elements.form.querySelector("#address-level1");
+
+    if (field.localName == "input") {
+      field.value = addressLevel1Value || "";
+      return;
+    }
+
+    let matchedSelectOption = this.findAddressSelectOption(field, {
+      country,
+      "address-level1": addressLevel1Value,
+    }, "address-level1");
+    if (matchedSelectOption && !matchedSelectOption.selected) {
+      field.value = matchedSelectOption.value;
+      field.dispatchEvent(new Event("input", {bubbles: true}));
+      field.dispatchEvent(new Event("change", {bubbles: true}));
+    } else if (addressLevel1Value) {
+      // If the option wasn't found, insert an option at the beginning of
+      // the select that matches the stored value.
+      field.insertBefore(new Option(addressLevel1Value, addressLevel1Value, true, true), field.firstChild);
+    }
+  }
+
+  /**
+   * Replace the text input for address-level1 with a select dropdown if
+   * a fixed set of names exists. Otherwise show a text input.
+   *
+   * @param {Map?} options Map of options with regionCode -> name mappings
+   * @param {string} country The corresponding country
+   */
+  populateAddressLevel1(options, country) {
+    let field = this._elements.form.querySelector("#address-level1");
+
+    if (field.dataset.country == country) {
+      return;
+    }
+
+    if (!options) {
+      if (field.localName == "input") {
+        return;
+      }
+
+      let input = document.createElement("input");
+      input.setAttribute("type", "text");
+      input.id = "address-level1";
+      input.required = field.required;
+      input.disabled = field.disabled;
+      input.tabIndex = field.tabIndex;
+      field.replaceWith(input);
+      return;
+    }
+
+    if (field.localName == "input") {
+      let select = document.createElement("select");
+      select.id = "address-level1";
+      select.required = field.required;
+      select.disabled = field.disabled;
+      select.tabIndex = field.tabIndex;
+      field.replaceWith(select);
+      field = select;
+    }
+
+    field.textContent = "";
+    field.dataset.country = country;
+    let fragment = document.createDocumentFragment();
+    fragment.appendChild(new Option(undefined, undefined, true, true));
+    for (let [regionCode, regionName] of options) {
+      let option = new Option(regionName, regionCode);
+      fragment.appendChild(option);
+    }
+    field.appendChild(fragment);
   }
 
   populateCountries() {
@@ -328,26 +464,45 @@ class EditCreditCard extends EditAutofillForm {
       billingAddressRow: this._elements.form.querySelector(".billingAddressRow"),
     });
 
-    this.loadRecord(record, addresses);
     this.attachEventListeners();
+    this.loadRecord(record, addresses);
   }
 
   loadRecord(record, addresses, preserveFieldValues) {
     // _record must be updated before generateYears and generateBillingAddressOptions are called.
     this._record = record;
     this._addresses = addresses;
-    this.generateBillingAddressOptions();
+    this.generateBillingAddressOptions(preserveFieldValues);
     if (!preserveFieldValues) {
       // Re-populating the networks will reset the selected option.
       this.populateNetworks();
+      // Re-generating the months will reset the selected option.
+      this.generateMonths();
       // Re-generating the years will reset the selected option.
       this.generateYears();
       super.loadRecord(record);
+    }
+  }
 
-      // Resetting the form in the super.loadRecord won't clear custom validity
-      // state so reset it here. Since the cc-number field is disabled upon editing
-      // we don't need to recaclulate its validity here.
-      this._elements.ccNumber.setCustomValidity("");
+  generateMonths() {
+    const count = 12;
+
+    // Clear the list
+    this._elements.month.textContent = "";
+
+    // Empty month option
+    this._elements.month.appendChild(new Option());
+
+    // Populate month list. Format: "month number - month name"
+    let dateFormat = new Intl.DateTimeFormat(navigator.language, {month: "long"}).format;
+    for (let i = 0; i < count; i++) {
+      let monthNumber = (i + 1).toString();
+      let monthName = dateFormat(new Date(1970, i));
+      let option = new Option();
+      option.value = monthNumber;
+      // XXX: Bug 1446164 - Localize this string.
+      option.textContent = `${monthNumber.padStart(2, "0")} - ${monthName}`;
+      this._elements.month.appendChild(option);
     }
   }
 
@@ -394,8 +549,13 @@ class EditCreditCard extends EditAutofillForm {
     this._elements.ccType.appendChild(frag);
   }
 
-  generateBillingAddressOptions() {
-    let billingAddressGUID = this._record && this._record.billingAddressGUID;
+  generateBillingAddressOptions(preserveFieldValues) {
+    let billingAddressGUID;
+    if (preserveFieldValues && this._elements.billingAddress.value) {
+      billingAddressGUID = this._elements.billingAddress.value;
+    } else if (this._record) {
+      billingAddressGUID = this._record.billingAddressGUID;
+    }
 
     this._elements.billingAddress.textContent = "";
 
@@ -417,22 +577,6 @@ class EditCreditCard extends EditAutofillForm {
     super.attachEventListeners();
   }
 
-  handleChange(event) {
-    super.handleChange(event);
-
-    if (event.target != this._elements.ccNumber) {
-      return;
-    }
-
-    let ccNumberField = this._elements.ccNumber;
-
-    // Mark the cc-number field as invalid if the number is empty or invalid.
-    if (!this.isCCNumber(ccNumberField.value)) {
-      let invalidCardNumberString = this._elements.invalidCardNumberStringElement.textContent;
-      ccNumberField.setCustomValidity(invalidCardNumberString || " ");
-    }
-  }
-
   handleInput(event) {
     // Clear the error message if cc-number is valid
     if (event.target == this._elements.ccNumber &&
@@ -440,5 +584,16 @@ class EditCreditCard extends EditAutofillForm {
       this._elements.ccNumber.setCustomValidity("");
     }
     super.handleInput(event);
+  }
+
+  updateCustomValidity(field) {
+    super.updateCustomValidity(field);
+
+    // Mark the cc-number field as invalid if the number is empty or invalid.
+    if (field == this._elements.ccNumber &&
+        !this.isCCNumber(field.value)) {
+      let invalidCardNumberString = this._elements.invalidCardNumberStringElement.textContent;
+      field.setCustomValidity(invalidCardNumberString || " ");
+    }
   }
 }

@@ -19,6 +19,8 @@
 #include "nsIScriptError.h"
 #include "nsString.h"
 
+class nsGlobalWindowInner;
+
 class nsScriptErrorNote final : public nsIScriptErrorNote {
  public:
   nsScriptErrorNote();
@@ -27,7 +29,7 @@ class nsScriptErrorNote final : public nsIScriptErrorNote {
   NS_DECL_NSISCRIPTERRORNOTE
 
   void Init(const nsAString& message, const nsAString& sourceName,
-            uint32_t lineNumber, uint32_t columnNumber);
+            uint32_t sourceId, uint32_t lineNumber, uint32_t columnNumber);
 
  private:
   virtual ~nsScriptErrorNote();
@@ -35,13 +37,14 @@ class nsScriptErrorNote final : public nsIScriptErrorNote {
   nsString mMessage;
   nsString mSourceName;
   nsString mSourceLine;
+  uint32_t mSourceId;
   uint32_t mLineNumber;
   uint32_t mColumnNumber;
 };
 
 // Definition of nsScriptError..
 class nsScriptErrorBase : public nsIScriptError {
-public:
+ public:
   nsScriptErrorBase();
 
   NS_DECL_NSICONSOLEMESSAGE
@@ -49,11 +52,12 @@ public:
 
   void AddNote(nsIScriptErrorNote* note);
 
-protected:
+  static bool ComputeIsFromPrivateWindow(nsGlobalWindowInner* aWindow);
+
+ protected:
   virtual ~nsScriptErrorBase();
 
-  void
-  InitializeOnMainThread();
+  void InitializeOnMainThread();
 
   void InitializationHelper(const nsAString& message,
                             const nsAString& sourceLine, uint32_t lineNumber,
@@ -65,6 +69,7 @@ protected:
   nsString mMessage;
   nsString mMessageName;
   nsString mSourceName;
+  uint32_t mSourceId;
   uint32_t mLineNumber;
   nsString mSourceLine;
   uint32_t mColumnNumber;
@@ -82,17 +87,18 @@ protected:
 };
 
 class nsScriptError final : public nsScriptErrorBase {
-public:
+ public:
   nsScriptError() {}
   NS_DECL_THREADSAFE_ISUPPORTS
 
-private:
+ private:
   virtual ~nsScriptError() {}
 };
 
 class nsScriptErrorWithStack : public nsScriptErrorBase {
-public:
-  nsScriptErrorWithStack(JS::HandleObject aStack, JS::HandleObject aStackGlobal);
+ public:
+  nsScriptErrorWithStack(JS::HandleObject aStack,
+                         JS::HandleObject aStackGlobal);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsScriptErrorWithStack)
@@ -101,7 +107,7 @@ public:
   NS_IMETHOD GetStackGlobal(JS::MutableHandleValue) override;
   NS_IMETHOD ToString(nsACString& aResult) override;
 
-private:
+ private:
   virtual ~nsScriptErrorWithStack();
   // Complete stackframe where the error happened.
   // Must be a (possibly wrapped) SavedFrame object.

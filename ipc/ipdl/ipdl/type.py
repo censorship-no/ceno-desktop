@@ -3,6 +3,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import print_function
+
 import os
 import sys
 
@@ -65,6 +67,9 @@ class TypeVisitor:
     def visitArrayType(self, a, *args):
         a.basetype.accept(self, *args)
 
+    def visitMaybeType(self, m, *args):
+        m.basetype.accept(self, *args)
+
     def visitShmemType(self, s, *args):
         pass
 
@@ -78,6 +83,9 @@ class TypeVisitor:
         pass
 
     def visitEndpointType(self, s, *args):
+        pass
+
+    def visitUniquePtrType(self, s, *args):
         pass
 
 
@@ -104,12 +112,17 @@ class Type:
     def isAtom(self):
         return False
 
+    def isUniquePtr(self):
+        return False
+
     def typename(self):
         return self.__class__.__name__
 
-    def name(self): raise Exception, 'NYI'
+    def name(self):
+        raise NotImplementedError
 
-    def fullname(self): raise Exception, 'NYI'
+    def fullname(self):
+        raise NotImplementedError
 
     def accept(self, visitor, *args):
         visit = getattr(visitor, 'visit' + self.__class__.__name__, None)
@@ -184,6 +197,8 @@ class IPDLType(Type):
     def isUnion(self): return False
 
     def isArray(self): return False
+
+    def isMaybe(self): return False
 
     def isAtom(self): return True
 
@@ -336,7 +351,7 @@ class ProtocolType(IPDLType):
 
 
 class ActorType(IPDLType):
-    def __init__(self, protocol, nullable=0):
+    def __init__(self, protocol, nullable=False):
         self.protocol = protocol
         self.nullable = nullable
 
@@ -374,7 +389,7 @@ looks for such a cycle and returns True if found.'''
             return False
         elif t is self or t in self.mutualRec:
             return True
-        elif t.isArray():
+        elif t.isArray() or t.isMaybe():
             isrec = self.mutuallyRecursiveWith(t.basetype, exploring)
             if isrec:
                 self.mutualRec.add(t)
@@ -439,6 +454,19 @@ class ArrayType(IPDLType):
     def fullname(self): return self.basetype.fullname() + '[]'
 
 
+class MaybeType(IPDLType):
+    def __init__(self, basetype):
+        self.basetype = basetype
+
+    def isAtom(self): return False
+
+    def isMaybe(self): return True
+
+    def name(self): return self.basetype.name() + '?'
+
+    def fullname(self): return self.basetype.fullname() + '?'
+
+
 class ShmemType(IPDLType):
     def __init__(self, qname):
         self.qname = qname
@@ -491,6 +519,19 @@ class EndpointType(IPDLType):
         return str(self.qname)
 
 
+class UniquePtrType(Type):
+    def __init__(self, innertype):
+        self.innertype = innertype
+
+    def isUniquePtr(self): return True
+
+    def name(self):
+        return 'UniquePtr<' + self.innertype.fullname() + '>'
+
+    def fullname(self):
+        return 'mozilla::UniquePtr<' + self.innertype.fullname() + '>'
+
+
 def iteractortypes(t, visited=None):
     """Iterate over any actor(s) buried in |type|."""
     if visited is None:
@@ -501,7 +542,7 @@ def iteractortypes(t, visited=None):
         return
     elif t.isActor():
         yield t
-    elif t.isArray():
+    elif t.isArray() or t.isMaybe():
         for actor in iteractortypes(t.basetype, visited):
             yield actor
     elif t.isCompound() and t not in visited:
@@ -642,7 +683,7 @@ With this information, it type checks the AST.'''
 
     def reportErrors(self, errout):
         for error in self.errors:
-            print >>errout, error
+            print(error, file=errout)
 
 
 class TcheckVisitor(Visitor):
@@ -843,7 +884,10 @@ class GatherDecls(TcheckVisitor):
 
     def visitUsingStmt(self, using):
         fullname = str(using.type)
-        if using.type.basename() == fullname:
+        if (using.type.basename() == fullname) or using.type.uniqueptr:
+            # Prevent generation of typedefs.  If basename == fullname then
+            # there is nothing to typedef.  With UniquePtrs, basenames
+            # are generic so typedefs would be illegal.
             fullname = None
         if fullname == 'mozilla::ipc::Shmem':
             ipdltype = ShmemType(using.type.spec)
@@ -1051,6 +1095,12 @@ class GatherDecls(TcheckVisitor):
         if typespec.array:
             itype = ArrayType(itype)
 
+        if typespec.maybe:
+            itype = MaybeType(itype)
+
+        if typespec.uniqueptr:
+            itype = UniquePtrType(itype)
+
         return itype
 
 
@@ -1094,7 +1144,7 @@ def fullyDefined(t, exploring=None):
 
     if t.isAtom():
         return True
-    elif t.isArray():
+    elif t.isArray() or t.isMaybe():
         return fullyDefined(t.basetype, exploring)
     elif t.defined:
         return True

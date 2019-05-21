@@ -39,8 +39,8 @@ var MetricsChecker = {
       deniedOffers: this.HISTOGRAMS.DENIED.snapshot().sum || 0,
       autoRejectedOffers: this.HISTOGRAMS.AUTO_REJECTED.snapshot().sum || 0,
       showOriginal: this.HISTOGRAMS.SHOW_ORIGINAL.snapshot().sum || 0,
-      detectedLanguageChangedBefore: this.HISTOGRAMS.DETECTION_CHANGES.snapshot().counts[1] || 0,
-      detectedLanguageChangeAfter: this.HISTOGRAMS.DETECTION_CHANGES.snapshot().counts[0] || 0,
+      detectedLanguageChangedBefore: this.HISTOGRAMS.DETECTION_CHANGES.snapshot().values[1] || 0,
+      detectedLanguageChangeAfter: this.HISTOGRAMS.DETECTION_CHANGES.snapshot().values[0] || 0,
       targetLanguageChanged: this.HISTOGRAMS.TARGET_CHANGES.snapshot().sum || 0,
       showUI: this.HISTOGRAMS.SHOW_UI.snapshot().sum || 0,
       detectLang: this.HISTOGRAMS.DETECT_LANG.snapshot().sum || 0,
@@ -273,7 +273,6 @@ add_task(async function test_never_offer_translation() {
 });
 
 add_task(async function test_translation_preferences() {
-
   let preferenceChecks = {
     "browser.translation.ui.show": [
       {value: false, expected: {showUI: 0}},
@@ -295,5 +294,4 @@ add_task(async function test_translation_preferences() {
     }
     Services.prefs.clearUserPref(preference);
   }
-
 });

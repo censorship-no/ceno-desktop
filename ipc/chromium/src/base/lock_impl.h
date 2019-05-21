@@ -11,9 +11,9 @@
 #include "build/build_config.h"
 
 #if defined(OS_WIN)
-#include <windows.h>
+#  include <windows.h>
 #elif defined(OS_POSIX)
-#include <pthread.h>
+#  include <pthread.h>
 #endif
 
 namespace base {
@@ -27,7 +27,7 @@ class LockImpl {
 #if defined(OS_WIN)
   using NativeHandle = SRWLOCK;
 #elif defined(OS_POSIX)
-  using NativeHandle =  pthread_mutex_t;
+  using NativeHandle = pthread_mutex_t;
 #endif
 
   LockImpl();

@@ -8,10 +8,10 @@
 
 var EXPORTED_SYMBOLS = ["ContextMenuChild"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
+const {ActorChild} = ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
@@ -31,6 +31,11 @@ XPCOMUtils.defineLazyGetter(this, "PageMenuChild", () => {
   ChromeUtils.import("resource://gre/modules/PageMenu.jsm", tmp);
   return new tmp.PageMenuChild();
 });
+
+XPCOMUtils.defineLazyGetter(this, "ReferrerInfo", () =>
+  Components.Constructor("@mozilla.org/referrer-info;1",
+                         "nsIReferrerInfo",
+                         "init"));
 
 const messageListeners = {
   "ContextMenu:BookmarkFrame": function(aMessage) {
@@ -94,7 +99,12 @@ const messageListeners = {
             if (this.content.document.fullscreenEnabled) {
               media.requestFullscreen();
             }
-
+            break;
+          case "pictureinpicture":
+            let event = new this.content.CustomEvent("MozTogglePictureInPicture", {
+              bubbles: true,
+            }, this.content);
+            media.dispatchEvent(event);
             break;
         }
       }
@@ -125,41 +135,18 @@ const messageListeners = {
                          (node.form.enctype == "application/x-www-form-urlencoded" ||
                           node.form.enctype == ""));
     let title = node.ownerDocument.title;
-    let formData = [];
 
-    function escapeNameValuePair(aName, aValue, aIsFormUrlEncoded) {
-      if (aIsFormUrlEncoded) {
+    function escapeNameValuePair([aName, aValue]) {
+      if (isURLEncoded) {
         return escape(aName + "=" + aValue);
       }
 
       return escape(aName) + "=" + escape(aValue);
     }
-
-    for (let el of node.form.elements) {
-      if (!el.type) // happens with fieldsets
-        continue;
-
-      if (el == node) {
-        formData.push((isURLEncoded) ? escapeNameValuePair(el.name, "%s", true) :
-                                       // Don't escape "%s", just append
-                                       escapeNameValuePair(el.name, "", false) + "%s");
-        continue;
-      }
-
-      let type = el.type.toLowerCase();
-
-      if (((el instanceof this.content.HTMLInputElement && el.mozIsTextField(true)) ||
-          type == "hidden" || type == "textarea") ||
-          ((type == "checkbox" || type == "radio") && el.checked)) {
-        formData.push(escapeNameValuePair(el.name, el.value, isURLEncoded));
-      } else if (el instanceof this.content.HTMLSelectElement && el.selectedIndex >= 0) {
-        for (let j = 0; j < el.options.length; j++) {
-          if (el.options[j].selected)
-            formData.push(escapeNameValuePair(el.name, el.options[j].value,
-                                              isURLEncoded));
-        }
-      }
-    }
+    let formData = new this.content.FormData(node.form);
+    formData.delete(node.name);
+    formData = Array.from(formData).map(escapeNameValuePair);
+    formData.push(escape(node.name) + (isURLEncoded ? escape("=%s") : "=%s"));
 
     let postData;
 
@@ -620,6 +607,15 @@ class ContextMenuChild extends ActorChild {
 
       data.context.targetAsCPOW = targetAsCPOW;
 
+      data.referrerInfo = new ReferrerInfo(
+        referrerPolicy,
+        !context.linkHasNoReferrer,
+        data.documentURIObject);
+      data.frameReferrerInfo = new ReferrerInfo(
+        referrerPolicy,
+        !context.linkHasNoReferrer,
+        referrer ? Services.io.newURI(referrer) : null);
+
       mainWin.setContextMenuContentData(data);
     }
   }
@@ -695,13 +691,15 @@ class ContextMenuChild extends ActorChild {
 
     let node = aEvent.composedTarget;
 
-    // Set the node to containing <video>/<audio> if the node
-    // is in the videocontrols UA Widget.
+    // Set the node to containing <video>/<audio>/<embed>/<object> if the node
+    // is in the videocontrols/pluginProblem UA Widget.
     if (this.content.ShadowRoot) {
       let n = node;
       while (n) {
         if (n instanceof this.content.ShadowRoot) {
-          if (n.host instanceof this.content.HTMLMediaElement) {
+          if (n.host instanceof this.content.HTMLMediaElement ||
+              n.host instanceof this.content.HTMLEmbedElement ||
+              n.host instanceof this.content.HTMLObjectElement) {
             node = n.host;
             break;
           }
@@ -718,6 +716,16 @@ class ContextMenuChild extends ActorChild {
     if (node.nodeType == node.DOCUMENT_NODE ||
         // Don't display for XUL element unless <label class="text-link">
         (node.namespaceURI == XUL_NS && !this._isXULTextLinkLabel(node))) {
+      context.shouldDisplay = false;
+      return;
+    }
+
+    const isAboutDevtoolsToolbox =
+          this.content.document.documentURI.startsWith("about:devtools-toolbox");
+    const editFlags = SpellCheckHelper.isEditable(node, this.content);
+
+    if (isAboutDevtoolsToolbox && (editFlags & SpellCheckHelper.TEXTINPUT) === 0) {
+      // Don't display for about:devtools-toolbox page unless the source was text input.
       context.shouldDisplay = false;
       return;
     }
@@ -772,6 +780,9 @@ class ContextMenuChild extends ActorChild {
     context.target = node;
 
     context.principal = context.target.ownerDocument.nodePrincipal;
+    // Bug 965637, query the CSP from the doc instead of the Principal
+    context.csp = E10SUtils.serializeCSP(context.target.ownerDocument.nodePrincipal.csp);
+
     context.frameOuterWindowID = WebNavigationFrames.getFrameId(context.target.ownerGlobal);
 
     // Check if we are in a synthetic document (stand alone image, video, etc.).
@@ -780,7 +791,6 @@ class ContextMenuChild extends ActorChild {
     context.shouldInitInlineSpellCheckerUINoChildren = false;
     context.shouldInitInlineSpellCheckerUIWithChildren = false;
 
-    let editFlags = SpellCheckHelper.isEditable(context.target, this.content);
     this._setContextForNodesNoChildren(editFlags);
     this._setContextForNodesWithChildren(editFlags);
 
@@ -790,6 +800,16 @@ class ContextMenuChild extends ActorChild {
       // The timestamp is used to verify that the target wasn't changed since the observed menu event.
       timeStamp: context.timeStamp,
     };
+
+    if (isAboutDevtoolsToolbox) {
+      // Setup the menu items on text input in about:devtools-toolbox.
+      context.inAboutDevtoolsToolbox = true;
+      context.canSpellCheck = false;
+      context.inTabBrowser = false;
+      context.inFrame = false;
+      context.inSrcdocFrame = false;
+      context.onSpellcheckable = false;
+    }
   }
 
   /**
@@ -956,7 +976,6 @@ class ContextMenuChild extends ActorChild {
             (elem instanceof this.content.HTMLAreaElement && elem.href) ||
             elem instanceof this.content.HTMLLinkElement ||
             elem.getAttributeNS(XLINK_NS, "type") == "simple")) {
-
           // Target is a link or a descendant of a link.
           context.onLink = true;
 

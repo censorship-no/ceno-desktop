@@ -1,8 +1,7 @@
 // test for networkactivity
 //
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var results = [];
@@ -33,7 +32,6 @@ async function checkValueAndTrigger(request, data) {
 }
 
 function doTest() {
-    prefs.clearUserPref("network.activity.intervalMilliseconds");
     ok(results.length > 0);
     ok(results[0].host == "127.0.0.1");
     ok(results[0].rx > 0 || results[0].tx > 0);
@@ -51,9 +49,6 @@ function run_test() {
 
   Services.obs.addObserver(networkActivity, 'network-activity');
 
-  // send events every 100ms
-  prefs.setIntPref("network.activity.intervalMilliseconds", 100);
-
   // why do I have to do this ??
   Services.obs.notifyObservers(null, "profile-initial-state", null);
 
@@ -61,6 +56,6 @@ function run_test() {
   httpserver.registerPathHandler("/ok", handler);
   httpserver.start(-1);
   var channel = createChannel();
-  channel.asyncOpen2(new ChannelListener(checkValueAndTrigger, null));
+  channel.asyncOpen(new ChannelListener(checkValueAndTrigger, null));
 }
 

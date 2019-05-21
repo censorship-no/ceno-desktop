@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 <%namespace name="helpers" file="/helpers.mako.rs" />
 <% from data import Keyword %>
@@ -53,33 +53,34 @@ ${helpers.single_keyword(
 
 ${helpers.predefined_type(
     "text-indent",
-    "LengthOrPercentage",
-    "computed::LengthOrPercentage::Length(computed::Length::new(0.))",
+    "LengthPercentage",
+    "computed::LengthPercentage::zero()",
     animation_value_type="ComputedValue",
     spec="https://drafts.csswg.org/css-text/#propdef-text-indent",
     allow_quirks=True,
     servo_restyle_damage = "reflow",
 )}
 
-// Also known as "word-wrap" (which is more popular because of IE), but this is the preferred
-// name per CSS-TEXT 6.2.
-${helpers.single_keyword(
+// Also known as "word-wrap" (which is more popular because of IE), but this is
+// the preferred name per CSS-TEXT 6.2.
+${helpers.predefined_type(
     "overflow-wrap",
-    "normal break-word",
-    gecko_constant_prefix="NS_STYLE_OVERFLOWWRAP",
+    "OverflowWrap",
+    "computed::OverflowWrap::Normal",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-text/#propdef-overflow-wrap",
     alias="word-wrap",
+    needs_context=False,
     servo_restyle_damage="rebuild_and_reflow",
 )}
 
-// TODO(pcwalton): Support `word-break: keep-all` once we have better CJK support.
-${helpers.single_keyword(
+${helpers.predefined_type(
     "word-break",
-    "normal break-all keep-all",
-    gecko_constant_prefix="NS_STYLE_WORDBREAK",
+    "WordBreak",
+    "computed::WordBreak::Normal",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-text/#propdef-word-break",
+    needs_context=False,
     servo_restyle_damage="rebuild_and_reflow",
 )}
 
@@ -136,7 +137,7 @@ ${helpers.single_keyword(
 ${helpers.predefined_type(
     "text-align",
     "TextAlign",
-    "computed::TextAlign::start()",
+    "computed::TextAlign::Start",
     animation_value_type="discrete",
     flags="APPLIES_TO_PLACEHOLDER",
     spec="https://drafts.csswg.org/css-text/#propdef-text-align",
@@ -156,7 +157,7 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "word-spacing",
     "WordSpacing",
-    "computed::WordSpacing::normal()",
+    "computed::WordSpacing::zero()",
     animation_value_type="ComputedValue",
     flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
     spec="https://drafts.csswg.org/css-text/#propdef-word-spacing",
@@ -256,10 +257,10 @@ ${helpers.predefined_type(
 
 ${helpers.predefined_type(
     "-moz-tab-size",
-    "MozTabSize",
-    "generics::text::MozTabSize::Number(From::from(8.0))",
+    "NonNegativeLengthOrNumber",
+    "generics::length::LengthOrNumber::Number(From::from(8.0))",
     products="gecko",
-    animation_value_type="AnimatedMozTabSize",
+    animation_value_type="LengthOrNumber",
     spec="https://drafts.csswg.org/css-text-3/#tab-size-property",
 )}
 
@@ -293,9 +294,9 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "-webkit-text-stroke-width",
     "BorderSideWidth",
-    "::values::computed::NonNegativeLength::new(0.)",
-    initial_specified_value="specified::BorderSideWidth::Length(specified::Length::zero())",
-    computed_type="::values::computed::NonNegativeLength",
+    "crate::values::computed::NonNegativeLength::new(0.)",
+    initial_specified_value="specified::BorderSideWidth::zero()",
+    computed_type="crate::values::computed::NonNegativeLength",
     products="gecko",
     gecko_pref="layout.css.prefixes.webkit",
     flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
@@ -336,6 +337,7 @@ ${helpers.single_keyword(
 ${helpers.single_keyword(
     "text-rendering",
     "auto optimizespeed optimizelegibility geometricprecision",
+    gecko_enum_prefix="StyleTextRendering",
     animation_value_type="discrete",
     spec="https://www.w3.org/TR/SVG11/painting.html#TextRenderingProperty",
     servo_restyle_damage="rebuild_and_reflow",
@@ -347,8 +349,8 @@ ${helpers.single_keyword(
     "-moz-control-character-visibility",
     "hidden visible",
     gecko_constant_prefix="NS_STYLE_CONTROL_CHARACTER_VISIBILITY",
-    gecko_ffi_name="mControlCharacterVisibility",
     animation_value_type="none",
+    gecko_ffi_name="mControlCharacterVisibility",
     products="gecko",
     spec="Nonstandard",
 )}

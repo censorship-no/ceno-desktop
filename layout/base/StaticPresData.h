@@ -7,7 +7,7 @@
 #ifndef mozilla_StaticPresData_h
 #define mozilla_StaticPresData_h
 
-#include "nsAutoPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCoord.h"
 #include "nsCOMPtr.h"
 #include "nsFont.h"
@@ -19,24 +19,22 @@ namespace mozilla {
 struct LangGroupFontPrefs {
   // Font sizes default to zero; they will be set in GetFontPreferences
   LangGroupFontPrefs()
-    : mLangGroup(nullptr)
-    , mMinimumFontSize(0)
-    , mDefaultVariableFont()
-    , mDefaultFixedFont(mozilla::eFamily_monospace, 0)
-    , mDefaultSerifFont(mozilla::eFamily_serif, 0)
-    , mDefaultSansSerifFont(mozilla::eFamily_sans_serif, 0)
-    , mDefaultMonospaceFont(mozilla::eFamily_monospace, 0)
-    , mDefaultCursiveFont(mozilla::eFamily_cursive, 0)
-    , mDefaultFantasyFont(mozilla::eFamily_fantasy, 0)
-  {
+      : mLangGroup(nullptr),
+        mMinimumFontSize(0),
+        mDefaultVariableFont(),
+        mDefaultFixedFont(mozilla::eFamily_monospace, 0),
+        mDefaultSerifFont(mozilla::eFamily_serif, 0),
+        mDefaultSansSerifFont(mozilla::eFamily_sans_serif, 0),
+        mDefaultMonospaceFont(mozilla::eFamily_monospace, 0),
+        mDefaultCursiveFont(mozilla::eFamily_cursive, 0),
+        mDefaultFantasyFont(mozilla::eFamily_fantasy, 0) {
     mDefaultVariableFont.fontlist.SetDefaultFontType(mozilla::eFamily_serif);
     // We create mDefaultVariableFont.fontlist with defaultType as the
     // fallback font, and not as part of the font list proper. This way,
     // it can be overwritten should there be a language change.
   }
 
-  void Reset()
-  {
+  void Reset() {
     // Throw away any other LangGroupFontPrefs objects:
     mNext = nullptr;
 
@@ -46,7 +44,7 @@ struct LangGroupFontPrefs {
 
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
     size_t n = 0;
-    LangGroupFontPrefs* curr = mNext;
+    LangGroupFontPrefs* curr = mNext.get();
     while (curr) {
       n += aMallocSizeOf(curr);
 
@@ -55,13 +53,57 @@ struct LangGroupFontPrefs {
       // - mLangGroup
       // - mDefault*Font
 
-      curr = curr->mNext;
+      curr = curr->mNext.get();
     }
     return n;
   }
 
   // Initialize this with the data for a given language
   void Initialize(nsAtom* aLangGroupAtom);
+
+  /**
+   * Get the default font for the given language and generic font ID.
+   * aLanguage may not be nullptr.
+   *
+   * This object is read-only, you must copy the font to modify it.
+   *
+   * When aFontID is kPresContext_DefaultVariableFontID or
+   * kPresContext_DefaultFixedFontID (which equals
+   * kGenericFont_moz_fixed, which is used for the -moz-fixed generic),
+   * the nsFont returned has its name as a CSS generic family (serif or
+   * sans-serif for the former, monospace for the latter), and its size
+   * as the default font size for variable or fixed fonts for the
+   * language group.
+   *
+   * For aFontID corresponding to a CSS Generic, the nsFont returned has
+   * its name set to that generic font's name, and its size set to
+   * the user's preference for font size for that generic and the
+   * given language.
+   */
+  const nsFont* GetDefaultFont(uint8_t aFontID) const {
+    switch (aFontID) {
+      // Special (our default variable width font and fixed width font)
+      case kGenericFont_moz_variable:
+        return &mDefaultVariableFont;
+      case kGenericFont_moz_fixed:
+        return &mDefaultFixedFont;
+      // CSS
+      case kGenericFont_serif:
+        return &mDefaultSerifFont;
+      case kGenericFont_sans_serif:
+        return &mDefaultSansSerifFont;
+      case kGenericFont_monospace:
+        return &mDefaultMonospaceFont;
+      case kGenericFont_cursive:
+        return &mDefaultCursiveFont;
+      case kGenericFont_fantasy:
+        return &mDefaultFantasyFont;
+        break;
+      default:
+        MOZ_ASSERT_UNREACHABLE("invalid font id");
+        return nullptr;
+    }
+  }
 
   RefPtr<nsAtom> mLangGroup;
   nscoord mMinimumFontSize;
@@ -72,7 +114,7 @@ struct LangGroupFontPrefs {
   nsFont mDefaultMonospaceFont;
   nsFont mDefaultCursiveFont;
   nsFont mDefaultFantasyFont;
-  nsAutoPtr<LangGroupFontPrefs> mNext;
+  mozilla::UniquePtr<LangGroupFontPrefs> mNext;
 };
 
 /**
@@ -81,9 +123,8 @@ struct LangGroupFontPrefs {
  * for that functionality. We delegate to it from nsPresContext where
  * appropriate, and use it standalone in some cases as well.
  */
-class StaticPresData
-{
-public:
+class StaticPresData {
+ public:
   // Initialization and shutdown of the singleton. Called exactly once.
   static void Init();
   static void Shutdown();
@@ -91,12 +132,6 @@ public:
   // Gets an instance of the singleton. Infallible between the calls to Init
   // and Shutdown.
   static StaticPresData* Get();
-
-  /**
-   * This table maps border-width enums 'thin', 'medium', 'thick'
-   * to actual nscoord values.
-   */
-  const nscoord* GetBorderWidthTable() { return mBorderWidthTable; }
 
   /**
    * Given a language, get the language group name, which can
@@ -140,58 +175,19 @@ public:
    *
    * See comment on GetLangGroup for the usage of aNeedsToCache.
    */
-  const LangGroupFontPrefs* GetFontPrefsForLangHelper(nsAtom* aLanguage,
-                                                      const LangGroupFontPrefs* aPrefs,
-                                                      bool* aNeedsToCache = nullptr) const;
-  /**
-   * Get the default font for the given language and generic font ID.
-   * aLanguage may not be nullptr.
-   *
-   * This object is read-only, you must copy the font to modify it.
-   *
-   * When aFontID is kPresContext_DefaultVariableFontID or
-   * kPresContext_DefaultFixedFontID (which equals
-   * kGenericFont_moz_fixed, which is used for the -moz-fixed generic),
-   * the nsFont returned has its name as a CSS generic family (serif or
-   * sans-serif for the former, monospace for the latter), and its size
-   * as the default font size for variable or fixed fonts for the
-   * language group.
-   *
-   * For aFontID corresponding to a CSS Generic, the nsFont returned has
-   * its name set to that generic font's name, and its size set to
-   * the user's preference for font size for that generic and the
-   * given language.
-   */
-  const nsFont* GetDefaultFontHelper(uint8_t aFontID,
-                                     nsAtom* aLanguage,
+  const LangGroupFontPrefs* GetFontPrefsForLangHelper(
+      nsAtom* aLanguage, const LangGroupFontPrefs* aPrefs,
+      bool* aNeedsToCache = nullptr) const;
+  const nsFont* GetDefaultFontHelper(uint8_t aFontID, nsAtom* aLanguage,
                                      const LangGroupFontPrefs* aPrefs) const;
 
-  /*
-   * These versions operate on the font pref cache on StaticPresData.
-   */
-
-  const nsFont* GetDefaultFont(uint8_t aFontID, nsAtom* aLanguage) const
-  {
-    MOZ_ASSERT(aLanguage);
-    return GetDefaultFontHelper(aFontID, aLanguage, GetFontPrefsForLang(aLanguage));
-  }
-  const LangGroupFontPrefs* GetFontPrefsForLang(nsAtom* aLanguage, bool* aNeedsToCache = nullptr) const
-  {
-    MOZ_ASSERT(aLanguage);
-    return GetFontPrefsForLangHelper(aLanguage, &mStaticLangGroupFontPrefs, aNeedsToCache);
-  }
-
-  void ResetCachedFontPrefs() { mStaticLangGroupFontPrefs.Reset(); }
-
-private:
+ private:
   StaticPresData();
   ~StaticPresData() {}
 
   nsLanguageAtomService* mLangService;
-  nscoord mBorderWidthTable[3];
-  LangGroupFontPrefs mStaticLangGroupFontPrefs;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_StaticPresData_h
+#endif  // mozilla_StaticPresData_h

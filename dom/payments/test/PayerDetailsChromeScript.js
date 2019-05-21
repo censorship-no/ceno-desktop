@@ -1,9 +1,7 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+const { XPCOMUtils } = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const paymentSrv = Cc[
   "@mozilla.org/dom/payments/payment-request-service;1"
@@ -35,7 +33,7 @@ const TestingUIService = {
   updatePayment(requestId) {
     // Let's echo what was sent in by the error...
     const request = paymentSrv.getPaymentRequestById(requestId);
-    const { name, email, phone } = request.paymentDetails.payer;
+    const { name, email, phone } = request.paymentDetails.payerErrors;
     const { error } = request.paymentDetails;
     // Let's use the .error as the switch
     switch (error) {

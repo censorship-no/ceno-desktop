@@ -1,0 +1,52 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+include PBackgroundSharedTypes;
+include ProtocolTypes;
+
+namespace mozilla {
+namespace dom {
+
+struct LSRequestCommonParams
+{
+  PrincipalInfo principalInfo;
+  nsCString originKey;
+};
+
+struct LSRequestPreloadDatastoreParams
+{
+  LSRequestCommonParams commonParams;
+};
+
+struct LSRequestPrepareDatastoreParams
+{
+  LSRequestCommonParams commonParams;
+  nsID? clientId;
+};
+
+struct LSRequestPrepareObserverParams
+{
+  PrincipalInfo principalInfo;
+  nsID? clientId;
+};
+
+union LSRequestParams
+{
+  LSRequestPreloadDatastoreParams;
+  LSRequestPrepareDatastoreParams;
+  LSRequestPrepareObserverParams;
+};
+
+struct LSSimpleRequestPreloadedParams
+{
+  PrincipalInfo principalInfo;
+};
+
+union LSSimpleRequestParams
+{
+  LSSimpleRequestPreloadedParams;
+};
+
+} // namespace dom
+} // namespace mozilla

@@ -361,7 +361,7 @@ function testTextAddSelection(aID, aStartOffset, aEndOffset, aSelectionsCount) {
 
   acc.addSelection(aStartOffset, aEndOffset);
 
-  ok(acc.selectionCount, aSelectionsCount,
+  is(acc.selectionCount, aSelectionsCount,
      text + ": failed to add selection from offset '" + aStartOffset +
      "' to offset '" + aEndOffset + "': selectionCount after");
 }
@@ -380,7 +380,7 @@ function testTextRemoveSelection(aID, aSelectionIndex, aSelectionsCount) {
 
   acc.removeSelection(aSelectionIndex);
 
-  ok(acc.selectionCount, aSelectionsCount,
+  is(acc.selectionCount, aSelectionsCount,
      text + ": failed to remove selection at index '" +
      aSelectionIndex + "': selectionCount after");
 }
@@ -587,7 +587,6 @@ function testTextHelper(aID, aOffset, aBoundaryType,
             startMsg + "wrong end offset" +
             "(got '" + endOffsetObj.value + "', expected: '" + aEndOffset + "')" +
             ", offset: " + aOffset + endMsg);
-
   } catch (e) {
     var okFunc = exceptionFlag ? todo : ok;
     okFunc(false, startMsg + "failed at offset " + aOffset + endMsg +
@@ -608,4 +607,5 @@ function boundaryToString(aBoundaryType) {
     case BOUNDARY_LINE_END:
       return "line end";
   }
+  return "unknown";
 }

@@ -7,23 +7,16 @@ Transform the release-sign-and-push task into an actual task description.
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+from taskgraph.loader.single_dep import schema
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.attributes import copy_attributes_from_dependent_job
-from taskgraph.util.schema import validate_schema, Schema, resolve_keyed_by, optionally_keyed_by
+from taskgraph.util.schema import resolve_keyed_by, optionally_keyed_by
 from taskgraph.transforms.task import task_description_schema
 from voluptuous import Any, Required
 
-
 transforms = TransformSequence()
 
-task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
-
-
-transforms = TransformSequence()
-
-
-langpack_sign_push_description_schema = Schema({
-    Required('dependent-task'): object,
+langpack_sign_push_description_schema = schema.extend({
     Required('label'): basestring,
     Required('description'): basestring,
     Required('worker-type'): optionally_keyed_by('release-level', basestring),
@@ -45,20 +38,13 @@ langpack_sign_push_description_schema = Schema({
 @transforms.add
 def set_label(config, jobs):
     for job in jobs:
-        label = 'sign-and-push-langpacks-{}'.format(job['dependent-task'].label)
+        label = 'sign-and-push-langpacks-{}'.format(job['primary-dependency'].label)
         job['label'] = label
 
         yield job
 
 
-@transforms.add
-def validate(config, jobs):
-    for job in jobs:
-        validate_schema(
-            langpack_sign_push_description_schema, job,
-            'In sign-and-push-langpacks ({} kind) task for {}:'.format(config.kind, job['label'])
-        )
-        yield job
+transforms.add_validate(langpack_sign_push_description_schema)
 
 
 @transforms.add
@@ -75,7 +61,7 @@ def resolve_keys(config, jobs):
         resolve_keyed_by(
             job, 'worker.channel', item_name=job['label'],
             project=config.params['project'],
-            platform=job['dependent-task'].attributes['build_platform'],
+            platform=job['primary-dependency'].attributes['build_platform'],
         )
 
         yield job
@@ -84,7 +70,7 @@ def resolve_keys(config, jobs):
 @transforms.add
 def copy_attributes(config, jobs):
     for job in jobs:
-        dep_job = job['dependent-task']
+        dep_job = job['primary-dependency']
         job['attributes'] = copy_attributes_from_dependent_job(dep_job)
         job['attributes']['chunk_locales'] = dep_job.attributes.get('chunk_locales', ['en-US'])
 
@@ -94,7 +80,7 @@ def copy_attributes(config, jobs):
 @transforms.add
 def filter_out_macos_jobs_but_mac_only_locales(config, jobs):
     for job in jobs:
-        build_platform = job['dependent-task'].attributes.get('build_platform')
+        build_platform = job['primary-dependency'].attributes.get('build_platform')
 
         if build_platform in ('linux64-nightly', 'linux64-devedition-nightly'):
             yield job
@@ -111,7 +97,7 @@ def filter_out_macos_jobs_but_mac_only_locales(config, jobs):
 @transforms.add
 def make_task_description(config, jobs):
     for job in jobs:
-        dep_job = job['dependent-task']
+        dep_job = job['primary-dependency']
 
         treeherder = job.get('treeherder', {})
         treeherder.setdefault('symbol', 'langpack(SnP{})'.format(
@@ -127,9 +113,7 @@ def make_task_description(config, jobs):
             locales='/'.join(job['attributes']['chunk_locales']),
         )
 
-        job['dependencies'] = {
-            str(dep_job.kind): dep_job.label
-        }
+        job['dependencies'] = {dep_job.kind: dep_job.label}
         job['treeherder'] = treeherder
 
         yield job
@@ -176,6 +160,6 @@ def get_upstream_task_ref(job, expected_kinds):
 @transforms.add
 def strip_unused_data(config, jobs):
     for job in jobs:
-        del job['dependent-task']
+        del job['primary-dependency']
 
         yield job

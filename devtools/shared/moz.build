@@ -9,7 +9,6 @@ include('../templates.mozbuild')
 DIRS += [
     'acorn',
     'adb',
-    'apps',
     'client',
     'css',
     'discovery',
@@ -23,11 +22,9 @@ DIRS += [
     'performance',
     'platform',
     'protocol',
-    'pretty-fast',
     'qrcode',
     'screenshot',
     'security',
-    'sourcemap',
     'sprintfjs',
     'specs',
     'transport',
@@ -68,6 +65,7 @@ DevToolsModules(
     'l10n.js',
     'loader-plugin-raw.jsm',
     'Loader.jsm',
+    'multi-e10s-helper.js',
     'Parser.jsm',
     'path.js',
     'plural-form.js',
@@ -76,7 +74,6 @@ DevToolsModules(
     'task.js',
     'ThreadSafeDevToolsUtils.js',
     'throttle.js',
-    'wasm-source-map.js',
 )
 
 with Files('**'):

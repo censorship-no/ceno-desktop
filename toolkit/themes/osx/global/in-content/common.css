@@ -21,14 +21,6 @@ xul|button[dlgtype="help"] {
   width: auto;
 }
 
-xul|caption {
-  padding-inline-start: 0;
-}
-
-xul|groupbox > xul|*.groupbox-body {
-  padding: 0;
-}
-
 xul|menulist > xul|menupopup > xul|menuitem[checked="true"]::before,
 xul|menulist > xul|menupopup > xul|menuitem[selected="true"]::before {
   display: none;
@@ -41,9 +33,7 @@ xul|*.menulist-dropmarker {
 }
 
 xul|menulist > xul|menupopup xul|menu,
-xul|menulist > xul|menupopup xul|menuitem,
-xul|button[type="menu"] > xul|menupopup xul|menu,
-xul|button[type="menu"] > xul|menupopup xul|menuitem {
+xul|menulist > xul|menupopup xul|menuitem {
   padding-inline-end: 34px;
 }
 
@@ -65,10 +55,7 @@ xul|*.text-link:-moz-focusring {
   box-shadow: none;
 }
 
-xul|button:-moz-focusring,
-xul|menulist:-moz-focusring,
 xul|checkbox:-moz-focusring > .checkbox-check,
-*|button.primary:focus,
 html|input[type="checkbox"]:-moz-focusring + html|label:before,
 xul|radio[focused="true"] > .radio-check,
 xul|tab:-moz-focusring > .tab-middle > .tab-text {
@@ -81,18 +68,10 @@ xul|radio[focused="true"] > .radio-check {
   -moz-outline-radius: 100%;
 }
 
-html|*.numberbox-input::-moz-number-spin-up {
-  border-radius: 4px 4px 0 0;
-}
-
-html|*.numberbox-input::-moz-number-spin-down  {
-  border-radius: 0 0 4px 4px;
-}
-
 textbox[type="search"] {
   -moz-appearance: none;
-  padding-inline-start: 10px;
-  padding-inline-end: 10px;
+  padding-inline-start: 8px;
+  padding-inline-end: 8px;
 }
 
 xul|textbox[type="search"] > moz-input-box > .textbox-search-sign {

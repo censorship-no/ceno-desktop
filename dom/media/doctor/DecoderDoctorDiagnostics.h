@@ -10,9 +10,11 @@
 #include "MediaResult.h"
 #include "nsString.h"
 
-class nsIDocument;
-
 namespace mozilla {
+
+namespace dom {
+class Document;
+}
 
 struct DecoderDoctorEvent {
   enum Domain {
@@ -37,39 +39,30 @@ struct DecoderDoctorEvent {
 //
 // This class' methods must be called from the main thread.
 
-class DecoderDoctorDiagnostics
-{
-public:
+class DecoderDoctorDiagnostics {
+ public:
   // Store the diagnostic information collected so far on a document for a
   // given format. All diagnostics for a document will be analyzed together
   // within a short timeframe.
   // Should only be called once.
-  void StoreFormatDiagnostics(nsIDocument* aDocument,
-                              const nsAString& aFormat,
-                              bool aCanPlay,
+  void StoreFormatDiagnostics(dom::Document* aDocument,
+                              const nsAString& aFormat, bool aCanPlay,
                               const char* aCallSite);
 
-  void StoreMediaKeySystemAccess(nsIDocument* aDocument,
-                                 const nsAString& aKeySystem,
-                                 bool aIsSupported,
+  void StoreMediaKeySystemAccess(dom::Document* aDocument,
+                                 const nsAString& aKeySystem, bool aIsSupported,
                                  const char* aCallSite);
 
-  void StoreEvent(nsIDocument* aDocument,
-                  const DecoderDoctorEvent& aEvent,
+  void StoreEvent(dom::Document* aDocument, const DecoderDoctorEvent& aEvent,
                   const char* aCallSite);
 
-  void StoreDecodeError(nsIDocument* aDocument,
-                        const MediaResult& aError,
-                        const nsString& aMediaSrc,
-                        const char* aCallSite);
+  void StoreDecodeError(dom::Document* aDocument, const MediaResult& aError,
+                        const nsString& aMediaSrc, const char* aCallSite);
 
-  void StoreDecodeWarning(nsIDocument* aDocument,
-                          const MediaResult& aWarning,
-                          const nsString& aMediaSrc,
-                          const char* aCallSite);
+  void StoreDecodeWarning(dom::Document* aDocument, const MediaResult& aWarning,
+                          const nsString& aMediaSrc, const char* aCallSite);
 
-  enum DiagnosticsType
-  {
+  enum DiagnosticsType {
     eUnsaved,
     eFormatSupportCheck,
     eMediaKeySystemAccessRequest,
@@ -104,34 +97,21 @@ public:
 
   const nsAString& KeySystem() const { return mKeySystem; }
   bool IsKeySystemSupported() const { return mIsKeySystemSupported; }
-  enum KeySystemIssue {
-    eUnset,
-    eWidevineWithNoWMF
-  };
-  void SetKeySystemIssue(KeySystemIssue aKeySystemIssue)
-  {
+  enum KeySystemIssue { eUnset, eWidevineWithNoWMF };
+  void SetKeySystemIssue(KeySystemIssue aKeySystemIssue) {
     mKeySystemIssue = aKeySystemIssue;
   }
-  KeySystemIssue GetKeySystemIssue() const
-  {
-    return mKeySystemIssue;
-  }
+  KeySystemIssue GetKeySystemIssue() const { return mKeySystemIssue; }
 
-  DecoderDoctorEvent event() const
-  {
-    return mEvent;
-  }
+  DecoderDoctorEvent event() const { return mEvent; }
 
   const MediaResult& DecodeIssue() const { return mDecodeIssue; }
-  const nsString& DecodeIssueMediaSrc() const
-  {
-    return mDecodeIssueMediaSrc;
-  }
+  const nsString& DecodeIssueMediaSrc() const { return mDecodeIssueMediaSrc; }
 
-private:
-  // Currently-known type of diagnostics. Set from one of the 'Store...' methods.
-  // This helps ensure diagnostics are only stored once,
-  // and makes it easy to know what information they contain.
+ private:
+  // Currently-known type of diagnostics. Set from one of the 'Store...'
+  // methods. This helps ensure diagnostics are only stored once, and makes it
+  // easy to know what information they contain.
   DiagnosticsType mDiagnosticsType = eUnsaved;
 
   nsString mFormat;
@@ -155,6 +135,6 @@ private:
   nsString mDecodeIssueMediaSrc;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

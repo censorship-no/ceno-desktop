@@ -76,10 +76,7 @@ var Utils = { // jshint ignore:line
   },
 
   getCurrentBrowser: function getCurrentBrowser(aWindow) {
-    let win = aWindow ||
-      Services.wm.getMostRecentWindow("navigator:browser") ||
-      Services.wm.getMostRecentWindow("navigator:geckoview");
-    return win.document.querySelector("browser[type=content][primary=true]");
+    return aWindow.document.querySelector("browser[type=content][primary=true]");
   },
 
   get isContentProcess() {
@@ -126,18 +123,24 @@ var Utils = { // jshint ignore:line
           }
         } catch (e) {
           Logger.debug("Failed to get a string from a bundle for", string);
-        } finally {
-          return str;
         }
+        return str;
       },
     };
     return this.stringBundle;
   },
 
-  getMessageManager: function getMessageManager(aBrowser) {
-    let browser = aBrowser || this.getCurrentBrowser();
+  getCurrentMessageManager: function getCurrentMessageManager(aWindow) {
     try {
-      return browser.frameLoader.messageManager;
+      return this.getCurrentBrowser(aWindow).frameLoader.messageManager;
+    } catch (x) {
+      return null;
+    }
+  },
+
+  getMessageManagerForFrame: function getMessageManagerForFrame(aFrame) {
+    try {
+      return aFrame.frameLoader.messageManager;
     } catch (x) {
       return null;
     }
@@ -153,7 +156,6 @@ var Utils = { // jshint ignore:line
       let extState = {};
       aAccessibleOrEvent.getState(state, extState);
       return new State(state.value, extState.value);
-
   },
 
   getAttributes: function getAttributes(aAccessible) {
@@ -178,9 +180,7 @@ var Utils = { // jshint ignore:line
   },
 
   getContentResolution: function _getContentResolution(aAccessible) {
-    let res = { value: 1 };
-    aAccessible.document.window.windowUtils.getResolution(res);
-    return res.value;
+    return aAccessible.document.window.windowUtils.getResolution();
   },
 
   getBounds: function getBounds(aAccessible) {
@@ -278,6 +278,7 @@ var Utils = { // jshint ignore:line
         return value;
       }
     }
+    return undefined;
   },
 
   getLandmarkName: function getLandmarkName(aAccessible) {
@@ -311,7 +312,7 @@ var Utils = { // jshint ignore:line
   matchRoles: function matchRoles(aAccessible, aRoles) {
     let roles = this.getAttributes(aAccessible)["xml-roles"];
     if (!roles) {
-      return;
+      return undefined;
     }
 
     // Looking up a role that would match any in the provided roles.
@@ -341,6 +342,26 @@ var Utils = { // jshint ignore:line
 
     return parent.role === Roles.LISTITEM && parent.childCount > 1 &&
       aStaticText.indexInParent === 0;
+  },
+
+  getTextLeafForOffset: function getTextLeafForOffset(aAccessible, aOffset) {
+    let ht = aAccessible.QueryInterface(Ci.nsIAccessibleHyperText);
+    let offset = 0;
+    for (let child = aAccessible.firstChild; child; child = child.nextSibling) {
+      if (ht.getLinkIndexAtOffset(offset) != -1) {
+        // This is an embedded character, increment by one.
+        offset++;
+      } else {
+        offset += child.name.length;
+      }
+
+      if (offset >= aOffset) {
+        return child;
+      }
+    }
+
+    // This is probably a single child.
+    return aAccessible.lastChild;
   },
 };
 

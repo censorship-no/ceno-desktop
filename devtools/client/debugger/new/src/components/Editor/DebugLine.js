@@ -1,84 +1,89 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.DebugLine = undefined;
-
-var _react = require("devtools/client/shared/vendor/react");
-
-var _editor = require("../../utils/editor/index");
-
-var _source = require("../../utils/source");
-
-var _pause = require("../../utils/pause/index");
-
-var _indentation = require("../../utils/indentation");
-
-var _reactRedux = require("devtools/client/shared/vendor/react-redux");
-
-var _selectors = require("../../selectors/index");
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function isDocumentReady(selectedSource, selectedFrame) {
-  return selectedFrame && (0, _source.isLoaded)(selectedSource) && (0, _editor.hasDocument)(selectedFrame.location.sourceId);
+
+// @flow
+import { Component } from "react";
+import {
+  toEditorPosition,
+  getDocument,
+  hasDocument,
+  startOperation,
+  endOperation
+} from "../../utils/editor";
+import { isLoaded } from "../../utils/source";
+import { isException } from "../../utils/pause";
+import { getIndentation } from "../../utils/indentation";
+import { connect } from "../../utils/connect";
+import {
+  getVisibleSelectedFrame,
+  getPauseReason,
+  getSourceFromId,
+  getCurrentThread
+} from "../../selectors";
+
+import type { Frame, Why, Source } from "../../types";
+
+type Props = {
+  frame: Frame,
+  why: Why,
+  source: Source
+};
+
+type TextClasses = {
+  markTextClass: string,
+  lineClass: string
+};
+
+function isDocumentReady(source, frame) {
+  return frame && isLoaded(source) && hasDocument(frame.location.sourceId);
 }
 
-class DebugLine extends _react.Component {
-  componentDidUpdate(prevProps) {
-    const {
-      why,
-      selectedFrame,
-      selectedSource
-    } = this.props;
-    (0, _editor.startOperation)();
-    this.clearDebugLine(prevProps.selectedFrame, prevProps.selectedSource, prevProps.why);
-    this.setDebugLine(why, selectedFrame, selectedSource);
-    (0, _editor.endOperation)();
+export class DebugLine extends Component<Props> {
+  debugExpression: null;
+
+  componentDidUpdate(prevProps: Props) {
+    const { why, frame, source } = this.props;
+
+    startOperation();
+    this.clearDebugLine(prevProps.why, prevProps.frame, prevProps.source);
+    this.setDebugLine(why, frame, source);
+    endOperation();
   }
 
   componentDidMount() {
-    const {
-      why,
-      selectedFrame,
-      selectedSource
-    } = this.props;
-    this.setDebugLine(why, selectedFrame, selectedSource);
+    const { why, frame, source } = this.props;
+    this.setDebugLine(why, frame, source);
   }
 
-  setDebugLine(why, selectedFrame, selectedSource) {
-    if (!isDocumentReady(selectedSource, selectedFrame)) {
+  componentWillUnmount() {
+    const { why, frame, source } = this.props;
+    this.clearDebugLine(why, frame, source);
+  }
+
+  setDebugLine(why: Why, frame: Frame, source: Source) {
+    if (!isDocumentReady(source, frame)) {
       return;
     }
+    const sourceId = frame.location.sourceId;
+    const doc = getDocument(sourceId);
 
-    const sourceId = selectedFrame.location.sourceId;
-    const doc = (0, _editor.getDocument)(sourceId);
-    let {
-      line,
-      column
-    } = (0, _editor.toEditorPosition)(selectedFrame.location);
-    const {
-      markTextClass,
-      lineClass
-    } = this.getTextClasses(why);
+    let { line, column } = toEditorPosition(frame.location);
+    const { markTextClass, lineClass } = this.getTextClasses(why);
     doc.addLineClass(line, "line", lineClass);
+
     const lineText = doc.getLine(line);
-    column = Math.max(column, (0, _indentation.getIndentation)(lineText));
-    this.debugExpression = doc.markText({
-      ch: column,
-      line
-    }, {
-      ch: null,
-      line
-    }, {
-      className: markTextClass
-    });
+    column = Math.max(column, getIndentation(lineText));
+
+    this.debugExpression = doc.markText(
+      { ch: column, line },
+      { ch: null, line },
+      { className: markTextClass }
+    );
   }
 
-  clearDebugLine(selectedFrame, selectedSource, why) {
-    if (!isDocumentReady(selectedSource, selectedFrame)) {
+  clearDebugLine(why: Why, frame: Frame, source: Source) {
+    if (!isDocumentReady(source, frame)) {
       return;
     }
 
@@ -86,43 +91,36 @@ class DebugLine extends _react.Component {
       this.debugExpression.clear();
     }
 
-    const sourceId = selectedFrame.location.sourceId;
-    const {
-      line
-    } = (0, _editor.toEditorPosition)(selectedFrame.location);
-    const doc = (0, _editor.getDocument)(sourceId);
-    const {
-      lineClass
-    } = this.getTextClasses(why);
+    const sourceId = frame.location.sourceId;
+    const { line } = toEditorPosition(frame.location);
+    const doc = getDocument(sourceId);
+    const { lineClass } = this.getTextClasses(why);
     doc.removeLineClass(line, "line", lineClass);
   }
 
-  getTextClasses(why) {
-    if ((0, _pause.isException)(why)) {
+  getTextClasses(why: Why): TextClasses {
+    if (isException(why)) {
       return {
         markTextClass: "debug-expression-error",
         lineClass: "new-debug-line-error"
       };
     }
 
-    return {
-      markTextClass: "debug-expression",
-      lineClass: "new-debug-line"
-    };
+    return { markTextClass: "debug-expression", lineClass: "new-debug-line" };
   }
 
   render() {
     return null;
   }
-
 }
 
-exports.DebugLine = DebugLine;
+const mapStateToProps = state => {
+  const frame = getVisibleSelectedFrame(state);
+  return {
+    frame,
+    source: frame && getSourceFromId(state, frame.location.sourceId),
+    why: getPauseReason(state, getCurrentThread(state))
+  };
+};
 
-const mapStateToProps = state => ({
-  selectedFrame: (0, _selectors.getVisibleSelectedFrame)(state),
-  selectedSource: (0, _selectors.getSelectedSource)(state),
-  why: (0, _selectors.getPauseReason)(state)
-});
-
-exports.default = (0, _reactRedux.connect)(mapStateToProps)(DebugLine);
+export default connect(mapStateToProps)(DebugLine);

@@ -6,13 +6,12 @@
 
 "use strict";
 
-var { loader, require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+var { loader, require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 
 // Require this module to setup core modules
 loader.require("devtools/client/framework/devtools-browser");
 
 var { gDevTools } = require("devtools/client/framework/devtools");
-var { TargetFactory } = require("devtools/client/framework/target");
 var { Toolbox } = require("devtools/client/framework/toolbox");
 var Services = require("Services");
 var { DebuggerClient } = require("devtools/shared/client/debugger-client");
@@ -66,7 +65,6 @@ var connect = async function() {
   const env = Cc["@mozilla.org/process/environment;1"]
     .getService(Ci.nsIEnvironment);
   const port = env.get("MOZ_BROWSER_TOOLBOX_PORT");
-  const addonID = env.get("MOZ_BROWSER_TOOLBOX_ADDONID");
 
   // A port needs to be passed in from the environment, for instance:
   //    MOZ_BROWSER_TOOLBOX_PORT=6080 ./mach run -chrome \
@@ -88,14 +86,8 @@ var connect = async function() {
   await gClient.connect();
 
   appendStatusMessage("Get root form for toolbox");
-  if (addonID) {
-    const { addons } = await gClient.listAddons();
-    const addonTargetActor = addons.filter(addon => addon.id === addonID).pop();
-    await openToolbox({form: addonTargetActor, chrome: true});
-  } else {
-    const response = await gClient.mainRoot.getProcess(0);
-    await openToolbox({form: response.form, chrome: true});
-  }
+  const front = await gClient.mainRoot.getMainProcess();
+  await openToolbox(front);
 };
 
 // Certain options should be toggled since we can assume chrome debugging here
@@ -104,6 +96,7 @@ function setPrefDefaults() {
   Services.prefs.setBoolPref("devtools.performance.ui.show-platform-data", true);
   Services.prefs.setBoolPref("devtools.inspector.showAllAnonymousContent", true);
   Services.prefs.setBoolPref("browser.dom.window.dump.enabled", true);
+  Services.prefs.setBoolPref("devtools.console.stdout.chrome", true);
   Services.prefs.setBoolPref("devtools.command-button-noautohide.enabled", true);
   // Bug 1225160 - Using source maps with browser debugging can lead to a crash
   Services.prefs.setBoolPref("devtools.debugger.source-maps-enabled", false);
@@ -140,14 +133,9 @@ function onCloseCommand(event) {
   window.close();
 }
 
-async function openToolbox({ form, chrome }) {
-  let options = {
-    form: form,
-    client: gClient,
-    chrome: chrome,
-  };
-  appendStatusMessage(`Create toolbox target: ${JSON.stringify(arguments, null, 2)}`);
-  const target = await TargetFactory.forRemoteTab(options);
+async function openToolbox(target) {
+  const form = target.targetForm;
+  appendStatusMessage(`Create toolbox target: ${JSON.stringify({form}, null, 2)}`);
   const frame = document.getElementById("toolbox-iframe");
 
   // Remember the last panel that was used inside of this profile.
@@ -157,13 +145,13 @@ async function openToolbox({ form, chrome }) {
       Services.prefs.getCharPref("devtools.toolbox.selectedTool",
                                   "jsdebugger"));
 
-  options = { customIframe: frame };
+  const toolboxOptions = { customIframe: frame };
   appendStatusMessage(`Show toolbox with ${selectedTool} selected`);
   const toolbox = await gDevTools.showToolbox(
     target,
     selectedTool,
     Toolbox.HostType.CUSTOM,
-    options
+    toolboxOptions
   );
   onNewToolbox(toolbox);
 }

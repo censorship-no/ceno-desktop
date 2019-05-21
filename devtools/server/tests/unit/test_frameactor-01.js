@@ -12,6 +12,10 @@ var gClient;
 var gThreadClient;
 
 function run_test() {
+  Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+  });
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-stack");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
@@ -29,7 +33,7 @@ function test_pause_frame() {
   gThreadClient.addOneTimeListener("paused", function(event, packet) {
     Assert.ok(!!packet.frame);
     Assert.ok(!!packet.frame.actor);
-    Assert.equal(packet.frame.callee.name, "stopMe");
+    Assert.equal(packet.frame.displayName, "stopMe");
     gThreadClient.resume(function() {
       finishClient(gClient);
     });

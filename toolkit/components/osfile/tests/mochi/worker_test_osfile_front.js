@@ -256,7 +256,6 @@ function test_iter_dir() {
       ok(lastAccess, "test_iter_dir: Windows lastAccess date exists: " + lastAccess);
       ok(lastAccess.getFullYear() >= 2009 && lastAccess.getFullYear() <= year, "test_iter_dir: consistent lastAccess date");
     }
-
   }
   ok(encountered_tmp_file, "test_iter_dir: We have found the temporary file");
 
@@ -444,7 +443,7 @@ function test_info() {
     // decides that the file was actually truncated rather than
     // recreated, hence that it should keep its previous creation
     // date.  Debugging hilarity ensues.
-  });
+  })();
 
   let change = stat.lastModificationDate;
   info("Testing lastModificationDate: " + change);

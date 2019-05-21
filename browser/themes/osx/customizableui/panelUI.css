@@ -35,7 +35,7 @@ panelmultiview .toolbaritem-combined-buttons > spacer.before-label {
   margin-inline-start: 18px;
 }
 
-.subviewbutton:not(:-moz-any([image],[targetURI],.cui-withicon, .bookmark-item)) > .menu-iconic-left {
+.subviewbutton:not(:-moz-any([image],[targetURI],.bookmark-item)) > .menu-iconic-left {
   display: none;
 }
 
@@ -79,4 +79,24 @@ menu.subviewbutton > .menu-right {
 
 #PanelUI-remotetabs-tabslist {
   padding-bottom: 4px;
+}
+
+.panel-button {
+  -moz-appearance: none;
+  border-radius: 2px;
+  background-color: var(--arrowpanel-dimmed);
+  color: inherit;
+  padding: 2px 6px;
+}
+
+.panel-button@buttonStateHover@ {
+  background-color: var(--arrowpanel-dimmed-further);
+}
+
+.panel-button@buttonStateActive@ {
+  background-color: var(--arrowpanel-dimmed-even-further);
+}
+
+.panel-button:-moz-focusring {
+  box-shadow: var(--focus-ring-box-shadow);
 }

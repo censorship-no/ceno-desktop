@@ -1,18 +1,19 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Specified angles.
 
+use crate::parser::{Parse, ParserContext};
+use crate::values::computed::angle::Angle as ComputedAngle;
+use crate::values::computed::{Context, ToComputedValue};
+use crate::values::specified::calc::CalcNode;
+use crate::values::CSSFloat;
+use crate::Zero;
 use cssparser::{Parser, Token};
-use parser::{Parse, ParserContext};
 use std::f32::consts::PI;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ParseError, SpecifiedValueInfo, ToCss};
-use values::CSSFloat;
-use values::computed::{Context, ToComputedValue};
-use values::computed::angle::Angle as ComputedAngle;
-use values::specified::calc::CalcNode;
 
 /// A specified angle dimension.
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
@@ -30,6 +31,21 @@ pub enum AngleDimension {
     /// An angle with turn unit.
     #[css(dimension)]
     Turn(CSSFloat),
+}
+
+impl Zero for AngleDimension {
+    fn zero() -> Self {
+        AngleDimension::Deg(0.)
+    }
+
+    fn is_zero(&self) -> bool {
+        match *self {
+            AngleDimension::Deg(ref f) |
+            AngleDimension::Grad(ref f) |
+            AngleDimension::Rad(ref f) |
+            AngleDimension::Turn(ref f) => *f == 0.,
+        }
+    }
 }
 
 impl AngleDimension {
@@ -56,6 +72,19 @@ impl AngleDimension {
 pub struct Angle {
     value: AngleDimension,
     was_calc: bool,
+}
+
+impl Zero for Angle {
+    fn zero() -> Self {
+        Self {
+            value: Zero::zero(),
+            was_calc: false,
+        }
+    }
+
+    fn is_zero(&self) -> bool {
+        self.value.is_zero()
+    }
 }
 
 impl ToCss for Angle {
@@ -101,6 +130,11 @@ impl Angle {
         }
     }
 
+    /// Return `0deg`.
+    pub fn zero() -> Self {
+        Self::from_degrees(0.0, false)
+    }
+
     /// Returns the value of the angle in degrees, mostly for `calc()`.
     #[inline]
     pub fn degrees(&self) -> CSSFloat {
@@ -111,12 +145,6 @@ impl Angle {
     #[inline]
     pub fn was_calc(&self) -> bool {
         self.was_calc
-    }
-
-    /// Returns `0deg`.
-    #[inline]
-    pub fn zero() -> Self {
-        Self::from_degrees(0.0, false)
     }
 
     /// Returns an `Angle` parsed from a `calc()` expression.
@@ -152,11 +180,7 @@ impl Parse for Angle {
 
 impl Angle {
     /// Parse an `<angle>` value given a value and an unit.
-    pub fn parse_dimension(
-        value: CSSFloat,
-        unit: &str,
-        was_calc: bool,
-    ) -> Result<Angle, ()> {
+    pub fn parse_dimension(value: CSSFloat, unit: &str, was_calc: bool) -> Result<Angle, ()> {
         let value = match_ignore_ascii_case! { unit,
             "deg" => AngleDimension::Deg(value),
             "grad" => AngleDimension::Grad(value),
@@ -197,10 +221,11 @@ impl Angle {
                 AllowUnitlessZeroAngle::No => Err(()),
             },
             Token::Function(ref name) if name.eq_ignore_ascii_case("calc") => {
-                return input.parse_nested_block(|i| CalcNode::parse_angle(context, i))
+                return input.parse_nested_block(|i| CalcNode::parse_angle(context, i));
             },
             _ => Err(()),
-        }.map_err(|()| input.new_unexpected_token_error(token.clone()))
+        }
+        .map_err(|()| input.new_unexpected_token_error(token.clone()))
     }
 }
 

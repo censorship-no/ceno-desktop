@@ -10,31 +10,14 @@ ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
 ChromeUtils.import("resource://gre/modules/Services.jsm", this);
 
-ChromeUtils.defineModuleGetter(this, "TelemetryStopwatch",
-  "resource://gre/modules/TelemetryStopwatch.jsm");
-
 function debug(msg) {
   Services.console.logStringMessage("SessionStoreContent: " + msg);
 }
 
-ChromeUtils.defineModuleGetter(this, "FormData",
-  "resource://gre/modules/FormData.jsm");
-
 ChromeUtils.defineModuleGetter(this, "ContentRestore",
   "resource:///modules/sessionstore/ContentRestore.jsm");
-ChromeUtils.defineModuleGetter(this, "DocShellCapabilities",
-  "resource:///modules/sessionstore/DocShellCapabilities.jsm");
-ChromeUtils.defineModuleGetter(this, "ScrollPosition",
-  "resource://gre/modules/ScrollPosition.jsm");
 ChromeUtils.defineModuleGetter(this, "SessionHistory",
   "resource://gre/modules/sessionstore/SessionHistory.jsm");
-ChromeUtils.defineModuleGetter(this, "SessionStorage",
-  "resource:///modules/sessionstore/SessionStorage.jsm");
-
-ChromeUtils.defineModuleGetter(this, "Utils",
-  "resource://gre/modules/sessionstore/Utils.jsm");
-const ssu = Cc["@mozilla.org/browser/sessionstore/utils;1"]
-              .getService(Ci.nsISessionStoreUtils);
 
 // A bound to the size of data to store for DOM Storage.
 const DOM_STORAGE_LIMIT_PREF = "browser.sessionstore.dom_storage_limit";
@@ -47,15 +30,6 @@ const PREF_INTERVAL = "browser.sessionstore.interval";
 
 const kNoIndex = Number.MAX_SAFE_INTEGER;
 const kLastIndex = Number.MAX_SAFE_INTEGER - 1;
-
-/**
- * A function that will recursively call |cb| to collect data for all
- * non-dynamic frames in the current frame/docShell tree.
- */
-function mapFrameTree(mm, callback) {
-  let [data] = Utils.mapFrameTree(mm.content, callback);
-  return data;
-}
 
 class Handler {
   constructor(store) {
@@ -158,7 +132,7 @@ class EventListener extends Handler {
   constructor(store) {
     super(store);
 
-    ssu.addDynamicFrameFilteredListener(this.mm, "load", this, true);
+    SessionStoreUtils.addDynamicFrameFilteredListener(this.mm, "load", this, true);
   }
 
   handleEvent(event) {
@@ -336,7 +310,10 @@ class ScrollPositionListener extends Handler {
   constructor(store) {
     super(store);
 
-    ssu.addDynamicFrameFilteredListener(this.mm, "scroll", this, false);
+    SessionStoreUtils.addDynamicFrameFilteredListener(
+        this.mm, "mozvisualscroll", this,
+        /* capture */ false, /* system group */ true);
+
     this.stateChangeNotifier.addObserver(this);
   }
 
@@ -353,7 +330,7 @@ class ScrollPositionListener extends Handler {
   }
 
   collect() {
-    return mapFrameTree(this.mm, ScrollPosition.collect);
+    return SessionStoreUtils.collectScrollPosition(this.mm.content);
   }
 }
 
@@ -378,7 +355,7 @@ class FormDataListener extends Handler {
   constructor(store) {
     super(store);
 
-    ssu.addDynamicFrameFilteredListener(this.mm, "input", this, true);
+    SessionStoreUtils.addDynamicFrameFilteredListener(this.mm, "input", this, true);
     this.stateChangeNotifier.addObserver(this);
   }
 
@@ -391,7 +368,7 @@ class FormDataListener extends Handler {
   }
 
   collect() {
-    return mapFrameTree(this.mm, FormData.collect);
+    return SessionStoreUtils.collectFormData(this.mm.content);
   }
 }
 
@@ -418,9 +395,7 @@ class DocShellCapabilitiesListener extends Handler {
   }
 
   onPageLoadStarted() {
-    // The order of docShell capabilities cannot change while we're running
-    // so calling join() without sorting before is totally sufficient.
-    let caps = DocShellCapabilities.collect(this.mm.docShell).join(",");
+    let caps = SessionStoreUtils.collectDocShellCapabilities(this.mm.docShell);
 
     // Send new data only when the capability list changes.
     if (caps != this._latestCapabilities) {
@@ -453,13 +428,13 @@ class SessionStorageListener extends Handler {
     // The event listener waiting for MozSessionStorageChanged events.
     this._listener = null;
 
-    Services.obs.addObserver(this, "browser:purge-domain-data");
+    Services.obs.addObserver(this, "browser:purge-sessionStorage");
     this.stateChangeNotifier.addObserver(this);
     this.resetEventListener();
   }
 
   uninit() {
-    Services.obs.removeObserver(this, "browser:purge-domain-data");
+    Services.obs.removeObserver(this, "browser:purge-sessionStorage");
   }
 
   observe() {
@@ -475,14 +450,14 @@ class SessionStorageListener extends Handler {
   resetEventListener() {
     if (!this._listener) {
       this._listener =
-        ssu.addDynamicFrameFilteredListener(this.mm, "MozSessionStorageChanged",
-                                            this, true);
+        SessionStoreUtils.addDynamicFrameFilteredListener(this.mm, "MozSessionStorageChanged",
+                                                          this, true);
     }
   }
 
   removeEventListener() {
-    ssu.removeDynamicFrameFilteredListener(this.mm, "MozSessionStorageChanged",
-                                           this._listener, true);
+    SessionStoreUtils.removeDynamicFrameFilteredListener(this.mm, "MozSessionStorageChanged",
+                                                         this._listener, true);
     this._listener = null;
   }
 
@@ -545,7 +520,10 @@ class SessionStorageListener extends Handler {
     // messages.
     this.resetChanges();
 
-    this.messageQueue.push("storage", () => SessionStorage.collect(content));
+    this.messageQueue.push("storage", () => {
+      let data = SessionStoreUtils.collectSessionStorage(content);
+      return Object.keys(data).length ? data : null;
+    });
   }
 
   onPageLoadCompleted() {

@@ -1,15 +1,15 @@
 //! A Dominator Tree represented as mappings of Ebbs to their immediate dominator.
 
-use entity::EntityMap;
-use flowgraph::{BasicBlock, ControlFlowGraph};
-use ir::instructions::BranchInfo;
-use ir::{Ebb, ExpandedProgramPoint, Function, Inst, Layout, ProgramOrder, Value};
-use packed_option::PackedOption;
-use std::cmp;
-use std::cmp::Ordering;
-use std::mem;
+use crate::entity::SecondaryMap;
+use crate::flowgraph::{BasicBlock, ControlFlowGraph};
+use crate::ir::instructions::BranchInfo;
+use crate::ir::{Ebb, ExpandedProgramPoint, Function, Inst, Layout, ProgramOrder, Value};
+use crate::packed_option::PackedOption;
+use crate::timing;
+use core::cmp;
+use core::cmp::Ordering;
+use core::mem;
 use std::vec::Vec;
-use timing;
 
 /// RPO numbers are not first assigned in a contiguous way but as multiples of STRIDE, to leave
 /// room for modifications of the dominator tree.
@@ -38,7 +38,7 @@ struct DomNode {
 
 /// The dominator tree for a single function.
 pub struct DominatorTree {
-    nodes: EntityMap<Ebb, DomNode>,
+    nodes: SecondaryMap<Ebb, DomNode>,
 
     /// CFG post-order of all reachable EBBs.
     postorder: Vec<Ebb>,
@@ -217,7 +217,7 @@ impl DominatorTree {
     /// function.
     pub fn new() -> Self {
         Self {
-            nodes: EntityMap::new(),
+            nodes: SecondaryMap::new(),
             postorder: Vec::new(),
             stack: Vec::new(),
             valid: false,
@@ -345,22 +345,25 @@ impl DominatorTree {
     fn push_successors(&mut self, func: &Function, ebb: Ebb) {
         for inst in func.layout.ebb_insts(ebb) {
             match func.dfg.analyze_branch(inst) {
-                BranchInfo::SingleDest(succ, _) => {
-                    if self.nodes[succ].rpo_number == 0 {
-                        self.nodes[succ].rpo_number = SEEN;
-                        self.stack.push(succ);
+                BranchInfo::SingleDest(succ, _) => self.push_if_unseen(succ),
+                BranchInfo::Table(jt, dest) => {
+                    for succ in func.jump_tables[jt].iter() {
+                        self.push_if_unseen(*succ);
                     }
-                }
-                BranchInfo::Table(jt) => {
-                    for (_, succ) in func.jump_tables[jt].entries() {
-                        if self.nodes[succ].rpo_number == 0 {
-                            self.nodes[succ].rpo_number = SEEN;
-                            self.stack.push(succ);
-                        }
+                    if let Some(dest) = dest {
+                        self.push_if_unseen(dest);
                     }
                 }
                 BranchInfo::NotABranch => {}
             }
+        }
+    }
+
+    /// Push `ebb` onto `self.stack` if it has not already been seen.
+    fn push_if_unseen(&mut self, ebb: Ebb) {
+        if self.nodes[ebb].rpo_number == 0 {
+            self.nodes[ebb].rpo_number = SEEN;
+            self.stack.push(ebb);
         }
     }
 
@@ -502,10 +505,10 @@ impl DominatorTree {
 /// - An ordering of EBBs according to a dominator tree pre-order.
 /// - Constant time dominance checks at the EBB granularity.
 ///
-/// The information in this auxillary data structure is not easy to update when the control flow
+/// The information in this auxiliary data structure is not easy to update when the control flow
 /// graph changes, which is why it is kept separate.
 pub struct DominatorTreePreorder {
-    nodes: EntityMap<Ebb, ExtraNode>,
+    nodes: SecondaryMap<Ebb, ExtraNode>,
 
     // Scratch memory used by `compute_postorder()`.
     stack: Vec<Ebb>,
@@ -533,7 +536,7 @@ impl DominatorTreePreorder {
     /// Create a new blank `DominatorTreePreorder`.
     pub fn new() -> Self {
         Self {
-            nodes: EntityMap::new(),
+            nodes: SecondaryMap::new(),
             stack: Vec::new(),
         }
     }
@@ -666,14 +669,14 @@ impl DominatorTreePreorder {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
-    use cursor::{Cursor, FuncCursor};
-    use flowgraph::ControlFlowGraph;
-    use ir::types::*;
-    use ir::{Function, InstBuilder, TrapCode};
-    use settings;
-    use verifier::{verify_context, VerifierErrors};
+    use crate::cursor::{Cursor, FuncCursor};
+    use crate::flowgraph::ControlFlowGraph;
+    use crate::ir::types::*;
+    use crate::ir::{Function, InstBuilder, TrapCode};
+    use crate::settings;
+    use crate::verifier::{verify_context, VerifierErrors};
 
     #[test]
     fn empty() {

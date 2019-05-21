@@ -4,17 +4,9 @@
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
 <resources>
-
-    <string name="ouinet_injector_endpoint">1.1.1.1:7076</string>
-    <string name="ouinet_injector_ipfs_id">XXXX</string>
-    <string name="ouinet_injector_bt_pubkey">XXXX</string>
-    <string name="ouinet_injector_credentials">XXXX</string>
-    <string name="ouinet_injector_tls_cert">-----BEGIN CERTIFICATE-----\
-XXXX\
------END CERTIFICATE-----\
-</string>
-    <string name="ouinet_notification_title">CENO Browser service</string>
-    <string name="ouinet_notification_description">Tap to stop</string>
-    <string name="ouinet_notification_channel_name">CENO service</string>
-
+    <string name="ouinet_index_bep44_pubkey"></string>
+    <string name="ouinet_index_ipns_id"></string>
+    <string name="ouinet_injector_endpoint">5.196.75.194:7077</string>
+    <string name="ouinet_injector_credentials">ouinet-test:Phohdaiti6Limahque4foi1aivaF6oca</string>
+    <string name="ouinet_injector_tls_cert"></string>
 </resources>

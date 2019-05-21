@@ -3,9 +3,9 @@
 * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 ChromeUtils.import("resource://services-common/utils.js"); /* global: CommonUtils */
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/TelemetryStopwatch.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Accounts} = ChromeUtils.import("resource://gre/modules/Accounts.jsm");
 
 XPCOMUtils.defineLazyGetter(window, "gChromeWin", () =>
   window.docShell.rootTreeItem.domWindow
@@ -275,30 +275,32 @@ var Logins = {
   _onSaveEditLogin: function() {
     let newUsername = document.getElementById("username").value;
     let newPassword = document.getElementById("password").value;
-    let newDomain  = document.getElementById("hostname").value;
     let origUsername = this._selectedLogin.username;
     let origPassword = this._selectedLogin.password;
-    let origDomain = this._selectedLogin.hostname;
 
     try {
-      if ((newUsername === origUsername) &&
-          (newPassword === origPassword) &&
-          (newDomain === origDomain) ) {
+      if ((newUsername === origUsername) && (newPassword === origPassword)) {
         Snackbars.show(gStringBundle.GetStringFromName("editLogin.saved1"), Snackbars.LENGTH_LONG);
         this._showList();
         return;
       }
 
-      let logins = Services.logins.findLogins({}, origDomain, origDomain, null);
+      let logins = Services.logins.findLogins({}, this._selectedLogin.hostname, this._selectedLogin.formSubmitURL, this._selectedLogin.httpRealm);
 
       for (let i = 0; i < logins.length; i++) {
         if (logins[i].username == origUsername) {
-          let clone = logins[i].clone();
-          clone.username = newUsername;
-          clone.password = newPassword;
-          clone.hostname = newDomain;
-          Services.logins.removeLogin(logins[i]);
-          Services.logins.addLogin(clone);
+          let propBag = Cc["@mozilla.org/hash-property-bag;1"].
+            createInstance(Ci.nsIWritablePropertyBag);
+          if (newUsername !== origUsername) {
+            propBag.setProperty("username", newUsername);
+          }
+          if (newPassword !== origPassword) {
+            propBag.setProperty("password", newPassword);
+          }
+          // Sync relies on timePasswordChanged to decide whether
+          // or not to sync a login, so touch it.
+          propBag.setProperty("timePasswordChanged", Date.now());
+          Services.logins.modifyLogin(logins[i], propBag);
           break;
         }
       }
@@ -368,6 +370,7 @@ var Logins = {
       { label: gStringBundle.GetStringFromName("loginsMenu.copyUsername") },
       { label: gStringBundle.GetStringFromName("loginsMenu.editLogin") },
       { label: gStringBundle.GetStringFromName("loginsMenu.delete") },
+      { label: gStringBundle.GetStringFromName("loginsMenu.deleteAll") },
     ];
 
     prompt.setSingleChoiceItems(menuItems);
@@ -389,26 +392,50 @@ var Logins = {
           history.pushState({ id: login.guid }, document.title);
           break;
         case 4:
-          let confirmPrompt = new Prompt({
-            window: window,
-            message: gStringBundle.GetStringFromName("loginsDialog.confirmDelete"),
-            buttons: [
-              gStringBundle.GetStringFromName("loginsDialog.confirm"),
-              gStringBundle.GetStringFromName("loginsDialog.cancel") ],
-          });
-          confirmPrompt.show((data) => {
-            switch (data.button) {
-              case 0:
-                // Corresponds to "confirm" button.
-                Services.logins.removeLogin(login);
+          Accounts.getFirefoxAccount().then(user => {
+             const promptMessage = user ? gStringBundle.GetStringFromName("loginsDialog.confirmDeleteForFxaUser")
+                                        : gStringBundle.GetStringFromName("loginsDialog.confirmDelete");
+             const confirmationMessage = gStringBundle.GetStringFromName("loginsDetails.deleted");
 
-                // Show a snackbar to notify the login record has been deleted.
-                Snackbars.show(gStringBundle.GetStringFromName("loginsDetails.deleted"), Snackbars.LENGTH_LONG);
-            }
+             this._showConfirmationPrompt(promptMessage,
+                                          confirmationMessage,
+                                          () => Services.logins.removeLogin(login));
           });
+          break;
+        case 5:
+          Accounts.getFirefoxAccount().then(user => {
+             const promptMessage = user ? gStringBundle.GetStringFromName("loginsDialog.confirmDeleteAllForFxaUser")
+                                        : gStringBundle.GetStringFromName("loginsDialog.confirmDeleteAll");
+             const confirmationMessage = gStringBundle.GetStringFromName("loginsDetails.deletedAll");
+
+             this._showConfirmationPrompt(promptMessage,
+                                          confirmationMessage,
+                                          () => Services.logins.removeAllLogins());
+          });
+          break;
       }
     });
   },
+
+   _showConfirmationPrompt: function(promptMessage, confirmationMessage, actionToPerform) {
+     new Prompt({
+         window: window,
+         message: promptMessage,
+         buttons: [
+           // Use default, generic values
+           gStringBundle.GetStringFromName("loginsDialog.confirm"),
+           gStringBundle.GetStringFromName("loginsDialog.cancel") ],
+       }).show((data) => {
+         switch (data.button) {
+           case 0:
+             // Corresponds to "confirm" button.
+
+             actionToPerform();
+
+             Snackbars.show(confirmationMessage, Snackbars.LENGTH_LONG);
+         }
+       });
+   },
 
   _loadFavicon: function(aImg, aHostname) {
     // Load favicon from cache.

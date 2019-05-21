@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Ok, tushundim",
   "prefs_home_header": "Firefox bosh sahifasi",
   "prefs_home_description": "Firefox bosh sahifasida qaysi kontent chiqishi kerakligini tanlang.",
+  "prefs_content_discovery_header": "Firefox Home",
+  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
+  "prefs_content_discovery_button": "Turn Off Content Discovery",
   "prefs_section_rows_option": "{num} qator;{num} qator",
   "prefs_search_header": "Internetdan qidirish",
   "prefs_topsites_description": "Tez-tez tashrif buyuradigan saytlaringiz",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Save the stories you love in Pocket, and fuel your mind with fascinating reads.",
   "highlights_empty_state": "Saytlarni ko‘rishni boshlashingiz bilan biz sizga ajoyib maqola, video va oxirgi kirilgan yoki xatcho‘plarga qo‘shilgan sahifalarni ko‘rsatamiz.",
   "topstories_empty_state": "Hammasini ko‘rib chiqdingiz. {provider}dan so‘nggi hikoyalarni o‘qish uchun keyinroq bu sahifaga qayting. Kuta olmaysizmi? Internetdan eng zo‘r hikoyalarni topish uchun ommabop mavzuni tanlang.",
-  "manual_migration_explanation2": "Firefox brauzerida boshqa brauzerdagi xatcho‘p, tarix va parollarni ochib ko‘ring.",
-  "manual_migration_cancel_button": "Yoʻq, kerak emas",
-  "manual_migration_import_button": "Hozir import qilish",
   "error_fallback_default_info": "Kontent yuklanayotganda qandaydir xatolik yuz berdi.",
   "error_fallback_default_refresh_suggestion": "Yana urinib ko‘rish uchun sahifani yangilang.",
   "section_menu_action_remove_section": "Qismni olib tashlash",
@@ -107,5 +107,8 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "Privacy Notice",
   "firstrun_continue_to_login": "Continue",
   "firstrun_skip_login": "Skip this step",
-  "context_menu_title": "Open menu"
+  "context_menu_title": "Open menu",
+  "manual_migration_explanation2": "Firefox brauzerida boshqa brauzerdagi xatcho‘p, tarix va parollarni ochib ko‘ring.",
+  "manual_migration_cancel_button": "Yoʻq, kerak emas",
+  "manual_migration_import_button": "Hozir import qilish"
 };

@@ -19,26 +19,23 @@
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/MediaQueryListBinding.h"
 
-class nsIDocument;
-
 namespace mozilla {
 namespace dom {
 
 class MediaList;
 
 class MediaQueryList final : public DOMEventTargetHelper,
-                             public mozilla::LinkedListElement<MediaQueryList>
-{
-public:
+                             public mozilla::LinkedListElement<MediaQueryList> {
+ public:
   // The caller who constructs is responsible for calling Evaluate
   // before calling any other methods.
-  MediaQueryList(nsIDocument* aDocument,
-                 const nsAString& aMediaQueryList,
-                 mozilla::dom::CallerType aCallerType);
-private:
+  MediaQueryList(Document* aDocument, const nsAString& aMediaQueryList,
+                 CallerType aCallerType);
+
+ private:
   ~MediaQueryList();
 
-public:
+ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaQueryList, DOMEventTargetHelper)
 
@@ -46,7 +43,8 @@ public:
 
   void MaybeNotify();
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL methods
   void GetMedia(nsAString& aMedia);
@@ -65,9 +63,8 @@ public:
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
 
-private:
-  void LastRelease() final
-  {
+ private:
+  void LastRelease() final {
     auto listElement = static_cast<LinkedListElement<MediaQueryList>*>(this);
     if (listElement->isInList()) {
       listElement->remove();
@@ -90,14 +87,14 @@ private:
   // after cycle collection unlinking.  Having a non-null mDocument
   // is equivalent to being in that document's mDOMMediaQueryLists
   // linked list.
-  nsCOMPtr<nsIDocument> mDocument;
+  RefPtr<Document> mDocument;
 
   RefPtr<MediaList> mMediaList;
   bool mMatches;
   bool mMatchesValid;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* !defined(mozilla_dom_MediaQueryList_h) */

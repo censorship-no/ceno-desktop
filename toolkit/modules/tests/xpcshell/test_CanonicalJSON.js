@@ -1,4 +1,4 @@
-const { CanonicalJSON } = ChromeUtils.import("resource://gre/modules/CanonicalJSON.jsm", {});
+const { CanonicalJSON } = ChromeUtils.import("resource://gre/modules/CanonicalJSON.jsm");
 
 function stringRepresentation(obj) {
   const clone = JSON.parse(JSON.stringify(obj));
@@ -138,4 +138,23 @@ add_task(async function test_canonicalJSON_with_deeply_nested_dicts() {
     '"1":{"a":"a","b":"b","c":"c"},"2":2,"3":3},"id":"1"}},"id":"1"}]';
 
   Assert.equal(CanonicalJSON.stringify(records), expected);
+});
+
+add_task(async function test_canonicalJSON_should_use_scientific_notation() {
+  /*
+  We globally follow the Python float representation, except for exponents < 10
+  where we drop the leading zero
+  */
+  Assert.equal(CanonicalJSON.stringify(.00099), "0.00099");
+  Assert.equal(CanonicalJSON.stringify(.000011), "0.000011");
+  Assert.equal(CanonicalJSON.stringify(.0000011), "0.0000011");
+  Assert.equal(CanonicalJSON.stringify(.000001), "0.000001");
+  Assert.equal(CanonicalJSON.stringify(.00000099), "9.9e-7");
+  Assert.equal(CanonicalJSON.stringify(.0000001), "1e-7");
+  Assert.equal(CanonicalJSON.stringify(.000000930258908), "9.30258908e-7");
+  Assert.equal(CanonicalJSON.stringify(.00000000000068272), "6.8272e-13");
+  Assert.equal(CanonicalJSON.stringify(Math.pow(10, 20)), "100000000000000000000");
+  Assert.equal(CanonicalJSON.stringify(Math.pow(10, 21)), "1e+21");
+  Assert.equal(CanonicalJSON.stringify(Math.pow(10, 15) + 0.1), "1000000000000000.1");
+  Assert.equal(CanonicalJSON.stringify(Math.pow(10, 16) * 1.1), "11000000000000000");
 });

@@ -7,6 +7,8 @@
 /* import-globals-from ../../../toolkit/content/preferencesBindings.js */
 /* import-globals-from in-content/extensionControlled.js */
 
+document.documentElement.addEventListener("dialoghelp", window.top.openPrefsHelp);
+
 Preferences.addAll([
   // Add network.proxy.autoconfig_url before network.proxy.type so they're
   // both initialized when network.proxy.type initialization triggers a call to
@@ -35,6 +37,7 @@ Preferences.addAll([
   { id: "network.proxy.backup.socks_port", type: "int" },
   { id: "network.trr.mode", type: "int" },
   { id: "network.trr.uri", type: "string" },
+  { id: "network.trr.custom_uri", "type": "string" },
 ]);
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -42,7 +45,14 @@ window.addEventListener("DOMContentLoaded", () => {
     gConnectionsDialog.proxyTypeChanged.bind(gConnectionsDialog));
   Preferences.get("network.proxy.socks_version").on("change",
     gConnectionsDialog.updateDNSPref.bind(gConnectionsDialog));
-  gConnectionsDialog.initDnsOverHttpsUI();
+
+  // wait until the network.trr prefs are added before init'ing the UI for them
+  gConnectionsDialog.uiReady = new Promise(resolve => {
+    gConnectionsDialog._initialPrefsAdded = resolve;
+  }).then(() => {
+    delete gConnectionsDialog._initialPrefsAdded;
+    gConnectionsDialog.initDnsOverHttpsUI();
+  });
 
   document
     .getElementById("disableProxyExtension")
@@ -55,6 +65,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
 var gConnectionsDialog = {
   beforeAccept() {
+    if (document.getElementById("customDnsOverHttpsUrlRadio").selected) {
+      Services.prefs.setStringPref("network.trr.uri", document.getElementById("customDnsOverHttpsInput").value);
+    }
+
     var proxyTypePref = Preferences.get("network.proxy.type");
     if (proxyTypePref.value == 2) {
       this.doAutoconfigURLFixup();
@@ -123,7 +137,7 @@ var gConnectionsDialog = {
     var autologinProxyPref = Preferences.get("signon.autologin.proxy");
     autologinProxyPref.disabled = proxyTypePref.value == 0;
     var noProxiesPref = Preferences.get("network.proxy.no_proxies_on");
-    noProxiesPref.disabled = proxyTypePref.value != 1;
+    noProxiesPref.disabled = proxyTypePref.value == 0;
 
     var autoconfigURLPref = Preferences.get("network.proxy.autoconfig_url");
     autoconfigURLPref.disabled = proxyTypePref.value != 2;
@@ -282,6 +296,10 @@ var gConnectionsDialog = {
     }
   },
 
+  isDnsOverHttpsLocked() {
+    return Services.prefs.prefIsLocked("network.trr.mode");
+  },
+
   isDnsOverHttpsEnabled() {
     // values outside 1:4 are considered falsey/disabled in this context
     let trrPref = Preferences.get("network.trr.mode");
@@ -291,9 +309,13 @@ var gConnectionsDialog = {
 
   readDnsOverHttpsMode() {
     // called to update checked element property to reflect current pref value
+    // this is the first signal we get when the prefs are added, so lazy-init
     let enabled = this.isDnsOverHttpsEnabled();
     let uriPref = Preferences.get("network.trr.uri");
-    uriPref.disabled = !enabled;
+    uriPref.disabled = !enabled || this.isDnsOverHttpsLocked();
+    if (this._initialPrefsAdded) {
+      this._initialPrefsAdded();
+    }
     return enabled;
   },
 
@@ -304,16 +326,43 @@ var gConnectionsDialog = {
     return trrModeCheckbox.checked ? 2 : 0;
   },
 
-  writeDnsOverHttpsUri() {
-    // called to update pref with user input
-    let input = document.getElementById("networkDnsOverHttpsUrl");
-    let uriString = input.value.trim();
-    // turn an empty string into `undefined` to clear the pref back to the default
-    return uriString.length ? uriString : undefined;
+  updateDnsOverHttpsUI() {
+    // Disable the custom url input box if the parent checkbox and custom radio button attached to it is not selected.
+    // Disable the custom radio button if the parent checkbox is not selected.
+    let parentCheckbox = document.getElementById("networkDnsOverHttps");
+    let customDnsOverHttpsUrlRadio = document.getElementById("customDnsOverHttpsUrlRadio");
+    let customDnsOverHttpsInput = document.getElementById("customDnsOverHttpsInput");
+    customDnsOverHttpsInput.disabled = !parentCheckbox.checked || !customDnsOverHttpsUrlRadio.selected;
+    customDnsOverHttpsUrlRadio.disabled = !parentCheckbox.checked;
+  },
+
+  getDnsOverHttpsControls() {
+    return [
+      document.getElementById("networkDnsOverHttps"),
+      document.getElementById("customDnsOverHttpsUrlRadio"),
+      document.getElementById("defaultDnsOverHttpsUrlRadio"),
+      document.getElementById("customDnsOverHttpsInput"),
+    ];
+  },
+
+  disableDnsOverHttpsUI(disabled) {
+    for (let element of this.getDnsOverHttpsControls()) {
+      element.disabled = disabled;
+    }
   },
 
   initDnsOverHttpsUI() {
-    let input = document.getElementById("networkDnsOverHttpsUrl");
-    input.placeholder = Preferences.get("network.trr.uri").defaultValue;
+    // If we have a locked pref disable the UI.
+    this.disableDnsOverHttpsUI(this.isDnsOverHttpsLocked());
+
+    let defaultDnsOverHttpsUrlRadio = document.getElementById("defaultDnsOverHttpsUrlRadio");
+    let defaultPrefUrl = Preferences.get("network.trr.uri").defaultValue;
+    document.l10n.setAttributes(defaultDnsOverHttpsUrlRadio, "connection-dns-over-https-url-default", {
+      url: defaultPrefUrl,
+    });
+    defaultDnsOverHttpsUrlRadio.value = defaultPrefUrl;
+    let radioGroup = document.getElementById("DnsOverHttpsUrlRadioGroup");
+    radioGroup.selectedIndex = Preferences.get("network.trr.uri").hasUserValue ? 1 : 0;
+    this.updateDnsOverHttpsUI();
   },
 };

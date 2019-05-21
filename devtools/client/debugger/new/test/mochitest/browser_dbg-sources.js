@@ -1,22 +1,15 @@
-/* Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/ */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // Tests that the source tree works.
 
-function getLabel(dbg, index) {
-  return findElement(dbg, "sourceNode", index)
-    .textContent.trim()
-    .replace(/^[\s\u200b]*/g, "");
-}
-
 add_task(async function() {
-  const dbg = await initDebugger("doc-sources.html");
+  const dbg = await initDebugger("doc-sources.html", "simple1", "simple2", "nested-source", "long.js");
   const {
     selectors: { getSelectedSource },
     getState
   } = dbg;
-
-  await waitForSources(dbg, "simple1", "simple2", "nested-source", "long.js");
 
   // Expand nodes and make sure more sources appear.
   await assertSourceCount(dbg, 2);
@@ -40,7 +33,7 @@ add_task(async function() {
 
   ok(fourthNode.classList.contains("focused"), "4th node is focused");
   ok(selectedSource.includes("nested-source.js"), "nested-source is selected");
-
+  await assertNodeIsFocused(dbg, 4);
   await waitForSelectedSource(dbg, "nested-source");
 
   // Make sure new sources appear in the list.
@@ -51,8 +44,9 @@ add_task(async function() {
   });
 
   await waitForSourceCount(dbg, 9);
+  await assertNodeIsFocused(dbg, 4);
   is(
-    getLabel(dbg, 7),
+    getSourceNodeLabel(dbg, 7),
     "math.min.js",
     "math.min.js - The dynamic script exists"
   );

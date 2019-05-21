@@ -11,28 +11,27 @@ function getCurrentRuntime(runtimesState) {
 exports.getCurrentRuntime = getCurrentRuntime;
 
 function getCurrentClient(runtimesState) {
-  const connection = getCurrentConnection(runtimesState);
-  return connection ? connection.client : null;
+  const runtimeDetails = getCurrentRuntimeDetails(runtimesState);
+  return runtimeDetails ? runtimeDetails.clientWrapper : null;
 }
 exports.getCurrentClient = getCurrentClient;
 
-function getCurrentRuntimeInfo(runtimesState) {
-  const connection = getCurrentConnection(runtimesState);
-  return connection ? connection.info : null;
-}
-exports.getCurrentRuntimeInfo = getCurrentRuntimeInfo;
-
 function findRuntimeById(id, runtimesState) {
-  const allRuntimes = [
+  return getAllRuntimes(runtimesState).find(r => r.id === id);
+}
+exports.findRuntimeById = findRuntimeById;
+
+function getAllRuntimes(runtimesState) {
+  return [
     ...runtimesState.networkRuntimes,
     ...runtimesState.thisFirefoxRuntimes,
     ...runtimesState.usbRuntimes,
   ];
-  return allRuntimes.find(r => r.id === id);
 }
-exports.findRuntimeById = findRuntimeById;
+exports.getAllRuntimes = getAllRuntimes;
 
-function getCurrentConnection(runtimesState) {
+function getCurrentRuntimeDetails(runtimesState) {
   const runtime = getCurrentRuntime(runtimesState);
-  return runtime ? runtime.connection : null;
+  return runtime ? runtime.runtimeDetails : null;
 }
+exports.getCurrentRuntimeDetails = getCurrentRuntimeDetails;

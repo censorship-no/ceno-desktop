@@ -2,7 +2,7 @@
    waitForTime, waitUntil */
 "use strict";
 
-const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 const Services = require("Services");
 const { TargetFactory } = require("devtools/client/framework/target");
 
@@ -23,7 +23,7 @@ async function getTargetForSelectedTab() {
 
 async function startServerAndGetSelectedTabMemory() {
   const target = await getTargetForSelectedTab();
-  const memory = target.getFront("memory");
+  const memory = await target.getFront("memory");
   return {memory, target};
 }
 

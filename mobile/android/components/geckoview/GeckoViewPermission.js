@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   EventDispatcher: "resource://gre/modules/Messaging.jsm",
@@ -205,7 +205,6 @@ GeckoViewPermission.prototype = {
         type: "GeckoView:ContentPermission",
         uri: aRequest.principal.URI.displaySpec,
         perm: perm.type,
-        access: perm.access !== "unused" ? perm.access : null,
     }).then(granted => {
       if (!granted) {
         return false;

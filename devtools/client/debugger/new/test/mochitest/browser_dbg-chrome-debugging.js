@@ -10,10 +10,7 @@
 var gClient, gThreadClient;
 var gNewChromeSource = promise.defer();
 
-var { DevToolsLoader } = ChromeUtils.import(
-  "resource://devtools/shared/Loader.jsm",
-  {}
-);
+var { DevToolsLoader } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 var customLoader = new DevToolsLoader();
 customLoader.invisibleToDebugger = true;
 var { DebuggerServer } = customLoader.require("devtools/server/main");
@@ -26,12 +23,6 @@ function initDebuggerClient() {
 
   let transport = DebuggerServer.connectPipe();
   return new DebuggerClient(transport);
-}
-
-async function attachThread(client, actor) {
-  let [response, targetFront] = await client.attachTarget(actor);
-  let [response2, threadClient] = await targetFront.attachThread(null);
-  return threadClient;
 }
 
 function onNewSource(event, packet) {
@@ -63,9 +54,10 @@ add_task(async function() {
   const [type] = await gClient.connect();
   is(type, "browser", "Root actor should identify itself as a browser.");
 
-  const response = await gClient.mainRoot.getProcess(0);
-  let actor = response.form.actor;
-  gThreadClient = await attachThread(gClient, actor);
+  const front = await gClient.mainRoot.getMainProcess();
+  await front.attach();
+  const [, threadClient] = await front.attachThread();
+  gThreadClient = threadClient;
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:mozilla");
 
   // listen for a new source and global

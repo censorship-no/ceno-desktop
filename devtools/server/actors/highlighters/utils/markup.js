@@ -163,12 +163,14 @@ exports.createSVGNode = createSVGNode;
  *   attributes.
  * - parent: if provided, the newly created element will be appended to this
  *   node.
+ * - text: if provided, set the text content of the element.
  */
 function createNode(win, options) {
   const type = options.nodeType || "div";
   const namespace = options.namespace || XHTML_NS;
+  const doc = win.document;
 
-  const node = win.document.createElementNS(namespace, type);
+  const node = doc.createElementNS(namespace, type);
 
   for (const name in options.attributes || {}) {
     let value = options.attributes[name];
@@ -180,6 +182,10 @@ function createNode(win, options) {
 
   if (options.parent) {
     options.parent.appendChild(node);
+  }
+
+  if (options.text) {
+    node.appendChild(doc.createTextNode(options.text));
   }
 
   return node;
@@ -668,10 +674,12 @@ function moveInfobar(container, bounds, win, options = {}) {
   // the transform, results in the creation of both a stacking context and a containing
   // block. The object acts as a containing block for fixed positioned descendants."
   // (See https://www.w3.org/TR/css-transforms-1/#transform-rendering)
+  // We also need to shift the infobar 50% to the left in order for it to appear centered
+  // on the element it points to.
   container.setAttribute("style", `
     position:${position};
     transform-origin: 0 0;
-    transform: scale(${1 / zoom}) translate(${left}px, ${top}px)`);
+    transform: scale(${1 / zoom}) translate(calc(${left}px - 50%), ${top}px)`);
 
   container.setAttribute("position", positionAttribute);
 }

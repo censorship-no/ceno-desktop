@@ -21,29 +21,30 @@ class WebAuthnTransactionChild;
 class WebAuthnMakeCredentialResult;
 class WebAuthnGetAssertionResult;
 
-class WebAuthnManagerBase : public nsIDOMEventListener
-{
-public:
+class WebAuthnManagerBase : public nsIDOMEventListener {
+ public:
   NS_DECL_NSIDOMEVENTLISTENER
+
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_CLASS(WebAuthnManagerBase)
 
   explicit WebAuthnManagerBase(nsPIDOMWindowInner* aParent);
 
-  virtual void
-  FinishMakeCredential(const uint64_t& aTransactionId,
-                       const WebAuthnMakeCredentialResult& aResult) = 0;
+  virtual void FinishMakeCredential(
+      const uint64_t& aTransactionId,
+      const WebAuthnMakeCredentialResult& aResult) = 0;
 
-  virtual void
-  FinishGetAssertion(const uint64_t& aTransactionId,
-                     const WebAuthnGetAssertionResult& aResult) = 0;
+  virtual void FinishGetAssertion(
+      const uint64_t& aTransactionId,
+      const WebAuthnGetAssertionResult& aResult) = 0;
 
-  virtual void
-  RequestAborted(const uint64_t& aTransactionId,
-                 const nsresult& aError) = 0;
+  virtual void RequestAborted(const uint64_t& aTransactionId,
+                              const nsresult& aError) = 0;
 
   void ActorDestroyed();
 
-protected:
-  ~WebAuthnManagerBase();
+ protected:
+  virtual ~WebAuthnManagerBase();
 
   // Needed by HandleEvent() to cancel transactions.
   virtual void CancelTransaction(const nsresult& aError) = 0;
@@ -61,7 +62,7 @@ protected:
   RefPtr<WebAuthnTransactionChild> mChild;
 };
 
-}
-}
+}  // namespace dom
+}  // namespace mozilla
 
-#endif //mozilla_dom_WebAuthnManagerBase_h
+#endif  // mozilla_dom_WebAuthnManagerBase_h

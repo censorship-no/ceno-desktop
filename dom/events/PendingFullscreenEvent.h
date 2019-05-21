@@ -9,12 +9,13 @@
 
 #include "nsContentUtils.h"
 
-class nsIDocument;
-
 namespace mozilla {
 
-enum class FullscreenEventType
-{
+namespace dom {
+class Document;
+}
+
+enum class FullscreenEventType {
   Change,
   Error,
 };
@@ -23,24 +24,18 @@ enum class FullscreenEventType
  * Class for dispatching a fullscreen event. It should be queued and
  * invoked as part of "run the fullscreen steps" algorithm.
  */
-class PendingFullscreenEvent
-{
-public:
-  PendingFullscreenEvent(FullscreenEventType aType,
-                         nsIDocument* aDocument,
+class PendingFullscreenEvent {
+ public:
+  PendingFullscreenEvent(FullscreenEventType aType, dom::Document* aDocument,
                          nsINode* aTarget)
-    : mDocument(aDocument)
-    , mTarget(aTarget)
-    , mType(aType)
-  {
+      : mDocument(aDocument), mTarget(aTarget), mType(aType) {
     MOZ_ASSERT(aDocument);
     MOZ_ASSERT(aTarget);
   }
 
-  nsIDocument* Document() const { return mDocument; }
+  dom::Document* Document() const { return mDocument; }
 
-  void Dispatch()
-  {
+  void Dispatch() {
 #ifdef DEBUG
     MOZ_ASSERT(!mDispatched);
     mDispatched = true;
@@ -54,15 +49,15 @@ public:
         name = NS_LITERAL_STRING("fullscreenerror");
         break;
     }
-    nsINode* target = mTarget->GetComposedDoc() == mDocument
-      ? mTarget.get() : mDocument.get();
+    nsINode* target = mTarget->GetComposedDoc() == mDocument ? mTarget.get()
+                                                             : mDocument.get();
     Unused << nsContentUtils::DispatchTrustedEvent(
-      mDocument, target, name,
-      CanBubble::eYes, Cancelable::eNo, Composed::eYes);
+        mDocument, target, name, CanBubble::eYes, Cancelable::eNo,
+        Composed::eYes);
   }
 
-private:
-  nsCOMPtr<nsIDocument> mDocument;
+ private:
+  RefPtr<dom::Document> mDocument;
   nsCOMPtr<nsINode> mTarget;
   FullscreenEventType mType;
 #ifdef DEBUG
@@ -70,6 +65,6 @@ private:
 #endif
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_PendingFullscreenEvent_h_
+#endif  // mozilla_PendingFullscreenEvent_h_

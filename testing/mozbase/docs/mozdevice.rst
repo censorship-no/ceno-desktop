@@ -1,7 +1,7 @@
-:mod:`mozdevice` --- Interact with Android or B2G devices
-=========================================================
+:mod:`mozdevice` --- Interact with Android devices
+==================================================
 
-Mozdevice provides several interfaces to interact with an Android or B2G
+Mozdevice provides several interfaces to interact with an Android
 device such as a phone, tablet, or emulator. It allows you to push
 files to these types of devices, launch processes, and more. There are
 currently two available interfaces:
@@ -60,10 +60,12 @@ Informational methods
 .. automethod:: ADBDevice.get_logcat
 .. automethod:: ADBDevice.get_prop
 .. automethod:: ADBDevice.get_state
+.. automethod:: ADBDevice.get_top_activity
 
 System control methods
 ++++++++++++++++++++++
 .. automethod:: ADBDevice.is_device_ready
+.. automethod:: ADBDevice.power_on
 .. automethod:: ADBDevice.reboot
 
 File management methods
@@ -90,41 +92,16 @@ Process management methods
 .. automethod:: ADBDevice.pkill
 .. automethod:: ADBDevice.process_exist
 
-ADBAndroid
-``````````
-.. autoclass:: ADBAndroid
-
-Informational methods
-+++++++++++++++++++++
-.. automethod:: ADBAndroid.get_battery_percentage
-.. automethod:: ADBAndroid.get_top_activity
-
-System control methods
-++++++++++++++++++++++
-.. automethod:: ADBAndroid.is_device_ready
-.. automethod:: ADBAndroid.power_on
-.. automethod:: ADBAndroid.reboot
-
 Application management methods
 ++++++++++++++++++++++++++++++
-.. automethod:: ADBAndroid.install_app
-.. automethod:: ADBAndroid.is_app_installed
-.. automethod:: ADBAndroid.launch_application
-.. automethod:: ADBAndroid.launch_fennec
-.. automethod:: ADBAndroid.launch_geckoview_example
-.. automethod:: ADBAndroid.stop_application
-.. automethod:: ADBAndroid.uninstall_app
-.. automethod:: ADBAndroid.update_app
-
-ADBB2G
-``````
-.. autoclass:: ADBB2G
-
-Informational methods
-+++++++++++++++++++++
-.. automethod:: ADBB2G.get_battery_percentage
-.. automethod:: ADBB2G.get_info
-.. automethod:: ADBB2G.get_memory_total
+.. automethod:: ADBDevice.install_app
+.. automethod:: ADBDevice.is_app_installed
+.. automethod:: ADBDevice.launch_application
+.. automethod:: ADBDevice.launch_fennec
+.. automethod:: ADBDevice.launch_geckoview_example
+.. automethod:: ADBDevice.stop_application
+.. automethod:: ADBDevice.uninstall_app
+.. automethod:: ADBDevice.update_app
 
 ADBProcess
 ``````````

@@ -14,10 +14,9 @@
 namespace mozilla {
 namespace layers {
 
-class VideoBridgeChild final : public PVideoBridgeChild
-                             , public TextureForwarder
-{
-public:
+class VideoBridgeChild final : public PVideoBridgeChild,
+                               public TextureForwarder {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VideoBridgeChild, override);
 
   static void Startup();
@@ -30,12 +29,11 @@ public:
                                     const ReadLockDescriptor& aReadLock,
                                     const LayersBackend& aLayersBackend,
                                     const TextureFlags& aFlags,
-                                    const uint64_t& aSerial) override;
-  bool DeallocPTextureChild(PTextureChild* actor) override;
+                                    const uint64_t& aSerial);
+  bool DeallocPTextureChild(PTextureChild* actor);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
   void DeallocPVideoBridgeChild() override;
-
 
   // ISurfaceAllocator
   bool AllocUnsafeShmem(size_t aSize,
@@ -50,22 +48,23 @@ public:
   PTextureChild* CreateTexture(const SurfaceDescriptor& aSharedData,
                                const ReadLockDescriptor& aReadLock,
                                LayersBackend aLayersBackend,
-                               TextureFlags aFlags,
-                               uint64_t aSerial,
+                               TextureFlags aFlags, uint64_t aSerial,
                                wr::MaybeExternalImageId& aExternalImageId,
                                nsIEventTarget* aTarget = nullptr) override;
 
   // ClientIPCAllocator
   base::ProcessId GetParentPid() const override { return OtherPid(); }
-  MessageLoop * GetMessageLoop() const override { return mMessageLoop; }
-  void CancelWaitForRecycle(uint64_t aTextureId) override { MOZ_ASSERT(false, "NO RECYCLING HERE"); }
+  MessageLoop* GetMessageLoop() const override { return mMessageLoop; }
+  void CancelWaitForRecycle(uint64_t aTextureId) override {
+    MOZ_ASSERT(false, "NO RECYCLING HERE");
+  }
 
   // ISurfaceAllocator
   bool IsSameProcess() const override;
 
   bool CanSend() { return mCanSend; }
 
-private:
+ private:
   VideoBridgeChild();
   ~VideoBridgeChild();
 
@@ -74,7 +73,7 @@ private:
   bool mCanSend;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif

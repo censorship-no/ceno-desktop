@@ -9,14 +9,15 @@ using namespace mozilla::safebrowsing;
 
 namespace mozilla {
 namespace safebrowsing {
-    class Classifier;
-}
-}
+class Classifier;
+class LookupCacheV4;
+}  // namespace safebrowsing
+}  // namespace mozilla
 
 typedef nsCString _Fragment;
 typedef nsTArray<nsCString> _PrefixArray;
 
-template<typename Function>
+template <typename Function>
 void RunTestInNewThread(Function&& aFunction);
 
 // Synchronously apply updates by calling Classifier::AsyncApplyUpdates.
@@ -25,8 +26,7 @@ nsresult SyncApplyUpdates(Classifier* aClassifier,
 
 // Return nsIFile with root directory - NS_APP_USER_PROFILE_50_DIR
 // Sub-directories are passed in path argument.
-already_AddRefed<nsIFile>
-GetFile(const nsTArray<nsString>& path);
+already_AddRefed<nsIFile> GetFile(const nsTArray<nsString>& path);
 
 // ApplyUpdate will call |ApplyUpdates| of Classifier within a new thread
 void ApplyUpdate(nsTArray<TableUpdate*>& updates);
@@ -44,6 +44,9 @@ nsresult PrefixArrayToAddPrefixArrayV2(const nsTArray<nsCString>& prefixArray,
 // Generate a hash prefix from string
 nsCString GeneratePrefix(const nsCString& aFragment, uint8_t aLength);
 
+// To test if the content is equal
+void CheckContent(LookupCacheV4* cache, PrefixStringMap& expected);
+
 // Create a LookupCacheV4 object with sepecified prefix array.
-template<typename T>
+template <typename T>
 RefPtr<T> SetupLookupCache(const _PrefixArray& prefixArray);

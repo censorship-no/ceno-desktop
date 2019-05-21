@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,23 +7,20 @@
 #define nsLookAndFeel_h_
 #include "nsXPLookAndFeel.h"
 
-class nsLookAndFeel final : public nsXPLookAndFeel
-{
-public:
+class nsLookAndFeel final : public nsXPLookAndFeel {
+ public:
   nsLookAndFeel();
   virtual ~nsLookAndFeel();
 
   void NativeInit() final;
   virtual void RefreshImpl() override;
-  virtual nsresult NativeGetColor(ColorID aID, nscolor &aResult) override;
-  virtual nsresult GetIntImpl(IntID aID, int32_t &aResult) override;
-  virtual nsresult GetFloatImpl(FloatID aID, float &aResult) override;
+  virtual nsresult NativeGetColor(ColorID aID, nscolor& aResult) override;
+  virtual nsresult GetIntImpl(IntID aID, int32_t& aResult) override;
+  virtual nsresult GetFloatImpl(FloatID aID, float& aResult) override;
   virtual bool GetFontImpl(FontID aID, nsString& aFontName,
-                           gfxFontStyle& aFontStyle,
-                           float aDevPixPerCSSPixel) override;
+                           gfxFontStyle& aFontStyle) override;
 
-  virtual char16_t GetPasswordCharacterImpl() override
-  {
+  virtual char16_t GetPasswordCharacterImpl() override {
     // unicode value for the bullet character, used for password textfields.
     return 0x2022;
   }
@@ -31,15 +28,17 @@ public:
   static bool UseOverlayScrollbars();
 
   virtual nsTArray<LookAndFeelInt> GetIntCacheImpl() override;
-  virtual void SetIntCacheImpl(const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache) override;
+  virtual void SetIntCacheImpl(
+      const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache) override;
 
-protected:
+ protected:
   static bool SystemWantsOverlayScrollbars();
   static bool AllowOverlayScrollbarsOverlap();
 
   static bool SystemWantsDarkTheme();
+  static nscolor ProcessSelectionBackground(nscolor aColor);
 
-private:
+ private:
   int32_t mUseOverlayScrollbars;
   bool mUseOverlayScrollbarsCached;
 
@@ -48,6 +47,9 @@ private:
 
   int32_t mPrefersReducedMotion;
   bool mPrefersReducedMotionCached;
+
+  int32_t mSystemUsesDarkTheme;
+  bool mSystemUsesDarkThemeCached;
 
   nscolor mColorTextSelectBackground;
   nscolor mColorTextSelectBackgroundDisabled;
@@ -89,4 +91,4 @@ private:
   void EnsureInit();
 };
 
-#endif // nsLookAndFeel_h_
+#endif  // nsLookAndFeel_h_

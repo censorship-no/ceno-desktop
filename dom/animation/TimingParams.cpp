@@ -8,48 +8,45 @@
 
 #include "mozilla/AnimationUtils.h"
 #include "mozilla/dom/AnimatableBinding.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/KeyframeAnimationOptionsBinding.h"
 #include "mozilla/dom/KeyframeEffectBinding.h"
 #include "mozilla/ServoCSSParser.h"
-#include "nsIDocument.h"
 
 namespace mozilla {
 
 template <class OptionsType>
-static const dom::EffectTiming&
-GetTimingProperties(const OptionsType& aOptions);
+static const dom::EffectTiming& GetTimingProperties(
+    const OptionsType& aOptions);
 
 template <>
-/* static */ const dom::EffectTiming&
-GetTimingProperties(
-  const dom::UnrestrictedDoubleOrKeyframeEffectOptions& aOptions)
-{
+/* static */
+const dom::EffectTiming& GetTimingProperties(
+    const dom::UnrestrictedDoubleOrKeyframeEffectOptions& aOptions) {
   MOZ_ASSERT(aOptions.IsKeyframeEffectOptions());
   return aOptions.GetAsKeyframeEffectOptions();
 }
 
 template <>
-/* static */ const dom::EffectTiming&
-GetTimingProperties(
-  const dom::UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions)
-{
+/* static */
+const dom::EffectTiming& GetTimingProperties(
+    const dom::UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions) {
   MOZ_ASSERT(aOptions.IsKeyframeAnimationOptions());
   return aOptions.GetAsKeyframeAnimationOptions();
 }
 
 template <class OptionsType>
-/* static */ TimingParams
-TimingParams::FromOptionsType(const OptionsType& aOptions,
-                              nsIDocument* aDocument,
-                              ErrorResult& aRv)
-{
+/* static */
+TimingParams TimingParams::FromOptionsType(const OptionsType& aOptions,
+                                           dom::Document* aDocument,
+                                           ErrorResult& aRv) {
   TimingParams result;
 
   if (aOptions.IsUnrestrictedDouble()) {
     double durationInMs = aOptions.GetAsUnrestrictedDouble();
     if (durationInMs >= 0) {
       result.mDuration.emplace(
-        StickyTimeDuration::FromMilliseconds(durationInMs));
+          StickyTimeDuration::FromMilliseconds(durationInMs));
     } else {
       aRv.Throw(NS_ERROR_DOM_TYPE_ERR);
       return result;
@@ -63,33 +60,28 @@ TimingParams::FromOptionsType(const OptionsType& aOptions,
   return result;
 }
 
-/* static */ TimingParams
-TimingParams::FromOptionsUnion(
-  const dom::UnrestrictedDoubleOrKeyframeEffectOptions& aOptions,
-  nsIDocument* aDocument,
-  ErrorResult& aRv)
-{
+/* static */
+TimingParams TimingParams::FromOptionsUnion(
+    const dom::UnrestrictedDoubleOrKeyframeEffectOptions& aOptions,
+    dom::Document* aDocument, ErrorResult& aRv) {
   return FromOptionsType(aOptions, aDocument, aRv);
 }
 
-/* static */ TimingParams
-TimingParams::FromOptionsUnion(
-  const dom::UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions,
-  nsIDocument* aDocument,
-  ErrorResult& aRv)
-{
+/* static */
+TimingParams TimingParams::FromOptionsUnion(
+    const dom::UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions,
+    dom::Document* aDocument, ErrorResult& aRv) {
   return FromOptionsType(aOptions, aDocument, aRv);
 }
 
-/* static */ TimingParams
-TimingParams::FromEffectTiming(const dom::EffectTiming& aEffectTiming,
-                               nsIDocument* aDocument,
-                               ErrorResult& aRv)
-{
+/* static */
+TimingParams TimingParams::FromEffectTiming(
+    const dom::EffectTiming& aEffectTiming, dom::Document* aDocument,
+    ErrorResult& aRv) {
   TimingParams result;
 
   Maybe<StickyTimeDuration> duration =
-    TimingParams::ParseDuration(aEffectTiming.mDuration, aRv);
+      TimingParams::ParseDuration(aEffectTiming.mDuration, aRv);
   if (aRv.Failed()) {
     return result;
   }
@@ -102,7 +94,7 @@ TimingParams::FromEffectTiming(const dom::EffectTiming& aEffectTiming,
     return result;
   }
   Maybe<ComputedTimingFunction> easing =
-    TimingParams::ParseEasing(aEffectTiming.mEasing, aDocument, aRv);
+      TimingParams::ParseEasing(aEffectTiming.mEasing, aDocument, aRv);
   if (aRv.Failed()) {
     return result;
   }
@@ -121,13 +113,10 @@ TimingParams::FromEffectTiming(const dom::EffectTiming& aEffectTiming,
   return result;
 }
 
-/* static */ TimingParams
-TimingParams::MergeOptionalEffectTiming(
-  const TimingParams& aSource,
-  const dom::OptionalEffectTiming& aEffectTiming,
-  nsIDocument* aDocument,
-  ErrorResult& aRv)
-{
+/* static */
+TimingParams TimingParams::MergeOptionalEffectTiming(
+    const TimingParams& aSource, const dom::OptionalEffectTiming& aEffectTiming,
+    dom::Document* aDocument, ErrorResult& aRv) {
   MOZ_ASSERT(!aRv.Failed(), "Initially return value should be ok");
 
   TimingParams result = aSource;
@@ -137,7 +126,7 @@ TimingParams::MergeOptionalEffectTiming(
   Maybe<StickyTimeDuration> duration;
   if (aEffectTiming.mDuration.WasPassed()) {
     duration =
-      TimingParams::ParseDuration(aEffectTiming.mDuration.Value(), aRv);
+        TimingParams::ParseDuration(aEffectTiming.mDuration.Value(), aRv);
     if (aRv.Failed()) {
       return result;
     }
@@ -160,8 +149,8 @@ TimingParams::MergeOptionalEffectTiming(
 
   Maybe<ComputedTimingFunction> easing;
   if (aEffectTiming.mEasing.WasPassed()) {
-    easing =
-      TimingParams::ParseEasing(aEffectTiming.mEasing.Value(), aDocument, aRv);
+    easing = TimingParams::ParseEasing(aEffectTiming.mEasing.Value(), aDocument,
+                                       aRv);
     if (aRv.Failed()) {
       return result;
     }
@@ -174,11 +163,11 @@ TimingParams::MergeOptionalEffectTiming(
   }
   if (aEffectTiming.mDelay.WasPassed()) {
     result.mDelay =
-      TimeDuration::FromMilliseconds(aEffectTiming.mDelay.Value());
+        TimeDuration::FromMilliseconds(aEffectTiming.mDelay.Value());
   }
   if (aEffectTiming.mEndDelay.WasPassed()) {
     result.mEndDelay =
-      TimeDuration::FromMilliseconds(aEffectTiming.mEndDelay.Value());
+        TimeDuration::FromMilliseconds(aEffectTiming.mEndDelay.Value());
   }
   if (aEffectTiming.mIterations.WasPassed()) {
     result.mIterations = aEffectTiming.mIterations.Value();
@@ -201,11 +190,9 @@ TimingParams::MergeOptionalEffectTiming(
   return result;
 }
 
-/* static */ Maybe<ComputedTimingFunction>
-TimingParams::ParseEasing(const nsAString& aEasing,
-                          nsIDocument* aDocument,
-                          ErrorResult& aRv)
-{
+/* static */
+Maybe<ComputedTimingFunction> TimingParams::ParseEasing(
+    const nsAString& aEasing, dom::Document* aDocument, ErrorResult& aRv) {
   MOZ_ASSERT(aDocument);
 
   nsTimingFunction timingFunction;
@@ -215,26 +202,21 @@ TimingParams::ParseEasing(const nsAString& aEasing,
     return Nothing();
   }
 
-  if (timingFunction.mType == nsTimingFunction::Type::Linear) {
+  if (timingFunction.IsLinear()) {
     return Nothing();
   }
 
   return Some(ComputedTimingFunction(timingFunction));
 }
 
-bool
-TimingParams::operator==(const TimingParams& aOther) const
-{
+bool TimingParams::operator==(const TimingParams& aOther) const {
   // We don't compare mActiveDuration and mEndTime because they are calculated
   // from other timing parameters.
-  return mDuration == aOther.mDuration &&
-         mDelay == aOther.mDelay &&
-         mEndDelay == aOther.mEndDelay &&
-         mIterations == aOther.mIterations &&
+  return mDuration == aOther.mDuration && mDelay == aOther.mDelay &&
+         mEndDelay == aOther.mEndDelay && mIterations == aOther.mIterations &&
          mIterationStart == aOther.mIterationStart &&
-         mDirection == aOther.mDirection &&
-         mFill == aOther.mFill &&
+         mDirection == aOther.mDirection && mFill == aOther.mFill &&
          mFunction == aOther.mFunction;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

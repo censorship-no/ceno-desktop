@@ -8,7 +8,7 @@
  * https://console.spec.whatwg.org/#console-namespace
  */
 
-[Exposed=(Window,Worker,WorkerDebugger,Worklet,System),
+[Exposed=(Window,Worker,WorkerDebugger,Worklet),
  ClassString="Console",
  ProtoObjectHack]
 namespace console {
@@ -87,6 +87,9 @@ dictionary ConsoleEvent {
   DOMString addonId = "";
   DOMString level = "";
   DOMString filename = "";
+  // Unique identifier within the process for the script source this event is
+  // associated with, or zero.
+  unsigned long sourceId = 0;
   unsigned long lineNumber = 0;
   unsigned long columnNumber = 0;
   DOMString functionName = "";
@@ -115,6 +118,9 @@ dictionary ConsoleProfileEvent {
 // This dictionary is used to manage stack trace data.
 dictionary ConsoleStackEntry {
   DOMString filename = "";
+  // Unique identifier within the process for the script source this entry is
+  // associated with, or zero.
+  unsigned long sourceId = 0;
   unsigned long lineNumber = 0;
   unsigned long columnNumber = 0;
   DOMString functionName = "";
@@ -146,7 +152,7 @@ dictionary ConsoleCounterError {
 };
 
 [ChromeOnly,
- Exposed=(Window,Worker,WorkerDebugger,Worklet,System)]
+ Exposed=(Window,Worker,WorkerDebugger,Worklet)]
 // This is basically a copy of the console namespace.
 interface ConsoleInstance {
   // Logging

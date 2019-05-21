@@ -23,20 +23,21 @@ async function test_socket_conn() {
   authenticator.allowConnection = () => {
     return DebuggerServer.AuthenticationResult.ALLOW;
   };
-  const listener = DebuggerServer.createListener();
+  const socketOptions = {
+    authenticator,
+    portOrPath: -1,
+  };
+  const listener = new SocketListener(DebuggerServer, socketOptions);
   Assert.ok(listener);
-  listener.portOrPath = -1;
-  listener.authenticator = authenticator;
   listener.open();
   Assert.equal(DebuggerServer.listeningSockets, 1);
   gPort = DebuggerServer._listeners[0].port;
   info("Debugger server port is " + gPort);
   // Open a second, separate listener
-  gExtraListener = DebuggerServer.createListener();
-  gExtraListener.portOrPath = -1;
-  gExtraListener.authenticator = authenticator;
+  gExtraListener = new SocketListener(DebuggerServer, socketOptions);
   gExtraListener.open();
   Assert.equal(DebuggerServer.listeningSockets, 2);
+  Assert.ok(!DebuggerServer.hasConnection());
 
   info("Starting long and unicode tests at " + new Date().toTimeString());
   const unicodeString = "(╯°□°）╯︵ ┻━┻";
@@ -44,13 +45,15 @@ async function test_socket_conn() {
     host: "127.0.0.1",
     port: gPort,
   });
+  Assert.ok(DebuggerServer.hasConnection());
 
   // Assert that connection settings are available on transport object
   const settings = transport.connectionSettings;
   Assert.equal(settings.host, "127.0.0.1");
   Assert.equal(settings.port, gPort);
 
-  return new Promise((resolve) => {
+  const onDebuggerConnectionClosed = DebuggerServer.once("connectionchange");
+  await new Promise((resolve) => {
     transport.hooks = {
       onPacket: function(packet) {
         this.onPacket = function({unicode}) {
@@ -71,16 +74,19 @@ async function test_socket_conn() {
     };
     transport.ready();
   });
+  const type = await onDebuggerConnectionClosed;
+  Assert.equal(type, "closed");
+  Assert.ok(!DebuggerServer.hasConnection());
 }
 
 async function test_socket_shutdown() {
   Assert.equal(DebuggerServer.listeningSockets, 2);
   gExtraListener.close();
   Assert.equal(DebuggerServer.listeningSockets, 1);
-  Assert.ok(DebuggerServer.closeAllListeners());
+  Assert.ok(DebuggerServer.closeAllSocketListeners());
   Assert.equal(DebuggerServer.listeningSockets, 0);
   // Make sure closing the listener twice does nothing.
-  Assert.ok(!DebuggerServer.closeAllListeners());
+  Assert.ok(!DebuggerServer.closeAllSocketListeners());
   Assert.equal(DebuggerServer.listeningSockets, 0);
 
   info("Connecting to a server socket at " + new Date().toTimeString());

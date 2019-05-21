@@ -17,8 +17,9 @@ function assertBreakpointExists(dbg, source, line) {
   );
 }
 
-function assertEditorBreakpoint(dbg, line, shouldExist) {
-  const exists = !!getLineEl(dbg, line).querySelector(".new-breakpoint");
+async function assertEditorBreakpoint(dbg, line, shouldExist) {
+  const el = await getLineEl(dbg, line);
+  const exists = !!el.querySelector(".new-breakpoint");
   ok(
     exists === shouldExist,
     "Breakpoint " +
@@ -28,36 +29,43 @@ function assertEditorBreakpoint(dbg, line, shouldExist) {
   );
 }
 
-function getLineEl(dbg, line) {
-  const lines = dbg.win.document.querySelectorAll(".CodeMirror-code > div");
-  return lines[line - 1];
+async function getLineEl(dbg, line) {
+  let el = await codeMirrorGutterElement(dbg, line);
+  while (el && !el.matches(".CodeMirror-code > div")) {
+    el = el.parentElement;
+  }
+  return el;
 }
 
-function clickGutter(dbg, line) {
-  clickElement(dbg, "gutter", line);
+async function clickGutter(dbg, line) {
+  const el = await codeMirrorGutterElement(dbg, line);
+  clickDOMElement(dbg, el);
 }
 
 add_task(async function() {
   // NOTE: the CORS call makes the test run times inconsistent
-  const dbg = await initDebugger("doc-sourcemaps.html");
+  const dbg = await initDebugger("doc-sourcemaps.html", "entry.js", "output.js", "times2.js", "opts.js");
   const {
-    selectors: { getBreakpoint, getBreakpoints },
+    selectors: { getBreakpoint, getBreakpointCount },
     getState
   } = dbg;
 
-  await waitForSources(dbg, "entry.js", "output.js", "times2.js", "opts.js");
   ok(true, "Original sources exist");
   const bundleSrc = findSource(dbg, "bundle.js");
 
+  // Check that the original sources appear in the source tree
+  await clickElement(dbg, "sourceDirectoryLabel", 3);
+  await assertSourceCount(dbg, 8);
+
   await selectSource(dbg, bundleSrc);
 
-  await clickGutter(dbg, 13);
+  await clickGutter(dbg, 70);
   await waitForDispatch(dbg, "ADD_BREAKPOINT");
-  assertEditorBreakpoint(dbg, 13, true);
+  assertEditorBreakpoint(dbg, 70, true);
 
-  await clickGutter(dbg, 13);
+  await clickGutter(dbg, 70);
   await waitForDispatch(dbg, "REMOVE_BREAKPOINT");
-  is(getBreakpoints(getState()).size, 0, "No breakpoints exists");
+  is(getBreakpointCount(getState()), 0, "No breakpoints exists");
 
   const entrySrc = findSource(dbg, "entry.js");
 
@@ -71,14 +79,13 @@ add_task(async function() {
 
   // Test breaking on a breakpoint
   await addBreakpoint(dbg, "entry.js", 15);
-  is(getBreakpoints(getState()).size, 1, "One breakpoint exists");
+  is(getBreakpointCount(getState()), 1, "One breakpoint exists");
   assertBreakpointExists(dbg, entrySrc, 15);
 
   invokeInTab("keepMeAlive");
   await waitForPaused(dbg);
   assertPausedLocation(dbg);
 
-  await stepIn(dbg);
   await stepIn(dbg);
   assertPausedLocation(dbg);
 

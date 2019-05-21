@@ -12,9 +12,8 @@
 namespace mozilla {
 namespace dom {
 
-class SessionStorageCache final
-{
-public:
+class SessionStorageCache final {
+ public:
   NS_INLINE_DECL_REFCOUNTING(SessionStorageCache)
 
   SessionStorageCache();
@@ -43,17 +42,13 @@ public:
 
   void Clear(DataSetType aDataSetType, bool aByUserInteraction = true);
 
-  already_AddRefed<SessionStorageCache>
-  Clone() const;
+  already_AddRefed<SessionStorageCache> Clone() const;
 
-private:
+ private:
   ~SessionStorageCache() = default;
 
-  struct DataSet
-  {
-    DataSet()
-      : mOriginQuotaUsage(0)
-    {}
+  struct DataSet {
+    DataSet() : mOriginQuotaUsage(0) {}
 
     bool ProcessUsageDelta(int64_t aDelta);
 
@@ -65,10 +60,9 @@ private:
 
   DataSet mDefaultSet;
   DataSet mSessionSet;
-  bool mSessionDataSetActive;
 };
 
-} // dom namespace
-} // mozilla namespace
+}  // namespace dom
+}  // namespace mozilla
 
-#endif //mozilla_dom_SessionStorageCache_h
+#endif  // mozilla_dom_SessionStorageCache_h

@@ -4,69 +4,25 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["QueryContext", "UrlbarController"];
+var EXPORTED_SYMBOLS = [
+  "UrlbarController",
+];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
-  // BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
-  Services: "resource://gre/modules/Services.jsm",
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
+  BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
+  ExtensionSearchHandler: "resource://gre/modules/ExtensionSearchHandler.jsm",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
+  URLBAR_SELECTED_RESULT_TYPES: "resource:///modules/BrowserUsageTelemetry.jsm",
 });
 
-/**
- * QueryContext defines a user's autocomplete input from within the Address Bar.
- * It supplements it with details of how the search results should be obtained
- * and what they consist of.
- */
-class QueryContext {
-  /**
-   * Constructs the QueryContext instance.
-   *
-   * @param {object} options
-   *   The initial options for QueryContext.
-   * @param {string} options.searchString
-   *   The string the user entered in autocomplete. Could be the empty string
-   *   in the case of the user opening the popup via the mouse.
-   * @param {number} options.lastKey
-   *   The last key the user entered (as a key code). Could be null if the search
-   *   was started via the mouse.
-   * @param {boolean} options.isPrivate
-   *   Set to true if this query was started from a private browsing window.
-   * @param {number} options.maxResults
-   *   The maximum number of results that will be displayed for this query.
-   * @param {boolean} [options.autoFill]
-   *   Whether or not to include autofill results. Optional, as this is normally
-   *   set by the AddressBarController.
-   */
-  constructor(options = {}) {
-    this._checkRequiredOptions(options, [
-      "searchString",
-      "lastKey",
-      "maxResults",
-      "isPrivate",
-    ]);
-
-    this.autoFill = !!options.autoFill;
-  }
-
-  /**
-   * Checks the required options, saving them as it goes.
-   *
-   * @param {object} options The options object to check.
-   * @param {array} optionNames The names of the options to check for.
-   * @throws {Error} Throws if there is a missing option.
-   */
-  _checkRequiredOptions(options, optionNames) {
-    for (let optionName of optionNames) {
-      if (!(optionName in options)) {
-        throw new Error(`Missing or empty ${optionName} provided to QueryContext`);
-      }
-      this[optionName] = options[optionName];
-    }
-  }
-}
+const TELEMETRY_1ST_RESULT = "PLACES_AUTOCOMPLETE_1ST_RESULT_TIME_MS";
+const TELEMETRY_6_FIRST_RESULTS = "PLACES_AUTOCOMPLETE_6_FIRST_RESULTS_TIME_MS";
 
 /**
  * The address bar controller handles queries from the address bar, obtains
@@ -78,6 +34,8 @@ class QueryContext {
  * - onQueryStarted(queryContext)
  * - onQueryResults(queryContext)
  * - onQueryCancelled(queryContext)
+ * - onQueryFinished(queryContext)
+ * - onQueryResultRemoved(index)
  */
 class UrlbarController {
   /**
@@ -86,153 +44,119 @@ class UrlbarController {
    *
    * @param {object} options
    *   The initial options for UrlbarController.
-   * @param {object} options.window
-   *   The window this controller is operating within.
+   * @param {object} options.browserWindow
+   *   The browser window this controller is operating within.
    * @param {object} [options.manager]
    *   Optional fake providers manager to override the built-in providers manager.
    *   Intended for use in unit tests only.
    */
   constructor(options = {}) {
-    if (!options.window) {
-      throw new Error("Missing options: window");
+    if (!options.browserWindow) {
+      throw new Error("Missing options: browserWindow");
+    }
+    if (!options.browserWindow.location ||
+        options.browserWindow.location.href != AppConstants.BROWSER_CHROME_URL) {
+      throw new Error("browserWindow should be an actual browser window.");
     }
 
     this.manager = options.manager || UrlbarProvidersManager;
-    this.window = options.window;
+    this.browserWindow = options.browserWindow;
 
     this._listeners = new Set();
+    this._userSelectionBehavior = "none";
+  }
+
+  /**
+   * Hooks up the controller with an input.
+   *
+   * @param {UrlbarInput} input
+   *   The UrlbarInput instance associated with this controller.
+   */
+  setInput(input) {
+    this.input = input;
+  }
+
+  /**
+   * Hooks up the controller with a view.
+   *
+   * @param {UrlbarView} view
+   *   The UrlbarView instance associated with this controller.
+   */
+  setView(view) {
+    this.view = view;
   }
 
   /**
    * Takes a query context and starts the query based on the user input.
    *
-   * @param {QueryContext} queryContext The query details.
+   * @param {UrlbarQueryContext} queryContext The query details.
    */
   async startQuery(queryContext) {
-    queryContext.autoFill = Services.prefs.getBoolPref("browser.urlbar.autoFill", true);
+    // Cancel any running query.
+    this.cancelQuery();
+
+    this._lastQueryContext = queryContext;
+
+    queryContext.lastResultCount = 0;
+    TelemetryStopwatch.start(TELEMETRY_1ST_RESULT, queryContext);
+    TelemetryStopwatch.start(TELEMETRY_6_FIRST_RESULTS, queryContext);
 
     this._notify("onQueryStarted", queryContext);
-
     await this.manager.startQuery(queryContext, this);
+    this._notify("onQueryFinished", queryContext);
+    return queryContext;
   }
 
   /**
    * Cancels an in-progress query. Note, queries may continue running if they
-   * can't be canceled.
+   * can't be cancelled.
    *
-   * @param {QueryContext} queryContext The query details.
+   * @param {UrlbarUtils.CANCEL_REASON} [reason]
+   *   The reason the query was cancelled.
    */
-  cancelQuery(queryContext) {
-    this.manager.cancelQuery(queryContext);
+  cancelQuery(reason) {
+    if (!this._lastQueryContext) {
+      return;
+    }
 
-    this._notify("onQueryCancelled", queryContext);
+    TelemetryStopwatch.cancel(TELEMETRY_1ST_RESULT, this._lastQueryContext);
+    TelemetryStopwatch.cancel(TELEMETRY_6_FIRST_RESULTS, this._lastQueryContext);
+
+    this.manager.cancelQuery(this._lastQueryContext);
+    this._notify("onQueryCancelled", this._lastQueryContext);
+    delete this._lastQueryContext;
+
+    if (reason == UrlbarUtils.CANCEL_REASON.BLUR &&
+        ExtensionSearchHandler.hasActiveInputSession()) {
+      ExtensionSearchHandler.handleInputCancelled();
+    }
   }
 
   /**
    * Receives results from a query.
    *
-   * @param {QueryContext} queryContext The query details.
+   * @param {UrlbarQueryContext} queryContext The query details.
    */
   receiveResults(queryContext) {
-    this._notify("onQueryResults", queryContext);
-  }
-
-  /**
-   * Handles the case where a url or other text has been entered into the
-   * urlbar. This will either load the URL, or some text that could be a keyword
-   * or a simple value to load via the default search engine.
-   *
-   * @param {Event} event The event that triggered this.
-   * @param {string} text The text that was entered into the urlbar.
-   * @param {string} [openWhere] Where we expect the result to be opened.
-   * @param {object} [openParams]
-   *   The parameters related to how and where the result will be opened.
-   *   For possible properties @see {_loadURL}
-   */
-  handleEnteredText(event, text, openWhere, openParams = {}) {
-    let browser = this.window.gBrowser.selectedBrowser;
-    let where = openWhere || this._whereToOpen(event);
-
-    openParams.postData = null;
-    openParams.allowInheritPrincipal = false;
-
-    // TODO: Work out how we get the user selection behavior, probably via passing
-    // it in, since we don't have the old autocomplete controller to work with.
-    // BrowserUsageTelemetry.recordUrlbarSelectedResultMethod(
-    //   event, this.userSelectionBehavior);
-
-    text = text.trim();
-
-    try {
-      new URL(text);
-    } catch (ex) {
-      // TODO: Figure out why we need lastLocationChange here.
-      // TODO: Possibly move getShortcutOrURIAndPostData into a utility function
-      // in a jsm (there's nothing window specific about it).
-      // let lastLocationChange = browser.lastLocationChange;
-      // getShortcutOrURIAndPostData(text).then(data => {
-      //   if (where != "current" ||
-      //       browser.lastLocationChange == lastLocationChange) {
-      //     params.postData = data.postData;
-      //     params.allowInheritPrincipal = data.mayInheritPrincipal;
-      //     this._loadURL(data.url, browser, where,
-      //                   openUILinkParams);
-      //   }
-      // });
-      return;
+    if (queryContext.lastResultCount < 1 && queryContext.results.length >= 1) {
+      TelemetryStopwatch.finish(TELEMETRY_1ST_RESULT, queryContext);
+    }
+    if (queryContext.lastResultCount < 6 && queryContext.results.length >= 6) {
+      TelemetryStopwatch.finish(TELEMETRY_6_FIRST_RESULTS, queryContext);
     }
 
-    this._loadURL(text, browser, where, openParams);
-  }
-
-  /**
-   * Opens a specific result that has been selected.
-   *
-   * @param {Event} event The event that triggered this.
-   * @param {UrlbarMatch} result The result that was selected.
-   * @param {string} [openWhere] Where we expect the result to be opened.
-   * @param {object} [openParams]
-   *   The parameters related to how and where the result will be opened.
-   *   For possible properties @see {_loadURL}
-   */
-  resultSelected(event, result, openWhere, openParams = {}) {
-    // TODO: Work out how we get the user selection behavior, probably via passing
-    // it in, since we don't have the old autocomplete controller to work with.
-    // BrowserUsageTelemetry.recordUrlbarSelectedResultMethod(
-    //   event, this.userSelectionBehavior);
-
-    let where = openWhere || this._whereToOpen(event);
-    openParams.postData = null;
-    openParams.allowInheritPrincipal = false;
-    let browser = this.window.gBrowser.selectedBrowser;
-    let url = result.url;
-
-    switch (result.type) {
-      case UrlbarUtils.MATCH_TYPE.TAB_SWITCH: {
-        // TODO: Implement handleRevert or equivalent on the input.
-        // this.input.handleRevert();
-        let prevTab = this.window.gBrowser.selectedTab;
-        let loadOpts = {
-          adoptIntoActiveWindow: UrlbarPrefs.get("switchTabs.adoptIntoActiveWindow"),
-        };
-
-        if (this.window.switchToTabHavingURI(url, false, loadOpts) &&
-            this.window.isTabEmpty(prevTab)) {
-          this.window.gBrowser.removeTab(prevTab);
-        }
-        return;
-
-        // TODO: How to handle meta chars?
-        // Once we get here, we got a TAB_SWITCH match but the user
-        // bypassed it by pressing shift/meta/ctrl. Those modifiers
-        // might otherwise affect where we open - we always want to
-        // open in the current tab.
-        // where = "current";
-
+    if (queryContext.lastResultCount == 0) {
+      if (queryContext.results.length && queryContext.results[0].autofill) {
+        this.input.setValueFromResult(queryContext.results[0]);
       }
+      // The first time we receive results try to connect to the heuristic
+      // result.
+      this.speculativeConnect(queryContext, 0, "resultsadded");
     }
 
-    this._loadURL(url, browser, where, openParams);
+    this._notify("onQueryResults", queryContext);
+    // Update lastResultCount after notifying, so the view can use it.
+    queryContext.lastResultCount = queryContext.results.length;
   }
 
   /**
@@ -258,11 +182,310 @@ class UrlbarController {
   }
 
   /**
-   * When switching tabs, clear some internal caches to handle cases like
-   * backspace, autofill or repeated searches.
+   * When the containing context changes (for example when switching tabs),
+   * clear any caches that connects consecutive searches in the same context.
+   * For example it can be used to clear information used to improve autofill
+   * or save resourced on repeated searches.
    */
-  tabContextChanged() {
-    // TODO: implementation needed (bug 1496685)
+  viewContextChanged() {
+    this.cancelQuery();
+    this._notify("onViewContextChanged");
+  }
+
+  /**
+   * Checks whether a keyboard event that would normally open the view should
+   * instead be handled natively by the input field.
+   * On certain platforms, the up and down keys can be used to move the caret,
+   * in which case we only want to open the view if the caret is at the
+   * start or end of the input.
+   *
+   * @param {KeyboardEvent} event
+   *   The DOM KeyboardEvent.
+   * @returns {boolean}
+   *   Returns true if the event should move the caret instead of opening the
+   *   view.
+   */
+  keyEventMovesCaret(event) {
+    if (this.view.isOpen) {
+      return false;
+    }
+    if (AppConstants.platform != "macosx" &&
+        AppConstants.platform != "linux") {
+      return false;
+    }
+    let isArrowUp = event.keyCode == KeyEvent.DOM_VK_UP;
+    let isArrowDown = event.keyCode == KeyEvent.DOM_VK_DOWN;
+    if (!isArrowUp && !isArrowDown) {
+      return false;
+    }
+    let start = this.input.selectionStart;
+    let end = this.input.selectionEnd;
+    if (end != start ||
+        (isArrowUp && start > 0) ||
+        (isArrowDown && end < this.input.textValue.length)) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Receives keyboard events from the input and handles those that should
+   * navigate within the view or pick the currently selected item.
+   *
+   * @param {KeyboardEvent} event
+   *   The DOM KeyboardEvent.
+   */
+  handleKeyNavigation(event) {
+    const isMac = AppConstants.platform == "macosx";
+    // Handle readline/emacs-style navigation bindings on Mac.
+    if (isMac &&
+        this.view.isOpen &&
+        event.ctrlKey &&
+        (event.key == "n" || event.key == "p")) {
+      this.view.selectBy(1, { reverse: event.key == "p" });
+      event.preventDefault();
+      return;
+    }
+
+    if (this.view.isOpen) {
+      let queryContext = this._lastQueryContext;
+      if (queryContext) {
+        this.view.oneOffSearchButtons.handleKeyPress(
+          event,
+          queryContext.results.length,
+          this.view.allowEmptySelection,
+          queryContext.searchString);
+        if (event.defaultPrevented) {
+          return;
+        }
+      }
+    }
+
+    switch (event.keyCode) {
+      case KeyEvent.DOM_VK_ESCAPE:
+        this.input.handleRevert();
+        event.preventDefault();
+        break;
+      case KeyEvent.DOM_VK_RETURN:
+        if (isMac &&
+            event.metaKey) {
+          // Prevent beep on Mac.
+          event.preventDefault();
+        }
+        this.input.handleCommand(event);
+        break;
+      case KeyEvent.DOM_VK_TAB:
+        if (this.view.isOpen) {
+          this.view.selectBy(1, { reverse: event.shiftKey });
+          this.userSelectionBehavior = "tab";
+          event.preventDefault();
+        }
+        break;
+      case KeyEvent.DOM_VK_DOWN:
+      case KeyEvent.DOM_VK_UP:
+      case KeyEvent.DOM_VK_PAGE_DOWN:
+      case KeyEvent.DOM_VK_PAGE_UP:
+        if (event.ctrlKey || event.altKey) {
+          break;
+        }
+        if (this.view.isOpen) {
+          this.userSelectionBehavior = "arrow";
+          this.view.selectBy(
+            event.keyCode == KeyEvent.DOM_VK_PAGE_DOWN ||
+            event.keyCode == KeyEvent.DOM_VK_PAGE_UP ?
+              5 : 1,
+            { reverse: event.keyCode == KeyEvent.DOM_VK_UP ||
+                       event.keyCode == KeyEvent.DOM_VK_PAGE_UP });
+        } else {
+          if (this.keyEventMovesCaret(event)) {
+            break;
+          }
+          this.input.startQuery();
+        }
+        event.preventDefault();
+        break;
+      case KeyEvent.DOM_VK_DELETE:
+      case KeyEvent.DOM_VK_BACK_SPACE:
+        if (event.shiftKey && this.view.isOpen && this._handleDeleteEntry()) {
+          event.preventDefault();
+        }
+        break;
+    }
+  }
+
+  /**
+   * Tries to initialize a speculative connection on a result.
+   * Speculative connections are only supported for a subset of all the results.
+   * @param {UrlbarQueryContext} context The queryContext
+   * @param {number} resultIndex index of the result to speculative connect to.
+   * @param {string} reason Reason for the speculative connect request.
+   * @note speculative connect to:
+   *  - Search engine heuristic results
+   *  - autofill results
+   *  - http/https results
+   */
+  speculativeConnect(context, resultIndex, reason) {
+    // Never speculative connect in private contexts.
+    if (!this.input || context.isPrivate || context.results.length == 0) {
+      return;
+    }
+    let result = context.results[resultIndex];
+    let {url} = UrlbarUtils.getUrlFromResult(result);
+    if (!url) {
+      return;
+    }
+
+    switch (reason) {
+      case "resultsadded": {
+        // We should connect to an heuristic result, if it exists.
+        if ((resultIndex == 0 && context.preselected) || result.autofill) {
+          if (result.type == UrlbarUtils.RESULT_TYPE.SEARCH) {
+            // Speculative connect only if search suggestions are enabled.
+            if (UrlbarPrefs.get("suggest.searches") &&
+                UrlbarPrefs.get("browser.search.suggest.enabled")) {
+              let engine = Services.search.defaultEngine;
+              UrlbarUtils.setupSpeculativeConnection(engine, this.browserWindow);
+            }
+          } else if (result.autofill) {
+            UrlbarUtils.setupSpeculativeConnection(url, this.browserWindow);
+          }
+        }
+        return;
+      }
+      case "mousedown": {
+        // On mousedown, connect only to http/https urls.
+        if (url.startsWith("http")) {
+          UrlbarUtils.setupSpeculativeConnection(url, this.browserWindow);
+        }
+        return;
+      }
+      default: {
+        throw new Error("Invalid speculative connection reason");
+      }
+    }
+  }
+
+  /**
+   * Stores the selection behavior that the user has used to select a result.
+   *
+   * @param {"arrow"|"tab"|"none"} behavior
+   *   The behavior the user used.
+   */
+  set userSelectionBehavior(behavior) {
+    // Don't change the behavior to arrow if tab has already been recorded,
+    // as we want to know that the tab was used first.
+    if (behavior == "arrow" && this._userSelectionBehavior == "tab") {
+      return;
+    }
+    this._userSelectionBehavior = behavior;
+  }
+
+  /**
+   * Records details of the selected result in telemetry. We only record the
+   * selection behavior, type and index.
+   *
+   * @param {Event} event
+   *   The event which triggered the result to be selected.
+   * @param {number} resultIndex
+   *   The index of the result.
+   */
+  recordSelectedResult(event, resultIndex) {
+    let result;
+    let selectedResult = -1;
+
+    if (resultIndex >= 0) {
+      result = this.view.getResult(resultIndex);
+      // Except for the history popup, the urlbar always has a selection.  The
+      // first result at index 0 is the "heuristic" result that indicates what
+      // will happen when you press the Enter key.  Treat it as no selection.
+      selectedResult = resultIndex > 0 || !result.heuristic ? resultIndex : -1;
+    }
+    BrowserUsageTelemetry.recordUrlbarSelectedResultMethod(
+      event, selectedResult, this._userSelectionBehavior);
+
+    if (!result) {
+      return;
+    }
+
+    let telemetryType;
+    switch (result.type) {
+      case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
+        telemetryType = "switchtab";
+        break;
+      case UrlbarUtils.RESULT_TYPE.SEARCH:
+        telemetryType = result.payload.suggestion ? "searchsuggestion" : "searchengine";
+        break;
+      case UrlbarUtils.RESULT_TYPE.URL:
+        if (result.autofill) {
+          telemetryType = "autofill";
+        } else if (result.source == UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL &&
+                   result.heuristic) {
+          telemetryType = "visiturl";
+        } else {
+          telemetryType = result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS ? "bookmark" : "history";
+        }
+        break;
+      case UrlbarUtils.RESULT_TYPE.KEYWORD:
+        telemetryType = "keyword";
+        break;
+      case UrlbarUtils.RESULT_TYPE.OMNIBOX:
+        telemetryType = "extension";
+        break;
+      case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
+        telemetryType = "remotetab";
+        break;
+      default:
+        Cu.reportError(`Unknown Result Type ${result.type}`);
+        return;
+    }
+
+    Services.telemetry
+            .getHistogramById("FX_URLBAR_SELECTED_RESULT_INDEX")
+            .add(resultIndex);
+    // You can add values but don't change any of the existing values.
+    // Otherwise you'll break our data.
+    if (telemetryType in URLBAR_SELECTED_RESULT_TYPES) {
+      Services.telemetry
+              .getHistogramById("FX_URLBAR_SELECTED_RESULT_TYPE")
+              .add(URLBAR_SELECTED_RESULT_TYPES[telemetryType]);
+      Services.telemetry
+              .getKeyedHistogramById("FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE")
+              .add(telemetryType, resultIndex);
+    } else {
+      Cu.reportError("Unknown FX_URLBAR_SELECTED_RESULT_TYPE type: " +
+                     telemetryType);
+    }
+  }
+
+  /**
+   * Internal function handling deletion of entries. We only support removing
+   * of history entries - other result sources will be ignored.
+   *
+   * @returns {boolean} Returns true if the deletion was acted upon.
+   */
+  _handleDeleteEntry() {
+    if (!this._lastQueryContext) {
+      Cu.reportError("Cannot delete - the latest query is not present");
+      return false;
+    }
+
+    const selectedResult = this.input.view.selectedResult;
+    if (!selectedResult ||
+        selectedResult.source != UrlbarUtils.RESULT_SOURCE.HISTORY) {
+      return false;
+    }
+
+    let index = this._lastQueryContext.results.indexOf(selectedResult);
+    if (!index) {
+      Cu.reportError("Failed to find the selected result in the results");
+      return false;
+    }
+
+    this._lastQueryContext.results.splice(index, 1);
+    this._notify("onQueryResultRemoved", index);
+
+    PlacesUtils.history.remove(selectedResult.payload.url).catch(Cu.reportError);
+    return true;
   }
 
   /**
@@ -273,120 +496,14 @@ class UrlbarController {
    */
   _notify(name, ...params) {
     for (let listener of this._listeners) {
-      try {
-        listener[name](...params);
-      } catch (ex) {
-        Cu.reportError(ex);
+      // Can't use "in" because some tests proxify these.
+      if (typeof listener[name] != "undefined") {
+        try {
+          listener[name](...params);
+        } catch (ex) {
+          Cu.reportError(ex);
+        }
       }
     }
-  }
-
-  /**
-   * Loads the url in the appropriate place.
-   *
-   * @param {string} url
-   *   The URL to open.
-   * @param {object} browser
-   *   The browser to open it in.
-   * @param {string} openUILinkWhere
-   *   Where we expect the result to be opened.
-   * @param {object} params
-   *   The parameters related to how and where the result will be opened.
-   *   Further supported paramters are listed in utilityOverlay.js#openUILinkIn.
-   * @param {object} params.triggeringPrincipal
-   *   The principal that the action was triggered from.
-   * @param {nsIInputStream} [params.postData]
-   *   The POST data associated with a search submission.
-   * @param {boolean} [params.allowInheritPrincipal]
-   *   If the principal may be inherited
-   */
-  _loadURL(url, browser, openUILinkWhere, params) {
-    // TODO: These should probably be set by the input field.
-    // this.value = url;
-    // browser.userTypedValue = url;
-    if (this.window.gInitialPages.includes(url)) {
-      browser.initialPageLoadedFromURLBar = url;
-    }
-    try {
-      // TODO: Move function to PlacesUIUtils.
-      this.window.addToUrlbarHistory(url);
-    } catch (ex) {
-      // Things may go wrong when adding url to session history,
-      // but don't let that interfere with the loading of the url.
-      Cu.reportError(ex);
-    }
-
-    params.allowThirdPartyFixup = true;
-
-    if (openUILinkWhere == "current") {
-      params.targetBrowser = browser;
-      params.indicateErrorPageLoad = true;
-      params.allowPinnedTabHostChange = true;
-      params.allowPopups = url.startsWith("javascript:");
-    } else {
-      params.initiatingDoc = this.window.document;
-    }
-
-    // Focus the content area before triggering loads, since if the load
-    // occurs in a new tab, we want focus to be restored to the content
-    // area when the current tab is re-selected.
-    browser.focus();
-
-    if (openUILinkWhere != "current") {
-      // TODO: Implement handleRevert or equivalent on the input.
-      // this.input.handleRevert();
-    }
-
-    try {
-      this.window.openTrustedLinkIn(url, openUILinkWhere, params);
-    } catch (ex) {
-      // This load can throw an exception in certain cases, which means
-      // we'll want to replace the URL with the loaded URL:
-      if (ex.result != Cr.NS_ERROR_LOAD_SHOWED_ERRORPAGE) {
-        // TODO: Implement handleRevert or equivalent on the input.
-        // this.input.handleRevert();
-      }
-    }
-
-    // TODO This should probably be handed via input.
-    // Ensure the start of the URL is visible for usability reasons.
-    // this.selectionStart = this.selectionEnd = 0;
-  }
-
-  /**
-   * Determines where a URL/page should be opened.
-   *
-   * @param {Event} event the event triggering the opening.
-   * @returns {"current" | "tabshifted" | "tab" | "save" | "window"}
-   */
-  _whereToOpen(event) {
-    let isMouseEvent = event instanceof this.window.MouseEvent;
-    let reuseEmpty = !isMouseEvent;
-    let where = undefined;
-    if (!isMouseEvent && event && event.altKey) {
-      // We support using 'alt' to open in a tab, because ctrl/shift
-      // might be used for canonizing URLs:
-      where = event.shiftKey ? "tabshifted" : "tab";
-    } else if (!isMouseEvent && this._ctrlCanonizesURLs && event && event.ctrlKey) {
-      // If we're allowing canonization, and this is a key event with ctrl
-      // pressed, open in current tab to allow ctrl-enter to canonize URL.
-      where = "current";
-    } else {
-      where = this.window.whereToOpenLink(event, false, false);
-    }
-    if (this.openInTab) {
-      if (where == "current") {
-        where = "tab";
-      } else if (where == "tab") {
-        where = "current";
-      }
-      reuseEmpty = true;
-    }
-    if (where == "tab" &&
-        reuseEmpty &&
-        this.window.isTabEmpty(this.window.gBrowser.selectedTab)) {
-      where = "current";
-    }
-    return where;
   }
 }

@@ -10,11 +10,10 @@
 #include "nsQueryFrame.h"
 
 /**
-  * nsISelectControlFrame is the interface for combo boxes and listboxes
-  */
-class nsISelectControlFrame : public nsQueryFrame
-{
-public:
+ * nsISelectControlFrame is the interface for combo boxes and listboxes
+ */
+class nsISelectControlFrame : public nsQueryFrame {
+ public:
   NS_DECL_QUERYFRAME_TARGET(nsISelectControlFrame)
 
   /**
@@ -44,8 +43,8 @@ public:
    * Notify the frame when selectedIndex was changed.  This might
    * destroy the frame.
    */
-  NS_IMETHOD OnSetSelectedIndex(int32_t aOldIndex, int32_t aNewIndex) = 0;
-
+  NS_IMETHOD_(void)
+  OnSetSelectedIndex(int32_t aOldIndex, int32_t aNewIndex) = 0;
 };
 
 #endif

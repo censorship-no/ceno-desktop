@@ -7,7 +7,7 @@ DIRS += [
 
 ]
 
-DevToolsModules(
+CompiledModules(
     'annotateFrames.js',
     'collapseFrames.js',
     'displayName.js',

@@ -6,7 +6,7 @@
 
 var EXPORTED_SYMBOLS = [ "TranslationContentHandler" ];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "LanguageDetector",
   "resource:///modules/translation/LanguageDetector.jsm");
 
@@ -78,8 +78,7 @@ TranslationContentHandler.prototype = {
       return;
 
     // Grab a 60k sample of text from the page.
-    let encoder = Cc["@mozilla.org/layout/documentEncoder;1?type=text/plain"]
-                    .createInstance(Ci.nsIDocumentEncoder);
+    let encoder = Cu.createDocumentEncoder("text/plain");
     encoder.init(content.document, "text/plain", encoder.SkipInvisibleContent);
     let string = encoder.encodeToStringWithMaxLength(60 * 1024);
 
@@ -116,7 +115,7 @@ TranslationContentHandler.prototype = {
     switch (msg.name) {
       case "Translation:TranslateDocument":
       {
-        ChromeUtils.import("resource:///modules/translation/TranslationDocument.jsm");
+        var {TranslationDocument} = ChromeUtils.import("resource:///modules/translation/TranslationDocument.jsm");
 
         // If a TranslationDocument already exists for this document, it should
         // be used instead of creating a new one so that we can use the original

@@ -72,6 +72,7 @@ from .data import (
     TestManifest,
     UnifiedSources,
     VariablePassthru,
+    XPCOMComponentManifests,
     XPIDLModule,
 )
 from mozpack.chrome.manifest import (
@@ -213,12 +214,17 @@ class TreeMetadataEmitter(LoggingMixin):
             ('IPDL_SOURCES', lambda c: c.sources),
             ('PREPROCESSED_IPDL_SOURCES', lambda c: c.preprocessed_sources),
         ]
+        xpcom_attrs = [
+            ('XPCOM_MANIFESTS', lambda c: c.manifests),
+        ]
 
         idl_sources = {}
         for root, cls, attrs in ((self.config.substs.get('WEBIDL_ROOT'),
                                   WebIDLCollection, webidl_attrs),
                                  (self.config.substs.get('IPDL_ROOT'),
-                                  IPDLCollection, ipdl_attrs)):
+                                  IPDLCollection, ipdl_attrs),
+                                 (self.config.substs.get('XPCOM_ROOT'),
+                                  XPCOMComponentManifests, xpcom_attrs)):
             if root:
                 collection = cls(contexts[root])
                 for var, src_getter in attrs:
@@ -1164,6 +1170,7 @@ class TreeMetadataEmitter(LoggingMixin):
             'WEBIDL_FILES',
             'IPDL_SOURCES',
             'PREPROCESSED_IPDL_SOURCES',
+            'XPCOM_MANIFESTS',
         )
         for context_var in idl_vars:
             for name in context.get(context_var, []):
@@ -1175,11 +1182,15 @@ class TreeMetadataEmitter(LoggingMixin):
         local_includes = []
         for local_include in context.get('LOCAL_INCLUDES', []):
             full_path = local_include.full_path
-            if (not isinstance(local_include, ObjDirPath) and
-                    not os.path.exists(full_path)):
-                raise SandboxValidationError('Path specified in LOCAL_INCLUDES '
-                    'does not exist: %s (resolved to %s)' % (local_include,
-                    full_path), context)
+            if not isinstance(local_include, ObjDirPath):
+                if not os.path.exists(full_path):
+                    raise SandboxValidationError('Path specified in LOCAL_INCLUDES '
+                        'does not exist: %s (resolved to %s)' % (local_include,
+                        full_path), context)
+                if not os.path.isdir(full_path):
+                    raise SandboxValidationError('Path specified in LOCAL_INCLUDES '
+                        'is a filename, but a directory is required: %s '
+                        '(resolved to %s)' % (local_include, full_path), context)
             if (full_path == context.config.topsrcdir or
                     full_path == context.config.topobjdir):
                 raise SandboxValidationError('Path specified in LOCAL_INCLUDES '
@@ -1305,14 +1316,13 @@ class TreeMetadataEmitter(LoggingMixin):
                                           Manifest('components',
                                                    mozpath.basename(c)))
 
-        if self.config.substs.get('MOZ_RUST_TESTS', None):
-            rust_tests = context.get('RUST_TESTS', [])
-            if rust_tests:
-                # TODO: more sophisticated checking of the declared name vs.
-                # contents of the Cargo.toml file.
-                features = context.get('RUST_TEST_FEATURES', [])
+        rust_tests = context.get('RUST_TESTS', [])
+        if rust_tests:
+            # TODO: more sophisticated checking of the declared name vs.
+            # contents of the Cargo.toml file.
+            features = context.get('RUST_TEST_FEATURES', [])
 
-                yield RustTests(context, rust_tests, features)
+            yield RustTests(context, rust_tests, features)
 
         for obj in self._process_test_manifests(context):
             yield obj
@@ -1333,6 +1343,15 @@ class TreeMetadataEmitter(LoggingMixin):
             computed_as_flags.resolve_flags('OS',
                                             context.config.substs.get('YASM_ASFLAGS', []))
 
+        if context.get('USE_NASM') is True:
+            nasm = context.config.substs.get('NASM')
+            if not nasm:
+                raise SandboxValidationError('nasm is not available', context)
+            passthru.variables['AS'] = nasm
+            passthru.variables['AS_DASH_C_FLAG'] = ''
+            passthru.variables['ASOUTOPTION'] = '-o '
+            computed_as_flags.resolve_flags('OS',
+                                            context.config.substs.get('NASM_ASFLAGS', []))
 
         if passthru.variables:
             yield passthru

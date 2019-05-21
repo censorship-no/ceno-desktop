@@ -7,16 +7,20 @@ Transform the beetmover task into an actual task description.
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.attributes import copy_attributes_from_dependent_job
-from taskgraph.util.schema import validate_schema, Schema
-from taskgraph.util.scriptworker import (get_beetmover_bucket_scope,
-                                         get_beetmover_action_scope,
-                                         get_worker_type_for_scope)
-from taskgraph.util.taskcluster import get_artifact_prefix
-from taskgraph.transforms.task import task_description_schema
-from voluptuous import Any, Required, Optional
+from voluptuous import Optional, Required
 
+from taskgraph.loader.single_dep import schema
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.transforms.task import task_description_schema
+from taskgraph.util.attributes import copy_attributes_from_dependent_job
+from taskgraph.util.scriptworker import (generate_beetmover_artifact_map,
+                                         generate_beetmover_upstream_artifacts,
+                                         get_beetmover_bucket_scope,
+                                         get_beetmover_action_scope,
+                                         get_worker_type_for_scope,
+                                         should_use_artifact_map)
+from taskgraph.util.taskcluster import get_artifact_prefix
+from taskgraph.util.treeherder import replace_group
 
 # Until bug 1331141 is fixed, if you are adding any new artifacts here that
 # need to be transfered to S3, please be aware you also need to follow-up
@@ -110,21 +114,9 @@ UPSTREAM_SOURCE_ARTIFACTS = [
     "source.tar.xz.asc",
 ]
 
-# Voluptuous uses marker objects as dictionary *keys*, but they are not
-# comparable, so we cast all of the keys back to regular strings
-task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
-
 transforms = TransformSequence()
 
-# shortcut for a string where task references are allowed
-taskref_or_string = Any(
-    basestring,
-    {Required('task-reference'): basestring})
-
-beetmover_description_schema = Schema({
-    # the dependent task (object) for this beetmover job, used to inform beetmover.
-    Required('dependent-task'): object,
-
+beetmover_description_schema = schema.extend({
     # depname is used in taskref's to identify the taskID of the unsigned things
     Required('depname', default='build'): basestring,
 
@@ -141,27 +133,24 @@ beetmover_description_schema = Schema({
 
     Required('shipping-phase'): task_description_schema['shipping-phase'],
     Optional('shipping-product'): task_description_schema['shipping-product'],
+    Optional('attributes'): task_description_schema['attributes'],
 })
 
 
-@transforms.add
-def validate(config, jobs):
-    for job in jobs:
-        label = job.get('dependent-task', object).__dict__.get('label', '?no-label?')
-        validate_schema(
-            beetmover_description_schema, job,
-            "In beetmover ({!r} kind) task for {!r}:".format(config.kind, label))
-        yield job
+transforms.add_validate(beetmover_description_schema)
 
 
 @transforms.add
 def make_task_description(config, jobs):
     for job in jobs:
-        dep_job = job['dependent-task']
+        dep_job = job['primary-dependency']
         attributes = dep_job.attributes
 
         treeherder = job.get('treeherder', {})
-        treeherder.setdefault('symbol', 'BM-S')
+        treeherder.setdefault(
+            'symbol',
+            replace_group(dep_job.task['extra']['treeherder']['symbol'], 'BM')
+        )
         dep_th_platform = dep_job.task.get('extra', {}).get(
             'treeherder', {}).get('machine', {}).get('platform', '')
         treeherder.setdefault('platform',
@@ -181,16 +170,18 @@ def make_task_description(config, jobs):
             )
         )
 
-        dependent_kind = str(dep_job.kind)
-        dependencies = {dependent_kind: dep_job.label}
+        dependencies = {dep_job.kind: dep_job.label}
 
-        if len(dep_job.dependencies) > 1:
+        # XXX release snap-repackage has a variable number of dependencies, depending on how many
+        # "post-beetmover-dummy" jobs there are in the graph.
+        if dep_job.kind != 'release-snap-repackage' and len(dep_job.dependencies) > 1:
             raise NotImplementedError(
                 "Can't beetmove a signing task with multiple dependencies")
         signing_dependencies = dep_job.dependencies
         dependencies.update(signing_dependencies)
 
         attributes = copy_attributes_from_dependent_job(dep_job)
+        attributes.update(job.get('attributes', {}))
 
         if job.get('locale'):
             attributes['locale'] = job['locale']
@@ -263,7 +254,7 @@ def generate_upstream_artifacts(job, signing_task_ref, build_task_ref, platform,
             "paths": ["{}/{}".format(artifact_prefix, p)
                       for p in build_mapping[multi_platform]],
             "locale": "multi",
-            }, {
+        }, {
             "taskId": {"task-reference": signing_task_ref},
             "taskType": "signing",
             "paths": ["{}/{}".format(artifact_prefix, p)
@@ -305,7 +296,9 @@ def make_task_worker(config, jobs):
     for job in jobs:
         valid_beetmover_job = (len(job["dependencies"]) == 2 and
                                any(['signing' in j for j in job['dependencies']]))
-        if not valid_beetmover_job:
+        # XXX release snap-repackage has a variable number of dependencies, depending on how many
+        # "post-beetmover-dummy" jobs there are in the graph.
+        if '-snap-' not in job['label'] and not valid_beetmover_job:
             raise NotImplementedError("Beetmover must have two dependencies.")
 
         locale = job["attributes"].get("locale")
@@ -321,13 +314,23 @@ def make_task_worker(config, jobs):
         signing_task_ref = "<" + str(signing_task) + ">"
         build_task_ref = "<" + str(build_task) + ">"
 
+        if should_use_artifact_map(platform, config.params['project']):
+            upstream_artifacts = generate_beetmover_upstream_artifacts(
+                config, job, platform, locale
+            )
+        else:
+            upstream_artifacts = generate_upstream_artifacts(
+                job, signing_task_ref, build_task_ref, platform, locale
+            )
         worker = {
             'implementation': 'beetmover',
             'release-properties': craft_release_properties(config, job),
-            'upstream-artifacts': generate_upstream_artifacts(
-                job, signing_task_ref, build_task_ref, platform, locale
-            )
+            'upstream-artifacts': upstream_artifacts,
         }
+
+        if should_use_artifact_map(platform, config.params['project']):
+            worker['artifact-map'] = generate_beetmover_artifact_map(
+                config, job, platform=platform, locale=locale)
 
         if locale:
             worker["locale"] = locale

@@ -8,6 +8,7 @@
 <link rel="match" href="reference/text-indent-percentage-002-ref.html">
 <meta name="assert" content="Percentages in text-indent refer to width of the element's content box">
 <style>
+body { background: white; }
 section { position: absolute; }
 section, div {
   border-right: 10px solid white;
@@ -18,10 +19,22 @@ div {
   box-sizing: border-box;
   width: 120px;
 }
-.test div { text-indent: 50%; color: red; overflow: hidden; } /* overflow:hidden should not make any difference, but it does in some browsers */
+span {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: green;
+}
+.ref span {
+  background: red;
+  /* the next two lines are to avoid antialiasing artifacts causing a tiny about of red to be visible */
+  box-sizing: border-box;
+  border: 1px solid white;
+}
+.test div { text-indent: 50%; overflow: hidden; } /* overflow:hidden should not make any difference, but it does in some browsers */
 .ref div { text-indent: 50px; }
 </style>
 
-<p>Test passes if there is a single black X below and no red.
-<section class=test><div>X</div></section>
-<section class=ref><div>X</div></section>
+<p>Test passes if there is a green square below and no red.
+<section class=ref><div><span></span></div></section>
+<section class=test><div><span></span></div></section>

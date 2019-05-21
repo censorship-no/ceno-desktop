@@ -33,7 +33,7 @@ struct nsIDataType
         VTYPE_CHAR              = TD_CHAR             ,
         VTYPE_WCHAR             = TD_WCHAR            ,
         VTYPE_VOID              = TD_VOID             ,
-        VTYPE_ID                = TD_PNSIID           ,
+        VTYPE_ID                = TD_NSIDPTR          ,
         VTYPE_CHAR_STR          = TD_PSTRING          ,
         VTYPE_WCHAR_STR         = TD_PWSTRING         ,
         VTYPE_INTERFACE         = TD_INTERFACE_TYPE   ,
@@ -64,7 +64,7 @@ struct nsIDataType
 [scriptable, uuid(81e4c2de-acac-4ad6-901a-b5fb1b851a0d)]
 interface nsIVariant : nsISupports
 {
-    [noscript] readonly attribute uint16_t     dataType;
+    [notxpcom,nostdcall] readonly attribute uint16_t     dataType;
 
     [noscript] uint8_t      getAsInt8();
     [noscript] int16_t      getAsInt16();

@@ -11,9 +11,11 @@ from taskgraph.loader.single_dep import loader as base_loader
 NON_NIGHTLY_LABELS_WHICH_SHOULD_SIGN_BUILDS = (
     'build-win32/debug', 'build-win32/opt', 'build-win32/pgo',
     'build-win64/debug', 'build-win64/opt', 'build-win64/pgo',
+    'build-win64-aarch64/opt', 'build-win64-aarch64/debug'
     'build-win32-devedition/opt', 'build-win64-devedition/opt',
     'build-win64-ccov/debug',
-    'build-linux/opt', 'build-linux64/opt', 'build-macosx64/opt',
+    'build-linux/opt', 'build-linux64/opt', 'build-linux64/pgo',
+    'build-macosx64/opt',
     'build-android-api-16/opt'
     'release-source-linux64-source/opt',
     'release-source-linux64-fennec-source/opt',
@@ -27,7 +29,7 @@ def loader(kind, path, config, params, loaded_tasks):
     jobs = base_loader(kind, path, config, params, loaded_tasks)
 
     for job in jobs:
-        dependent_task = job['dependent-task']
+        dependent_task = job['primary-dependency']
         if dependent_task.attributes.get('nightly') or \
                 dependent_task.label in NON_NIGHTLY_LABELS_WHICH_SHOULD_SIGN_BUILDS:
             yield job

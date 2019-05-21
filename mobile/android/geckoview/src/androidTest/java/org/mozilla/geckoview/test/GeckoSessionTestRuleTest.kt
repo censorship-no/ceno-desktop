@@ -43,20 +43,22 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     }
 
     @Setting.List(Setting(key = Setting.Key.USE_PRIVATE_MODE, value = "true"),
-                  Setting(key = Setting.Key.DISPLAY_MODE, value = "DISPLAY_MODE_MINIMAL_UI"))
+                  Setting(key = Setting.Key.DISPLAY_MODE, value = "DISPLAY_MODE_MINIMAL_UI"),
+                  Setting(key = Setting.Key.ALLOW_JAVASCRIPT, value = "false"))
     @Setting(key = Setting.Key.USE_TRACKING_PROTECTION, value = "true")
     @Test fun settingsApplied() {
         assertThat("USE_PRIVATE_MODE should be set",
-                   sessionRule.session.settings.getBoolean(
-                           GeckoSessionSettings.USE_PRIVATE_MODE),
+                   sessionRule.session.settings.usePrivateMode,
                    equalTo(true))
         assertThat("DISPLAY_MODE should be set",
-                   sessionRule.session.settings.getInt(GeckoSessionSettings.DISPLAY_MODE),
+                   sessionRule.session.settings.displayMode,
                    equalTo(GeckoSessionSettings.DISPLAY_MODE_MINIMAL_UI))
         assertThat("USE_TRACKING_PROTECTION should be set",
-                   sessionRule.session.settings.getBoolean(
-                           GeckoSessionSettings.USE_TRACKING_PROTECTION),
+                   sessionRule.session.settings.useTrackingProtection,
                    equalTo(true))
+        assertThat("ALLOW_JAVASCRIPT should be set",
+                sessionRule.session.settings.allowJavascript,
+                equalTo(false))
     }
 
     @Test(expected = UiThreadUtils.TimeoutException::class)
@@ -383,7 +385,7 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
         sessionRule.session.loadTestPath(HELLO_HTML_PATH)
         sessionRule.waitForPageStop()
 
-        sessionRule.forCallbacksDuringWait(GeckoSession.ScrollDelegate { _, _, _ -> })
+        sessionRule.forCallbacksDuringWait(object : GeckoSession.ScrollDelegate {})
     }
 
     @Test fun forCallbacksDuringWait_specificMethod() {
@@ -434,8 +436,11 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
         sessionRule.session.loadTestPath(HELLO_HTML_PATH)
         sessionRule.waitForPageStop()
 
-        sessionRule.forCallbacksDuringWait(
-                GeckoSession.ScrollDelegate @AssertCalled { _, _, _ -> })
+        sessionRule.forCallbacksDuringWait(object : GeckoSession.ScrollDelegate {
+            @AssertCalled
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+            }
+        })
     }
 
     @Test fun forCallbacksDuringWait_specificCount() {
@@ -545,8 +550,11 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
         sessionRule.session.loadTestPath(HELLO_HTML_PATH)
         sessionRule.waitForPageStop()
 
-        sessionRule.forCallbacksDuringWait(
-                GeckoSession.ScrollDelegate @AssertCalled(false) { _, _, _ -> })
+        sessionRule.forCallbacksDuringWait(object : GeckoSession.ScrollDelegate {
+            @AssertCalled(false)
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+            }
+        })
     }
 
     @Test(expected = AssertionError::class)
@@ -565,8 +573,11 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
         sessionRule.session.loadTestPath(HELLO_HTML_PATH)
         sessionRule.waitForPageStop()
 
-        sessionRule.forCallbacksDuringWait(
-                GeckoSession.ScrollDelegate @AssertCalled(count = 0) { _, _, _ -> })
+        sessionRule.forCallbacksDuringWait(object : GeckoSession.ScrollDelegate {
+            @AssertCalled(count = 0)
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+            }
+        })
     }
 
     @Test(expected = AssertionError::class)
@@ -702,14 +713,20 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     }
 
     @Test fun delegateUntilTestEnd_notCalled() {
-        sessionRule.delegateUntilTestEnd(
-                GeckoSession.ScrollDelegate @AssertCalled(false) { _, _, _ -> })
+        sessionRule.delegateUntilTestEnd(object : GeckoSession.ScrollDelegate {
+            @AssertCalled(false)
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+            }
+        })
     }
 
     @Test(expected = AssertionError::class)
     fun delegateUntilTestEnd_throwOnNotCalled() {
-        sessionRule.delegateUntilTestEnd(
-                GeckoSession.ScrollDelegate @AssertCalled(count = 1) { _, _, _ -> })
+        sessionRule.delegateUntilTestEnd(object : GeckoSession.ScrollDelegate {
+            @AssertCalled(count = 1)
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+            }
+        })
         sessionRule.performTestEndCheck()
     }
 
@@ -786,16 +803,22 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
 
     @Test(expected = AssertionError::class)
     fun delegateDuringNextWait_throwOnNotCalled() {
-        sessionRule.delegateDuringNextWait(
-                GeckoSession.ScrollDelegate @AssertCalled(count = 1) { _, _, _ -> })
+        sessionRule.delegateDuringNextWait(object : GeckoSession.ScrollDelegate {
+            @AssertCalled(count = 1)
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+            }
+        })
         sessionRule.session.loadTestPath(HELLO_HTML_PATH)
         sessionRule.waitForPageStop()
     }
 
     @Test(expected = AssertionError::class)
     fun delegateDuringNextWait_throwOnNotCalledAtTestEnd() {
-        sessionRule.delegateDuringNextWait(
-                GeckoSession.ScrollDelegate @AssertCalled(count = 1) { _, _, _ -> })
+        sessionRule.delegateDuringNextWait(object : GeckoSession.ScrollDelegate {
+            @AssertCalled(count = 1)
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+            }
+        })
         sessionRule.performTestEndCheck()
     }
 
@@ -869,7 +892,7 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     @NullDelegate(GeckoSession.NavigationDelegate::class)
     fun delegateDuringNextWait_throwOnNullDelegate() {
         sessionRule.session.delegateDuringNextWait(object : Callbacks.NavigationDelegate {
-            override fun onLocationChange(session: GeckoSession, url: String) {
+            override fun onLocationChange(session: GeckoSession, url: String?) {
             }
         })
     }
@@ -891,8 +914,9 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     }
 
     @Test fun createOpenSession_withSettings() {
-        val settings = GeckoSessionSettings(sessionRule.session.settings)
-        settings.setBoolean(GeckoSessionSettings.USE_PRIVATE_MODE, true)
+        val settings = GeckoSessionSettings.Builder(sessionRule.session.settings)
+                .usePrivateMode(true)
+                .build()
 
         val newSession = sessionRule.createOpenSession(settings)
         assertThat("New session has same settings", newSession.settings, equalTo(settings))
@@ -927,8 +951,7 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     }
 
     @Test fun createClosedSession_withSettings() {
-        val settings = GeckoSessionSettings(sessionRule.session.settings)
-        settings.setBoolean(GeckoSessionSettings.USE_PRIVATE_MODE, true)
+        val settings = GeckoSessionSettings.Builder(sessionRule.session.settings).usePrivateMode(true).build()
 
         val newSession = sessionRule.createClosedSession(settings)
         assertThat("New session has same settings", newSession.settings, equalTo(settings))
@@ -1332,7 +1355,8 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     @Test(expected = UiThreadUtils.TimeoutException::class)
     fun evaluateJS_canTimeout() {
         sessionRule.session.delegateUntilTestEnd(object : Callbacks.PromptDelegate {
-            override fun onAlert(session: GeckoSession, title: String, msg: String, callback: GeckoSession.PromptDelegate.AlertCallback) {
+            override fun onAlert(session: GeckoSession, title: String?, msg: String?,
+                                 callback: GeckoSession.PromptDelegate.AlertCallback) {
                 // Do nothing for the alert, so it hangs forever.
             }
         })
@@ -1489,7 +1513,8 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
 
         sessionRule.session.forCallbacksDuringWait(object : Callbacks.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onAlert(session: GeckoSession, title: String, msg: String, callback: GeckoSession.PromptDelegate.AlertCallback) {
+            override fun onAlert(session: GeckoSession, title: String?, msg: String?,
+                                 callback: GeckoSession.PromptDelegate.AlertCallback) {
             }
         })
     }
@@ -1505,7 +1530,8 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     @Test fun waitForJS_delegateDuringWait() {
         var count = 0
         sessionRule.session.delegateDuringNextWait(object : Callbacks.PromptDelegate {
-            override fun onAlert(session: GeckoSession, title: String, msg: String, callback: GeckoSession.PromptDelegate.AlertCallback) {
+            override fun onAlert(session: GeckoSession, title: String?, msg: String?,
+                                 callback: GeckoSession.PromptDelegate.AlertCallback) {
                 count++
                 callback.dismiss()
             }
@@ -1521,6 +1547,7 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
 
     @WithDevToolsAPI
     @Test fun waitForChromeJS() {
+        assumeThat(sessionRule.env.isDebugBuild, equalTo(false))
         sessionRule.session.reload()
         sessionRule.session.waitForPageStop()
 
@@ -1656,7 +1683,7 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
         assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
         // Cannot test x86 debug builds due to Gecko's "ah_crap_handler"
         // that waits for debugger to attach during a SIGSEGV.
-        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.cpuArch == "x86",
+        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
                    equalTo(false))
 
         mainSession.loadUri(CONTENT_CRASH_URL)
@@ -1673,7 +1700,7 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
         assumeThat(sessionRule.env.shouldShutdownOnCrash(), equalTo(false))
         // Cannot test x86 debug builds due to Gecko's "ah_crap_handler"
         // that waits for debugger to attach during a SIGSEGV.
-        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.cpuArch == "x86",
+        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
                    equalTo(false))
 
         sessionRule.session.loadUri(CONTENT_CRASH_URL)

@@ -10,9 +10,10 @@
 
 var EXPORTED_SYMBOLS = ["FormAutofillHandler"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-ChromeUtils.import("resource://formautofill/FormAutofill.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {FormAutofill} = ChromeUtils.import("resource://formautofill/FormAutofill.jsm");
 
 ChromeUtils.defineModuleGetter(this, "FormAutofillUtils",
                                "resource://formautofill/FormAutofillUtils.jsm");
@@ -20,6 +21,12 @@ ChromeUtils.defineModuleGetter(this, "FormAutofillHeuristics",
                                "resource://formautofill/FormAutofillHeuristics.jsm");
 ChromeUtils.defineModuleGetter(this, "FormLikeFactory",
                                "resource://gre/modules/FormLikeFactory.jsm");
+
+XPCOMUtils.defineLazyGetter(this, "reauthPasswordPromptMessage", () => {
+  const brandShortName = FormAutofillUtils.brandBundle.GetStringFromName("brandShortName");
+  return FormAutofillUtils.stringBundle.formatStringFromName(
+    `useCreditCardPasswordPrompt.${AppConstants.platform}`, [brandShortName], 1);
+});
 
 this.log = null;
 FormAutofill.defineLazyLogGetter(this, EXPORTED_SYMBOLS[0]);
@@ -290,7 +297,7 @@ class FormAutofillSection {
         // Use case for multiple select is not considered here.
         if (!option.selected) {
           option.selected = true;
-          element.dispatchEvent(new element.ownerGlobal.UIEvent("input", {bubbles: true}));
+          element.dispatchEvent(new element.ownerGlobal.Event("input", {bubbles: true}));
           element.dispatchEvent(new element.ownerGlobal.Event("change", {bubbles: true}));
         }
         // Autofill highlight appears regardless if value is changed or not
@@ -867,12 +874,10 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
    * @override
    */
   async prepareFillingProfile(profile) {
-    // When Master Password is enabled by users, the decryption process
-    // should prompt Master Password dialog to get the decrypted credit
-    // card number. Otherwise, the number can be decrypted with the default
-    // password.
+    // Prompt the OS login dialog to get the decrypted credit
+    // card number.
     if (profile["cc-number-encrypted"]) {
-      let decrypted = await this._decrypt(profile["cc-number-encrypted"], true);
+      let decrypted = await this._decrypt(profile["cc-number-encrypted"], reauthPasswordPromptMessage);
 
       if (!decrypted) {
         // Early return if the decrypted is empty or undefined

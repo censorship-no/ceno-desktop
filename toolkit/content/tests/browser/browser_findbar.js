@@ -2,7 +2,7 @@
 ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
 
 const TEST_PAGE_URI = "data:text/html;charset=utf-8,The letter s.";
-// Using 'javascript' schema to bypass E10SUtils.canLoadURIInProcess, because
+// Using 'javascript' schema to bypass E10SUtils.canLoadURIInRemoteType, because
 // it does not allow 'data:' URI to be loaded in the parent process.
 const E10S_PARENT_TEST_PAGE_URI = "javascript:document.write('The letter s.');";
 
@@ -203,7 +203,6 @@ add_task(async function e10sLostKeys() {
 
 function promiseFindFinished(searchText, highlightOn) {
   return new Promise(async (resolve) => {
-
     let findbar = await gBrowser.getFindBar();
     findbar.startFind(findbar.FIND_NORMAL);
     let highlightElement = findbar.getElement("highlight");
@@ -240,7 +239,6 @@ function promiseFindFinished(searchText, highlightOn) {
       findbar.browser.finder.addResultListener(resultListener);
       findbar._find();
     });
-
   });
 }
 
@@ -250,6 +248,8 @@ function promiseRemotenessChange(tab, shouldBeRemote) {
     tab.addEventListener("TabRemotenessChange", function() {
       resolve();
     }, {once: true});
-    gBrowser.updateBrowserRemoteness(browser, shouldBeRemote);
+    let remoteType = shouldBeRemote ?
+        E10SUtils.DEFAULT_REMOTE_TYPE : E10SUtils.NOT_REMOTE;
+    gBrowser.updateBrowserRemoteness(browser, { remoteType });
   });
 }

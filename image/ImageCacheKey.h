@@ -15,7 +15,6 @@
 #include "mozilla/RefPtr.h"
 #include "PLDHashTable.h"
 
-class nsIDocument;
 class nsIURI;
 
 namespace mozilla {
@@ -29,22 +28,28 @@ namespace image {
  * Controlled documents do not share their cache entries with
  * non-controlled documents, or other controlled documents.
  */
-class ImageCacheKey final
-{
-public:
+class ImageCacheKey final {
+ public:
   ImageCacheKey(nsIURI* aURI, const OriginAttributes& aAttrs,
-                nsIDocument* aDocument, nsresult& aRv);
+                dom::Document* aDocument);
 
   ImageCacheKey(const ImageCacheKey& aOther);
   ImageCacheKey(ImageCacheKey&& aOther);
 
   bool operator==(const ImageCacheKey& aOther) const;
-  PLDHashNumber Hash() const { return mHash; }
+  PLDHashNumber Hash() const {
+    if (MOZ_UNLIKELY(mHash.isNothing())) {
+      EnsureHash();
+    }
+    return mHash.value();
+  }
 
   /// A weak pointer to the URI.
   nsIURI* URI() const { return mURI; }
 
-  const OriginAttributes& OriginAttributesRef() const { return mOriginAttributes; }
+  const OriginAttributes& OriginAttributesRef() const {
+    return mOriginAttributes;
+  }
 
   /// Is this cache entry for a chrome image?
   bool IsChrome() const { return mIsChrome; }
@@ -53,24 +58,27 @@ public:
   /// belongs to, if any.
   void* ControlledDocument() const { return mControlledDocument; }
 
-private:
+ private:
   bool SchemeIs(const char* aScheme);
 
   // For ServiceWorker and for anti-tracking we need to use the document as
   // token for the key. All those exceptions are handled by this method.
-  static void* GetSpecialCaseDocumentToken(nsIDocument* aDocument,
+  static void* GetSpecialCaseDocumentToken(dom::Document* aDocument,
                                            nsIURI* aURI);
+
+  void EnsureHash() const;
+  void EnsureBlobRef() const;
 
   nsCOMPtr<nsIURI> mURI;
   Maybe<uint64_t> mBlobSerial;
-  nsCString mBlobRef;
+  mutable nsCString mBlobRef;
   OriginAttributes mOriginAttributes;
   void* mControlledDocument;
-  PLDHashNumber mHash;
+  mutable Maybe<PLDHashNumber> mHash;
   bool mIsChrome;
 };
 
-} // namespace image
-} // namespace mozilla
+}  // namespace image
+}  // namespace mozilla
 
-#endif // mozilla_image_src_ImageCacheKey_h
+#endif  // mozilla_image_src_ImageCacheKey_h

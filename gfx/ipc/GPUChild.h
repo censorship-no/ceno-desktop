@@ -15,21 +15,18 @@ namespace mozilla {
 
 namespace ipc {
 class CrashReporterHost;
-} // namespace ipc
+}  // namespace ipc
 namespace dom {
 class MemoryReportRequestHost;
-} // namespace dom
+}  // namespace dom
 namespace gfx {
 
 class GPUProcessHost;
 
-class GPUChild final
-  : public PGPUChild
-  , public gfxVarReceiver
-{
+class GPUChild final : public PGPUChild, public gfxVarReceiver {
   typedef mozilla::dom::MemoryReportRequestHost MemoryReportRequestHost;
 
-public:
+ public:
   explicit GPUChild(GPUProcessHost* aHost);
   ~GPUChild();
 
@@ -38,50 +35,61 @@ public:
   bool EnsureGPUReady();
   base::ProcessHandle GetChildProcessHandle();
 
-  PAPZInputBridgeChild* AllocPAPZInputBridgeChild(const LayersId& aLayersId) override;
-  bool DeallocPAPZInputBridgeChild(PAPZInputBridgeChild* aActor) override;
+  PAPZInputBridgeChild* AllocPAPZInputBridgeChild(const LayersId& aLayersId);
+  bool DeallocPAPZInputBridgeChild(PAPZInputBridgeChild* aActor);
 
   // gfxVarReceiver overrides.
   void OnVarChanged(const GfxVarUpdate& aVar) override;
 
   // PGPUChild overrides.
-  mozilla::ipc::IPCResult RecvInitComplete(const GPUDeviceData& aData) override;
-  mozilla::ipc::IPCResult RecvReportCheckerboard(const uint32_t& aSeverity, const nsCString& aLog) override;
-  mozilla::ipc::IPCResult RecvInitCrashReporter(Shmem&& shmem, const NativeThreadId& aThreadId) override;
-  mozilla::ipc::IPCResult RecvCreateVRProcess() override;
+  mozilla::ipc::IPCResult RecvInitComplete(const GPUDeviceData& aData);
+  mozilla::ipc::IPCResult RecvReportCheckerboard(const uint32_t& aSeverity,
+                                                 const nsCString& aLog);
+  mozilla::ipc::IPCResult RecvInitCrashReporter(
+      Shmem&& shmem, const NativeThreadId& aThreadId);
+  mozilla::ipc::IPCResult RecvCreateVRProcess();
+  mozilla::ipc::IPCResult RecvShutdownVRProcess();
 
-  mozilla::ipc::IPCResult RecvAccumulateChildHistograms(InfallibleTArray<HistogramAccumulation>&& aAccumulations) override;
-  mozilla::ipc::IPCResult RecvAccumulateChildKeyedHistograms(InfallibleTArray<KeyedHistogramAccumulation>&& aAccumulations) override;
-  mozilla::ipc::IPCResult RecvUpdateChildScalars(InfallibleTArray<ScalarAction>&& aScalarActions) override;
-  mozilla::ipc::IPCResult RecvUpdateChildKeyedScalars(InfallibleTArray<KeyedScalarAction>&& aScalarActions) override;
-  mozilla::ipc::IPCResult RecvRecordChildEvents(nsTArray<ChildEventData>&& events) override;
-  mozilla::ipc::IPCResult RecvRecordDiscardedData(const DiscardedData& aDiscardedData) override;
+  mozilla::ipc::IPCResult RecvAccumulateChildHistograms(
+      InfallibleTArray<HistogramAccumulation>&& aAccumulations);
+  mozilla::ipc::IPCResult RecvAccumulateChildKeyedHistograms(
+      InfallibleTArray<KeyedHistogramAccumulation>&& aAccumulations);
+  mozilla::ipc::IPCResult RecvUpdateChildScalars(
+      InfallibleTArray<ScalarAction>&& aScalarActions);
+  mozilla::ipc::IPCResult RecvUpdateChildKeyedScalars(
+      InfallibleTArray<KeyedScalarAction>&& aScalarActions);
+  mozilla::ipc::IPCResult RecvRecordChildEvents(
+      nsTArray<ChildEventData>&& events);
+  mozilla::ipc::IPCResult RecvRecordDiscardedData(
+      const DiscardedData& aDiscardedData);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
-  mozilla::ipc::IPCResult RecvGraphicsError(const nsCString& aError) override;
-  mozilla::ipc::IPCResult RecvNotifyUiObservers(const nsCString& aTopic) override;
-  mozilla::ipc::IPCResult RecvNotifyDeviceReset(const GPUDeviceData& aData) override;
-  mozilla::ipc::IPCResult RecvAddMemoryReport(const MemoryReport& aReport) override;
-  mozilla::ipc::IPCResult RecvFinishMemoryReport(const uint32_t& aGeneration) override;
-  mozilla::ipc::IPCResult RecvUpdateFeature(const Feature& aFeature, const FeatureFailure& aChange) override;
-  mozilla::ipc::IPCResult RecvUsedFallback(const Fallback& aFallback, const nsCString& aMessage) override;
-  mozilla::ipc::IPCResult RecvBHRThreadHang(const HangDetails& aDetails) override;
+  mozilla::ipc::IPCResult RecvGraphicsError(const nsCString& aError);
+  mozilla::ipc::IPCResult RecvNotifyUiObservers(const nsCString& aTopic);
+  mozilla::ipc::IPCResult RecvNotifyDeviceReset(const GPUDeviceData& aData);
+  mozilla::ipc::IPCResult RecvAddMemoryReport(const MemoryReport& aReport);
+  mozilla::ipc::IPCResult RecvFinishMemoryReport(const uint32_t& aGeneration);
+  mozilla::ipc::IPCResult RecvUpdateFeature(const Feature& aFeature,
+                                            const FeatureFailure& aChange);
+  mozilla::ipc::IPCResult RecvUsedFallback(const Fallback& aFallback,
+                                           const nsCString& aMessage);
+  mozilla::ipc::IPCResult RecvBHRThreadHang(const HangDetails& aDetails);
 
   bool SendRequestMemoryReport(const uint32_t& aGeneration,
                                const bool& aAnonymize,
                                const bool& aMinimizeMemoryUsage,
-                               const MaybeFileDesc& aDMDFile);
+                               const Maybe<ipc::FileDescriptor>& aDMDFile);
 
   static void Destroy(UniquePtr<GPUChild>&& aChild);
 
-private:
+ private:
   GPUProcessHost* mHost;
   UniquePtr<ipc::CrashReporterHost> mCrashReporter;
   UniquePtr<MemoryReportRequestHost> mMemoryReportRequest;
   bool mGPUReady;
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // _include_mozilla_gfx_ipc_GPUChild_h_
+#endif  // _include_mozilla_gfx_ipc_GPUChild_h_

@@ -18,6 +18,12 @@
  *   Add-on ID for this particular study.
  * @property {string} addonUrl
  *   URL that the study add-on was installed from.
+ * @property {int} extensionApiId
+ *   The ID used to look up the extension in Normandy's API.
+ * @property {string} extensionHash
+ *   The hash of the XPI file.
+ * @property {string} extensionHashAlgorithm
+ *   The algorithm used to hash the XPI file.
  * @property {string} addonVersion
  *   Study add-on version number
  * @property {string} studyStartDate
@@ -26,8 +32,7 @@
  *   Date when the study was ended.
  */
 
-ChromeUtils.import("resource://gre/modules/osfile.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(this, "IndexedDB", "resource://gre/modules/IndexedDB.jsm");
 ChromeUtils.defineModuleGetter(this, "AddonManager", "resource://gre/modules/AddonManager.jsm");
@@ -72,14 +77,20 @@ async function getDatabase() {
 /**
  * Get a transaction for interacting with the study store.
  *
+ * @param {IDBDatabase} db
+ * @param {String} mode Either "readonly" or "readwrite"
+ *
  * NOTE: Methods on the store returned by this function MUST be called
  * synchronously, otherwise the transaction with the store will expire.
  * This is why the helper takes a database as an argument; if we fetched the
  * database in the helper directly, the helper would be async and the
  * transaction would expire before methods on the store were called.
  */
-function getStore(db) {
-  return db.objectStore(STORE_NAME, "readwrite");
+function getStore(db, mode) {
+  if (!mode) {
+    throw new Error("mode is required");
+  }
+  return db.objectStore(STORE_NAME, mode);
 }
 
 var AddonStudies = {
@@ -99,21 +110,16 @@ var AddonStudies = {
         const oldStudies = await AddonStudies.getAll();
         let db = await getDatabase();
         await AddonStudies.clear();
-        for (const study of studies) {
-          await getStore(db).add(study);
-        }
-        await AddonStudies.close();
+        const store = getStore(db, "readwrite");
+        await Promise.all(studies.map(study => store.add(study)));
 
         try {
           await testFunction(...args, studies);
         } finally {
           db = await getDatabase();
           await AddonStudies.clear();
-          for (const study of oldStudies) {
-            await getStore(db).add(study);
-          }
-
-          await AddonStudies.close();
+          const store = getStore(db, "readwrite");
+          await Promise.all(oldStudies.map(study => store.add(study)));
         }
       };
     };
@@ -129,7 +135,6 @@ var AddonStudies = {
         await this.markAsEnded(study, "uninstalled-sideload");
       }
     }
-    await this.close();
 
     // Listen for add-on uninstalls so we can stop the corresponding studies.
     AddonManager.addAddonListener(this);
@@ -146,11 +151,7 @@ var AddonStudies = {
     const activeStudies = (await this.getAll()).filter(study => study.active);
     const matchingStudy = activeStudies.find(study => study.addonId === addon.id);
     if (matchingStudy) {
-      // Use a dedicated DB connection instead of the shared one so that we can
-      // close it without fear of affecting other users of the shared connection.
-      const db = await openDatabase();
       await this.markAsEnded(matchingStudy, "uninstalled");
-      await db.close();
     }
   },
 
@@ -159,19 +160,7 @@ var AddonStudies = {
    */
   async clear() {
     const db = await getDatabase();
-    await getStore(db).clear();
-  },
-
-  /**
-   * Close the current database connection if it is open.
-   */
-  async close() {
-    if (databasePromise) {
-      const promise = databasePromise;
-      databasePromise = null;
-      const db = await promise;
-      await db.close();
-    }
+    await getStore(db, "readwrite").clear();
   },
 
   /**
@@ -181,7 +170,7 @@ var AddonStudies = {
    */
   async has(recipeId) {
     const db = await getDatabase();
-    const study = await getStore(db).get(recipeId);
+    const study = await getStore(db, "readonly").get(recipeId);
     return !!study;
   },
 
@@ -192,7 +181,7 @@ var AddonStudies = {
    */
   async get(recipeId) {
     const db = await getDatabase();
-    return getStore(db).get(recipeId);
+    return getStore(db, "readonly").get(recipeId);
   },
 
   /**
@@ -201,7 +190,7 @@ var AddonStudies = {
    */
   async getAll() {
     const db = await getDatabase();
-    return getStore(db).getAll();
+    return getStore(db, "readonly").getAll();
   },
 
   /**
@@ -210,7 +199,16 @@ var AddonStudies = {
    */
   async add(study) {
     const db = await getDatabase();
-    return getStore(db).add(study);
+    return getStore(db, "readwrite").add(study);
+  },
+
+  /**
+   * Update a study in storage.
+   * @return {Promise<void, Error>} Resolves when the study is updated, or rejects with an error.
+   */
+  async update(study) {
+    const db = await getDatabase();
+    return getStore(db, "readwrite").put(study);
   },
 
   /**
@@ -220,7 +218,7 @@ var AddonStudies = {
    */
   async delete(recipeId) {
     const db = await getDatabase();
-    return getStore(db).delete(recipeId);
+    return getStore(db, "readwrite").delete(recipeId);
   },
 
   /**
@@ -237,7 +235,7 @@ var AddonStudies = {
     study.active = false;
     study.studyEndDate = new Date();
     const db = await getDatabase();
-    await getStore(db).put(study);
+    await getStore(db, "readwrite").put(study);
 
     Services.obs.notifyObservers(study, STUDY_ENDED_TOPIC, `${study.recipeId}`);
     TelemetryEvents.sendEvent("unenroll", "addon_study", study.name, {

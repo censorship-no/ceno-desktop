@@ -1,7 +1,5 @@
-commit 4a3ba8eee90ea1414d4f7ee36563e6c9b28fda96
-Author: Yoshito Umaoka <y.umaoka@gmail.com>
-Date:   Wed Jun 20 05:34:56 2018 +0000
+commit 4f715ae124c418a15a3fa4d8fb14f406576a7ee5
+Author: Jeff Genovy <29107334+jefgen@users.noreply.github.com>
+Date:   Wed Apr 10 17:32:11 2019 -0700
 
-    ICU-13823 Merged #13840 number parser memory overflow fix (r41541) to maint-62 for 62.1 GA.
-    
-    X-SVN-Rev: 41542
+    ICU-20536 ICU 63.2 release tasks + tzdata2019a

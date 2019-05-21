@@ -28,62 +28,58 @@
 
 namespace mozilla {
 class CycleCollectedJSContext;
+class EventQueue;
+template <typename>
+class ThreadEventQueue;
 class ThreadEventTarget;
-}
+}  // namespace mozilla
 
 using mozilla::NotNull;
 
+class nsLocalExecutionRecord;
 class nsThreadEnumerator;
 
 // See https://www.w3.org/TR/longtasks
 #define LONGTASK_BUSY_WINDOW_MS 50
 
 // A native thread
-class nsThread
-  : public nsIThreadInternal
-  , public nsISupportsPriority
-  , private mozilla::LinkedListElement<nsThread>
-{
+class nsThread : public nsIThreadInternal,
+                 public nsISupportsPriority,
+                 private mozilla::LinkedListElement<nsThread> {
   friend mozilla::LinkedList<nsThread>;
   friend mozilla::LinkedListElement<nsThread>;
-public:
+
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIEVENTTARGET_FULL
   NS_DECL_NSITHREAD
   NS_DECL_NSITHREADINTERNAL
   NS_DECL_NSISUPPORTSPRIORITY
 
-  enum MainThreadFlag
-  {
-    MAIN_THREAD,
-    NOT_MAIN_THREAD
-  };
+  enum MainThreadFlag { MAIN_THREAD, NOT_MAIN_THREAD };
 
   nsThread(NotNull<mozilla::SynchronizedEventQueue*> aQueue,
-           MainThreadFlag aMainThread,
-           uint32_t aStackSize);
+           MainThreadFlag aMainThread, uint32_t aStackSize);
 
-private:
+ private:
   nsThread();
 
-public:
-  // Initialize this as a wrapper for a new PRThread, and optionally give it a name.
+ public:
+  // Initialize this as a wrapper for a new PRThread, and optionally give it a
+  // name.
   nsresult Init(const nsACString& aName = NS_LITERAL_CSTRING(""));
 
   // Initialize this as a wrapper for the current PRThread.
   nsresult InitCurrentThread();
 
-private:
+ private:
   // Initializes the mThreadId and stack base/size members, and adds the thread
   // to the ThreadList().
   void InitCommon();
 
-public:
+ public:
   // The PRThread corresponding to this thread.
-  PRThread* GetPRThread()
-  {
-    return mThread;
-  }
+  PRThread* GetPRThread() { return mThread; }
 
   const void* StackBase() const { return mStackBase; }
   size_t StackSize() const { return mStackSize; }
@@ -92,16 +88,11 @@ public:
 
   // If this flag is true, then the nsThread was created using
   // nsIThreadManager::NewThread.
-  bool ShutdownRequired()
-  {
-    return mShutdownRequired;
-  }
+  bool ShutdownRequired() { return mShutdownRequired; }
 
-  void
-  SetScriptObserver(mozilla::CycleCollectedJSContext* aScriptObserver);
+  void SetScriptObserver(mozilla::CycleCollectedJSContext* aScriptObserver);
 
-  uint32_t
-  RecursionDepth() const;
+  uint32_t RecursionDepth() const;
 
   void ShutdownComplete(NotNull<struct nsThreadShutdownContext*> aContext);
 
@@ -110,23 +101,19 @@ public:
   static const uint32_t kRunnableNameBufSize = 1000;
   static mozilla::Array<char, kRunnableNameBufSize> sMainThreadRunnableName;
 
-  void EnableInputEventPrioritization()
-  {
+  void EnableInputEventPrioritization() {
     EventQueue()->EnableInputEventPrioritization();
   }
 
-  void FlushInputEventPrioritization()
-  {
+  void FlushInputEventPrioritization() {
     EventQueue()->FlushInputEventPrioritization();
   }
 
-  void SuspendInputEventPrioritization()
-  {
+  void SuspendInputEventPrioritization() {
     EventQueue()->SuspendInputEventPrioritization();
   }
 
-  void ResumeInputEventPrioritization()
-  {
+  void ResumeInputEventPrioritization() {
     EventQueue()->ResumeInputEventPrioritization();
   }
 
@@ -136,12 +123,10 @@ public:
 
   mozilla::SynchronizedEventQueue* EventQueue() { return mEvents.get(); }
 
-  bool ShuttingDown()
-  {
-    return mShutdownContext != nullptr;
-  }
+  bool ShuttingDown() { return mShutdownContext != nullptr; }
 
-  virtual mozilla::PerformanceCounter* GetPerformanceCounter(nsIRunnable* aEvent);
+  virtual mozilla::PerformanceCounter* GetPerformanceCounter(
+      nsIRunnable* aEvent);
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
@@ -156,12 +141,29 @@ public:
   static uint32_t MaxActiveThreads();
 
   const mozilla::TimeStamp& LastLongTaskEnd() { return mLastLongTaskEnd; }
-  const mozilla::TimeStamp& LastLongNonIdleTaskEnd() { return mLastLongNonIdleTaskEnd; }
+  const mozilla::TimeStamp& LastLongNonIdleTaskEnd() {
+    return mLastLongNonIdleTaskEnd;
+  }
 
-private:
+  // When entering local execution mode a new event queue is created and used as
+  // an event source. This queue is only accessible through an
+  // nsLocalExecutionGuard constructed from the nsLocalExecutionRecord returned
+  // by this function, effectively restricting the events that get run while in
+  // local execution mode to those dispatched by the owner of the guard object.
+  //
+  // Local execution is not nestable. When the nsLocalExecutionGuard is
+  // destructed, the thread exits the local execution mode.
+  //
+  // Note that code run in local execution mode is not considered a task in the
+  // spec sense. Events from the local queue are considered part of the
+  // enclosing task and as such do not trigger profiling hooks, observer
+  // notifications, etc.
+  nsLocalExecutionRecord EnterLocalExecution();
+
+ private:
   void DoMainThreadSpecificProcessing(bool aReallyWait);
 
-protected:
+ protected:
   friend class nsThreadShutdownEvent;
 
   friend class nsThreadEnumerator;
@@ -171,8 +173,7 @@ protected:
   static void ThreadFunc(void* aArg);
 
   // Helper
-  already_AddRefed<nsIThreadObserver> GetObserver()
-  {
+  already_AddRefed<nsIThreadObserver> GetObserver() {
     nsIThreadObserver* obs;
     nsThread::GetObserver(&obs);
     return already_AddRefed<nsIThreadObserver>(obs);
@@ -195,7 +196,6 @@ protected:
   void AddToThreadList();
   void MaybeRemoveFromThreadList();
 
-
   // Whether or not these members have a value determines whether the nsThread
   // is treated as a full XPCOM thread or as a thin wrapper.
   //
@@ -214,24 +214,23 @@ protected:
   mozilla::CycleCollectedJSContext* mScriptObserver;
 
   PRThread* mThread;
-  void*     mStackBase = nullptr;
-  uint32_t  mStackSize;
-  uint32_t  mThreadId;
+  void* mStackBase = nullptr;
+  uint32_t mStackSize;
+  uint32_t mThreadId;
 
-  uint32_t  mNestedEventLoopDepth;
-  uint32_t  mCurrentEventLoopDepth;
+  uint32_t mNestedEventLoopDepth;
+  uint32_t mCurrentEventLoopDepth;
 
   mozilla::TimeStamp mLastLongTaskEnd;
   mozilla::TimeStamp mLastLongNonIdleTaskEnd;
 
   mozilla::Atomic<bool> mShutdownRequired;
 
-  int8_t   mPriority;
+  int8_t mPriority;
 
-  uint8_t  mIsMainThread;
+  uint8_t mIsMainThread;
 
-  bool IsMainThread() const
-  {
+  bool IsMainThread() const {
     return MainThreadFlag(mIsMainThread) == MAIN_THREAD;
   }
 
@@ -247,25 +246,68 @@ protected:
   mozilla::TimeStamp mNextIdleDeadline;
 
   RefPtr<mozilla::PerformanceCounter> mCurrentPerformanceCounter;
+
+  bool mIsInLocalExecutionMode = false;
 };
 
-class MOZ_STACK_CLASS nsThreadEnumerator final
-{
-public:
-  nsThreadEnumerator()
-    : mMal(nsThread::ThreadListMutex())
-  {}
+class nsLocalExecutionRecord;
+
+// This RAII class controls the duration of the associated nsThread's local
+// execution mode and provides access to the local event target. (See
+// nsThread::EnterLocalExecution() for details.) It is constructed from an
+// nsLocalExecutionRecord, which can only be constructed by nsThread.
+class MOZ_RAII nsLocalExecutionGuard final {
+ public:
+  MOZ_IMPLICIT nsLocalExecutionGuard(
+      nsLocalExecutionRecord&& aLocalExecutionRecord);
+  nsLocalExecutionGuard(const nsLocalExecutionGuard&) = delete;
+  nsLocalExecutionGuard(nsLocalExecutionGuard&&) = delete;
+  ~nsLocalExecutionGuard();
+
+  nsCOMPtr<nsISerialEventTarget> GetEventTarget() const {
+    return mLocalEventTarget;
+  }
+
+ private:
+  mozilla::SynchronizedEventQueue& mEventQueueStack;
+  nsCOMPtr<nsISerialEventTarget> mLocalEventTarget;
+  bool& mLocalExecutionFlag;
+};
+
+class MOZ_TEMPORARY_CLASS nsLocalExecutionRecord final {
+ private:
+  friend class nsThread;
+  friend class nsLocalExecutionGuard;
+
+  nsLocalExecutionRecord(mozilla::SynchronizedEventQueue& aEventQueueStack,
+                         bool& aLocalExecutionFlag)
+      : mEventQueueStack(aEventQueueStack),
+        mLocalExecutionFlag(aLocalExecutionFlag) {}
+
+  nsLocalExecutionRecord(nsLocalExecutionRecord&&) = default;
+
+ public:
+  nsLocalExecutionRecord(const nsLocalExecutionRecord&) = delete;
+
+ private:
+  mozilla::SynchronizedEventQueue& mEventQueueStack;
+  bool& mLocalExecutionFlag;
+};
+
+class MOZ_STACK_CLASS nsThreadEnumerator final {
+ public:
+  nsThreadEnumerator() : mMal(nsThread::ThreadListMutex()) {}
 
   auto begin() { return nsThread::ThreadList().begin(); }
   auto end() { return nsThread::ThreadList().end(); }
 
-private:
+ private:
   mozilla::OffTheBooksMutexAutoLock mMal;
 };
 
-#if defined(XP_UNIX) && !defined(ANDROID) && !defined(DEBUG) && HAVE_UALARM \
-  && defined(_GNU_SOURCE)
-# define MOZ_CANARY
+#if defined(XP_UNIX) && !defined(ANDROID) && !defined(DEBUG) && HAVE_UALARM && \
+    defined(_GNU_SOURCE)
+#  define MOZ_CANARY
 
 extern int sCanaryOutputFD;
 #endif

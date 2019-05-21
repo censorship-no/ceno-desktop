@@ -13,6 +13,8 @@
 #include "mozilla/Mutex.h"
 #include "nsTObserverArray.h"
 
+class nsIEventTarget;
+class nsISerialEventTarget;
 class nsIThreadObserver;
 
 namespace mozilla {
@@ -31,34 +33,34 @@ namespace mozilla {
 // different synchronized queue on the main thread, SchedulerEventQueue, which
 // will handle the cooperative threading model.
 
-class ThreadTargetSink
-{
-public:
+class ThreadTargetSink {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ThreadTargetSink)
 
   virtual bool PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
-                        EventPriority aPriority) = 0;
+                        EventQueuePriority aPriority) = 0;
 
   // After this method is called, no more events can be posted.
   virtual void Disconnect(const MutexAutoLock& aProofOfLock) = 0;
 
-  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
-  {
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
   }
 
-  virtual size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const = 0;
+  virtual size_t SizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf) const = 0;
 
-protected:
+ protected:
   virtual ~ThreadTargetSink() {}
 };
 
-class SynchronizedEventQueue : public ThreadTargetSink
-{
-public:
-  virtual already_AddRefed<nsIRunnable> GetEvent(bool aMayWait,
-                                                 EventPriority* aPriority) = 0;
+class SynchronizedEventQueue : public ThreadTargetSink {
+ public:
+  virtual already_AddRefed<nsIRunnable> GetEvent(
+      bool aMayWait, EventQueuePriority* aPriority) = 0;
   virtual bool HasPendingEvent() = 0;
+
+  virtual bool HasPendingHighPriorityEvents() = 0;
 
   // This method atomically checks if there are pending events and, if there are
   // none, forbids future events from being posted. It returns true if there
@@ -83,18 +85,40 @@ public:
   virtual void SuspendInputEventPrioritization() = 0;
   virtual void ResumeInputEventPrioritization() = 0;
 
-  size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const override
-  {
+  size_t SizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf) const override {
     return mEventObservers.ShallowSizeOfExcludingThis(aMallocSizeOf);
   }
 
-protected:
+  /**
+   * This method causes any events currently enqueued on the thread to be
+   * suppressed until PopEventQueue is called, and any event dispatched to this
+   * thread's nsIEventTarget will queue as well. Calls to PushEventQueue may be
+   * nested and must each be paired with a call to PopEventQueue in order to
+   * restore the original state of the thread. The returned nsIEventTarget may
+   * be used to push events onto the nested queue. Dispatching will be disabled
+   * once the event queue is popped. The thread will only ever process pending
+   * events for the innermost event queue. Must only be called on the target
+   * thread.
+   */
+  virtual already_AddRefed<nsISerialEventTarget> PushEventQueue() = 0;
+
+  /**
+   * Revert a call to PushEventQueue. When an event queue is popped, any events
+   * remaining in the queue are appended to the elder queue. This also causes
+   * the nsIEventTarget returned from PushEventQueue to stop dispatching events.
+   * Must only be called on the target thread, and with the innermost event
+   * queue.
+   */
+  virtual void PopEventQueue(nsIEventTarget* aTarget) = 0;
+
+ protected:
   virtual ~SynchronizedEventQueue() {}
 
-private:
+ private:
   nsTObserverArray<nsCOMPtr<nsIThreadObserver>> mEventObservers;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_SynchronizedEventQueue_h
+#endif  // mozilla_SynchronizedEventQueue_h

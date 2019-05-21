@@ -3,13 +3,14 @@
 //! The order of extended basic blocks in a function and the order of instructions in an EBB is
 //! determined by the `Layout` data structure defined in this module.
 
-use entity::EntityMap;
-use ir::progpoint::{ExpandedProgramPoint, ProgramOrder};
-use ir::{Ebb, Inst};
-use packed_option::PackedOption;
-use std::cmp;
-use std::iter::{IntoIterator, Iterator};
-use timing;
+use crate::entity::SecondaryMap;
+use crate::ir::progpoint::{ExpandedProgramPoint, ProgramOrder};
+use crate::ir::{Ebb, Inst};
+use crate::packed_option::PackedOption;
+use crate::timing;
+use core::cmp;
+use core::iter::{IntoIterator, Iterator};
+use log::debug;
 
 /// The `Layout` struct determines the layout of EBBs and instructions in a function. It does not
 /// contain definitions of instructions or EBBs, but depends on `Inst` and `Ebb` entity references
@@ -28,11 +29,11 @@ use timing;
 pub struct Layout {
     /// Linked list nodes for the layout order of EBBs Forms a doubly linked list, terminated in
     /// both ends by `None`.
-    ebbs: EntityMap<Ebb, EbbNode>,
+    ebbs: SecondaryMap<Ebb, EbbNode>,
 
     /// Linked list nodes for the layout order of instructions. Forms a double linked list per EBB,
     /// terminated in both ends by `None`.
-    insts: EntityMap<Inst, InstNode>,
+    insts: SecondaryMap<Inst, InstNode>,
 
     /// First EBB in the layout order, or `None` when no EBBs have been laid out.
     first_ebb: Option<Ebb>,
@@ -45,8 +46,8 @@ impl Layout {
     /// Create a new empty `Layout`.
     pub fn new() -> Self {
         Self {
-            ebbs: EntityMap::new(),
-            insts: EntityMap::new(),
+            ebbs: SecondaryMap::new(),
+            insts: SecondaryMap::new(),
             first_ebb: None,
             last_ebb: None,
         }
@@ -741,10 +742,10 @@ impl<'f> DoubleEndedIterator for Insts<'f> {
 #[cfg(test)]
 mod tests {
     use super::Layout;
-    use cursor::{Cursor, CursorPosition};
-    use entity::EntityRef;
-    use ir::{Ebb, Inst, ProgramOrder, SourceLoc};
-    use std::cmp::Ordering;
+    use crate::cursor::{Cursor, CursorPosition};
+    use crate::entity::EntityRef;
+    use crate::ir::{Ebb, Inst, ProgramOrder, SourceLoc};
+    use core::cmp::Ordering;
     use std::vec::Vec;
 
     struct LayoutCursor<'f> {
@@ -782,8 +783,8 @@ mod tests {
     impl<'f> LayoutCursor<'f> {
         /// Create a new `LayoutCursor` for `layout`.
         /// The cursor holds a mutable reference to `layout` for its entire lifetime.
-        pub fn new(layout: &'f mut Layout) -> LayoutCursor<'f> {
-            LayoutCursor {
+        pub fn new(layout: &'f mut Layout) -> Self {
+            Self {
                 layout,
                 pos: CursorPosition::Nowhere,
             }

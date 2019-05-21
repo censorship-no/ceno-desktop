@@ -18,7 +18,6 @@ var Snackbars = {
   LENGTH_SHORT: LENGTH_SHORT,
 
   show: function(aMessage, aDuration, aOptions) {
-
     // Takes care of the deprecated toast calls
     if (typeof aDuration === "string") {
       [aDuration, aOptions] = migrateToastIfNeeded(aDuration, aOptions);
@@ -44,7 +43,9 @@ var Snackbars = {
       EventDispatcher.instance.sendRequestForResult(msg)
         .then(result => aOptions.action.callback())
         .catch(result => {
-          if (result === null) {
+          if (aOptions.action.rejection) {
+            aOptions.action.rejection(result);
+          } else if (result === null) {
             /* The snackbar was dismissed without executing the callback, nothing to do here. */
           } else {
             Cu.reportError(result);

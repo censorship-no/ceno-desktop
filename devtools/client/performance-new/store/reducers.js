@@ -7,7 +7,6 @@ const { combineReducers } = require("devtools/client/shared/vendor/redux");
 const { recordingState: {
   NOT_YET_KNOWN,
 }} = require("devtools/client/performance-new/utils");
-
 /**
  * The current state of the recording.
  * @param state - A recordingState key.
@@ -115,6 +114,21 @@ function threads(state = ["GeckoMain", "Compositor"], action) {
 }
 
 /**
+ * The current objdirs list.
+ * @param {array of strings} state
+ */
+function objdirs(state = [], action) {
+  switch (action.type) {
+    case "CHANGE_OBJDIRS":
+      return action.objdirs;
+    case "INITIALIZE_STORE":
+      return action.recordingSettingsFromPreferences.objdirs;
+    default:
+      return state;
+  }
+}
+
+/**
  * These are all the values used to initialize the profiler. They should never change
  * once added to the store.
  *
@@ -146,5 +160,6 @@ module.exports = combineReducers({
   entries,
   features,
   threads,
+  objdirs,
   initializedValues,
 });

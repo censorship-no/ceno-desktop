@@ -37,10 +37,6 @@ its prototype:
     Debugger API (e.g, [`Debugger.Source`][source]) for purposes other than
     step debugging a target JavaScript program.
 
-`allowWasmBinarySource`
-:   A boolean value indicating whether WebAssembly sources will be available
-    in binary form. The WebAssembly text generation will be disabled.
-
 `collectCoverageInfo`
 :   A boolean value indicating whether code coverage should be enabled inside
     each debuggee of this `Debugger` instance. Changing this flag value will
@@ -485,6 +481,10 @@ other kinds of objects.
      `Debugger.Object` owned by this `Debugger`. Otherwise, if `value` is some
      other kind of object, and hence not a proper debuggee value, throw a
      TypeError instead.
+
+<code>adoptSource(<i>source</i>)</code>
+:    Given `source` of type `Debugger.Source` which is owned by an arbitrary
+     `Debugger`, return an equivalent `Debugger.Source` owned by this `Debugger`.
 
 ## Static methods of the Debugger Object
 

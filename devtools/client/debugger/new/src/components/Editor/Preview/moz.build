@@ -7,7 +7,7 @@ DIRS += [
 
 ]
 
-DevToolsModules(
+CompiledModules(
     'index.js',
     'Popup.js',
 )

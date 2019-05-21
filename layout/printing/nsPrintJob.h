@@ -26,21 +26,25 @@
 // Classes
 class nsPagePrintTimer;
 class nsIDocShell;
-class nsIDocument;
 class nsIDocumentViewerPrint;
 class nsPrintObject;
 class nsIDocShell;
 class nsIPageSequenceFrame;
 
+namespace mozilla {
+namespace dom {
+class Document;
+}
+}  // namespace mozilla
+
 /**
  * A print job may be instantiated either for printing to an actual physical
  * printer, or for creating a print preview.
  */
-class nsPrintJob final : public nsIObserver
-                       , public nsIWebProgressListener
-                       , public nsSupportsWeakReference
-{
-public:
+class nsPrintJob final : public nsIObserver,
+                         public nsIWebProgressListener,
+                         public nsSupportsWeakReference {
+ public:
   static nsresult GetGlobalPrintSettings(nsIPrintSettings** aPrintSettings);
   static void CloseProgressDialog(nsIWebProgressListener* aWebProgressListener);
 
@@ -55,36 +59,31 @@ public:
   NS_DECL_NSIWEBPROGRESSLISTENER
 
   // Old nsIWebBrowserPrint methods; not cleaned up yet
-  NS_IMETHOD Print(nsIPrintSettings*       aPrintSettings,
+  NS_IMETHOD Print(nsIPrintSettings* aPrintSettings,
                    nsIWebProgressListener* aWebProgressListener);
   NS_IMETHOD PrintPreview(nsIPrintSettings* aPrintSettings,
                           mozIDOMWindowProxy* aChildDOMWin,
                           nsIWebProgressListener* aWebProgressListener);
-  NS_IMETHOD GetIsFramesetDocument(bool *aIsFramesetDocument);
-  NS_IMETHOD GetIsIFrameSelected(bool *aIsIFrameSelected);
-  NS_IMETHOD GetIsRangeSelection(bool *aIsRangeSelection);
-  NS_IMETHOD GetIsFramesetFrameSelected(bool *aIsFramesetFrameSelected);
-  NS_IMETHOD GetPrintPreviewNumPages(int32_t *aPrintPreviewNumPages);
+  NS_IMETHOD GetIsFramesetDocument(bool* aIsFramesetDocument);
+  NS_IMETHOD GetIsIFrameSelected(bool* aIsIFrameSelected);
+  NS_IMETHOD GetIsRangeSelection(bool* aIsRangeSelection);
+  NS_IMETHOD GetIsFramesetFrameSelected(bool* aIsFramesetFrameSelected);
+  NS_IMETHOD GetPrintPreviewNumPages(int32_t* aPrintPreviewNumPages);
   NS_IMETHOD EnumerateDocumentNames(uint32_t* aCount, char16_t*** aResult);
-  NS_IMETHOD GetDoingPrint(bool *aDoingPrint);
-  NS_IMETHOD GetDoingPrintPreview(bool *aDoingPrintPreview);
-  NS_IMETHOD GetCurrentPrintSettings(nsIPrintSettings **aCurrentPrintSettings);
-
+  NS_IMETHOD GetDoingPrint(bool* aDoingPrint);
+  NS_IMETHOD GetDoingPrintPreview(bool* aDoingPrintPreview);
+  NS_IMETHOD GetCurrentPrintSettings(nsIPrintSettings** aCurrentPrintSettings);
 
   // This enum tells indicates what the default should be for the title
   // if the title from the document is null
-  enum eDocTitleDefault {
-    eDocTitleDefBlank,
-    eDocTitleDefURLDoc
-  };
+  enum eDocTitleDefault { eDocTitleDefBlank, eDocTitleDefURLDoc };
 
   void Destroy();
   void DestroyPrintingData();
 
   nsresult Initialize(nsIDocumentViewerPrint* aDocViewerPrint,
-                      nsIDocShell*            aContainer,
-                      nsIDocument*            aDocument,
-                      float                   aScreenDPI);
+                      nsIDocShell* aContainer,
+                      mozilla::dom::Document* aDocument, float aScreenDPI);
 
   nsresult GetSeqFrameAndCountPages(nsIFrame*& aSeqFrame, int32_t& aCount);
 
@@ -92,8 +91,8 @@ public:
   // The following three methods are used for printing...
   //
   nsresult DocumentReadyForPrinting();
-  nsresult GetSelectionDocument(nsIDeviceContextSpec * aDevSpec,
-                                nsIDocument ** aNewDoc);
+  nsresult GetSelectionDocument(nsIDeviceContextSpec* aDevSpec,
+                                mozilla::dom::Document** aNewDoc);
 
   nsresult SetupToPrintContent();
   nsresult EnablePOsForPrinting();
@@ -110,14 +109,14 @@ public:
   void InstallPrintPreviewListener();
 
   // nsIDocumentViewerPrint Printing Methods
-  bool     HasPrintCallbackCanvas();
-  bool     PrePrintPage();
-  bool     PrintPage(nsPrintObject* aPOect, bool& aInRange);
-  bool     DonePrintingPages(nsPrintObject* aPO, nsresult aResult);
+  bool HasPrintCallbackCanvas();
+  bool PrePrintPage();
+  bool PrintPage(nsPrintObject* aPOect, bool& aInRange);
+  bool DonePrintingPages(nsPrintObject* aPO, nsresult aResult);
 
   //---------------------------------------------------------------------
-  void BuildDocTree(nsIDocShell *      aParentNode,
-                    nsTArray<nsPrintObject*> * aDocList,
+  void BuildDocTree(nsIDocShell* aParentNode,
+                    nsTArray<nsPrintObject*>* aDocList,
                     const mozilla::UniquePtr<nsPrintObject>& aPO);
   nsresult ReflowDocList(const mozilla::UniquePtr<nsPrintObject>& aPO,
                          bool aSetPixelScale);
@@ -143,7 +142,6 @@ public:
   void FirePrintingErrorEvent(nsresult aPrintError);
   //---------------------------------------------------------------------
 
-
   // Timer Methods
   nsresult StartPagePrintTimer(const mozilla::UniquePtr<nsPrintObject>& aPO);
 
@@ -156,51 +154,43 @@ public:
   already_AddRefed<nsPIDOMWindowOuter> FindFocusedDOMWindow();
 
   void GetDisplayTitleAndURL(const mozilla::UniquePtr<nsPrintObject>& aPO,
-                             nsAString&       aTitle,
-                             nsAString&       aURLStr,
+                             nsAString& aTitle, nsAString& aURLStr,
                              eDocTitleDefault aDefType);
 
-  bool     CheckBeforeDestroy();
+  bool CheckBeforeDestroy();
   nsresult Cancelled();
 
-  nsIPresShell* GetPrintPreviewPresShell() {return mPrtPreview->mPrintObject->mPresShell;}
+  nsIPresShell* GetPrintPreviewPresShell() {
+    return mPrtPreview->mPrintObject->mPresShell;
+  }
 
-  float GetPrintPreviewScale() { return mPrtPreview->mPrintObject->
-                                        mPresContext->GetPrintPreviewScale(); }
+  float GetPrintPreviewScale() {
+    return mPrtPreview->mPrintObject->mPresContext->GetPrintPreviewScale();
+  }
 
   // These calls also update the DocViewer
   void SetIsPrinting(bool aIsPrinting);
-  bool GetIsPrinting()
-  {
-    return mIsDoingPrinting;
-  }
+  bool GetIsPrinting() { return mIsDoingPrinting; }
   void SetIsPrintPreview(bool aIsPrintPreview);
-  bool GetIsPrintPreview()
-  {
-    return mIsDoingPrintPreview;
-  }
-  bool GetIsCreatingPrintPreview()
-  {
-    return mIsCreatingPrintPreview;
-  }
+  bool GetIsPrintPreview() { return mIsDoingPrintPreview; }
+  bool GetIsCreatingPrintPreview() { return mIsCreatingPrintPreview; }
 
-  void SetDisallowSelectionPrint(bool aDisallowSelectionPrint)
-  {
+  void SetDisallowSelectionPrint(bool aDisallowSelectionPrint) {
     mDisallowSelectionPrint = aDisallowSelectionPrint;
   }
 
-private:
+ private:
   nsPrintJob& operator=(const nsPrintJob& aOther) = delete;
 
   ~nsPrintJob();
 
   nsresult CommonPrint(bool aIsPrintPreview, nsIPrintSettings* aPrintSettings,
                        nsIWebProgressListener* aWebProgressListener,
-                       nsIDocument* aDoc);
+                       mozilla::dom::Document* aDoc);
 
   nsresult DoCommonPrint(bool aIsPrintPreview, nsIPrintSettings* aPrintSettings,
                          nsIWebProgressListener* aWebProgressListener,
-                         nsIDocument* aDoc);
+                         mozilla::dom::Document* aDoc);
 
   void FirePrintCompletionEvent();
 
@@ -208,10 +198,8 @@ private:
 
   nsresult AfterNetworkPrint(bool aHandleError);
 
-  nsresult SetRootView(nsPrintObject* aPO,
-                       bool& aDoReturn,
-                       bool& aDocumentIsTopLevel,
-                       nsSize& aAdjSize);
+  nsresult SetRootView(nsPrintObject* aPO, bool& aDoReturn,
+                       bool& aDocumentIsTopLevel, nsSize& aAdjSize);
   nsView* GetParentViewForRoot();
   bool DoSetPixelScale();
   void UpdateZoomRatio(nsPrintObject* aPO, bool aSetPixelScale);
@@ -223,8 +211,7 @@ private:
 
   void PageDone(nsresult aResult);
 
-
-  nsCOMPtr<nsIDocument> mDocument;
+  RefPtr<mozilla::dom::Document> mDocument;
   nsCOMPtr<nsIDocumentViewerPrint> mDocViewerPrint;
 
   nsWeakPtr mContainer;
@@ -255,5 +242,4 @@ private:
   bool mDisallowSelectionPrint = false;
 };
 
-#endif // nsPrintJob_h
-
+#endif  // nsPrintJob_h

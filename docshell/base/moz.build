@@ -36,7 +36,6 @@ DIRS += [
 ]
 
 XPIDL_SOURCES += [
-    'nsCDefaultURIFixup.idl',
     'nsIContentViewer.idl',
     'nsIContentViewerEdit.idl',
     'nsIDocShell.idl',
@@ -44,6 +43,7 @@ XPIDL_SOURCES += [
     'nsIDocShellTreeOwner.idl',
     'nsIDocumentLoaderFactory.idl',
     'nsILoadContext.idl',
+    'nsILoadURIDelegate.idl',
     'nsIPrivacyTransitionObserver.idl',
     'nsIReflowObserver.idl',
     'nsIRefreshURI.idl',
@@ -61,7 +61,7 @@ XPIDL_MODULE = 'docshell'
 EXPORTS += [
     'nsCTooltipTextProvider.h',
     'nsDocShell.h',
-    'nsDocShellLoadInfo.h',
+    'nsDocShellLoadState.h',
     'nsDocShellLoadTypes.h',
     'nsDocShellTreeOwner.h',
     'nsILinkHandler.h',
@@ -76,19 +76,24 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.dom += [
     'BrowsingContext.h',
-    'ChromeBrowsingContext.h'
+    'BrowsingContextFieldList.h',
+    'BrowsingContextGroup.h',
+    'CanonicalBrowsingContext.h',
+    'ChildProcessChannelListener.h',
 ]
 
 UNIFIED_SOURCES += [
     'BrowsingContext.cpp',
-    'ChromeBrowsingContext.cpp',
+    'BrowsingContextGroup.cpp',
+    'CanonicalBrowsingContext.cpp',
+    'ChildProcessChannelListener.cpp',
     'LoadContext.cpp',
     'nsAboutRedirector.cpp',
     'nsDefaultURIFixup.cpp',
     'nsDocShell.cpp',
     'nsDocShellEditorData.cpp',
     'nsDocShellEnumerator.cpp',
-    'nsDocShellLoadInfo.cpp',
+    'nsDocShellLoadState.cpp',
     'nsDocShellTreeOwner.cpp',
     'nsDSURIContentListener.cpp',
     'nsPingListener.cpp',
@@ -103,6 +108,8 @@ FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
     '/docshell/shistory',
     '/dom/base',
+    '/dom/bindings',
+    '/js/xpconnect/src',
     '/layout/base',
     '/layout/generic',
     '/layout/style',

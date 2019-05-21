@@ -28,12 +28,11 @@ add_task(async function() {
   await waitForSelectedSource(dbg, "sjs_code_reload.sjs");
 
   const source = findSource(dbg, "sjs_code_reload");
-  const location = { sourceId: source.id, line: 6 };
+  const location = { sourceId: source.id, line: 6, column: 2 };
 
   await waitForBreakpoint(dbg, location);
 
-  const breakpoints = dbg.selectors.getBreakpoints(dbg.getState());
-  const breakpointList = breakpoints.valueSeq().toJS();
+  const breakpointList = dbg.selectors.getBreakpointsList(dbg.getState());
   const breakpoint = breakpointList[0];
 
   is(breakpointList.length, 1);

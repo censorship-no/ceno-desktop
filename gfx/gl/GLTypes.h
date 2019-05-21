@@ -9,21 +9,21 @@
 #include <stdint.h>
 
 #ifndef GLAPIENTRY
-# ifdef WIN32
-#  include <windef.h>
-#  define GLAPIENTRY APIENTRY
-#  define GLAPI
-# else
-#  define GLAPIENTRY
-#  define GLAPI
-# endif
+#  ifdef WIN32
+#    include <windef.h>
+#    define GLAPIENTRY APIENTRY
+#    define GLAPI
+#  else
+#    define GLAPIENTRY
+#    define GLAPI
+#  endif
 #endif
 
 typedef uint8_t realGLboolean;
 
 #if !defined(__gltypes_h_) && !defined(__gl_h_)
-#define __gltypes_h_
-#define __gl_h_
+#  define __gltypes_h_
+#  define __gl_h_
 
 typedef uint32_t GLenum;
 typedef uint32_t GLbitfield;
@@ -36,22 +36,22 @@ typedef uint8_t GLubyte;
 typedef uint16_t GLushort;
 typedef float GLfloat;
 typedef float GLclampf;
-#ifndef GLdouble_defined
+#  ifndef GLdouble_defined
 typedef double GLdouble;
-#endif
+#  endif
 typedef double GLclampd;
 typedef void GLvoid;
 
 typedef char GLchar;
-#ifndef __gl2_h_
-#ifdef _WIN64
+#  ifndef __gl2_h_
+#    ifdef _WIN64
 typedef signed long long int GLintptr;
 typedef signed long long int GLsizeiptr;
-#else
+#    else
 typedef signed long int GLintptr;
 typedef signed long int GLsizeiptr;
-#endif
-#endif
+#    endif
+#  endif
 
 #endif /* #if !defined(__gltypes_h_) && !defined(__gl_h_) */
 
@@ -66,13 +66,10 @@ typedef uint64_t GLuint64;
 typedef void* GLeglImage;
 
 // KHR_debug
-typedef void (GLAPIENTRY *GLDEBUGPROC)(GLenum source,
-                                       GLenum type,
-                                       GLuint id,
-                                       GLenum severity,
-                                       GLsizei length,
-                                       const GLchar* message,
-                                       const GLvoid* userParam);
+typedef void(GLAPIENTRY* GLDEBUGPROC)(GLenum source, GLenum type, GLuint id,
+                                      GLenum severity, GLsizei length,
+                                      const GLchar* message,
+                                      const GLvoid* userParam);
 
 // EGL types
 typedef void* EGLImage;
@@ -92,28 +89,27 @@ typedef void* EGLSync;
 typedef void* EGLStreamKHR;
 typedef uint64_t EGLTime;
 
-#define EGL_NO_CONTEXT       ((EGLContext)0)
-#define EGL_NO_DISPLAY       ((EGLDisplay)0)
-#define EGL_NO_SURFACE       ((EGLSurface)0)
-#define EGL_NO_CONFIG        ((EGLConfig)nullptr)
-#define EGL_NO_SYNC          ((EGLSync)0)
-#define EGL_NO_IMAGE         ((EGLImage)0)
-
+#define EGL_NO_CONTEXT ((EGLContext)0)
+#define EGL_NO_DISPLAY ((EGLDisplay)0)
+#define EGL_NO_SURFACE ((EGLSurface)0)
+#define EGL_NO_CONFIG ((EGLConfig) nullptr)
+#define EGL_NO_SYNC ((EGLSync)0)
+#define EGL_NO_IMAGE ((EGLImage)0)
 
 #ifdef XP_WIN
-    #ifndef WIN32_LEAN_AND_MEAN
-        #define WIN32_LEAN_AND_MEAN 1
-    #endif
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN 1
+#  endif
 
-    #include <windef.h>
+#  include <windef.h>
 
-    typedef HDC EGLNativeDisplayType;
-    typedef HBITMAP EGLNativePixmapType;
-    typedef HWND EGLNativeWindowType;
+typedef HDC EGLNativeDisplayType;
+typedef HBITMAP EGLNativePixmapType;
+typedef HWND EGLNativeWindowType;
 #else
-    typedef void* EGLNativeDisplayType;
-    typedef void* EGLNativePixmapType;
-    typedef void* EGLNativeWindowType;
+typedef void* EGLNativeDisplayType;
+typedef void* EGLNativePixmapType;
+typedef void* EGLNativeWindowType;
 #endif
 
-#endif // GLTYPES_H_
+#endif  // GLTYPES_H_

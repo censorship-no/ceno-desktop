@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Rendben, értem",
   "prefs_home_header": "Firefox kezdőlap tartalma",
   "prefs_home_description": "Válassza ki milyen tartalmat szeretne a Firefox kezdőlapon.",
+  "prefs_content_discovery_header": "Firefox kezdőlap",
+  "prefs_content_discovery_description": "A Firefox kezdőlapon lévő tartalomfelfedezéssel kiváló minőségű, releváns cikkeket találhat szerte a weben.",
+  "prefs_content_discovery_button": "Tartalomfelfedezés kikapcsolása",
   "prefs_section_rows_option": "{num} sor;{num} sor",
   "prefs_search_header": "Webes keresés",
   "prefs_topsites_description": "A leggyakrabban látogatott oldalak",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Mentse az Ön által kedvelt történeteket a Pocketbe, és töltse fel elméjét lebilincselő olvasnivalókkal.",
   "highlights_empty_state": "Kezdjen el böngészni, és itt fognak megjelenni azok a nagyszerű cikkek, videók és más lapok, amelyeket nemrég meglátogatott vagy könyvjelzőzött.",
   "topstories_empty_state": "Már felzárkózott. Nézzen vissza később a legújabb {provider} hírekért. Nem tud várni? Válasszon egy népszerű témát, hogy még több sztorit találjon a weben.",
-  "manual_migration_explanation2": "Próbálja ki a Firefoxot másik böngészőből származó könyvjelzőkkel, előzményekkel és jelszavakkal.",
-  "manual_migration_cancel_button": "Köszönöm, nem",
-  "manual_migration_import_button": "Importálás most",
   "error_fallback_default_info": "Hoppá, valami hiba történt a tartalom betöltésekor.",
   "error_fallback_default_refresh_suggestion": "Az újrapróbálkozáshoz frissítse az oldalt.",
   "section_menu_action_remove_section": "Szakasz eltávolítása",
@@ -108,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Folytatás",
   "firstrun_skip_login": "Lépés kihagyása",
   "context_menu_title": "Menü megnyitása",
-  "pocket_learn_more": "További tudnivalók"
+  "manual_migration_explanation2": "Próbálja ki a Firefoxot másik böngészőből származó könyvjelzőkkel, előzményekkel és jelszavakkal.",
+  "manual_migration_cancel_button": "Köszönöm, nem",
+  "manual_migration_import_button": "Importálás most"
 };

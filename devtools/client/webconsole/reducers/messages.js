@@ -17,9 +17,10 @@ const {
   MESSAGE_TYPE,
   MESSAGE_SOURCE,
 } = constants;
-const { getGripPreviewItems } = require("devtools/client/shared/components/reps/reps");
-const { getUnicodeUrlPath } = require("devtools/client/shared/unicode-url");
-const { getSourceNames } = require("devtools/client/shared/source-utils");
+
+loader.lazyRequireGetter(this, "getGripPreviewItems", "devtools/client/shared/components/reps/reps", true);
+loader.lazyRequireGetter(this, "getUnicodeUrlPath", "devtools/client/shared/unicode-url", true);
+loader.lazyRequireGetter(this, "getSourceNames", "devtools/client/shared/source-utils", true);
 
 const {
   UPDATE_REQUEST,
@@ -32,6 +33,8 @@ const {
 const MessageState = overrides => Object.freeze(Object.assign({
   // List of all the messages added to the console.
   messagesById: new Map(),
+  // When recording or replaying, all progress values in messagesById.
+  replayProgressMessages: new Set(),
   // Array of the visible messages.
   visibleMessages: [],
   // Object for the filtered messages.
@@ -55,12 +58,15 @@ const MessageState = overrides => Object.freeze(Object.assign({
   // Map of the form {messageId : networkInformation}
   // `networkInformation` holds request, response, totalTime, ...
   networkMessagesUpdateById: {},
+  // Set of logpoint IDs that have been removed
+  removedLogpointIds: new Set(),
   pausedExecutionPoint: null,
 }, overrides));
 
 function cloneState(state) {
   return {
     messagesById: new Map(state.messagesById),
+    replayProgressMessages: new Set(state.replayProgressMessages),
     visibleMessages: [...state.visibleMessages],
     filteredMessagesCount: {...state.filteredMessagesCount},
     messagesUiById: [...state.messagesUiById],
@@ -70,6 +76,7 @@ function cloneState(state) {
     removedActors: [...state.removedActors],
     repeatById: {...state.repeatById},
     networkMessagesUpdateById: {...state.networkMessagesUpdateById},
+    removedLogpointIds: new Set(state.removedLogpointIds),
     pausedExecutionPoint: state.pausedExecutionPoint,
   };
 }
@@ -77,6 +84,7 @@ function cloneState(state) {
 function addMessage(state, filtersState, prefsState, newMessage) {
   const {
     messagesById,
+    replayProgressMessages,
     groupsById,
     currentGroup,
     repeatById,
@@ -84,6 +92,25 @@ function addMessage(state, filtersState, prefsState, newMessage) {
 
   if (newMessage.type === constants.MESSAGE_TYPE.NULL_MESSAGE) {
     // When the message has a NULL type, we don't add it.
+    return state;
+  }
+
+  if (newMessage.executionPoint && !newMessage.logpointId) {
+    // When replaying old behaviors in a tab, we might see the same messages
+    // multiple times. Ignore duplicate messages with the same progress values.
+    // We don't need to do this for logpoint messages, which will only arrive once.
+    const progress = newMessage.executionPoint.progress;
+    if (replayProgressMessages.has(progress)) {
+      return state;
+    }
+    state.replayProgressMessages.add(progress);
+  }
+
+  // After messages with a given logpoint ID have been removed, ignore all
+  // future messages with that ID.
+  if (newMessage.logpointId &&
+      state.removedLogpointIds &&
+      state.removedLogpointIds.has(newMessage.logpointId)) {
     return state;
   }
 
@@ -110,6 +137,8 @@ function addMessage(state, filtersState, prefsState, newMessage) {
   newMessage.groupId = currentGroup;
   newMessage.indent = parentGroups.length;
 
+  ensureExecutionPoint(state, newMessage);
+
   const addedMessage = Object.freeze(newMessage);
   state.messagesById.set(newMessage.id, addedMessage);
 
@@ -133,6 +162,7 @@ function addMessage(state, filtersState, prefsState, newMessage) {
 
   if (visible) {
     state.visibleMessages.push(newMessage.id);
+    maybeSortVisibleMessages(state);
   } else if (DEFAULT_FILTERS.includes(cause)) {
     state.filteredMessagesCount.global++;
     state.filteredMessagesCount[cause]++;
@@ -207,7 +237,7 @@ function messages(state = MessageState(), action, filtersState, prefsState) {
         }, []),
       });
 
-    case constants.PRIVATE_MESSAGES_CLEAR:
+    case constants.PRIVATE_MESSAGES_CLEAR: {
       const removedIds = [];
       for (const [id, message] of messagesById) {
         if (message.private === true) {
@@ -223,6 +253,25 @@ function messages(state = MessageState(), action, filtersState, prefsState) {
       return removeMessagesFromState({
         ...state,
       }, removedIds);
+    }
+
+    case constants.MESSAGES_CLEAR_LOGPOINT: {
+      const removedIds = [];
+      for (const [id, message] of messagesById) {
+        if (message.logpointId == action.logpointId) {
+          removedIds.push(id);
+        }
+      }
+
+      if (removedIds.length === 0) {
+        return state;
+      }
+
+      return removeMessagesFromState({
+        ...state,
+        removedLogpointIds: new Set([...state.removedLogpointIds, action.logpointId]),
+      }, removedIds);
+    }
 
     case constants.MESSAGE_OPEN:
       const openState = {...state};
@@ -350,11 +399,14 @@ function messages(state = MessageState(), action, filtersState, prefsState) {
         }
       });
 
-      return {
+      const filteredState = {
         ...state,
         visibleMessages: messagesToShow,
         filteredMessagesCount: filtered,
       };
+      maybeSortVisibleMessages(filteredState);
+
+      return filteredState;
   }
 
   return state;
@@ -924,4 +976,80 @@ function getDefaultFiltersCounter() {
   return count;
 }
 
+// Make sure that message has an execution point which can be used for sorting
+// if other messages with real execution points appear later.
+function ensureExecutionPoint(state, newMessage) {
+  if (newMessage.executionPoint) {
+    return;
+  }
+
+  // Add a lastExecutionPoint property which will place this message immediately
+  // after the last visible one when sorting.
+  let point = { progress: 0 }, messageCount = 1;
+  if (state.visibleMessages.length) {
+    const lastId = state.visibleMessages[state.visibleMessages.length - 1];
+    const lastMessage = state.messagesById.get(lastId);
+    if (lastMessage.executionPoint) {
+      point = lastMessage.executionPoint;
+    } else {
+      point = lastMessage.lastExecutionPoint.point;
+      messageCount = lastMessage.lastExecutionPoint.messageCount + 1;
+    }
+  }
+  newMessage.lastExecutionPoint = { point, messageCount };
+}
+
+function messageExecutionPoint(state, id) {
+  const message = state.messagesById.get(id);
+  return message.executionPoint || message.lastExecutionPoint.point;
+}
+
+function messageCountSinceLastExecutionPoint(state, id) {
+  const message = state.messagesById.get(id);
+  return message.lastExecutionPoint ? message.lastExecutionPoint.messageCount : 0;
+}
+
+function maybeSortVisibleMessages(state) {
+  // When using log points while replaying, messages can be added out of order
+  // with respect to how they originally executed. Use the execution point
+  // information in the messages to sort visible messages according to how
+  // they originally executed. This isn't necessary if we haven't seen any
+  // messages with progress counters, as either we aren't replaying or haven't
+  // seen any messages yet.
+  if (state.replayProgressMessages.size) {
+    state.visibleMessages.sort((a, b) => {
+      const pointA = messageExecutionPoint(state, a);
+      const pointB = messageExecutionPoint(state, b);
+      if (pointA.progress != pointB.progress) {
+        return pointA.progress > pointB.progress;
+      }
+      // Execution points without a progress counter predate execution points
+      // with one, i.e. a console.log() call (which bumps the progress value)
+      // predates the code that runs afterward.
+      if ("frameIndex" in pointA != "frameIndex" in pointB) {
+        return "frameIndex" in pointA;
+      }
+      // Deeper frames predate shallower frames, if the progress counter is the
+      // same. We bump the progress counter when pushing frames, but not when
+      // popping them.
+      if (pointA.frameIndex != pointB.frameIndex) {
+        return pointA.frameIndex < pointB.frameIndex;
+      }
+      // Earlier script locations predate later script locations.
+      if (pointA.offset != pointB.offset) {
+        return pointA.offset > pointB.offset;
+      }
+      // When messages don't have their own execution point, they can still be
+      // distinguished by the number of messages since the last one which did
+      // have an execution point.
+      const countA = messageCountSinceLastExecutionPoint(state, a);
+      const countB = messageCountSinceLastExecutionPoint(state, b);
+      return countA > countB;
+    });
+  }
+}
+
 exports.messages = messages;
+
+// Export for testing purpose.
+exports.ensureExecutionPoint = ensureExecutionPoint;

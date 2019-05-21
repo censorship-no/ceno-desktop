@@ -1,8 +1,6 @@
 "use strict";
 
-const {ExtensionManager} = ChromeUtils.import("resource://gre/modules/ExtensionChild.jsm", {});
-
-Cu.importGlobalProperties(["Blob", "URL"]);
+const {ExtensionManager} = ChromeUtils.import("resource://gre/modules/ExtensionChild.jsm", null);
 
 let experimentAPIs = {
   userinputtest: {

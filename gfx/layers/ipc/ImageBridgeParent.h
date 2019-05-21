@@ -7,28 +7,28 @@
 #ifndef gfx_layers_ipc_ImageBridgeParent_h_
 #define gfx_layers_ipc_ImageBridgeParent_h_
 
-#include <stddef.h>                     // for size_t
-#include <stdint.h>                     // for uint32_t, uint64_t
+#include <stddef.h>  // for size_t
+#include <stdint.h>  // for uint32_t, uint64_t
 #include "CompositableTransactionParent.h"
-#include "mozilla/Assertions.h"         // for MOZ_ASSERT_HELPER2
-#include "mozilla/Attributes.h"         // for override
+#include "mozilla/Assertions.h"  // for MOZ_ASSERT_HELPER2
+#include "mozilla/Attributes.h"  // for override
 #include "mozilla/ipc/ProtocolUtils.h"
-#include "mozilla/ipc/SharedMemory.h"   // for SharedMemory, etc
+#include "mozilla/ipc/SharedMemory.h"  // for SharedMemory, etc
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/PImageBridgeParent.h"
 #include "nsISupportsImpl.h"
-#include "nsTArrayForwardDeclare.h"     // for InfallibleTArray
+#include "nsTArrayForwardDeclare.h"  // for InfallibleTArray
 
 class MessageLoop;
 
 namespace base {
 class Thread;
-} // namespace base
+}  // namespace base
 
 namespace mozilla {
 namespace ipc {
 class Shmem;
-} // namespace ipc
+}  // namespace ipc
 
 namespace layers {
 
@@ -39,16 +39,15 @@ struct ImageCompositeNotificationInfo;
  */
 class ImageBridgeParent final : public PImageBridgeParent,
                                 public CompositableParentManager,
-                                public ShmemAllocator
-{
-public:
+                                public ShmemAllocator {
+ public:
   typedef InfallibleTArray<CompositableOperation> EditArray;
   typedef InfallibleTArray<OpDestroy> OpDestroyArray;
 
-protected:
+ protected:
   ImageBridgeParent(MessageLoop* aLoop, ProcessId aChildProcessId);
 
-public:
+ public:
   ~ImageBridgeParent();
 
   /**
@@ -66,37 +65,38 @@ public:
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
   // CompositableParentManager
-  virtual void SendAsyncMessage(const InfallibleTArray<AsyncParentMessageData>& aMessage) override;
+  virtual void SendAsyncMessage(
+      const InfallibleTArray<AsyncParentMessageData>& aMessage) override;
 
-  virtual void NotifyNotUsed(PTextureParent* aTexture, uint64_t aTransactionId) override;
+  virtual void NotifyNotUsed(PTextureParent* aTexture,
+                             uint64_t aTransactionId) override;
 
-  virtual base::ProcessId GetChildProcessId() override
-  {
-    return OtherPid();
-  }
+  virtual base::ProcessId GetChildProcessId() override { return OtherPid(); }
 
   // PImageBridge
-  virtual mozilla::ipc::IPCResult RecvUpdate(EditArray&& aEdits, OpDestroyArray&& aToDestroy,
-                                          const uint64_t& aFwdTransactionId) override;
+  mozilla::ipc::IPCResult RecvUpdate(EditArray&& aEdits,
+                                     OpDestroyArray&& aToDestroy,
+                                     const uint64_t& aFwdTransactionId);
 
-  virtual PTextureParent* AllocPTextureParent(const SurfaceDescriptor& aSharedData,
-                                              const ReadLockDescriptor& aReadLock,
-                                              const LayersBackend& aLayersBackend,
-                                              const TextureFlags& aFlags,
-                                              const uint64_t& aSerial,
-                                              const wr::MaybeExternalImageId& aExternalImageId) override;
-  virtual bool DeallocPTextureParent(PTextureParent* actor) override;
+  PTextureParent* AllocPTextureParent(
+      const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
+      const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
+      const uint64_t& aSerial,
+      const wr::MaybeExternalImageId& aExternalImageId);
+  bool DeallocPTextureParent(PTextureParent* actor);
 
-  virtual mozilla::ipc::IPCResult RecvNewCompositable(const CompositableHandle& aHandle,
-                                                      const TextureInfo& aInfo,
-                                                      const LayersBackend& aLayersBackend) override;
-  virtual mozilla::ipc::IPCResult RecvReleaseCompositable(const CompositableHandle& aHandle) override;
+  mozilla::ipc::IPCResult RecvNewCompositable(
+      const CompositableHandle& aHandle, const TextureInfo& aInfo,
+      const LayersBackend& aLayersBackend);
+  mozilla::ipc::IPCResult RecvReleaseCompositable(
+      const CompositableHandle& aHandle);
 
-  PMediaSystemResourceManagerParent* AllocPMediaSystemResourceManagerParent() override;
-  bool DeallocPMediaSystemResourceManagerParent(PMediaSystemResourceManagerParent* aActor) override;
+  PMediaSystemResourceManagerParent* AllocPMediaSystemResourceManagerParent();
+  bool DeallocPMediaSystemResourceManagerParent(
+      PMediaSystemResourceManagerParent* aActor);
 
   // Shutdown step 1
-  virtual mozilla::ipc::IPCResult RecvWillClose() override;
+  mozilla::ipc::IPCResult RecvWillClose();
 
   MessageLoop* GetMessageLoop() const { return mMessageLoop; }
 
@@ -116,16 +116,17 @@ public:
 
   static already_AddRefed<ImageBridgeParent> GetInstance(ProcessId aId);
 
-  static bool NotifyImageComposites(nsTArray<ImageCompositeNotificationInfo>& aNotifications);
+  static bool NotifyImageComposites(
+      nsTArray<ImageCompositeNotificationInfo>& aNotifications);
 
   virtual bool UsesImageBridge() const override { return true; }
 
   virtual bool IPCOpen() const override { return !mClosed; }
 
-protected:
+ protected:
   void Bind(Endpoint<PImageBridgeParent>&& aEndpoint);
 
-private:
+ private:
   static void ShutdownInternal();
 
   void DeferredDestroy();
@@ -145,7 +146,7 @@ private:
   RefPtr<CompositorThreadHolder> mCompositorThreadHolder;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
-#endif // gfx_layers_ipc_ImageBridgeParent_h_
+#endif  // gfx_layers_ipc_ImageBridgeParent_h_

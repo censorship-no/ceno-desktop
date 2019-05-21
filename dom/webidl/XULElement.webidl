@@ -60,6 +60,10 @@ interface XULElement : Element {
   [SetterThrows]
   attribute DOMString top;
 
+  // Return the screen coordinates of the element.
+  readonly attribute long screenX;
+  readonly attribute long screenY;
+
   // Tooltip
   [SetterThrows]
   attribute DOMString tooltipText;
@@ -75,6 +79,8 @@ interface XULElement : Element {
   [Throws]
   readonly attribute BoxObject?                 boxObject;
 
+  [SetterThrows]
+  attribute long tabIndex;
   [Throws]
   void                      focus();
   [Throws]

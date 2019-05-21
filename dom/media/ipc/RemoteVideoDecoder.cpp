@@ -1,218 +1,214 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 #include "RemoteVideoDecoder.h"
-#include "VideoDecoderChild.h"
-#include "VideoDecoderManagerChild.h"
-#include "mozilla/layers/TextureClient.h"
-#include "mozilla/StaticPrefs.h"
-#include "base/thread.h"
-#include "MediaInfo.h"
-#include "ImageContainer.h"
-#include "mozilla/layers/SynchronousTask.h"
+
+#include "mozilla/layers/ImageDataSerializer.h"
+
+#ifdef MOZ_AV1
+#  include "AOMDecoder.h"
+#  include "DAV1DDecoder.h"
+#endif
+#include "ImageContainer.h"  // for PlanarYCbCrData and BufferRecycleBin
+#include "RemoteDecoderManagerChild.h"
 
 namespace mozilla {
-namespace dom {
 
-using base::Thread;
-using namespace ipc;
-using namespace layers;
-using namespace gfx;
+using namespace layers;  // for PlanarYCbCrData and BufferRecycleBin
 
-RemoteVideoDecoder::RemoteVideoDecoder()
-  : mActor(new VideoDecoderChild())
-  , mDescription("RemoteVideoDecoder")
-  , mIsHardwareAccelerated(false)
-  , mConversion(MediaDataDecoder::ConversionRequired::kNeedNone)
-{
-}
+RemoteVideoDecoderChild::RemoteVideoDecoderChild()
+    : RemoteDecoderChild(), mBufferRecycleBin(new BufferRecycleBin) {}
 
-RemoteVideoDecoder::~RemoteVideoDecoder()
-{
-  // We're about to be destroyed and drop our ref to
-  // VideoDecoderChild. Make sure we put a ref into the
-  // task queue for the VideoDecoderChild thread to keep
-  // it alive until we send the delete message.
-  RefPtr<VideoDecoderChild> actor = mActor;
-
-  RefPtr<Runnable> task = NS_NewRunnableFunction(
-    "dom::RemoteVideoDecoder::~RemoteVideoDecoder", [actor]() {
-      MOZ_ASSERT(actor);
-      actor->DestroyIPDL();
-    });
-
-  // Drop out references to the actor so that the last ref
-  // always gets released on the manager thread.
-  actor = nullptr;
-  mActor = nullptr;
-
-  VideoDecoderManagerChild::GetManagerThread()->Dispatch(task.forget(),
-                                                         NS_DISPATCH_NORMAL);
-}
-
-RefPtr<MediaDataDecoder::InitPromise>
-RemoteVideoDecoder::Init()
-{
-  RefPtr<RemoteVideoDecoder> self = this;
-  return InvokeAsync(VideoDecoderManagerChild::GetManagerAbstractThread(),
-                     __func__,
-                     [self]() { return self->mActor->Init(); })
-    ->Then(VideoDecoderManagerChild::GetManagerAbstractThread(),
-           __func__,
-           [self, this](TrackType aTrack) {
-             mDescription =
-               mActor->GetDescriptionName() + NS_LITERAL_CSTRING(" (remote)");
-             mIsHardwareAccelerated =
-               mActor->IsHardwareAccelerated(mHardwareAcceleratedReason);
-             mConversion = mActor->NeedsConversion();
-             return InitPromise::CreateAndResolve(aTrack, __func__);
-           },
-           [self](const MediaResult& aError) {
-             return InitPromise::CreateAndReject(aError, __func__);
-           });
-}
-
-RefPtr<MediaDataDecoder::DecodePromise>
-RemoteVideoDecoder::Decode(MediaRawData* aSample)
-{
-  RefPtr<RemoteVideoDecoder> self = this;
-  RefPtr<MediaRawData> sample = aSample;
-  return InvokeAsync(VideoDecoderManagerChild::GetManagerAbstractThread(),
-                     __func__,
-                     [self, sample]() { return self->mActor->Decode(sample); });
-}
-
-RefPtr<MediaDataDecoder::FlushPromise>
-RemoteVideoDecoder::Flush()
-{
-  RefPtr<RemoteVideoDecoder> self = this;
-  return InvokeAsync(VideoDecoderManagerChild::GetManagerAbstractThread(),
-                     __func__, [self]() { return self->mActor->Flush(); });
-}
-
-RefPtr<MediaDataDecoder::DecodePromise>
-RemoteVideoDecoder::Drain()
-{
-  RefPtr<RemoteVideoDecoder> self = this;
-  return InvokeAsync(VideoDecoderManagerChild::GetManagerAbstractThread(),
-                     __func__, [self]() { return self->mActor->Drain(); });
-}
-
-RefPtr<ShutdownPromise>
-RemoteVideoDecoder::Shutdown()
-{
-  RefPtr<RemoteVideoDecoder> self = this;
-  return InvokeAsync(VideoDecoderManagerChild::GetManagerAbstractThread(),
-                     __func__, [self]() {
-                       self->mActor->Shutdown();
-                       return ShutdownPromise::CreateAndResolve(true, __func__);
-                     });
-}
-
-bool
-RemoteVideoDecoder::IsHardwareAccelerated(nsACString& aFailureReason) const
-{
-  aFailureReason = mHardwareAcceleratedReason;
-  return mIsHardwareAccelerated;
-}
-
-void
-RemoteVideoDecoder::SetSeekThreshold(const media::TimeUnit& aTime)
-{
-  RefPtr<RemoteVideoDecoder> self = this;
-  media::TimeUnit time = aTime;
-  VideoDecoderManagerChild::GetManagerThread()->Dispatch(
-    NS_NewRunnableFunction("dom::RemoteVideoDecoder::SetSeekThreshold",
-                           [=]() {
-                             MOZ_ASSERT(self->mActor);
-                             self->mActor->SetSeekThreshold(time);
-                           }),
-    NS_DISPATCH_NORMAL);
-}
-
-MediaDataDecoder::ConversionRequired
-RemoteVideoDecoder::NeedsConversion() const
-{
-  return mConversion;
-}
-
-nsresult
-RemoteDecoderModule::Startup()
-{
-  if (!VideoDecoderManagerChild::GetManagerThread()) {
-    return NS_ERROR_FAILURE;
+RefPtr<mozilla::layers::Image> RemoteVideoDecoderChild::DeserializeImage(
+    const SurfaceDescriptorBuffer& aSdBuffer, const IntSize& aPicSize) {
+  MOZ_ASSERT(aSdBuffer.desc().type() == BufferDescriptor::TYCbCrDescriptor);
+  if (aSdBuffer.desc().type() != BufferDescriptor::TYCbCrDescriptor) {
+    return nullptr;
   }
-  return mWrapped->Startup();
-}
+  const YCbCrDescriptor& descriptor = aSdBuffer.desc().get_YCbCrDescriptor();
 
-bool
-RemoteDecoderModule::SupportsMimeType(const nsACString& aMimeType,
-                                      DecoderDoctorDiagnostics* aDiagnostics) const
-{
-  return mWrapped->SupportsMimeType(aMimeType, aDiagnostics);
-}
-
-bool
-RemoteDecoderModule::Supports(const TrackInfo& aTrackInfo,
-                              DecoderDoctorDiagnostics* aDiagnostics) const
-{
-  return mWrapped->Supports(aTrackInfo, aDiagnostics);
-}
-
-static inline bool
-IsRemoteAcceleratedCompositor(KnowsCompositor* aKnows)
-{
-  TextureFactoryIdentifier ident = aKnows->GetTextureFactoryIdentifier();
-  return ident.mParentBackend != LayersBackend::LAYERS_BASIC &&
-         ident.mParentProcessType == GeckoProcessType_GPU;
-}
-
-already_AddRefed<MediaDataDecoder>
-RemoteDecoderModule::CreateVideoDecoder(const CreateDecoderParams& aParams)
-{
-  if (!StaticPrefs::MediaGpuProcessDecoder() ||
-      !aParams.mKnowsCompositor ||
-      !IsRemoteAcceleratedCompositor(aParams.mKnowsCompositor))
-  {
-    return mWrapped->CreateVideoDecoder(aParams);
+  uint8_t* buffer = nullptr;
+  const MemoryOrShmem& memOrShmem = aSdBuffer.data();
+  switch (memOrShmem.type()) {
+    case MemoryOrShmem::Tuintptr_t:
+      buffer = reinterpret_cast<uint8_t*>(memOrShmem.get_uintptr_t());
+      break;
+    case MemoryOrShmem::TShmem:
+      buffer = memOrShmem.get_Shmem().get<uint8_t>();
+      break;
+    default:
+      MOZ_ASSERT(false, "Unknown MemoryOrShmem type");
   }
-
-  RefPtr<RemoteVideoDecoder> object = new RemoteVideoDecoder();
-
-  SynchronousTask task("InitIPDL");
-  MediaResult result(NS_OK);
-  VideoDecoderManagerChild::GetManagerThread()->Dispatch(
-    NS_NewRunnableFunction(
-      "dom::RemoteDecoderModule::CreateVideoDecoder",
-      [&]() {
-        AutoCompleteTask complete(&task);
-        result = object->mActor->InitIPDL(
-          aParams.VideoConfig(),
-          aParams.mRate.mValue,
-          aParams.mOptions,
-          aParams.mKnowsCompositor->GetTextureFactoryIdentifier());
-      }),
-    NS_DISPATCH_NORMAL);
-  task.Wait();
-
-  if (NS_FAILED(result)) {
-    if (aParams.mError) {
-      *aParams.mError = result;
-    }
+  if (!buffer) {
     return nullptr;
   }
 
-  return object.forget();
+  PlanarYCbCrData pData;
+  pData.mYSize = descriptor.ySize();
+  pData.mYStride = descriptor.yStride();
+  pData.mCbCrSize = descriptor.cbCrSize();
+  pData.mCbCrStride = descriptor.cbCrStride();
+  // default mYSkip, mCbSkip, mCrSkip because not held in YCbCrDescriptor
+  pData.mYSkip = pData.mCbSkip = pData.mCrSkip = 0;
+  // default mPicX, mPicY because not held in YCbCrDescriptor
+  pData.mPicX = pData.mPicY = 0;
+  pData.mPicSize = aPicSize;
+  pData.mStereoMode = descriptor.stereoMode();
+  pData.mColorDepth = descriptor.colorDepth();
+  pData.mYUVColorSpace = descriptor.yUVColorSpace();
+  pData.mYChannel = ImageDataSerializer::GetYChannel(buffer, descriptor);
+  pData.mCbChannel = ImageDataSerializer::GetCbChannel(buffer, descriptor);
+  pData.mCrChannel = ImageDataSerializer::GetCrChannel(buffer, descriptor);
+
+  // images coming from AOMDecoder are RecyclingPlanarYCbCrImages.
+  RefPtr<RecyclingPlanarYCbCrImage> image =
+      new RecyclingPlanarYCbCrImage(mBufferRecycleBin);
+  bool setData = image->CopyData(pData);
+  MOZ_ASSERT(setData);
+
+  switch (memOrShmem.type()) {
+    case MemoryOrShmem::Tuintptr_t:
+      delete[] reinterpret_cast<uint8_t*>(memOrShmem.get_uintptr_t());
+      break;
+    case MemoryOrShmem::TShmem:
+      DeallocShmem(memOrShmem.get_Shmem());
+      break;
+    default:
+      MOZ_ASSERT(false, "Unknown MemoryOrShmem type");
+  }
+
+  if (!setData) {
+    return nullptr;
+  }
+
+  return image;
 }
 
-nsCString
-RemoteVideoDecoder::GetDescriptionName() const
-{
-  return mDescription;
+mozilla::ipc::IPCResult RemoteVideoDecoderChild::RecvOutput(
+    const DecodedOutputIPDL& aDecodedData) {
+  AssertOnManagerThread();
+  MOZ_ASSERT(aDecodedData.type() == DecodedOutputIPDL::TRemoteVideoDataIPDL);
+  const RemoteVideoDataIPDL& aData = aDecodedData.get_RemoteVideoDataIPDL();
+
+  RefPtr<Image> image = DeserializeImage(aData.sdBuffer(), aData.frameSize());
+
+  RefPtr<VideoData> video = VideoData::CreateFromImage(
+      aData.display(), aData.base().offset(), aData.base().time(),
+      aData.base().duration(), image, aData.base().keyframe(),
+      aData.base().timecode());
+
+  mDecodedData.AppendElement(std::move(video));
+  return IPC_OK();
 }
 
-} // namespace dom
-} // namespace mozilla
+MediaResult RemoteVideoDecoderChild::InitIPDL(
+    const VideoInfo& aVideoInfo, float aFramerate,
+    const CreateDecoderParams::OptionSet& aOptions) {
+  RefPtr<RemoteDecoderManagerChild> manager =
+      RemoteDecoderManagerChild::GetSingleton();
+
+  // The manager isn't available because RemoteDecoderManagerChild has been
+  // initialized with null end points and we don't want to decode video on RDD
+  // process anymore. Return false here so that we can fallback to other PDMs.
+  if (!manager) {
+    return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                       RESULT_DETAIL("RemoteDecoderManager is not available."));
+  }
+
+  if (!manager->CanSend()) {
+    return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                       RESULT_DETAIL("RemoteDecoderManager unable to send."));
+  }
+
+  mIPDLSelfRef = this;
+  bool success = false;
+  nsCString errorDescription;
+  VideoDecoderInfoIPDL decoderInfo(aVideoInfo, aFramerate);
+  if (manager->SendPRemoteDecoderConstructor(this, decoderInfo, aOptions,
+                                             &success, &errorDescription)) {
+    mCanSend = true;
+  }
+
+  return success ? MediaResult(NS_OK)
+                 : MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR, errorDescription);
+}
+
+RemoteVideoDecoderParent::RemoteVideoDecoderParent(
+    RemoteDecoderManagerParent* aParent, const VideoInfo& aVideoInfo,
+    float aFramerate, const CreateDecoderParams::OptionSet& aOptions,
+    TaskQueue* aManagerTaskQueue, TaskQueue* aDecodeTaskQueue, bool* aSuccess,
+    nsCString* aErrorDescription)
+    : RemoteDecoderParent(aParent, aManagerTaskQueue, aDecodeTaskQueue),
+      mVideoInfo(aVideoInfo) {
+  CreateDecoderParams params(mVideoInfo);
+  params.mTaskQueue = mDecodeTaskQueue;
+  params.mImageContainer = new layers::ImageContainer();
+  params.mRate = CreateDecoderParams::VideoFrameRate(aFramerate);
+  params.mOptions = aOptions;
+  MediaResult error(NS_OK);
+  params.mError = &error;
+
+#ifdef MOZ_AV1
+  if (AOMDecoder::IsAV1(params.mConfig.mMimeType)) {
+    if (StaticPrefs::MediaAv1UseDav1d()) {
+      mDecoder = new DAV1DDecoder(params);
+    } else {
+      mDecoder = new AOMDecoder(params);
+    }
+  }
+#endif
+
+  if (NS_FAILED(error)) {
+    MOZ_ASSERT(aErrorDescription);
+    *aErrorDescription = error.Description();
+  }
+
+  *aSuccess = !!mDecoder;
+}
+
+MediaResult RemoteVideoDecoderParent::ProcessDecodedData(
+    const MediaDataDecoder::DecodedData& aData) {
+  MOZ_ASSERT(OnManagerThread());
+
+  for (const auto& data : aData) {
+    MOZ_ASSERT(data->mType == MediaData::Type::VIDEO_DATA,
+               "Can only decode videos using RemoteDecoderParent!");
+    VideoData* video = static_cast<VideoData*>(data.get());
+
+    MOZ_ASSERT(video->mImage,
+               "Decoded video must output a layer::Image to "
+               "be used with RemoteDecoderParent");
+
+    PlanarYCbCrImage* image =
+        static_cast<PlanarYCbCrImage*>(video->mImage.get());
+
+    SurfaceDescriptorBuffer sdBuffer;
+    Shmem buffer;
+    if (!AllocShmem(image->GetDataSize(), Shmem::SharedMemory::TYPE_BASIC,
+                    &buffer)) {
+      return MediaResult(NS_ERROR_OUT_OF_MEMORY,
+                         "AllocShmem failed in "
+                         "RemoteVideoDecoderParent::ProcessDecodedData");
+    }
+    if (image->GetDataSize() > buffer.Size<uint8_t>()) {
+      return MediaResult(NS_ERROR_OUT_OF_MEMORY,
+                         "AllocShmem returned less than requested in "
+                         "RemoteVideoDecoderParent::ProcessDecodedData");
+    }
+
+    sdBuffer.data() = std::move(buffer);
+    image->BuildSurfaceDescriptorBuffer(sdBuffer);
+
+    RemoteVideoDataIPDL output(
+        MediaDataIPDL(data->mOffset, data->mTime, data->mTimecode,
+                      data->mDuration, data->mKeyframe),
+        video->mDisplay, image->GetSize(), sdBuffer, video->mFrameID);
+    Unused << SendOutput(output);
+  }
+
+  return NS_OK;
+}
+
+}  // namespace mozilla

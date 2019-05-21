@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Ok, jag förstår",
   "prefs_home_header": "Innehåll Firefox-startskärm",
   "prefs_home_description": "Välj vilket innehåll du vill ha på din startskärm i Firefox.",
+  "prefs_content_discovery_header": "Firefox startsida",
+  "prefs_content_discovery_description": "Content Discovery på Firefox startsida låter dig upptäcka högkvalitativa, relevanta artiklar från hela webben.",
+  "prefs_content_discovery_button": "Stäng av Content Discovery",
   "prefs_section_rows_option": "{num} rad;{num} rader",
   "prefs_search_header": "Webbsök",
   "prefs_topsites_description": "Sidorna du besöker mest",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Spara de historier som du tycker är intressant i Pocket, och stimulera dina tankar med fascinerande läsmaterial.",
   "highlights_empty_state": "Börja surfa, och vi visar några av de bästa artiklarna, videoklippen och andra sidor du nyligen har besökt eller bokmärkt här.",
   "topstories_empty_state": "Det finns inte fler. Kom tillbaka senare för fler huvudnyheter från {provider}. Kan du inte vänta? Välj ett populärt ämne för att hitta fler bra nyheter från hela världen.",
-  "manual_migration_explanation2": "Testa Firefox med bokmärken, historik och lösenord från en annan webbläsare.",
-  "manual_migration_cancel_button": "Nej tack",
-  "manual_migration_import_button": "Importera nu",
   "error_fallback_default_info": "Oj, något gick fel när innehållet skulle laddas.",
   "error_fallback_default_refresh_suggestion": "Uppdatera sidan för att försöka igen.",
   "section_menu_action_remove_section": "Ta bort sektion",
@@ -108,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Fortsätt",
   "firstrun_skip_login": "Hoppa över det här steget",
   "context_menu_title": "Öppna meny",
-  "pocket_learn_more": "Läs mer"
+  "manual_migration_explanation2": "Testa Firefox med bokmärken, historik och lösenord från en annan webbläsare.",
+  "manual_migration_cancel_button": "Nej tack",
+  "manual_migration_import_button": "Importera nu"
 };

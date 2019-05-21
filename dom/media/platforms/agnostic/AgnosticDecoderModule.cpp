@@ -14,44 +14,53 @@
 #include "mozilla/StaticPrefs.h"
 
 #ifdef MOZ_AV1
-#include "AOMDecoder.h"
+#  include "AOMDecoder.h"
+#  include "DAV1DDecoder.h"
 #endif
 
 namespace mozilla {
 
-bool
-AgnosticDecoderModule::SupportsMimeType(
-  const nsACString& aMimeType,
-  DecoderDoctorDiagnostics* aDiagnostics) const
-{
+bool AgnosticDecoderModule::SupportsMimeType(
+    const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
   bool supports =
-    VPXDecoder::IsVPX(aMimeType) ||
-    OpusDataDecoder::IsOpus(aMimeType) ||
-    VorbisDataDecoder::IsVorbis(aMimeType) ||
-    WaveDataDecoder::IsWave(aMimeType) ||
-    TheoraDecoder::IsTheora(aMimeType);
+      VPXDecoder::IsVPX(aMimeType) || OpusDataDecoder::IsOpus(aMimeType) ||
+      WaveDataDecoder::IsWave(aMimeType) || TheoraDecoder::IsTheora(aMimeType);
+  if (!StaticPrefs::MediaRddVorbisEnabled() ||
+      !StaticPrefs::MediaRddProcessEnabled()) {
+    supports |= VorbisDataDecoder::IsVorbis(aMimeType);
+  }
 #ifdef MOZ_AV1
-  if (StaticPrefs::MediaAv1Enabled()) {
+  // We remove support for decoding AV1 here if RDD is enabled so that
+  // decoding on the content process doesn't accidentally happen in case
+  // something goes wrong with launching the RDD process.
+  if (StaticPrefs::MediaAv1Enabled() &&
+      !StaticPrefs::MediaRddProcessEnabled()) {
     supports |= AOMDecoder::IsAV1(aMimeType);
   }
 #endif
-  MOZ_LOG(sPDMLog, LogLevel::Debug, ("Agnostic decoder %s requested type",
-        supports ? "supports" : "rejects"));
+  MOZ_LOG(sPDMLog, LogLevel::Debug,
+          ("Agnostic decoder %s requested type",
+           supports ? "supports" : "rejects"));
   return supports;
 }
 
-already_AddRefed<MediaDataDecoder>
-AgnosticDecoderModule::CreateVideoDecoder(const CreateDecoderParams& aParams)
-{
+already_AddRefed<MediaDataDecoder> AgnosticDecoderModule::CreateVideoDecoder(
+    const CreateDecoderParams& aParams) {
   RefPtr<MediaDataDecoder> m;
 
   if (VPXDecoder::IsVPX(aParams.mConfig.mMimeType)) {
     m = new VPXDecoder(aParams);
   }
 #ifdef MOZ_AV1
+  // see comment above about AV1 and the RDD process
   else if (AOMDecoder::IsAV1(aParams.mConfig.mMimeType) &&
+           !StaticPrefs::MediaRddProcessEnabled() &&
            StaticPrefs::MediaAv1Enabled()) {
-    m = new AOMDecoder(aParams);
+    if (StaticPrefs::MediaAv1UseDav1d()) {
+      m = new DAV1DDecoder(aParams);
+    } else {
+      m = new AOMDecoder(aParams);
+    }
   }
 #endif
   else if (TheoraDecoder::IsTheora(aParams.mConfig.mMimeType)) {
@@ -61,9 +70,8 @@ AgnosticDecoderModule::CreateVideoDecoder(const CreateDecoderParams& aParams)
   return m.forget();
 }
 
-already_AddRefed<MediaDataDecoder>
-AgnosticDecoderModule::CreateAudioDecoder(const CreateDecoderParams& aParams)
-{
+already_AddRefed<MediaDataDecoder> AgnosticDecoderModule::CreateAudioDecoder(
+    const CreateDecoderParams& aParams) {
   RefPtr<MediaDataDecoder> m;
 
   const TrackInfo& config = aParams.mConfig;
@@ -78,4 +86,4 @@ AgnosticDecoderModule::CreateAudioDecoder(const CreateDecoderParams& aParams)
   return m.forget();
 }
 
-} // namespace mozilla
+}  // namespace mozilla

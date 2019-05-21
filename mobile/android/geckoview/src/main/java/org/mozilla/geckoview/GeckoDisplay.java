@@ -6,70 +6,145 @@
 
 package org.mozilla.geckoview;
 
+import android.graphics.Bitmap;
+import android.support.annotation.NonNull;
+import android.support.annotation.UiThread;
 import android.view.Surface;
+
+import org.mozilla.gecko.util.ThreadUtils;
 
 /**
  * Applications use a GeckoDisplay instance to provide {@link GeckoSession} with a {@link Surface} for
  * displaying content. To ensure drawing only happens on a valid {@link Surface}, {@link GeckoSession}
- * will only use the provided {@link Surface} after {@link #surfaceChanged(Surface, int, int)} is
- * called and before {@link #surfaceDestroyed()} returns.
+ * will only use the provided {@link Surface} after {@link #surfaceChanged(Surface, int, int)} or
+ * {@link #surfaceChanged(Surface, int, int, int, int)} is called and before {@link #surfaceDestroyed()} returns.
  */
 public class GeckoDisplay {
-    private final GeckoSession session;
+    private final GeckoSession mSession;
 
     protected GeckoDisplay(final GeckoSession session) {
-        this.session = session;
+        mSession = session;
     }
 
     /**
-     * Required callback. The display's Surface has been created or changed. Must be
+     * Sets a surface for the compositor render a surface.
+     *
+     * Required call. The display's Surface has been created or changed. Must be
      * called on the application main thread. GeckoSession may block this call to ensure
      * the Surface is valid while resuming drawing.
      *
      * @param surface The new Surface.
-     * @param width New width of the Surface.
-     * @param height New height of the Surface.
+     * @param width New width of the Surface. Can not be negative.
+     * @param height New height of the Surface. Can not be negative.
      */
-    public void surfaceChanged(Surface surface, int width, int height) {
-        if (session.getDisplay() == this) {
-            session.onSurfaceChanged(surface, width, height);
+    @UiThread
+    public void surfaceChanged(@NonNull final Surface surface, final int width, final int height) {
+        surfaceChanged(surface, 0, 0, width, height);
+    }
+
+    /**
+     * Sets a surface for the compositor render a surface.
+     *
+     * Required call. The display's Surface has been created or changed. Must be
+     * called on the application main thread. GeckoSession may block this call to ensure
+     * the Surface is valid while resuming drawing. The origin of the content window
+     * (0, 0) is the top left corner of the screen.
+     *
+     * @param surface The new Surface.
+     * @param left The compositor origin offset in the X axis. Can not be negative.
+     * @param top The compositor origin offset in the Y axis. Can not be negative.
+     * @param width New width of the Surface. Can not be negative.
+     * @param height New height of the Surface. Can not be negative.
+     * @throws IllegalArgumentException if left or top are negative.
+     */
+    @UiThread
+    public void surfaceChanged(@NonNull final Surface surface, final int left, final int top,
+                               final int width, final int height) {
+        ThreadUtils.assertOnUiThread();
+
+        if ((left < 0) || (top < 0)) {
+            throw new IllegalArgumentException("Parameters can not be negative.");
+        }
+
+        if (mSession.getDisplay() == this) {
+            mSession.onSurfaceChanged(surface, left, top, width, height);
         }
     }
 
     /**
-     * Required callback. The display's Surface has been destroyed. Must be called on the
+     * Removes the current surface registered with the compositor.
+     *
+     * Required call. The display's Surface has been destroyed. Must be called on the
      * application main thread. GeckoSession may block this call to ensure the Surface is
      * valid while pausing drawing.
      */
+    @UiThread
     public void surfaceDestroyed() {
-        if (session.getDisplay() == this) {
-            session.onSurfaceDestroyed();
+        ThreadUtils.assertOnUiThread();
+
+        if (mSession.getDisplay() == this) {
+            mSession.onSurfaceDestroyed();
         }
     }
 
     /**
-     * Optional callback. The display's coordinates on the screen has changed. Must be
+     * Update the position of the surface on the screen.
+     *
+     * Optional call. The display's coordinates on the screen has changed. Must be
      * called on the application main thread.
      *
      * @param left The X coordinate of the display on the screen, in screen pixels.
      * @param top The Y coordinate of the display on the screen, in screen pixels.
      */
+    @UiThread
     public void screenOriginChanged(final int left, final int top) {
-        if (session.getDisplay() == this) {
-            session.onScreenOriginChanged(left, top);
+        ThreadUtils.assertOnUiThread();
+
+        if (mSession.getDisplay() == this) {
+            mSession.onScreenOriginChanged(left, top);
         }
     }
 
     /**
-     * Return whether the display should be pinned on the screen. When pinned, the display
-     * should not be moved on the screen due to animation, scrolling, etc. A common reason
-     * for the display being pinned is when the user is dragging a selection caret inside
-     * the display; normal user interaction would be disrupted in that case if the display
+     * Return whether the display should be pinned on the screen.
+     *
+     * When pinned, the display should not be moved on the screen due to animation, scrolling, etc.
+     * A common reason for the display being pinned is when the user is dragging a selection caret
+     * inside the display; normal user interaction would be disrupted in that case if the display
      * was moved on screen.
      *
      * @return True if display should be pinned on the screen.
      */
+    @UiThread
     public boolean shouldPinOnScreen() {
-        return session.getDisplay() == this && session.shouldPinOnScreen();
+        ThreadUtils.assertOnUiThread();
+        return mSession.getDisplay() == this && mSession.shouldPinOnScreen();
+    }
+
+    /**
+     * Request a {@link Bitmap} of the visible portion of the web page currently being
+     * rendered.
+     *
+     * Returned {@link Bitmap} will have the same dimensions as the {@link Surface} the
+     * {@link GeckoDisplay} is currently using.
+     *
+     * If the {@link GeckoSession#isCompositorReady} is false the {@link GeckoResult} will complete
+     * with an {@link IllegalStateException}.
+     *
+     * This function must be called on the UI thread.
+     *
+     * @return A {@link GeckoResult} that completes with a {@link Bitmap} containing
+     * the pixels and size information of the currently visible rendered web page.
+     */
+    @UiThread
+    public @NonNull GeckoResult<Bitmap> capturePixels() {
+        ThreadUtils.assertOnUiThread();
+        if (!mSession.isCompositorReady()) {
+            return GeckoResult.fromException(
+                    new IllegalStateException("Compositor must be ready before pixels can be captured"));
+        }
+        GeckoResult<Bitmap> result = new GeckoResult<>();
+        mSession.mCompositor.requestScreenPixels(result);
+        return result;
     }
 }

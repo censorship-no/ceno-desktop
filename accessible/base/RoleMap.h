@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// clang-format off
 /**
  * Usage: declare the macro ROLE()with the following arguments:
  * ROLE(geckoRole, stringRole, atkRole, macRole, msaaRole, ia2Role, nameRule)
@@ -957,7 +958,7 @@ ROLE(NON_NATIVE_DOCUMENT,
      "non-native document",
      ATK_ROLE_DOCUMENT_FRAME,
      NSAccessibilityGroupRole,
-     USE_ROLE_STRING,
+     ROLE_SYSTEM_DOCUMENT,
      ROLE_SYSTEM_DOCUMENT,
      java::SessionAccessibility::CLASSNAME_VIEW,
      eNoNameRule)
@@ -1620,3 +1621,13 @@ ROLE(CONTENT_INSERTION,
      IA2_ROLE_CONTENT_INSERTION,
      java::SessionAccessibility::CLASSNAME_VIEW,
      eNoNameRule)
+
+ROLE(FORM_LANDMARK,
+     "form",
+     ATK_ROLE_LANDMARK,
+     NSAccessibilityGroupRole,
+     USE_ROLE_STRING,
+     IA2_ROLE_FORM,
+     java::SessionAccessibility::CLASSNAME_VIEW,
+     eNoNameRule)
+// clang-format on

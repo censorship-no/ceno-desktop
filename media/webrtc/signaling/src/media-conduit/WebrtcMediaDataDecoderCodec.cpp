@@ -7,31 +7,25 @@
 #include "Layers.h"
 #include "PDMFactory.h"
 #include "VideoUtils.h"
-#include "mozilla/media/MediaUtils.h"
 #include "mozilla/layers/ImageBridgeChild.h"
-#include "webrtc/base/keep_ref_until_done.h"
+#include "mozilla/media/MediaUtils.h"
+#include "webrtc/rtc_base/keep_ref_until_done.h"
 
 namespace mozilla {
 
 WebrtcMediaDataDecoder::WebrtcMediaDataDecoder()
-  : mThreadPool(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER))
-  , mTaskQueue(new TaskQueue(do_AddRef(mThreadPool),
-                             "WebrtcMediaDataDecoder::mTaskQueue"))
-  , mImageContainer(layers::LayerManager::CreateImageContainer(
-      layers::ImageContainer::ASYNCHRONOUS))
-  , mFactory(new PDMFactory())
-  , mTrackType(TrackInfo::kUndefinedTrack)
-{
-}
+    : mThreadPool(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER)),
+      mTaskQueue(new TaskQueue(do_AddRef(mThreadPool),
+                               "WebrtcMediaDataDecoder::mTaskQueue")),
+      mImageContainer(layers::LayerManager::CreateImageContainer(
+          layers::ImageContainer::ASYNCHRONOUS)),
+      mFactory(new PDMFactory()),
+      mTrackType(TrackInfo::kUndefinedTrack) {}
 
-WebrtcMediaDataDecoder::~WebrtcMediaDataDecoder()
-{
-}
+WebrtcMediaDataDecoder::~WebrtcMediaDataDecoder() {}
 
-int32_t
-WebrtcMediaDataDecoder::InitDecode(const webrtc::VideoCodec* aCodecSettings,
-                                   int32_t aNumberOfCores)
-{
+int32_t WebrtcMediaDataDecoder::InitDecode(
+    const webrtc::VideoCodec* aCodecSettings, int32_t aNumberOfCores) {
   nsCString codec;
   switch (aCodecSettings->codecType) {
     case webrtc::VideoCodecType::kVideoCodecVP8:
@@ -53,36 +47,34 @@ WebrtcMediaDataDecoder::InitDecode(const webrtc::VideoCodec* aCodecSettings,
   mInfo.mMimeType = codec;
 
   RefPtr<layers::KnowsCompositor> knowsCompositor =
-    layers::ImageBridgeChild::GetSingleton();
+      layers::ImageBridgeChild::GetSingleton();
+
+  if (mDecoder) {
+    Release();
+  }
 
   mDecoder = mFactory->CreateDecoder(
-    { mInfo,
-      mTaskQueue,
-      CreateDecoderParams::OptionSet(CreateDecoderParams::Option::LowLatency),
-      mTrackType,
-      mImageContainer,
-      knowsCompositor });
+      {mInfo, mTaskQueue,
+       CreateDecoderParams::OptionSet(CreateDecoderParams::Option::LowLatency),
+       mTrackType, mImageContainer, knowsCompositor});
 
   if (!mDecoder) {
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
 
-  media::Await(do_AddRef(mThreadPool),
-               mDecoder->Init(),
-               [](TrackInfo::TrackType) {},
+  media::Await(do_AddRef(mThreadPool), mDecoder->Init(),
+               [&](TrackInfo::TrackType) { mError = NS_OK; },
                [&](const MediaResult& aError) { mError = aError; });
 
-  return NS_SUCCEEDED(mError) ? WEBRTC_VIDEO_CODEC_OK : WEBRTC_VIDEO_CODEC_ERROR;
+  return NS_SUCCEEDED(mError) ? WEBRTC_VIDEO_CODEC_OK
+                              : WEBRTC_VIDEO_CODEC_ERROR;
 }
 
-int32_t
-WebrtcMediaDataDecoder::Decode(
-  const webrtc::EncodedImage& aInputImage,
-  bool aMissingFrames,
-  const webrtc::RTPFragmentationHeader* aFragmentation,
-  const webrtc::CodecSpecificInfo* aCodecSpecificInfo,
-  int64_t aRenderTimeMs)
-{
+int32_t WebrtcMediaDataDecoder::Decode(
+    const webrtc::EncodedImage& aInputImage, bool aMissingFrames,
+    const webrtc::RTPFragmentationHeader* aFragmentation,
+    const webrtc::CodecSpecificInfo* aCodecSpecificInfo,
+    int64_t aRenderTimeMs) {
   if (!mCallback || !mDecoder) {
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
@@ -104,27 +96,27 @@ WebrtcMediaDataDecoder::Decode(
   }
 
   RefPtr<MediaRawData> compressedFrame =
-    new MediaRawData(aInputImage._buffer, aInputImage._length);
+      new MediaRawData(aInputImage._buffer, aInputImage._length);
   if (!compressedFrame->Data()) {
     return WEBRTC_VIDEO_CODEC_MEMORY;
   }
 
   compressedFrame->mTime =
-    media::TimeUnit::FromMicroseconds(aInputImage._timeStamp);
+      media::TimeUnit::FromMicroseconds(aInputImage._timeStamp);
   compressedFrame->mTimecode =
-    media::TimeUnit::FromMicroseconds(aRenderTimeMs * 1000);
+      media::TimeUnit::FromMicroseconds(aRenderTimeMs * 1000);
   compressedFrame->mKeyframe =
-    aInputImage._frameType == webrtc::FrameType::kVideoFrameKey;
+      aInputImage._frameType == webrtc::FrameType::kVideoFrameKey;
   {
-    media::Await(do_AddRef(mThreadPool),
-                 mDecoder->Decode(compressedFrame),
+    media::Await(do_AddRef(mThreadPool), mDecoder->Decode(compressedFrame),
                  [&](const MediaDataDecoder::DecodedData& aResults) {
                    mResults = aResults;
+                   mError = NS_OK;
                  },
                  [&](const MediaResult& aError) { mError = aError; });
 
     for (auto& frame : mResults) {
-      MOZ_ASSERT(frame->mType == MediaData::VIDEO_DATA);
+      MOZ_ASSERT(frame->mType == MediaData::Type::VIDEO_DATA);
       RefPtr<VideoData> video = frame->As<VideoData>();
       MOZ_ASSERT(video);
       if (!video->mImage) {
@@ -132,10 +124,9 @@ WebrtcMediaDataDecoder::Decode(
         continue;
       }
       rtc::scoped_refptr<ImageBuffer> image(
-        new rtc::RefCountedObject<ImageBuffer>(std::move(video->mImage)));
+          new rtc::RefCountedObject<ImageBuffer>(std::move(video->mImage)));
 
-      webrtc::VideoFrame videoFrame(image,
-                                    frame->mTime.ToMicroseconds(),
+      webrtc::VideoFrame videoFrame(image, frame->mTime.ToMicroseconds(),
                                     frame->mDuration.ToMicroseconds() * 1000,
                                     aInputImage.rotation_);
       mCallback->Decoded(videoFrame);
@@ -146,62 +137,25 @@ WebrtcMediaDataDecoder::Decode(
                               : WEBRTC_VIDEO_CODEC_ERROR;
 }
 
-int32_t
-WebrtcMediaDataDecoder::RegisterDecodeCompleteCallback(
-  webrtc::DecodedImageCallback* aCallback)
-{
+int32_t WebrtcMediaDataDecoder::RegisterDecodeCompleteCallback(
+    webrtc::DecodedImageCallback* aCallback) {
   mCallback = aCallback;
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int32_t
-WebrtcMediaDataDecoder::Release()
-{
+int32_t WebrtcMediaDataDecoder::Release() {
   RefPtr<MediaDataDecoder> decoder = mDecoder.forget();
-  decoder->Flush()->Then(
-    mTaskQueue, __func__, [decoder]() { decoder->Shutdown(); });
+  decoder->Flush()->Then(mTaskQueue, __func__,
+                         [decoder]() { decoder->Shutdown(); });
 
   mNeedKeyframe = true;
+  mError = NS_OK;
 
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-bool
-WebrtcMediaDataDecoder::OnTaskQueue() const
-{
+bool WebrtcMediaDataDecoder::OnTaskQueue() const {
   return OwnerThread()->IsCurrentThreadIn();
 }
 
-ImageBuffer::ImageBuffer(RefPtr<layers::Image>&& aImage)
-  : webrtc::NativeHandleBuffer(aImage,
-                               aImage->GetSize().width,
-                               aImage->GetSize().height)
-  , mImage(std::move(aImage))
-{
-}
-
-rtc::scoped_refptr<webrtc::VideoFrameBuffer>
-ImageBuffer::NativeToI420Buffer()
-{
-  RefPtr<layers::PlanarYCbCrImage> image = mImage->AsPlanarYCbCrImage();
-  if (!image) {
-    // TODO. YUV420 ReadBack, Image only provides a RGB readback.
-    return nullptr;
-  }
-  rtc::scoped_refptr<layers::PlanarYCbCrImage> refImage(image);
-  const layers::PlanarYCbCrData* data = image->GetData();
-  rtc::scoped_refptr<webrtc::VideoFrameBuffer> buf(
-    new rtc::RefCountedObject<webrtc::WrappedI420Buffer>(
-      data->mPicSize.width,
-      data->mPicSize.height,
-      data->mYChannel,
-      data->mYStride,
-      data->mCbChannel,
-      data->mCbCrStride,
-      data->mCrChannel,
-      data->mCbCrStride,
-      rtc::KeepRefUntilDone(refImage)));
-  return buf;
-}
-
-} // namespace mozilla
+}  // namespace mozilla

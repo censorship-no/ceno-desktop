@@ -1,20 +1,19 @@
 "use strict";
 
-const PREF_INTRO_COUNT = "privacy.trackingprotection.introCount";
-const PREF_CB_UI_ENABLED = "browser.contentblocking.ui.enabled";
+const PREF_INTRO_DELAY = "browser.contentblocking.introDelaySeconds";
+const PREF_INTRO_COUNT = "browser.contentblocking.introCount";
 const PREF_TP_ENABLED = "privacy.trackingprotection.enabled";
 const BENIGN_PAGE = "http://tracking.example.org/browser/browser/base/content/test/trackingUI/benignPage.html";
 const TRACKING_PAGE = "http://tracking.example.org/browser/browser/base/content/test/trackingUI/trackingPage.html";
 const TOOLTIP_PANEL = document.getElementById("UITourTooltip");
 const TOOLTIP_ANCHOR = document.getElementById("tracking-protection-icon-animatable-box");
 
-var {UrlClassifierTestUtils} = ChromeUtils.import("resource://testing-common/UrlClassifierTestUtils.jsm", {});
+var {UrlClassifierTestUtils} = ChromeUtils.import("resource://testing-common/UrlClassifierTestUtils.jsm");
 
 registerCleanupFunction(function() {
   UrlClassifierTestUtils.cleanupTestTrackers();
-  Services.prefs.clearUserPref(PREF_CB_UI_ENABLED);
   Services.prefs.clearUserPref(PREF_TP_ENABLED);
-  Services.prefs.clearUserPref(PREF_INTRO_COUNT);
+  Services.prefs.clearUserPref(PREF_INTRO_DELAY);
 });
 
 function allowOneIntro() {
@@ -22,8 +21,8 @@ function allowOneIntro() {
 }
 
 add_task(async function setup_test() {
-  Services.prefs.setBoolPref(PREF_CB_UI_ENABLED, false);
   Services.prefs.setBoolPref(PREF_TP_ENABLED, true);
+  Services.prefs.setIntPref(PREF_INTRO_DELAY, 0);
   await UrlClassifierTestUtils.addTestTrackers();
 });
 
@@ -38,7 +37,6 @@ add_task(async function test_benignPage() {
            () => {
              ok(true, "Info panel didn't appear on a benign page");
            });
-
   });
 });
 
@@ -54,7 +52,7 @@ add_task(async function test_trackingPages() {
     is(Services.prefs.getIntPref(PREF_INTRO_COUNT), window.ContentBlocking.MAX_INTROS, "Check intro count increased");
 
     let step2URL = Services.urlFormatter.formatURLPref("privacy.trackingprotection.introURL") +
-                   "?step=2&newtab=true&variation=0";
+                   "?step=2&newtab=true&variation=2";
     let buttons = document.getElementById("UITourTooltipButtons");
 
     info("Click the step text and nothing should happen");
@@ -87,6 +85,5 @@ add_task(async function test_trackingPages() {
            () => {
              ok(true, "Info panel didn't appear more than MAX_INTROS on tracking pages");
            });
-
   });
 });

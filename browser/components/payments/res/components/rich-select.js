@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import HandleEventMixin from "../mixins/HandleEventMixin.js";
 import ObservedPropertiesMixin from "../mixins/ObservedPropertiesMixin.js";
 import RichOption from "./rich-option.js";
 
@@ -13,7 +14,7 @@ import RichOption from "./rich-option.js";
  * Note: The only supported way to change the selected option is via the
  *       `value` setter.
  */
-export default class RichSelect extends ObservedPropertiesMixin(HTMLElement) {
+export default class RichSelect extends HandleEventMixin(ObservedPropertiesMixin(HTMLElement)) {
   static get observedAttributes() {
     return [
       "disabled",
@@ -24,10 +25,12 @@ export default class RichSelect extends ObservedPropertiesMixin(HTMLElement) {
   constructor() {
     super();
     this.popupBox = document.createElement("select");
-    this.popupBox.addEventListener("change", this);
   }
 
   connectedCallback() {
+    // the popupBox element may change in between constructor and being connected
+    // so wait until connected before listening to events on it
+    this.popupBox.addEventListener("change", this);
     this.appendChild(this.popupBox);
     this.render();
   }
@@ -55,15 +58,10 @@ export default class RichSelect extends ObservedPropertiesMixin(HTMLElement) {
     return this.popupBox.querySelector(`:scope > [value="${CSS.escape(value)}"]`);
   }
 
-  handleEvent(event) {
-    switch (event.type) {
-      case "change": {
-        // Since the render function depends on the popupBox's value, we need to
-        // re-render if the value changes.
-        this.render();
-        break;
-      }
-    }
+  onChange(event) {
+    // Since the render function depends on the popupBox's value, we need to
+    // re-render if the value changes.
+    this.render();
   }
 
   render() {
@@ -74,7 +72,7 @@ export default class RichSelect extends ObservedPropertiesMixin(HTMLElement) {
 
     if (this.value) {
       let optionType = this.getAttribute("option-type");
-      if (selectedRichOption.localName != optionType) {
+      if (!selectedRichOption || selectedRichOption.localName != optionType) {
         selectedRichOption = document.createElement(optionType);
       }
 

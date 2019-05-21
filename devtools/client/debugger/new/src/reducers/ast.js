@@ -1,157 +1,145 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.initialASTState = initialASTState;
-exports.getSymbols = getSymbols;
-exports.hasSymbols = hasSymbols;
-exports.isSymbolsLoading = isSymbolsLoading;
-exports.isEmptyLineInSource = isEmptyLineInSource;
-exports.getEmptyLines = getEmptyLines;
-exports.getPausePoints = getPausePoints;
-exports.getPausePoint = getPausePoint;
-exports.hasPausePoints = hasPausePoints;
-exports.getOutOfScopeLocations = getOutOfScopeLocations;
-exports.getPreview = getPreview;
-exports.getSourceMetaData = getSourceMetaData;
-exports.hasSourceMetaData = hasSourceMetaData;
-exports.getInScopeLines = getInScopeLines;
-exports.isLineInScope = isLineInScope;
-
-var _immutable = require("devtools/client/shared/vendor/immutable");
-
-var I = _interopRequireWildcard(_immutable);
-
-var _makeRecord = require("../utils/makeRecord");
-
-var _makeRecord2 = _interopRequireDefault(_makeRecord);
-
-var _ast = require("../utils/ast");
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = Object.defineProperty && Object.getOwnPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : {}; if (desc.get || desc.set) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } } newObj.default = obj; return newObj; } }
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+// @flow
 
 /**
  * Ast reducer
  * @module reducers/ast
  */
-function initialASTState() {
-  return (0, _makeRecord2.default)({
-    symbols: I.Map(),
-    emptyLines: I.Map(),
+
+import type { AstLocation, SymbolDeclarations } from "../workers/parser";
+
+import type { Source } from "../types";
+import type { Action, DonePromiseAction } from "../actions/types";
+
+type EmptyLinesType = number[];
+
+export type Symbols = SymbolDeclarations | {| loading: true |};
+export type EmptyLinesMap = { [k: string]: EmptyLinesType };
+export type SymbolsMap = { [k: string]: Symbols };
+
+export type SourceMetaDataType = {
+  framework: ?string
+};
+
+export type SourceMetaDataMap = { [k: string]: SourceMetaDataType };
+
+export type Preview =
+  | {| updating: true |}
+  | null
+  | {|
+      updating: false,
+      expression: string,
+      location: AstLocation,
+      cursorPos: any,
+      tokenPos: AstLocation,
+      result: Object
+    |};
+
+export type ASTState = {
+  +symbols: SymbolsMap,
+  +emptyLines: EmptyLinesMap,
+  +outOfScopeLocations: ?Array<AstLocation>,
+  +inScopeLines: ?Array<number>,
+  +preview: Preview,
+  +sourceMetaData: SourceMetaDataMap
+};
+
+export function initialASTState(): ASTState {
+  return {
+    symbols: {},
+    emptyLines: {},
     outOfScopeLocations: null,
     inScopeLines: null,
     preview: null,
-    pausePoints: I.Map(),
-    sourceMetaData: I.Map()
-  })();
+    sourceMetaData: {}
+  };
 }
 
-function update(state = initialASTState(), action) {
+function update(state: ASTState = initialASTState(), action: Action): ASTState {
   switch (action.type) {
-    case "SET_SYMBOLS":
-      {
-        const {
-          sourceId
-        } = action;
-
-        if (action.status === "start") {
-          return state.setIn(["symbols", sourceId], {
-            loading: true
-          });
-        }
-
-        const value = action.value;
-        return state.setIn(["symbols", sourceId], value);
+    case "SET_SYMBOLS": {
+      const { sourceId } = action;
+      if (action.status === "start") {
+        return {
+          ...state,
+          symbols: { ...state.symbols, [sourceId]: { loading: true } }
+        };
       }
 
-    case "SET_PAUSE_POINTS":
-      {
-        const {
-          sourceText,
-          sourceId,
-          pausePoints
-        } = action;
-        const emptyLines = (0, _ast.findEmptyLines)(sourceText, pausePoints);
-        return state.setIn(["pausePoints", sourceId], pausePoints).setIn(["emptyLines", sourceId], emptyLines);
+      const value = ((action: any): DonePromiseAction).value;
+      return {
+        ...state,
+        symbols: { ...state.symbols, [sourceId]: value }
+      };
+    }
+
+    case "OUT_OF_SCOPE_LOCATIONS": {
+      return { ...state, outOfScopeLocations: action.locations };
+    }
+
+    case "IN_SCOPE_LINES": {
+      return { ...state, inScopeLines: action.lines };
+    }
+
+    case "CLEAR_SELECTION": {
+      return { ...state, preview: null };
+    }
+
+    case "SET_PREVIEW": {
+      if (action.status == "start") {
+        return { ...state, preview: { updating: true } };
       }
 
-    case "OUT_OF_SCOPE_LOCATIONS":
-      {
-        return state.set("outOfScopeLocations", action.locations);
+      if (!action.value) {
+        return { ...state, preview: null };
       }
 
-    case "IN_SCOPE_LINES":
-      {
-        return state.set("inScopeLines", action.lines);
+      // NOTE: if the preview does not exist, it has been cleared
+      if (state.preview) {
+        return { ...state, preview: { ...action.value, updating: false } };
       }
 
-    case "CLEAR_SELECTION":
-      {
-        return state.set("preview", null);
-      }
+      return state;
+    }
 
-    case "SET_PREVIEW":
-      {
-        if (action.status == "start") {
-          return state.set("preview", {
-            updating: true
-          });
-        }
+    case "RESUME": {
+      return { ...state, outOfScopeLocations: null };
+    }
 
-        if (!action.value) {
-          return state.set("preview", null);
-        } // NOTE: if the preview does not exist, it has been cleared
+    case "NAVIGATE": {
+      return initialASTState();
+    }
 
+    case "SET_SOURCE_METADATA": {
+      const { sourceId, sourceMetaData } = action;
+      return {
+        ...state,
+        sourceMetaData: { ...state.sourceMetaData, [sourceId]: sourceMetaData }
+      };
+    }
 
-        if (state.get("preview")) {
-          return state.set("preview", { ...action.value,
-            updating: false
-          });
-        }
-
-        return state;
-      }
-
-    case "RESUME":
-      {
-        return state.set("outOfScopeLocations", null);
-      }
-
-    case "NAVIGATE":
-      {
-        return initialASTState();
-      }
-
-    case "SET_SOURCE_METADATA":
-      {
-        return state.setIn(["sourceMetaData", action.sourceId], action.sourceMetaData);
-      }
-
-    default:
-      {
-        return state;
-      }
+    default: {
+      return state;
+    }
   }
-} // NOTE: we'd like to have the app state fully typed
-// https://github.com/devtools-html/debugger.html/blob/master/src/reducers/sources.js#L179-L185
+}
 
+// NOTE: we'd like to have the app state fully typed
+// https://github.com/firefox-devtools/debugger/blob/master/src/reducers/sources.js#L179-L185
+type OuterState = { ast: ASTState };
 
-function getSymbols(state, source) {
+export function getSymbols(state: OuterState, source: ?Source): ?Symbols {
   if (!source) {
     return null;
   }
 
-  return state.ast.symbols.get(source.id) || null;
+  return state.ast.symbols[source.id] || null;
 }
 
-function hasSymbols(state, source) {
+export function hasSymbols(state: OuterState, source: Source): boolean {
   const symbols = getSymbols(state, source);
 
   if (!symbols) {
@@ -161,9 +149,8 @@ function hasSymbols(state, source) {
   return !symbols.loading;
 }
 
-function isSymbolsLoading(state, source) {
+export function isSymbolsLoading(state: OuterState, source: ?Source): boolean {
   const symbols = getSymbols(state, source);
-
   if (!symbols) {
     return false;
   }
@@ -171,76 +158,30 @@ function isSymbolsLoading(state, source) {
   return symbols.loading;
 }
 
-function isEmptyLineInSource(state, line, selectedSourceId) {
-  const emptyLines = getEmptyLines(state, selectedSourceId);
-  return emptyLines && emptyLines.includes(line);
+export function getOutOfScopeLocations(state: OuterState) {
+  return state.ast.outOfScopeLocations;
 }
 
-function getEmptyLines(state, sourceId) {
-  if (!sourceId) {
-    return null;
-  }
-
-  return state.ast.emptyLines.get(sourceId);
-}
-
-function getPausePoints(state, sourceId) {
-  return state.ast.pausePoints.get(sourceId);
-}
-
-function getPausePoint(state, location) {
-  if (!location) {
-    return;
-  }
-
-  const {
-    column,
-    line,
-    sourceId
-  } = location;
-  const pausePoints = getPausePoints(state, sourceId);
-
-  if (!pausePoints) {
-    return;
-  }
-
-  const linePoints = pausePoints[String(line)];
-
-  if (linePoints && column) {
-    return linePoints[String(column)];
-  }
-}
-
-function hasPausePoints(state, sourceId) {
-  const pausePoints = getPausePoints(state, sourceId);
-  return !!pausePoints;
-}
-
-function getOutOfScopeLocations(state) {
-  return state.ast.get("outOfScopeLocations");
-}
-
-function getPreview(state) {
-  return state.ast.get("preview");
+export function getPreview(state: OuterState) {
+  return state.ast.preview;
 }
 
 const emptySourceMetaData = {};
-
-function getSourceMetaData(state, sourceId) {
-  return state.ast.sourceMetaData.get(sourceId) || emptySourceMetaData;
+export function getSourceMetaData(state: OuterState, sourceId: string) {
+  return state.ast.sourceMetaData[sourceId] || emptySourceMetaData;
 }
 
-function hasSourceMetaData(state, sourceId) {
-  return state.ast.hasIn(["sourceMetaData", sourceId]);
+export function hasSourceMetaData(state: OuterState, sourceId: string) {
+  return state.ast.sourceMetaData[sourceId];
 }
 
-function getInScopeLines(state) {
-  return state.ast.get("inScopeLines");
+export function getInScopeLines(state: OuterState) {
+  return state.ast.inScopeLines;
 }
 
-function isLineInScope(state, line) {
-  const linesInScope = state.ast.get("inScopeLines");
+export function isLineInScope(state: OuterState, line: number) {
+  const linesInScope = state.ast.inScopeLines;
   return linesInScope && linesInScope.includes(line);
 }
 
-exports.default = update;
+export default update;

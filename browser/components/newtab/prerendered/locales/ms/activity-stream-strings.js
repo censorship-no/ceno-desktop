@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Ok, faham",
   "prefs_home_header": "Kandungan Halaman Utama Firefox",
   "prefs_home_description": "Pilih kandungan yang mahu dalam skrin Halaman Utama Firefox.",
+  "prefs_content_discovery_header": "Firefox Home",
+  "prefs_content_discovery_description": "Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.",
+  "prefs_content_discovery_button": "Turn Off Content Discovery",
   "prefs_section_rows_option": "{num} baris",
   "prefs_search_header": "Carian Web",
   "prefs_topsites_description": "Laman yang anda kerap lawati",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Simpan cerita yang anda suka dalam Pocket dan jana minda dengan bahan bacaan yang menarik.",
   "highlights_empty_state": "Mulakan melayar dan kami akan paparkan beberapa artikel, video dan halaman menarik lain yang sudah anda layari dan tandabuku di sini.",
   "topstories_empty_state": "Anda sudah di sini. Tapi sila datang lagi untuk mendapatkan lebih banyak berita hangat daripada {provider}. Tidak boleh tunggu? Pilih topik untuk mendapatkannya dari serata dunia.",
-  "manual_migration_explanation2": "Cuba Firefox dengan tandabuku, sejarah dan kata laluan yang disimpan dalam pelayar lain.",
-  "manual_migration_cancel_button": "Tidak, Terima kasih",
-  "manual_migration_import_button": "Import Sekarang",
   "error_fallback_default_info": "Ooops, ada kesilapan memuatkan kandungan ini.",
   "error_fallback_default_refresh_suggestion": "Muat semula halaman untuk cuba lagi.",
   "section_menu_action_remove_section": "Buang Seksyen",
@@ -108,5 +108,8 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Teruskan",
   "firstrun_skip_login": "Langkau langkah ini",
   "context_menu_title": "Buka menu",
-  "pocket_learn_more": "Ketahui Selanjutnya"
+  "pocket_learn_more": "Ketahui Selanjutnya",
+  "manual_migration_explanation2": "Cuba Firefox dengan tandabuku, sejarah dan kata laluan yang disimpan dalam pelayar lain.",
+  "manual_migration_cancel_button": "Tidak, Terima kasih",
+  "manual_migration_import_button": "Import Sekarang"
 };

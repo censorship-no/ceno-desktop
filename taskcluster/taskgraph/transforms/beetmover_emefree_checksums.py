@@ -7,25 +7,14 @@ Transform release-beetmover-source-checksums into an actual task description.
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+from taskgraph.loader.single_dep import schema
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.transforms.beetmover import craft_release_properties
 from taskgraph.util.attributes import copy_attributes_from_dependent_job
-from taskgraph.util.schema import validate_schema, Schema
 from taskgraph.transforms.task import task_description_schema
-from voluptuous import Any, Required, Optional
+from voluptuous import Required, Optional
 
-# Voluptuous uses marker objects as dictionary *keys*, but they are not
-# comparable, so we cast all of the keys back to regular strings
-task_description_schema = {str(k): v for k, v in task_description_schema.schema.iteritems()}
-
-transforms = TransformSequence()
-
-taskref_or_string = Any(
-    basestring,
-    {Required('task-reference'): basestring})
-
-beetmover_checksums_description_schema = Schema({
-    Required('dependent-task'): object,
+beetmover_checksums_description_schema = schema.extend({
     Required('depname', default='build'): basestring,
     Optional('label'): basestring,
     Optional('extra'): object,
@@ -34,20 +23,14 @@ beetmover_checksums_description_schema = Schema({
 })
 
 
-@transforms.add
-def validate(config, jobs):
-    for job in jobs:
-        label = job.get('dependent-task', object).__dict__.get('label', '?no-label?')
-        validate_schema(
-            beetmover_checksums_description_schema, job,
-            "In checksums-signing ({!r} kind) task for {!r}:".format(config.kind, label))
-        yield job
+transforms = TransformSequence()
+transforms.add_validate(beetmover_checksums_description_schema)
 
 
 @transforms.add
 def make_beetmover_checksums_description(config, jobs):
     for job in jobs:
-        dep_job = job['dependent-task']
+        dep_job = job['primary-dependency']
         attributes = dep_job.attributes
         build_platform = attributes.get("build_platform")
         if not build_platform:
@@ -70,8 +53,7 @@ def make_beetmover_checksums_description(config, jobs):
         extra['partner_path'] = dep_job.task['payload']['upstreamArtifacts'][0]['locale']
         extra['repack_id'] = repack_id
 
-        dependent_kind = str(dep_job.kind)
-        dependencies = {dependent_kind: dep_job.label}
+        dependencies = {dep_job.kind: dep_job.label}
         for k, v in dep_job.dependencies.items():
             if k.startswith('beetmover'):
                 dependencies[k] = v

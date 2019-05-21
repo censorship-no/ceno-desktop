@@ -4,30 +4,29 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import os
+
 import mozunit
 import pytest
-from moztest.resolve import TestResolver
-
-from tryselect.selectors import fuzzy
 
 
-@pytest.fixture
-def patch_resolver(monkeypatch):
-    def inner(suites, tests):
-        def fake_test_metadata(*args, **kwargs):
-            return suites, tests
-        monkeypatch.setattr(TestResolver, 'resolve_metadata', fake_test_metadata)
-    return inner
+@pytest.mark.skipif(os.name == 'nt', reason="fzf not installed on host")
+def test_paths(run_mach, capfd):
+    cmd = ['try', 'fuzzy', '--no-push',
+           '-q', "'linux64/opt-xpcshell", 'caps/tests/unit/test_origin.js']
+    assert run_mach(cmd) == 0
 
+    output = capfd.readouterr().out
+    print(output)
 
-def test_filter_by_paths(patch_resolver):
-    tasks = ['foobar/xpcshell-1', 'foobar/mochitest', 'foobar/xpcshell']
+    # If there are more than one tasks here, it means that something went wrong
+    # with the path filtering.
+    expected = """
+    "tasks": [
+        "test-linux64/opt-xpcshell-1"
+    ]""".lstrip()
 
-    patch_resolver(['xpcshell'], {})
-    assert fuzzy.filter_by_paths(tasks, 'dummy') == []
-
-    patch_resolver([], [{'flavor': 'xpcshell'}])
-    assert fuzzy.filter_by_paths(tasks, 'dummy') == ['foobar/xpcshell-1', 'foobar/xpcshell']
+    assert expected in output
 
 
 if __name__ == '__main__':

@@ -11,8 +11,8 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarPrefs"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
@@ -25,10 +25,6 @@ const PREF_URLBAR_BRANCH = "browser.urlbar.";
 // value, nsIPrefBranch getter method name]].  In the former case, the getter
 // method name is inferred from the typeof the default value.
 const PREF_URLBAR_DEFAULTS = new Map([
-  // This will be removed in the future.  If false, UnifiedComplete will not
-  // perform any searches at all.
-  ["autocomplete.enabled", true],
-
   // "Autofill" is the name of the feature that automatically completes domains
   // and URLs that the user has visited as the user is typing them in the urlbar
   // textbox.  If false, autofill will be disabled.
@@ -47,6 +43,16 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // part of it. This also copies the urlbar value to the selection clipboard
   // on systems that support it.
   ["clickSelectsAll", false],
+
+  // Whether using `ctrl` when hitting return/enter in the URL bar
+  // (or clicking 'go') should prefix 'www.' and suffix
+  // browser.fixup.alternate.suffix to the URL bar value prior to
+  // navigating.
+  ["ctrlCanonizesURLs", true],
+
+  // Whether copying the entire URL from the location bar will put a human
+  // readable (percent-decoded) URL on the clipboard.
+  ["decodeURLsOnCopy", false],
 
   // The amount of time (ms) to wait after the user has stopped typing before
   // fetching results.  However, we ignore this for the very first result (the
@@ -68,10 +74,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // INSERTMETHOD values.
   ["insertMethod", UrlbarUtils.INSERTMETHOD.MERGE_RELATED],
 
-  // Controls how URLs are matched against the user's search string.  See
-  // mozIPlacesAutoComplete.
-  ["matchBehavior", Ci.mozIPlacesAutoComplete.MATCH_BOUNDARY_ANYWHERE],
-
   // Controls the composition of search results.
   ["matchBuckets", "suggestion:4,general:Infinity"],
 
@@ -91,16 +93,24 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // The maximum number of results in the urlbar popup.
   ["maxRichResults", 10],
 
+  // One-off search buttons enabled status.
+  ["oneOffSearches", false],
+
+  // Whether addresses and search results typed into the address bar
+  // should be opened in new tabs by default.
+  ["openintab", false],
+
+  // Whether the quantum bar is enabled.
+  ["quantumbar", false],
+
+  // Whether speculative connections should be enabled.
+  ["speculativeConnect.enabled", true],
+
   // Results will include the user's bookmarks when this is true.
   ["suggest.bookmark", true],
 
   // Results will include the user's history when this is true.
   ["suggest.history", true],
-
-  // Results will include the user's history when this is true, but only those
-  // URLs with the "typed" flag (which includes but isn't limited to URLs the
-  // user has typed in the urlbar).
-  ["suggest.history.onlyTyped", false],
 
   // Results will include switch-to-tab results when this is true.
   ["suggest.openpage", true],
@@ -129,14 +139,18 @@ const PREF_URLBAR_DEFAULTS = new Map([
 ]);
 const PREF_OTHER_DEFAULTS = new Map([
   ["keyword.enabled", true],
+  ["browser.search.suggest.enabled", true],
+  ["ui.popup.disable_autohide", false],
 ]);
 
-const TYPES = [
-  "history",
-  "bookmark",
-  "openpage",
-  "searches",
-];
+// Maps preferences under browser.urlbar.suggest to behavior names, as defined
+// in mozIPlacesAutoComplete.
+const SUGGEST_PREF_TO_BEHAVIOR = {
+  history: "history",
+  bookmark: "bookmark",
+  openpage: "openpage",
+  searches: "search",
+};
 
 const PREF_TYPES = new Map([
   ["boolean", "Bool"],
@@ -144,26 +158,26 @@ const PREF_TYPES = new Map([
   ["number", "Int"],
 ]);
 
-// Buckets for match insertion.
-// Every time a new match is returned, we go through each bucket in array order,
-// and look for the first one having available space for the given match type.
+// Buckets for result insertion.
+// Every time a new result is returned, we go through each bucket in array order,
+// and look for the first one having available space for the given result type.
 // Each bucket is an array containing the following indices:
-//   0: The match type of the acceptable entries.
+//   0: The result type of the acceptable entries.
 //   1: available number of slots in this bucket.
 // There are different matchBuckets definition for different contexts, currently
 // a general one (matchBuckets) and a search one (matchBucketsSearch).
 //
 // First buckets. Anything with an Infinity frecency ends up here.
 const DEFAULT_BUCKETS_BEFORE = [
-  [UrlbarUtils.MATCH_GROUP.HEURISTIC, 1],
-  [UrlbarUtils.MATCH_GROUP.EXTENSION, UrlbarUtils.MAXIMUM_ALLOWED_EXTENSION_MATCHES - 1],
+  [UrlbarUtils.RESULT_GROUP.HEURISTIC, 1],
+  [UrlbarUtils.RESULT_GROUP.EXTENSION, UrlbarUtils.MAXIMUM_ALLOWED_EXTENSION_MATCHES - 1],
 ];
 // => USER DEFINED BUCKETS WILL BE INSERTED HERE <=
 //
 // Catch-all buckets. Anything remaining ends up here.
 const DEFAULT_BUCKETS_AFTER = [
-  [UrlbarUtils.MATCH_GROUP.SUGGESTION, Infinity],
-  [UrlbarUtils.MATCH_GROUP.GENERAL, Infinity],
+  [UrlbarUtils.RESULT_GROUP.SUGGESTION, Infinity],
+  [UrlbarUtils.RESULT_GROUP.GENERAL, Infinity],
 ];
 
 /**
@@ -175,12 +189,14 @@ class Preferences {
    */
   constructor() {
     this._map = new Map();
-
+    this.QueryInterface = ChromeUtils.generateQI([
+      Ci.nsIObserver,
+      Ci.nsISupportsWeakReference,
+    ]);
     Services.prefs.addObserver(PREF_URLBAR_BRANCH, this, true);
-    Services.prefs.addObserver("keyword.enabled", this, true);
-
-    // On startup we must check that some prefs are linked.
-    this._updateLinkedPrefs();
+    for (let pref of PREF_OTHER_DEFAULTS.keys()) {
+      Services.prefs.addObserver(pref, this, true);
+    }
   }
 
   /**
@@ -211,13 +227,10 @@ class Preferences {
     // Some prefs may influence others.
     if (pref == "matchBuckets") {
       this._map.delete("matchBucketsSearch");
-    } else if (pref == "suggest.history") {
-      this._map.delete("suggest.history.onlyTyped");
     }
-    if (pref == "autocomplete.enabled" || pref.startsWith("suggest.")) {
+    if (pref.startsWith("suggest.")) {
       this._map.delete("defaultBehavior");
       this._map.delete("emptySearchDefaultBehavior");
-      this._updateLinkedPrefs(pref);
     }
   }
 
@@ -293,16 +306,11 @@ class Preferences {
         }
         return this.get("matchBuckets");
       }
-      case "suggest.history.onlyTyped": {
-        // If history is not set, onlyTyped value should be ignored.
-        return this.get("suggest.history") && this._readPref(pref);
-      }
       case "defaultBehavior": {
         let val = 0;
-        for (let type of [...TYPES, "history.onlyTyped"]) {
-          let behavior = type == "history.onlyTyped" ? "TYPED" : type.toUpperCase();
-          val |= this.get("suggest." + type) &&
-                 Ci.mozIPlacesAutoComplete["BEHAVIOR_" + behavior];
+        for (let type of Object.keys(SUGGEST_PREF_TO_BEHAVIOR)) {
+          let behavior = `BEHAVIOR_${SUGGEST_PREF_TO_BEHAVIOR[type].toUpperCase()}`;
+          val |= this.get("suggest." + type) && Ci.mozIPlacesAutoComplete[behavior];
         }
         return val;
       }
@@ -313,8 +321,7 @@ class Preferences {
         // bookmarks are disabled, it defaults to open pages.
         let val = Ci.mozIPlacesAutoComplete.BEHAVIOR_RESTRICT;
         if (this.get("suggest.history")) {
-          val |= Ci.mozIPlacesAutoComplete.BEHAVIOR_HISTORY |
-                Ci.mozIPlacesAutoComplete.BEHAVIOR_TYPED;
+          val |= Ci.mozIPlacesAutoComplete.BEHAVIOR_HISTORY;
         } else if (this.get("suggest.bookmark")) {
           val |= Ci.mozIPlacesAutoComplete.BEHAVIOR_BOOKMARK;
         } else {
@@ -322,78 +329,8 @@ class Preferences {
         }
         return val;
       }
-      case "matchBehavior": {
-        // Validate matchBehavior; default to MATCH_BOUNDARY_ANYWHERE.
-        let val = this._readPref(pref);
-        if (![Ci.mozIPlacesAutoComplete.MATCH_ANYWHERE,
-              Ci.mozIPlacesAutoComplete.MATCH_BOUNDARY,
-              Ci.mozIPlacesAutoComplete.MATCH_BEGINNING].includes(val)) {
-          val = Ci.mozIPlacesAutoComplete.MATCH_BOUNDARY_ANYWHERE;
-        }
-        return val;
-      }
     }
     return this._readPref(pref);
-  }
-
-  /**
-   * Used to keep some pref values linked.
-   * TODO: remove autocomplete.enabled and rely only on suggest.* prefs once we
-   * can drop legacy add-ons compatibility.
-   *
-   * @param {string} changedPref
-   *        The name of the preference that changed.
-   */
-  _updateLinkedPrefs(changedPref = "") {
-    // Avoid re-entrance.
-    if (this._linkingPrefs) {
-      return;
-    }
-    this._linkingPrefs = true;
-    try {
-      let branch = Services.prefs.getBranch(PREF_URLBAR_BRANCH);
-      if (changedPref.startsWith("suggest.")) {
-        // A suggest pref changed, fix autocomplete.enabled.
-        branch.setBoolPref("autocomplete.enabled",
-                          TYPES.some(type => this.get("suggest." + type)));
-      } else if (this.get("autocomplete.enabled")) {
-        // If autocomplete is enabled and all of the suggest.* prefs are
-        // disabled, reset the suggest.* prefs to their default value.
-        if (TYPES.every(type => !this.get("suggest." + type))) {
-          for (let type of TYPES) {
-            let def = PREF_URLBAR_DEFAULTS.get("suggest." + type);
-            branch.setBoolPref("suggest." + type, def);
-          }
-        }
-      } else {
-        // If autocomplete is disabled, deactivate all suggest preferences.
-        for (let type of TYPES) {
-          branch.setBoolPref("suggest." + type, false);
-        }
-      }
-    } finally {
-      delete this._linkingPrefs;
-    }
-  }
-
-  /**
-   * QueryInterface
-   *
-   * @param {IID} qiIID
-   * @returns {Preferences} this
-   */
-  QueryInterface(qiIID) {
-    let supportedIIDs = [
-      Ci.nsISupports,
-      Ci.nsIObserver,
-      Ci.nsISupportsWeakReference,
-    ];
-    for (let iid of supportedIIDs) {
-      if (Ci[iid].equals(qiIID)) {
-        return this;
-      }
-    }
-    throw Cr.NS_ERROR_NO_INTERFACE;
   }
 }
 

@@ -9,6 +9,7 @@
 
 #include "nsINSSComponent.h"
 
+#include "EnterpriseRoots.h"
 #include "ScopedNSSTypes.h"
 #include "SharedCertVerifier.h"
 #include "mozilla/Attributes.h"
@@ -22,36 +23,42 @@
 #include "sslt.h"
 
 #ifdef XP_WIN
-#include "windows.h" // this needs to be before the following includes
-#include "wincrypt.h"
-#endif // XP_WIN
+#  include "windows.h"  // this needs to be before the following includes
+#  include "wincrypt.h"
+#endif  // XP_WIN
 
 class nsIDOMWindow;
 class nsIPrompt;
 class nsIX509CertList;
 class SmartCardThreadList;
 
-namespace mozilla { namespace psm {
+namespace mozilla {
+namespace psm {
 
 MOZ_MUST_USE
-  ::already_AddRefed<mozilla::psm::SharedCertVerifier>
-  GetDefaultCertVerifier();
+::already_AddRefed<mozilla::psm::SharedCertVerifier> GetDefaultCertVerifier();
 
-} } // namespace mozilla::psm
+}  // namespace psm
+}  // namespace mozilla
 
-#define NS_NSSCOMPONENT_CID \
-{0x4cb64dfd, 0xca98, 0x4e24, {0xbe, 0xfd, 0x0d, 0x92, 0x85, 0xa3, 0x3b, 0xcb}}
+#define NS_NSSCOMPONENT_CID                          \
+  {                                                  \
+    0x4cb64dfd, 0xca98, 0x4e24, {                    \
+      0xbe, 0xfd, 0x0d, 0x92, 0x85, 0xa3, 0x3b, 0xcb \
+    }                                                \
+  }
 
 extern bool EnsureNSSInitializedChromeOrContent();
 
 // Implementation of the PSM component interface.
-class nsNSSComponent final : public nsINSSComponent
-                           , public nsIObserver
-{
-public:
+class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
+ public:
   // LoadLoadableRootsTask updates mLoadableRootsLoaded and
   // mLoadableRootsLoadedResult and then signals mLoadableRootsLoadedMonitor.
   friend class LoadLoadableRootsTask;
+  // BackgroundImportEnterpriseCertsTask calls ImportEnterpriseRoots and
+  // UpdateCertVerifierWithEnterpriseRoots.
+  friend class BackgroundImportEnterpriseCertsTask;
 
   nsNSSComponent();
 
@@ -64,36 +71,29 @@ public:
   static nsresult GetNewPrompter(nsIPrompt** result);
 
   static void FillTLSVersionRange(SSLVersionRange& rangeOut,
-                                  uint32_t minFromPrefs,
-                                  uint32_t maxFromPrefs,
+                                  uint32_t minFromPrefs, uint32_t maxFromPrefs,
                                   SSLVersionRange defaults);
 
-protected:
+ protected:
   virtual ~nsNSSComponent();
 
-private:
+ private:
   nsresult InitializeNSS();
   void ShutdownNSS();
 
   void setValidationOptions(bool isInitialSetting,
                             const mozilla::MutexAutoLock& proofOfLock);
+  void UpdateCertVerifierWithEnterpriseRoots();
   nsresult setEnabledTLSVersions();
   nsresult RegisterObservers();
 
   void MaybeImportEnterpriseRoots();
   void ImportEnterpriseRoots();
   void UnloadEnterpriseRoots();
+  nsresult CommonGetEnterpriseCerts(
+      nsTArray<nsTArray<uint8_t>>& enterpriseCerts, bool getRoots);
 
-  void MaybeEnableFamilySafetyCompatibility(uint32_t familySafetyMode);
-  void UnloadFamilySafetyRoot();
-
-  nsresult TrustLoaded3rdPartyRoots();
-
-#ifdef XP_WIN
-  nsresult MaybeImportFamilySafetyRoot(PCCERT_CONTEXT certificate,
-                                       bool& wasFamilySafetyRoot);
-  nsresult LoadFamilySafetyRoot();
-#endif // XP_WIN
+  bool ShouldEnableEnterpriseRootsForFamilySafety(uint32_t familySafetyMode);
 
   // mLoadableRootsLoadedMonitor protects mLoadableRootsLoaded.
   mozilla::Monitor mLoadableRootsLoadedMonitor;
@@ -112,8 +112,7 @@ private:
   RefPtr<mozilla::psm::SharedCertVerifier> mDefaultCertVerifier;
   nsString mMitmCanaryIssuer;
   bool mMitmDetecionEnabled;
-  mozilla::UniqueCERTCertList mEnterpriseRoots;
-  mozilla::UniqueCERTCertificate mFamilySafetyRoot;
+  mozilla::Vector<EnterpriseCert> mEnterpriseCerts;
 
   // The following members are accessed only on the main thread:
   static int mInstanceCount;
@@ -126,9 +125,7 @@ private:
   bool mLoadLoadableRootsTaskDispatched;
 };
 
-inline nsresult
-BlockUntilLoadableRootsLoaded()
-{
+inline nsresult BlockUntilLoadableRootsLoaded() {
   nsCOMPtr<nsINSSComponent> component(do_GetService(PSM_COMPONENT_CONTRACTID));
   if (!component) {
     return NS_ERROR_FAILURE;
@@ -136,9 +133,7 @@ BlockUntilLoadableRootsLoaded()
   return component->BlockUntilLoadableRootsLoaded();
 }
 
-inline nsresult
-CheckForSmartCardChanges()
-{
+inline nsresult CheckForSmartCardChanges() {
 #ifndef MOZ_NO_SMART_CARDS
   nsCOMPtr<nsINSSComponent> component(do_GetService(PSM_COMPONENT_CONTRACTID));
   if (!component) {
@@ -150,4 +145,4 @@ CheckForSmartCardChanges()
 #endif
 }
 
-#endif // _nsNSSComponent_h_
+#endif  // _nsNSSComponent_h_

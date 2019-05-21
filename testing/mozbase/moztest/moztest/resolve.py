@@ -43,6 +43,8 @@ TEST_SUITES = {
         'aliases': ('c', 'rc'),
         'mach_command': 'crashtest',
         'kwargs': {'test_file': None},
+        'task_regex': ['crashtest($|.*(-1|[^0-9])$)',
+                       'test-verify($|.*(-1|[^0-9])$)'],
     },
     'firefox-ui-functional': {
         'aliases': ('fxfn',),
@@ -69,6 +71,7 @@ TEST_SUITES = {
         'aliases': ('mn',),
         'mach_command': 'marionette-test',
         'kwargs': {'tests': None},
+        'task_regex': ['marionette($|.*(-1|[^0-9])$)'],
     },
     'mochitest-a11y': {
         'aliases': ('a11y', 'ally'),
@@ -213,7 +216,7 @@ _test_flavors = {
     'a11y': 'mochitest-a11y',
     'browser-chrome': 'mochitest-browser',
     'chrome': 'mochitest-chrome',
-    'crashtest': '',
+    'crashtest': 'crashtest',
     'firefox-ui-functional': 'firefox-ui-functional',
     'firefox-ui-update': 'firefox-ui-update',
     'marionette': 'marionette',
@@ -328,6 +331,10 @@ class TestMetadata(object):
 
                     ancestor_manifest = metadata.get('ancestor-manifest')
                     if ancestor_manifest:
+                        # The (ancestor manifest, included manifest) tuple
+                        # contains the defaults of the included manifest, so
+                        # use it instead of [metadata['manifest']].
+                        defaults_manifests[0] = (ancestor_manifest, metadata['manifest'])
                         defaults_manifests.append(ancestor_manifest)
 
                     for manifest in defaults_manifests:
@@ -406,7 +413,7 @@ class TestMetadata(object):
 
         candidate_paths = set()
 
-        if any(self.is_wpt_path(path) for path in paths):
+        if flavor in (None, 'web-platform-tests') and any(self.is_wpt_path(p) for p in paths):
             self.add_wpt_manifest_data()
 
         for path in sorted(paths):
@@ -484,6 +491,7 @@ class TestMetadata(object):
                         "support-files": "",
                         "subsuite": test_type,
                         "dir_relpath": os.path.dirname(src_path),
+                        "srcdir_relpath": src_path,
                         })
 
         self._wpt_loaded = True

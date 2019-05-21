@@ -6,23 +6,62 @@
 
 
 IPDL_SOURCES += [
+    'PMediaDecoderParams.ipdlh',
+    'PRDD.ipdl',
+    'PRemoteDecoder.ipdl',
+    'PRemoteDecoderManager.ipdl',
     'PVideoDecoder.ipdl',
     'PVideoDecoderManager.ipdl',
 ]
 
-EXPORTS.mozilla.dom += [
-    'MediaIPCUtils.h',
-    'RemoteVideoDecoder.h',
+EXPORTS.mozilla += [
+    'GpuDecoderModule.h',
+    'IRemoteDecoderChild.h',
+    'RDDChild.h',
+    'RDDParent.h',
+    'RDDProcessHost.h',
+    'RDDProcessImpl.h',
+    'RDDProcessManager.h',
+    'RemoteDecoderChild.h',
+    'RemoteDecoderManagerChild.h',
+    'RemoteDecoderManagerParent.h',
+    'RemoteDecoderModule.h',
+    'RemoteDecoderParent.h',
+    'RemoteMediaDataDecoder.h',
+    'VideoDecoderChild.h',
     'VideoDecoderManagerChild.h',
     'VideoDecoderManagerParent.h',
+    'VideoDecoderParent.h',
+]
+
+EXPORTS.mozilla.dom += [
+    'MediaIPCUtils.h',
 ]
 
 SOURCES += [
+    'GpuDecoderModule.cpp',
+    'RDDChild.cpp',
+    'RDDParent.cpp',
+    'RDDProcessHost.cpp',
+    'RDDProcessImpl.cpp',
+    'RDDProcessManager.cpp',
+    'RemoteAudioDecoder.cpp',
+    'RemoteDecoderChild.cpp',
+    'RemoteDecoderManagerChild.cpp',
+    'RemoteDecoderManagerParent.cpp',
+    'RemoteDecoderModule.cpp',
+    'RemoteDecoderParent.cpp',
+    'RemoteMediaDataDecoder.cpp',
     'RemoteVideoDecoder.cpp',
     'VideoDecoderChild.cpp',
     'VideoDecoderManagerChild.cpp',
     'VideoDecoderManagerParent.cpp',
     'VideoDecoderParent.cpp',
+]
+
+# so we can include nsMacUtilsImpl.h in RDDParent.cpp for sandboxing
+LOCAL_INCLUDES += [
+    '/xpcom/base',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')

@@ -9,8 +9,6 @@
 
 #include "mozilla/RefPtr.h"
 
-class nsIDocument;
-
 namespace mozilla {
 namespace layers {
 
@@ -22,23 +20,22 @@ namespace layers {
 // or work improperly with APZ enabled. This class helps us detect such an
 // effect so that we can warn the author and/or take other preventative
 // measures.
-class MOZ_STACK_CLASS ScrollLinkedEffectDetector
-{
-private:
+class MOZ_STACK_CLASS ScrollLinkedEffectDetector {
+ private:
   static uint32_t sDepth;
   static bool sFoundScrollLinkedEffect;
 
-public:
+ public:
   static void PositioningPropertyMutated();
 
-  explicit ScrollLinkedEffectDetector(nsIDocument* aDoc);
+  explicit ScrollLinkedEffectDetector(dom::Document*);
   ~ScrollLinkedEffectDetector();
 
-private:
-  RefPtr<nsIDocument> mDocument;
+ private:
+  RefPtr<dom::Document> mDocument;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif /* mozilla_layers_ScrollLinkedEffectDetector_h */

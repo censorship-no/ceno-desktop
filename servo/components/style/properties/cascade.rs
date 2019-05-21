@@ -1,30 +1,31 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! The main cascading algorithm of the style system.
 
-use context::QuirksMode;
-use custom_properties::CustomPropertiesBuilder;
-use dom::TElement;
-use font_metrics::FontMetricsProvider;
-use logical_geometry::WritingMode;
-use media_queries::Device;
-use properties::{ComputedValues, StyleBuilder};
-use properties::{LonghandId, LonghandIdSet};
-use properties::{PropertyDeclaration, PropertyDeclarationId, DeclarationImportanceIterator};
-use properties::CASCADE_PROPERTY;
-use rule_cache::{RuleCache, RuleCacheConditions};
-use rule_tree::{CascadeLevel, StrongRuleNode};
-use selector_parser::PseudoElement;
+use crate::context::QuirksMode;
+use crate::custom_properties::CustomPropertiesBuilder;
+use crate::dom::TElement;
+use crate::font_metrics::FontMetricsProvider;
+use crate::logical_geometry::WritingMode;
+use crate::media_queries::Device;
+use crate::properties::{ComputedValues, StyleBuilder};
+use crate::properties::{LonghandId, LonghandIdSet};
+use crate::properties::{PropertyDeclaration, PropertyDeclarationId, DeclarationImportanceIterator};
+use crate::properties::CASCADE_PROPERTY;
+use crate::rule_cache::{RuleCache, RuleCacheConditions};
+use crate::rule_tree::{CascadeLevel, StrongRuleNode};
+use crate::selector_parser::PseudoElement;
+use crate::stylesheets::{Origin, PerOrigin};
 use servo_arc::Arc;
-use shared_lock::StylesheetGuards;
+use crate::shared_lock::StylesheetGuards;
 use smallbitvec::SmallBitVec;
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::cell::RefCell;
-use style_adjuster::StyleAdjuster;
-use values::computed;
+use crate::style_adjuster::StyleAdjuster;
+use crate::values::computed;
 
 /// We split the cascade in two phases: 'early' properties, and 'late'
 /// properties.
@@ -236,19 +237,22 @@ where
                 parent_style.unwrap(),
                 parent_style_ignoring_first_line.unwrap()
             ) ||
-            parent_style.unwrap().pseudo() == Some(PseudoElement::FirstLine)
+            parent_style.unwrap().is_first_line_style()
     );
 
     let inherited_style = parent_style.unwrap_or(device.default_computed_values());
 
     let mut declarations = SmallVec::<[(&_, CascadeLevel); 32]>::new();
     let custom_properties = {
-        let mut builder = CustomPropertiesBuilder::new(inherited_style.custom_properties());
+        let mut builder = CustomPropertiesBuilder::new(
+            inherited_style.custom_properties(),
+            device.environment(),
+        );
 
         for (declaration, cascade_level) in iter_declarations() {
             declarations.push((declaration, cascade_level));
             if let PropertyDeclaration::Custom(ref declaration) = *declaration {
-                builder.cascade(&declaration.name, &declaration.value);
+                builder.cascade(declaration, cascade_level.origin());
             }
         }
 
@@ -336,14 +340,8 @@ fn should_ignore_declaration_when_ignoring_document_colors(
         return false;
     }
 
-    let is_ua_or_user_rule = matches!(
-        cascade_level,
-        CascadeLevel::UANormal |
-            CascadeLevel::UserNormal |
-            CascadeLevel::UserImportant |
-            CascadeLevel::UAImportant
-    );
-
+    let is_ua_or_user_rule =
+        matches!(cascade_level.origin(), Origin::User | Origin::UserAgent);
     if is_ua_or_user_rule {
         return false;
     }
@@ -385,6 +383,7 @@ struct Cascade<'a, 'b: 'a> {
     context: &'a mut computed::Context<'b>,
     cascade_mode: CascadeMode<'a>,
     seen: LonghandIdSet,
+    reverted: PerOrigin<LonghandIdSet>,
     saved_font_size: Option<PropertyDeclaration>,
     saved_font_family: Option<PropertyDeclaration>,
 }
@@ -395,6 +394,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             context,
             cascade_mode,
             seen: LonghandIdSet::default(),
+            reverted: Default::default(),
             saved_font_size: None,
             saved_font_family: None,
         }
@@ -420,6 +420,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             declaration.id,
             self.context.builder.custom_properties.as_ref(),
             self.context.quirks_mode,
+            self.context.device().environment(),
         ))
     }
 
@@ -484,6 +485,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
 
         for (declaration, cascade_level) in declarations {
             let declaration_id = declaration.id();
+            let origin = cascade_level.origin();
             let longhand_id = match declaration_id {
                 PropertyDeclarationId::Longhand(id) => id,
                 PropertyDeclarationId::Custom(..) => continue,
@@ -506,6 +508,10 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             };
 
             if self.seen.contains(physical_longhand_id) {
+                continue;
+            }
+
+            if self.reverted.borrow_for_origin(&origin).contains(physical_longhand_id) {
                 continue;
             }
 
@@ -534,6 +540,15 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                 if should_ignore {
                     continue;
                 }
+            }
+
+            if declaration.is_revert() {
+                for origin in origin.following_including() {
+                    self.reverted
+                        .borrow_mut_for_origin(&origin)
+                        .insert(physical_longhand_id);
+                }
+                continue;
             }
 
             self.seen.insert(physical_longhand_id);
@@ -625,6 +640,10 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
 
         #[cfg(feature = "gecko")]
         {
+            if let Some(display) = builder.get_box_if_mutated() {
+                display.generate_combined_transform();
+            }
+
             if let Some(bg) = builder.get_background_if_mutated() {
                 bg.fill_arrays();
             }
@@ -737,13 +756,13 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
 
                 // FIXME(emilio): Why both setting the generic and passing it
                 // down?
-                let pres_context = self.context.builder.device.pres_context();
+                let doc = self.context.builder.device.document();
                 let gecko_font = self.context.builder.mutate_font().gecko_mut();
                 gecko_font.mGenericID = generic;
                 unsafe {
-                    ::gecko_bindings::bindings::Gecko_nsStyleFont_PrefillDefaultForGeneric(
+                    crate::gecko_bindings::bindings::Gecko_nsStyleFont_PrefillDefaultForGeneric(
                         gecko_font,
-                        pres_context,
+                        doc,
                         generic,
                     );
                 }
@@ -792,7 +811,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                     self.seen.contains(LonghandId::MozMinFontSizeRatio) ||
                     self.seen.contains(LonghandId::FontFamily)
                 {
-                    use properties::{CSSWideKeyword, WideKeywordDeclaration};
+                    use crate::properties::{CSSWideKeyword, WideKeywordDeclaration};
 
                     // font-size must be explicitly inherited to handle lang
                     // changes and scriptlevel changes.

@@ -27,24 +27,27 @@
 class nsHtml5Parser;
 class nsHtml5StreamParser;
 class nsIContent;
-class nsIDocument;
+namespace mozilla {
+namespace dom {
+class Document;
+}
+}  // namespace mozilla
 
 class nsHtml5TreeOpExecutor final
-  : public nsHtml5DocumentBuilder
-  , public nsIContentSink
-  , public nsAHtml5TreeOpSink
-  , public mozilla::LinkedListElement<nsHtml5TreeOpExecutor>
-{
+    : public nsHtml5DocumentBuilder,
+      public nsIContentSink,
+      public nsAHtml5TreeOpSink,
+      public mozilla::LinkedListElement<nsHtml5TreeOpExecutor> {
   friend class nsHtml5FlushLoopGuard;
   typedef mozilla::net::ReferrerPolicy ReferrerPolicy;
   using Encoding = mozilla::Encoding;
-  template<typename T>
+  template <typename T>
   using NotNull = mozilla::NotNull<T>;
 
-public:
+ public:
   NS_DECL_ISUPPORTS_INHERITED
 
-private:
+ private:
 #ifdef DEBUG_NS_HTML5_TREE_OP_EXECUTOR_FLUSH
   static uint32_t sAppendBatchMaxSize;
   static uint32_t sAppendBatchSlotsExamined;
@@ -93,13 +96,19 @@ private:
    */
   bool mAlreadyComplainedAboutCharset;
 
-public:
+  /**
+   * Whether this executor has already complained about the tree being too
+   * deep.
+   */
+  bool mAlreadyComplainedAboutDeepTree;
+
+ public:
   nsHtml5TreeOpExecutor();
 
-protected:
+ protected:
   virtual ~nsHtml5TreeOpExecutor();
 
-public:
+ public:
   // nsIContentSink
 
   /**
@@ -127,6 +136,8 @@ public:
    */
   NS_IMETHOD WillResume() override;
 
+  virtual void InitialDocumentTranslationCompleted() override;
+
   /**
    * Sets the parser.
    */
@@ -140,8 +151,7 @@ public:
   /**
    * Don't call. For interface compat only.
    */
-  virtual void SetDocumentCharset(NotNull<const Encoding*> aEncoding) override
-  {
+  virtual void SetDocumentCharset(NotNull<const Encoding*> aEncoding) override {
     MOZ_ASSERT_UNREACHABLE("No one should call this.");
   }
 
@@ -156,8 +166,7 @@ public:
 
   // Not from interface
 
-  void SetStreamParser(nsHtml5StreamParser* aStreamParser)
-  {
+  void SetStreamParser(nsHtml5StreamParser* aStreamParser) {
     mStreamParser = aStreamParser;
   }
 
@@ -182,15 +191,15 @@ public:
 
   void Start();
 
-  void NeedsCharsetSwitchTo(NotNull<const Encoding*> aEncoding,
-                            int32_t aSource,
+  void NeedsCharsetSwitchTo(NotNull<const Encoding*> aEncoding, int32_t aSource,
                             uint32_t aLineNumber);
 
-  void MaybeComplainAboutCharset(const char* aMsgId,
-                                 bool aError,
+  void MaybeComplainAboutCharset(const char* aMsgId, bool aError,
                                  uint32_t aLineNumber);
 
-  void ComplainAboutBogusProtocolCharset(nsIDocument* aDoc);
+  void ComplainAboutBogusProtocolCharset(mozilla::dom::Document*);
+
+  void MaybeComplainAboutDeepTree(uint32_t aLineNumber);
 
   bool HasStarted() { return mStarted; }
 
@@ -226,36 +235,27 @@ public:
 
   nsIURI* GetViewSourceBaseURI();
 
-  void PreloadScript(const nsAString& aURL,
-                     const nsAString& aCharset,
-                     const nsAString& aType,
-                     const nsAString& aCrossOrigin,
+  void PreloadScript(const nsAString& aURL, const nsAString& aCharset,
+                     const nsAString& aType, const nsAString& aCrossOrigin,
                      const nsAString& aIntegrity,
-                     bool aScriptFromHead,
-                     bool aAsync,
-                     bool aDefer,
-                     bool aNoModule);
+                     ReferrerPolicy aReferrerPolicy, bool aScriptFromHead,
+                     bool aAsync, bool aDefer, bool aNoModule);
 
-  void PreloadStyle(const nsAString& aURL,
-                    const nsAString& aCharset,
+  void PreloadStyle(const nsAString& aURL, const nsAString& aCharset,
                     const nsAString& aCrossOrigin,
                     const nsAString& aReferrerPolicy,
                     const nsAString& aIntegrity);
 
-  void PreloadImage(const nsAString& aURL,
-                    const nsAString& aCrossOrigin,
-                    const nsAString& aSrcset,
-                    const nsAString& aSizes,
+  void PreloadImage(const nsAString& aURL, const nsAString& aCrossOrigin,
+                    const nsAString& aSrcset, const nsAString& aSizes,
                     const nsAString& aImageReferrerPolicy);
 
   void PreloadOpenPicture();
 
   void PreloadEndPicture();
 
-  void PreloadPictureSource(const nsAString& aSrcset,
-                            const nsAString& aSizes,
-                            const nsAString& aType,
-                            const nsAString& aMedia);
+  void PreloadPictureSource(const nsAString& aSrcset, const nsAString& aSizes,
+                            const nsAString& aType, const nsAString& aMedia);
 
   void SetSpeculationBase(const nsAString& aURL);
 
@@ -266,7 +266,7 @@ public:
 
   void AddBase(const nsAString& aURL);
 
-private:
+ private:
   nsHtml5Parser* GetParser();
 
   bool IsExternalViewSource();
@@ -286,6 +286,8 @@ private:
    * list of preloaded URIs
    */
   bool ShouldPreloadURI(nsIURI* aURI);
+
+  ReferrerPolicy GetPreloadReferrerPolicy(const nsAString& aReferrerPolicy);
 };
 
-#endif // nsHtml5TreeOpExecutor_h
+#endif  // nsHtml5TreeOpExecutor_h

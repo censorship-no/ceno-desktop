@@ -1,7 +1,8 @@
 const {ASRouterTargeting, QueryCache} =
-  ChromeUtils.import("resource://activity-stream/lib/ASRouterTargeting.jsm", {});
+  ChromeUtils.import("resource://activity-stream/lib/ASRouterTargeting.jsm");
 const {AddonTestUtils} =
-  ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm", {});
+  ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm");
+const {CFRMessageProvider} = ChromeUtils.import("resource://activity-stream/lib/CFRMessageProvider.jsm");
 ChromeUtils.defineModuleGetter(this, "ProfileAge",
   "resource://gre/modules/ProfileAge.jsm");
 ChromeUtils.defineModuleGetter(this, "AddonManager",
@@ -188,7 +189,7 @@ add_task(async function check_needsUpdate() {
 
 add_task(async function checksearchEngines() {
   const result = await ASRouterTargeting.Environment.searchEngines;
-  const expectedInstalled = Services.search.getVisibleEngines()
+  const expectedInstalled = (await Services.search.getVisibleEngines())
     .map(engine => engine.identifier)
     .sort()
     .join(",");
@@ -198,14 +199,14 @@ add_task(async function checksearchEngines() {
     "searchEngines.installed should be an array of visible search engines");
   ok(result.current && typeof result.current === "string",
     "searchEngines.current should be a truthy string");
-  is(result.current, Services.search.currentEngine.identifier,
+  is(result.current, (await Services.search.getDefault()).identifier,
     "searchEngines.current should be the current engine name");
 
-  const message = {id: "foo", targeting: `searchEngines[.current == ${Services.search.currentEngine.identifier}]`};
+  const message = {id: "foo", targeting: `searchEngines[.current == ${(await Services.search.getDefault()).identifier}]`};
   is(await ASRouterTargeting.findMatchingMessage({messages: [message]}), message,
     "should select correct item by searchEngines.current");
 
-  const message2 = {id: "foo", targeting: `searchEngines[${Services.search.getVisibleEngines()[0].identifier} in .installed]`};
+  const message2 = {id: "foo", targeting: `searchEngines[${(await Services.search.getVisibleEngines())[0].identifier} in .installed]`};
   is(await ASRouterTargeting.findMatchingMessage({messages: [message2]}), message2,
     "should select correct item by searchEngines.installed");
 });
@@ -344,9 +345,15 @@ add_task(async function check_pinned_sites() {
   const originalPin = JSON.stringify(NewTabUtils.pinnedLinks.links);
   const sitesToPin = [
     {url: "https://foo.com"},
+    {url: "https://bloo.com"},
     {url: "https://floogle.com", searchTopSite: true},
   ];
   sitesToPin.forEach((site => NewTabUtils.pinnedLinks.pin(site, NewTabUtils.pinnedLinks.links.length)));
+
+  // Unpinning adds null to the list of pinned sites, which we should test that we handle gracefully for our targeting
+  NewTabUtils.pinnedLinks.unpin(sitesToPin[1]);
+  ok(NewTabUtils.pinnedLinks.links.includes(null),
+    "should have set an item in pinned links to null via unpinning for testing");
 
   let message;
 
@@ -385,9 +392,6 @@ add_task(async function check_region() {
 });
 
 add_task(async function check_browserSettings() {
-  is(await ASRouterTargeting.Environment.browserSettings.attribution, TelemetryEnvironment.currentEnvironment.settings.attribution,
-    "should return correct attribution info");
-
   is(await JSON.stringify(ASRouterTargeting.Environment.browserSettings.update), JSON.stringify(TelemetryEnvironment.currentEnvironment.settings.update),
       "should return correct update info");
 });
@@ -419,4 +423,53 @@ add_task(async function check_xpinstall_enabled() {
   // flip to true, check targeting reflects that
   await pushPrefs(["xpinstall.enabled", true]);
   is(await ASRouterTargeting.Environment.xpinstallEnabled, true);
+});
+
+add_task(async function check_pinned_tabs() {
+  await BrowserTestUtils.withNewTab({gBrowser, url: "about:blank"}, async browser => {
+    is(await ASRouterTargeting.Environment.hasPinnedTabs, false, "No pin tabs yet");
+
+    let tab = gBrowser.getTabForBrowser(browser);
+    gBrowser.pinTab(tab);
+
+    is(await ASRouterTargeting.Environment.hasPinnedTabs, true, "Should detect pinned tab");
+
+    gBrowser.unpinTab(tab);
+  });
+});
+
+add_task(async function checkCFRPinnedTabsTargetting() {
+  const now = Date.now();
+  const timeMinutesAgo = numMinutes => now - numMinutes * 60 * 1000;
+  const messages = CFRMessageProvider.getMessages();
+  const trigger = {
+    id: "frequentVisits",
+    context: {
+      recentVisits: [
+        {timestamp: timeMinutesAgo(61)},
+        {timestamp: timeMinutesAgo(30)},
+        {timestamp: timeMinutesAgo(1)},
+      ],
+    },
+    param: "github.com",
+  };
+
+  is(await ASRouterTargeting.findMatchingMessage({messages, trigger}), undefined,
+    "should not select PIN_TAB mesage with only 2 visits in past hour");
+
+  trigger.context.recentVisits.push({timestamp: timeMinutesAgo(59)});
+  is(await ASRouterTargeting.findMatchingMessage({messages, trigger}), messages.find(m => m.id === "PIN_TAB"),
+    "should select PIN_TAB mesage");
+
+  await BrowserTestUtils.withNewTab({gBrowser, url: "about:blank"}, async browser => {
+    let tab = gBrowser.getTabForBrowser(browser);
+    gBrowser.pinTab(tab);
+    is(await ASRouterTargeting.findMatchingMessage({messages, trigger}), undefined,
+      "should not select PIN_TAB mesage if there is a pinned tab already");
+    gBrowser.unpinTab(tab);
+  });
+
+  trigger.param = "foo.bar";
+  is(await ASRouterTargeting.findMatchingMessage({messages, trigger}), undefined,
+    "should not select PIN_TAB mesage with a trigger param/host not in our hostlist");
 });

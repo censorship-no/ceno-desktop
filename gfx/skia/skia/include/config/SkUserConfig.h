@@ -100,14 +100,6 @@
  */
 //#define SK_MAX_SIZE_FOR_LCDTEXT     48
 
-/*  If SK_DEBUG is defined, then you can optionally define SK_SUPPORT_UNITTEST
-    which will run additional self-tests at startup. These can take a long time,
-    so this flag is optional.
- */
-#ifdef SK_DEBUG
-//#define SK_SUPPORT_UNITTEST
-#endif
-
 /*  Change the ordering to work in X windows.
  */
 //#ifdef SK_SAMPLES_FOR_X
@@ -152,8 +144,6 @@
 
 #define SK_SUPPORT_DEPRECATED_CLIPOPS
 
-#define SK_DISABLE_EXPLICIT_GPU_RESOURCE_ALLOCATION
-
 #ifndef MOZ_IMPLICIT
 #  ifdef MOZ_CLANG_PLUGIN
 #    define MOZ_IMPLICIT __attribute__((annotate("moz_implicit")))
@@ -164,12 +154,6 @@
 
 #define MOZ_SKIA
 
-#ifndef SK_SUPPORT_GPU
-#  ifdef USE_SKIA_GPU
-#    define SK_SUPPORT_GPU 1
-#  else
-#    define SK_SUPPORT_GPU 0
-#  endif
-#endif
+#define SK_SUPPORT_GPU 0
 
 #endif

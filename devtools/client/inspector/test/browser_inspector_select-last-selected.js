@@ -21,38 +21,38 @@ var TEST_DATA = [
   {
     url: PAGE_1,
     nodeToSelect: "#id1",
-    selectedNode: "#id1"
+    selectedNode: "#id1",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id2",
-    selectedNode: "#id2"
+    selectedNode: "#id2",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id3",
-    selectedNode: "#id3"
+    selectedNode: "#id3",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id4",
-    selectedNode: "#id4"
+    selectedNode: "#id4",
   },
   {
     url: PAGE_2,
     nodeToSelect: null,
-    selectedNode: "body"
+    selectedNode: "body",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id5",
-    selectedNode: "body"
+    selectedNode: "body",
   },
   {
     url: PAGE_2,
     nodeToSelect: null,
-    selectedNode: "body"
-  }
+    selectedNode: "body",
+  },
 ];
 
 add_task(async function() {
@@ -82,8 +82,7 @@ add_task(async function() {
       const onNewRoot = inspector.once("new-root");
       const onUpdated = inspector.once("inspector-updated");
 
-      const activeTab = toolbox.target.activeTab;
-      await activeTab.reload();
+      await toolbox.target.reload();
       info("Waiting for inspector to be ready.");
       await markuploaded;
       await onNewRoot;

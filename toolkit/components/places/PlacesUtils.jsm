@@ -5,8 +5,8 @@
 
 var EXPORTED_SYMBOLS = ["PlacesUtils"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
@@ -259,8 +259,7 @@ const SYNC_BOOKMARK_VALIDATORS = Object.freeze({
   recordId: simpleValidateFunc(v => typeof v == "string" && (
                                 (PlacesSyncUtils.bookmarks.ROOTS.includes(v) || PlacesUtils.isValidGuid(v)))),
   parentRecordId: v => SYNC_BOOKMARK_VALIDATORS.recordId(v),
-  // Sync uses kinds instead of types, which distinguish between livemarks and
-  // queries.
+  // Sync uses kinds instead of types.
   kind: simpleValidateFunc(v => typeof v == "string" &&
                                 Object.values(PlacesSyncUtils.bookmarks.KINDS).includes(v)),
   query: simpleValidateFunc(v => v === null || (typeof v == "string" && v)),
@@ -400,6 +399,7 @@ var PlacesUtils = {
   // Used to track the action that populated the clipboard.
   TYPE_X_MOZ_PLACE_ACTION: "text/x-moz-place-action",
 
+  // Deprecated: Remaining only for supporting migration of old livemarks.
   LMANNO_FEEDURI: "livemark/feedURI",
   LMANNO_SITEURI: "livemark/siteURI",
   CHARSET_ANNO: "URIProperties/characterSet",
@@ -469,6 +469,18 @@ var PlacesUtils = {
      return typeof guidPrefix == "string" && guidPrefix &&
             (/^[a-zA-Z0-9\-_]{1,11}$/.test(guidPrefix));
    },
+
+  /**
+   * Generates a random GUID and replace its beginning with the given
+   * prefix. We do this instead of just prepending the prefix to keep
+   * the correct character length.
+   *
+   * @param prefix: (String)
+   * @return (String)
+   */
+  generateGuidWithPrefix(prefix) {
+    return prefix + this.history.makeGuid().substring(prefix.length);
+  },
 
   /**
    * Converts a string or n URL object to an nsIURI.
@@ -1037,6 +1049,7 @@ var PlacesUtils = {
    * @param   type
    *          The content type of the blob.
    * @returns An array of objects representing each item contained by the source.
+   * @throws if the blob contains invalid data.
    */
   unwrapNodes: function PU_unwrapNodes(blob, type) {
     // We split on "\n"  because the transferable system converts "\r\n" to "\n"
@@ -1057,9 +1070,9 @@ var PlacesUtils = {
         for (let i = 0; i < parts.length; i = i + 2) {
           let uriString = parts[i];
           let titleString = "";
-          if (parts.length > i + 1)
+          if (parts.length > i + 1) {
             titleString = parts[i + 1];
-          else {
+          } else {
             // for drag and drop of files, try to use the leafName as title
             try {
               titleString = Services.io.newURI(uriString).QueryInterface(Ci.nsIURL)
@@ -1067,7 +1080,8 @@ var PlacesUtils = {
             } catch (ex) {}
           }
           // note:  Services.io.newURI() will throw if uriString is not a valid URI
-          if (Services.io.newURI(uriString)) {
+          let uri = Services.io.newURI(uriString);
+          if (Services.io.newURI(uriString) && uri.scheme != "place") {
             nodes.push({ uri: uriString,
                          title: titleString ? titleString : uriString,
                          type: this.TYPE_X_MOZ_URL });
@@ -1080,14 +1094,18 @@ var PlacesUtils = {
         for (let i = 0; i < parts.length; i++) {
           let uriString = parts[i];
           // text/uri-list is converted to TYPE_UNICODE but it could contain
-          // comments line prepended by #, we should skip them
-          if (uriString.substr(0, 1) == "\x23")
+          // comments line prepended by #, we should skip them, as well as
+          // empty uris.
+          if (uriString.substr(0, 1) == "\x23" || uriString == "") {
             continue;
+          }
           // note: Services.io.newURI) will throw if uriString is not a valid URI
-          if (uriString != "" && Services.io.newURI(uriString))
+          let uri = Services.io.newURI(uriString);
+          if (uri.scheme != "place") {
             nodes.push({ uri: uriString,
                          title: uriString,
                          type: this.TYPE_X_MOZ_URL });
+          }
         }
         break;
       }
@@ -1105,8 +1123,8 @@ var PlacesUtils = {
    */
   validatePageInfo(pageInfo, validateVisits = true) {
     return this.validateItemProperties("PageInfo", PAGEINFO_VALIDATORS, pageInfo,
-      { url: { requiredIf: b => { typeof b.guid != "string"; } },
-        guid: { requiredIf: b => { typeof b.url != "string"; } },
+      { url: { requiredIf: b => !b.guid },
+        guid: { requiredIf: b => !b.url },
         visits: { requiredIf: b => validateVisits  },
       });
   },
@@ -1826,10 +1844,6 @@ XPCOMUtils.defineLazyServiceGetter(PlacesUtils, "annotations",
 XPCOMUtils.defineLazyServiceGetter(PlacesUtils, "tagging",
                                    "@mozilla.org/browser/tagging-service;1",
                                    "nsITaggingService");
-
-XPCOMUtils.defineLazyServiceGetter(PlacesUtils, "livemarks",
-                                   "@mozilla.org/browser/livemark-service;2",
-                                   "mozIAsyncLivemarks");
 
 XPCOMUtils.defineLazyGetter(this, "bundle", function() {
   const PLACES_STRING_BUNDLE_URI = "chrome://places/locale/places.properties";
@@ -2621,7 +2635,6 @@ var GuidHelper = {
 
     let guid = await PlacesUtils.withConnectionWrapper("GuidHelper.getItemGuid",
                                                        async function(db) {
-
       let rows = await db.executeCached(
         "SELECT b.id, b.guid from moz_bookmarks b WHERE b.id = :id LIMIT 1",
         { id: aItemId });

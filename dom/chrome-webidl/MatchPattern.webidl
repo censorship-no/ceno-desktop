@@ -30,7 +30,7 @@ interface URI;
  *      the URL path must exactly match the pattern path.
  */
 [Constructor(DOMString pattern, optional MatchPatternOptions options),
- ChromeOnly, Exposed=(Window,System)]
+ ChromeOnly, Exposed=Window]
 interface MatchPattern {
   /**
    * Returns true if the given URI matches the pattern.
@@ -57,6 +57,12 @@ interface MatchPattern {
   boolean subsumes(MatchPattern pattern);
 
   /**
+   * Returns true if this pattern will match any host which would be matched
+   * by the given pattern, ignoring the scheme.
+   */
+  boolean subsumesDomain(MatchPattern pattern);
+
+  /**
    * Returns true if there is any host which would be matched by both this
    * pattern and the given pattern.
    */
@@ -74,7 +80,7 @@ interface MatchPattern {
  * matches when any of its sub-patterns matches.
  */
 [Constructor(sequence<(DOMString or MatchPattern)> patterns, optional MatchPatternOptions options),
- ChromeOnly, Exposed=(Window,System)]
+ ChromeOnly, Exposed=Window]
 interface MatchPatternSet {
   /**
    * Returns true if the given URI matches any sub-pattern.
@@ -97,6 +103,12 @@ interface MatchPatternSet {
    * Returns true if any sub-pattern subsumes the given pattern.
    */
   boolean subsumes(MatchPattern pattern);
+
+  /**
+   * Returns true if any sub-pattern subsumes the given pattern,
+   * ignoring any of the schemes in the patterns.
+   */
+  boolean subsumesDomain(MatchPattern pattern);
 
   /**
    * Returns true if any sub-pattern overlaps the given pattern.

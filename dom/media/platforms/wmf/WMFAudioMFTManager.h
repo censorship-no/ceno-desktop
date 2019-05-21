@@ -5,18 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if !defined(WMFAudioOutputSource_h_)
-#define WMFAudioOutputSource_h_
+#  define WMFAudioOutputSource_h_
 
-#include "MFTDecoder.h"
-#include "WMF.h"
-#include "WMFMediaDataDecoder.h"
-#include "mozilla/RefPtr.h"
+#  include "MFTDecoder.h"
+#  include "WMF.h"
+#  include "WMFMediaDataDecoder.h"
+#  include "mozilla/RefPtr.h"
 
 namespace mozilla {
 
-class WMFAudioMFTManager : public MFTManager
-{
-public:
+class WMFAudioMFTManager : public MFTManager {
+ public:
   explicit WMFAudioMFTManager(const AudioInfo& aConfig);
   ~WMFAudioMFTManager();
 
@@ -31,17 +30,13 @@ public:
 
   void Shutdown() override;
 
-  TrackInfo::TrackType GetType() override
-  {
-    return TrackInfo::kAudioTrack;
-  }
+  TrackInfo::TrackType GetType() override { return TrackInfo::kAudioTrack; }
 
-  nsCString GetDescriptionName() const override
-  {
+  nsCString GetDescriptionName() const override {
     return NS_LITERAL_CSTRING("wmf audio decoder");
   }
 
-private:
+ private:
   HRESULT UpdateOutputType();
 
   uint32_t mAudioChannels;
@@ -49,30 +44,15 @@ private:
   uint32_t mAudioRate;
   nsTArray<BYTE> mUserData;
 
-  // The offset, at which playback started since the
-  // last discontinuity.
-  media::TimeUnit mAudioTimeOffset;
-  // The number of audio frames that we've played since the last
-  // discontinuity.
-  int64_t mAudioFrameSum = 0;
-
-  enum StreamType
-  {
-    Unknown,
-    AAC,
-    MP3
-  };
+  enum StreamType { Unknown, AAC, MP3 };
   StreamType mStreamType;
 
   const GUID& GetMFTGUID();
   const GUID& GetMediaSubtypeGUID();
 
-  // True if we need to re-initialize mAudioTimeOffset and mAudioFrameSum
-  // from the next audio packet we decode. This happens after a seek, since
-  // WMF doesn't mark a stream as having a discontinuity after a seek(0).
-  bool mMustRecaptureAudioPosition = true;
+  bool mFirstFrame = true;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // WMFAudioOutputSource_h_
+#endif  // WMFAudioOutputSource_h_

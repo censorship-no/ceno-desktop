@@ -52,11 +52,6 @@ WebConsolePanel.prototype = {
         });
       }
 
-      // Local debugging needs to make the target remote.
-      if (!this.target.isRemote) {
-        await this.target.attach();
-      }
-
       const webConsoleUIWindow = iframe.contentWindow.wrappedJSObject;
       const chromeWindow = iframe.ownerDocument.defaultView;
 
@@ -64,7 +59,7 @@ WebConsolePanel.prototype = {
       this.hud = await HUDService.openWebConsole(
         this.target, webConsoleUIWindow, chromeWindow);
 
-      // Pipe 'reloaded' event from WebConsoleFrame to WebConsolePanel.
+      // Pipe 'reloaded' event from WebConsoleUI to WebConsolePanel.
       // These events are listened by the Toolbox.
       this.hud.ui.on("reloaded", () => {
         this.emit("reloaded");

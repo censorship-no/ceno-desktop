@@ -10,7 +10,7 @@
 #include "mozilla/UniquePtr.h"
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
-#include "mozilla/sandboxing/loggingTypes.h"
+#  include "mozilla/sandboxing/loggingTypes.h"
 
 namespace sandbox {
 class TargetServices;
@@ -20,8 +20,7 @@ class TargetServices;
 /**
  * Data needed to start a child process.
  */
-struct XREChildData
-{
+struct XREChildData {
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   /**
    * Chromium sandbox TargetServices.
@@ -32,7 +31,13 @@ struct XREChildData
    * Function to provide a logging function to the chromium sandbox code.
    */
   mozilla::sandboxing::ProvideLogFunctionCb ProvideLogFunction = nullptr;
+
+  /**
+   * Chromium sandbox broker services; needed by the remote sandbox
+   * launcher process.
+   */
+  sandbox::BrokerServices* sandboxBrokerServices = nullptr;
 #endif
 };
 
-#endif // XREChildData_h
+#endif  // XREChildData_h

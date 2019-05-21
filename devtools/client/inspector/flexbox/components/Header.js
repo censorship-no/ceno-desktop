@@ -13,6 +13,7 @@ const {
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
+const { getStr } = require("devtools/client/inspector/layout/utils/l10n");
 
 const FlexContainer = createFactory(require("./FlexContainer"));
 const FlexItemSelector = createFactory(require("./FlexItemSelector"));
@@ -56,6 +57,7 @@ class Header extends PureComponent {
         className: "devtools-checkbox-toggle",
         checked: this.props.highlighted,
         onChange: this.onFlexboxCheckboxClick,
+        title: getStr("flexbox.togglesFlexboxHighlighter2"),
         type: "checkbox",
       })
     );
@@ -124,14 +126,17 @@ class Header extends PureComponent {
         flexItemShown ?
           dom.button({
             className: "flex-header-button-prev devtools-button",
-            onClick: () => setSelectedNode(nodeFront),
+            onClick: e => {
+              e.stopPropagation();
+              setSelectedNode(nodeFront);
+            },
           })
           :
           null,
         dom.div(
           {
             className: "flex-header-content" +
-                       (flexItemShown ? " flex-item-shown" : "")
+                       (flexItemShown ? " flex-item-shown" : ""),
           },
           this.renderFlexContainer(),
           this.renderFlexItemSelector()

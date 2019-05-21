@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPContentParent.h"
+#include "GMPLog.h"
 #include "GMPParent.h"
 #include "GMPServiceChild.h"
 #include "GMPVideoDecoderParent.h"
@@ -15,82 +16,67 @@
 #include "base/task.h"
 
 namespace mozilla {
-
-#ifdef LOG
-#undef LOG
-#endif
-
-extern LogModule* GetGMPLog();
-
-#define LOGD(msg) MOZ_LOG(GetGMPLog(), mozilla::LogLevel::Debug, msg)
-#define LOG(level, msg) MOZ_LOG(GetGMPLog(), (level), msg)
-
-#ifdef __CLASS__
-#undef __CLASS__
-#endif
-#define __CLASS__ "GMPContentParent"
-
 namespace gmp {
 
+static const char* GetBoolString(bool aBool) {
+  return aBool ? "true" : "false";
+}
+
 GMPContentParent::GMPContentParent(GMPParent* aParent)
-  : mParent(aParent)
-  , mPluginId(0)
-{
+    : mParent(aParent), mPluginId(0) {
+  GMP_LOG("GMPContentParent::GMPContentParent(this=%p), aParent=%p", this,
+          aParent);
   if (mParent) {
     SetDisplayName(mParent->GetDisplayName());
     SetPluginId(mParent->GetPluginId());
   }
 }
 
-GMPContentParent::~GMPContentParent()
-{
+GMPContentParent::~GMPContentParent() {
+  GMP_LOG(
+      "GMPContentParent::~GMPContentParent(this=%p) mVideoDecoders.IsEmpty=%s, "
+      "mVideoEncoders.IsEmpty=%s, mChromiumCDMs.IsEmpty=%s, "
+      "mCloseBlockerCount=%" PRIu32,
+      this, GetBoolString(mVideoDecoders.IsEmpty()),
+      GetBoolString(mVideoEncoders.IsEmpty()),
+      GetBoolString(mChromiumCDMs.IsEmpty()), mCloseBlockerCount);
 }
 
-class ReleaseGMPContentParent : public Runnable
-{
-public:
+class ReleaseGMPContentParent : public Runnable {
+ public:
   explicit ReleaseGMPContentParent(GMPContentParent* aToRelease)
-    : Runnable("gmp::ReleaseGMPContentParent")
-    , mToRelease(aToRelease)
-  {
-  }
+      : Runnable("gmp::ReleaseGMPContentParent"), mToRelease(aToRelease) {}
 
-  NS_IMETHOD Run() override
-  {
-    return NS_OK;
-  }
+  NS_IMETHOD Run() override { return NS_OK; }
 
-private:
+ private:
   RefPtr<GMPContentParent> mToRelease;
 };
 
-void
-GMPContentParent::ActorDestroy(ActorDestroyReason aWhy)
-{
-  MOZ_ASSERT(mVideoDecoders.IsEmpty() &&
-             mVideoEncoders.IsEmpty() &&
+void GMPContentParent::ActorDestroy(ActorDestroyReason aWhy) {
+  GMP_LOG("GMPContentParent::ActorDestroy(this=%p, aWhy=%d)", this,
+          static_cast<int>(aWhy));
+  MOZ_ASSERT(mVideoDecoders.IsEmpty() && mVideoEncoders.IsEmpty() &&
              mChromiumCDMs.IsEmpty());
   NS_DispatchToCurrentThread(new ReleaseGMPContentParent(this));
 }
 
-void
-GMPContentParent::CheckThread()
-{
+void GMPContentParent::CheckThread() {
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
 }
 
-void
-GMPContentParent::ChromiumCDMDestroyed(ChromiumCDMParent* aDecoder)
-{
+void GMPContentParent::ChromiumCDMDestroyed(ChromiumCDMParent* aCDM) {
+  GMP_LOG("GMPContentParent::ChromiumCDMDestroyed(this=%p, aCDM=%p)", this,
+          aCDM);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
 
-  MOZ_ALWAYS_TRUE(mChromiumCDMs.RemoveElement(aDecoder));
+  MOZ_ALWAYS_TRUE(mChromiumCDMs.RemoveElement(aCDM));
   CloseIfUnused();
 }
 
-void
-GMPContentParent::VideoDecoderDestroyed(GMPVideoDecoderParent* aDecoder)
-{
+void GMPContentParent::VideoDecoderDestroyed(GMPVideoDecoderParent* aDecoder) {
+  GMP_LOG("GMPContentParent::VideoDecoderDestroyed(this=%p, aDecoder=%p)", this,
+          aDecoder);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
 
   // If the constructor fails, we'll get called before it's added
@@ -98,9 +84,9 @@ GMPContentParent::VideoDecoderDestroyed(GMPVideoDecoderParent* aDecoder)
   CloseIfUnused();
 }
 
-void
-GMPContentParent::VideoEncoderDestroyed(GMPVideoEncoderParent* aEncoder)
-{
+void GMPContentParent::VideoEncoderDestroyed(GMPVideoEncoderParent* aEncoder) {
+  GMP_LOG("GMPContentParent::VideoEncoderDestroyed(this=%p, aEncoder=%p)", this,
+          aEncoder);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
 
   // If the constructor fails, we'll get called before it's added
@@ -108,47 +94,53 @@ GMPContentParent::VideoEncoderDestroyed(GMPVideoEncoderParent* aEncoder)
   CloseIfUnused();
 }
 
-void
-GMPContentParent::AddCloseBlocker()
-{
+void GMPContentParent::AddCloseBlocker() {
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   ++mCloseBlockerCount;
+  GMP_LOG(
+      "GMPContentParent::AddCloseBlocker(this=%p) mCloseBlockerCount=%" PRIu32,
+      this, mCloseBlockerCount);
 }
 
-void
-GMPContentParent::RemoveCloseBlocker()
-{
+void GMPContentParent::RemoveCloseBlocker() {
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   --mCloseBlockerCount;
+  GMP_LOG(
+      "GMPContentParent::RemoveCloseBlocker(this=%p) "
+      "mCloseBlockerCount=%" PRIu32,
+      this, mCloseBlockerCount);
   CloseIfUnused();
 }
 
-void
-GMPContentParent::CloseIfUnused()
-{
-  if (mVideoDecoders.IsEmpty() &&
-      mVideoEncoders.IsEmpty() &&
-      mChromiumCDMs.IsEmpty() &&
-      mCloseBlockerCount == 0) {
+void GMPContentParent::CloseIfUnused() {
+  GMP_LOG(
+      "GMPContentParent::CloseIfUnused(this=%p) mVideoDecoders.IsEmpty=%s, "
+      "mVideoEncoders.IsEmpty=%s, mChromiumCDMs.IsEmpty=%s, "
+      "mCloseBlockerCount=%" PRIu32,
+      this, GetBoolString(mVideoDecoders.IsEmpty()),
+      GetBoolString(mVideoEncoders.IsEmpty()),
+      GetBoolString(mChromiumCDMs.IsEmpty()), mCloseBlockerCount);
+  if (mVideoDecoders.IsEmpty() && mVideoEncoders.IsEmpty() &&
+      mChromiumCDMs.IsEmpty() && mCloseBlockerCount == 0) {
     RefPtr<GMPContentParent> toClose;
     if (mParent) {
       toClose = mParent->ForgetGMPContentParent();
     } else {
       toClose = this;
       RefPtr<GeckoMediaPluginServiceChild> gmp(
-        GeckoMediaPluginServiceChild::GetSingleton());
+          GeckoMediaPluginServiceChild::GetSingleton());
       gmp->RemoveGMPContentParent(toClose);
     }
     NS_DispatchToCurrentThread(NewRunnableMethod(
-      "gmp::GMPContentParent::Close", toClose, &GMPContentParent::Close));
+        "gmp::GMPContentParent::Close", toClose, &GMPContentParent::Close));
   }
 }
 
-nsCOMPtr<nsISerialEventTarget>
-GMPContentParent::GMPEventTarget()
-{
+nsCOMPtr<nsISerialEventTarget> GMPContentParent::GMPEventTarget() {
   if (!mGMPEventTarget) {
-    nsCOMPtr<mozIGeckoMediaPluginService> mps = do_GetService("@mozilla.org/gecko-media-plugin-service;1");
+    GMP_LOG("GMPContentParent::GMPEventTarget(this=%p)", this);
+    nsCOMPtr<mozIGeckoMediaPluginService> mps =
+        do_GetService("@mozilla.org/gecko-media-plugin-service;1");
     MOZ_ASSERT(mps);
     if (!mps) {
       return nullptr;
@@ -168,9 +160,8 @@ GMPContentParent::GMPEventTarget()
   return mGMPEventTarget;
 }
 
-already_AddRefed<ChromiumCDMParent>
-GMPContentParent::GetChromiumCDM()
-{
+already_AddRefed<ChromiumCDMParent> GMPContentParent::GetChromiumCDM() {
+  GMP_LOG("GMPContentParent::GetChromiumCDM(this=%p)", this);
   PChromiumCDMParent* actor = SendPChromiumCDMConstructor();
   if (!actor) {
     return nullptr;
@@ -183,16 +174,15 @@ GMPContentParent::GetChromiumCDM()
   return parent.forget();
 }
 
-nsresult
-GMPContentParent::GetGMPVideoDecoder(GMPVideoDecoderParent** aGMPVD,
-                                     uint32_t aDecryptorId)
-{
+nsresult GMPContentParent::GetGMPVideoDecoder(GMPVideoDecoderParent** aGMPVD,
+                                              uint32_t aDecryptorId) {
+  GMP_LOG("GMPContentParent::GetGMPVideoDecoder(this=%p)", this);
   // returned with one anonymous AddRef that locks it until Destroy
   PGMPVideoDecoderParent* pvdp = SendPGMPVideoDecoderConstructor(aDecryptorId);
   if (!pvdp) {
     return NS_ERROR_FAILURE;
   }
-  GMPVideoDecoderParent *vdp = static_cast<GMPVideoDecoderParent*>(pvdp);
+  GMPVideoDecoderParent* vdp = static_cast<GMPVideoDecoderParent*>(pvdp);
   // This addref corresponds to the Proxy pointer the consumer is returned.
   // It's dropped by calling Close() on the interface.
   NS_ADDREF(vdp);
@@ -202,15 +192,14 @@ GMPContentParent::GetGMPVideoDecoder(GMPVideoDecoderParent** aGMPVD,
   return NS_OK;
 }
 
-nsresult
-GMPContentParent::GetGMPVideoEncoder(GMPVideoEncoderParent** aGMPVE)
-{
+nsresult GMPContentParent::GetGMPVideoEncoder(GMPVideoEncoderParent** aGMPVE) {
+  GMP_LOG("GMPContentParent::GetGMPVideoEncoder(this=%p)", this);
   // returned with one anonymous AddRef that locks it until Destroy
   PGMPVideoEncoderParent* pvep = SendPGMPVideoEncoderConstructor();
   if (!pvep) {
     return NS_ERROR_FAILURE;
   }
-  GMPVideoEncoderParent *vep = static_cast<GMPVideoEncoderParent*>(pvep);
+  GMPVideoEncoderParent* vep = static_cast<GMPVideoEncoderParent*>(pvep);
   // This addref corresponds to the Proxy pointer the consumer is returned.
   // It's dropped by calling Close() on the interface.
   NS_ADDREF(vep);
@@ -220,53 +209,53 @@ GMPContentParent::GetGMPVideoEncoder(GMPVideoEncoderParent** aGMPVE)
   return NS_OK;
 }
 
-PChromiumCDMParent*
-GMPContentParent::AllocPChromiumCDMParent()
-{
+PChromiumCDMParent* GMPContentParent::AllocPChromiumCDMParent() {
+  GMP_LOG("GMPContentParent::AllocPChromiumCDMParent(this=%p)", this);
   ChromiumCDMParent* parent = new ChromiumCDMParent(this, GetPluginId());
   NS_ADDREF(parent);
   return parent;
 }
 
-PGMPVideoDecoderParent*
-GMPContentParent::AllocPGMPVideoDecoderParent(const uint32_t& aDecryptorId)
-{
+PGMPVideoDecoderParent* GMPContentParent::AllocPGMPVideoDecoderParent(
+    const uint32_t& aDecryptorId) {
+  GMP_LOG("GMPContentParent::AllocPGMPVideoDecoderParent(this=%p)", this);
   GMPVideoDecoderParent* vdp = new GMPVideoDecoderParent(this);
   NS_ADDREF(vdp);
   return vdp;
 }
 
-bool
-GMPContentParent::DeallocPChromiumCDMParent(PChromiumCDMParent* aActor)
-{
+bool GMPContentParent::DeallocPChromiumCDMParent(PChromiumCDMParent* aActor) {
+  GMP_LOG("GMPContentParent::DeallocPChromiumCDMParent(this=%p, aActor=%p)",
+          this, aActor);
   ChromiumCDMParent* parent = static_cast<ChromiumCDMParent*>(aActor);
   NS_RELEASE(parent);
   return true;
 }
 
-bool
-GMPContentParent::DeallocPGMPVideoDecoderParent(PGMPVideoDecoderParent* aActor)
-{
+bool GMPContentParent::DeallocPGMPVideoDecoderParent(
+    PGMPVideoDecoderParent* aActor) {
+  GMP_LOG("GMPContentParent::DeallocPGMPVideoDecoderParent(this=%p, aActor=%p)",
+          this, aActor);
   GMPVideoDecoderParent* vdp = static_cast<GMPVideoDecoderParent*>(aActor);
   NS_RELEASE(vdp);
   return true;
 }
 
-PGMPVideoEncoderParent*
-GMPContentParent::AllocPGMPVideoEncoderParent()
-{
+PGMPVideoEncoderParent* GMPContentParent::AllocPGMPVideoEncoderParent() {
+  GMP_LOG("GMPContentParent::AllocPGMPVideoEncoderParent(this=%p)", this);
   GMPVideoEncoderParent* vep = new GMPVideoEncoderParent(this);
   NS_ADDREF(vep);
   return vep;
 }
 
-bool
-GMPContentParent::DeallocPGMPVideoEncoderParent(PGMPVideoEncoderParent* aActor)
-{
+bool GMPContentParent::DeallocPGMPVideoEncoderParent(
+    PGMPVideoEncoderParent* aActor) {
+  GMP_LOG("GMPContentParent::DeallocPGMPVideoEncoderParent(this=%p, aActor=%p)",
+          this, aActor);
   GMPVideoEncoderParent* vep = static_cast<GMPVideoEncoderParent*>(aActor);
   NS_RELEASE(vep);
   return true;
 }
 
-} // namespace gmp
-} // namespace mozilla
+}  // namespace gmp
+}  // namespace mozilla

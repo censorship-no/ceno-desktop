@@ -7,7 +7,7 @@ DIRS += [
 
 ]
 
-DevToolsModules(
+CompiledModules(
     'blackbox.js',
     'index.js',
     'loadSourceText.js',

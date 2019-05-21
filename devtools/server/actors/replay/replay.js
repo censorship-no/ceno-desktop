@@ -41,7 +41,15 @@ const dbg = new Debugger();
 
 // We are interested in debugging all globals in the process.
 dbg.onNewGlobalObject = function(global) {
-  dbg.addDebuggee(global);
+  try {
+    dbg.addDebuggee(global);
+  } catch (e) {
+    // Ignore errors related to adding a same-compartment debuggee.
+    // See bug 1523755.
+    if (!/debugger and debuggee must be in different compartments/.test("" + e)) {
+      throw e;
+    }
+  }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -116,6 +124,10 @@ function scriptFrameForIndex(index) {
   return frame;
 }
 
+function isNonNullObject(obj) {
+  return obj && (typeof obj == "object" || typeof obj == "function");
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Persistent Script State
 ///////////////////////////////////////////////////////////////////////////////
@@ -149,9 +161,9 @@ function addScriptSource(source) {
 }
 
 function considerScript(script) {
-  return script.url
-      && !script.url.startsWith("resource:")
-      && !script.url.startsWith("chrome:");
+  // The set of scripts which is exposed to the debugger server is the same as
+  // the scripts for which the progress counter is updated.
+  return RecordReplayControl.shouldUpdateProgressCounter(script.url);
 }
 
 dbg.onNewScript = function(script) {
@@ -178,6 +190,50 @@ dbg.onNewScript = function(script) {
   // created.
   installPendingHandlers();
 };
+
+///////////////////////////////////////////////////////////////////////////////
+// Object Snapshots
+///////////////////////////////////////////////////////////////////////////////
+
+// Snapshots are generated for objects that might be inspected at times when we
+// are not paused at the point where the snapshot was originally taken. The
+// snapshot data is provided to the server, which can use it to provide limited
+// answers to the client about the object's contents, without having to consult
+// a child process.
+
+function snapshotObjectProperty({ name, desc }) {
+  // Only capture primitive properties in object snapshots.
+  if ("value" in desc && !convertedValueIsObject(desc.value)) {
+    return { name, desc };
+  }
+  return { name, desc: { value: "<unavailable>" } };
+}
+
+function makeObjectSnapshot(object) {
+  assert(object instanceof Debugger.Object);
+
+  // Include properties that would be included in a normal object's data packet,
+  // except do not allow inspection of any other referenced objects.
+  // In particular, don't set the prototype so that the object inspector will
+  // not attempt to crawl the object's prototype chain.
+  return {
+    kind: "Object",
+    callable: object.callable,
+    isBoundFunction: object.isBoundFunction,
+    isArrowFunction: object.isArrowFunction,
+    isGeneratorFunction: object.isGeneratorFunction,
+    isAsyncFunction: object.isAsyncFunction,
+    class: object.class,
+    name: object.name,
+    displayName: object.displayName,
+    parameterNames: object.parameterNames,
+    isProxy: object.isProxy,
+    isExtensible: object.isExtensible(),
+    isSealed: object.isSealed(),
+    isFrozen: object.isFrozen(),
+    properties: getObjectProperties(object).map(snapshotObjectProperty),
+  };
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Console Message State
@@ -249,25 +305,14 @@ Services.obs.addObserver({
 
     // Message arguments are preserved as debuggee values.
     if (apiMessage.arguments) {
-      contents.arguments = apiMessage.arguments.map(makeDebuggeeValue);
+      contents.arguments = apiMessage.arguments.map(v => {
+        return convertValue(makeDebuggeeValue(v), { snapshot: true });
+      });
     }
 
     newConsoleMessage("ConsoleAPI", null, contents);
   },
 }, "console-api-log-event");
-
-function convertConsoleMessage(contents) {
-  const result = {};
-  for (const id in contents) {
-    if (id == "arguments" && contents.messageType == "ConsoleAPI") {
-      // Copy arguments over as debuggee values.
-      result.arguments = contents.arguments.map(convertValue);
-    } else {
-      result[id] = contents[id];
-    }
-  }
-  return result;
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Position Handler State
@@ -435,37 +480,57 @@ function getObjectId(obj) {
   return id;
 }
 
-function convertValue(value) {
+// Convert a value for sending to the parent.
+function convertValue(value, options) {
   if (value instanceof Debugger.Object) {
+    if (options && options.snapshot) {
+      return { snapshot: makeObjectSnapshot(value) };
+    }
     return { object: getObjectId(value) };
   }
-  if (value === undefined) {
-    return { special: "undefined" };
-  }
-  if (value !== value) { // eslint-disable-line no-self-compare
-    return { special: "NaN" };
-  }
-  if (value == Infinity) {
-    return { special: "Infinity" };
-  }
-  if (value == -Infinity) {
-    return { special: "-Infinity" };
+  if (value === undefined ||
+      value == Infinity ||
+      value == -Infinity ||
+      Object.is(value, NaN) ||
+      Object.is(value, -0)) {
+    return { special: "" + value };
   }
   return value;
 }
 
-function convertCompletionValue(value) {
+function convertedValueIsObject(value) {
+  return isNonNullObject(value) && "object" in value;
+}
+
+function convertCompletionValue(value, options) {
   if ("return" in value) {
-    return { return: convertValue(value.return) };
+    return { return: convertValue(value.return, options) };
   }
   if ("throw" in value) {
-    return { throw: convertValue(value.throw) };
+    return { throw: convertValue(value.throw, options) };
   }
   throw new Error("Unexpected completion value");
 }
 
+// Convert a value we received from the parent.
+function convertValueFromParent(value) {
+  if (isNonNullObject(value)) {
+    if (value.object) {
+      return gPausedObjects.getObject(value.object);
+    }
+    switch (value.special) {
+    case "undefined": return undefined;
+    case "Infinity": return Infinity;
+    case "-Infinity": return -Infinity;
+    case "NaN": return NaN;
+    case "0": return -0;
+    }
+  }
+  return value;
+}
+
 function makeDebuggeeValue(value) {
-  if (value && typeof value == "object") {
+  if (isNonNullObject(value)) {
     assert(!(value instanceof Debugger.Object));
     const global = Cu.getGlobalForObject(value);
     const dbgGlobal = dbg.makeGlobalObjectReference(global);
@@ -494,6 +559,7 @@ function getScriptData(id) {
     sourceLength: script.sourceLength,
     displayName: script.displayName,
     url: script.url,
+    format: script.format,
   };
 }
 
@@ -515,6 +581,24 @@ function getSourceData(id) {
 
 function forwardToScript(name) {
   return request => gScripts.getObject(request.id)[name](request.value);
+}
+
+function getObjectProperties(object) {
+  const names = object.getOwnPropertyNames();
+
+  return names.map(name => {
+    const desc = object.getOwnPropertyDescriptor(name);
+    if ("value" in desc) {
+      desc.value = convertValue(desc.value);
+    }
+    if ("get" in desc) {
+      desc.get = getObjectId(desc.get);
+    }
+    if ("set" in desc) {
+      desc.set = getObjectId(desc.set);
+    }
+    return { name, desc };
+  });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -626,21 +710,30 @@ const gRequestHandlers = {
     }
 
     const object = gPausedObjects.getObject(request.id);
-    const names = object.getOwnPropertyNames();
+    return getObjectProperties(object);
+  },
 
-    return names.map(name => {
-      const desc = object.getOwnPropertyDescriptor(name);
-      if ("value" in desc) {
-        desc.value = convertValue(desc.value);
-      }
-      if ("get" in desc) {
-        desc.get = getObjectId(desc.get);
-      }
-      if ("set" in desc) {
-        desc.set = getObjectId(desc.set);
-      }
-      return { name, desc };
-    });
+  objectProxyData(request) {
+    if (!RecordReplayControl.maybeDivergeFromRecording()) {
+      return { exception: "Recording divergence in unwrapObject" };
+    }
+    const obj = gPausedObjects.getObject(request.id);
+    return {
+      unwrapped: convertValue(obj.unwrap()),
+      target: convertValue(obj.proxyTarget),
+      handler: convertValue(obj.proxyHandler),
+    };
+  },
+
+  objectApply(request) {
+    if (!RecordReplayControl.maybeDivergeFromRecording()) {
+      return { throw: "Recording divergence in objectApply" };
+    }
+    const obj = gPausedObjects.getObject(request.id);
+    const thisv = convertValueFromParent(request.thisv);
+    const args = request.args.map(v => convertValueFromParent(v));
+    const rv = obj.apply(thisv, args);
+    return convertCompletionValue(rv);
   },
 
   getEnvironmentNames(request) {
@@ -649,12 +742,17 @@ const gRequestHandlers = {
                value: "Recording divergence in getEnvironmentNames" }];
     }
 
-    const env = gPausedObjects.getObject(request.id);
-    const names = env.names();
+    try {
+      const env = gPausedObjects.getObject(request.id);
+      const names = env.names();
 
-    return names.map(name => {
-      return { name, value: convertValue(env.getVariable(name)) };
-    });
+      return names.map(name => {
+        return { name, value: convertValue(env.getVariable(name)) };
+      });
+    } catch (e) {
+      return [{name: "Unknown names",
+               value: "Exception thrown in getEnvironmentNames" }];
+    }
   },
 
   getFrame(request) {
@@ -695,6 +793,10 @@ const gRequestHandlers = {
   getOffsetLocation: forwardToScript("getOffsetLocation"),
   getSuccessorOffsets: forwardToScript("getSuccessorOffsets"),
   getPredecessorOffsets: forwardToScript("getPredecessorOffsets"),
+  getAllColumnOffsets: forwardToScript("getAllColumnOffsets"),
+  getOffsetMetadata: forwardToScript("getOffsetMetadata"),
+  getPossibleBreakpoints: forwardToScript("getPossibleBreakpoints"),
+  getPossibleBreakpointOffsets: forwardToScript("getPossibleBreakpointOffsets"),
 
   frameEvaluate(request) {
     if (!RecordReplayControl.maybeDivergeFromRecording()) {
@@ -703,7 +805,7 @@ const gRequestHandlers = {
 
     const frame = scriptFrameForIndex(request.index);
     const rv = frame.eval(request.text, request.options);
-    return convertCompletionValue(rv);
+    return convertCompletionValue(rv, request.convertOptions);
   },
 
   popFrameResult(request) {
@@ -711,11 +813,19 @@ const gRequestHandlers = {
   },
 
   findConsoleMessages(request) {
-    return gConsoleMessages.map(convertConsoleMessage);
+    return gConsoleMessages;
   },
 
   getNewConsoleMessage(request) {
-    return convertConsoleMessage(gConsoleMessages[gConsoleMessages.length - 1]);
+    return gConsoleMessages[gConsoleMessages.length - 1];
+  },
+
+  currentExecutionPoint(request) {
+    return RecordReplayControl.currentExecutionPoint();
+  },
+
+  recordingEndpoint(request) {
+    return RecordReplayControl.recordingEndpoint();
   },
 };
 

@@ -16,13 +16,10 @@ namespace dom {
 // -- CSSPageRuleDeclaration ---------------------------------------
 
 CSSPageRuleDeclaration::CSSPageRuleDeclaration(
-  already_AddRefed<RawServoDeclarationBlock> aDecls)
-  : mDecls(new DeclarationBlock(std::move(aDecls)))
-{
-}
+    already_AddRefed<RawServoDeclarationBlock> aDecls)
+    : mDecls(new DeclarationBlock(std::move(aDecls))) {}
 
-CSSPageRuleDeclaration::~CSSPageRuleDeclaration()
-{
+CSSPageRuleDeclaration::~CSSPageRuleDeclaration() {
   mDecls->SetOwningRule(nullptr);
 }
 
@@ -35,37 +32,26 @@ NS_INTERFACE_MAP_BEGIN(CSSPageRuleDeclaration)
       aIID.Equals(NS_GET_IID(nsXPCOMCycleCollectionParticipant))) {
     return Rule()->QueryInterface(aIID, aInstancePtr);
   }
-  else
-NS_IMPL_QUERY_TAIL_INHERITING(nsDOMCSSDeclaration)
+NS_INTERFACE_MAP_END_INHERITING(nsDOMCSSDeclaration)
 
 NS_IMPL_ADDREF_USING_AGGREGATOR(CSSPageRuleDeclaration, Rule())
 NS_IMPL_RELEASE_USING_AGGREGATOR(CSSPageRuleDeclaration, Rule())
 
 /* nsDOMCSSDeclaration implementation */
 
-css::Rule*
-CSSPageRuleDeclaration::GetParentRule()
-{
-  return Rule();
-}
+css::Rule* CSSPageRuleDeclaration::GetParentRule() { return Rule(); }
 
-nsINode*
-CSSPageRuleDeclaration::GetParentObject()
-{
+nsINode* CSSPageRuleDeclaration::GetParentObject() {
   return Rule()->GetParentObject();
 }
 
-DeclarationBlock*
-CSSPageRuleDeclaration::GetOrCreateCSSDeclaration(Operation aOperation,
-                                                  DeclarationBlock** aCreated)
-{
+DeclarationBlock* CSSPageRuleDeclaration::GetOrCreateCSSDeclaration(
+    Operation aOperation, DeclarationBlock** aCreated) {
   return mDecls;
 }
 
-nsresult
-CSSPageRuleDeclaration::SetCSSDeclaration(DeclarationBlock* aDecl,
-                                          MutationClosureData* aClosureData)
-{
+nsresult CSSPageRuleDeclaration::SetCSSDeclaration(
+    DeclarationBlock* aDecl, MutationClosureData* aClosureData) {
   MOZ_ASSERT(aDecl, "must be non-null");
   CSSPageRule* rule = Rule();
 
@@ -80,31 +66,20 @@ CSSPageRuleDeclaration::SetCSSDeclaration(DeclarationBlock* aDecl,
   return NS_OK;
 }
 
-nsIDocument*
-CSSPageRuleDeclaration::DocToUpdate()
-{
-  return nullptr;
-}
-
 nsDOMCSSDeclaration::ParsingEnvironment
 CSSPageRuleDeclaration::GetParsingEnvironment(
-  nsIPrincipal* aSubjectPrincipal) const
-{
+    nsIPrincipal* aSubjectPrincipal) const {
   return GetParsingEnvironmentForRule(Rule());
 }
 
 // -- CSSPageRule --------------------------------------------------
 
-CSSPageRule::CSSPageRule(RefPtr<RawServoPageRule> aRawRule,
-                         StyleSheet* aSheet,
-                         css::Rule* aParentRule,
-                         uint32_t aLine,
+CSSPageRule::CSSPageRule(RefPtr<RawServoPageRule> aRawRule, StyleSheet* aSheet,
+                         css::Rule* aParentRule, uint32_t aLine,
                          uint32_t aColumn)
-  : css::Rule(aSheet, aParentRule, aLine, aColumn)
-  , mRawRule(std::move(aRawRule))
-  , mDecls(Servo_PageRule_GetStyle(mRawRule).Consume())
-{
-}
+    : css::Rule(aSheet, aParentRule, aLine, aColumn),
+      mRawRule(std::move(aRawRule)),
+      mDecls(Servo_PageRule_GetStyle(mRawRule).Consume()) {}
 
 NS_IMPL_ADDREF_INHERITED(CSSPageRule, css::Rule)
 NS_IMPL_RELEASE_INHERITED(CSSPageRule, css::Rule)
@@ -138,9 +113,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(CSSPageRule, css::Rule)
   // Keep this in sync with IsCCLeaf.
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-bool
-CSSPageRule::IsCCLeaf() const
-{
+bool CSSPageRule::IsCCLeaf() const {
   if (!Rule::IsCCLeaf()) {
     return false;
   }
@@ -148,17 +121,13 @@ CSSPageRule::IsCCLeaf() const
   return !mDecls.PreservingWrapper();
 }
 
-size_t
-CSSPageRule::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
-{
+size_t CSSPageRule::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
   // TODO Implement this!
   return aMallocSizeOf(this);
 }
 
 #ifdef DEBUG
-void
-CSSPageRule::List(FILE* out, int32_t aIndent) const
-{
+void CSSPageRule::List(FILE* out, int32_t aIndent) const {
   nsAutoCString str;
   for (int32_t i = 0; i < aIndent; i++) {
     str.AppendLiteral("  ");
@@ -170,25 +139,18 @@ CSSPageRule::List(FILE* out, int32_t aIndent) const
 
 /* CSSRule implementation */
 
-void
-CSSPageRule::GetCssText(nsAString& aCssText) const
-{
+void CSSPageRule::GetCssText(nsAString& aCssText) const {
   Servo_PageRule_GetCssText(mRawRule, &aCssText);
 }
 
 /* CSSPageRule implementation */
 
-nsICSSDeclaration*
-CSSPageRule::Style()
-{
-  return &mDecls;
-}
+nsICSSDeclaration* CSSPageRule::Style() { return &mDecls; }
 
-JSObject*
-CSSPageRule::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
+JSObject* CSSPageRule::WrapObject(JSContext* aCx,
+                                  JS::Handle<JSObject*> aGivenProto) {
   return CSSPageRule_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

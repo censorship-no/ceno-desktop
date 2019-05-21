@@ -10,15 +10,15 @@ var EXPORTED_SYMBOLS = [
 
 const myScope = this;
 
-ChromeUtils.import("resource://gre/modules/Log.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/ObjectUtils.jsm");
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+const {ObjectUtils} = ChromeUtils.import("resource://gre/modules/ObjectUtils.jsm");
+const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 const Utils = TelemetryUtils;
 
-const { AddonManager } = ChromeUtils.import("resource://gre/modules/AddonManager.jsm", {});
+const { AddonManager } = ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
 
 ChromeUtils.defineModuleGetter(this, "AttributionCode",
                                "resource:///modules/AttributionCode.jsm");
@@ -30,6 +30,8 @@ ChromeUtils.defineModuleGetter(this, "ProfileAge",
                                "resource://gre/modules/ProfileAge.jsm");
 ChromeUtils.defineModuleGetter(this, "WindowsRegistry",
                                "resource://gre/modules/WindowsRegistry.jsm");
+ChromeUtils.defineModuleGetter(this, "UpdateUtils",
+                               "resource://gre/modules/UpdateUtils.jsm");
 
 // The maximum length of a string (e.g. description) in the addons section.
 const MAX_ADDON_STRING_LENGTH = 100;
@@ -46,6 +48,21 @@ const MAX_EXPERIMENT_TYPE_LENGTH = 20;
 // eslint-disable-next-line no-unused-vars
 var Policy = {
   now: () => new Date(),
+  _intlLoaded: false,
+  _browserDelayedStartup() {
+    if (Policy._intlLoaded) {
+      return Promise.resolve();
+    }
+    return new Promise(resolve => {
+      let startupTopic = "browser-delayed-startup-finished";
+      Services.obs.addObserver(function observer(subject, topic) {
+        if (topic == startupTopic) {
+          Services.obs.removeObserver(observer, startupTopic);
+          resolve();
+        }
+      }, startupTopic);
+    });
+  },
 };
 
 // This is used to buffer calls to setExperimentActive and friends, so that we
@@ -147,7 +164,7 @@ var TelemetryEnvironment = {
   RECORD_DEFAULTPREF_STATE: 4, // We only record if the pref exists
 
   // Testing method
-  testWatchPreferences(prefMap) {
+  async testWatchPreferences(prefMap) {
     return getGlobal()._watchPreferences(prefMap);
   },
 
@@ -183,11 +200,7 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["app.support.baseURL", {what: RECORD_PREF_VALUE}],
   ["accessibility.browsewithcaret", {what: RECORD_PREF_VALUE}],
   ["accessibility.force_disabled", {what:  RECORD_PREF_VALUE}],
-  ["app.normandy.test.with_true_default", {what: RECORD_PREF_VALUE}],
-  ["app.normandy.test.with_false_default", {what: RECORD_PREF_VALUE}],
-  ["app.normandy.test.without_default", {what: RECORD_PREF_VALUE}],
   ["app.shield.optoutstudies.enabled", {what: RECORD_PREF_VALUE}],
-  ["app.update.auto", {what: RECORD_PREF_VALUE}],
   ["app.update.interval", {what: RECORD_PREF_VALUE}],
   ["app.update.service.enabled", {what: RECORD_PREF_VALUE}],
   ["app.update.silent", {what: RECORD_PREF_VALUE}],
@@ -253,10 +266,13 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["pdfjs.disabled", {what: RECORD_PREF_VALUE}],
   ["places.history.enabled", {what: RECORD_PREF_VALUE}],
   ["plugins.show_infobar", {what: RECORD_PREF_VALUE}],
+  ["privacy.fuzzyfox.enabled", {what: RECORD_PREF_VALUE}],
   ["privacy.trackingprotection.enabled", {what: RECORD_PREF_VALUE}],
   ["privacy.donottrackheader.enabled", {what: RECORD_PREF_VALUE}],
   ["security.mixed_content.block_active_content", {what: RECORD_PREF_VALUE}],
   ["security.mixed_content.block_display_content", {what: RECORD_PREF_VALUE}],
+  ["toolkit.telemetry.testing.overridePreRelease", {what: RECORD_PREF_VALUE}],
+  ["toolkit.telemetry.overrideUpdateChannel", {what: RECORD_PREF_STATE}],
   ["xpinstall.signatures.required", {what: RECORD_PREF_VALUE}],
 ]);
 
@@ -269,7 +285,6 @@ const PREF_DISTRIBUTOR = "app.distributor";
 const PREF_DISTRIBUTOR_CHANNEL = "app.distributor.channel";
 const PREF_APP_PARTNER_BRANCH = "app.partner.";
 const PREF_PARTNER_ID = "mozilla.partner.id";
-const PREF_UPDATE_AUTODOWNLOAD = "app.update.auto";
 const PREF_SEARCH_COHORT = "browser.search.cohort";
 
 const COMPOSITOR_CREATED_TOPIC = "compositor:created";
@@ -281,6 +296,7 @@ const SEARCH_SERVICE_TOPIC = "browser-search-service";
 const SESSIONSTORE_WINDOWS_RESTORED_TOPIC = "sessionstore-windows-restored";
 const PREF_CHANGED_TOPIC = "nsPref:changed";
 const BLOCKLIST_LOADED_TOPIC = "blocklist-loaded";
+const AUTO_UPDATE_PREF_CHANGE_TOPIC = "auto-update-config-change";
 
 /**
  * Enforces the parameter to a boolean value.
@@ -319,6 +335,49 @@ function getSystemLocale() {
   } catch (e) {
     return null;
   }
+}
+
+/**
+ * Get the current OS locales.
+ * @return an array of strings with the OS locales or null on failure.
+ */
+function getSystemLocales() {
+  try {
+    return Cc["@mozilla.org/intl/ospreferences;1"].
+             getService(Ci.mozIOSPreferences).
+             systemLocales;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Get the current OS regional preference locales.
+ * @return an array of strings with the OS regional preference locales or null on failure.
+ */
+function getRegionalPrefsLocales() {
+  try {
+    return Cc["@mozilla.org/intl/ospreferences;1"].
+             getService(Ci.mozIOSPreferences).
+             regionalPrefsLocales;
+  } catch (e) {
+    return null;
+  }
+}
+
+function getIntlSettings() {
+  return {
+    requestedLocales: Services.locale.requestedLocales,
+    availableLocales: Services.locale.availableLocales,
+    appLocales: Services.locale.appLocalesAsBCP47,
+    systemLocales: getSystemLocales(),
+    regionalPrefsLocales: getRegionalPrefsLocales(),
+    acceptLanguages:
+      Services.prefs.getComplexValue("intl.accept_languages", Ci.nsIPrefLocalizedString)
+        .data
+        .split(",")
+        .map(str => str.trim()),
+  };
 }
 
 /**
@@ -889,21 +948,22 @@ function EnvironmentCache() {
     system: this._getSystem(),
   };
 
-  this._updateSettings();
   this._addObservers();
 
   // Build the remaining asynchronous parts of the environment. Don't register change listeners
   // until the initial environment has been built.
 
-  let p = [];
+  let p = [ this._updateSettings() ];
   this._addonBuilder = new EnvironmentAddonBuilder(this);
-  p = [ this._addonBuilder.init() ];
+  p.push(this._addonBuilder.init());
 
   this._currentEnvironment.profile = {};
   p.push(this._updateProfile());
   if (AppConstants.MOZ_BUILD_APP == "browser") {
     p.push(this._loadAttributionAsync());
   }
+  p.push(this._loadAutoUpdateAsync());
+  p.push(this._loadIntlData());
 
   for (const [id, {branch, options}] of gActiveExperimentStartupBuffer.entries()) {
     this.setExperimentActive(id, branch, options);
@@ -1051,10 +1111,10 @@ EnvironmentCache.prototype = {
    * Only used in tests, set the preferences to watch.
    * @param aPreferences A map of preferences names and their recording policy.
    */
-  _watchPreferences(aPreferences) {
+  async _watchPreferences(aPreferences) {
     this._stopWatchingPrefs();
     this._watchedPrefs = aPreferences;
-    this._updateSettings();
+    await this._updateSettings();
     this._startWatchingPrefs();
   },
 
@@ -1154,6 +1214,7 @@ EnvironmentCache.prototype = {
     Services.obs.addObserver(this, GFX_FEATURES_READY_TOPIC);
     Services.obs.addObserver(this, SEARCH_ENGINE_MODIFIED_TOPIC);
     Services.obs.addObserver(this, SEARCH_SERVICE_TOPIC);
+    Services.obs.addObserver(this, AUTO_UPDATE_PREF_CHANGE_TOPIC);
   },
 
   _removeObservers() {
@@ -1166,6 +1227,7 @@ EnvironmentCache.prototype = {
     Services.obs.removeObserver(this, GFX_FEATURES_READY_TOPIC);
     Services.obs.removeObserver(this, SEARCH_ENGINE_MODIFIED_TOPIC);
     Services.obs.removeObserver(this, SEARCH_SERVICE_TOPIC);
+    Services.obs.removeObserver(this, AUTO_UPDATE_PREF_CHANGE_TOPIC);
   },
 
   observe(aSubject, aTopic, aData) {
@@ -1219,6 +1281,9 @@ EnvironmentCache.prototype = {
           this._onPrefChanged(aData);
         }
         break;
+      case AUTO_UPDATE_PREF_CHANGE_TOPIC:
+        this._currentEnvironment.settings.update.autoDownload = (aData == "true");
+        break;
     }
   },
 
@@ -1250,7 +1315,7 @@ EnvironmentCache.prototype = {
   /**
    * Update the default search engine value.
    */
-  _updateSearchEngine() {
+  async _updateSearchEngine() {
     if (!this._canQuerySearch) {
       this._log.trace("_updateSearchEngine - ignoring early call");
       return;
@@ -1271,7 +1336,7 @@ EnvironmentCache.prototype = {
     // Update the search engine entry in the current environment.
     this._currentEnvironment.settings.defaultSearchEngine = this._getDefaultSearchEngine();
     this._currentEnvironment.settings.defaultSearchEngineData =
-      Services.search.getDefaultEngineInfo();
+      await Services.search.getDefaultEngineInfo();
 
     // Record the cohort identifier used for search defaults A/B testing.
     if (Services.prefs.prefHasUserValue(PREF_SEARCH_COHORT)) {
@@ -1284,12 +1349,12 @@ EnvironmentCache.prototype = {
   /**
    * Update the default search engine value and trigger the environment change.
    */
-  _onSearchEngineChange() {
+  async _onSearchEngineChange() {
     this._log.trace("_onSearchEngineChange");
 
     // Finally trigger the environment change notification.
     let oldEnvironment = Cu.cloneInto(this._currentEnvironment, myScope);
-    this._updateSearchEngine();
+    await this._updateSearchEngine();
     this._onEnvironmentChange("search-engine-changed", oldEnvironment);
   },
 
@@ -1353,35 +1418,35 @@ EnvironmentCache.prototype = {
    * @returns null on error, true if we are the default browser, or false otherwise.
    */
   _isDefaultBrowser() {
+    let isDefault = (service, ...args) => {
+      try {
+        return !!service.isDefaultBrowser(...args);
+      } catch (ex) {
+        this._log.error("_isDefaultBrowser - Could not determine if default browser", ex);
+        return null;
+      }
+    };
+
     if (!("@mozilla.org/browser/shell-service;1" in Cc)) {
       this._log.info("_isDefaultBrowser - Could not obtain browser shell service");
       return null;
     }
 
-    let shellService;
     try {
-      let scope = {};
-      ChromeUtils.import("resource:///modules/ShellService.jsm", scope);
-      shellService = scope.ShellService;
+      let { ShellService } = ChromeUtils.import("resource:///modules/ShellService.jsm");
+      // This uses the same set of flags used by the pref pane.
+      return isDefault(ShellService, false, true);
     } catch (ex) {
       this._log.error("_isDefaultBrowser - Could not obtain shell service JSM");
     }
 
-    if (!shellService) {
-      try {
-        shellService = Cc["@mozilla.org/browser/shell-service;1"]
-                         .getService(Ci.nsIShellService);
-      } catch (ex) {
-        this._log.error("_isDefaultBrowser - Could not obtain shell service", ex);
-        return null;
-      }
-    }
-
     try {
-      // This uses the same set of flags used by the pref pane.
-      return !!shellService.isDefaultBrowser(false, true);
+      let shellService = Cc["@mozilla.org/browser/shell-service;1"]
+                            .getService(Ci.nsIShellService);
+    // This uses the same set of flags used by the pref pane.
+      return isDefault(shellService, true);
     } catch (ex) {
-      this._log.error("_isDefaultBrowser - Could not determine if default browser", ex);
+      this._log.error("_isDefaultBrowser - Could not obtain shell service", ex);
       return null;
     }
   },
@@ -1399,7 +1464,7 @@ EnvironmentCache.prototype = {
   /**
    * Update the cached settings data.
    */
-  _updateSettings() {
+  async _updateSettings() {
     let updateChannel = null;
     try {
       updateChannel = Utils.getUpdateChannel();
@@ -1411,21 +1476,30 @@ EnvironmentCache.prototype = {
       e10sMultiProcesses: Services.appinfo.maxWebProcessCount,
       telemetryEnabled: Utils.isTelemetryEnabled,
       locale: getBrowserLocale(),
+      // We need to wait for browser-delayed-startup-finished to ensure that the locales
+      // have settled, once that's happened we can get the intl data directly.
+      intl: Policy._intlLoaded ? getIntlSettings() : {},
       update: {
         channel: updateChannel,
         enabled: !Services.policies || Services.policies.isAllowed("appUpdate"),
-        autoDownload: Services.prefs.getBoolPref(PREF_UPDATE_AUTODOWNLOAD, true),
       },
       userPrefs: this._getPrefData(),
       sandbox: this._getSandboxData(),
     };
+
+    // Services.appinfo.launcherProcessState is not available in all build
+    // configurations, in which case an exception may be thrown.
+    try {
+      this._currentEnvironment.settings.launcherProcessState = Services.appinfo.launcherProcessState;
+    } catch (e) {}
 
     this._currentEnvironment.settings.addonCompatibilityCheckEnabled =
       AddonManager.checkCompatibility;
 
     this._updateAttribution();
     this._updateDefaultBrowser();
-    this._updateSearchEngine();
+    await this._updateSearchEngine();
+    this._updateAutoDownload();
   },
 
   _getSandboxData() {
@@ -1501,6 +1575,40 @@ EnvironmentCache.prototype = {
         limitStringToLength(data[key], MAX_ATTRIBUTION_STRING_LENGTH);
     }
     this._currentEnvironment.settings.attribution = attributionData;
+  },
+
+  /**
+   * Load the auto update pref and adds it to the environment
+   */
+  async _loadAutoUpdateAsync() {
+    if (AppConstants.MOZ_UPDATER) {
+      this._updateAutoDownloadCache = await UpdateUtils.getAppUpdateAutoEnabled();
+    } else {
+      this._updateAutoDownloadCache = false;
+    }
+    this._updateAutoDownload();
+  },
+
+  /**
+   * Update the environment with the cached value for whether updates can auto-
+   * download.
+   */
+  _updateAutoDownload() {
+    if (this._updateAutoDownloadCache === undefined) {
+      return;
+    }
+    this._currentEnvironment.settings.update.autoDownload = this._updateAutoDownloadCache;
+  },
+
+  /**
+  * Get i18n data about the system.
+  * @return A promise of completion.
+  */
+  async _loadIntlData() {
+    // Wait for the startup topic.
+    await Policy._browserDelayedStartup();
+    this._currentEnvironment.settings.intl = getIntlSettings();
+    Policy._intlLoaded = true;
   },
 
   /**
@@ -1667,6 +1775,7 @@ EnvironmentCache.prototype = {
       D2DEnabled: getGfxField("D2DEnabled", null),
       DWriteEnabled: getGfxField("DWriteEnabled", null),
       ContentBackend: getGfxField("ContentBackend", null),
+      LowEndMachine: getGfxField("LowEndMachine", false),
       // The following line is disabled due to main thread jank and will be enabled
       // again as part of bug 1154500.
       // DWriteVersion: getGfxField("DWriteVersion", null),
@@ -1741,6 +1850,7 @@ EnvironmentCache.prototype = {
 
     if (AppConstants.platform === "win") {
       data.isWow64 = getSysinfoProperty("isWow64", null);
+      data.isWowARM64 = getSysinfoProperty("isWowARM64", null);
     } else if (AppConstants.platform == "android") {
       data.device = this._getDeviceData();
     }

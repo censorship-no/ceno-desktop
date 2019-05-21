@@ -1,3 +1,4 @@
+// GENERATED, DO NOT EDIT
 // file: testIntl.js
 // Copyright (C) 2011 2012 Norbert Lindenberg. All rights reserved.
 // Copyright (C) 2012 2013 Mozilla Corporation. All rights reserved.
@@ -813,6 +814,7 @@ function getInvalidLocaleArguments() {
     "u-nu-latn-cu-bob", // extension sequence without language
     "hans-cmn-cn", // "hans" could theoretically be a 4-letter language code,
                    // but those can't be followed by extlang codes.
+    "abcdefghi", // overlong language
     "cmn-hans-cn-u-u", // duplicate singleton
     "cmn-hans-cn-t-u-ca-u", // duplicate singleton
     "de-gregory-gregory", // duplicate variant

@@ -5,23 +5,21 @@
 #include "nsHtml5SVGLoadDispatcher.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 
 using namespace mozilla;
 
 nsHtml5SVGLoadDispatcher::nsHtml5SVGLoadDispatcher(nsIContent* aElement)
-  : Runnable("nsHtml5SVGLoadDispatcher")
-  , mElement(aElement)
-  , mDocument(mElement->OwnerDoc())
-{
+    : Runnable("nsHtml5SVGLoadDispatcher"),
+      mElement(aElement),
+      mDocument(mElement->OwnerDoc()) {
   mDocument->BlockOnload();
 }
 
 NS_IMETHODIMP
-nsHtml5SVGLoadDispatcher::Run()
-{
+nsHtml5SVGLoadDispatcher::Run() {
   WidgetEvent event(true, eSVGLoad);
   event.mFlags.mBubbles = false;
   // Do we care about forcing presshell creation if it hasn't happened yet?

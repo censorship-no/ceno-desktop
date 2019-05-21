@@ -11,16 +11,15 @@ EXTRA_JS_MODULES += [
     'Localization.jsm',
 ]
 
+TESTING_JS_MODULES += [
+    'FluentSyntax.jsm',
+]
+
 XPIDL_SOURCES += [
     'mozIDOMLocalization.idl',
 ]
 
 XPIDL_MODULE = 'locale'
-
-EXTRA_COMPONENTS += [
-    'mozDOMLocalization.js',
-    'mozDOMLocalization.manifest',
-]
 
 EXPORTS.mozilla.dom += [
     'DocumentL10n.h',
@@ -32,12 +31,14 @@ UNIFIED_SOURCES += [
 
 LOCAL_INCLUDES += [
     '/dom/base',
+    '/js/xpconnect/src',
 ]
 
 XPCSHELL_TESTS_MANIFESTS += ['test/xpcshell.ini']
 
 MOCHITEST_MANIFESTS += ['test/mochitest.ini']
 MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
+BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 
 SPHINX_TREES['l10n'] = 'docs'
 

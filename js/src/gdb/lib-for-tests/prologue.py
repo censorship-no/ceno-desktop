@@ -14,7 +14,7 @@ active_fragment = None
 # ('breakpoint', by default) and then select the calling frame.
 
 
-def run_fragment(fragment, function='breakpoint'):
+def run_fragment(fragment, function='gdb-tests.cpp:breakpoint'):
     # Arrange to stop at a reasonable place in the test program.
     bp = gdb.Breakpoint(function)
     try:
@@ -82,13 +82,6 @@ def assert_subprinter_registered(printer, subprinter):
                              "'info pretty-printer' says:\n"
                              "%s" % (printer, subprinter, output))
 
-
-enable_bigint = False
-try:
-    if gdb.lookup_type('JS::BigInt'):
-        enable_bigint = True
-except Exception:
-    pass
 
 # Request full stack traces for Python errors.
 gdb.execute('set python print-stack full')

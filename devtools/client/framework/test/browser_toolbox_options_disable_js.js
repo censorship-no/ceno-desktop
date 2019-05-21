@@ -73,17 +73,17 @@ async function toggleJS(toolbox) {
     info("Checking checkbox to disable JS");
   }
 
-  let { javascriptEnabled } = toolbox.target.activeTab.configureOptions;
+  let { javascriptEnabled } = toolbox.target.configureOptions;
   is(javascriptEnabled, !cbx.checked,
-    "BrowsingContextFront's configureOptions is correct before the toggle");
+    "BrowsingContextTargetFront's configureOptions is correct before the toggle");
 
   const browserLoaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   cbx.click();
   await browserLoaded;
 
-  ({ javascriptEnabled } = toolbox.target.activeTab.configureOptions);
+  ({ javascriptEnabled } = toolbox.target.configureOptions);
   is(javascriptEnabled, !cbx.checked,
-    "BrowsingContextFront's configureOptions is correctly updated");
+    "BrowsingContextTargetFront's configureOptions is correctly updated");
 }
 
 async function testJSDisabled() {

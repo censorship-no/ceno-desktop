@@ -1,5 +1,7 @@
 "use strict";
 
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 const gPrefs = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
 
 function symmetricEquality(expect, a, b)
@@ -307,14 +309,15 @@ add_test(function test_accentEncoding()
   run_next_test();
 });
 
-add_test(function test_percentDecoding()
+add_test({ skip_if: () => AppConstants.MOZ_APP_NAME == "thunderbird" },
+         function test_percentDecoding()
 {
   var url = stringToURL("http://%70%61%73%74%65%62%69%6E.com");
   Assert.equal(url.spec, "http://pastebin.com/");
 
-  // We shouldn't unescape characters that are not allowed in the hostname.
-  url = stringToURL("http://example.com%0a%23.google.com/");
-  Assert.equal(url.spec, "http://example.com%0a%23.google.com/");
+  // Disallowed hostname characters are rejected even when percent encoded
+  Assert.throws(() => { url = stringToURL("http://example.com%0a%23.google.com/"); },
+                /NS_ERROR_MALFORMED_URI/, "invalid characters are not allowed");
   run_next_test();
 });
 
@@ -544,10 +547,86 @@ add_test(function test_emptyPassword() {
   url = url.mutate().setPassword("ppppppppppp").finalize();
   Assert.equal(url.spec, "http://z:ppppppppppp@example.com/");
 
-  url = url.mutate().setUsername("").finalize(); // Should clear password too
-  Assert.equal(url.spec, "http://example.com/");
+  url = stringToURL("http://example.com");
   url = url.mutate().setPassword("").finalize(); // Still empty. Should work.
   Assert.equal(url.spec, "http://example.com/");
+
+  run_next_test();
+});
+
+add_test(function test_emptyUser() {
+  let url = stringToURL("http://:a@example.com/path/to/something?query#hash");
+  Assert.equal(url.spec, "http://:a@example.com/path/to/something?query#hash");
+  url = stringToURL("http://:@example.com/path/to/something?query#hash");
+  Assert.equal(url.spec, "http://example.com/path/to/something?query#hash");
+
+  const kurl = stringToURL("http://user:pass@example.com:8888/path/to/something?query#hash");
+  url = kurl.mutate().setUsername("").finalize();
+  Assert.equal(url.spec, "http://:pass@example.com:8888/path/to/something?query#hash");
+  Assert.equal(url.host, "example.com");
+  Assert.equal(url.hostPort, "example.com:8888");
+  Assert.equal(url.filePath, "/path/to/something");
+  Assert.equal(url.query, "query");
+  Assert.equal(url.ref, "hash");
+  url = kurl.mutate().setUserPass(":pass1").finalize();
+  Assert.equal(url.spec, "http://:pass1@example.com:8888/path/to/something?query#hash");
+  Assert.equal(url.host, "example.com");
+  Assert.equal(url.hostPort, "example.com:8888");
+  Assert.equal(url.filePath, "/path/to/something");
+  Assert.equal(url.query, "query");
+  Assert.equal(url.ref, "hash");
+  url = url.mutate().setUsername("user2").finalize();
+  Assert.equal(url.spec, "http://user2:pass1@example.com:8888/path/to/something?query#hash");
+  Assert.equal(url.host, "example.com");
+  url = url.mutate().setUserPass(":pass234").finalize();
+  Assert.equal(url.spec, "http://:pass234@example.com:8888/path/to/something?query#hash");
+  Assert.equal(url.host, "example.com");
+  url = url.mutate().setUserPass("").finalize();
+  Assert.equal(url.spec, "http://example.com:8888/path/to/something?query#hash");
+  Assert.equal(url.host, "example.com");
+  url = url.mutate().setPassword("pa").finalize();
+  Assert.equal(url.spec, "http://:pa@example.com:8888/path/to/something?query#hash");
+  Assert.equal(url.host, "example.com");
+  url = url.mutate().setUserPass("user:pass").finalize();
+  symmetricEquality(true, url.QueryInterface(Ci.nsIURL), kurl);
+
+  url = stringToURL("http://example.com:8888/path/to/something?query#hash");
+  url = url.mutate().setPassword("pass").finalize();
+  Assert.equal(url.spec, "http://:pass@example.com:8888/path/to/something?query#hash");
+  url = url.mutate().setUsername("").finalize();
+  Assert.equal(url.spec, "http://:pass@example.com:8888/path/to/something?query#hash");
+
+  url = stringToURL("http://example.com:8888");
+  url = url.mutate().setUsername("user").finalize();
+  url = url.mutate().setUsername("").finalize();
+  Assert.equal(url.spec, "http://example.com:8888/");
+
+  url = stringToURL("http://:pass@example.com");
+  Assert.equal(url.spec, "http://:pass@example.com/");
+  url = url.mutate().setPassword("").finalize();
+  Assert.equal(url.spec, "http://example.com/");
+  url = url.mutate().setUserPass("user:pass").finalize();
+  Assert.equal(url.spec, "http://user:pass@example.com/");
+  Assert.equal(url.host, "example.com");
+  url = url.mutate().setUserPass("u:p").finalize();
+  Assert.equal(url.spec, "http://u:p@example.com/");
+  Assert.equal(url.host, "example.com");
+  url = url.mutate().setUserPass("u1:p23").finalize();
+  Assert.equal(url.spec, "http://u1:p23@example.com/");
+  Assert.equal(url.host, "example.com");
+  url = url.mutate().setUsername("u").finalize();
+  Assert.equal(url.spec, "http://u:p23@example.com/");
+  Assert.equal(url.host, "example.com");
+  url = url.mutate().setPassword("p").finalize();
+  Assert.equal(url.spec, "http://u:p@example.com/");
+  Assert.equal(url.host, "example.com");
+
+  url = url.mutate().setUserPass("u2:p2").finalize();
+  Assert.equal(url.spec, "http://u2:p2@example.com/");
+  Assert.equal(url.host, "example.com");
+  url = url.mutate().setUserPass("u23:p23").finalize();
+  Assert.equal(url.spec, "http://u23:p23@example.com/");
+  Assert.equal(url.host, "example.com");
 
   run_next_test();
 });
@@ -617,6 +696,21 @@ add_test(function test_idna_host() {
   url = stringToURL("http://user:password@www.ält.com:8080/path?query#etc");
   url = url.mutate().setRef("").finalize();
   equal(url.spec, "http://user:password@www.xn--lt-uia.com:8080/path?query");
+
+  run_next_test();
+});
+
+add_test({ skip_if: () => AppConstants.MOZ_APP_NAME == "thunderbird" },
+         function test_bug1517025() {
+  Assert.throws(() => { let other = stringToURL("https://b%9a/"); },
+                /NS_ERROR_UNEXPECTED/, "bad URI");
+
+  Assert.throws(() => { let other = stringToURL("https://b%9ª/"); },
+                /NS_ERROR_MALFORMED_URI/, "bad URI");
+
+  let base = stringToURL("https://bug1517025.bmoattachments.org/attachment.cgi?id=9033787");
+  Assert.throws(() => { let uri = Services.io.newURI("/\\b%9ª", "windows-1252", base); },
+                /NS_ERROR_MALFORMED_URI/, "bad URI");
 
   run_next_test();
 });

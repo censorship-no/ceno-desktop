@@ -450,7 +450,10 @@ function compareFocusResults() {
     is(matchWindow.document.hasFocus(), true, currentTestName + " hasFocus");
     var expectedActive = _expectedElement;
     if (!expectedActive) {
-      expectedActive = matchWindow.document instanceof XULDocument ?
+      // Documents that have a XUL document element currently have a different
+      // active element behavior than regular HTML documents. This test will
+      // need to be updated when bug 1492582 is fixed.
+      expectedActive = matchWindow.document.documentElement instanceof XULElement ?
                        "main-window" : getId(matchWindow.document.body);
     }
     is(getId(matchWindow.document.activeElement), expectedActive, currentTestName + " activeElement");
@@ -508,7 +511,6 @@ function expectFocusShift(callback, expectedWindow, expectedElement, focusChange
 
     if (_lastfocuswindow &&
         _lastfocuswindow != expectedWindow) {
-
       if (!gMultiProcessBrowser || _lastfocuswindow != "main-window") {
         expectedEvents.push("blur: " + _lastfocuswindow + "-document");
         expectedEvents.push("blur: " + _lastfocuswindow + "-window");

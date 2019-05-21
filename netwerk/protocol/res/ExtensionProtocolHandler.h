@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,12 +14,12 @@
 namespace mozilla {
 namespace net {
 
-class ExtensionProtocolHandler final : public nsISubstitutingProtocolHandler,
-                                       public nsIProtocolHandlerWithDynamicFlags,
-                                       public SubstitutingProtocolHandler,
-                                       public nsSupportsWeakReference
-{
-public:
+class ExtensionProtocolHandler final
+    : public nsISubstitutingProtocolHandler,
+      public nsIProtocolHandlerWithDynamicFlags,
+      public SubstitutingProtocolHandler,
+      public nsSupportsWeakReference {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIPROTOCOLHANDLERWITHDYNAMICFLAGS
   NS_FORWARD_NSIPROTOCOLHANDLER(SubstitutingProtocolHandler::)
@@ -68,14 +68,13 @@ public:
    *         extension and doesn't result in |aTerminateSender| being
    *         set to true.
    */
-  Result<Ok, nsresult> NewFD(nsIURI* aChildURI,
-                             bool* aTerminateSender,
+  Result<Ok, nsresult> NewFD(nsIURI* aChildURI, bool* aTerminateSender,
                              NeckoParent::GetExtensionFDResolver& aResolve);
 
-protected:
+ protected:
   ~ExtensionProtocolHandler() = default;
 
-private:
+ private:
   explicit ExtensionProtocolHandler();
 
   MOZ_MUST_USE bool ResolveSpecialCases(const nsACString& aHost,
@@ -123,8 +122,7 @@ private:
    *        the file access. The new channel encapsulates a request to
    *        the parent for an IPCStream for the file.
    */
-  void SubstituteRemoteFileChannel(nsIURI* aURI,
-                                   nsILoadInfo* aLoadinfo,
+  void SubstituteRemoteFileChannel(nsIURI* aURI, nsILoadInfo* aLoadinfo,
                                    nsACString& aResolvedFileSpec,
                                    nsIChannel** aRetVal);
 
@@ -154,12 +152,9 @@ private:
    *        nsIFile for which Normalize() has already been called.
    * @param aRequestedFile the requested web-accessible resource file. Argument
    *        must be an nsIFile for which Normalize() has already been called.
-   * @param aResult outparam set to true when the load of the requested file
-   *        should be allowed.
    */
-  Result<Ok, nsresult> AllowExternalResource(nsIFile* aExtensionDir,
-                                             nsIFile* aRequestedFile,
-                                             bool* aResult);
+  Result<bool, nsresult> AllowExternalResource(nsIFile* aExtensionDir,
+                                               nsIFile* aRequestedFile);
 
 #if defined(XP_MACOSX)
   /**
@@ -173,10 +168,8 @@ private:
    *
    * @param aRequestedFile the requested web-accessible resource file. Argument
    *        must be an nsIFile for which Normalize() has already been called.
-   * @param aResult outparam set to true on development builds when the
-   *        requested file resides in the repo.
    */
-  Result<Ok, nsresult> DevRepoContains(nsIFile* aRequestedFile, bool* aResult);
+  Result<bool, nsresult> DevRepoContains(nsIFile* aRequestedFile);
 
   // On development builds, this points to development repo. Lazily set.
   nsCOMPtr<nsIFile> mDevRepo;
@@ -200,10 +193,8 @@ private:
    *
    * @param aExtensionDir the extension directory. Argument must be an
    *        nsIFile for which Normalize() has already been called.
-   * @param aResult outparam set to true on development builds when the
-   *        requested file resides in the repo.
    */
-  Result<Ok, nsresult> AppDirContains(nsIFile* aExtensionDir, bool* aResult);
+  Result<bool, nsresult> AppDirContains(nsIFile* aExtensionDir);
 
   // On development builds, cache the NS_GRE_DIR repo. Lazily set.
   nsCOMPtr<nsIFile> mAppDir;
@@ -226,7 +217,7 @@ private:
   bool mUseRemoteFileChannels;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
 #endif /* ExtensionProtocolHandler_h___ */

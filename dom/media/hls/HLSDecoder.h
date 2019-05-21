@@ -14,11 +14,9 @@ namespace mozilla {
 
 class HLSResourceCallbacksSupport;
 
-class HLSDecoder final : public MediaDecoder
-{
-public:
-  // MediaDecoder interface.
-  explicit HLSDecoder(MediaDecoderInit& aInit);
+class HLSDecoder final : public MediaDecoder {
+ public:
+  static RefPtr<HLSDecoder> Create(MediaDecoderInit& aInit);
 
   // Returns true if the HLS backend is pref'ed on.
   static bool IsEnabled();
@@ -30,6 +28,7 @@ public:
 
   nsresult Load(nsIChannel* aChannel);
 
+  // MediaDecoder interface.
   void Play() override;
 
   void Pause() override;
@@ -44,17 +43,20 @@ public:
   // Called as data arrives on the underlying HLS player. Main thread only.
   void NotifyDataArrived();
 
-private:
+ private:
   friend class HLSResourceCallbacksSupport;
 
+  explicit HLSDecoder(MediaDecoderInit& aInit);
+  ~HLSDecoder();
   MediaDecoderStateMachine* CreateStateMachine();
 
-  bool CanPlayThroughImpl() final
-  {
+  bool CanPlayThroughImpl() final {
     // TODO: We don't know how to estimate 'canplaythrough' for this decoder.
     // For now we just return true for 'autoplay' can work.
     return true;
   }
+
+  static size_t sAllocatedInstances;  // Access only in the main thread.
 
   nsCOMPtr<nsIChannel> mChannel;
   nsCOMPtr<nsIURI> mURI;
@@ -63,6 +65,6 @@ private:
   RefPtr<HLSResourceCallbacksSupport> mCallbackSupport;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif /* HLSDecoder_h_ */

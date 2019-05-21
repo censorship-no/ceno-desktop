@@ -23,10 +23,9 @@ include "mozilla/layers/WebRenderMessageUtils.h";
 using struct mozilla::null_t from "ipc/IPCMessageUtils.h";
 using struct mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
 using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/CompositorTypes.h";
-using struct mozilla::layers::FrameMetrics from "FrameMetrics.h";
-using mozilla::layers::FrameMetrics::ViewID from "FrameMetrics.h";
-using mozilla::layers::MaybeZoomConstraints from "FrameMetrics.h";
-using struct mozilla::layers::ScrollableLayerGuid from "FrameMetrics.h";
+using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
+using mozilla::layers::ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
+using mozilla::layers::MaybeZoomConstraints from "mozilla/layers/ZoomConstraints.h";
 using mozilla::layers::LayersBackend from "mozilla/layers/LayersTypes.h";
 using mozilla::CrossProcessMutexHandle from "mozilla/ipc/CrossProcessMutex.h";
 using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
@@ -49,6 +48,22 @@ using mozilla::layers::TransactionId from "mozilla/layers/LayersTypes.h";
 namespace mozilla {
 namespace layers {
 
+struct FrameStats {
+  TransactionId id;
+  TimeStamp compositeStart;
+  TimeStamp renderStart;
+  TimeStamp compositeEnd;
+  int32_t contentFrameTime;
+  double resourceUploadTime;
+  double gpuCacheUploadTime;
+  TimeStamp transactionStart;
+  TimeStamp refreshStart;
+  TimeStamp fwdTime;
+  TimeStamp sceneBuiltTime;
+  uint32_t skippedComposites;
+  nsCString url;
+};
+
 
 /**
  * The PCompositorBridge protocol is a top-level protocol for the compositor.
@@ -59,15 +74,15 @@ namespace layers {
  *   CompositorBridgeChild instance lives in the UI process, and the
  *   CompositorBridgeParent lives in the GPU process (if there is one) or the
  *   UI process otherwise.
- * - There is also a CrossProcessCompositorBridgeParent/CompositorBridgeChild
- *   pair created for each content process. The CrossProcessCompositorBridgeParent
+ * - There is also a ContentCompositorBridgeParent/CompositorBridgeChild
+ *   pair created for each content process. The ContentCompositorBridgeParent
  *   lives in the GPU process (if there is one) or the UI process otherwise. The
  *   CompositorBridgeChild is a singleton in the content process. Note that
  *   a given content process may have multiple browser instances (represented
  *   by TabChild instances), that are attached to different windows, and therefore
  *   rendered by different compositors. This means that when a browser instance
  *   sends messages via its CompositorBridgeChild, the corresponding
- *   CrossProcessCompositorBridgeParent has to use the layers id in the message
+ *   ContentCompositorBridgeParent has to use the layers id in the message
  *   to find the correct compositor or CompositorBridgeParent to pass the message
  *   on to.
  *
@@ -100,6 +115,8 @@ child:
   // if there was no transaction since the last composite.
   async DidComposite(LayersId id, TransactionId transactionId,
                      TimeStamp compositeStart, TimeStamp compositeEnd);
+
+  async NotifyFrameStats(FrameStats[] aFrameStats);
 
   /**
    * Parent informs the child that the graphics objects are ready for

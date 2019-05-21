@@ -1,53 +1,94 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.mapScopes = mapScopes;
-
-var _selectors = require("../../selectors/index");
-
-var _loadSourceText = require("../sources/loadSourceText");
-
-var _promise = require("../utils/middleware/promise");
-
-var _prefs = require("../../utils/prefs");
-
-var _log = require("../../utils/log");
-
-var _source = require("../../utils/source");
-
-var _mapScopes = require("../../utils/pause/mapScopes/index");
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function mapScopes(scopes, frame) {
-  return async function ({
-    dispatch,
-    getState,
-    client,
-    sourceMaps
-  }) {
-    const generatedSource = (0, _selectors.getSource)(getState(), frame.generatedLocation.sourceId);
-    const source = (0, _selectors.getSource)(getState(), frame.location.sourceId);
+
+// @flow
+
+import {
+  getSource,
+  getMapScopes,
+  getSelectedFrame,
+  getSelectedGeneratedScope,
+  getSelectedOriginalScope,
+  getCurrentThread
+} from "../../selectors";
+import { loadSourceText } from "../sources/loadSourceText";
+import { PROMISE } from "../utils/middleware/promise";
+
+import { log } from "../../utils/log";
+import { isGenerated, isOriginal } from "../../utils/source";
+import type { Frame, Scope } from "../../types";
+
+import type { ThunkArgs } from "../types";
+
+import { buildMappedScopes } from "../../utils/pause/mapScopes";
+
+export function toggleMapScopes() {
+  return async function({ dispatch, getState, client, sourceMaps }: ThunkArgs) {
+    if (getMapScopes(getState())) {
+      return dispatch({ type: "TOGGLE_MAP_SCOPES", mapScopes: false });
+    }
+
+    dispatch({ type: "TOGGLE_MAP_SCOPES", mapScopes: true });
+
+    const thread = getCurrentThread(getState());
+    if (getSelectedOriginalScope(getState(), thread)) {
+      return;
+    }
+
+    const scopes = getSelectedGeneratedScope(getState(), thread);
+    const frame = getSelectedFrame(getState(), thread);
+    if (!scopes || !frame) {
+      return;
+    }
+
+    dispatch(mapScopes(Promise.resolve(scopes.scope), frame));
+  };
+}
+
+export function mapScopes(scopes: Promise<Scope>, frame: Frame) {
+  return async function({ dispatch, getState, client, sourceMaps }: ThunkArgs) {
+    const generatedSource = getSource(
+      getState(),
+      frame.generatedLocation.sourceId
+    );
+
+    const source = getSource(getState(), frame.location.sourceId);
+
     await dispatch({
       type: "MAP_SCOPES",
+      thread: frame.thread,
       frame,
-      [_promise.PROMISE]: async function () {
-        if (!_prefs.features.mapScopes || !source || !generatedSource || generatedSource.isWasm || source.isPrettyPrinted || (0, _source.isGenerated)(source)) {
+      [PROMISE]: (async function() {
+        if (
+          !getMapScopes(getState()) ||
+          !source ||
+          !generatedSource ||
+          generatedSource.isWasm ||
+          source.isPrettyPrinted ||
+          isGenerated(source)
+        ) {
           return null;
         }
 
-        await dispatch((0, _loadSourceText.loadSourceText)(source));
+        await dispatch(loadSourceText(source));
+        if (isOriginal(source)) {
+          await dispatch(loadSourceText(generatedSource));
+        }
 
         try {
-          return await (0, _mapScopes.buildMappedScopes)(source, frame, (await scopes), sourceMaps, client);
+          return await buildMappedScopes(
+            source,
+            frame,
+            await scopes,
+            sourceMaps,
+            client
+          );
         } catch (e) {
-          (0, _log.log)(e);
+          log(e);
           return null;
         }
-      }()
+      })()
     });
   };
 }

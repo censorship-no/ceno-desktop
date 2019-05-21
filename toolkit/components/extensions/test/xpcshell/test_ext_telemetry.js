@@ -43,7 +43,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
       doneSignal: "scalar_add",
     });
 
-    const scalars = Services.telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+    const scalars = Services.telemetry.getSnapshotForScalars("main", false);
     equal(scalars.parent["telemetry.test.unsigned_int_kind"], 1);
 
     Services.telemetry.clearScalars();
@@ -104,7 +104,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
       doneSignal: "scalar_set",
     });
 
-    const scalars = Services.telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+    const scalars = Services.telemetry.getSnapshotForScalars("main", false);
     equal(scalars.parent["telemetry.test.boolean_kind"], true);
 
     Services.telemetry.clearScalars();
@@ -136,7 +136,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
       doneSignal: "scalar_set_maximum",
     });
 
-    const scalars = Services.telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+    const scalars = Services.telemetry.getSnapshotForScalars("main", false);
     equal(scalars.parent["telemetry.test.unsigned_int_kind"], 123);
 
     Services.telemetry.clearScalars();
@@ -190,6 +190,35 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
     Services.telemetry.clearEvents();
   });
 
+  // Bug 1536877
+  add_task(async function test_telemetry_record_event_value_must_be_string() {
+    Services.telemetry.clearEvents();
+    Services.telemetry.setEventRecordingEnabled("telemetry.test", true);
+
+    await run({
+      backgroundScript: async () => {
+        try {
+          await browser.telemetry.recordEvent("telemetry.test", "test1", "object1", "value1");
+          browser.test.notifyPass("record_event_string_value");
+        } catch (ex) {
+          browser.test.fail(`Unexpected exception raised during record_event_value_must_be_string: ${ex}`);
+          browser.test.notifyPass("record_event_string_value");
+          throw ex;
+        }
+      },
+      doneSignal: "record_event_string_value",
+    });
+
+    let events = Services.telemetry.snapshotEvents(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, true);
+    equal(events.parent.length, 1);
+    equal(events.parent[0][1], "telemetry.test");
+    equal(events.parent[0][3], "object1");
+    equal(events.parent[0][4], "value1");
+
+    Services.telemetry.setEventRecordingEnabled("telemetry.test", false);
+    Services.telemetry.clearEvents();
+  });
+
   add_task(async function test_telemetry_register_scalars_string() {
     Services.telemetry.clearScalars();
 
@@ -208,7 +237,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
       doneSignal: "register_scalars_string",
     });
 
-    const scalars = Services.telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+    const scalars = Services.telemetry.getSnapshotForScalars("main", false);
     equal(scalars.dynamic["telemetry.test.dynamic.webext_string"], "hello");
 
     Services.telemetry.clearScalars();
@@ -238,7 +267,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
       doneSignal: "register_scalars_multiple",
     });
 
-    const scalars = Services.telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+    const scalars = Services.telemetry.getSnapshotForScalars("main", false);
     equal(scalars.dynamic["telemetry.test.dynamic.webext_string"], "hello");
     equal(scalars.dynamic["telemetry.test.dynamic.webext_string_too"], "world");
 
@@ -263,7 +292,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
       doneSignal: "register_scalars_boolean",
     });
 
-    const scalars = Services.telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+    const scalars = Services.telemetry.getSnapshotForScalars("main", false);
     equal(scalars.dynamic["telemetry.test.dynamic.webext_boolean"], true);
 
     Services.telemetry.clearScalars();
@@ -287,7 +316,7 @@ if (AppConstants.MOZ_BUILD_APP === "browser") {
       doneSignal: "register_scalars_count",
     });
 
-    const scalars = Services.telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN);
+    const scalars = Services.telemetry.getSnapshotForScalars("main", false);
     equal(scalars.dynamic["telemetry.test.dynamic.webext_count"], 123);
 
     Services.telemetry.clearScalars();

@@ -19,7 +19,7 @@ For events recorded into Firefox Telemetry we also provide an API that opaquely 
 Serialization format
 ====================
 
-Events are submitted as an array, e.g.:
+Events are submitted in an :doc:`../data/event-ping` as an array, e.g.:
 
 .. code-block:: js
 
@@ -73,6 +73,8 @@ For the Firefox Telemetry implementation, several fields are subject to length l
 Only ``value`` and the values of ``extra`` will be truncated if over the specified length.
 Any other ``String`` going over its limit will be reported as an error and the operation
 aborted.
+
+.. _eventdefinition:
 
 The YAML definition file
 ========================
@@ -133,6 +135,18 @@ The following event properties are valid:
   - ``fennec``
   - ``geckoview``
   - ``all`` (record on all products)
+- ``operating_systems`` *(optional, list of strings)*: This field restricts recording to certain operating systems only. It defaults to ``all``. Currently supported values are:
+
+   - ``mac``
+   - ``linux``
+   - ``windows``
+   - ``android``
+   - ``unix``
+   - ``all`` (record on all operating systems)
+
+.. note::
+
+  Combinations of ``category``, ``method``, and ``object`` defined in the file must be unique.
 
 The API
 =======
@@ -199,6 +213,8 @@ Example:
 
   Even if your event category isn't enabled, counts of events that attempted to be recorded will
   be :ref:`summarized <events.event-summary>`.
+
+.. _registerevents:
 
 ``registerEvents()``
 ~~~~~~~~~~~~~~~~~~~~
@@ -297,6 +313,23 @@ example above, if ``interaction.click.document`` was registered with ``registerE
 the dynamic-process scalar ``telemetry.dynamic_event_counts`` would have a key
 ``interaction#click#document`` with the value ``6``.
 
+Testing
+=======
+
+Tests involving Event Telemetry often follow this four-step form:
+
+1. ``Services.telemetry.clearEvents();`` To minimize the effects of prior code and tests.
+2. ``Services.telemetry.setEventRecordingEnabled(myCategory, true);`` To enable the collection of
+   your events. (May or may not be relevant in your case)
+3. ``runTheCode();`` This is part of the test where you call the code that's supposed to collect
+   Event Telemetry.
+4. ``TelemetryTestUtils.assertEvents(expected, filter, options);`` This will check the
+   events recorded by Event Telemetry against your provided list of expected events.
+   If you only need to check the number of events recorded, you can use
+   ``TelemetryTestUtils.assertNumberOfEvents(expectedNum, filter, options);``.
+   Both utilities have `helpful inline documentation <https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/telemetry/tests/utils/TelemetryTestUtils.jsm>`_.
+
+
 Version History
 ===============
 
@@ -312,3 +345,4 @@ Version History
 
    - Enabled support for adding events in artifact builds and build-faster workflows (`bug 1448945 <https://bugzilla.mozilla.org/show_bug.cgi?id=1448945>`_).
    - Added summarization of events (`bug 1440673 <https://bugzilla.mozilla.org/show_bug.cgi?id=1440673>`_).
+- Firefox 66: Replace ``cpp_guard`` with ``operating_systems`` (`bug 1482912 <https://bugzilla.mozilla.org/show_bug.cgi?id=1482912>`_)`

@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "W pórěźe, som zrozměł",
   "prefs_home_header": "Wopśimjeśe startowego boka Firefox",
   "prefs_home_description": "Wubjeŕśo, kótare wopśimjeśe cośo na swójej startowej wobrazowce Firefox měś.",
+  "prefs_content_discovery_header": "Startowy bok Firefox",
+  "prefs_content_discovery_description": "Content Discovery na startowem boku Firefox wam zmóžnja, w interneśe relewantne nastawki wusokeje kwality namakaś.",
+  "prefs_content_discovery_button": "Content Discovery znjemóžniś",
   "prefs_section_rows_option": "{num} smužka;{num} smužce;{num}smužki;{num} smužkow",
   "prefs_search_header": "Webpytanje",
   "prefs_topsites_description": "Sedła, ku kótarymž se nejcesćej woglědujośo",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Składujśo tšojeńka, kótarež se wam spódobuju, w Pocket a žywśo swój duch z fasciněrujucymi cytańkami.",
   "highlights_empty_state": "Zachopśo pśeglědowaś, a pokažomy někotare wjelicne nastawki, wideo a druge boki, kótarež sćo se njedawno woglědał abo how ako cytańske znamjenja składował.",
   "topstories_empty_state": "To jo nachylu wšykno. Wrośćo se pózdźej wjelicnych tšojeńkow dla wót {provider}. Njamóžośo cakaś? Wubjeŕśo woblubowanu temu, aby dalšne wjelicne tšojeńka we webje namakał.",
-  "manual_migration_explanation2": "Wopytajśo Firefox z cytanskimi znamjenjami, historiju a gronidłami z drugego wobglědowaka.",
-  "manual_migration_cancel_button": "Ně, źěkujom se",
-  "manual_migration_import_button": "Něnto importěrowaś",
   "error_fallback_default_info": "Hopla, pśi cytanju toś togo wopśimjeśa njejo se něco raźiło.",
   "error_fallback_default_refresh_suggestion": "Aktualizěrujśo bok, aby hyšći raz wopytał.",
   "section_menu_action_remove_section": "Wótrězk wótwónoźeś",
@@ -108,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Dalej",
   "firstrun_skip_login": "Toś ten kšac pśeskócyś",
   "context_menu_title": "Meni wócyniś",
-  "pocket_learn_more": "Dalšne informacije"
+  "manual_migration_explanation2": "Wopytajśo Firefox z cytanskimi znamjenjami, historiju a gronidłami z drugego wobglědowaka.",
+  "manual_migration_cancel_button": "Ně, źěkujom se",
+  "manual_migration_import_button": "Něnto importěrowaś"
 };

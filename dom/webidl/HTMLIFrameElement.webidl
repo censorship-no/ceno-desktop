@@ -49,10 +49,10 @@ partial interface HTMLIFrameElement {
   [CEReactions, SetterThrows, Pure]
            attribute DOMString longDesc;
 
-  [CEReactions, TreatNullAs=EmptyString, SetterThrows, Pure]
-           attribute DOMString marginHeight;
-  [CEReactions, TreatNullAs=EmptyString, SetterThrows, Pure]
-           attribute DOMString marginWidth;
+  [CEReactions, SetterThrows, Pure]
+           attribute [TreatNullAs=EmptyString] DOMString marginHeight;
+  [CEReactions, SetterThrows, Pure]
+           attribute [TreatNullAs=EmptyString] DOMString marginWidth;
 };
 
 partial interface HTMLIFrameElement {
@@ -72,7 +72,7 @@ HTMLIFrameElement implements BrowserElement;
 
 // https://wicg.github.io/feature-policy/#policy
 partial interface HTMLIFrameElement {
-  [SameObject, Pref="dom.security.featurePolicy.enabled"]
+  [SameObject, Pref="dom.security.featurePolicy.webidl.enabled"]
   readonly attribute Policy policy;
 
   [CEReactions, SetterThrows, Pure, Pref="dom.security.featurePolicy.enabled"]

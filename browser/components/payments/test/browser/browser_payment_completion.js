@@ -11,11 +11,16 @@ async function setup() {
   let billingAddressGUID = await addAddressRecord(PTU.Addresses.TimBL);
   let card = Object.assign({}, PTU.BasicCards.JohnDoe,
                            { billingAddressGUID });
-  await addCardRecord(card);
+  let card1GUID = await addCardRecord(card);
+  return {address1GUID: billingAddressGUID, card1GUID};
 }
 
 add_task(async function test_complete_success() {
-  await setup();
+  if (!OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
+    todo(false, "Cannot test OS key store login on official builds.");
+    return;
+  }
+  let prefilledGuids = await setup();
   await BrowserTestUtils.withNewTab({
     gBrowser,
     url: BLANK_PAGE_URL,
@@ -28,11 +33,17 @@ add_task(async function test_complete_success() {
       }
     );
 
+    await spawnPaymentDialogTask(frame, async ({prefilledGuids: guids}) => {
+      let paymentMethodPicker = content.document.querySelector("payment-method-picker");
+      content.fillField(Cu.waiveXrays(paymentMethodPicker).dropdown.popupBox,
+                        guids.card1GUID);
+    }, {prefilledGuids});
+
     await spawnPaymentDialogTask(frame, PTU.DialogContentTasks.setSecurityCode, {
       securityCode: "123",
     });
 
-    spawnPaymentDialogTask(frame, PTU.DialogContentTasks.completePayment);
+    await loginAndCompletePayment(frame);
 
     // Add a handler to complete the payment above.
     info("acknowledging the completion from the merchant page");
@@ -47,7 +58,11 @@ add_task(async function test_complete_success() {
 });
 
 add_task(async function test_complete_fail() {
-  await setup();
+  if (!OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
+    todo(false, "Cannot test OS key store login on official builds.");
+    return;
+  }
+  let prefilledGuids = await setup();
   await BrowserTestUtils.withNewTab({
     gBrowser,
     url: BLANK_PAGE_URL,
@@ -60,12 +75,18 @@ add_task(async function test_complete_fail() {
       }
     );
 
+    await spawnPaymentDialogTask(frame, async ({prefilledGuids: guids}) => {
+      let paymentMethodPicker = content.document.querySelector("payment-method-picker");
+      content.fillField(Cu.waiveXrays(paymentMethodPicker).dropdown.popupBox,
+                        guids.card1GUID);
+    }, {prefilledGuids});
+
     await spawnPaymentDialogTask(frame, PTU.DialogContentTasks.setSecurityCode, {
       securityCode: "456",
     });
 
     info("clicking pay");
-    spawnPaymentDialogTask(frame, PTU.DialogContentTasks.completePayment);
+    await loginAndCompletePayment(frame);
 
     info("acknowledging the completion from the merchant page");
     let {completeException} = await ContentTask.spawn(browser,
@@ -81,7 +102,11 @@ add_task(async function test_complete_fail() {
 });
 
 add_task(async function test_complete_timeout() {
-  await setup();
+  if (!OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
+    todo(false, "Cannot test OS key store login on official builds.");
+    return;
+  }
+  let prefilledGuids = await setup();
   await BrowserTestUtils.withNewTab({
     gBrowser,
     url: BLANK_PAGE_URL,
@@ -97,12 +122,18 @@ add_task(async function test_complete_timeout() {
       }
     );
 
+    await spawnPaymentDialogTask(frame, async ({prefilledGuids: guids}) => {
+      let paymentMethodPicker = content.document.querySelector("payment-method-picker");
+      content.fillField(Cu.waiveXrays(paymentMethodPicker).dropdown.popupBox,
+                        guids.card1GUID);
+    }, {prefilledGuids});
+
     await spawnPaymentDialogTask(frame, PTU.DialogContentTasks.setSecurityCode, {
       securityCode: "789",
     });
 
     info("clicking pay");
-    await spawnPaymentDialogTask(frame, PTU.DialogContentTasks.completePayment);
+    await loginAndCompletePayment(frame);
 
     info("acknowledging the completion from the merchant page after a delay");
     let {completeException} = await ContentTask.spawn(browser,

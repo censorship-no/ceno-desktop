@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Ok, chapì",
   "prefs_home_header": "Cuntegn da la pagina da partenza da Firefox",
   "prefs_home_description": "Tscherna il cuntegn che ti vuls vesair sin la pagina da partenza da Firefox.",
+  "prefs_content_discovery_header": "Pagina da partenza da Firefox",
+  "prefs_content_discovery_description": "La vitrina da cuntegn pussibilitescha da scuvrir artitgels relevants da gronda qualitad en il web.",
+  "prefs_content_discovery_button": "Deactivar la vitrina da cuntegn",
   "prefs_section_rows_option": "{num} lingia;{num} lingias",
   "prefs_search_header": "Tschertga web",
   "prefs_topsites_description": "Las paginas che ti visitas il pli savens",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Memorisescha ils artitgels che ta plaschan en Pocket e procura per inspiraziun cuntinuanta cun lectura fascinanta.",
   "highlights_empty_state": "Cumenza a navigar e nus ta mussain qua artitgels, videos ed autras paginas che ti has visità dacurt u che ti has agiuntà dacurt sco segnapagina.",
   "topstories_empty_state": "Ussa has ti legì tut las novitads. Turna pli tard per ulteriuras novitads da {provider}. Na pos betg spetgar? Tscherna in tema popular per chattar ulteriuras istorgias ord il web.",
-  "manual_migration_explanation2": "Emprova Firefox cun ils segnapaginas, la cronologia ed ils pleds-clav importads d'in auter navigatur.",
-  "manual_migration_cancel_button": "Na, grazia",
-  "manual_migration_import_button": "Importar ussa",
   "error_fallback_default_info": "Oha, igl è succedì in sbagl cun chargiar il cuntegn.",
   "error_fallback_default_refresh_suggestion": "Rechargia la pagina per reempruvar.",
   "section_menu_action_remove_section": "Allontanar la secziun",
@@ -108,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Cuntinuar",
   "firstrun_skip_login": "Sursiglir quest pass",
   "context_menu_title": "Avrir il menu",
-  "pocket_learn_more": "Ulteriuras infurmaziuns"
+  "manual_migration_explanation2": "Emprova Firefox cun ils segnapaginas, la cronologia ed ils pleds-clav importads d'in auter navigatur.",
+  "manual_migration_cancel_button": "Na, grazia",
+  "manual_migration_import_button": "Importar ussa"
 };

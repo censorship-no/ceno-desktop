@@ -5,8 +5,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Test infrastructure
 
-ChromeUtils.import("resource://testing-common/httpd.js");
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {HttpServer} = ChromeUtils.import("resource://testing-common/httpd.js");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
@@ -20,6 +20,11 @@ var testPathBase = "/cl_hdrs";
 var prefs;
 var enforcePrefStrict;
 var enforcePrefSoft;
+
+Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+});
 
 function run_test()
 {
@@ -41,7 +46,7 @@ function run_test_number(num)
 
   var channel = setupChannel(testPath);
   flags = test_flags[num];   // OK if flags undefined for test
-  channel.asyncOpen2(new ChannelListener(eval("completeTest" + num),
+  channel.asyncOpen(new ChannelListener(eval("completeTest" + num),
                                         channel, flags));
 }
 
@@ -63,21 +68,21 @@ function run_gzip_test(num)
       throw Cr.NS_ERROR_NO_INTERFACE;
     },
 
-    onStartRequest: function(aRequest, aContext) {},
+    onStartRequest: function(aRequest) {},
 
-    onStopRequest: function(aRequest, aContext, aStatusCode) {
+    onStopRequest: function(aRequest, aStatusCode) {
       // Make sure we catch the error NS_ERROR_NET_PARTIAL_TRANSFER here.
       Assert.equal(aStatusCode, Cr.NS_ERROR_NET_PARTIAL_TRANSFER);
       //  do_test_finished();
         endTests();
     },
 
-    onDataAvailable: function(request, context, stream, offset, count) {}
+    onDataAvailable: function(request, stream, offset, count) {}
   };
 
   let listener = new StreamListener();
  
-  channel.asyncOpen2(listener);
+  channel.asyncOpen(listener);
 
 }
 

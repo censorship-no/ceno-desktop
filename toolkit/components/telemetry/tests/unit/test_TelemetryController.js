@@ -8,16 +8,16 @@
  * checked in the second request.
  */
 
-ChromeUtils.import("resource://services-common/utils.js");
-ChromeUtils.import("resource://gre/modules/ClientID.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {CommonUtils} = ChromeUtils.import("resource://services-common/utils.js");
+const {ClientID} = ChromeUtils.import("resource://gre/modules/ClientID.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", this);
 ChromeUtils.import("resource://gre/modules/TelemetryStorage.jsm", this);
 ChromeUtils.import("resource://gre/modules/TelemetrySend.jsm", this);
 ChromeUtils.import("resource://gre/modules/TelemetryArchive.jsm", this);
 ChromeUtils.import("resource://gre/modules/TelemetryUtils.jsm", this);
-ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+const {Preferences} = ChromeUtils.import("resource://gre/modules/Preferences.jsm");
 ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm", this);
 
 const PING_FORMAT_VERSION = 4;
@@ -94,6 +94,7 @@ add_task(async function test_setup() {
   do_get_profile();
   loadAddonManager("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
   finishAddonManagerStartup();
+  fakeIntlReady();
   // Make sure we don't generate unexpected pings due to pref changes.
   await setEmptyPrefWatchlist();
 
@@ -126,13 +127,6 @@ add_task(async function test_simplePing() {
   await sendPing(false, false);
   let request = await PingServer.promiseNextRequest();
 
-  // Check that we have a version query parameter in the URL.
-  Assert.notEqual(request.queryString, "");
-
-  // Make sure the version in the query string matches the new ping format version.
-  let params = request.queryString.split("&");
-  Assert.ok(params.find(p => p == ("v=" + PING_FORMAT_VERSION)));
-
   let ping = decodeRequestPayload(request);
   checkPingFormat(ping, TEST_PING_TYPE, false, false);
 });
@@ -147,7 +141,7 @@ add_task(async function test_disableDataUpload() {
   }
 
   // Check that the optin probe is not set, there should be other data in the snapshot though
-  let snapshot = Telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false).parent;
+  let snapshot = Telemetry.getSnapshotForScalars("main", false).parent;
   Assert.ok(!(OPTIN_PROBE in snapshot), "Data optin scalar should not be set at start");
 
   // Send a first ping to get the current used client id
@@ -166,7 +160,7 @@ add_task(async function test_disableDataUpload() {
   // Wait on ping activity to settle.
   await TelemetrySend.testWaitOnOutgoingPings();
 
-  snapshot = Telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false).parent;
+  snapshot = Telemetry.getSnapshotForScalars("main", false).parent;
   Assert.ok(!(OPTIN_PROBE in snapshot), "Data optin scalar should not be set after optout");
 
   // Restore FHR Upload.
@@ -174,13 +168,12 @@ add_task(async function test_disableDataUpload() {
 
   // We need to wait until the scalar is set
   await ContentTaskUtils.waitForCondition(() => {
-    const scalarSnapshot =
-      Telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false);
+    const scalarSnapshot = Telemetry.getSnapshotForScalars("main", false);
     return Object.keys(scalarSnapshot).includes("parent") &&
            OPTIN_PROBE in scalarSnapshot.parent;
   });
 
-  snapshot = Telemetry.snapshotScalars(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, false).parent;
+  snapshot = Telemetry.getSnapshotForScalars("main", false).parent;
   Assert.ok(snapshot[OPTIN_PROBE], "Enabling data upload should set optin probe");
 
   // Simulate a failure in sending the optout ping by disabling the HTTP server.
@@ -643,6 +636,44 @@ add_task(async function test_newCanRecordsMatchTheOld() {
                "Release Data is the new way to say Base Collection");
   Assert.equal(Telemetry.canRecordExtended, Telemetry.canRecordPrereleaseData,
                "Prerelease Data is the new way to say Extended Collection");
+});
+
+add_task(function test_histogram_filtering() {
+  const COUNT_ID = "TELEMETRY_TEST_COUNT";
+  const KEYED_ID = "TELEMETRY_TEST_KEYED_COUNT";
+  const count = Telemetry.getHistogramById(COUNT_ID);
+  const keyed = Telemetry.getKeyedHistogramById(KEYED_ID);
+
+  count.add(1);
+  keyed.add("a", 1);
+
+  let snapshot = Telemetry.getSnapshotForHistograms("main", false, /* filter */ false).parent;
+  let keyedSnapshot = Telemetry.getSnapshotForKeyedHistograms("main", false, /* filter */ false).parent;
+  Assert.ok(COUNT_ID in snapshot, "test histogram should be snapshotted");
+  Assert.ok(KEYED_ID in keyedSnapshot, "test keyed histogram should be snapshotted");
+
+  snapshot = Telemetry.getSnapshotForHistograms("main", false, /* filter */ true).parent;
+  keyedSnapshot = Telemetry.getSnapshotForKeyedHistograms("main", false, /* filter */ true).parent;
+  Assert.ok(!(COUNT_ID in snapshot), "test histogram should not be snapshotted");
+  Assert.ok(!(KEYED_ID in keyedSnapshot), "test keyed histogram should not be snapshotted");
+});
+
+add_task(function test_scalar_filtering() {
+  const COUNT_ID = "telemetry.test.unsigned_int_kind";
+  const KEYED_ID = "telemetry.test.keyed_unsigned_int";
+
+  Telemetry.scalarSet(COUNT_ID, 2);
+  Telemetry.keyedScalarSet(KEYED_ID, "a", 2);
+
+  let snapshot = Telemetry.getSnapshotForScalars("main", false, /* filter */ false).parent;
+  let keyedSnapshot = Telemetry.getSnapshotForKeyedScalars("main", false, /* filter */ false).parent;
+  Assert.ok(COUNT_ID in snapshot, "test scalars should be snapshotted");
+  Assert.ok(KEYED_ID in keyedSnapshot, "test keyed scalars should be snapshotted");
+
+  snapshot = Telemetry.getSnapshotForScalars("main", false, /* filter */ true).parent;
+  keyedSnapshot = Telemetry.getSnapshotForKeyedScalars("main", false, /* filter */ true).parent;
+  Assert.ok(!(COUNT_ID in snapshot), "test scalars should not be snapshotted");
+  Assert.ok(!(KEYED_ID in keyedSnapshot), "test keyed scalars should not be snapshotted");
 });
 
 add_task(async function stopServer() {

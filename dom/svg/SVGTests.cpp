@@ -6,7 +6,8 @@
 
 #include "mozilla/dom/SVGTests.h"
 #include "DOMSVGStringList.h"
-#include "nsSVGFeatures.h"
+#include "nsIContent.h"
+#include "nsIContentInlines.h"
 #include "mozilla/dom/SVGSwitchElement.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsStyleUtil.h"
@@ -15,49 +16,47 @@
 namespace mozilla {
 namespace dom {
 
-nsStaticAtom* const SVGTests::sStringListNames[3] =
-{
-  nsGkAtoms::requiredFeatures,
-  nsGkAtoms::requiredExtensions,
-  nsGkAtoms::systemLanguage,
+nsStaticAtom* const SVGTests::sStringListNames[3] = {
+    nsGkAtoms::requiredFeatures,
+    nsGkAtoms::requiredExtensions,
+    nsGkAtoms::systemLanguage,
 };
 
-SVGTests::SVGTests()
-{
+SVGTests::SVGTests() {
   mStringListAttributes[LANGUAGE].SetIsCommaSeparated(true);
 }
 
-already_AddRefed<DOMSVGStringList>
-SVGTests::RequiredFeatures()
-{
-  return DOMSVGStringList::GetDOMWrapper(
-           &mStringListAttributes[FEATURES], AsSVGElement(), true, FEATURES);
+already_AddRefed<DOMSVGStringList> SVGTests::RequiredFeatures() {
+  return DOMSVGStringList::GetDOMWrapper(&mStringListAttributes[FEATURES],
+                                         AsSVGElement(), true, FEATURES);
 }
 
-already_AddRefed<DOMSVGStringList>
-SVGTests::RequiredExtensions()
-{
-  return DOMSVGStringList::GetDOMWrapper(
-           &mStringListAttributes[EXTENSIONS], AsSVGElement(), true, EXTENSIONS);
+already_AddRefed<DOMSVGStringList> SVGTests::RequiredExtensions() {
+  return DOMSVGStringList::GetDOMWrapper(&mStringListAttributes[EXTENSIONS],
+                                         AsSVGElement(), true, EXTENSIONS);
 }
 
-already_AddRefed<DOMSVGStringList>
-SVGTests::SystemLanguage()
-{
-  return DOMSVGStringList::GetDOMWrapper(
-           &mStringListAttributes[LANGUAGE], AsSVGElement(), true, LANGUAGE);
+already_AddRefed<DOMSVGStringList> SVGTests::SystemLanguage() {
+  return DOMSVGStringList::GetDOMWrapper(&mStringListAttributes[LANGUAGE],
+                                         AsSVGElement(), true, LANGUAGE);
 }
 
-bool
-SVGTests::HasExtension(const nsAString& aExtension)
-{
-  return nsSVGFeatures::HasExtension(aExtension,
-                                     AsSVGElement()->IsInChromeDocument());
+bool SVGTests::HasExtension(const nsAString& aExtension) const {
+#define SVG_SUPPORTED_EXTENSION(str) \
+  if (aExtension.EqualsLiteral(str)) return true;
+  SVG_SUPPORTED_EXTENSION("http://www.w3.org/1999/xhtml")
+  nsNameSpaceManager* nameSpaceManager = nsNameSpaceManager::GetInstance();
+  if (AsSVGElement()->IsInChromeDocument() ||
+      !nameSpaceManager->mMathMLDisabled) {
+    SVG_SUPPORTED_EXTENSION("http://www.w3.org/1998/Math/MathML")
+  }
+#undef SVG_SUPPORTED_EXTENSION
+
+  return false;
 }
 
-bool
-SVGTests::IsConditionalProcessingAttribute(const nsAtom* aAttribute) const
-{
+bool SVGTests::IsConditionalProcessingAttribute(
+    const nsAtom* aAttribute) const {
   for (uint32_t i = 0; i < ArrayLength(sStringListNames); i++) {
     if (aAttribute == sStringListNames[i]) {
       return true;
@@ -66,9 +65,8 @@ SVGTests::IsConditionalProcessingAttribute(const nsAtom* aAttribute) const
   return false;
 }
 
-int32_t
-SVGTests::GetBestLanguagePreferenceRank(const nsAString& aAcceptLangs) const
-{
+int32_t SVGTests::GetBestLanguagePreferenceRank(
+    const nsAString& aAcceptLangs) const {
   const nsCaseInsensitiveStringComparator caseInsensitiveComparator;
 
   if (!mStringListAttributes[LANGUAGE].IsExplicitlySet()) {
@@ -85,10 +83,10 @@ SVGTests::GetBestLanguagePreferenceRank(const nsAString& aAcceptLangs) const
       bool exactMatch = languageToken.Equals(mStringListAttributes[LANGUAGE][i],
                                              caseInsensitiveComparator);
       bool prefixOnlyMatch =
-        !exactMatch &&
-        nsStyleUtil::DashMatchCompare(mStringListAttributes[LANGUAGE][i],
-                                      languageTokenizer.nextToken(),
-                                      caseInsensitiveComparator);
+          !exactMatch &&
+          nsStyleUtil::DashMatchCompare(mStringListAttributes[LANGUAGE][i],
+                                        languageTokenizer.nextToken(),
+                                        caseInsensitiveComparator);
       if (index == 0 && exactMatch) {
         // best possible match
         return 0;
@@ -103,11 +101,10 @@ SVGTests::GetBestLanguagePreferenceRank(const nsAString& aAcceptLangs) const
   return lowestRank;
 }
 
-const nsString * const SVGTests::kIgnoreSystemLanguage = (nsString *) 0x01;
+const nsString* const SVGTests::kIgnoreSystemLanguage = (nsString*)0x01;
 
-bool
-SVGTests::PassesConditionalProcessingTests(const nsString *aAcceptLangs) const
-{
+bool SVGTests::PassesConditionalProcessingTests(
+    const nsString* aAcceptLangs) const {
   // Required Extensions
   //
   // The requiredExtensions  attribute defines a list of required language
@@ -120,8 +117,7 @@ SVGTests::PassesConditionalProcessingTests(const nsString *aAcceptLangs) const
       return false;
     }
     for (uint32_t i = 0; i < mStringListAttributes[EXTENSIONS].Length(); i++) {
-      if (!nsSVGFeatures::HasExtension(mStringListAttributes[EXTENSIONS][i],
-                                       AsSVGElement()->IsInChromeDocument())) {
+      if (!HasExtension(mStringListAttributes[EXTENSIONS][i])) {
         return false;
       }
     }
@@ -152,7 +148,8 @@ SVGTests::PassesConditionalProcessingTests(const nsString *aAcceptLangs) const
     }
 
     if (acceptLangs.IsEmpty()) {
-      NS_WARNING("no default language specified for systemLanguage conditional test");
+      NS_WARNING(
+          "no default language specified for systemLanguage conditional test");
       return false;
     }
 
@@ -174,11 +171,9 @@ SVGTests::PassesConditionalProcessingTests(const nsString *aAcceptLangs) const
   return true;
 }
 
-bool
-SVGTests::ParseConditionalProcessingAttribute(nsAtom* aAttribute,
-                                              const nsAString& aValue,
-                                              nsAttrValue& aResult)
-{
+bool SVGTests::ParseConditionalProcessingAttribute(nsAtom* aAttribute,
+                                                   const nsAString& aValue,
+                                                   nsAttrValue& aResult) {
   for (uint32_t i = 0; i < ArrayLength(sStringListNames); i++) {
     if (aAttribute == sStringListNames[i]) {
       nsresult rv = mStringListAttributes[i].SetValue(aValue);
@@ -192,9 +187,7 @@ SVGTests::ParseConditionalProcessingAttribute(nsAtom* aAttribute,
   return false;
 }
 
-void
-SVGTests::UnsetAttr(const nsAtom* aAttribute)
-{
+void SVGTests::UnsetAttr(const nsAtom* aAttribute) {
   for (uint32_t i = 0; i < ArrayLength(sStringListNames); i++) {
     if (aAttribute == sStringListNames[i]) {
       mStringListAttributes[i].Clear();
@@ -204,23 +197,17 @@ SVGTests::UnsetAttr(const nsAtom* aAttribute)
   }
 }
 
-nsStaticAtom*
-SVGTests::GetAttrName(uint8_t aAttrEnum) const
-{
+nsStaticAtom* SVGTests::GetAttrName(uint8_t aAttrEnum) const {
   return sStringListNames[aAttrEnum];
 }
 
-void
-SVGTests::GetAttrValue(uint8_t aAttrEnum, nsAttrValue& aValue) const
-{
+void SVGTests::GetAttrValue(uint8_t aAttrEnum, nsAttrValue& aValue) const {
   MOZ_ASSERT(aAttrEnum < ArrayLength(sStringListNames),
              "aAttrEnum out of range");
   aValue.SetTo(mStringListAttributes[aAttrEnum], nullptr);
 }
 
-void
-SVGTests::MaybeInvalidate()
-{
+void SVGTests::MaybeInvalidate() {
   nsIContent* parent = AsSVGElement()->GetFlattenedTreeParent();
 
   if (parent &&
@@ -229,5 +216,5 @@ SVGTests::MaybeInvalidate()
   }
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

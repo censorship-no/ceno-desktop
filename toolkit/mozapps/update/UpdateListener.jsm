@@ -6,8 +6,8 @@
 
 var EXPORTED_SYMBOLS = ["UpdateListener"];
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {clearTimeout, setTimeout} = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 ChromeUtils.defineModuleGetter(this, "AppMenuNotifications",
                                "resource://gre/modules/AppMenuNotifications.jsm");
@@ -146,6 +146,7 @@ var UpdateListener = {
         break;
       case "check-attempts-exceeded":
       case "unknown":
+      case "bad-perms":
         // Background update has failed, let's show the UI responsible for
         // prompting the user to update manually.
         this.clearCallbacks();

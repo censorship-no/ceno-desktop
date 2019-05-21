@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(this, "BrowserUtils",
   "resource://gre/modules/BrowserUtils.jsm");
 
 var EXPORTED_SYMBOLS = ["DateTimePickerChild"];
 
-ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
+const {ActorChild} = ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
 
 /**
  * DateTimePickerChild is the communication channel between the input box
@@ -30,7 +30,20 @@ class DateTimePickerChild extends ActorChild {
    */
   close() {
     this.removeListeners();
-    this._inputElement.setDateTimePickerState(false);
+    let dateTimeBoxElement = this._inputElement.dateTimeBoxElement;
+    if (!dateTimeBoxElement) {
+      this._inputElement = null;
+      return;
+    }
+
+    if (this._inputElement.openOrClosedShadowRoot) {
+      // dateTimeBoxElement is within UA Widget Shadow DOM.
+      // An event dispatch to it can't be accessed by document.
+      let win = this._inputElement.ownerGlobal;
+      dateTimeBoxElement.dispatchEvent(
+        new win.CustomEvent("MozSetDateTimePickerState", { detail: false }));
+    }
+
     this._inputElement = null;
   }
 
@@ -89,7 +102,20 @@ class DateTimePickerChild extends ActorChild {
         break;
       }
       case "FormDateTime:PickerValueChanged": {
-        this._inputElement.updateDateTimeInputBox(aMessage.data);
+        let dateTimeBoxElement = this._inputElement.dateTimeBoxElement;
+        if (!dateTimeBoxElement) {
+          return;
+        }
+
+        let win = this._inputElement.ownerGlobal;
+
+        if (this._inputElement.openOrClosedShadowRoot) {
+          // dateTimeBoxElement is within UA Widget Shadow DOM.
+          // An event dispatch to it can't be accessed by document.
+          dateTimeBoxElement.dispatchEvent(
+            new win.CustomEvent("MozPickerValueChanged",
+              { detail: Cu.cloneInto(aMessage.data, win) }));
+        }
         break;
       }
       default:
@@ -118,7 +144,21 @@ class DateTimePickerChild extends ActorChild {
         }
 
         this._inputElement = aEvent.originalTarget;
-        this._inputElement.setDateTimePickerState(true);
+
+        let dateTimeBoxElement = this._inputElement.dateTimeBoxElement;
+        if (!dateTimeBoxElement) {
+          throw new Error("How do we get this event without a UA Widget or XBL binding?");
+        }
+
+        if (this._inputElement.openOrClosedShadowRoot) {
+          // dateTimeBoxElement is within UA Widget Shadow DOM.
+          // An event dispatch to it can't be accessed by document, because
+          // the event is not composed.
+          let win = this._inputElement.ownerGlobal;
+          dateTimeBoxElement.dispatchEvent(
+            new win.CustomEvent("MozSetDateTimePickerState", { detail: true }));
+        }
+
         this.addListeners();
 
         let value = this._inputElement.getDateTimeInputBoxValue();

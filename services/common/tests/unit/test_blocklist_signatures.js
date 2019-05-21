@@ -1,11 +1,10 @@
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://testing-common/httpd.js");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm", {});
-const BlocklistClients = ChromeUtils.import("resource://services-common/blocklist-clients.js", {});
-const { UptakeTelemetry } = ChromeUtils.import("resource://services-common/uptake-telemetry.js", {});
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const BlocklistClients = ChromeUtils.import("resource://services-common/blocklist-clients.js", null);
+const { UptakeTelemetry } = ChromeUtils.import("resource://services-common/uptake-telemetry.js");
 
 let server;
 
@@ -152,9 +151,6 @@ add_task(async function test_check_signatures() {
   Services.prefs.setCharPref(PREF_SETTINGS_SERVER,
     `http://localhost:${server.identity.primaryPort}/v1`);
 
-  // Set up some data we need for our test
-  let startTime = Date.now();
-
   // These are records we'll use in the test collections
   const RECORD1 = {
     details: {
@@ -298,7 +294,7 @@ add_task(async function test_check_signatures() {
   // With all of this set up, we attempt a sync. This will resolve if all is
   // well and throw if something goes wrong.
   // We don't want to load initial json dumps in this test suite.
-  await OneCRLBlocklistClient.maybeSync(1000, startTime, {loadDump: false});
+  await OneCRLBlocklistClient.maybeSync(1000, { loadDump: false });
 
   let endHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
 
@@ -336,7 +332,7 @@ add_task(async function test_check_signatures() {
       [RESPONSE_META_TWO_ITEMS_SIG],
   };
   registerHandlers(twoItemsResponses);
-  await OneCRLBlocklistClient.maybeSync(3000, startTime);
+  await OneCRLBlocklistClient.maybeSync(3000);
 
 
   // Check the collection with one addition and one removal has a valid
@@ -368,7 +364,7 @@ add_task(async function test_check_signatures() {
       [RESPONSE_META_THREE_ITEMS_SIG],
   };
   registerHandlers(oneAddedOneRemovedResponses);
-  await OneCRLBlocklistClient.maybeSync(4000, startTime);
+  await OneCRLBlocklistClient.maybeSync(4000);
 
   // Check the signature is still valid with no operation (no changes)
 
@@ -390,7 +386,7 @@ add_task(async function test_check_signatures() {
       [RESPONSE_META_THREE_ITEMS_SIG],
   };
   registerHandlers(noOpResponses);
-  await OneCRLBlocklistClient.maybeSync(4100, startTime);
+  await OneCRLBlocklistClient.maybeSync(4100);
 
 
   // Check the collection is reset when the signature is invalid
@@ -451,7 +447,7 @@ add_task(async function test_check_signatures() {
   let syncEventSent = false;
   OneCRLBlocklistClient.on("sync", ({ data }) => { syncEventSent = true; });
 
-  await OneCRLBlocklistClient.maybeSync(5000, startTime);
+  await OneCRLBlocklistClient.maybeSync(5000);
 
   endHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
 
@@ -492,7 +488,7 @@ add_task(async function test_check_signatures() {
   syncEventSent = false;
   OneCRLBlocklistClient.on("sync", ({ data }) => { syncEventSent = true; });
 
-  await OneCRLBlocklistClient.maybeSync(5000, startTime);
+  await OneCRLBlocklistClient.maybeSync(5000);
 
   // Local data was unchanged, since it was never than the one returned by the server,
   // thus the sync event is not sent.
@@ -528,7 +524,7 @@ add_task(async function test_check_signatures() {
   let syncData;
   OneCRLBlocklistClient.on("sync", ({ data }) => { syncData = data; });
 
-  await OneCRLBlocklistClient.maybeSync(5000, startTime, { loadDump: false });
+  await OneCRLBlocklistClient.maybeSync(5000, { loadDump: false });
 
   // Local data was unchanged, since it was never than the one returned by the server.
   equal(syncData.current.length, 2);
@@ -559,7 +555,7 @@ add_task(async function test_check_signatures() {
   startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
   registerHandlers(allBadSigResponses);
   try {
-    await OneCRLBlocklistClient.maybeSync(6000, startTime);
+    await OneCRLBlocklistClient.maybeSync(6000);
     do_throw("Sync should fail (the signature is intentionally bad)");
   } catch (e) {
     await checkRecordCount(OneCRLBlocklistClient, 2);
@@ -581,7 +577,7 @@ add_task(async function test_check_signatures() {
   startHistogram = getUptakeTelemetrySnapshot(TELEMETRY_HISTOGRAM_KEY);
   registerHandlers(missingSigResponses);
   try {
-    await OneCRLBlocklistClient.maybeSync(6000, startTime);
+    await OneCRLBlocklistClient.maybeSync(6000);
     do_throw("Sync should fail (the signature is missing)");
   } catch (e) {
     await checkRecordCount(OneCRLBlocklistClient, 2);

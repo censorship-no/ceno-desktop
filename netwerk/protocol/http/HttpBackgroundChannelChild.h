@@ -12,18 +12,19 @@
 #include "nsIRunnable.h"
 #include "nsTArray.h"
 
-using mozilla::ipc::IPCResult;
 using mozilla::dom::ClassifierInfo;
+using mozilla::ipc::IPCResult;
 
 namespace mozilla {
 namespace net {
 
 class HttpChannelChild;
 
-class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild
-{
+class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild {
   friend class BackgroundChannelCreateCallback;
-public:
+  friend class PHttpBackgroundChannelChild;
+
+ public:
   explicit HttpBackgroundChannelChild();
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(HttpBackgroundChannelChild)
@@ -40,40 +41,47 @@ public:
   // Enqueued messages in background channel will be flushed.
   void OnStartRequestReceived();
 
-protected:
+ protected:
   IPCResult RecvOnTransportAndData(const nsresult& aChannelStatus,
                                    const nsresult& aTransportStatus,
                                    const uint64_t& aOffset,
                                    const uint32_t& aCount,
-                                   const nsCString& aData) override;
+                                   const nsCString& aData);
 
   IPCResult RecvOnStopRequest(const nsresult& aChannelStatus,
                               const ResourceTimingStruct& aTiming,
                               const TimeStamp& aLastActiveTabOptHit,
-                              const nsHttpHeaderArray& aResponseTrailers) override;
+                              const nsHttpHeaderArray& aResponseTrailers);
 
   IPCResult RecvOnProgress(const int64_t& aProgress,
-                           const int64_t& aProgressMax) override;
+                           const int64_t& aProgressMax);
 
-  IPCResult RecvOnStatus(const nsresult& aStatus) override;
+  IPCResult RecvOnStatus(const nsresult& aStatus);
 
-  IPCResult RecvFlushedForDiversion() override;
+  IPCResult RecvFlushedForDiversion();
 
-  IPCResult RecvDivertMessages() override;
+  IPCResult RecvDivertMessages();
 
-  IPCResult RecvOnStartRequestSent() override;
+  IPCResult RecvOnStartRequestSent();
 
-  IPCResult RecvNotifyTrackingProtectionDisabled() override;
+  IPCResult RecvNotifyChannelClassifierProtectionDisabled(
+      const uint32_t& aAcceptedReason);
 
-  IPCResult RecvNotifyTrackingCookieBlocked(const uint32_t& aRejectedReason) override;
+  IPCResult RecvNotifyCookieAllowed();
 
-  IPCResult RecvNotifyTrackingResource(const bool& aIsThirdParty) override;
+  IPCResult RecvNotifyCookieBlocked(const uint32_t& aRejectedReason);
 
-  IPCResult RecvSetClassifierMatchedInfo(const ClassifierInfo& info) override;
+  IPCResult RecvNotifyClassificationFlags(const uint32_t& aClassificationFlags,
+                                          const bool& aIsThirdParty);
+
+  IPCResult RecvNotifyFlashPluginStateChanged(
+      const nsIHttpChannel::FlashPluginState& aState);
+
+  IPCResult RecvSetClassifierMatchedInfo(const ClassifierInfo& info);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
-private:
+ private:
   virtual ~HttpBackgroundChannelChild();
 
   // Initiate the creation of the PBckground IPC channel.
@@ -109,7 +117,7 @@ private:
   nsTArray<nsCOMPtr<nsIRunnable>> mQueuedRunnables;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
-#endif // mozilla_net_HttpBackgroundChannelChild_h
+#endif  // mozilla_net_HttpBackgroundChannelChild_h

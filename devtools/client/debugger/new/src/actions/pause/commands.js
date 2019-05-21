@@ -1,36 +1,40 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.command = command;
-exports.stepIn = stepIn;
-exports.stepOver = stepOver;
-exports.stepOut = stepOut;
-exports.resume = resume;
-exports.rewind = rewind;
-exports.reverseStepIn = reverseStepIn;
-exports.reverseStepOver = reverseStepOver;
-exports.reverseStepOut = reverseStepOut;
-exports.astCommand = astCommand;
-
-var _selectors = require("../../selectors/index");
-
-var _promise = require("../utils/middleware/promise");
-
-var _parser = require("../../workers/parser/index");
-
-var _breakpoints = require("../breakpoints/index");
-
-var _prefs = require("../../utils/prefs");
-
-var _telemetry = require("../../utils/telemetry");
-
 /* -*- indent-tabs-mode: nil; js-indent-level: 2; js-indent-level: 2 -*- */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
+
+// @flow
+
+import {
+  getIsPaused,
+  getCurrentThread,
+  getSource,
+  getTopFrame,
+  getSelectedFrame
+} from "../../selectors";
+import { PROMISE } from "../utils/middleware/promise";
+import { getNextStep } from "../../workers/parser";
+import { addHiddenBreakpoint } from "../breakpoints";
+import { evaluateExpressions } from "../expressions";
+import { selectLocation } from "../sources";
+import { features } from "../../utils/prefs";
+import { recordEvent } from "../../utils/telemetry";
+
+import type { Source, ThreadId } from "../../types";
+import type { ThunkArgs } from "../types";
+import type { Command } from "../../reducers/types";
+
+export function selectThread(thread: ThreadId) {
+  return async ({ dispatch, getState, client }: ThunkArgs) => {
+    await dispatch({ type: "SELECT_THREAD", thread });
+    dispatch(evaluateExpressions());
+
+    const frame = getSelectedFrame(getState(), thread);
+    if (frame) {
+      dispatch(selectLocation(frame.location));
+    }
+  };
+}
 
 /**
  * Debugger commands like stepOver, stepIn, stepUp
@@ -39,176 +43,147 @@ var _telemetry = require("../../utils/telemetry");
  * @memberof actions/pause
  * @static
  */
-function command(type) {
-  return async ({
-    dispatch,
-    client
-  }) => {
-    return dispatch({
-      type: "COMMAND",
-      command: type,
-      [_promise.PROMISE]: client[type]()
-    });
+export function command(thread: ThreadId, type: Command) {
+  return async ({ dispatch, getState, client }: ThunkArgs) => {
+    if (type) {
+      return dispatch({
+        type: "COMMAND",
+        command: type,
+        thread,
+        [PROMISE]: client[type](thread)
+      });
+    }
   };
 }
+
 /**
  * StepIn
  * @memberof actions/pause
  * @static
  * @returns {Function} {@link command}
  */
-
-
-function stepIn() {
-  return ({
-    dispatch,
-    getState
-  }) => {
-    if ((0, _selectors.isPaused)(getState())) {
-      return dispatch(command("stepIn"));
+export function stepIn() {
+  return ({ dispatch, getState }: ThunkArgs) => {
+    const thread = getCurrentThread(getState());
+    if (getIsPaused(getState(), thread)) {
+      return dispatch(command(thread, "stepIn"));
     }
   };
 }
+
 /**
  * stepOver
  * @memberof actions/pause
  * @static
  * @returns {Function} {@link command}
  */
-
-
-function stepOver() {
-  return ({
-    dispatch,
-    getState
-  }) => {
-    if ((0, _selectors.isPaused)(getState())) {
-      return dispatch(astCommand("stepOver"));
+export function stepOver() {
+  return ({ dispatch, getState }: ThunkArgs) => {
+    const thread = getCurrentThread(getState());
+    if (getIsPaused(getState(), thread)) {
+      return dispatch(astCommand(thread, "stepOver"));
     }
   };
 }
+
 /**
  * stepOut
  * @memberof actions/pause
  * @static
  * @returns {Function} {@link command}
  */
-
-
-function stepOut() {
-  return ({
-    dispatch,
-    getState
-  }) => {
-    if ((0, _selectors.isPaused)(getState())) {
-      return dispatch(command("stepOut"));
+export function stepOut() {
+  return ({ dispatch, getState }: ThunkArgs) => {
+    const thread = getCurrentThread(getState());
+    if (getIsPaused(getState(), thread)) {
+      return dispatch(command(thread, "stepOut"));
     }
   };
 }
+
 /**
  * resume
  * @memberof actions/pause
  * @static
  * @returns {Function} {@link command}
  */
-
-
-function resume() {
-  return ({
-    dispatch,
-    getState
-  }) => {
-    if ((0, _selectors.isPaused)(getState())) {
-      (0, _telemetry.recordEvent)("continue");
-      return dispatch(command("resume"));
+export function resume() {
+  return ({ dispatch, getState }: ThunkArgs) => {
+    const thread = getCurrentThread(getState());
+    if (getIsPaused(getState(), thread)) {
+      recordEvent("continue");
+      return dispatch(command(thread, "resume"));
     }
   };
 }
+
 /**
  * rewind
  * @memberof actions/pause
  * @static
  * @returns {Function} {@link command}
  */
-
-
-function rewind() {
-  return ({
-    dispatch,
-    getState
-  }) => {
-    if ((0, _selectors.isPaused)(getState())) {
-      return dispatch(command("rewind"));
+export function rewind() {
+  return ({ dispatch, getState }: ThunkArgs) => {
+    const thread = getCurrentThread(getState());
+    if (getIsPaused(getState(), thread)) {
+      return dispatch(command(thread, "rewind"));
     }
   };
 }
+
 /**
  * reverseStepIn
  * @memberof actions/pause
  * @static
  * @returns {Function} {@link command}
  */
-
-
-function reverseStepIn() {
-  return ({
-    dispatch,
-    getState
-  }) => {
-    if ((0, _selectors.isPaused)(getState())) {
-      return dispatch(command("reverseStepIn"));
+export function reverseStepIn() {
+  return ({ dispatch, getState }: ThunkArgs) => {
+    const thread = getCurrentThread(getState());
+    if (getIsPaused(getState(), thread)) {
+      return dispatch(command(thread, "reverseStepIn"));
     }
   };
 }
+
 /**
  * reverseStepOver
  * @memberof actions/pause
  * @static
  * @returns {Function} {@link command}
  */
-
-
-function reverseStepOver() {
-  return ({
-    dispatch,
-    getState
-  }) => {
-    if ((0, _selectors.isPaused)(getState())) {
-      return dispatch(astCommand("reverseStepOver"));
+export function reverseStepOver() {
+  return ({ dispatch, getState }: ThunkArgs) => {
+    const thread = getCurrentThread(getState());
+    if (getIsPaused(getState(), thread)) {
+      return dispatch(astCommand(thread, "reverseStepOver"));
     }
   };
 }
+
 /**
  * reverseStepOut
  * @memberof actions/pause
  * @static
  * @returns {Function} {@link command}
  */
-
-
-function reverseStepOut() {
-  return ({
-    dispatch,
-    getState
-  }) => {
-    if ((0, _selectors.isPaused)(getState())) {
-      return dispatch(command("reverseStepOut"));
+export function reverseStepOut() {
+  return ({ dispatch, getState }: ThunkArgs) => {
+    const thread = getCurrentThread(getState());
+    if (getIsPaused(getState(), thread)) {
+      return dispatch(command(thread, "reverseStepOut"));
     }
   };
 }
+
 /*
  * Checks for await or yield calls on the paused line
  * This avoids potentially expensive parser calls when we are likely
  * not at an async expression.
  */
-
-
-function hasAwait(source, pauseLocation) {
-  const {
-    line,
-    column
-  } = pauseLocation;
-
+function hasAwait(source: Source, pauseLocation) {
+  const { line, column } = pauseLocation;
   if (source.isWasm || !source.text) {
     return false;
   }
@@ -220,41 +195,36 @@ function hasAwait(source, pauseLocation) {
   }
 
   const snippet = lineText.slice(column - 50, column + 50);
+
   return !!snippet.match(/(yield|await)/);
 }
+
 /**
  * @memberOf actions/pause
  * @static
  * @param stepType
  * @returns {function(ThunkArgs)}
  */
-
-
-function astCommand(stepType) {
-  return async ({
-    dispatch,
-    getState,
-    sourceMaps
-  }) => {
-    if (!_prefs.features.asyncStepping) {
-      return dispatch(command(stepType));
+export function astCommand(thread: ThreadId, stepType: Command) {
+  return async ({ dispatch, getState, sourceMaps }: ThunkArgs) => {
+    if (!features.asyncStepping) {
+      return dispatch(command(thread, stepType));
     }
 
     if (stepType == "stepOver") {
       // This type definition is ambiguous:
-      const frame = (0, _selectors.getTopFrame)(getState());
-      const source = (0, _selectors.getSource)(getState(), frame.location.sourceId);
+      const frame: any = getTopFrame(getState(), thread);
+      const source = getSource(getState(), frame.location.sourceId);
 
       if (source && hasAwait(source, frame.location)) {
-        const nextLocation = await (0, _parser.getNextStep)(source.id, frame.location);
-
+        const nextLocation = await getNextStep(source.id, frame.location);
         if (nextLocation) {
-          await dispatch((0, _breakpoints.addHiddenBreakpoint)(nextLocation));
-          return dispatch(command("resume"));
+          await dispatch(addHiddenBreakpoint(nextLocation));
+          return dispatch(command(thread, "resume"));
         }
       }
     }
 
-    return dispatch(command(stepType));
+    return dispatch(command(thread, stepType));
   };
 }

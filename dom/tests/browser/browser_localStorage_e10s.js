@@ -2,74 +2,9 @@ const HELPER_PAGE_URL =
   "http://example.com/browser/dom/tests/browser/page_localstorage_e10s.html";
 const HELPER_PAGE_ORIGIN = "http://example.com/";
 
-// Simple tab wrapper abstracting our messaging mechanism;
-class KnownTab {
-  constructor(name, tab) {
-    this.name = name;
-    this.tab = tab;
-  }
-
-  cleanup() {
-    this.tab = null;
-  }
-}
-
-// Simple data structure class to help us track opened tabs and their pids.
-class KnownTabs {
-  constructor() {
-    this.byPid = new Map();
-    this.byName = new Map();
-  }
-
-  cleanup() {
-    this.byPid = null;
-    this.byName = null;
-  }
-}
-
-/**
- * Open our helper page in a tab in its own content process, asserting that it
- * really is in its own process.  We initially load and wait for about:blank to
- * load, and only then loadURI to our actual page.  This is to ensure that
- * LocalStorageManager has had an opportunity to be created and populate
- * mOriginsHavingData.
- *
- * (nsGlobalWindow will reliably create LocalStorageManager as a side-effect of
- * the unconditional call to nsGlobalWindow::PreloadLocalStorage.  This will
- * reliably create the StorageDBChild instance, and its corresponding
- * StorageDBParent will send the set of origins when it is constructed.)
- */
-async function openTestTabInOwnProcess(name, knownTabs) {
-  let realUrl = HELPER_PAGE_URL + '?' + encodeURIComponent(name);
-  // Load and wait for about:blank.
-  let tab = await BrowserTestUtils.openNewForegroundTab({
-    gBrowser, opening: 'about:blank', forceNewProcess: true
-  });
-  let pid = tab.linkedBrowser.frameLoader.tabParent.osPid;
-  ok(!knownTabs.byName.has(name), "tab needs its own name: " + name);
-  ok(!knownTabs.byPid.has(pid), "tab needs to be in its own process: " + pid);
-
-  let knownTab = new KnownTab(name, tab);
-  knownTabs.byPid.set(pid, knownTab);
-  knownTabs.byName.set(name, knownTab);
-
-  // Now trigger the actual load of our page.
-  BrowserTestUtils.loadURI(tab.linkedBrowser, realUrl);
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  is(tab.linkedBrowser.frameLoader.tabParent.osPid, pid, "still same pid");
-  return knownTab;
-}
-
-/**
- * Close all the tabs we opened.
- */
-async function cleanupTabs(knownTabs) {
-  for (let knownTab of knownTabs.byName.values()) {
-    BrowserTestUtils.removeTab(knownTab.tab);
-    knownTab.cleanup();
-  }
-  knownTabs.cleanup();
-}
+let testDir = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
+Services.scriptloader.loadSubScript(testDir + "/helper_localStorage_e10s.js",
+                                    this);
 
 /**
  * Wait for a LocalStorage flush to occur.  This notification can occur as a
@@ -78,13 +13,20 @@ async function cleanupTabs(knownTabs) {
  * - InsertDBOp seeing a preload op for an origin with outstanding changes.
  * - Us generating a "domstorage-test-flush-force" observer notification.
  */
+
+ /* import-globals-from helper_localStorage_e10s.js */
+
 function waitForLocalStorageFlush() {
+  if (Services.lsm.nextGenLocalStorageEnabled) {
+    return new Promise(resolve => executeSoon(resolve));
+  }
+
   return new Promise(function(resolve) {
     let observer = {
-      observe: function() {
+      observe() {
         SpecialPowers.removeObserver(observer, "domstorage-test-flushed");
         resolve();
-      }
+      },
     };
     SpecialPowers.addObserver(observer, "domstorage-test-flushed");
   });
@@ -101,13 +43,17 @@ function waitForLocalStorageFlush() {
  * notifications, but correctness is guaranteed after the second notification.
  */
 function triggerAndWaitForLocalStorageFlush() {
+  if (Services.lsm.nextGenLocalStorageEnabled) {
+    return new Promise(resolve => executeSoon(resolve));
+  }
+
   SpecialPowers.notifyObservers(null, "domstorage-test-flush-force");
   // This first wait is ambiguous...
   return waitForLocalStorageFlush().then(function() {
     // So issue a second flush and wait for that.
     SpecialPowers.notifyObservers(null, "domstorage-test-flush-force");
     return waitForLocalStorageFlush();
-  })
+  });
 }
 
 /**
@@ -127,6 +73,18 @@ function clearOriginStorageEnsuringNoPreload() {
   let principal =
     Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
       HELPER_PAGE_ORIGIN);
+
+  if (Services.lsm.nextGenLocalStorageEnabled) {
+    let request =
+      Services.qms.clearStoragesForPrincipal(principal, "default", "ls");
+    let promise = new Promise(resolve => {
+      request.callback = () => {
+        resolve();
+      };
+    });
+    return promise;
+  }
+
   // We want to use createStorage to force the cache to be created so we can
   // issue the clear.  It's possible for getStorage to return false but for the
   // origin preload hash to still have our origin in it.
@@ -146,6 +104,9 @@ async function verifyTabPreload(knownTab, expectStorageExists) {
       let principal =
         Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
           origin);
+      if (Services.lsm.nextGenLocalStorageEnabled) {
+        return Services.lsm.isPreloaded(principal);
+      }
       return !!Services.domStorageManager.getStorage(null, principal);
     });
   is(storageExists, expectStorageExists, "Storage existence === preload");
@@ -304,7 +265,7 @@ add_task(async function() {
       // Enable LocalStorage's testing API so we can explicitly trigger a flush
       // when needed.
       ["dom.storage.testing", true],
-    ]
+    ],
   });
 
   // Ensure that there is no localstorage data or potential false positives for
@@ -317,10 +278,13 @@ add_task(async function() {
 
   // - Open tabs.  Don't configure any of them yet.
   const knownTabs = new KnownTabs();
-  const writerTab = await openTestTabInOwnProcess("writer", knownTabs);
-  const listenerTab = await openTestTabInOwnProcess("listener", knownTabs);
-  const readerTab = await openTestTabInOwnProcess("reader", knownTabs);
-  const lateWriteThenListenTab = await openTestTabInOwnProcess(
+  const writerTab = await openTestTabInOwnProcess(HELPER_PAGE_URL, "writer",
+    knownTabs);
+  const listenerTab = await openTestTabInOwnProcess(HELPER_PAGE_URL, "listener",
+    knownTabs);
+  const readerTab = await openTestTabInOwnProcess(HELPER_PAGE_URL, "reader",
+    knownTabs);
+  const lateWriteThenListenTab = await openTestTabInOwnProcess(HELPER_PAGE_URL,
     "lateWriteThenListen", knownTabs);
 
   // Sanity check that preloading did not occur in the tabs.
@@ -329,14 +293,14 @@ add_task(async function() {
   await verifyTabPreload(readerTab, false);
 
   // - Configure the tabs.
-  const initialSentinel = 'initial';
+  const initialSentinel = "initial";
   const noSentinelCheck = null;
   await recordTabStorageEvents(listenerTab, initialSentinel);
 
   // - Issue the initial batch of writes and verify.
   info("initial writes");
   const initialWriteMutations = [
-    //[key (null=clear), newValue (null=delete), oldValue (verification)]
+    // [key (null=clear), newValue (null=delete), oldValue (verification)]
     ["getsCleared", "1", null],
     ["alsoGetsCleared", "2", null],
     [null, null, null],
@@ -347,12 +311,12 @@ add_task(async function() {
     ["getsDeletedImmediately", null, "5"],
     ["alsoStays", "6", null],
     ["getsDeletedLater", null, "4"],
-    ["clobbered", "post", "pre"]
+    ["clobbered", "post", "pre"],
   ];
   const initialWriteState = {
     stays: "3",
     clobbered: "post",
-    alsoStays: "6"
+    alsoStays: "6",
   };
 
   await mutateTabStorage(writerTab, initialWriteMutations, initialSentinel);
@@ -388,17 +352,17 @@ add_task(async function() {
   // it did not add an event listener.
 
   info("late writes");
-  const lateWriteSentinel = 'lateWrite';
+  const lateWriteSentinel = "lateWrite";
   const lateWriteMutations = [
     ["lateStays", "10", null],
     ["lateClobbered", "latePre", null],
     ["lateDeleted", "11", null],
     ["lateClobbered", "lastPost", "latePre"],
-    ["lateDeleted", null, "11"]
+    ["lateDeleted", null, "11"],
   ];
   const lateWriteState = Object.assign({}, initialWriteState, {
     lateStays: "10",
-    lateClobbered: "lastPost"
+    lateClobbered: "lastPost",
   });
 
   await recordTabStorageEvents(listenerTab, lateWriteSentinel);
@@ -418,17 +382,17 @@ add_task(async function() {
 
   // - Issue last set of writes from writerTab.
   info("last set of writes");
-  const lastWriteSentinel = 'lastWrite';
+  const lastWriteSentinel = "lastWrite";
   const lastWriteMutations = [
     ["lastStays", "20", null],
     ["lastDeleted", "21", null],
     ["lastClobbered", "lastPre", null],
     ["lastClobbered", "lastPost", "lastPre"],
-    ["lastDeleted", null, "21"]
+    ["lastDeleted", null, "21"],
   ];
   const lastWriteState = Object.assign({}, lateWriteState, {
     lastStays: "20",
-    lastClobbered: "lastPost"
+    lastClobbered: "lastPost",
   });
 
   await recordTabStorageEvents(listenerTab, lastWriteSentinel);
@@ -461,8 +425,8 @@ add_task(async function() {
 
   // - Open a fresh tab and make sure it sees the precache/preload
   info("late open preload check");
-  const lateOpenSeesPreload =
-    await openTestTabInOwnProcess("lateOpenSeesPreload", knownTabs);
+  const lateOpenSeesPreload = await openTestTabInOwnProcess(HELPER_PAGE_URL,
+    "lateOpenSeesPreload", knownTabs);
   await verifyTabPreload(lateOpenSeesPreload, true);
 
   // - Clean up.

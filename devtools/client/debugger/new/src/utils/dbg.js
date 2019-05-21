@@ -1,97 +1,104 @@
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.setupHelper = setupHelper;
-
-var _timings = require("./timings");
-
-var timings = _interopRequireWildcard(_timings);
-
-var _prefs = require("./prefs");
-
-var _devtoolsEnvironment = require("devtools/client/debugger/new/dist/vendors").vendored["devtools-environment"];
-
-var _pausePoints = require("./pause/pausePoints");
-
-function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = Object.defineProperty && Object.getOwnPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : {}; if (desc.get || desc.set) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } } newObj.default = obj; return newObj; } }
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function findSource(dbg, url) {
+
+// @flow
+
+import * as timings from "./timings";
+import { prefs, asyncStore, features } from "./prefs";
+import { isDevelopment, isTesting } from "devtools-environment";
+
+function findSource(dbg: any, url: string) {
   const sources = dbg.selectors.getSourceList();
   return sources.find(s => (s.url || "").includes(url));
 }
 
-function findSources(dbg, url) {
+function findSources(dbg: any, url: string) {
   const sources = dbg.selectors.getSourceList();
   return sources.filter(s => (s.url || "").includes(url));
 }
 
-function sendPacket(dbg, packet, callback) {
-  dbg.client.sendPacket(packet, callback || console.log);
+function sendPacket(dbg: any, packet: any) {
+  return dbg.client.sendPacket(packet);
 }
 
-function sendPacketToThread(dbg, packet, callback) {
-  sendPacket(dbg, {
+function sendPacketToThread(dbg: Object, packet: any) {
+  return sendPacket(dbg, {
     to: dbg.connection.tabConnection.threadClient.actor,
     ...packet
-  }, callback);
+  });
 }
 
-function evaluate(dbg, expression, callback) {
-  dbg.client.evaluate(expression).then(callback || console.log);
+function evaluate(dbg: Object, expression: any) {
+  return dbg.client.evaluate(expression);
 }
 
-function bindSelectors(obj) {
+function bindSelectors(obj: Object): Object {
   return Object.keys(obj.selectors).reduce((bound, selector) => {
-    bound[selector] = (a, b, c) => obj.selectors[selector](obj.store.getState(), a, b, c);
-
+    bound[selector] = (a, b, c) =>
+      obj.selectors[selector](obj.store.getState(), a, b, c);
     return bound;
   }, {});
 }
 
 function getCM() {
-  const cm = document.querySelector(".CodeMirror");
+  const cm: any = document.querySelector(".CodeMirror");
   return cm && cm.CodeMirror;
 }
 
-function _formatPausePoints(dbg, url) {
-  const source = dbg.helpers.findSource(url);
-  const pausePoints = dbg.selectors.getPausePoints(source);
-  console.log((0, _pausePoints.formatPausePoints)(source.text, pausePoints));
+function formatMappedLocation(mappedLocation) {
+  const { location, generatedLocation } = mappedLocation;
+  return {
+    original: `(${location.line}, ${location.column})`,
+    generated: `(${generatedLocation.line}, ${generatedLocation.column})`
+  };
 }
 
-function setupHelper(obj) {
+function formatMappedLocations(locations) {
+  return console.table(locations.map(loc => formatMappedLocation(loc)));
+}
+
+function formatSelectedColumnBreakpoints(dbg) {
+  const positions = dbg.selectors.getBreakpointPositionsForSource(
+    dbg.selectors.getSelectedSource().id
+  );
+
+  return formatMappedLocations(positions);
+}
+
+export function setupHelper(obj: Object) {
   const selectors = bindSelectors(obj);
-  const dbg = { ...obj,
+  const dbg: Object = {
+    ...obj,
     selectors,
-    prefs: _prefs.prefs,
-    asyncStore: _prefs.asyncStore,
-    features: _prefs.features,
+    prefs,
+    asyncStore,
+    features,
     timings,
     getCM,
     helpers: {
       findSource: url => findSource(dbg, url),
       findSources: url => findSources(dbg, url),
-      evaluate: (expression, cbk) => evaluate(dbg, expression, cbk),
-      sendPacketToThread: (packet, cbk) => sendPacketToThread(dbg, packet, cbk),
-      sendPacket: (packet, cbk) => sendPacket(dbg, packet, cbk)
+      evaluate: expression => evaluate(dbg, expression),
+      sendPacketToThread: packet => sendPacketToThread(dbg, packet),
+      sendPacket: packet => sendPacket(dbg, packet),
+      dumpThread: () => sendPacketToThread(dbg, { type: "dumpThread" })
     },
     formatters: {
-      pausePoints: url => _formatPausePoints(dbg, url)
+      mappedLocations: locations => formatMappedLocations(locations),
+      mappedLocation: location => formatMappedLocation(location),
+      selectedColumnBreakpoints: () => formatSelectedColumnBreakpoints(dbg)
     },
     _telemetry: {
       events: {}
     }
   };
+
   window.dbg = dbg;
 
-  if ((0, _devtoolsEnvironment.isDevelopment)() && !(0, _devtoolsEnvironment.isTesting)()) {
+  if (isDevelopment() && !isTesting()) {
     console.group("Development Notes");
-    const baseUrl = "https://devtools-html.github.io/debugger.html";
+    const baseUrl = "https://firefox-devtools.github.io/debugger";
     const localDevelopmentUrl = `${baseUrl}/docs/dbg.html`;
     console.log("Debugging Tips", localDevelopmentUrl);
     console.log("dbg", window.dbg);

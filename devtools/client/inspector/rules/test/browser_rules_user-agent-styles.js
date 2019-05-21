@@ -16,48 +16,52 @@ const TEST_DATA = [
   {
     selector: "blockquote",
     numUserRules: 1,
-    numUARules: 0
+    numUARules: 0,
   },
   {
     selector: "pre",
     numUserRules: 1,
-    numUARules: 0
+    numUARules: 0,
   },
   {
     selector: "input[type=range]",
     numUserRules: 1,
-    numUARules: 0
+    numUARules: 0,
   },
   {
     selector: "input[type=number]",
     numUserRules: 1,
-    numUARules: 0
+    numUARules: 0,
   },
   {
     selector: "input[type=color]",
     numUserRules: 1,
-    numUARules: 0
+    numUARules: 0,
   },
   {
     selector: "input[type=text]",
     numUserRules: 1,
-    numUARules: 0
+    numUARules: 0,
   },
   {
     selector: "progress",
     numUserRules: 1,
-    numUARules: 0
+    numUARules: 0,
   },
   // Note that some tests below assume that the "a" selector is the
   // last test in TEST_DATA.
   {
     selector: "a",
     numUserRules: 3,
-    numUARules: 0
-  }
+    numUARules: 0,
+  },
 ];
 
 add_task(async function() {
+  // Bug 1517210: GC heuristics are broken for this test, so that the test ends up
+  // running out of memory if we don't force to reduce the GC side before/after the test.
+  Cu.forceShrinkingGC();
+
   requestLongerTimeout(4);
 
   info("Starting the test with the pref set to true before toolbox is opened");
@@ -79,6 +83,10 @@ add_task(async function() {
 
   info("Resetting " + PREF_UA_STYLES);
   Services.prefs.clearUserPref(PREF_UA_STYLES);
+
+  // Bug 1517210: GC heuristics are broken for this test, so that the test ends up
+  // running out of memory if we don't force to reduce the GC side before/after the test.
+  Cu.forceShrinkingGC();
 });
 
 async function setUserAgentStylesPref(val) {
@@ -156,7 +164,7 @@ async function compareAppliedStylesWithUI(inspector, view, filter) {
     {
       inherited: true,
       matchedSelectors: true,
-      filter: filter
+      filter: filter,
     }
   );
 

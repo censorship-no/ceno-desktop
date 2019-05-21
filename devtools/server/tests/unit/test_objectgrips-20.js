@@ -8,27 +8,19 @@
 // when passing `ignoreNonIndexedProperties` and `ignoreIndexedProperties` options
 // with various objects. (See Bug 1403065)
 
-async function run_test() {
-  do_test_pending();
-  await run_test_with_server(DebuggerServer);
-  await run_test_with_server(WorkerDebuggerServer);
-  do_test_finished();
-}
-
 const DO_NOT_CHECK_VALUE = Symbol();
 
-async function run_test_with_server(server) {
-  initTestDebuggerServer(server);
-  const debuggee = addTestGlobal("test-grips", server);
+Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+});
+
+add_task(threadClientTest(async ({ threadClient, debuggee, client }) => {
   debuggee.eval(function stopMe(arg1) {
     debugger;
   }.toString());
 
-  const dbgClient = new DebuggerClient(server.connectPipe());
-  await dbgClient.connect();
-  const [,, threadClient] = await attachTestTabAndResume(dbgClient, "test-grips");
-
-  [{
+  const testCases = [{
     evaledObject: { a: 10 },
     expectedIndexedProperties: [],
     expectedNonIndexedProperties: [["a", 10]],
@@ -153,7 +145,20 @@ async function run_test_with_server(server) {
       ["byteLength", 2],
       ["byteOffset", 0],
     ],
-  }, {
+  }];
+
+  for (const test of testCases) {
+    await test_object_grip(debuggee, client, threadClient, test);
+  }
+}));
+
+// These tests are not yet supported in workers.
+add_task(threadClientTest(async ({ threadClient, debuggee, client }) => {
+  debuggee.eval(function stopMe(arg1) {
+    debugger;
+  }.toString());
+
+  const testCases = [{
     evaledObject: `(() => {
       x = new Int8Array([1, 2]);
       Object.defineProperty(x, 'length', {value: 0});
@@ -174,12 +179,12 @@ async function run_test_with_server(server) {
     })()`,
     expectedIndexedProperties: [["0", 1], ["1", 2]],
     expectedNonIndexedProperties: [],
-  }].forEach(async (testData) => {
-    await test_object_grip(debuggee, dbgClient, threadClient, testData);
-  });
+  }];
 
-  await dbgClient.close();
-}
+  for (const test of testCases) {
+    await test_object_grip(debuggee, client, threadClient, test);
+  }
+}, { doNotRunWorker: true }));
 
 async function test_object_grip(debuggee, dbgClient, threadClient, testData = {}) {
   const {
@@ -214,13 +219,18 @@ async function test_object_grip(debuggee, dbgClient, threadClient, testData = {}
       resolve();
     });
 
-    debuggee.eval(`
-      stopMe(${
-        typeof evaledObject === "string"
-          ? evaledObject
-          : JSON.stringify(evaledObject)
-      });
-    `);
+    // Be sure to run debuggee code in its own HTML 'task', so that when we call
+    // the onDebuggerStatement hook, the test's own microtasks don't get suspended
+    // along with the debuggee's.
+    do_timeout(0, () => {
+      debuggee.eval(`
+        stopMe(${
+          typeof evaledObject === "string"
+            ? evaledObject
+            : JSON.stringify(evaledObject)
+        });
+      `);
+    });
   });
 }
 

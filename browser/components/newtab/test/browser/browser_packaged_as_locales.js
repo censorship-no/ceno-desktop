@@ -1,10 +1,11 @@
-ChromeUtils.import("resource://gre/modules/Services.jsm");
 XPCOMUtils.defineLazyServiceGetter(this, "aboutNewTabService",
                                    "@mozilla.org/browser/aboutnewtab-service;1",
                                    "nsIAboutNewTabService");
 
 // Tests are by default run with non-debug en-US configuration
-const DEFAULT_URL = "resource://activity-stream/prerendered/en-US/activity-stream-prerendered.html";
+const DEFAULT_URL = SpecialPowers.getBoolPref("browser.tabs.remote.separatePrivilegedContentProcess") ?
+  "resource://activity-stream/prerendered/en-US/activity-stream-prerendered-noscripts.html" :
+  "resource://activity-stream/prerendered/en-US/activity-stream-prerendered.html";
 
 /**
  * Temporarily change the app locale to get the localized activity stream url

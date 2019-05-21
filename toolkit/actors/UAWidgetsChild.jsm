@@ -6,8 +6,8 @@
 
 var EXPORTED_SYMBOLS = ["UAWidgetsChild"];
 
-ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {ActorChild} = ChromeUtils.import("resource://gre/modules/ActorChild.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 class UAWidgetsChild extends ActorChild {
   constructor(dispatcher) {
@@ -18,11 +18,10 @@ class UAWidgetsChild extends ActorChild {
 
   handleEvent(aEvent) {
     switch (aEvent.type) {
-      case "UAWidgetBindToTree":
-      case "UAWidgetAttributeChanged":
+      case "UAWidgetSetupOrChange":
         this.setupOrNotifyWidget(aEvent.target);
         break;
-      case "UAWidgetUnbindFromTree":
+      case "UAWidgetTeardown":
         this.teardownWidget(aEvent.target);
         break;
     }
@@ -38,8 +37,12 @@ class UAWidgetsChild extends ActorChild {
       this.setupWidget(aElement);
       return;
     }
-    if (typeof widget.wrappedJSObject.onattributechange == "function") {
-      widget.wrappedJSObject.onattributechange();
+    if (typeof widget.onchange == "function") {
+      try {
+        widget.onchange();
+      } catch (ex) {
+        Cu.reportError(ex);
+      }
     }
   }
 
@@ -50,32 +53,52 @@ class UAWidgetsChild extends ActorChild {
       case "video":
       case "audio":
         uri = "chrome://global/content/elements/videocontrols.js";
-        widgetName = "VideoControlsPageWidget";
+        widgetName = "VideoControlsWidget";
         break;
       case "input":
-        // TODO (datetimebox)
+        uri = "chrome://global/content/elements/datetimebox.js";
+        widgetName = "DateTimeBoxWidget";
         break;
-      case "applet":
       case "embed":
       case "object":
-        // TODO (pluginProblems)
+        uri = "chrome://global/content/elements/pluginProblem.js";
+        widgetName = "PluginProblemWidget";
+        break;
+      case "marquee":
+        uri = "chrome://global/content/elements/marquee.js";
+        widgetName = "MarqueeWidget";
         break;
     }
 
     if (!uri || !widgetName) {
+      Cu.reportError("Getting a UAWidgetSetupOrChange event on undefined element.");
       return;
     }
 
     let shadowRoot = aElement.openOrClosedShadowRoot;
-    let sandbox = aElement.nodePrincipal.isSystemPrincipal ?
+    if (!shadowRoot) {
+      Cu.reportError("Getting a UAWidgetSetupOrChange event without the Shadow Root.");
+      return;
+    }
+
+    let isSystemPrincipal = aElement.nodePrincipal.isSystemPrincipal;
+    let sandbox = isSystemPrincipal ?
       Object.create(null) : Cu.getUAWidgetScope(aElement.nodePrincipal);
 
     if (!sandbox[widgetName]) {
-      Services.scriptloader.loadSubScript(uri, sandbox, "UTF-8");
+      Services.scriptloader.loadSubScript(uri, sandbox);
     }
 
     let widget = new sandbox[widgetName](shadowRoot);
+    if (!isSystemPrincipal) {
+      widget = widget.wrappedJSObject;
+    }
     this.widgets.set(aElement, widget);
+    try {
+      widget.onsetup();
+    } catch (ex) {
+      Cu.reportError(ex);
+    }
   }
 
   teardownWidget(aElement) {
@@ -83,8 +106,12 @@ class UAWidgetsChild extends ActorChild {
     if (!widget) {
       return;
     }
-    if (typeof widget.wrappedJSObject.destructor == "function") {
-      widget.wrappedJSObject.destructor();
+    if (typeof widget.destructor == "function") {
+      try {
+        widget.destructor();
+      } catch (ex) {
+        Cu.reportError(ex);
+      }
     }
     this.widgets.delete(aElement);
   }

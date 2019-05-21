@@ -1,14 +1,11 @@
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
-const { XPCOMUtils } = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", {});
-const { AddonManager } = ChromeUtils.import("resource://gre/modules/AddonManager.jsm", {});
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { XPCOMUtils } = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { AddonManager } = ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
 const env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
-let scope = {};
-Services.scriptloader.loadSubScript("resource://talos-powers/TalosParentProfiler.js", scope);
-const { TalosParentProfiler } = scope;
 
 XPCOMUtils.defineLazyGetter(this, "require", function() {
   let { require } =
-    ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+    ChromeUtils.import("resource://devtools/shared/Loader.jsm");
   return require;
 });
 
@@ -71,11 +68,7 @@ function awaitBrowserLoaded(browser, includeSubFrames = false, wantLoad = null) 
 
 /* globals res:true */
 
-function Damp() {
-  Services.prefs.setBoolPref("devtools.webconsole.new-frontend-enabled", true);
-  // Disable the 3 pane inspector onboarding tooltip for DAMP tests. See Bug 1459538.
-  Services.prefs.setBoolPref("devtools.inspector.show-three-pane-tooltip", false);
-}
+function Damp() {}
 
 Damp.prototype = {
   async garbageCollect() {
@@ -98,10 +91,29 @@ Damp.prototype = {
     }
   },
 
+  async ensureTalosParentProfiler() {
+    // TalosParentProfiler is part of TalosPowers, which is a separate WebExtension
+    // that may or may not already have finished loading at this point (unlike most
+    // Pageloader tests, Damp doesn't wait for Pageloader to find TalosPowers before
+    // running). getTalosParentProfiler is used to wait for TalosPowers to be around
+    // before continuing.
+    async function getTalosParentProfiler() {
+      try {
+        var {TalosParentProfiler} = ChromeUtils.import("resource://talos-powers/TalosParentProfiler.jsm");
+        return TalosParentProfiler;
+      } catch (err) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return getTalosParentProfiler();
+      }
+    }
+
+    this.TalosParentProfiler = await getTalosParentProfiler();
+  },
+
   /**
    * Helper to tell when a test start and when it is finished.
-   * It helps recording its duration, but also put markers for perf-html when profiling
-   * DAMP.
+   * It helps recording its duration, but also put markers for profiler.firefox.com
+   * when profiling DAMP.
    *
    * When this method is called, the test is considered to be starting immediately
    * When the test is over, the returned object's `done` method should be called.
@@ -110,8 +122,8 @@ Damp.prototype = {
    *        Test title, displayed everywhere in PerfHerder, DevTools Perf Dashboard, ...
    * @param record Boolean
    *        Optional, if passed false, the test won't be recorded. It won't appear in
-   *        PerfHerder. Instead we will record perf-html markers and only print the
-   *        timings on stdout.
+   *        PerfHerder. Instead we will record profiler.firefox.com markers and only
+   *        print the timings on stdout.
    *
    * @return object
    *         With a `done` method, to be called whenever the test is finished running
@@ -246,7 +258,7 @@ Damp.prototype = {
     this._currentTest = test;
 
     dump(`Loading test '${test}'\n`);
-    let testMethod = require("chrome://damp/content/tests/" + test);
+    let testMethod = require(this.rootURI.resolve(`content/tests/${test}`));
 
     this._timeout = window.setTimeout(() => {
       this.error("Test timed out");
@@ -300,8 +312,8 @@ Damp.prototype = {
     }
     this._log("\n" + out);
 
-    if (content && content.tpRecordTime) {
-      content.tpRecordTime(testResults.join(","), 0, testNames.join(","));
+    if (this.testDone) {
+      this.testDone({testResults, testNames});
     } else {
       // alert(out);
     }
@@ -325,7 +337,7 @@ Damp.prototype = {
       this._reportAllResults();
     }
 
-    TalosParentProfiler.pause("DAMP - end");
+    this.TalosParentProfiler.pause("DAMP - end");
   },
 
   startAllocationTracker() {
@@ -385,27 +397,29 @@ Damp.prototype = {
       requestIdleCallback(resolve, { timeout: 15000 });
     });
 
+    await this.ensureTalosParentProfiler();
+
     // Free memory before running the first test, otherwise we may have a GC
     // related to Firefox startup or DAMP setup during the first test.
     await this.garbageCollect();
   },
 
-  startTest() {
+  startTest(rootURI) {
+    let promise = new Promise(resolve => { this.testDone = resolve; });
+    this.rootURI = rootURI;
     try {
       dump("Initialize the head file with a reference to this DAMP instance\n");
-      let head = require("chrome://damp/content/tests/head.js");
+      let head = require(rootURI.resolve("content/tests/head.js"));
       head.initialize(this);
 
       this._win = Services.wm.getMostRecentWindow("navigator:browser");
       this._dampTab = this._win.gBrowser.selectedTab;
       this._win.gBrowser.selectedBrowser.focus(); // Unfocus the URL bar to avoid caret blink
 
-      TalosParentProfiler.resume("DAMP - start");
-
       // Filter tests via `./mach --subtests filter` command line argument
       let filter = Services.prefs.getCharPref("talos.subtests", "");
 
-      let DAMP_TESTS = require("chrome://damp/content/damp-tests.js");
+      let DAMP_TESTS = require(rootURI.resolve("content/damp-tests.js"));
       let tests = DAMP_TESTS.filter(test => !test.disabled)
                             .filter(test => test.name.includes(filter));
 
@@ -428,6 +442,7 @@ Damp.prototype = {
       }
 
      this.waitBeforeRunningTests().then(() => {
+        this.TalosParentProfiler.resume("DAMP - start");
         this._doSequence(sequenceArray, this._doneInternal);
       }).catch(e => {
         this.exception(e);
@@ -435,5 +450,7 @@ Damp.prototype = {
     } catch (e) {
       this.exception(e);
     }
+
+    return promise;
   },
 };

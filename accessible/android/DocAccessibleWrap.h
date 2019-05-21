@@ -12,10 +12,9 @@
 namespace mozilla {
 namespace a11y {
 
-class DocAccessibleWrap : public DocAccessible
-{
-public:
-  DocAccessibleWrap(nsIDocument* aDocument, nsIPresShell* aPresShell);
+class DocAccessibleWrap : public DocAccessible {
+ public:
+  DocAccessibleWrap(Document* aDocument, nsIPresShell* aPresShell);
   virtual ~DocAccessibleWrap();
 
   virtual nsresult HandleAccEvent(AccEvent* aEvent) override;
@@ -23,8 +22,7 @@ public:
   /**
    * Manage the mapping from id to Accessible.
    */
-  void AddID(uint32_t aID, AccessibleWrap* aAcc)
-  {
+  void AddID(uint32_t aID, AccessibleWrap* aAcc) {
     mIDToAccessibleMap.Put(aID, aAcc);
   }
   void RemoveID(uint32_t aID) { mIDToAccessibleMap.Remove(aID); }
@@ -34,13 +32,15 @@ public:
 
   void CacheFocusPath(AccessibleWrap* aAccessible);
 
+  void CacheViewport();
+
   enum {
     eBatch_Viewport = 0,
     eBatch_FocusPath = 1,
     eBatch_BoundsUpdate = 2,
   };
 
-protected:
+ protected:
   /*
    * This provides a mapping from 32 bit id to accessible objects.
    */
@@ -48,9 +48,7 @@ protected:
 
   virtual void DoInitialUpdate() override;
 
-private:
-  void CacheViewport();
-
+ private:
   void UpdateFocusPathBounds();
 
   static void CacheViewportCallback(nsITimer* aTimer, void* aDocAccParam);
@@ -60,7 +58,7 @@ private:
   AccessibleHashtable mFocusPath;
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

@@ -45,6 +45,15 @@
     info("Source resolution changed");
   }
 
+  async function setParameters(test, emitter, encodings) {
+    info(`Setting parameters to ${JSON.stringify(encodings)}`);
+    emitter.start();
+    await test.pcRemote._pc.getSenders()[0].setParameters({encodings});
+    await haveEvent(test.pcLocal.remoteMediaElements[0], "resize");
+    emitter.stop();
+		info("Parameters set");
+	}
+
   async function checkResolution(test, emitter, rid) {
     const vlocal = test.pcRemote.localMediaElements[0];
     const vremote = test.pcLocal.remoteMediaElements[0];
@@ -89,10 +98,8 @@
   runNetworkTest(async () => {
     await pushPrefs(['media.peerconnection.simulcast', true],
                     ['media.peerconnection.video.lock_scaling', true],
-                    // 180Kbps was determined empirically, set well-higher than
-                    // the 80Kbps+overhead needed for the two simulcast streams.
-                    // 100Kbps was apparently too low.
-                    ['media.peerconnection.video.min_bitrate_estimate', 180*1000]);
+                    // 240Kbps was determined empirically
+                    ['media.peerconnection.video.min_bitrate_estimate', 240*1000]);
 
     let emitter, helper;
 
@@ -174,7 +181,7 @@
         encodings.find(({rid}) => rid == "foo").scaleResolutionDownBy = 1;
         encodings.find(({rid}) => rid == "bar").scaleResolutionDownBy = 2;
         encodings.find(({rid}) => rid == "baz").scaleResolutionDownBy = 3;
-        await test.pcRemote._pc.getSenders()[0].setParameters({encodings});
+        await setParameters(test, emitter, encodings);
         await checkResolutions(test, emitter);
       },
     ]);

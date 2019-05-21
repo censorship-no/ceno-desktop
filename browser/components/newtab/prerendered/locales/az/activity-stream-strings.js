@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Tamam, başa düşdüm",
   "prefs_home_header": "Firefox Ev Məzmunu",
   "prefs_home_description": "Firefox Evdə hansı məzmunları görmək istədiyinizi seçin.",
+  "prefs_content_discovery_header": "Firefox Ev",
+  "prefs_content_discovery_description": "Firefox Evdəki Məzmun Kəşfi yüksək keyfiyyətli və sizə uyğun internet məqalələrini kəşf etməyinizə imkan verir.",
+  "prefs_content_discovery_button": "Məzmun Kəşfini Söndür",
   "prefs_section_rows_option": "{num} sətir;{num} sətir",
   "prefs_search_header": "Web Axtarış",
   "prefs_topsites_description": "Ən çox ziyarət etdiyiniz saytlar",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Sevdiyiniz məqalələri Pocket-də saxlayın və möhtəşəm yeni yazıları kəşf edin.",
   "highlights_empty_state": "İnternetdə gəzməyə başlayın, burada ziyarət edəcəyiniz və ya əlfəcinləyəcəyiniz məqalə, video və digər səhifələri göstərəcəyik.",
   "topstories_empty_state": "Hamısını oxudunuz. Yeni {provider} məqalələri üçün daha sonra təkrar yoxlayın. Gözləyə bilmirsiz? Məşhur mövzu seçərək internetdən daha çox gözəl məqalələr tapın.",
-  "manual_migration_explanation2": "Firefox səyyahını digər səyyahlardan olan əlfəcin, tarixçə və parollar ilə yoxlayın.",
-  "manual_migration_cancel_button": "Xeyr, Təşəkkürlər",
-  "manual_migration_import_button": "İndi idxal et",
   "error_fallback_default_info": "Uups, bu məzmunu yüklərkən nəsə səhv getdi.",
   "error_fallback_default_refresh_suggestion": "Təkrar yoxlamaq üçün səhifəni yeniləyin.",
   "section_menu_action_remove_section": "Bölməni Sil",
@@ -108,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Davam et",
   "firstrun_skip_login": "Bu addımı keç",
   "context_menu_title": "Menyunu aç",
-  "pocket_learn_more": "Ətraflı Öyrən"
+  "manual_migration_explanation2": "Firefox səyyahını digər səyyahlardan olan əlfəcin, tarixçə və parollar ilə yoxlayın.",
+  "manual_migration_cancel_button": "Xeyr, Təşəkkürlər",
+  "manual_migration_import_button": "İndi idxal et"
 };

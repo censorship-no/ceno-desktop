@@ -51,6 +51,7 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
 
   setColorPickerContent(color) {
     const { doc } = this.tooltip;
+    this.tooltip.panel.innerHTML = "";
 
     const container = doc.createElementNS(XHTML_NS, "div");
     container.id = "spectrum-tooltip";
@@ -168,7 +169,7 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
     telemetry.getHistogramById(TELEMETRY_PICKER_EYEDROPPER_OPEN_COUNT).add(true);
 
     // cancelling picker(if it is already selected) on opening eye-dropper
-    toolbox.highlighterUtils.cancelPicker();
+    inspector.nodePicker.cancel();
 
     // pickColorFromPage will focus the content document. If the devtools are in a
     // separate window, the colorpicker tooltip will be closed before pickColorFromPage

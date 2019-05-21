@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "我明白了",
   "prefs_home_header": "Firefox 主页内容",
   "prefs_home_description": "选择要在您的 Firefox 主页上显示的版块。",
+  "prefs_content_discovery_header": "Firefox 主页",
+  "prefs_content_discovery_description": "Firefox 主页中的“内容发现”可助您发现网络上的高品质、有价值的文章。",
+  "prefs_content_discovery_button": "关闭内容发现",
   "prefs_section_rows_option": "{num} 行",
   "prefs_search_header": "网络搜索",
   "prefs_topsites_description": "您经常访问的网站",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "将您喜爱的故事保存到 Pocket，用精彩的读物为思想注入活力。",
   "highlights_empty_state": "开始网上冲浪之旅吧，之后这里会显示您最近看过或加了书签的精彩文章、视频与其他页面。",
   "topstories_empty_state": "所有文章都读完啦！晚点再来，{provider} 将推荐更多热门文章。等不及了？选择一个热门话题，找到更多网上的好文章。",
-  "manual_migration_explanation2": "把在其他浏览器中保存的书签、历史记录和密码带到 Firefox 吧。",
-  "manual_migration_cancel_button": "不用了",
-  "manual_migration_import_button": "立即导入",
   "error_fallback_default_info": "哎呀，加载此内容出错了。",
   "error_fallback_default_refresh_suggestion": "刷新页面以重试。",
   "section_menu_action_remove_section": "移除版块",
@@ -108,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "继续",
   "firstrun_skip_login": "跳过此步骤",
   "context_menu_title": "打开菜单",
-  "pocket_learn_more": "详细了解"
+  "manual_migration_explanation2": "把在其他浏览器中保存的书签、历史记录和密码带到 Firefox 吧。",
+  "manual_migration_cancel_button": "不用了",
+  "manual_migration_import_button": "立即导入"
 };

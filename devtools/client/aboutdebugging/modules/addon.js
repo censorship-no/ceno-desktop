@@ -7,8 +7,7 @@
 loader.lazyImporter(this, "AddonManagerPrivate", "resource://gre/modules/AddonManager.jsm");
 
 const {
-  debugLocalAddon,
-  debugRemoteAddon,
+  debugAddon,
   getExtensionUuid,
   openTemporaryExtension,
   parseFileUri,
@@ -25,26 +24,12 @@ exports.isTemporaryID = function(addonID) {
   return AddonManagerPrivate.isTemporaryInstallID(addonID);
 };
 
-exports.isLegacyTemporaryExtension = function(addonForm) {
-  if (!addonForm.type) {
-    // If about:debugging is connected to an older then 59 remote Firefox, and type is
-    // not available on the addon/webextension actors, return false to avoid showing
-    // irrelevant warning messages.
-    return false;
-  }
-  return addonForm.type == "extension" &&
-         addonForm.temporarilyInstalled &&
-         !addonForm.isWebExtension &&
-         !addonForm.isAPIExtension;
-};
-
 /**
  * See JSDoc in devtools/client/aboutdebugging-new/src/modules/extensions-helper for all
  * the methods exposed below.
  */
 
-exports.debugLocalAddon = debugLocalAddon;
-exports.debugRemoteAddon = debugRemoteAddon;
+exports.debugAddon = debugAddon;
 exports.getExtensionUuid = getExtensionUuid;
 exports.openTemporaryExtension = openTemporaryExtension;
 exports.parseFileUri = parseFileUri;

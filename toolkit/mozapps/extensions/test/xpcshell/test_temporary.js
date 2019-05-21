@@ -2,34 +2,9 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
-
-const ID = "bootstrap1@tests.mozilla.org";
+const ID = "addon@tests.mozilla.org";
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "42");
-
-const ADDONS = {
-  test_bootstrap1_1: {
-    "install.rdf": {
-      "id": ID,
-      "name": "Test Bootstrap 1",
-    },
-    "bootstrap.js": EMPTY_BOOTSTRAP_JS,
-  },
-  test_bootstrap1_2: {
-    "install.rdf": {
-      "id": "bootstrap1@tests.mozilla.org",
-      "version": "2.0",
-      "name": "Test Bootstrap 1",
-    },
-    "bootstrap.js": EMPTY_BOOTSTRAP_JS,
-  },
-};
-
-const XPIS = {};
-for (let [name, files] of Object.entries(ADDONS)) {
-  XPIS[name] = AddonTestUtils.createTempXPIFile(files);
-}
 
 function waitForBootstrapEvent(expectedEvent, addonId) {
   return new Promise(resolve => {
@@ -57,8 +32,21 @@ async function checkEvent(promise, {reason, params}) {
   }
 }
 
-let Monitor = SlightlyLessDodgyBootstrapMonitor;
-Monitor.init();
+BootstrapMonitor.init();
+
+const XPIS = {};
+
+add_task(async function setup() {
+  for (let n of [1, 2]) {
+    XPIS[n] = await createTempWebExtensionFile({
+      manifest: {
+        name: "Test",
+        version: `${n}.0`,
+        applications: {gecko: {id: ID}},
+      },
+    });
+  }
+});
 
 // Install a temporary add-on with no existing add-on present.
 // Restart and make sure it has gone away.
@@ -92,25 +80,25 @@ add_task(async function test_new_temporary() {
     },
   });
 
-  await AddonManager.installTemporaryAddon(XPIS.test_bootstrap1_1);
+  await AddonManager.installTemporaryAddon(XPIS[1]);
 
   Assert.ok(extInstallCalled);
   Assert.ok(installingCalled);
   Assert.ok(installedCalled);
 
-  const install = Monitor.checkInstalled(ID, "1.0");
+  const install = BootstrapMonitor.checkInstalled(ID, "1.0");
   equal(install.reason, BOOTSTRAP_REASONS.ADDON_INSTALL);
 
-  Monitor.checkStarted(ID, "1.0");
+  BootstrapMonitor.checkStarted(ID, "1.0");
 
-  let info = Monitor.started.get(ID);
+  let info = BootstrapMonitor.started.get(ID);
   Assert.equal(info.reason, BOOTSTRAP_REASONS.ADDON_INSTALL);
 
   let addon = await promiseAddonByID(ID);
 
   checkAddon(ID, addon, {
     version: "1.0",
-    name: "Test Bootstrap 1",
+    name: "Test",
     isCompatible: true,
     appDisabled: false,
     isActive: true,
@@ -130,8 +118,8 @@ add_task(async function test_new_temporary() {
   let uninstall = await onUninstall;
   equal(uninstall.reason, BOOTSTRAP_REASONS.ADDON_UNINSTALL);
 
-  Monitor.checkNotInstalled(ID);
-  Monitor.checkNotStarted(ID);
+  BootstrapMonitor.checkNotInstalled(ID);
+  BootstrapMonitor.checkNotStarted(ID);
 
   addon = await promiseAddonByID(ID);
   Assert.equal(addon, null);
@@ -142,14 +130,15 @@ add_task(async function test_new_temporary() {
 // Install a temporary add-on over the top of an existing add-on.
 // Restart and make sure the existing add-on comes back.
 add_task(async function test_replace_temporary() {
-  let {addon} = await AddonTestUtils.promiseInstallXPI(ADDONS.test_bootstrap1_2);
+  await promiseInstallFile(XPIS[2]);
+  let addon = await promiseAddonByID(ID);
 
-  Monitor.checkInstalled(ID, "2.0");
-  Monitor.checkStarted(ID, "2.0");
+  BootstrapMonitor.checkInstalled(ID, "2.0");
+  BootstrapMonitor.checkStarted(ID, "2.0");
 
   checkAddon(ID, addon, {
     version: "2.0",
-    name: "Test Bootstrap 1",
+    name: "Test",
     isCompatible: true,
     appDisabled: false,
     isActive: true,
@@ -160,8 +149,6 @@ add_task(async function test_replace_temporary() {
 
   let tempdir = gTmpD.clone();
 
-  let bootstrapJS = await OS.File.read("data/test_temporary/bootstrap.js", {encoding: "utf-8"});
-
   for (let newversion of ["1.0", "3.0"]) {
     for (let packed of [false, true]) {
       // ugh, file locking issues with xpis on windows
@@ -169,39 +156,26 @@ add_task(async function test_replace_temporary() {
         continue;
       }
 
-      let files = {
-        "install.rdf": AddonTestUtils.createInstallRDF({
-          id: ID,
-          version: newversion,
-          name: "Test Bootstrap 1 (temporary)",
-        }),
-        "bootstrap.js": bootstrapJS,
-      };
-
-      let target;
-      if (!packed) {
-        // Unpacked extensions don't support signing, which means that
-        // our mock signing service is not able to give them a
-        // privileged signed state, and we can't install them on release
-        // builds.
-        if (!AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS) {
-          continue;
-        }
-
-        target = tempdir.clone();
-        target.append(ID);
-
-        await AddonTestUtils.promiseWriteFilesToDir(target.path, files);
-      } else {
-        target = tempdir.clone();
-        target.append(`${ID}.xpi`);
-
-        await AddonTestUtils.promiseWriteFilesToZip(target.path, files);
+      // Unpacked extensions don't support signing, which means that
+      // our mock signing service is not able to give them a
+      // privileged signed state, and we can't install them on release
+      // builds.
+      if (!packed && !AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS) {
+        continue;
       }
 
+      let files = ExtensionTestCommon.generateFiles({
+        manifest: {
+          name: "Test",
+          version: newversion,
+          applications: {gecko: {id: ID}},
+        },
+      });
+
+      let target = await AddonTestUtils.promiseWriteFilesToExtension(tempdir.path, ID, files, !packed);
+
       let onShutdown = waitForBootstrapEvent("shutdown", ID);
-      let onUninstall = waitForBootstrapEvent("uninstall", ID);
-      let onInstall = waitForBootstrapEvent("install", ID);
+      let onUpdate = waitForBootstrapEvent("update", ID);
       let onStartup = waitForBootstrapEvent("startup", ID);
 
       await AddonManager.installTemporaryAddon(target);
@@ -217,14 +191,7 @@ add_task(async function test_replace_temporary() {
         },
       });
 
-      await checkEvent(onUninstall, {
-        reason,
-        params: {
-          version: "2.0",
-        },
-      });
-
-      await checkEvent(onInstall, {
+      await checkEvent(onUpdate, {
         reason,
         params: {
           version: newversion,
@@ -247,7 +214,7 @@ add_task(async function test_replace_temporary() {
       // temporary add-on is installed and started
       checkAddon(ID, addon, {
         version: newversion,
-        name: "Test Bootstrap 1 (temporary)",
+        name: "Test",
         isCompatible: true,
         appDisabled: false,
         isActive: true,
@@ -264,8 +231,7 @@ add_task(async function test_replace_temporary() {
                BOOTSTRAP_REASONS.ADDON_UPGRADE;
 
       onShutdown = waitForBootstrapEvent("shutdown", ID);
-      onUninstall = waitForBootstrapEvent("uninstall", ID);
-      onInstall = waitForBootstrapEvent("install", ID);
+      onUpdate = waitForBootstrapEvent("update", ID);
       onStartup = waitForBootstrapEvent("startup", ID);
 
       await promiseRestartManager();
@@ -277,14 +243,7 @@ add_task(async function test_replace_temporary() {
         },
       });
 
-      await checkEvent(onUninstall, {
-        reason,
-        params: {
-          version: newversion,
-        },
-      });
-
-      await checkEvent(onInstall, {
+      await checkEvent(onUpdate, {
         reason,
         params: {
           version: "2.0",
@@ -302,15 +261,15 @@ add_task(async function test_replace_temporary() {
         },
       });
 
-      Monitor.checkInstalled(ID, "2.0");
-      Monitor.checkStarted(ID, "2.0");
+      BootstrapMonitor.checkInstalled(ID, "2.0");
+      BootstrapMonitor.checkStarted(ID, "2.0");
 
       addon = await promiseAddonByID(ID);
 
       // existing add-on is back
       checkAddon(ID, addon, {
         version: "2.0",
-        name: "Test Bootstrap 1",
+        name: "Test",
         isCompatible: true,
         appDisabled: false,
         isActive: true,
@@ -327,8 +286,8 @@ add_task(async function test_replace_temporary() {
   // remove original add-on
   await addon.uninstall();
 
-  Monitor.checkNotInstalled(ID);
-  Monitor.checkNotStarted(ID);
+  BootstrapMonitor.checkNotInstalled(ID);
+  BootstrapMonitor.checkNotStarted(ID);
 
   await promiseRestartManager();
 });
@@ -399,12 +358,6 @@ add_task(async function test_samefile() {
   await addon.uninstall();
 });
 
-function promiseWriteWebExtensionToDir(dir, manifest) {
-  return AddonTestUtils.promiseWriteFilesToDir(dir.path, {
-    "manifest.json": ExtensionTestCommon.generateManifest(manifest),
-  });
-}
-
 // Install a temporary add-on over the top of an existing add-on.
 // Uninstall it and make sure the existing add-on comes back.
 add_task(async function test_replace_permanent() {
@@ -416,17 +369,20 @@ add_task(async function test_replace_permanent() {
     },
   });
 
-  Monitor.checkInstalled(ID, "1.0");
-  Monitor.checkStarted(ID, "1.0");
+  BootstrapMonitor.checkInstalled(ID, "1.0");
+  BootstrapMonitor.checkStarted(ID, "1.0");
 
   let unpacked_addon = gTmpD.clone();
   unpacked_addon.append(ID);
 
-  await promiseWriteWebExtensionToDir(unpacked_addon, {
-    applications: {gecko: {id: ID}},
-    version: "2.0",
-    name: "Test Bootstrap 1 (temporary)",
+  let files = ExtensionTestCommon.generateFiles({
+    manifest: {
+      applications: {gecko: {id: ID}},
+      version: "2.0",
+      name: "Test Bootstrap 1 (temporary)",
+    },
   });
+  await AddonTestUtils.promiseWriteFilesToDir(unpacked_addon.path, files);
 
   let extInstallCalled = false;
   AddonManager.addInstallListener({
@@ -463,8 +419,8 @@ add_task(async function test_replace_permanent() {
   Assert.ok(installingCalled);
   Assert.ok(installedCalled);
 
-  Monitor.checkInstalled(ID);
-  Monitor.checkStarted(ID);
+  BootstrapMonitor.checkInstalled(ID);
+  BootstrapMonitor.checkStarted(ID);
 
   // temporary add-on is installed and started
   checkAddon(ID, addon, {
@@ -480,8 +436,8 @@ add_task(async function test_replace_permanent() {
 
   await addon.uninstall();
 
-  Monitor.checkInstalled(ID);
-  Monitor.checkStarted(ID);
+  BootstrapMonitor.checkInstalled(ID);
+  BootstrapMonitor.checkStarted(ID);
 
   addon = await promiseAddonByID(ID);
 
@@ -500,31 +456,37 @@ add_task(async function test_replace_permanent() {
   unpacked_addon.remove(true);
   await addon.uninstall();
 
-  Monitor.checkNotInstalled(ID);
-  Monitor.checkNotStarted(ID);
+  BootstrapMonitor.checkNotInstalled(ID);
+  BootstrapMonitor.checkNotStarted(ID);
 
   await promiseRestartManager();
 });
 
 // Install a temporary add-on as a version upgrade over the top of an
 // existing temporary add-on.
-add_task(async function test_replace_temporary_upgrade_presumably_in_a_different_way_from_the_previous_similar_task() {
+add_task(async function test_replace_temporary() {
   const unpackedAddon = gTmpD.clone();
   unpackedAddon.append(ID);
 
-  await promiseWriteWebExtensionToDir(unpackedAddon, {
-    applications: {gecko: {id: ID}},
-    version: "1.0",
+  let files = ExtensionTestCommon.generateFiles({
+    manifest: {
+      applications: {gecko: {id: ID}},
+      version: "1.0",
+    },
   });
+  await AddonTestUtils.promiseWriteFilesToDir(unpackedAddon.path, files);
 
   await AddonManager.installTemporaryAddon(unpackedAddon);
 
   // Increment the version number, re-install it, and make sure it
   // gets marked as an upgrade.
-  await promiseWriteWebExtensionToDir(unpackedAddon, {
-    applications: {gecko: {id: ID}},
-    version: "2.0",
+  files = ExtensionTestCommon.generateFiles({
+    manifest: {
+      applications: {gecko: {id: ID}},
+      version: "2.0",
+    },
   });
+  await AddonTestUtils.promiseWriteFilesToDir(unpackedAddon.path, files);
 
   const onShutdown = waitForBootstrapEvent("shutdown", ID);
   const onUpdate = waitForBootstrapEvent("update", ID);
@@ -567,19 +529,25 @@ add_task(async function test_replace_temporary_downgrade() {
   const unpackedAddon = gTmpD.clone();
   unpackedAddon.append(ID);
 
-  await promiseWriteWebExtensionToDir(unpackedAddon, {
-    applications: {gecko: {id: ID}},
-    version: "1.0",
+  let files = ExtensionTestCommon.generateFiles({
+    manifest: {
+      applications: {gecko: {id: ID}},
+      version: "1.0",
+    },
   });
+  await AddonTestUtils.promiseWriteFilesToDir(unpackedAddon.path, files);
 
   await AddonManager.installTemporaryAddon(unpackedAddon);
 
   // Decrement the version number, re-install, and make sure
   // it gets marked as a downgrade.
-  await promiseWriteWebExtensionToDir(unpackedAddon, {
-    applications: {gecko: {id: ID}},
-    version: "0.8",
+  files = ExtensionTestCommon.generateFiles({
+    manifest: {
+      applications: {gecko: {id: ID}},
+      version: "0.8",
+    },
   });
+  await AddonTestUtils.promiseWriteFilesToDir(unpackedAddon.path, files);
 
   const onShutdown = waitForBootstrapEvent("shutdown", ID);
   const onUpdate = waitForBootstrapEvent("update", ID);
@@ -617,14 +585,17 @@ add_task(async function test_replace_temporary_downgrade() {
 
 // Installing a temporary add-on over an existing add-on with the same
 // version number should be installed as an upgrade.
-add_task(async function test_replace_permanent_upgrade_presumably_in_a_different_way_from_the_previous_similar_task() {
+add_task(async function test_replace_same_version() {
   const unpackedAddon = gTmpD.clone();
   unpackedAddon.append(ID);
 
-  await promiseWriteWebExtensionToDir(unpackedAddon, {
-    applications: {gecko: {id: ID}},
-    version: "1.0",
+  let files = ExtensionTestCommon.generateFiles({
+    manifest: {
+      applications: {gecko: {id: ID}},
+      version: "1.0",
+    },
   });
+  await AddonTestUtils.promiseWriteFilesToDir(unpackedAddon.path, files);
 
   const onInitialInstall = waitForBootstrapEvent("install", ID);
   const onInitialStartup = waitForBootstrapEvent("startup", ID);
@@ -644,7 +615,7 @@ add_task(async function test_replace_permanent_upgrade_presumably_in_a_different
     },
   });
 
-  let info = Monitor.started.get(ID);
+  let info = BootstrapMonitor.started.get(ID);
   Assert.equal(info.reason, BOOTSTRAP_REASONS.ADDON_INSTALL);
 
   // Install it again.
@@ -685,24 +656,28 @@ add_task(async function test_replace_permanent_upgrade_presumably_in_a_different
 // Install a temporary add-on over the top of an existing disabled add-on.
 // After restart, the existing add-on should continue to be installed and disabled.
 add_task(async function test_replace_permanent_disabled() {
-  let {addon} = await AddonTestUtils.promiseInstallXPI(ADDONS.test_bootstrap1_1);
+  await promiseInstallFile(XPIS[1]);
+  let addon = await promiseAddonByID(ID);
 
-  Monitor.checkInstalled(ID, "1.0");
-  Monitor.checkStarted(ID, "1.0");
+  BootstrapMonitor.checkInstalled(ID, "1.0");
+  BootstrapMonitor.checkStarted(ID, "1.0");
 
   await addon.disable();
 
-  Monitor.checkInstalled(ID, "1.0");
-  Monitor.checkNotStarted(ID);
+  BootstrapMonitor.checkInstalled(ID, "1.0");
+  BootstrapMonitor.checkNotStarted(ID);
 
   let unpacked_addon = gTmpD.clone();
   unpacked_addon.append(ID);
 
-  await promiseWriteWebExtensionToDir(unpacked_addon, {
-    applications: {gecko: {id: ID}},
-    name: "Test Bootstrap 1 (temporary)",
-    version: "2.0",
+  let files = ExtensionTestCommon.generateFiles({
+    manifest: {
+      applications: {gecko: {id: ID}},
+      name: "Test",
+      version: "2.0",
+    },
   });
+  await AddonTestUtils.promiseWriteFilesToDir(unpacked_addon.path, files);
 
   let extInstallCalled = false;
   AddonManager.addInstallListener({
@@ -717,13 +692,13 @@ add_task(async function test_replace_permanent_disabled() {
 
   Assert.ok(extInstallCalled);
 
-  Monitor.checkInstalled(ID, "2.0");
-  Monitor.checkStarted(ID);
+  BootstrapMonitor.checkInstalled(ID, "2.0");
+  BootstrapMonitor.checkStarted(ID);
 
   // temporary add-on is installed and started
   checkAddon(ID, tempAddon, {
     version: "2.0",
-    name: "Test Bootstrap 1 (temporary)",
+    name: "Test",
     isCompatible: true,
     appDisabled: false,
     isActive: true,
@@ -739,13 +714,13 @@ add_task(async function test_replace_permanent_disabled() {
   await new Promise(executeSoon);
   addon = await promiseAddonByID(ID);
 
-  Monitor.checkInstalled(ID, "1.0");
-  Monitor.checkStarted(ID);
+  BootstrapMonitor.checkInstalled(ID, "1.0");
+  BootstrapMonitor.checkStarted(ID);
 
   // existing add-on is back
   checkAddon(ID, addon, {
     version: "1.0",
-    name: "Test Bootstrap 1",
+    name: "Test",
     isCompatible: true,
     appDisabled: false,
     isActive: true,
@@ -756,8 +731,8 @@ add_task(async function test_replace_permanent_disabled() {
 
   await addon.uninstall();
 
-  Monitor.checkNotInstalled(ID);
-  Monitor.checkNotStarted(ID);
+  BootstrapMonitor.checkNotInstalled(ID);
+  BootstrapMonitor.checkNotStarted(ID);
 
   await promiseRestartManager();
 });

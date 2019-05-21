@@ -1,15 +1,15 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Computed color values.
 
+use crate::values::animated::color::RGBA as AnimatedRGBA;
+use crate::values::animated::ToAnimatedValue;
+use crate::values::generics::color::{Color as GenericColor, ColorOrAuto as GenericColorOrAuto};
 use cssparser::{Color as CSSParserColor, RGBA};
 use std::fmt;
 use style_traits::{CssWriter, ToCss};
-use values::animated::ToAnimatedValue;
-use values::animated::color::RGBA as AnimatedRGBA;
-use values::generics::color::Color as GenericColor;
 
 /// Computed value type for the specified RGBAColor.
 pub type RGBAColor = RGBA;
@@ -101,3 +101,6 @@ impl ToAnimatedValue for RGBA {
         RGBA::from_floats(animated.red, animated.green, animated.blue, animated.alpha)
     }
 }
+
+/// auto | <color>
+pub type ColorOrAuto = GenericColorOrAuto<Color>;

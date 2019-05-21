@@ -23,9 +23,8 @@ namespace mozilla {
 // maintain each nsColumnSetFrame as an independent set of columns, and each
 // column-span element then becomes just a block level element.
 //
-class ColumnSetWrapperFrame final : public nsBlockFrame
-{
-public:
+class ColumnSetWrapperFrame final : public nsBlockFrame {
+ public:
   NS_DECL_FRAMEARENA_HELPERS(ColumnSetWrapperFrame)
   NS_DECL_QUERYFRAME
 
@@ -33,23 +32,40 @@ public:
                                                      ComputedStyle* aStyle,
                                                      nsFrameState aStateFlags);
 
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
+
+  nsContainerFrame* GetContentInsertionFrame() override;
+
+  void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
+
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
   void AppendFrames(ChildListID aListID, nsFrameList& aFrameList) override;
 
-  void InsertFrames(ChildListID aListID,
-                    nsIFrame* aPrevFrame,
+  void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                     nsFrameList& aFrameList) override;
 
   void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
-private:
-  explicit ColumnSetWrapperFrame(ComputedStyle* aStyle);
+  void MarkIntrinsicISizesDirty() override;
+
+ private:
+  explicit ColumnSetWrapperFrame(ComputedStyle* aStyle,
+                                 nsPresContext* aPresContext);
   ~ColumnSetWrapperFrame() override = default;
+
+#ifdef DEBUG
+  static void AssertColumnSpanWrapperSubtreeIsSane(const nsIFrame* aFrame);
+
+  // True if frame constructor has finished building this frame and all of
+  // its descendants.
+  bool mFinishedBuildingColumns = false;
+#endif
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_ColumnSetWrapperFrame_h
+#endif  // mozilla_ColumnSetWrapperFrame_h

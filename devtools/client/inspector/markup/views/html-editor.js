@@ -4,7 +4,7 @@
 
 "use strict";
 
-const Editor = require("devtools/client/sourceeditor/editor");
+const Editor = require("devtools/client/shared/sourceeditor/editor");
 const Services = require("Services");
 const EventEmitter = require("devtools/shared/event-emitter");
 
@@ -46,7 +46,7 @@ function HTMLEditor(htmlDocument) {
     lineWrapping: true,
     styleActiveLine: false,
     extraKeys: {},
-    theme: "mozilla markup-view"
+    theme: "mozilla markup-view",
   };
 
   config.extraKeys[ctrl("Enter")] = this.hide;
@@ -167,7 +167,7 @@ HTMLEditor.prototype = {
     this.hide(false);
     this.container.remove();
     this.editor.destroy();
-  }
+  },
 };
 
 function ctrl(k) {

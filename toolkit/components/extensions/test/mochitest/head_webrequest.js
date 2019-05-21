@@ -239,7 +239,13 @@ function background(events) {
     },
     onErrorOccurred(expected, details, result) {
       if (expected.error) {
-        browser.test.assertEq(expected.error, details.error, "expected error message received in onErrorOccurred");
+        if (Array.isArray(expected.error)) {
+          browser.test.assertTrue(
+            expected.error.includes(details.error),
+            "expected error message received in onErrorOccurred");
+        } else {
+          browser.test.assertEq(expected.error, details.error, "expected error message received in onErrorOccurred");
+        }
       }
     },
   };
@@ -338,6 +344,7 @@ function addLink(file) {
   let a = document.createElement("a");
   a.setAttribute("href", file);
   a.setAttribute("target", "_blank");
+  a.setAttribute("rel", "opener");
   document.body.appendChild(a);
   return a;
 }

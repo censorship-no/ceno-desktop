@@ -1,12 +1,13 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Rust helpers for Gecko's `nsStyleCoord`.
 
-use gecko_bindings::bindings;
-use gecko_bindings::structs::{nsStyleCoord, nsStyleCoord_Calc, nsStyleCoord_CalcValue};
-use gecko_bindings::structs::{nscoord, nsStyleCorners, nsStyleSides, nsStyleUnion, nsStyleUnit};
+use crate::gecko_bindings::bindings;
+use crate::gecko_bindings::structs::nsStyleSides;
+use crate::gecko_bindings::structs::{nsStyleCoord, nsStyleCoord_Calc, nsStyleCoord_CalcValue};
+use crate::gecko_bindings::structs::{nsStyleUnion, nsStyleUnit, nscoord};
 use std::mem;
 
 impl nsStyleCoord {
@@ -122,64 +123,6 @@ unsafe impl<'a> CoordDataMut for SidesDataMut<'a> {
     }
 }
 
-impl nsStyleCorners {
-    /// Get a `nsStyleCoord` like object representing the given index's value
-    /// and unit.
-    #[inline]
-    pub fn data_at(&self, index: usize) -> CornersData {
-        CornersData {
-            corners: self,
-            index: index,
-        }
-    }
-
-    /// Get a `nsStyleCoord` like object representing the mutable given index's
-    /// value and unit.
-    #[inline]
-    pub fn data_at_mut(&mut self, index: usize) -> CornersDataMut {
-        CornersDataMut {
-            corners: self,
-            index: index,
-        }
-    }
-}
-
-/// A `nsStyleCoord`-like struct on top of `nsStyleCorners`.
-pub struct CornersData<'a> {
-    corners: &'a nsStyleCorners,
-    index: usize,
-}
-
-/// A `nsStyleCoord`-like struct on top of a mutable `nsStyleCorners` reference.
-pub struct CornersDataMut<'a> {
-    corners: &'a mut nsStyleCorners,
-    index: usize,
-}
-
-unsafe impl<'a> CoordData for CornersData<'a> {
-    fn unit(&self) -> nsStyleUnit {
-        unsafe { self.corners.get_mUnits()[self.index] }
-    }
-    fn union(&self) -> nsStyleUnion {
-        unsafe { self.corners.get_mValues()[self.index] }
-    }
-}
-unsafe impl<'a> CoordData for CornersDataMut<'a> {
-    fn unit(&self) -> nsStyleUnit {
-        unsafe { self.corners.get_mUnits()[self.index] }
-    }
-    fn union(&self) -> nsStyleUnion {
-        unsafe { self.corners.get_mValues()[self.index] }
-    }
-}
-unsafe impl<'a> CoordDataMut for CornersDataMut<'a> {
-    unsafe fn values_mut(&mut self) -> (&mut nsStyleUnit, &mut nsStyleUnion) {
-        let unit = &mut self.corners.get_mUnits_mut()[self.index] as *mut _;
-        let value = &mut self.corners.get_mValues_mut()[self.index] as *mut _;
-        (&mut *unit, &mut *value)
-    }
-}
-
 /// Enum representing the tagged union that is CoordData.
 ///
 /// In release mode this should never actually exist in the code, and will be
@@ -266,7 +209,7 @@ pub unsafe trait CoordDataMut: CoordData {
     /// Useful for initializing uninits, given that `set_value` may segfault on
     /// uninits.
     fn leaky_set_null(&mut self) {
-        use gecko_bindings::structs::nsStyleUnit::*;
+        use crate::gecko_bindings::structs::nsStyleUnit::*;
         unsafe {
             let (unit, union) = self.values_mut();
             *unit = eStyleUnit_Null;
@@ -277,8 +220,8 @@ pub unsafe trait CoordDataMut: CoordData {
     #[inline(always)]
     /// Sets the inner value.
     fn set_value(&mut self, value: CoordDataValue) {
-        use gecko_bindings::structs::nsStyleUnit::*;
         use self::CoordDataValue::*;
+        use crate::gecko_bindings::structs::nsStyleUnit::*;
         self.reset();
         unsafe {
             let (unit, union) = self.values_mut();
@@ -364,8 +307,8 @@ pub unsafe trait CoordData {
     #[inline(always)]
     /// Get the appropriate value for this object.
     fn as_value(&self) -> CoordDataValue {
-        use gecko_bindings::structs::nsStyleUnit::*;
         use self::CoordDataValue::*;
+        use crate::gecko_bindings::structs::nsStyleUnit::*;
         unsafe {
             match self.unit() {
                 eStyleUnit_Null => Null,
@@ -387,7 +330,7 @@ pub unsafe trait CoordData {
     #[inline]
     /// Pretend inner value is a float; obtain it.
     unsafe fn get_float(&self) -> f32 {
-        use gecko_bindings::structs::nsStyleUnit::*;
+        use crate::gecko_bindings::structs::nsStyleUnit::*;
         debug_assert!(
             self.unit() == eStyleUnit_Percent ||
                 self.unit() == eStyleUnit_Factor ||
@@ -400,7 +343,7 @@ pub unsafe trait CoordData {
     #[inline]
     /// Pretend inner value is an int; obtain it.
     unsafe fn get_integer(&self) -> i32 {
-        use gecko_bindings::structs::nsStyleUnit::*;
+        use crate::gecko_bindings::structs::nsStyleUnit::*;
         debug_assert!(
             self.unit() == eStyleUnit_Coord ||
                 self.unit() == eStyleUnit_Integer ||

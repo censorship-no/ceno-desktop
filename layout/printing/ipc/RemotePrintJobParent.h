@@ -19,14 +19,14 @@
 class nsDeviceContext;
 class nsIPrintSettings;
 class nsIWebProgressListener;
-class PrintTranslator;
 
 namespace mozilla {
 namespace layout {
 
-class RemotePrintJobParent final : public PRemotePrintJobParent
-{
-public:
+class PrintTranslator;
+
+class RemotePrintJobParent final : public PRemotePrintJobParent {
+ public:
   explicit RemotePrintJobParent(nsIPrintSettings* aPrintSettings);
 
   void ActorDestroy(ActorDestroyReason aWhy) final;
@@ -34,37 +34,37 @@ public:
   mozilla::ipc::IPCResult RecvInitializePrint(const nsString& aDocumentTitle,
                                               const nsString& aPrintToFile,
                                               const int32_t& aStartPage,
-                                              const int32_t& aEndPage) final;
+                                              const int32_t& aEndPage);
 
-  mozilla::ipc::IPCResult RecvProcessPage() final;
+  mozilla::ipc::IPCResult RecvProcessPage();
 
-  mozilla::ipc::IPCResult RecvFinalizePrint() final;
+  mozilla::ipc::IPCResult RecvFinalizePrint();
 
-  mozilla::ipc::IPCResult RecvAbortPrint(const nsresult& aRv) final;
+  mozilla::ipc::IPCResult RecvAbortPrint(const nsresult& aRv);
 
   mozilla::ipc::IPCResult RecvStateChange(const long& aStateFlags,
-                                          const nsresult& aStatus) final;
+                                          const nsresult& aStatus);
 
   mozilla::ipc::IPCResult RecvProgressChange(const long& aCurSelfProgress,
                                              const long& aMaxSelfProgress,
                                              const long& aCurTotalProgress,
-                                             const long& aMaxTotalProgress) final;
+                                             const long& aMaxTotalProgress);
 
-  mozilla::ipc::IPCResult RecvStatusChange(const nsresult& aStatus) final;
+  mozilla::ipc::IPCResult RecvStatusChange(const nsresult& aStatus);
 
   /**
-    * Register a progress listener to receive print progress updates.
-    *
-    * @param aListener the progress listener to register. Must not be null.
-    */
+   * Register a progress listener to receive print progress updates.
+   *
+   * @param aListener the progress listener to register. Must not be null.
+   */
   void RegisterListener(nsIWebProgressListener* aListener);
 
   /**
-    * @return the print settings for this remote print job.
-    */
+   * @return the print settings for this remote print job.
+   */
   already_AddRefed<nsIPrintSettings> GetPrintSettings();
 
-private:
+ private:
   ~RemotePrintJobParent() final;
 
   nsresult InitializePrintDevice(const nsString& aDocumentTitle,
@@ -90,7 +90,7 @@ private:
   bool mIsDoingPrinting;
 };
 
-} // namespace layout
-} // namespace mozilla
+}  // namespace layout
+}  // namespace mozilla
 
-#endif // mozilla_layout_RemotePrintJobParent_h
+#endif  // mozilla_layout_RemotePrintJobParent_h

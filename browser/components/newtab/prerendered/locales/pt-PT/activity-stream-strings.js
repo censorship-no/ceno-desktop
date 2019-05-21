@@ -40,6 +40,9 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Ok, entendi",
   "prefs_home_header": "Conteúdo do ecrã inicial do Firefox",
   "prefs_home_description": "Escolha que conteúdo deseja no seu ecrã inicial do Firefox.",
+  "prefs_content_discovery_header": "Início do Firefox",
+  "prefs_content_discovery_description": "A descoberta de conteúdo no Início do Firefox permite-lhe descobrir artigos relevantes e de alta qualidade de toda a web.",
+  "prefs_content_discovery_button": "Desligar descoberta de conteúdo",
   "prefs_section_rows_option": "{num} linha;{num} linhas",
   "prefs_search_header": "Pesquisa Web",
   "prefs_topsites_description": "Os sites que mais visita",
@@ -80,9 +83,6 @@ window.gActivityStreamStrings = {
   "pocket_cta_text": "Guarde as histórias que adora no Pocket, e abasteça a sua mente com leituras fascinantes.",
   "highlights_empty_state": "Comece a navegar, e iremos mostrar-lhe alguns dos ótimos artigos, vídeos, e outras páginas que visitou recentemente ou adicionou aos marcadores aqui.",
   "topstories_empty_state": "Já apanhou tudo. Verifique mais tarde para mais histórias principais de {provider}. Não pode esperar? Selecione um tópico popular para encontrar mais boas histórias de toda a web.",
-  "manual_migration_explanation2": "Experimente o Firefox com marcadores, histórico e palavras-passe de outro navegador.",
-  "manual_migration_cancel_button": "Não, obrigado",
-  "manual_migration_import_button": "Importar agora",
   "error_fallback_default_info": "Oops, algo correu mal ao carregar este conteúdo.",
   "error_fallback_default_refresh_suggestion": "Atualize a página para tentar novamente.",
   "section_menu_action_remove_section": "Remover secção",
@@ -98,7 +98,7 @@ window.gActivityStreamStrings = {
   "firstrun_title": "Leve o Firefox consigo",
   "firstrun_content": "Obtenha os seus marcadores, histórico, palavras-passe e outras definições em todos os seus dispositivos.",
   "firstrun_learn_more_link": "Saber mais acerca do Contas Firefox",
-  "firstrun_form_header": "Introduza o seu e-mail",
+  "firstrun_form_header": "Introduza o seu email",
   "firstrun_form_sub_header": "para continuar para o Firefox Sync.",
   "firstrun_email_input_placeholder": "Email",
   "firstrun_invalid_input": "Email válido requerido",
@@ -108,5 +108,7 @@ window.gActivityStreamStrings = {
   "firstrun_continue_to_login": "Continuar",
   "firstrun_skip_login": "Saltar este passo",
   "context_menu_title": "Abrir menu",
-  "pocket_learn_more": "Saber mais"
+  "manual_migration_explanation2": "Experimente o Firefox com marcadores, histórico e palavras-passe de outro navegador.",
+  "manual_migration_cancel_button": "Não, obrigado",
+  "manual_migration_import_button": "Importar agora"
 };

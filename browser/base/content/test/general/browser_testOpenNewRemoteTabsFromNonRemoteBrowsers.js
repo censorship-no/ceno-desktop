@@ -5,13 +5,13 @@
 const OPEN_LOCATION_PREF = "browser.link.open_newwindow";
 const NON_REMOTE_PAGE = "about:welcomeback";
 
-ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+const {PrivateBrowsingUtils} = ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 requestLongerTimeout(2);
 
 function frame_script() {
   content.document.body.innerHTML = `
-    <a href="http://example.com/" target="_blank" id="testAnchor">Open a window</a>
+    <a href="http://example.com/" target="_blank" rel="opener" id="testAnchor">Open a window</a>
   `;
 
   let element = content.document.getElementById("testAnchor");

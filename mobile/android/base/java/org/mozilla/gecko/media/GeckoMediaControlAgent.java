@@ -100,6 +100,7 @@ public class GeckoMediaControlAgent {
     @RobocopTarget
     public static GeckoMediaControlAgent getInstance() {
         if (instance == null) {
+            Log.d(LOGTAG, "getInstance");
             instance = new GeckoMediaControlAgent();
         }
 
@@ -113,15 +114,21 @@ public class GeckoMediaControlAgent {
             return;
         }
 
-        mContext = context;
+        Log.d(LOGTAG, "attachToContext");
+        mContext = context.getApplicationContext();
         initialize();
     }
 
-    private boolean isAttachedToContext() {
+    public boolean isAttachedToContext() {
+        Log.d(LOGTAG, "isAttachedToContext - context = " + mContext);
         return (mContext != null);
     }
 
     private void initialize() {
+        // Need to make sure the receiver is registered and mInitialized has it's value set
+        // serially, on the main thread.
+        ThreadUtils.assertOnUiThread();
+
         if (mInitialized) {
             return;
         }
@@ -156,21 +163,23 @@ public class GeckoMediaControlAgent {
             @Override
             public void prefValue(String pref, boolean value) {
                 if (pref.equals(MEDIA_CONTROL_PREF)) {
-                    mIsMediaControlPrefOn = value;
+                    ThreadUtils.postToUiThread(() -> {
+                        mIsMediaControlPrefOn = value;
 
-                    // If media is playing, we just need to create or remove
-                    // the media control interface.
-                    if (sMediaState.equals(State.PLAYING)) {
-                        setState(mIsMediaControlPrefOn ? State.PLAYING : State.STOPPED);
-                    }
+                        // If media is playing, we just need to create or remove
+                        // the media control interface.
+                        if (sMediaState.equals(State.PLAYING)) {
+                            setState(mIsMediaControlPrefOn ? State.PLAYING : State.STOPPED);
+                        }
 
-                    // If turn off pref during pausing, except removing media
-                    // interface, we also need to stop the service and notify
-                    // gecko about that.
-                    if (sMediaState.equals(State.PAUSED) &&
-                            !mIsMediaControlPrefOn) {
-                        handleAction(ACTION_STOP);
-                    }
+                        // If turn off pref during pausing, except removing media
+                        // interface, we also need to stop the service and notify
+                        // gecko about that.
+                        if (sMediaState.equals(State.PAUSED) &&
+                                !mIsMediaControlPrefOn) {
+                            handleAction(ACTION_STOP);
+                        }
+                    });
                 }
             }
         };
@@ -291,12 +300,7 @@ public class GeckoMediaControlAgent {
             return;
         }
 
-        ThreadUtils.postToBackgroundThread(new Runnable() {
-            @Override
-            public void run() {
-                updateNotification(tab);
-            }
-        });
+        ThreadUtils.postToBackgroundThread(() -> updateNotification(tab));
     }
 
     /* package */ static boolean isMediaPlaying() {
@@ -316,7 +320,7 @@ public class GeckoMediaControlAgent {
             return;
         }
 
-        Log.d(LOGTAG, "HandleAction, action = " + action + ", mediaState = " + sMediaState);
+        Log.d(LOGTAG, "handleAction, action = " + action + ", mediaState = " + sMediaState);
         switch (action) {
             case ACTION_RESUME :
                 mController.getTransportControls().play();
@@ -396,6 +400,7 @@ public class GeckoMediaControlAgent {
 
     @SuppressLint("NewApi")
     /* package */ Notification createNotification(@NonNull MediaNotification mediaNotification) {
+        Log.d(LOGTAG, "createNotification - " + mediaNotification.toString());
         final Notification.MediaStyle style = new Notification.MediaStyle();
         style.setShowActionsInCompactView(0);
 
@@ -494,6 +499,7 @@ public class GeckoMediaControlAgent {
     }
 
     private void updateMediaNotification(boolean startForeground, MediaNotification mediaNotification) {
+        Log.d(LOGTAG, "updateMediaNotification - startForeground " + startForeground + ", " + mediaNotification.toString());
         final Intent intent = new Intent(mContext, MediaControlService.class);
         if (!startForeground) {
             intent.setAction(ACTION_STOP_FOREGROUND);
@@ -503,6 +509,7 @@ public class GeckoMediaControlAgent {
     }
 
     private void shutdownForegroundService() {
+        Log.d(LOGTAG, "shutdownForegroundService");
         final Intent intent = new Intent(mContext, MediaControlService.class);
         intent.setAction(GeckoMediaControlAgent.ACTION_SHUTDOWN);
         notifyForegroundService(intent);
@@ -541,16 +548,7 @@ public class GeckoMediaControlAgent {
         }
 
         void unregisterReceiver(Context context) {
-            try {
-                // TODO investigate why the receiver would not be registered - bug 1505685
-                context.unregisterReceiver(HeadSetStateReceiver.this);
-            } catch (IllegalArgumentException e) {
-                if (AppConstants.RELEASE_OR_BETA) {
-                    Log.w(LOGTAG, "bug 1505685", e);
-                } else {
-                    throw e;
-                }
-            }
+            context.unregisterReceiver(HeadSetStateReceiver.this);
         }
 
         @Override

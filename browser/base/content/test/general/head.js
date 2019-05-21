@@ -1,4 +1,4 @@
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 
 ChromeUtils.defineModuleGetter(this, "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm");
@@ -13,8 +13,6 @@ ChromeUtils.defineModuleGetter(this, "TabCrashHandler",
  * Wait for a <notification> to be closed then call the specified callback.
  */
 function waitForNotificationClose(notification, cb) {
-  let parent = notification.parentNode;
-
   let observer = new MutationObserver(function onMutatations(mutations) {
     for (let mutation of mutations) {
       for (let i = 0; i < mutation.removedNodes.length; i++) {
@@ -27,26 +25,23 @@ function waitForNotificationClose(notification, cb) {
       }
     }
   });
-  observer.observe(parent, {childList: true});
+  observer.observe(notification.control.stack, {childList: true});
 }
 
 function closeAllNotifications() {
-  let notificationBox = document.getElementById("global-notificationbox");
-
-  if (!notificationBox || !notificationBox.currentNotification) {
+  if (!gNotificationBox.currentNotification) {
     return Promise.resolve();
   }
 
   return new Promise(resolve => {
-    for (let notification of notificationBox.allNotifications) {
+    for (let notification of gNotificationBox.allNotifications) {
       waitForNotificationClose(notification, function() {
-        if (notificationBox.allNotifications.length === 0) {
+        if (gNotificationBox.allNotifications.length === 0) {
           resolve();
         }
       });
       notification.close();
     }
-
   });
 }
 
@@ -217,7 +212,6 @@ function promiseOpenAndLoadWindow(aOptions, aWaitForDelayedStartup = false) {
         Services.obs.removeObserver(onDS, "browser-delayed-startup-finished");
         resolve(win);
       }, "browser-delayed-startup-finished");
-
     } else {
       win.addEventListener("load", function() {
         resolve(win);
@@ -398,7 +392,7 @@ function promiseTabLoadEvent(tab, url) {
  * @rejects Never.
  */
 function waitForNewTabEvent(aTabBrowser) {
-  return promiseWaitForEvent(aTabBrowser.tabContainer, "TabOpen");
+  return BrowserTestUtils.waitForEvent(aTabBrowser.tabContainer, "TabOpen");
 }
 
 function is_hidden(element) {
@@ -427,27 +421,12 @@ function is_element_hidden(element, msg) {
   ok(is_hidden(element), msg || "Element should be hidden");
 }
 
-function promisePopupEvent(popup, eventSuffix) {
-  let endState = {shown: "open", hidden: "closed"}[eventSuffix];
-
-  if (popup.state == endState)
-    return Promise.resolve();
-
-  let eventType = "popup" + eventSuffix;
-  return new Promise(resolve => {
-    popup.addEventListener(eventType, function(event) {
-      resolve();
-    }, {once: true});
-
-  });
-}
-
 function promisePopupShown(popup) {
-  return promisePopupEvent(popup, "shown");
+  return BrowserTestUtils.waitForPopupEvent(popup, "shown");
 }
 
 function promisePopupHidden(popup) {
-  return promisePopupEvent(popup, "hidden");
+  return BrowserTestUtils.waitForPopupEvent(popup, "hidden");
 }
 
 function promiseNotificationShown(notification) {
@@ -530,4 +509,19 @@ function getCertExceptionDialog(aLocation) {
     }
   }
   return undefined;
+}
+
+/**
+ * Waits for the message from content to update the Page Style menu.
+ *
+ * @param browser
+ *        The <xul:browser> to wait for.
+ * @return Promise
+ */
+async function promiseStylesheetsUpdated(browser) {
+  await BrowserTestUtils.waitForMessage(browser.messageManager,
+                                        "PageStyle:StyleSheets");
+  // Resolve on the next tick of the event loop to give the Page Style
+  // menu code an opportunity to update.
+  await new Promise(resolve => Services.tm.dispatchToMainThread(resolve));
 }

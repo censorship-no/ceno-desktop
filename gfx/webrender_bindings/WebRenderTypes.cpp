@@ -11,9 +11,7 @@
 namespace mozilla {
 namespace wr {
 
-WindowId
-NewWindowId()
-{
+WindowId NewWindowId() {
   static uint64_t sNextId = 1;
 
   WindowId id;
@@ -21,9 +19,7 @@ NewWindowId()
   return id;
 }
 
-void
-Assign_WrVecU8(wr::WrVecU8& aVec, mozilla::ipc::ByteBuf&& aOther)
-{
+void Assign_WrVecU8(wr::WrVecU8& aVec, mozilla::ipc::ByteBuf&& aOther) {
   aVec.data = aOther.mData;
   aVec.length = aOther.mLen;
   aVec.capacity = aOther.mCapacity;
@@ -32,10 +28,19 @@ Assign_WrVecU8(wr::WrVecU8& aVec, mozilla::ipc::ByteBuf&& aOther)
   aOther.mCapacity = 0;
 }
 
-/*static*/ WrClipId
-WrClipId::RootScrollNode() {
-  return WrClipId { wr_root_scroll_node_id() };
+WrSpaceAndClip RootScrollNode() {
+  WrSpaceAndClip sac;
+  sac.clip = wr_root_clip_id();
+  sac.space = wr_root_scroll_node_id();
+  return sac;
 }
 
-} // namespace wr
-} // namespace mozilla
+WrSpaceAndClipChain RootScrollNodeWithChain() {
+  WrSpaceAndClipChain sacc;
+  sacc.clip_chain = wr::ROOT_CLIP_CHAIN;
+  sacc.space = wr_root_scroll_node_id();
+  return sacc;
+}
+
+}  // namespace wr
+}  // namespace mozilla

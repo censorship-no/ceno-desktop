@@ -12,35 +12,31 @@
 #include "MediaEventSource.h"
 #include "MediaSink.h"
 #include "MediaTimer.h"
+#include "VideoFrameContainer.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "VideoFrameContainer.h"
 
 namespace mozilla {
 
 class VideoFrameContainer;
-template <class T> class MediaQueue;
+template <class T>
+class MediaQueue;
 
-namespace media {
-
-class VideoSink : public MediaSink
-{
+class VideoSink : public MediaSink {
   typedef mozilla::layers::ImageContainer::ProducerID ProducerID;
-public:
-  VideoSink(AbstractThread* aThread,
-            MediaSink* aAudioSink,
-            MediaQueue<VideoData>& aVideoQueue,
-            VideoFrameContainer* aContainer,
-            FrameStatistics& aFrameStats,
-            uint32_t aVQueueSentToCompositerSize);
+
+ public:
+  VideoSink(AbstractThread* aThread, MediaSink* aAudioSink,
+            MediaQueue<VideoData>& aVideoQueue, VideoFrameContainer* aContainer,
+            FrameStatistics& aFrameStats, uint32_t aVQueueSentToCompositerSize);
 
   const PlaybackParams& GetPlaybackParams() const override;
 
   void SetPlaybackParams(const PlaybackParams& aParams) override;
 
-  RefPtr<GenericPromise> OnEnded(TrackType aType) override;
+  RefPtr<EndedPromise> OnEnded(TrackType aType) override;
 
   TimeUnit GetEndTime(TrackType aType) const override;
 
@@ -68,9 +64,12 @@ public:
 
   void Shutdown() override;
 
+  void SetSecondaryVideoContainer(VideoFrameContainer* aSecondary) override;
+  void ClearSecondaryVideoContainer() override;
+
   nsCString GetDebugInfo() override;
 
-private:
+ private:
   virtual ~VideoSink();
 
   // VideoQueue listener related.
@@ -103,20 +102,17 @@ private:
 
   void MaybeResolveEndPromise();
 
-  void AssertOwnerThread() const
-  {
+  void AssertOwnerThread() const {
     MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
   }
 
-  MediaQueue<VideoData>& VideoQueue() const
-  {
-    return mVideoQueue;
-  }
+  MediaQueue<VideoData>& VideoQueue() const { return mVideoQueue; }
 
   const RefPtr<AbstractThread> mOwnerThread;
   RefPtr<MediaSink> mAudioSink;
   MediaQueue<VideoData>& mVideoQueue;
   VideoFrameContainer* mContainer;
+  RefPtr<VideoFrameContainer> mSecondaryContainer;
 
   // Producer ID to help ImageContainer distinguish different streams of
   // FrameIDs. A unique and immutable value per VideoSink.
@@ -125,9 +121,9 @@ private:
   // Used to notify MediaDecoder's frame statistics
   FrameStatistics& mFrameStats;
 
-  RefPtr<GenericPromise> mEndPromise;
-  MozPromiseHolder<GenericPromise> mEndPromiseHolder;
-  MozPromiseRequestHolder<GenericPromise> mVideoSinkEndRequest;
+  RefPtr<EndedPromise> mEndPromise;
+  MozPromiseHolder<EndedPromise> mEndPromiseHolder;
+  MozPromiseRequestHolder<EndedPromise> mVideoSinkEndRequest;
 
   // The presentation end time of the last video frame which has been displayed.
   TimeUnit mVideoFrameEndTime;
@@ -166,9 +162,11 @@ private:
   // but reduces our frame drop rate.
   bool mHiResTimersRequested;
 #endif
+
+  RefPtr<layers::Image> mBlankImage;
+  bool InitializeBlankImage();
 };
 
-} // namespace media
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

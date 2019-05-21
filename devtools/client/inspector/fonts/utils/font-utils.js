@@ -86,7 +86,7 @@ module.exports = {
         const value = pair[1].trim();
         // Axis tags shorter or longer than 4 characters are invalid. Whitespace is valid.
         if (tag.length === 4) {
-          acc[tag] = value;
+          acc[tag] = parseFloat(value);
         }
         return acc;
       }, {});
@@ -109,5 +109,5 @@ module.exports = {
     }
 
     return Math.floor(number * Math.pow(10, decimals)) / Math.pow(10, decimals);
-  }
+  },
 };

@@ -27,8 +27,6 @@ if (inFrame) {
 
 function setCookieBehavior(behavior) {
   return SpecialPowers.pushPrefEnv({"set": [
-    ["browser.contentblocking.enabled", true],
-    ["browser.contentblocking.ui.enabled", true],
     [kPrefName, behavior],
   ]});
 }
@@ -242,6 +240,35 @@ function task(fn) {
       finishTest();
     });
   }
+}
+
+// The test will run on a separate window in order to apply the new cookie settings.
+async function runTestInWindow(test) {
+  let w = window.open("window_storagePermissions.html");
+  await new Promise(resolve => {
+    w.onload = e => {
+     resolve();
+    }
+  });
+
+  await new Promise(resolve => {
+    onmessage = e => {
+      if (e.data.type == "finish") {
+        w.close();
+        resolve();
+        return;
+      }
+
+      if (e.data.type == "check") {
+        ok(e.data.test, e.data.msg);
+        return;
+      }
+
+      ok(false, "Unknown message");
+    };
+
+    w.postMessage(test.toString(), "*");
+  });
 }
 
 var thirdparty = "https://example.com/tests/dom/tests/mochitest/general/";

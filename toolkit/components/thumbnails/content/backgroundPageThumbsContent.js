@@ -4,9 +4,9 @@
 
 /* eslint-env mozilla/frame-script */
 
-ChromeUtils.import("resource://gre/modules/PageThumbUtils.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {PageThumbUtils} = ChromeUtils.import("resource://gre/modules/PageThumbUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["Blob", "FileReader"]);
 
@@ -100,9 +100,12 @@ const backgroundPageThumbsContent = {
     this._currentCapture.pageLoadStartDate = new Date();
 
     try {
-      this._webNav.loadURI(this._currentCapture.url,
-                           Ci.nsIWebNavigation.LOAD_FLAGS_STOP_CONTENT,
-                           null, null, null);
+      // Bug 1498603 verify usages of systemPrincipal here
+      let loadURIOptions = {
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_STOP_CONTENT,
+      };
+      this._webNav.loadURI(this._currentCapture.url, loadURIOptions);
     } catch (e) {
       this._failCurrentCapture("BAD_URI");
     }
@@ -222,9 +225,11 @@ const backgroundPageThumbsContent = {
     if (!docShell) {
       return;
     }
-    this._webNav.loadURI("about:blank",
-                         Ci.nsIWebNavigation.LOAD_FLAGS_STOP_CONTENT,
-                         null, null, null);
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_STOP_CONTENT,
+    };
+    this._webNav.loadURI("about:blank", loadURIOptions);
   },
 
   QueryInterface: ChromeUtils.generateQI([

@@ -17,6 +17,7 @@ config = {
         'PATH': ':/usr/local/bin:/bin:\
 /usr/bin:/usr/local/sbin:/usr/sbin:/sbin',
     },
-    'artifact_flag_build_variant_in_try': None,
+    'build_targets': ['pre-export', 'export', 'recurse_rusttests'],
+    'disable_package_metrics': True,
     #######################
 }

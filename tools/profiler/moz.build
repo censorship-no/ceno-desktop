@@ -13,12 +13,14 @@ if CONFIG['MOZ_GECKO_PROFILER']:
     EXPORTS += [
         'public/ChildProfilerController.h',
         'public/GeckoProfilerReporter.h',
+        'public/ProfileJSONWriter.h',
         'public/ProfilerChild.h',
         'public/ProfilerMarkerPayload.h',
         'public/ProfilerParent.h',
         'public/shared-libraries.h',
     ]
     UNIFIED_SOURCES += [
+        'core/PageInformation.cpp',
         'core/platform.cpp',
         'core/ProfileBuffer.cpp',
         'core/ProfileBufferEntry.cpp',
@@ -28,7 +30,6 @@ if CONFIG['MOZ_GECKO_PROFILER']:
         'core/ProfilerMarkerPayload.cpp',
         'core/RegisteredThread.cpp',
         'gecko/ChildProfilerController.cpp',
-        'gecko/nsProfilerFactory.cpp',
         'gecko/nsProfilerStartParams.cpp',
         'gecko/ProfilerChild.cpp',
         'gecko/ProfilerIOInterposeObserver.cpp',
@@ -39,6 +40,10 @@ if CONFIG['MOZ_GECKO_PROFILER']:
         SOURCES += [
             'core/memory_hooks.cpp', # conflicts with platform.h class Thread
         ]
+
+    XPCOM_MANIFESTS += [
+        'gecko/components.conf',
+    ]
 
     if CONFIG['OS_TARGET'] == 'Darwin':
         # This file cannot be built in unified mode because it includes
@@ -93,6 +98,8 @@ if CONFIG['MOZ_GECKO_PROFILER']:
         '/docshell/base',
         '/ipc/chromium/src',
         '/mozglue/linker',
+        '/netwerk/base',
+        '/netwerk/protocol/http',
         '/toolkit/crashreporter/google-breakpad/src',
         '/tools/profiler/core/',
         '/tools/profiler/gecko/',
@@ -165,6 +172,3 @@ if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
 
 with Files('**'):
     BUG_COMPONENT = ('Core', 'Gecko Profiler')
-
-if CONFIG['CC_TYPE'] == 'clang-cl':
-    AllowCompilerWarnings()  # workaround for bug 1090497

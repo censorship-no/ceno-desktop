@@ -5,43 +5,43 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if !defined(MediaDataDecoderProxy_h_)
-#define MediaDataDecoderProxy_h_
+#  define MediaDataDecoderProxy_h_
 
-#include "PlatformDecoderModule.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/RefPtr.h"
-#include "nsThreadUtils.h"
-#include "nscore.h"
+#  include "PlatformDecoderModule.h"
+#  include "mozilla/Atomics.h"
+#  include "mozilla/RefPtr.h"
+#  include "nsThreadUtils.h"
+#  include "nscore.h"
 
 namespace mozilla {
 
 DDLoggedTypeDeclNameAndBase(MediaDataDecoderProxy, MediaDataDecoder);
 
 class MediaDataDecoderProxy
-  : public MediaDataDecoder
-  , public DecoderDoctorLifeLogger<MediaDataDecoderProxy>
-{
-public:
+    : public MediaDataDecoder,
+      public DecoderDoctorLifeLogger<MediaDataDecoderProxy> {
+ public:
   explicit MediaDataDecoderProxy(already_AddRefed<AbstractThread> aProxyThread)
-    : mProxyThread(aProxyThread)
-#if defined(DEBUG)
-    , mIsShutdown(false)
-#endif
+      : mProxyThread(aProxyThread)
+#  if defined(DEBUG)
+        ,
+        mIsShutdown(false)
+#  endif
   {
   }
 
   explicit MediaDataDecoderProxy(
-    already_AddRefed<MediaDataDecoder> aProxyDecoder)
-    : mProxyDecoder(aProxyDecoder)
-#if defined(DEBUG)
-    , mIsShutdown(false)
-#endif
+      already_AddRefed<MediaDataDecoder> aProxyDecoder)
+      : mProxyDecoder(aProxyDecoder)
+#  if defined(DEBUG)
+        ,
+        mIsShutdown(false)
+#  endif
   {
     DDLINKCHILD("proxy decoder", mProxyDecoder.get());
   }
 
-  void SetProxyTarget(MediaDataDecoder* aProxyDecoder)
-  {
+  void SetProxyTarget(MediaDataDecoder* aProxyDecoder) {
     MOZ_ASSERT(aProxyDecoder);
     mProxyDecoder = aProxyDecoder;
     DDLINKCHILD("proxy decoder", aProxyDecoder);
@@ -58,15 +58,15 @@ public:
   bool SupportDecoderRecycling() const override;
   ConversionRequired NeedsConversion() const override;
 
-private:
+ private:
   RefPtr<MediaDataDecoder> mProxyDecoder;
   RefPtr<AbstractThread> mProxyThread;
 
-#if defined(DEBUG)
+#  if defined(DEBUG)
   Atomic<bool> mIsShutdown;
-#endif
+#  endif
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // MediaDataDecoderProxy_h_
+#endif  // MediaDataDecoderProxy_h_

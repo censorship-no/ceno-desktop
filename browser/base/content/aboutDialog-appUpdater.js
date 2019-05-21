@@ -7,9 +7,10 @@
 
 /* import-globals-from aboutDialog.js */
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/DownloadUtils.jsm");
+var {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
+ChromeUtils.defineModuleGetter(this, "DownloadUtils",
+                               "resource://gre/modules/DownloadUtils.jsm");
 ChromeUtils.defineModuleGetter(this, "UpdateUtils",
                                "resource://gre/modules/UpdateUtils.jsm");
 
@@ -40,6 +41,7 @@ function appUpdater(options = {}) {
 
   this.options = options;
   this.updateDeck = document.getElementById("updateDeck");
+  this.promiseAutoUpdateSetting = null;
 
   // Hide the update deck when the update window is already open and it's not
   // already applied, to avoid syncing issues between them. Applied updates
@@ -80,6 +82,9 @@ function appUpdater(options = {}) {
     // selectPanel("downloading") is called from setupDownloadingUI().
     return;
   }
+
+  // We might need this value later, so start loading it from the disk now.
+  this.promiseAutoUpdateSetting = UpdateUtils.getAppUpdateAutoEnabled();
 
   // That leaves the options
   // "Check for updates, but let me choose whether to install them", and
@@ -134,14 +139,6 @@ appUpdater.prototype =
   get backgroundUpdateEnabled() {
     return !this.updateDisabledByPolicy &&
            gAppUpdater.aus.canStageUpdates;
-  },
-
-  // true when updating is automatic.
-  get updateAuto() {
-    try {
-      return Services.prefs.getBoolPref("app.update.auto");
-    } catch (e) { }
-    return true; // Firefox default is true
   },
 
   /**
@@ -260,10 +257,16 @@ appUpdater.prototype =
         return;
       }
 
-      if (gAppUpdater.updateAuto) // automatically download and install
-        gAppUpdater.startDownload();
-      else // ask
-        gAppUpdater.selectPanel("downloadAndInstall");
+      if (!gAppUpdater.promiseAutoUpdateSetting) {
+        gAppUpdater.promiseAutoUpdateSetting = UpdateUtils.getAppUpdateAutoEnabled();
+      }
+      gAppUpdater.promiseAutoUpdateSetting.then(updateAuto => {
+        if (updateAuto) { // automatically download and install
+          gAppUpdater.startDownload();
+        } else { // ask
+          gAppUpdater.selectPanel("downloadAndInstall");
+        }
+      });
     },
 
     /**
@@ -322,13 +325,13 @@ appUpdater.prototype =
   /**
    * See nsIRequestObserver.idl
    */
-  onStartRequest(aRequest, aContext) {
+  onStartRequest(aRequest) {
   },
 
   /**
    * See nsIRequestObserver.idl
    */
-  onStopRequest(aRequest, aContext, aStatusCode) {
+  onStopRequest(aRequest, aStatusCode) {
     switch (aStatusCode) {
     case Cr.NS_ERROR_UNEXPECTED:
       if (this.update.selectedPatch.state == "download-failed" &&

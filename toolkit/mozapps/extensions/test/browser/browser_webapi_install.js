@@ -1,10 +1,12 @@
 const TESTPAGE = `${SECURE_TESTROOT}webapi_checkavailable.html`;
-const XPI_URL = `${SECURE_TESTROOT}addons/browser_webapi_install.xpi`;
-const XPI_SHA = "sha256:d4bab17ff9ba5f635e97c84021f4c527c502250d62ab7f6e6c9e8ee28822f772";
+const XPI_URL = `${SECURE_TESTROOT}../xpinstall/amosigned.xpi`;
+const XPI_ADDON_ID = "amosigned-xpi@tests.mozilla.org";
 
-const ID = "webapi_install@tests.mozilla.org";
+const XPI_SHA = "sha256:91121ed2c27f670f2307b9aebdd30979f147318c7fb9111c254c14ddbb84e4b0";
+
+const ID = "amosigned-xpi@tests.mozilla.org";
 // eh, would be good to just stat the real file instead of this...
-const XPI_LEN = 4782;
+const XPI_LEN = 4287;
 
 function waitForClear() {
   const MSG = "WebAPICleanup";
@@ -25,7 +27,8 @@ function waitForClear() {
 add_task(async function setup() {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.webapi.testing", true],
-          ["extensions.install.requireBuiltInCerts", false]],
+          ["extensions.install.requireBuiltInCerts", false],
+          ["extensions.allowPrivateBrowsingByDefault", false]],
   });
   info("added preferences");
 });
@@ -197,37 +200,42 @@ function makeRegularTest(options, what) {
       },
     ];
 
-    let promptPromise = acceptAppMenuNotificationWhenShown("addon-installed");
+    let installPromptPromise =
+      promisePopupNotificationShown("addon-webext-permissions").then(panel => {
+        panel.button.click();
+      });
+
+    let promptPromise = acceptAppMenuNotificationWhenShown("addon-installed", options.addonId);
 
     await testInstall(browser, options, steps, what);
 
-    await promptPromise;
+    await installPromptPromise;
 
-    let version = Services.prefs.getIntPref("webapitest.active_version");
-    is(version, 1, "the install really did work");
+    await promptPromise;
 
     // Sanity check to ensure that the test in makeInstallTest() that
     // installs.size == 0 means we actually did clean up.
     ok(AddonManager.webAPI.installs.size > 0, "webAPI is tracking the AddonInstall");
 
-    let addons = await promiseAddonsByIDs([ID]);
-    isnot(addons[0], null, "Found the addon");
+    let addon = await promiseAddonByID(ID);
+    isnot(addon, null, "Found the addon");
 
     // Check that the expected installTelemetryInfo has been stored in the addon details.
-    Assert.deepEqual(addons[0].installTelemetryInfo, {source: "test-host", method: "amWebAPI"},
+    Assert.deepEqual(addon.installTelemetryInfo, {source: "test-host", method: "amWebAPI"},
                      "Got the expected addon.installTelemetryInfo");
 
-    await addons[0].uninstall();
+    await addon.uninstall();
 
-    addons = await promiseAddonsByIDs([ID]);
-    is(addons[0], null, "Addon was uninstalled");
+    addon = await promiseAddonByID(ID);
+    is(addon, null, "Addon was uninstalled");
   });
 }
 
-add_task(makeRegularTest({url: XPI_URL}, "a basic install works"));
-add_task(makeRegularTest({url: XPI_URL, hash: null}, "install with hash=null works"));
-add_task(makeRegularTest({url: XPI_URL, hash: ""}, "install with empty string for hash works"));
-add_task(makeRegularTest({url: XPI_URL, hash: XPI_SHA}, "install with hash works"));
+let addonId = XPI_ADDON_ID;
+add_task(makeRegularTest({url: XPI_URL, addonId}, "a basic install works"));
+add_task(makeRegularTest({url: XPI_URL, addonId, hash: null}, "install with hash=null works"));
+add_task(makeRegularTest({url: XPI_URL, addonId, hash: ""}, "install with empty string for hash works"));
+add_task(makeRegularTest({url: XPI_URL, addonId, hash: XPI_SHA}, "install with hash works"));
 
 add_task(makeInstallTest(async function(browser) {
   let steps = [
@@ -326,3 +334,24 @@ add_task(async function test_permissions() {
                    "not permitted",
                    "Installing from non-approved URL fails");
 });
+
+add_task(makeInstallTest(async function(browser) {
+  let xpiURL = `${SECURE_TESTROOT}../xpinstall/incompatible.xpi`;
+  let id = "incompatible-xpi@tests.mozilla.org";
+
+  let steps = [
+    {action: "install", expectError: true},
+    {
+      event: "onDownloadStarted",
+      props: {state: "STATE_DOWNLOADING"},
+    },
+    {event: "onDownloadProgress"},
+    {event: "onDownloadEnded"},
+    {event: "onDownloadCancelled"},
+  ];
+
+  await testInstall(browser, {url: xpiURL}, steps, "install of an incompatible XPI fails");
+
+  let addons = await promiseAddonsByIDs([id]);
+  is(addons[0], null, "The addon was not installed");
+}));

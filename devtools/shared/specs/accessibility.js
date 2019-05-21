@@ -80,6 +80,12 @@ const accessibleSpec = generateActorSpec({
   },
 
   methods: {
+    audit: {
+      request: {},
+      response: {
+        audit: RetVal("nullable:json"),
+      },
+    },
     children: {
       request: {},
       response: {
@@ -90,6 +96,12 @@ const accessibleSpec = generateActorSpec({
       request: {},
       response: {
         relations: RetVal("array:accessibleRelation"),
+      },
+    },
+    snapshot: {
+      request: {},
+      response: {
+        snapshot: RetVal("json"),
       },
     },
   },

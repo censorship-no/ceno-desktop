@@ -11,15 +11,14 @@
 #include "nsITimer.h"
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/Attributes.h"
+#include "XULTreeElement.h"
 
-class nsITreeBoxObject;
 class nsTreeColumn;
 struct nsTreeRange;
 
-class nsTreeSelection final : public nsINativeTreeSelection
-{
-public:
-  explicit nsTreeSelection(nsITreeBoxObject* aTree);
+class nsTreeSelection final : public nsINativeTreeSelection {
+ public:
+  explicit nsTreeSelection(mozilla::dom::XULTreeElement* aTree);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(nsTreeSelection)
@@ -30,30 +29,28 @@ public:
 
   friend struct nsTreeRange;
 
-protected:
+ protected:
   ~nsTreeSelection();
 
   nsresult FireOnSelectHandler();
-  static void SelectCallback(nsITimer *aTimer, void *aClosure);
+  static void SelectCallback(nsITimer* aTimer, void* aClosure);
 
-protected:
-  // Helper function to get the content node associated with mTree.
-  already_AddRefed<nsIContent> GetContent();
+ protected:
+  // The tree will hold on to us through the view and let go when it dies.
+  RefPtr<mozilla::dom::XULTreeElement> mTree;
 
-  // Members
-  nsCOMPtr<nsITreeBoxObject> mTree; // The tree will hold on to us through the view and let go when it dies.
+  bool mSuppressed;       // Whether or not we should be firing onselect events.
+  int32_t mCurrentIndex;  // The item to draw the rect around. The last one
+                          // clicked, etc.
+  int32_t mShiftSelectPivot;  // Used when multiple SHIFT+selects are performed
+                              // to pivot on.
 
-  bool mSuppressed; // Whether or not we should be firing onselect events.
-  int32_t mCurrentIndex; // The item to draw the rect around. The last one clicked, etc.
-  RefPtr<nsTreeColumn> mCurrentColumn;
-  int32_t mShiftSelectPivot; // Used when multiple SHIFT+selects are performed to pivot on.
-
-  nsTreeRange* mFirstRange; // Our list of ranges.
+  nsTreeRange* mFirstRange;  // Our list of ranges.
 
   nsCOMPtr<nsITimer> mSelectTimer;
 };
 
-nsresult
-NS_NewTreeSelection(nsITreeBoxObject* aTree, nsITreeSelection** aResult);
+nsresult NS_NewTreeSelection(mozilla::dom::XULTreeElement* aTree,
+                             nsITreeSelection** aResult);
 
 #endif

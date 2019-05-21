@@ -1,5 +1,3 @@
-let { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm", {});
-
 add_task(async function test_windowlessBrowserTroubleshootCrash() {
   let webNav = Services.appShell.createWindowlessBrowser(false);
 
@@ -14,11 +12,14 @@ add_task(async function test_windowlessBrowserTroubleshootCrash() {
             Services.obs.removeObserver(listener, "content-document-global-created");
             resolve();
           }
-        }
-    }
+        },
+    };
     Services.obs.addObserver(listener, "content-document-global-created");
   });
-  webNav.loadURI("about:blank", 0, null, null, null);
+  let loadURIOptions = {
+    triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+  };
+  webNav.loadURI("about:blank", loadURIOptions);
 
   await onLoaded;
 

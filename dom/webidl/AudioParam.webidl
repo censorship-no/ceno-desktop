@@ -10,6 +10,11 @@
  * liability, trademark and document use rules apply.
  */
 
+enum AutomationRate {
+    "a-rate",
+    "k-rate"
+};
+
 [Pref="dom.webaudio.enabled"]
 interface AudioParam {
 
@@ -49,4 +54,10 @@ partial interface AudioParam {
   // The name of the AudioParam
   [ChromeOnly]
   readonly attribute DOMString name;
+};
+
+partial interface AudioParam {
+  // This attribute is used for mochitest only.
+  [ChromeOnly]
+  readonly attribute boolean isStreamSuspended;
 };

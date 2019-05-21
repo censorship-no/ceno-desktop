@@ -85,14 +85,15 @@ var RootActor = protocol.ActorClassWithSpec(rootSpec, {
   },
 });
 
-var RootFront = protocol.FrontClassWithSpec(rootSpec, {
-  initialize: function(client) {
+class RootFront extends protocol.FrontClassWithSpec(rootSpec) {
+  constructor(client) {
+    super(client);
     this.actorID = "root";
-    protocol.Front.prototype.initialize.call(this, client);
+
     // Root owns itself.
     this.manage(this);
-  },
-});
+  }
+}
 
 function run_test() {
   DebuggerServer.createRootActor = (conn => {
@@ -102,17 +103,17 @@ function run_test() {
   DebuggerServer.init();
   const trace = connectPipeTracing();
   const client = new DebuggerClient(trace);
-  let rootClient;
+  let rootFront;
 
   let strfront = null;
 
   const expectRootChildren = function(size) {
     Assert.equal(rootActor.__poolMap.size, size + 1);
-    Assert.equal(rootClient.__poolMap.size, size + 1);
+    Assert.equal(rootFront.__poolMap.size, size + 1);
   };
 
   client.connect().then(([applicationType, traits]) => {
-    rootClient = RootFront(client);
+    rootFront = new RootFront(client);
 
     // Root actor has no children yet.
     expectRootChildren(0);
@@ -121,7 +122,7 @@ function run_test() {
                          "applicationType": "xpcshell-tests",
                          "traits": []});
     Assert.equal(applicationType, "xpcshell-tests");
-    rootClient.shortString().then(ret => {
+    rootFront.shortString().then(ret => {
       trace.expectSend({"type": "shortString", "to": "<actorid>"});
       trace.expectReceive({"value": "abc", "from": "<actorid>"});
 
@@ -133,7 +134,7 @@ function run_test() {
     }).then(ret => {
       Assert.equal(ret, SHORT_STR);
     }).then(() => {
-      return rootClient.longString();
+      return rootFront.longString();
     }).then(ret => {
       trace.expectSend({"type": "longString", "to": "<actorid>"});
       trace.expectReceive({"value": {"type": "longString",
@@ -166,7 +167,7 @@ function run_test() {
       expectRootChildren(0);
     }).then(() => {
       const deferred = defer();
-      rootClient.once("string-event", (str) => {
+      rootFront.once("string-event", (str) => {
         trace.expectSend({"type": "emitShortString", "to": "<actorid>"});
         trace.expectReceive({"type": "string-event", "str": "abc", "from": "<actorid>"});
 
@@ -179,7 +180,7 @@ function run_test() {
           deferred.resolve(value);
         });
       });
-      rootClient.emitShortString();
+      rootFront.emitShortString();
       return deferred.promise;
     }).then(value => {
       Assert.equal(value, SHORT_STR);
@@ -188,7 +189,7 @@ function run_test() {
       return strfront.release();
     }).then(() => {
       const deferred = defer();
-      rootClient.once("string-event", (str) => {
+      rootFront.once("string-event", (str) => {
         trace.expectSend({"type": "emitLongString", "to": "<actorid>"});
         trace.expectReceive({"type": "string-event",
                              "str": {"type": "longString",
@@ -221,7 +222,7 @@ function run_test() {
           deferred.resolve(value);
         });
       });
-      rootClient.emitLongString();
+      rootFront.emitLongString();
       return deferred.promise;
     }).then(value => {
       Assert.equal(value, LONG_STR);

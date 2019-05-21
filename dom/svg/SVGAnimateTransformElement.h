@@ -9,42 +9,42 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/SVGAnimationElement.h"
-#include "nsSMILAnimationFunction.h"
+#include "mozilla/SMILAnimationFunction.h"
 
-nsresult NS_NewSVGAnimateTransformElement(nsIContent **aResult,
-                                          already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+nsresult NS_NewSVGAnimateTransformElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
 namespace dom {
 
-class SVGAnimateTransformElement final : public SVGAnimationElement
-{
-protected:
-  explicit SVGAnimateTransformElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+class SVGAnimateTransformElement final : public SVGAnimationElement {
+ protected:
+  explicit SVGAnimateTransformElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-  nsSMILAnimationFunction mAnimationFunction;
-  friend nsresult
-    (::NS_NewSVGAnimateTransformElement(nsIContent **aResult,
-                                        already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+  SMILAnimationFunction mAnimationFunction;
+  friend nsresult(::NS_NewSVGAnimateTransformElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 
-  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-public:
+ public:
   // nsINode specializations
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // Element specializations
-  virtual bool ParseAttribute(int32_t aNamespaceID,
-                              nsAtom* aAttribute,
+  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                               const nsAString& aValue,
                               nsIPrincipal* aMaybeScriptedPrincipal,
                               nsAttrValue& aResult) override;
 
   // SVGAnimationElement
-  virtual nsSMILAnimationFunction& AnimationFunction() override;
+  virtual SMILAnimationFunction& AnimationFunction() override;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGAnimateTransformElement_h
+#endif  // mozilla_dom_SVGAnimateTransformElement_h

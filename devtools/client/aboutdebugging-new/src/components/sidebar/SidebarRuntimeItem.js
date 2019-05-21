@@ -20,7 +20,6 @@ const Actions = require("../../actions/index");
 class SidebarRuntimeItem extends PureComponent {
   static get propTypes() {
     return {
-      id: PropTypes.string.isRequired,
       deviceName: PropTypes.string,
       dispatch: PropTypes.func.isRequired,
       // Provided by wrapping the component with FluentReact.withLocalization.
@@ -28,6 +27,7 @@ class SidebarRuntimeItem extends PureComponent {
       icon: PropTypes.string.isRequired,
       isConnected: PropTypes.bool.isRequired,
       isSelected: PropTypes.bool.isRequired,
+      isUnknown: PropTypes.bool.isRequired,
       name: PropTypes.string.isRequired,
       runtimeId: PropTypes.string.isRequired,
     };
@@ -40,7 +40,7 @@ class SidebarRuntimeItem extends PureComponent {
       },
       dom.button(
         {
-          className: "sidebar-item__connect-button",
+          className: "default-button default-button--micro js-connect-button",
           onClick: () => {
             const { dispatch, runtimeId } = this.props;
             dispatch(Actions.connectRuntime(runtimeId));
@@ -51,38 +51,45 @@ class SidebarRuntimeItem extends PureComponent {
     );
   }
 
-  renderNameWithDevice(name, device) {
-    return dom.span(
-      {
-        className: "ellipsis-text",
-        title: `${name} (${device})`,
-      },
-      `${name}`,
-      dom.br({}),
-      device
-    );
-  }
+  renderName() {
+    const { deviceName, getString, isUnknown, name } = this.props;
 
-  renderName(name) {
-    return dom.span(
+    const displayName = isUnknown ?
+      getString("about-debugging-sidebar-runtime-item-waiting-for-runtime") : name;
+
+    const titleLocalizationId = deviceName ?
+      "about-debugging-sidebar-runtime-item-name" :
+      "about-debugging-sidebar-runtime-item-name-no-device";
+
+    return Localized(
       {
-        className: "ellipsis-text",
-        title: name,
+        id: titleLocalizationId,
+        attrs: { title: true },
+        $deviceName: deviceName,
+        $displayName: displayName,
       },
-      `${name}`
+      dom.span(
+        {
+          className: "ellipsis-text",
+          title: titleLocalizationId,
+        },
+        displayName,
+        // If a deviceName is available, display it on a separate line.
+        ...(deviceName ? [
+          dom.br({}),
+          deviceName,
+        ] : []),
+      )
     );
   }
 
   render() {
     const {
-      deviceName,
-      dispatch,
       getString,
       icon,
-      id,
       isConnected,
       isSelected,
-      name,
+      isUnknown,
       runtimeId,
     } = this.props;
 
@@ -93,23 +100,23 @@ class SidebarRuntimeItem extends PureComponent {
     return SidebarItem(
       {
         isSelected,
-        selectable: isConnected,
-        className: "sidebar-runtime-item",
-        onSelect: () => {
-          dispatch(Actions.selectPage(id, runtimeId));
-        },
+        to: isConnected ? `/runtime/${encodeURIComponent(runtimeId)}` : null,
       },
-      dom.img(
+      dom.div(
         {
-          className: "sidebar-runtime-item__icon " +
-            `${isConnected ? "sidebar-runtime-item__icon--connected" : "" }`,
-          src: icon,
-          alt: connectionStatus,
-          title: connectionStatus,
-        }
-      ),
-      deviceName ? this.renderNameWithDevice(name, deviceName) : this.renderName(name),
-      !isConnected ? this.renderConnectButton() : null
+          className: "sidebar-runtime-item__container",
+        },
+        dom.img(
+          {
+            className: "sidebar-runtime-item__icon ",
+            src: icon,
+            alt: connectionStatus,
+            title: connectionStatus,
+          }
+        ),
+        this.renderName(),
+        !isUnknown && !isConnected ? this.renderConnectButton() : null
+      )
     );
   }
 }

@@ -9,18 +9,18 @@ general, is to use `dump()` to print a string to stdout.  In Firefox,
 this log output normally ends up in the gecko.log file in your current
 working directory.  With Fennec it can be inspected using `adb logcat`.
 
-`mach marionette test` takes a `--gecko-log` option which lets
+`mach marionette-test` takes a `--gecko-log` option which lets
 you redirect this output stream.  This is convenient if you want to
 “merge” the test harness output with the stdout from the browser.
 Per Unix conventions you can use `-` (dash) to have Firefox write
 its log to stdout instead of file:
 
-	% ./mach marionette test --gecko-log -
+	% ./mach marionette-test --gecko-log -
 
 It is common to use this in conjunction with an option to increase
 the Marionette log level:
 
-  % ./mach test --gecko-log - -vv TEST
+	% ./mach test --gecko-log - -vv TEST
 
 A single `-v` enables debug logging, and a double `-vv` enables
 trace logging.
@@ -35,18 +35,34 @@ that is described below.
 JavaScript debugger
 -------------------
 
-You can attach a JavaScript debugger to the Marionette server
-through the [Browser Toolbox].  This enables you to introspect and
-set breakpoints in Gecko chrome code, which is a far more powerful
-debuggin technique than using `dump()` or `console.log()`.
+You can attach the [Browser Toolbox] JavaScript debugger to the
+Marionette server using the `--jsdebugger` flag.  This enables you
+to introspect and set breakpoints in Gecko chrome code, which is a
+more powerful debugging technique than using `dump()` or `console.log()`.
 
-The browser toolbox can be opened automatically when running Mn
-tests by passing `--jsdebugger` to the mach command:
+To automatically open the JS debugger for `Mn` tests:
 
-	% ./mach marionette test --jsdebugger
+	% ./mach marionette-test --jsdebugger
 
-It will prompt you when to start the test run to allow you time to
-set your breakpoints.  It will also prompt you between each test.
+It will prompt you when to start to allow you time to set your
+breakpoints.  It will also prompt you between each test.
+
+You can also use the `debugger;` statement anywhere in chrome code
+to add a breakpoint.  In this example, a breakpoint will be added
+whenever the `WebDriver:GetPageSource` command is called:
+
+	GeckoDriver.prototype.getPageSource = async function() {
+	  debugger;
+	  const win = assert.open(this.getCurrentWindow());
+	  await this._handleUserPrompts();
+	  …
+	}
+
+To not be prompted at the start of the test run or between tests,
+you can set the `marionette.debugging.clicktostart` preference to
+false this way:
+
+	% ./mach marionette-test --pref 'marionette.debugging.clicktostart:false' --jsdebugger
 
 For reference, below is the list of preferences that enables the
 chrome debugger for Marionette.  These are all set implicitly when

@@ -13,24 +13,9 @@ namespace mozilla {
 namespace dom {
 
 // From https://www.iana.org/assignments/cose/cose.xhtml#algorithms
-enum class CoseAlgorithmIdentifier : int32_t {
-  ES256 = -7
-};
+enum class CoseAlgorithmIdentifier : int32_t { ES256 = -7 };
 
-static nsresult
-CoseAlgorithmToWebCryptoId(const int32_t& aId, /* out */ nsString& aName)
-{
-  switch(static_cast<CoseAlgorithmIdentifier>(aId)) {
-    case CoseAlgorithmIdentifier::ES256:
-      aName.AssignLiteral(JWK_ALG_ECDSA_P_256);
-      break;
-    default:
-      return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
-  }
-  return NS_OK;
-}
+}  // namespace dom
+}  // namespace mozilla
 
-} // namespace dom
-} // namespace mozilla
-
-#endif // mozilla_dom_WebAuthnCoseIdentifiers_h
+#endif  // mozilla_dom_WebAuthnCoseIdentifiers_h

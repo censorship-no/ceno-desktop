@@ -1,7 +1,7 @@
 //! Data structures describing the registers in an ISA.
 
-use entity::EntityRef;
-use std::fmt;
+use crate::entity::EntityRef;
+use core::fmt;
 
 /// Register units are the smallest units of register allocation.
 ///
@@ -89,7 +89,8 @@ impl RegBank {
                     None
                 }
             }
-        }.and_then(|offset| {
+        }
+        .and_then(|offset| {
             if offset < self.units {
                 Some(offset + self.first_unit)
             } else {
@@ -151,7 +152,7 @@ pub struct RegClassData {
     /// first register unit in each allocatable register.
     pub mask: RegUnitMask,
 
-    /// The global `RegInfo` instance containing that this register class.
+    /// The global `RegInfo` instance containing this register class.
     pub info: &'static RegInfo,
 }
 

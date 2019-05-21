@@ -6,15 +6,15 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewRemoteDebugger"];
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {GeckoViewUtils} = ChromeUtils.import("resource://gre/modules/GeckoViewUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "require", () => {
-  const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+  const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
   return require;
 });
 
@@ -23,7 +23,12 @@ XPCOMUtils.defineLazyGetter(this, "DebuggerServer", () => {
   return DebuggerServer;
 });
 
-GeckoViewUtils.initLogging("RemoteDebugger", this);
+XPCOMUtils.defineLazyGetter(this, "SocketListener", () => {
+  let { SocketListener } = require("devtools/shared/security/socket");
+  return SocketListener;
+});
+
+const {debug, warn} = GeckoViewUtils.initLogging("RemoteDebugger"); // eslint-disable-line no-unused-vars
 
 var GeckoViewRemoteDebugger = {
   observe(aSubject, aTopic, aData) {
@@ -42,6 +47,16 @@ var GeckoViewRemoteDebugger = {
     debug `onInit`;
     this._isEnabled = false;
     this._usbDebugger = new USBRemoteDebugger();
+
+    // This lets Marionette start listening (when it's enabled).  Both
+    // GeckoView and Marionette do most of their initialization in
+    // "profile-after-change", and there is no order enforced between
+    // them.  Therefore we defer asking Marionette to startup until
+    // after all "profile-after-change" handlers (including this one)
+    // have completed.
+    Services.tm.dispatchToMainThread(() => {
+        Services.obs.notifyObservers(null, "marionette-startup-requested");
+    });
   },
 
   onEnable() {
@@ -56,6 +71,8 @@ var GeckoViewRemoteDebugger = {
     DebuggerServer.setRootActor(createRootActor);
     DebuggerServer.allowChromeProcess = true;
     DebuggerServer.chromeWindowType = "navigator:geckoview";
+    // Force the Server to stay alive even if there are no connections at the moment.
+    DebuggerServer.keepAlive = true;
 
     // Socket address for USB remote debugger expects
     // @ANDROID_PACKAGE_NAME/firefox-debugger-socket.
@@ -70,7 +87,7 @@ var GeckoViewRemoteDebugger = {
     if (packageName) {
       packageName = packageName + "/";
     } else {
-      warn `Missing env MOZ_ANDROID_PACKAGE_NAME. Unable to get pacakge name`;
+      warn `Missing env MOZ_ANDROID_PACKAGE_NAME. Unable to get package name`;
     }
 
     this._isEnabled = true;
@@ -94,12 +111,14 @@ var GeckoViewRemoteDebugger = {
 class USBRemoteDebugger {
   start(aPortOrPath) {
     try {
-      let AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
-      let authenticator = new AuthenticatorType.Server();
+      const AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
+      const authenticator = new AuthenticatorType.Server();
       authenticator.allowConnection = this.allowConnection.bind(this);
-      this._listener = DebuggerServer.createListener();
-      this._listener.portOrPath = aPortOrPath;
-      this._listener.authenticator = authenticator;
+      const socketOptions = {
+        authenticator,
+        portOrPath: aPortOrPath,
+      };
+      this._listener = new SocketListener(DebuggerServer, socketOptions);
       this._listener.open();
       debug `USB remote debugger - listening on ${aPortOrPath}`;
     } catch (e) {

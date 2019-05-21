@@ -1,14 +1,17 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-"use strict";
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-const { Task } = require("devtools/shared/task");
 const { LocalizationHelper } = require("devtools/shared/l10n");
-const { gDevTools } = require("devtools/client/framework/devtools");
-const { TargetFactory } = require("devtools/client/framework/target");
-const { Toolbox } = require("devtools/client/framework/toolbox");
-loader.lazyRequireGetter(this, "openContentLink", "devtools/client/shared/link", true);
+const {
+  gDevToolsBrowser
+} = require("devtools/client/framework/devtools-browser");
+loader.lazyRequireGetter(
+  this,
+  "openContentLink",
+  "devtools/client/shared/link",
+  true
+);
 
 const DBG_STRINGS_URI = "devtools/client/locales/debugger.properties";
 const L10N = new LocalizationHelper(DBG_STRINGS_URI);
@@ -31,11 +34,7 @@ DebuggerPanel.prototype = {
       tabTarget: this.toolbox.target,
       debuggerClient: this.toolbox.target.client,
       sourceMaps: this.toolbox.sourceMapService,
-      toolboxActions: {
-        // Open a link in a new browser tab.
-        openLink: this.openLink.bind(this),
-        openWorkerToolbox: this.openWorkerToolbox.bind(this)
-      }
+      panel: this
     });
 
     this._actions = actions;
@@ -43,6 +42,16 @@ DebuggerPanel.prototype = {
     this._selectors = selectors;
     this._client = client;
     this.isReady = true;
+
+    this.panelWin.document.addEventListener(
+      "drag:start",
+      this.toolbox.toggleDragging
+    );
+    this.panelWin.document.addEventListener(
+      "drag:end",
+      this.toolbox.toggleDragging
+    );
+
     return this;
   },
 
@@ -63,16 +72,36 @@ DebuggerPanel.prototype = {
     openContentLink(url);
   },
 
-  openWorkerToolbox: async function(worker) {
-    const [response, workerTargetFront] =
-      await this.toolbox.target.client.attachWorker(worker.actor);
-    const workerTarget = TargetFactory.forWorker(workerTargetFront);
-    const toolbox = await gDevTools.showToolbox(workerTarget, "jsdebugger", Toolbox.HostType.WINDOW);
-    toolbox.once("destroy", () => workerTargetFront.detach());
+  openWorkerToolbox: function(workerTargetFront) {
+    return gDevToolsBrowser.openWorkerToolbox(workerTargetFront, "jsdebugger");
+  },
+
+  openConsoleAndEvaluate: async function(input) {
+    const webconsolePanel = await this.toolbox.selectTool("webconsole");
+    const jsterm = webconsolePanel.hud.jsterm;
+    jsterm.execute(input);
+  },
+
+  openElementInInspector: async function(grip) {
+    await this.toolbox.initInspector();
+    const onSelectInspector = this.toolbox.selectTool("inspector");
+    const onGripNodeToFront = this.toolbox.walker.gripToNodeFront(grip);
+    const [front, inspector] = await Promise.all([
+      onGripNodeToFront,
+      onSelectInspector
+    ]);
+
+    const onInspectorUpdated = inspector.once("inspector-updated");
+    const onNodeFrontSet = this.toolbox.selection.setNodeFront(front, {
+      reason: "debugger"
+    });
+
+    return Promise.all([onNodeFrontSet, onInspectorUpdated]);
   },
 
   getFrames: function() {
-    let frames = this._selectors.getFrames(this._getState());
+    const thread = this._selectors.getCurrentThread(this._getState());
+    const frames = this._selectors.getFrames(this._getState(), thread);
 
     // Frames is null when the debugger is not paused.
     if (!frames) {
@@ -82,7 +111,10 @@ DebuggerPanel.prototype = {
       };
     }
 
-    const selectedFrame = this._selectors.getSelectedFrame(this._getState());
+    const selectedFrame = this._selectors.getSelectedFrame(
+      this._getState(),
+      thread
+    );
     const selected = frames.findIndex(frame => frame.id == selectedFrame.id);
 
     frames.forEach(frame => {
@@ -97,14 +129,23 @@ DebuggerPanel.prototype = {
   },
 
   isPaused() {
-    return this._selectors.isPaused(this._getState());
+    const thread = this._selectors.getCurrentThread(this._getState());
+    return this._selectors.getIsPaused(this._getState(), thread);
   },
 
-  selectSource(url, line) {
-    this._actions.selectSourceURL(url, { line });
+  selectSourceURL(url, line) {
+    return this._actions.selectSourceURL(url, { line });
   },
 
-  getSource(sourceURL) {
+  selectSource(sourceId, line) {
+    return this._actions.selectSource(sourceId, { line });
+  },
+
+  getSourceByActorId(sourceId) {
+    return this._selectors.getSourceByActorId(this._getState(), sourceId);
+  },
+
+  getSourceByURL(sourceURL) {
     return this._selectors.getSourceByURL(this._getState(), sourceURL);
   },
 

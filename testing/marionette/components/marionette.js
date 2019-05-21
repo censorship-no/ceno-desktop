@@ -4,13 +4,13 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const {
   EnvironmentPrefs,
   MarionettePrefs,
-} = ChromeUtils.import("chrome://marionette/content/prefs.js", {});
+} = ChromeUtils.import("chrome://marionette/content/prefs.js", null);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   Log: "chrome://marionette/content/log.js",
@@ -46,28 +46,30 @@ const PREF_ENABLED = "marionette.enabled";
 // pref being set to 4444.
 const ENV_PRESERVE_PREFS = "MOZ_MARIONETTE_PREF_STATE_ACROSS_RESTARTS";
 
+// ALL CHANGES TO THIS LIST MUST HAVE REVIEW FROM A MARIONETTE PEER!
+//
 // Marionette sets preferences recommended for automation when it starts,
 // unless marionette.prefs.recommended has been set to false.
-// Where noted, some prefs should also be set in the profile passed to
-// Marionette to prevent them from affecting startup, since some of these
-// are checked before Marionette initialises.
+//
+// All prefs as added here have immediate effect, and don't require a restart
+// nor have to be set in the profile before the application starts. If such a
+// latter preference has to be added, it needs to be done for the client like
+// Marionette client (geckoinstance.py), or geckodriver (prefs.rs).
+//
+// Note: Clients do not always use the latest version of the application. As
+// such backward compatibility has to be ensured at least for the last three
+// releases.
 const RECOMMENDED_PREFS = new Map([
 
   // Make sure Shield doesn't hit the network.
   ["app.normandy.api_url", ""],
 
-  // Disable automatic downloading of new releases.
+  // Disable automatically upgrading Firefox
   //
-  // This should also be set in the profile prior to starting Firefox,
-  // as it is picked up at runtime.
-  ["app.update.auto", false],
-
-  // Disable automatically upgrading Firefox.
-  //
-  // This should also be set in the profile prior to starting Firefox,
-  // as it is picked up at runtime.
+  // Note: This preference should have already been set by the client when
+  // creating the profile. But if not and to absolutely make sure that updates
+  // of Firefox aren't downloaded and applied, enforce its presence.
   ["app.update.disabledForTesting", true],
-  ["security.turn_off_all_security_so_that_viruses_can_take_over_this_computer", true],
 
   // Increase the APZ content response timeout in tests to 1 minute.
   // This is to accommodate the fact that test environments tends to be
@@ -239,6 +241,9 @@ const RECOMMENDED_PREFS = new Map([
   // Make sure SNTP requests do not hit the network
   ["network.sntp.pools", "%(server)s"],
 
+  // Don't do network connections for mitm priming
+  ["security.certerrors.mitm.priming.enabled", false],
+
   // Local documents have access to all other local documents,
   // including directory listings
   ["security.fileuri.strict_origin_policy", false],
@@ -315,7 +320,7 @@ class MarionetteParentProcess {
   }
 
   observe(subject, topic) {
-    log.debug(`Received observer notification ${topic}`);
+    log.trace(`Received observer notification ${topic}`);
 
     switch (topic) {
       case "nsPref:changed":
@@ -328,8 +333,8 @@ class MarionetteParentProcess {
 
       case "profile-after-change":
         Services.obs.addObserver(this, "command-line-startup");
-        Services.obs.addObserver(this, "sessionstore-windows-restored");
         Services.obs.addObserver(this, "toplevel-window-ready");
+        Services.obs.addObserver(this, "marionette-startup-requested");
 
         for (let [pref, value] of EnvironmentPrefs.from(ENV_PRESERVE_PREFS)) {
           Preferences.set(pref, value);
@@ -358,8 +363,10 @@ class MarionetteParentProcess {
       case "domwindowclosed":
         if (this.gfxWindow === null || subject === this.gfxWindow) {
           Services.obs.removeObserver(this, topic);
+          Services.obs.removeObserver(this, "toplevel-window-ready");
 
           Services.obs.addObserver(this, "xpcom-will-shutdown");
+
           this.finalUIStartup = true;
           this.init();
         }
@@ -383,9 +390,8 @@ class MarionetteParentProcess {
         }, {once: true});
         break;
 
-      case "sessionstore-windows-restored":
+      case "marionette-startup-requested":
         Services.obs.removeObserver(this, topic);
-        Services.obs.removeObserver(this, "toplevel-window-ready");
 
         // When Firefox starts on Windows, an additional GFX sanity test
         // window may appear off-screen.  Marionette should wait for it
@@ -398,10 +404,13 @@ class MarionetteParentProcess {
         }
 
         if (this.gfxWindow) {
-          log.debug("GFX sanity window detected, waiting until it has been closed...");
+          log.trace("GFX sanity window detected, waiting until it has been closed...");
           Services.obs.addObserver(this, "domwindowclosed");
         } else {
+          Services.obs.removeObserver(this, "toplevel-window-ready");
+
           Services.obs.addObserver(this, "xpcom-will-shutdown");
+
           this.finalUIStartup = true;
           this.init();
         }
@@ -419,7 +428,7 @@ class MarionetteParentProcess {
     win.addEventListener("load", () => {
       if (win.document.getElementById("safeModeDialog")) {
         // accept the dialog to start in safe-mode
-        log.debug("Safe mode detected, supressing dialog");
+        log.trace("Safe mode detected, supressing dialog");
         win.setTimeout(() => {
           win.document.documentElement.getButton("accept").click();
         });
@@ -434,15 +443,15 @@ class MarionetteParentProcess {
       return;
     }
 
-    log.debug(`Waiting for delayed startup...`);
+    log.trace(`Waiting until startup recorder finished recording startup scripts...`);
     Services.tm.idleDispatchToMainThread(async () => {
       let startupRecorder = Promise.resolve();
       if ("@mozilla.org/test/startuprecorder;1" in Cc) {
-        log.debug(`Waiting for startup tests...`);
         startupRecorder = Cc["@mozilla.org/test/startuprecorder;1"]
             .getService().wrappedJSObject.done;
       }
       await startupRecorder;
+      log.trace(`All scripts recorded.`);
 
       if (MarionettePrefs.recommendedPrefs) {
         for (let [k, v] of RECOMMENDED_PREFS) {

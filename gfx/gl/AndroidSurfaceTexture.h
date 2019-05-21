@@ -8,8 +8,8 @@
 #define AndroidSurfaceTexture_h__
 #ifdef MOZ_WIDGET_ANDROID
 
-#include "mozilla/gfx/Matrix.h"
-#include "SurfaceTexture.h"
+#  include "mozilla/gfx/Matrix.h"
+#  include "SurfaceTexture.h"
 
 typedef uint32_t AndroidSurfaceTextureHandle;
 
@@ -17,14 +17,15 @@ namespace mozilla {
 namespace gl {
 
 class AndroidSurfaceTexture {
-public:
-  static void GetTransformMatrix(java::sdk::SurfaceTexture::Param surfaceTexture,
-                                 mozilla::gfx::Matrix4x4* outMatrix);
-
+ public:
+  static void Init();
+  static void GetTransformMatrix(
+      java::sdk::SurfaceTexture::Param surfaceTexture,
+      mozilla::gfx::Matrix4x4* outMatrix);
 };
 
-} // gl
-} // mozilla
+}  // namespace gl
+}  // namespace mozilla
 
-#endif // MOZ_WIDGET_ANDROID
-#endif // AndroidSurfaceTexture_h__
+#endif  // MOZ_WIDGET_ANDROID
+#endif  // AndroidSurfaceTexture_h__

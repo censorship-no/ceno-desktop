@@ -30,13 +30,11 @@
 
   function checkTransferableText(transferable, expectedString, description) {
     var data = {};
-    var dataLen = {};
-    transferable.getTransferData("text/unicode", data, dataLen);
+    transferable.getTransferData("text/unicode", data);
     var actualValue = data.value.QueryInterface(Ci.nsISupportsString).data;
     // Use ok + shortenString instead of is(...) to avoid dumping millions of characters in the output.
     ok(actualValue === expectedString, description + ": text should match. " +
        "Expected " + shortenString(expectedString)  + ", got " + shortenString(actualValue));
-    is(dataLen.value, expectedString.length * 2, description + ": text length should match");
 
     function shortenString(str) {
       return str && str.length > 30 ? str.slice(0, 10) + "..." + str.slice(-10) : String(str);
@@ -51,7 +49,7 @@
     //
     // To avoid intermittents, we only check the file descriptor counts on non-Windows.
     // test_bug1123480.xul will do some basic testing for Windows.
-    ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+    const {AppConstants} = ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
     return AppConstants.platform !== 'win';
   }
 
@@ -81,8 +79,8 @@
   }
 
   function RunTest() {
-    ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
-    ChromeUtils.import("resource://gre/modules/Services.jsm");
+    const {PrivateBrowsingUtils} = ChromeUtils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
     var win = window.open("about:blank", "_blank", "chrome, width=500, height=200");
     ok(win, "should open window");

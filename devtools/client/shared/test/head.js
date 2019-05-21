@@ -10,7 +10,7 @@
 // shared-head.js handles imports, constants, and utility functions
 Services.scriptloader.loadSubScript("chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js", this);
 
-const {DOMHelpers} = ChromeUtils.import("resource://devtools/client/shared/DOMHelpers.jsm", {});
+const {DOMHelpers} = ChromeUtils.import("resource://devtools/client/shared/DOMHelpers.jsm");
 const {Hosts} = require("devtools/client/framework/toolbox-hosts");
 
 const TEST_URI_ROOT = "http://example.com/browser/devtools/client/shared/test/";
@@ -132,13 +132,13 @@ async function openAndCloseToolbox(nbOfTimes, usageTime, toolId) {
   for (let i = 0; i < nbOfTimes; i++) {
     info("Opening toolbox " + (i + 1));
     const target = await TargetFactory.forTab(gBrowser.selectedTab);
-    await gDevTools.showToolbox(target, toolId);
+    const toolbox = await gDevTools.showToolbox(target, toolId);
 
     // We use a timeout to check the toolbox's active time
     await new Promise(resolve => setTimeout(resolve, usageTime));
 
     info("Closing toolbox " + (i + 1));
-    await gDevTools.closeToolbox(target);
+    await toolbox.destroy();
   }
 }
 

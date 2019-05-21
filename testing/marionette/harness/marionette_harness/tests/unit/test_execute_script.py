@@ -273,7 +273,6 @@ class TestExecuteContent(MarionetteTestCase):
         self.assertTrue(self.marionette.execute_script(
             "return typeof arguments[0] == 'undefined'"))
 
-    @skip_if_mobile("Intermittent on Android - bug 1334035")
     def test_window_set_timeout_is_not_cancelled(self):
         def content_timeout_triggered(mn):
             return mn.execute_script("return window.n", sandbox=None) > 0
@@ -375,13 +374,8 @@ class TestExecuteChrome(WindowManagerMixin, TestExecuteContent):
 
     @skip_if_mobile("New windows not supported in Fennec")
     def test_unmarshal_element_collection(self):
-
-        def open_window_with_js():
-            self.marionette.execute_script(
-                "window.open('chrome://marionette/content/test.xul', 'xul', 'chrome');")
-
         try:
-            win = self.open_window(trigger=open_window_with_js)
+            win = self.open_chrome_window("chrome://marionette/content/test.xul")
             self.marionette.switch_to_window(win)
 
             expected = self.marionette.find_elements(By.TAG_NAME, "textbox")

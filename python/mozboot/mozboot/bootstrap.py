@@ -9,6 +9,16 @@ import platform
 import sys
 import os
 import subprocess
+try:
+    from ConfigParser import (
+        Error as ConfigParserError,
+        RawConfigParser,
+    )
+except ImportError:
+    from configparser import (
+        Error as ConfigParserError,
+        RawConfigParser,
+    )
 
 # Don't forgot to add new mozboot modules to the bootstrap download
 # list in bin/bootstrap.py!
@@ -30,11 +40,11 @@ APPLICATION_CHOICE = '''
 Note on Artifact Mode:
 
 Artifact builds download prebuilt C++ components rather than building
-them locally.
+them locally. Artifact builds are faster!
 
 Artifact builds are recommended for people working on Firefox or
-Firefox for Android frontends. They are unsuitable for those working
-on C++ code. For more information see:
+Firefox for Android frontends, or the GeckoView Java API. They are unsuitable
+for those working on C++ code. For more information see:
 https://developer.mozilla.org/en-US/docs/Artifact_builds.
 
 Please choose the version of Firefox you want to build:
@@ -44,8 +54,8 @@ Your choice: '''
 APPLICATIONS_LIST = [
     ('Firefox for Desktop Artifact Mode', 'browser_artifact_mode'),
     ('Firefox for Desktop', 'browser'),
-    ('Firefox for Android Artifact Mode', 'mobile_android_artifact_mode'),
-    ('Firefox for Android', 'mobile_android'),
+    ('GeckoView/Firefox for Android Artifact Mode', 'mobile_android_artifact_mode'),
+    ('GeckoView/Firefox for Android', 'mobile_android'),
 ]
 
 # This is a workaround for the fact that we must support python2.6 (which has
@@ -171,8 +181,7 @@ DEBIAN_DISTROS = (
     'LinuxMint',
     'Elementary OS',
     'Elementary',
-    '"elementary OS"',
-    '"elementary"'
+    'elementary'
 )
 
 ADD_GIT_TOOLS_PATH = '''
@@ -185,17 +194,56 @@ lines:
 Then restart your shell.
 '''
 
+TELEMETRY_OPT_IN_PROMPT = '''
+Would you like to enable build system telemetry?
+
+Mozilla collects data about local builds in order to make builds faster and
+improve developer tooling. To learn more about the data we intend to collect
+read here:
+https://firefox-source-docs.mozilla.org/build/buildsystem/telemetry.html.
+
+If you have questions, please ask in #build in irc.mozilla.org. If you would
+like to opt out of data collection, select (N) at the prompt.
+
+Your choice'''
+
+
+def update_or_create_build_telemetry_config(path):
+    """Write a mach config file enabling build telemetry to `path`. If the file does not exist,
+    create it. If it exists, add the new setting to the existing data.
+
+    This is standalone from mach's `ConfigSettings` so we can use it during bootstrap
+    without a source checkout.
+    """
+    config = RawConfigParser()
+    if os.path.exists(path):
+        try:
+            config.read([path])
+        except ConfigParserError as e:
+            print('Your mach configuration file at `{path}` is not parseable:\n{error}'.format(
+                path=path, error=e))
+            return False
+    if not config.has_section('build'):
+        config.add_section('build')
+    config.set('build', 'telemetry', 'true')
+    with open(path, 'wb') as f:
+        config.write(f)
+    return True
+
 
 class Bootstrapper(object):
     """Main class that performs system bootstrap."""
 
     def __init__(self, finished=FINISHED, choice=None, no_interactive=False,
-                 hg_configure=False, no_system_changes=False):
+                 hg_configure=False, no_system_changes=False, mach_context=None,
+                 vcs=None):
         self.instance = None
         self.finished = finished
         self.choice = choice
         self.hg_configure = hg_configure
         self.no_system_changes = no_system_changes
+        self.mach_context = mach_context
+        self.vcs = vcs
         cls = None
         args = {'no_interactive': no_interactive,
                 'no_system_changes': no_system_changes}
@@ -294,7 +342,7 @@ class Bootstrapper(object):
     # be available. We /could/ refactor parts of mach_bootstrap.py to be
     # part of this directory to avoid the code duplication.
     def try_to_create_state_dir(self):
-        state_dir, _ = get_state_dir()
+        state_dir = get_state_dir()
 
         if not os.path.exists(state_dir):
             should_create_state_dir = True
@@ -321,7 +369,7 @@ class Bootstrapper(object):
                                                checkout_root):
         # Install the clang packages needed for building the style system, as
         # well as the version of NodeJS that we currently support.
-
+        # Also install the clang static-analysis package by default
         # The best place to install our packages is in the state directory
         # we have.  We should have created one above in non-interactive mode.
         if not state_dir_available:
@@ -333,8 +381,25 @@ class Bootstrapper(object):
             sys.exit(1)
 
         self.instance.state_dir = state_dir
-        self.instance.ensure_stylo_packages(state_dir, checkout_root)
         self.instance.ensure_node_packages(state_dir, checkout_root)
+        if not self.instance.artifact_mode:
+            self.instance.ensure_stylo_packages(state_dir, checkout_root)
+            self.instance.ensure_clang_static_analysis_package(state_dir, checkout_root)
+            self.instance.ensure_nasm_packages(state_dir, checkout_root)
+
+    def check_telemetry_opt_in(self, state_dir):
+        # We can't prompt the user.
+        if self.instance.no_interactive:
+            return
+        # Don't prompt if the user already has a setting for this value.
+        if self.mach_context is not None and 'telemetry' in self.mach_context.settings.build:
+            return
+        choice = self.instance.prompt_yesno(prompt=TELEMETRY_OPT_IN_PROMPT)
+        if choice:
+            cfg_file = os.path.join(state_dir, 'machrc')
+            if update_or_create_build_telemetry_config(cfg_file):
+                print('\nThanks for enabling build telemetry! You can change this setting at ' +
+                      'any time by editing the config file `{}`\n'.format(cfg_file))
 
     def bootstrap(self):
         if self.choice is None:
@@ -349,6 +414,9 @@ class Bootstrapper(object):
         else:
             name, application = APPLICATIONS[self.choice]
 
+        self.instance.application = application
+        self.instance.artifact_mode = 'artifact_mode' in application
+
         if self.instance.no_system_changes:
             state_dir_available, state_dir = self.try_to_create_state_dir()
             # We need to enable the loading of hgrc in case extensions are
@@ -360,6 +428,8 @@ class Bootstrapper(object):
             (checkout_type, checkout_root) = r
             have_clone = bool(checkout_type)
 
+            if state_dir_available:
+                self.check_telemetry_opt_in(state_dir)
             self.maybe_install_private_packages_or_exit(state_dir,
                                                         state_dir_available,
                                                         have_clone,
@@ -373,7 +443,8 @@ class Bootstrapper(object):
 
         hg_installed, hg_modern = self.instance.ensure_mercurial_modern()
         self.instance.ensure_python_modern()
-        self.instance.ensure_rust_modern()
+        if not self.instance.artifact_mode:
+            self.instance.ensure_rust_modern()
 
         state_dir_available, state_dir = self.try_to_create_state_dir()
 
@@ -384,8 +455,9 @@ class Bootstrapper(object):
                                      hg=self.instance.which('hg'))
         (checkout_type, checkout_root) = r
 
-        # Possibly configure Mercurial, but not if the current checkout is Git.
-        if hg_installed and state_dir_available and checkout_type != 'git':
+        # Possibly configure Mercurial, but not if the current checkout or repo
+        # type is Git.
+        if hg_installed and state_dir_available and (checkout_type == 'hg' or self.vcs == 'hg'):
             configure_hg = False
             if not self.instance.no_interactive:
                 choice = self.instance.prompt_int(prompt=CONFIGURE_MERCURIAL,
@@ -398,8 +470,8 @@ class Bootstrapper(object):
             if configure_hg:
                 configure_mercurial(self.instance.which('hg'), state_dir)
 
-        # Offer to configure Git, if the current checkout is Git.
-        elif self.instance.which('git') and checkout_type == 'git':
+        # Offer to configure Git, if the current checkout or repo type is Git.
+        elif self.instance.which('git') and (checkout_type == 'git' or self.vcs == 'git'):
             should_configure_git = False
             if not self.instance.no_interactive:
                 choice = self.instance.prompt_int(prompt=CONFIGURE_GIT,
@@ -411,19 +483,20 @@ class Bootstrapper(object):
                 should_configure_git = self.hg_configure
 
             if should_configure_git:
-                configure_git(self.instance.which('git'), state_dir)
+                configure_git(self.instance.which('git'), state_dir,
+                              checkout_root)
 
         # Offer to clone if we're not inside a clone.
         have_clone = False
 
         if checkout_type:
             have_clone = True
-        elif hg_installed and not self.instance.no_interactive:
+        elif hg_installed and not self.instance.no_interactive and self.vcs == 'hg':
             dest = self.input_clone_dest()
             if dest:
                 have_clone = hg_clone_firefox(self.instance.which('hg'), dest)
                 checkout_root = dest
-        elif self.instance.which('git') and checkout_type == 'git':
+        elif self.instance.which('git') and self.vcs == 'git':
             dest = self.input_clone_dest(False)
             if dest:
                 git = self.instance.which('git')
@@ -434,6 +507,8 @@ class Bootstrapper(object):
         if not have_clone:
             print(SOURCE_ADVERTISE)
 
+        if state_dir_available:
+            self.check_telemetry_opt_in(state_dir)
         self.maybe_install_private_packages_or_exit(state_dir,
                                                     state_dir_available,
                                                     have_clone,
@@ -610,8 +685,22 @@ def current_firefox_checkout(check_output, env, hg=None):
     return (None, None)
 
 
-def update_git_tools(git, root_state_dir):
-    """Ensure git-cinnabar is up to date."""
+def update_git_tools(git, root_state_dir, top_src_dir):
+    """Update git tools, hooks and extensions"""
+    # Bug 1481425 - delete the git-mozreview
+    # commit message hook in .git/hooks dir
+    if top_src_dir:
+        mozreview_commit_hook = os.path.join(top_src_dir, '.git/hooks/commit-msg')
+        if os.path.exists(mozreview_commit_hook):
+            with open(mozreview_commit_hook, 'rb') as f:
+                contents = f.read()
+
+            if b'MozReview' in contents:
+                print('removing git-mozreview commit message hook...')
+                os.remove(mozreview_commit_hook)
+                print('git-mozreview commit message hook removed.')
+
+    # Ensure git-cinnabar is up to date.
     cinnabar_dir = os.path.join(root_state_dir, 'git-cinnabar')
 
     # Ensure the latest revision of git-cinnabar is present.
@@ -651,9 +740,9 @@ def update_git_repo(git, url, dest):
         print('=' * 80)
 
 
-def configure_git(git, root_state_dir):
+def configure_git(git, root_state_dir, top_src_dir):
     """Run the Git configuration steps."""
-    cinnabar_dir = update_git_tools(git, root_state_dir)
+    cinnabar_dir = update_git_tools(git, root_state_dir, top_src_dir)
 
     print(ADD_GIT_TOOLS_PATH.format(cinnabar_dir))
 

@@ -5,64 +5,57 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ChildProfilerController.h"
-#include "nsThreadUtils.h"
+
 #include "ProfilerChild.h"
+
+#include "nsThreadUtils.h"
 
 using namespace mozilla::ipc;
 
 namespace mozilla {
 
-/* static */ already_AddRefed<ChildProfilerController>
-ChildProfilerController::Create(mozilla::ipc::Endpoint<PProfilerChild>&& aEndpoint)
-{
+/* static */
+already_AddRefed<ChildProfilerController> ChildProfilerController::Create(
+    mozilla::ipc::Endpoint<PProfilerChild>&& aEndpoint) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
   RefPtr<ChildProfilerController> cpc = new ChildProfilerController();
   cpc->Init(std::move(aEndpoint));
   return cpc.forget();
 }
 
-ChildProfilerController::ChildProfilerController()
-{
+ChildProfilerController::ChildProfilerController() {
   MOZ_COUNT_CTOR(ChildProfilerController);
 }
 
-void
-ChildProfilerController::Init(Endpoint<PProfilerChild>&& aEndpoint)
-{
-  if (NS_SUCCEEDED(NS_NewNamedThread("ProfilerChild", getter_AddRefs(mThread)))) {
+void ChildProfilerController::Init(Endpoint<PProfilerChild>&& aEndpoint) {
+  if (NS_SUCCEEDED(
+          NS_NewNamedThread("ProfilerChild", getter_AddRefs(mThread)))) {
     // Now that mThread has been set, run SetupProfilerChild on the thread.
-    mThread->Dispatch(NewRunnableMethod<Endpoint<PProfilerChild>&&>(
-                        "ChildProfilerController::SetupProfilerChild",
-                        this,
-                        &ChildProfilerController::SetupProfilerChild,
-                        std::move(aEndpoint)),
-                      NS_DISPATCH_NORMAL);
+    mThread->Dispatch(
+        NewRunnableMethod<Endpoint<PProfilerChild>&&>(
+            "ChildProfilerController::SetupProfilerChild", this,
+            &ChildProfilerController::SetupProfilerChild, std::move(aEndpoint)),
+        NS_DISPATCH_NORMAL);
   }
 }
 
-nsCString
-ChildProfilerController::GrabShutdownProfileAndShutdown()
-{
+nsCString ChildProfilerController::GrabShutdownProfileAndShutdown() {
   nsCString shutdownProfile;
   ShutdownAndMaybeGrabShutdownProfileFirst(&shutdownProfile);
   return shutdownProfile;
 }
 
-void
-ChildProfilerController::Shutdown()
-{
+void ChildProfilerController::Shutdown() {
   ShutdownAndMaybeGrabShutdownProfileFirst(nullptr);
 }
 
-void
-ChildProfilerController::ShutdownAndMaybeGrabShutdownProfileFirst(nsCString* aOutShutdownProfile)
-{
+void ChildProfilerController::ShutdownAndMaybeGrabShutdownProfileFirst(
+    nsCString* aOutShutdownProfile) {
   if (mThread) {
     mThread->Dispatch(NewRunnableMethod<nsCString*>(
-                        "ChildProfilerController::ShutdownProfilerChild",
-                        this,
-                        &ChildProfilerController::ShutdownProfilerChild,
-                        aOutShutdownProfile),
+                          "ChildProfilerController::ShutdownProfilerChild",
+                          this, &ChildProfilerController::ShutdownProfilerChild,
+                          aOutShutdownProfile),
                       NS_DISPATCH_NORMAL);
     // Shut down the thread. This call will spin until all runnables (including
     // the ShutdownProfilerChild runnable) have been processed.
@@ -71,17 +64,16 @@ ChildProfilerController::ShutdownAndMaybeGrabShutdownProfileFirst(nsCString* aOu
   }
 }
 
-ChildProfilerController::~ChildProfilerController()
-{
+ChildProfilerController::~ChildProfilerController() {
   MOZ_COUNT_DTOR(ChildProfilerController);
 
-  MOZ_ASSERT(!mThread, "Please call Shutdown before destroying ChildProfilerController");
+  MOZ_ASSERT(!mThread,
+             "Please call Shutdown before destroying ChildProfilerController");
   MOZ_ASSERT(!mProfilerChild);
 }
 
-void
-ChildProfilerController::SetupProfilerChild(Endpoint<PProfilerChild>&& aEndpoint)
-{
+void ChildProfilerController::SetupProfilerChild(
+    Endpoint<PProfilerChild>&& aEndpoint) {
   MOZ_RELEASE_ASSERT(mThread == NS_GetCurrentThread());
   MOZ_ASSERT(aEndpoint.IsValid());
 
@@ -93,9 +85,8 @@ ChildProfilerController::SetupProfilerChild(Endpoint<PProfilerChild>&& aEndpoint
   }
 }
 
-void
-ChildProfilerController::ShutdownProfilerChild(nsCString* aOutShutdownProfile)
-{
+void ChildProfilerController::ShutdownProfilerChild(
+    nsCString* aOutShutdownProfile) {
   MOZ_RELEASE_ASSERT(mThread == NS_GetCurrentThread());
 
   if (aOutShutdownProfile) {
@@ -105,4 +96,4 @@ ChildProfilerController::ShutdownProfilerChild(nsCString* aOutShutdownProfile)
   mProfilerChild = nullptr;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

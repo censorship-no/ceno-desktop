@@ -4,7 +4,7 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
@@ -73,7 +73,7 @@ const BLANK_DB = function() {
 
 const TOOLKIT_ID     = "toolkit@mozilla.org";
 
-ChromeUtils.import("resource://gre/modules/Log.jsm");
+const {Log} = ChromeUtils.import("resource://gre/modules/Log.jsm");
 const LOGGER_ID = "addons.repository";
 
 // Create a new logger for use by the Addons Repository
@@ -91,8 +91,7 @@ function convertHTMLToPlainText(html) {
   input.data = html.replace(/\n/g, "<br>");
 
   var output = {};
-  converter.convert("text/html", input, input.data.length, "text/unicode",
-                    output, {});
+  converter.convert("text/html", input, "text/unicode", output);
 
   if (output.value instanceof Ci.nsISupportsString)
     return output.value.data.replace(/\r\n/g, "\n");
@@ -445,10 +444,16 @@ var AddonRepository = {
   _fetchPaged(ids, pref, handler) {
     let startURL = this._formatURLPref(pref, {IDS: ids.join(",")});
     let results = [];
+    let idCheck = ids.map(id => {
+      if (id.startsWith("rta:")) {
+        return atob(id.split(":")[1]);
+      }
+      return id;
+    });
 
     const fetchNextPage = (url) => {
       return new Promise((resolve, reject) => {
-        let request = new ServiceRequest();
+        let request = new ServiceRequest({mozAnon: true});
         request.mozBackgroundRequest = true;
         request.open("GET", url, true);
         request.responseType = "json";
@@ -467,7 +472,7 @@ var AddonRepository = {
           }
 
           try {
-            let newResults = handler(response.results).filter(e => ids.includes(e.id));
+            let newResults = handler(response.results).filter(e => idCheck.includes(e.id));
             results.push(...newResults);
           } catch (err) {
             reject(err);
@@ -917,13 +922,11 @@ var AddonDatabase = {
     this.connectionPromise = null;
     this._loaded = false;
 
-    if (aSkipFlush || !this._saveTask) {
+    if (aSkipFlush) {
       return Promise.resolve();
     }
 
-    let promise = this._saveTask.finalize();
-    this._saveTask = null;
-    return promise;
+    return this.flush();
   },
 
   /**
@@ -974,14 +977,7 @@ var AddonDatabase = {
 
       if (!this._blockerAdded) {
         AsyncShutdown.profileBeforeChange.addBlocker(
-          "Flush AddonRepository",
-          async () => {
-            if (!this._saveTask) {
-              return;
-            }
-            await this._saveTask.finalize();
-            this._saveTask = null;
-          });
+          "Flush AddonRepository", () => this.flush());
         this._blockerAdded = true;
       }
     }
