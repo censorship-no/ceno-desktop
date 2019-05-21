@@ -252,7 +252,7 @@ public final class GeckoSessionSettings implements Parcelable {
      * Read-only once session is open.
      */
     public static final Key<String> OUINET_CLIENT_ROOT_CERTIFICATE =
-        new Key<String>("ouinetClientRootCert", /* initOnly */ true, /* values */ null);
+        new Key<String>("ouinetClientRootCert", /* initOnly */ false, /* values */ null);
     /**
      * Key to set the window screen ID, or 0 to use default ID.
      * Read-only once session is open.
@@ -610,6 +610,14 @@ public final class GeckoSessionSettings implements Parcelable {
      */
     public void setUserAgentOverride(final @Nullable String value) {
         setString(USER_AGENT_OVERRIDE, value);
+    }
+
+    /**
+     * Specify the path to the CA root certificate.
+     * @param value The path to the certificate.
+     */
+    public void setPathToCARootCert(final @Nullable String value) {
+        setString(OUINET_CLIENT_ROOT_CERTIFICATE, value);
     }
 
     private void setString(final Key<String> key, final String value) {

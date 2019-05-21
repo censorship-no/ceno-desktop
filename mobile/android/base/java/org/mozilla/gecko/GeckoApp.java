@@ -53,10 +53,12 @@ import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -69,6 +71,7 @@ import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Parcelable;
 import android.os.StrictMode;
 import android.provider.ContactsContract;
@@ -140,8 +143,6 @@ public abstract class GeckoApp extends GeckoActivity
         System.setProperty("https.proxyHost", "127.0.0.1");
         System.setProperty("https.proxyPort", "8080");
     }
-
-    private boolean USE_SERVICE = true;
 
     private static final String LOGTAG = "GeckoApp";
     private static final long ONE_DAY_MS = TimeUnit.MILLISECONDS.convert(1, TimeUnit.DAYS);
@@ -223,6 +224,19 @@ public abstract class GeckoApp extends GeckoActivity
     private boolean foregrounded = false;
 
     private Ouinet mOuinet;
+    private boolean USE_SERVICE = true;
+
+    static {
+        // System.loadLibrary("ipfs_bindings");
+        // System.loadLibrary("client");
+        // System.loadLibrary("native-lib");
+
+        System.setProperty("http.proxyHost", "127.0.0.1");
+        System.setProperty("http.proxyPort", "8080");
+
+        System.setProperty("https.proxyHost", "127.0.0.1");
+        System.setProperty("https.proxyPort", "8080");
+    }
 
     private static final class LastSessionParser extends SessionParser {
         private JSONArray tabs;
@@ -1043,27 +1057,34 @@ public abstract class GeckoApp extends GeckoActivity
         //------------------------------------------------------------
         // Ouinet
         //------------------------------------------------------------
+        if (USE_SERVICE) {
+            Log.d(LOGTAG, " --------- Starting ouinet service");
+            Intent startOuinetIntent = new Intent(this, OuinetService.class);
+            startService(startOuinetIntent);
+        } else {
+            Log.d(LOGTAG, " --------- Starting ouinet in activity");
+            Ouinet.Config ouinetConfig = new Ouinet.Config();
 
-        Ouinet.Config ouinetConfig = new Ouinet.Config();
+            ouinetConfig.index_bep44_pubkey   = getResources().getString(R.string.ouinet_index_bep44_pubkey);
+            ouinetConfig.index_ipns_id     = getResources().getString(R.string.ouinet_index_ipns_id);
+            ouinetConfig.injector_endpoint    = getResources().getString(R.string.ouinet_injector_endpoint);
+            ouinetConfig.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
+            ouinetConfig.injector_tls_cert    = getResources().getString(R.string.ouinet_injector_tls_cert);
+            ouinetConfig.tls_ca_cert_store_path = "file:///android_asset/ceno/cacert.pem";
 
-        ouinetConfig.index_bep44_pubkey   = getResources().getString(R.string.ouinet_index_bep44_pubkey);
-        ouinetConfig.index_ipns_id     = getResources().getString(R.string.ouinet_index_ipns_id);
-        ouinetConfig.injector_endpoint    = getResources().getString(R.string.ouinet_injector_endpoint);
-        ouinetConfig.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
-        ouinetConfig.injector_tls_cert    = getResources().getString(R.string.ouinet_injector_tls_cert);
-        ouinetConfig.tls_ca_cert_store_path = "file:///android_asset/ceno/cacert.pem";
+            if (ouinetConfig.injector_tls_cert != null) {
+                Log.i(LOGTAG, "Injector's TLS certificate:");
 
-        if (ouinetConfig.injector_tls_cert != null) {
-            Log.i(LOGTAG, "Injector's TLS certificate:");
+                String[] lines = ouinetConfig.injector_tls_cert.split("\n");
 
-            String[] lines = ouinetConfig.injector_tls_cert.split("\n");
-
-            for (String line : lines) {
-                Log.i(LOGTAG, "\"" + line + "\"");
+                for (String line : lines) {
+                    Log.i(LOGTAG, "\"" + line + "\"");
+                }
             }
 
-        mOuinet = new Ouinet(this, ouinetConfig);
-        mOuinet.start();
+            mOuinet = new Ouinet(this, ouinetConfig);
+            mOuinet.start();
+        }
         //------------------------------------------------------------
 
         // The clock starts...now. Better hurry!
@@ -1175,12 +1196,39 @@ public abstract class GeckoApp extends GeckoActivity
         // ourselves.
         mLayerView.setSaveFromParentEnabled(false);
 
+        String caCertPath = "/data/user/0/ie.equalit.ceno/files/ouinet/ssl-ca-cert.pem";
+        if (!USE_SERVICE) {
+            caCertPath = mOuinet.pathToCARootCert();
+        }
         final GeckoSession session = new GeckoSession(
                 new GeckoSessionSettings.Builder()
                         .chromeUri("chrome://browser/content/browser.xul")
-                        .ouinetClientRootCertificate(mOuinet.pathToCARootCert())
+                        .ouinetClientRootCertificate(caCertPath)
                         .build());
-
+//        if (USE_SERVICE) {
+//            ServiceConnection connection = new ServiceConnection() {
+//                @Override
+//                public void onServiceConnected(ComponentName className,
+//                                               IBinder service) {
+//                    Log.d(LOGTAG, "Ouinet binder service connected");
+//                    OuinetService.OuinetBinder binder = (OuinetService.OuinetBinder) service;
+//                    Log.d(LOGTAG, "Getting Ouinet service");
+//                    OuinetService ouinetService = binder.getService();
+//                    Log.d(LOGTAG, "Setting path to Ouinet CA root certificate");
+//                    session.getSettings().setPathToCARootCert(ouinetService.getPathToCARootCert());
+//                    Log.d(LOGTAG, "Unbinding from ouinet service");
+//                    unbindService(this);
+//                }
+//
+//                @Override
+//                public void onServiceDisconnected(ComponentName arg0) {
+//                    Log.d(LOGTAG, "Ouinet binder service disconnected");
+//                }
+//            };
+//            Log.d(LOGTAG, "Starting ouinet bound service");
+//            Intent ouinetServiceIntent = new Intent(this, OuinetService.class);
+//            bindService(ouinetServiceIntent, connection, Context.BIND_AUTO_CREATE);
+//        }
         session.setContentDelegate(this);
 
         // If the view already has a session, we need to ensure it is closed.
@@ -2251,7 +2299,7 @@ public abstract class GeckoApp extends GeckoActivity
     public void onDestroy() {
         Log.d(LOGTAG, "---------------- Destroying----------------------------");
         if (USE_SERVICE) {
-            sAlreadyLoaded = false;
+            Log.d(LOGTAG, " ---- Using service, not doing anything ---");
         } else {
             if (mOuinet != null) {
                 mOuinet.stop();

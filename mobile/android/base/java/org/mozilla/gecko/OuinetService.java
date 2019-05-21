@@ -12,6 +12,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.os.Binder;
 import android.os.IBinder;
 import android.support.v4.app.NotificationCompat;
 import android.util.Log;
@@ -23,6 +24,8 @@ public class OuinetService extends Service {
     private static final int NOTIFICATION_ID = 1;
     private static final String CHANNEL_ID = "ouinet-notification-channel";
 
+    // Binder given to clients
+    private final IBinder binder = new OuinetBinder();
     private Ouinet mOuinet;
 
     @Override
@@ -95,9 +98,20 @@ public class OuinetService extends Service {
                 .build();
     }
 
+    public class OuinetBinder extends Binder {
+        OuinetService getService() {
+            // Return this instance of OuinetService so clients can call public methods
+            return OuinetService.this;
+        }
+    }
+
     @Override
     public IBinder onBind(Intent intent) {
-        return null;
+        return binder;
+    }
+
+    public String getPathToCARootCert() {
+        return mOuinet.pathToCARootCert();
     }
 
     @Override
@@ -112,13 +126,12 @@ public class OuinetService extends Service {
 
     private Ouinet.Config getConfig() {
         Ouinet.Config config = new Ouinet.Config();
-
-        config.injector_ipfs_id = getString(R.string.ouinet_injector_ipfs_id);
-        config.injector_endpoint = getString(R.string.ouinet_injector_endpoint);
-        config.injector_credentials = getString(R.string.ouinet_injector_credentials);
-        config.injector_tls_cert = getString(R.string.ouinet_injector_tls_cert);
+        config.index_bep44_pubkey   = getResources().getString(R.string.ouinet_index_bep44_pubkey);
+        config.index_ipns_id     = getResources().getString(R.string.ouinet_index_ipns_id);
+        config.injector_endpoint    = getResources().getString(R.string.ouinet_injector_endpoint);
+        config.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
+        config.injector_tls_cert    = getResources().getString(R.string.ouinet_injector_tls_cert);
         config.tls_ca_cert_store_path = "file:///android_asset/ceno/cacert.pem";
-        config.injector_bt_pubkey = getString(R.string.ouinet_injector_bt_pubkey);
         return config;
     }
 }
