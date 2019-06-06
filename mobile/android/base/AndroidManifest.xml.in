@@ -527,22 +527,6 @@
             </intent-filter>
         </receiver>
 
-<!--
-        <service android:description="string resource"
-                 android:directBootAware=["true" | "false"]
-                 android:enabled=["true" | "false"]
-                 android:exported=["true" | "false"]
-                 android:icon="drawable resource"
-
-                 android:label="string resource"
-                 android:name="org.mozilla.gecko.OuinetService"
-                 android:permission="string"
-                 android:process="string" >
-
-                 android:process="ie.equalit.ceno.ouinetService">
-        </service>
--->
-
 #include ../services/manifests/FxAccountAndroidManifest_services.xml.in
 
         <service

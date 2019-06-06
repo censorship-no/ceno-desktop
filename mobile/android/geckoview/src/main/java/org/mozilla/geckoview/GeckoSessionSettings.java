@@ -598,6 +598,11 @@ public final class GeckoSessionSettings implements Parcelable {
         setString(CHROME_URI, value);
     }
 
+    private void setOuinetClientRootCertificate(final @NonNull String value) {
+        setString(OUINET_CLIENT_ROOT_CERTIFICATE, value);
+    }
+
+
     /**
      * Specify the user agent override string.
      * Set value to null to use the user agent specified by USER_AGENT_MODE.
@@ -605,14 +610,6 @@ public final class GeckoSessionSettings implements Parcelable {
      */
     public void setUserAgentOverride(final @Nullable String value) {
         setString(USER_AGENT_OVERRIDE, value);
-    }
-
-    /**
-     * Specify the path to the CA root certificate.
-     * @param value The path to the certificate.
-     */
-    public void setPathToCARootCert(final @Nullable String value) {
-        setString(OUINET_CLIENT_ROOT_CERTIFICATE, value);
     }
 
     private void setString(final Key<String> key, final String value) {
