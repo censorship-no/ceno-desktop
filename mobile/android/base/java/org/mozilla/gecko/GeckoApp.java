@@ -117,6 +117,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import ie.equalit.ouinet.Ouinet;
+import ie.equalit.ouinet.Config;
 
 import static org.mozilla.gecko.Tabs.INTENT_EXTRA_SESSION_UUID;
 import static org.mozilla.gecko.Tabs.INTENT_EXTRA_TAB_ID;
@@ -1057,31 +1058,30 @@ public abstract class GeckoApp extends GeckoActivity
         //------------------------------------------------------------
         // Ouinet
         //------------------------------------------------------------
+        String injectorCert = getResources().getString(R.string.ouinet_injector_tls_cert);
+
+        Config ouinetConfig = new Config.ConfigBuilder(this)
+                .setIndexBep44PubKey(getResources().getString(R.string.ouinet_index_bep44_pubkey))
+                .setIndexIpnsId(getResources().getString(R.string.ouinet_index_ipns_id))
+                .setInjectorEndpoint(getResources().getString(R.string.ouinet_injector_endpoint))
+                .setInjectorCredentials(getResources().getString(R.string.ouinet_injector_credentials))
+                .setInjectorTlsCert(injectorCert)
+                .setTlsCaCertStorePath("file:///android_asset/ceno/cacert.pem")
+                .build();
+
+        if (injectorCert != null) {
+            Log.i(LOGTAG, "Injector's TLS certificate:");
+            for (String line : injectorCert.split("\n")) {
+                Log.i(LOGTAG, "\"" + line + "\"");
+            }
+        }
+
         if (USE_SERVICE) {
             Log.d(LOGTAG, " --------- Starting ouinet service");
             Intent startOuinetIntent = new Intent(this, OuinetService.class);
             startService(startOuinetIntent);
         } else {
             Log.d(LOGTAG, " --------- Starting ouinet in activity");
-            Ouinet.Config ouinetConfig = new Ouinet.Config();
-
-            ouinetConfig.index_bep44_pubkey   = getResources().getString(R.string.ouinet_index_bep44_pubkey);
-            ouinetConfig.index_ipns_id     = getResources().getString(R.string.ouinet_index_ipns_id);
-            ouinetConfig.injector_endpoint    = getResources().getString(R.string.ouinet_injector_endpoint);
-            ouinetConfig.injector_credentials = getResources().getString(R.string.ouinet_injector_credentials);
-            ouinetConfig.injector_tls_cert    = getResources().getString(R.string.ouinet_injector_tls_cert);
-            ouinetConfig.tls_ca_cert_store_path = "file:///android_asset/ceno/cacert.pem";
-
-            if (ouinetConfig.injector_tls_cert != null) {
-                Log.i(LOGTAG, "Injector's TLS certificate:");
-
-                String[] lines = ouinetConfig.injector_tls_cert.split("\n");
-
-                for (String line : lines) {
-                    Log.i(LOGTAG, "\"" + line + "\"");
-                }
-            }
-
             mOuinet = new Ouinet(this, ouinetConfig);
             mOuinet.start();
         }
@@ -1196,14 +1196,10 @@ public abstract class GeckoApp extends GeckoActivity
         // ourselves.
         mLayerView.setSaveFromParentEnabled(false);
 
-        String caCertPath = "/data/user/0/ie.equalit.ceno/files/ouinet/ssl-ca-cert.pem";
-        if (!USE_SERVICE) {
-            caCertPath = mOuinet.pathToCARootCert();
-        }
         final GeckoSession session = new GeckoSession(
                 new GeckoSessionSettings.Builder()
                         .chromeUri("chrome://browser/content/browser.xul")
-                        .ouinetClientRootCertificate(caCertPath)
+                        .ouinetClientRootCertificate(ouinetConfig.getCaRootCertPath())
                         .build());
 //        if (USE_SERVICE) {
 //            ServiceConnection connection = new ServiceConnection() {
