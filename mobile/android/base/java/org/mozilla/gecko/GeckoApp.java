@@ -1078,8 +1078,7 @@ public abstract class GeckoApp extends GeckoActivity
 
         if (USE_SERVICE) {
             Log.d(LOGTAG, " --------- Starting ouinet service");
-            Intent startOuinetIntent = new Intent(this, OuinetService.class);
-            startService(startOuinetIntent);
+            OuinetService.startOuinetService(this, ouinetConfig);
         } else {
             Log.d(LOGTAG, " --------- Starting ouinet in activity");
             mOuinet = new Ouinet(this, ouinetConfig);
@@ -1201,30 +1200,6 @@ public abstract class GeckoApp extends GeckoActivity
                         .chromeUri("chrome://browser/content/browser.xul")
                         .ouinetClientRootCertificate(ouinetConfig.getCaRootCertPath())
                         .build());
-//        if (USE_SERVICE) {
-//            ServiceConnection connection = new ServiceConnection() {
-//                @Override
-//                public void onServiceConnected(ComponentName className,
-//                                               IBinder service) {
-//                    Log.d(LOGTAG, "Ouinet binder service connected");
-//                    OuinetService.OuinetBinder binder = (OuinetService.OuinetBinder) service;
-//                    Log.d(LOGTAG, "Getting Ouinet service");
-//                    OuinetService ouinetService = binder.getService();
-//                    Log.d(LOGTAG, "Setting path to Ouinet CA root certificate");
-//                    session.getSettings().setPathToCARootCert(ouinetService.getPathToCARootCert());
-//                    Log.d(LOGTAG, "Unbinding from ouinet service");
-//                    unbindService(this);
-//                }
-//
-//                @Override
-//                public void onServiceDisconnected(ComponentName arg0) {
-//                    Log.d(LOGTAG, "Ouinet binder service disconnected");
-//                }
-//            };
-//            Log.d(LOGTAG, "Starting ouinet bound service");
-//            Intent ouinetServiceIntent = new Intent(this, OuinetService.class);
-//            bindService(ouinetServiceIntent, connection, Context.BIND_AUTO_CREATE);
-//        }
         session.setContentDelegate(this);
 
         // If the view already has a session, we need to ensure it is closed.
