@@ -28,26 +28,8 @@ public class OuinetService extends Service {
     private static final String CONFIG_EXTRA = "config";
     private static final int NOTIFICATION_ID = 1;
     private static final String CHANNEL_ID = "ouinet-notification-channel";
-    private static final String TLS_CA_CERT_PATH = "file:///android_asset/ceno/cacert.pem";
 
     private Ouinet mOuinet;
-
-//    public static Config getConfig(Context context) {
-//        Resources res = context.getResources();
-//        Config config = new Config.ConfigBuilder(context)
-//                .setIndexBep44PubKey(res.getString(R.string.ouinet_index_bep44_pubkey))
-//                .setIndexIpnsId(res.getString(R.string.ouinet_index_ipns_id))
-//                .setInjectorEndpoint(res.getString(R.string.ouinet_injector_endpoint))
-//                .setInjectorCredentials(res.getString(R.string.ouinet_injector_credentials))
-//                .setInjectorTlsCert(res.getString(R.string.ouinet_injector_tls_cert))
-//                .setTlsCaCertStorePath(TLS_CA_CERT_PATH)
-//                .build();
-//        return config;
-//    }
-
-//    public static String getCaCertPath(Config config) {
-//        return Ouinet.getCARootCert(config);
-//    }
 
     public static void startOuinetService(Context context, Config config) {
         Intent intent = new Intent(context, OuinetService.class);
