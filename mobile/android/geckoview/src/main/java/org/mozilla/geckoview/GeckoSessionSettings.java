@@ -252,7 +252,7 @@ public final class GeckoSessionSettings implements Parcelable {
      * Read-only once session is open.
      */
     public static final Key<String> OUINET_CLIENT_ROOT_CERTIFICATE =
-        new Key<String>("ouinetClientRootCert", /* initOnly */ false, /* values */ null);
+        new Key<String>("ouinetClientRootCert", /* initOnly */ true, /* values */ null);
     /**
      * Key to set the window screen ID, or 0 to use default ID.
      * Read-only once session is open.
@@ -597,11 +597,6 @@ public final class GeckoSessionSettings implements Parcelable {
     private void setChromeUri(final @NonNull String value) {
         setString(CHROME_URI, value);
     }
-
-    private void setOuinetClientRootCertificate(final @NonNull String value) {
-        setString(OUINET_CLIENT_ROOT_CERTIFICATE, value);
-    }
-
 
     /**
      * Specify the user agent override string.
