@@ -99,6 +99,7 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.mozilla.mozstumbler.service.mainthread.SafeReceiver;
 
 import java.io.File;
 import java.util.ArrayList;

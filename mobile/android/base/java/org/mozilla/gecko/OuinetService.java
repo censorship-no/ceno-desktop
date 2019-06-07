@@ -94,8 +94,8 @@ public class OuinetService extends Service {
             // Create a notification channel for Ouinet notifications. Recreating a notification
             // that already exists has no effect.
             NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
-                    getString(R.string.ouinet_notification_channel_name),
-                    NotificationManager.IMPORTANCE_DEFAULT);
+                    getString(R.string.ceno_notification_channel_name),
+                    NotificationManager.IMPORTANCE_LOW);
             channel_id = channel.getId();
             NotificationManager notificationManager = getSystemService(NotificationManager.class);
             notificationManager.createNotificationChannel(channel);
@@ -103,8 +103,8 @@ public class OuinetService extends Service {
 
         return new NotificationCompat.Builder(this, channel_id)
                 .setSmallIcon(R.drawable.ic_status_logo)
-                .setContentTitle(getString(R.string.ouinet_notification_title))
-                .setContentText(getString(R.string.ouinet_notification_description))
+                .setContentTitle(getString(R.string.ceno_notification_title))
+                .setContentText(getString(R.string.ceno_notification_description))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true) // Close on tap.

@@ -932,7 +932,11 @@ web sites through the HTML Notifications API. -->
 <!ENTITY no_wifi_dialog_title "CENO Browser">
 <!ENTITY no_wifi_dialog_description "The CENO browser is designed to work on wifi as it uses large amounts of data. Please re-open the app when you are connected to WiFi.">
 <!ENTITY no_wifi_close_button "Close">
+
 <!ENTITY wifi_disconnected_dialog_title "CENO Browser Warning">
 <!ENTITY wifi_disconnected_dialog_description "The CENO browser is designed to work on wifi as it uses large amounts of data. It is recommended that you close the app and re-open it when you are on wifi.">
 <!ENTITY wifi_disconnected_dismiss_button "Dismiss">
 
+<!ENTITY ceno_notification_title "CENO Browser service">
+<!ENTITY ceno_notification_description "Tap to stop">
+<!ENTITY ceno_notification_channel_name "CENO service">
