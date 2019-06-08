@@ -102,7 +102,7 @@ android {
 
         def isDebuggable = (!mozconfig.substs.MOZILLA_OFFICIAL) || (mozconfig.substs.NIGHTLY_BUILD && mozconfig.substs.MOZ_DEBUG)
         debug {
-            debuggable isDebuggable 
+            debuggable isDebuggable
             multiDexKeepProguard file("${topsrcdir}/mobile/android/config/proguard/debug-robocop-keeps.cfg")
         }
         release {
@@ -226,7 +226,7 @@ android {
 
 repositories {
     flatDir {
-        def ouinetArchiveDir = "${topsrcdir}/../build.ouinet/build-android/builddir/ouinet/build-android/outputs/aar"
+        def ouinetArchiveDir = "${topsrcdir}/../build.ouinet/build-android-${System.env.ABI}/builddir/ouinet/build-android/outputs/aar"
         dirs "${ouinetArchiveDir}"
     }
 }
@@ -455,7 +455,7 @@ android.applicationVariants.all { variant ->
         effort = "max"         // Using more memory and time to find issues is acceptable in automation
         reportLevel = "high"   // For now we only care about high priority bugs. After we have fixed
                                // the issues with medium/low priority we can lower the report level here.
-        
+
         classes = files("$project.buildDir/intermediates/classes")
         source = variant.javaCompile.source
         classpath = variant.javaCompile.classpath
