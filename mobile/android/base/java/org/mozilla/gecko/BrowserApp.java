@@ -322,7 +322,7 @@ public class BrowserApp extends GeckoApp
             new ScreenshotDelegate(),
             new BookmarkStateChangeDelegate(),
             new ReaderViewBookmarkPromotion(),
-            new PostUpdateHandler(),
+            //new PostUpdateHandler(),
             mTelemetryCorePingDelegate,
             new OfflineTabStatusDelegate(),
             new AdjustBrowserAppDelegate(mTelemetryCorePingDelegate)
@@ -617,6 +617,10 @@ public class BrowserApp extends GeckoApp
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        Log.d(LOGTAG, "Starting PostUpdateHandler");
+        // This has to happen before the AddonManager starts,https://redmine.equalit.ie/issues/12597
+        new PostUpdateHandler().onStart(this);
+
         final Context appContext = getApplicationContext();
 
         showSplashScreen = true;
@@ -1184,7 +1188,6 @@ public class BrowserApp extends GeckoApp
         if (mIsAbortingAppLaunch) {
             return;
         }
-
         // Queue this work so that the first launch of the activity doesn't
         // trigger profile init too early.
         ThreadUtils.postToBackgroundThread(new Runnable() {

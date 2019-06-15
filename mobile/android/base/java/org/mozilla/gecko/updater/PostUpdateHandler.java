@@ -29,7 +29,7 @@ import java.io.OutputStream;
  */
 public class PostUpdateHandler extends BrowserAppDelegateWithReference {
     private static final String LOGTAG = "GeckoPostUpdateHandler";
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
 
     @Override
     public void onStart(final BrowserApp browserApp) {
