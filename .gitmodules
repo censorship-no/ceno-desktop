@@ -1,0 +1,3 @@
+[submodule "mobile/android/extensions/ceno"]
+	path = mobile/android/extensions/ceno
+	url = https://github.com/censorship-no/ceno-ext-settings
