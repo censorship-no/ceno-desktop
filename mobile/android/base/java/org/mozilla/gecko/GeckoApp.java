@@ -1409,26 +1409,25 @@ public abstract class GeckoApp extends GeckoActivity
         }
 
         IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction(WifiManager.SUPPLICANT_CONNECTION_CHANGE_ACTION);
+        intentFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
         registerReceiver(new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                final String action = intent.getAction();
-                if (!WifiManager.SUPPLICANT_CONNECTION_CHANGE_ACTION.equals(action)) {
+                NetworkInfo info =
+                        intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
+                if (info == null) {
                     return;
                 }
-                if (intent.getBooleanExtra(WifiManager.EXTRA_SUPPLICANT_CONNECTED, false)) {
-                    // Wifi connected
-                    return;
+                if (info.getType() == ConnectivityManager.TYPE_WIFI && !info.isConnected()) {
+                    // Wifi disconnected
+                    Log.d(LOGTAG, "Wifi connection lost, showing dialog");
+                    new AlertDialog.Builder(GeckoApp.this)
+                            .setTitle(R.string.wifi_disconnected_dialog_title)
+                            .setMessage(R.string.wifi_disconnected_dialog_description)
+                            .setNegativeButton(R.string.wifi_disconnected_dismiss_button, doNothing)
+                            .setPositiveButton(R.string.no_wifi_close_button, closeApp)
+                            .show();
                 }
-                // Wifi disconnected
-                Log.d(LOGTAG, "Wifi connection lost, showing dialog");
-                new AlertDialog.Builder(GeckoApp.this)
-                        .setTitle(R.string.wifi_disconnected_dialog_title)
-                        .setMessage(R.string.wifi_disconnected_dialog_description)
-                        .setNegativeButton(R.string.wifi_disconnected_dismiss_button, doNothing)
-                        .setPositiveButton(R.string.no_wifi_close_button, closeApp)
-                        .show();
             }
         }, intentFilter);
     }
