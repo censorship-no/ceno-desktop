@@ -108,7 +108,7 @@ option(env='MOZ_ANDROID_MOZILLA_ONLINE',
 set_config('MOZ_ANDROID_MOZILLA_ONLINE',
            depends_if('MOZ_ANDROID_MOZILLA_ONLINE')(lambda _: True))
 
-imply_option('MOZ_SERVICES_HEALTHREPORT', True)
+imply_option('MOZ_SERVICES_HEALTHREPORT', False)
 imply_option('MOZ_ANDROID_HISTORY', True)
 imply_option('--enable-small-chunk-size', True)
 
