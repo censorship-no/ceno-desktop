@@ -10,6 +10,7 @@
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Logging.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/PresShell.h"
 
 #include "nsDocLoader.h"
 #include "nsNetUtil.h"
@@ -402,12 +403,13 @@ nsDocLoader::OnStartRequest(nsIRequest* request) {
   //
   if (mIsLoadingDocument) {
     if (loadFlags & nsIChannel::LOAD_DOCUMENT_URI) {
-      // If we have a document request channel, and this is not a redirect, we
-      // must abort it and replace it with the new one.
-      if (!(loadFlags & nsIChannel::LOAD_REPLACE) && mDocumentRequest) {
-        mDocumentRequest->Cancel(NS_ERROR_ABORT);
-        mDocumentRequest = nullptr;
-      }
+      //
+      // Make sure that the document channel is null at this point...
+      // (unless its been redirected)
+      //
+      NS_ASSERTION(
+          (loadFlags & nsIChannel::LOAD_REPLACE) || !(mDocumentRequest.get()),
+          "Overwriting an existing document channel!");
 
       // This request is associated with the entire document...
       mDocumentRequest = request;
@@ -758,12 +760,12 @@ void nsDocLoader::DocLoaderIsEmpty(bool aFlushLayout) {
 
               // Now unsuppress painting on the presshell, if we
               // haven't done that yet.
-              nsCOMPtr<nsIPresShell> shell = doc->GetShell();
-              if (shell && !shell->IsDestroying()) {
-                shell->UnsuppressPainting();
+              RefPtr<PresShell> presShell = doc->GetPresShell();
+              if (presShell && !presShell->IsDestroying()) {
+                presShell->UnsuppressPainting();
 
-                if (!shell->IsDestroying()) {
-                  shell->LoadComplete();
+                if (!presShell->IsDestroying()) {
+                  presShell->LoadComplete();
                 }
               }
             }
@@ -1419,11 +1421,11 @@ NS_IMETHODIMP nsDocLoader::AsyncOnChannelRedirect(
     }
 
     nsCOMPtr<nsIURI> newURI;
-    nsCOMPtr<nsILoadInfo> info;
+    nsCOMPtr<nsILoadInfo> info = nullptr;
     if (delegate) {
       // No point in getting the URI if we don't have a LoadURIDelegate.
       aNewChannel->GetURI(getter_AddRefs(newURI));
-      aNewChannel->GetLoadInfo(getter_AddRefs(info));
+      info = aNewChannel->LoadInfo();
     }
 
     RefPtr<Document> loadingDoc;

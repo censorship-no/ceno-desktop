@@ -20,20 +20,6 @@ async function withFakeClientID(uuid, f) {
   }
 }
 
-async function withFakeChannel(channel, f) {
-  const module = ChromeUtils.import("resource://services-common/uptake-telemetry.js", null);
-  const oldPolicy = module.Policy;
-  module.Policy = {
-    ...oldPolicy,
-    getChannel: () => channel,
-  };
-  try {
-    return await f();
-  } finally {
-    module.Policy = oldPolicy;
-  }
-}
-
 add_task(async function test_unknown_status_is_not_reported() {
   const source = "update-source";
   const startHistogram = getUptakeTelemetrySnapshot(source);
@@ -49,7 +35,9 @@ add_task(async function test_age_is_converted_to_string_and_reported() {
   const status = UptakeTelemetry.STATUS.SUCCESS;
   const age = 42;
 
-  await UptakeTelemetry.report(COMPONENT, status, { source: "s", age });
+  await withFakeChannel("nightly", async () => { // no sampling.
+    await UptakeTelemetry.report(COMPONENT, status, { source: "s", age });
+  });
 
   TelemetryTestUtils.assertEvents(
     [["uptake.remotecontent.result", "uptake", COMPONENT, status, { source: "s", age: `${age}` }]]);

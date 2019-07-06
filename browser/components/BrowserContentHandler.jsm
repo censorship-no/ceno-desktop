@@ -304,11 +304,6 @@ function openBrowserWindow(cmdLine, triggeringPrincipal, urlOrUrlList, postData 
 }
 
 function openPreferences(cmdLine, extraArgs) {
-  if (extraArgs && extraArgs.origin) {
-    Services.telemetry.getHistogramById("FX_PREFERENCES_OPENED_VIA").add(extraArgs.origin);
-  } else {
-    Services.telemetry.getHistogramById("FX_PREFERENCES_OPENED_VIA").add("other");
-  }
   openBrowserWindow(cmdLine, gSystemPrincipal, "about:preferences");
 }
 
@@ -386,7 +381,7 @@ nsBrowserContentHandler.prototype = {
       // Handle old preference dialog URLs.
       if (chromeParam == "chrome://browser/content/pref/pref.xul" ||
           chromeParam == "chrome://browser/content/preferences/preferences.xul") {
-        openPreferences(cmdLine, {origin: "commandLineLegacy"});
+        openPreferences(cmdLine);
         cmdLine.preventDefault = true;
       } else {
         try {
@@ -418,7 +413,7 @@ nsBrowserContentHandler.prototype = {
       }
     }
     if (cmdLine.handleFlag("preferences", false)) {
-      openPreferences(cmdLine, {origin: "commandLineLegacy"});
+      openPreferences(cmdLine);
       cmdLine.preventDefault = true;
     }
     if (cmdLine.handleFlag("silent", false))
@@ -558,6 +553,7 @@ nsBrowserContentHandler.prototype = {
             LaterRun.enabled = true;
             break;
           case OVERRIDE_NEW_MSTONE:
+          case OVERRIDE_NEW_BUILD_ID:
             // Check whether we will restore a session. If we will, we assume
             // that this is an "update" session. This does not take crashes
             // into account because that requires waiting for the session file
@@ -573,12 +569,6 @@ nsBrowserContentHandler.prototype = {
             }
 
             overridePage = overridePage.replace("%OLD_VERSION%", old_mstone);
-            break;
-          case OVERRIDE_NEW_BUILD_ID:
-            if (prefb.prefHasUserValue("app.update.postupdate")) {
-              // Send the update ping to signal that the update was successful.
-              UpdatePing.handleUpdateSuccess(old_mstone, old_buildId);
-            }
             break;
         }
       }

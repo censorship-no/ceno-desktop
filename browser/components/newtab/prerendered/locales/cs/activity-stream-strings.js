@@ -40,9 +40,7 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Ok, rozumím",
   "prefs_home_header": "Obsah domovské stránky Firefoxu",
   "prefs_home_description": "Vyberte obsah, který chcete mít na výchozí domovské stránce Firefoxu.",
-  "prefs_content_discovery_header": "Domovská stránka Firefoxu",
   "prefs_content_discovery_description": "Doporučování obsahu na domovské stránce obsahu vám nabídne kvalitní a relevantní články z celého internetu.",
-  "prefs_content_discovery_button": "Vypnout doporučování obsahu",
   "prefs_section_rows_option": "{num} řádek;{num} řádky;{num} řádků",
   "prefs_search_header": "Vyhledávání na webu",
   "prefs_topsites_description": "Nejnavštěvovanější stránky",
@@ -53,7 +51,7 @@ window.gActivityStreamStrings = {
   "prefs_highlights_options_visited_label": "Navštívené stránky",
   "prefs_highlights_options_download_label": "Nedávná stahování",
   "prefs_highlights_options_pocket_label": "Stránky uložené do služby Pocket",
-  "prefs_snippets_description": "Informace od Mozilly a o Firefoxu",
+  "prefs_snippets_description": "Aktuální informace od Mozilly a Firefoxu",
   "settings_pane_button_label": "Přizpůsobení stránky nového panelu",
   "settings_pane_topsites_header": "Top stránky",
   "settings_pane_highlights_header": "Vybrané",
@@ -97,7 +95,7 @@ window.gActivityStreamStrings = {
   "section_menu_action_privacy_notice": "Zásady ochrany osobních údajů",
   "firstrun_title": "Vezměte si Firefox s sebou",
   "firstrun_content": "Mějte své záložky, historii i uložená hesla s sebou na všech svých zařízeních.",
-  "firstrun_learn_more_link": "Zjistěte více o účtech Firefoxu",
+  "firstrun_learn_more_link": "Zjistit více o účtech Firefoxu",
   "firstrun_form_header": "Zadejte svoji e-mailovou adresu",
   "firstrun_form_sub_header": "a používejte službu Firefox Sync.",
   "firstrun_email_input_placeholder": "E-mail",
@@ -107,8 +105,5 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "Zásadami ochrany osobních údajů",
   "firstrun_continue_to_login": "Pokračovat",
   "firstrun_skip_login": "Přeskočit tento krok",
-  "context_menu_title": "Otevře nabídku",
-  "manual_migration_explanation2": "Vyzkoušejte Firefox se záložkami, historií a hesly z jiného vašeho prohlížeče.",
-  "manual_migration_cancel_button": "Ne, děkuji",
-  "manual_migration_import_button": "Importovat nyní"
+  "context_menu_title": "Otevře nabídku"
 };

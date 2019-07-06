@@ -40,9 +40,7 @@ window.gActivityStreamStrings = {
   "section_disclaimer_topstories_buttontext": "Ok, am înțeles",
   "prefs_home_header": "Conținutul paginii de start Firefox",
   "prefs_home_description": "Alege ce conținut vrei pe ecranul de start Firefox.",
-  "prefs_content_discovery_header": "Pagina de start Firefox",
   "prefs_content_discovery_description": "Descoperirea de conținut din pagina de start Firefox îți permite să descoperi articole relevante de calitate înaltă de pe web.",
-  "prefs_content_discovery_button": "Dezactivează descoperirea de conținut",
   "prefs_section_rows_option": "{num} rând;{num} rânduri;{num} de rânduri",
   "prefs_search_header": "Căutare web",
   "prefs_topsites_description": "Site-urile pe care le vizitezi cel mai des",
@@ -107,8 +105,5 @@ window.gActivityStreamStrings = {
   "firstrun_privacy_notice": "Politica de confidențialitate",
   "firstrun_continue_to_login": "Continuă",
   "firstrun_skip_login": "Omite acest pas",
-  "context_menu_title": "Deschide meniul",
-  "manual_migration_explanation2": "Încearcă Firefox cu marcajele, istoricul și parolele din alt browser.",
-  "manual_migration_cancel_button": "Nu, mulțumesc",
-  "manual_migration_import_button": "Importă acum"
+  "context_menu_title": "Deschide meniul"
 };

@@ -78,9 +78,9 @@ class OrderedListBox {
   setButtonState() {
     let {upButton, downButton, removeButton} = this;
     let {selectedIndex, itemCount} = this.richlistbox;
-    upButton.disabled = selectedIndex == 0;
+    upButton.disabled = selectedIndex <= 0;
     downButton.disabled = selectedIndex == itemCount - 1;
-    removeButton.disabled = itemCount == 1 || !this.selectedItem.canRemove;
+    removeButton.disabled = itemCount <= 1 || !this.selectedItem.canRemove;
   }
 
   moveUp() {
@@ -250,8 +250,9 @@ class SortedItemSelectList {
 
   createItem({label, value, className, disabled}) {
     let item = document.createElement("menuitem");
-    item.value = value;
     item.setAttribute("label", label);
+    if (value)
+      item.value = value;
     if (className)
       item.classList.add(className);
     if (disabled)

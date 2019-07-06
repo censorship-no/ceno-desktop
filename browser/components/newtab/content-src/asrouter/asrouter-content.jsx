@@ -4,6 +4,7 @@ import {OUTGOING_MESSAGE_NAME as AS_GENERAL_OUTGOING_MESSAGE_NAME} from "content
 import {generateMessages} from "./rich-text-strings";
 import {ImpressionsWrapper} from "./components/ImpressionsWrapper/ImpressionsWrapper";
 import {LocalizationProvider} from "fluent-react";
+import {NEWTAB_DARK_THEME} from "content-src/lib/constants";
 import {OnboardingMessage} from "./templates/OnboardingMessage/OnboardingMessage";
 import React from "react";
 import ReactDOM from "react-dom";
@@ -71,11 +72,15 @@ export const ASRouterUtils = {
         return {
           url: endpoint.href,
           snippetId: params.get("snippetId"),
+          theme: this.getPreviewTheme(),
         };
       } catch (e) {}
     }
 
     return null;
+  },
+  getPreviewTheme() {
+    return new URLSearchParams(global.location.href.slice(global.location.href.indexOf("theme"))).get("theme");
   },
 };
 
@@ -103,6 +108,7 @@ export class ASRouterUISurface extends React.PureComponent {
     if (!message && !extraProps.message_id) {
       throw new Error(`You must provide a message_id for bundled messages`);
     }
+    // snippets_user_event, onboarding_user_event
     const eventType = `${message.provider || bundle.provider}_user_event`;
     ASRouterUtils.sendTelemetry({
       message_id: message.id || extraProps.message_id,
@@ -155,11 +161,28 @@ export class ASRouterUISurface extends React.PureComponent {
   }
 
   dismissBundle(bundle) {
-    return () => ASRouterUtils.dismissBundle(bundle);
+    return () => {
+      ASRouterUtils.dismissBundle(bundle);
+      this.sendUserActionTelemetry({
+        event: "DISMISS",
+        id: "onboarding-cards",
+        message_id: bundle.map(m => m.id).join(","),
+        // Passing the action because some bundles (Trailhead) don't have a provider set
+        action: "onboarding_user_event",
+      });
+    };
   }
 
   triggerOnboarding() {
     ASRouterUtils.sendMessage({type: "TRIGGER", data: {trigger: {id: "showOnboarding"}}});
+  }
+
+  clearMessage(id) {
+    if (id === this.state.message.id) {
+      this.setState({message: {}});
+      // Remove any styles related to the RTAMO message
+      document.body.classList.remove("welcome", "hide-main", "amo");
+    }
   }
 
   onMessageFromParent({data: action}) {
@@ -171,11 +194,7 @@ export class ASRouterUISurface extends React.PureComponent {
         this.setState({bundle: action.data});
         break;
       case "CLEAR_MESSAGE":
-        if (action.data.id === this.state.message.id) {
-          this.setState({message: {}});
-          // Remove any styles related to the RTAMO message
-          document.body.classList.remove("welcome", "hide-main", "amo");
-        }
+        this.clearMessage(action.data.id);
         break;
       case "CLEAR_PROVIDER":
         if (action.data.id === this.state.message.provider) {
@@ -189,6 +208,10 @@ export class ASRouterUISurface extends React.PureComponent {
         break;
       case "CLEAR_ALL":
         this.setState({message: {}, bundle: {}});
+        break;
+      case "AS_ROUTER_TARGETING_UPDATE":
+        action.data.forEach(id => this.clearMessage(id));
+        break;
     }
   }
 
@@ -199,6 +222,9 @@ export class ASRouterUISurface extends React.PureComponent {
     }
 
     const endpoint = ASRouterUtils.getPreviewEndpoint();
+    if (endpoint && endpoint.theme === "dark") {
+      global.window.dispatchEvent(new CustomEvent("LightweightTheme:Set", {detail: {data: NEWTAB_DARK_THEME}}));
+    }
     ASRouterUtils.addListener(this.onMessageFromParent);
 
     // If we are loading about:welcome we want to trigger the onboarding messages
@@ -251,7 +277,7 @@ export class ASRouterUISurface extends React.PureComponent {
           {...this.state.bundle}
           UISurface="NEWTAB_OVERLAY"
           onAction={ASRouterUtils.executeAction}
-          onDoneButton={this.dismissBundle(this.state.bundle.bundle)}
+          onDismissBundle={this.dismissBundle(this.state.bundle.bundle)}
           sendUserActionTelemetry={this.sendUserActionTelemetry} />);
     }
     return null;
@@ -275,9 +301,11 @@ export class ASRouterUISurface extends React.PureComponent {
         <LocalizationProvider messages={generateMessages({"amo_html": message.content.text})}>
           <ReturnToAMO
             {...message}
+            UISurface="NEWTAB_OVERLAY"
             onReady={this.triggerOnboarding}
             onBlock={this.onDismissById(message.id)}
-            onAction={ASRouterUtils.executeAction} />
+            onAction={ASRouterUtils.executeAction}
+            sendUserActionTelemetry={this.sendUserActionTelemetry} />
         </LocalizationProvider>
       );
     }
@@ -291,7 +319,7 @@ export class ASRouterUISurface extends React.PureComponent {
         document={this.props.document}
         message={message}
         onAction={ASRouterUtils.executeAction}
-        onDoneButton={this.dismissBundle(this.state.bundle.bundle)}
+        onDismissBundle={this.dismissBundle(this.state.message.bundle)}
         sendUserActionTelemetry={this.sendUserActionTelemetry}
         dispatch={this.props.dispatch}
         fxaEndpoint={this.props.fxaEndpoint} />);
@@ -324,13 +352,13 @@ export class ASRouterUISurface extends React.PureComponent {
       // For onboarding, regular snippets etc. we should render
       // everything in our footer container.
       ReactDOM.createPortal(
-        <React.Fragment>
+        <>
           {this.renderPreviewBanner()}
           {this.renderTrailhead()}
           {this.renderFirstRunOverlay()}
           {this.renderOnboarding()}
           {this.renderSnippets()}
-        </React.Fragment>,
+        </>,
         shouldRenderInHeader ? this.headerPortal : this.footerPortal
       );
   }
