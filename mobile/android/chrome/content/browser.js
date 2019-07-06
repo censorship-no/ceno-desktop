@@ -333,7 +333,11 @@ function injectOuinetClientCARootCertificate() {
     if (!file) return;
 
     // TODO: This prompts the user to accept the certificate, try to disable that.
-    certdb.importCertsFromFile(file, Ci.nsIX509Cert.CA_CERT);
+    try {
+      certdb.importCertsFromFile(file, Ci.nsIX509Cert.CA_CERT);
+    } catch (err) {
+      console.log("Error importing cert from file: " + err);
+    }
 }
 
 var BrowserApp = {
