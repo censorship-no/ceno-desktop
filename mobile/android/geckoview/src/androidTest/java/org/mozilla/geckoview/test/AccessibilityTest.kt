@@ -517,7 +517,7 @@ class AccessibilityTest : BaseSessionTest() {
                 assertThat("Accessibility focus on first heading", node.text as String, startsWith("Fried cheese"))
                 if (Build.VERSION.SDK_INT >= 19) {
                     assertThat("First heading is level 1",
-                            node.extras.getCharSequence("AccessibilityNodeInfo.roleDescription").toString(),
+                            node.extras.getCharSequence("AccessibilityNodeInfo.roleDescription")!!.toString(),
                             equalTo("heading level 1"))
                 }
             }
@@ -532,7 +532,7 @@ class AccessibilityTest : BaseSessionTest() {
                 assertThat("Accessibility focus on second heading", node.text as String, startsWith("Popcorn shrimp"))
                 if (Build.VERSION.SDK_INT >= 19) {
                     assertThat("Second heading is level 2",
-                            node.extras.getCharSequence("AccessibilityNodeInfo.roleDescription").toString(),
+                            node.extras.getCharSequence("AccessibilityNodeInfo.roleDescription")!!.toString(),
                             equalTo("heading level 2"))
                 }
             }
@@ -547,7 +547,7 @@ class AccessibilityTest : BaseSessionTest() {
                 assertThat("Accessibility focus on second heading", node.text as String, startsWith("Chicken fingers"))
                 if (Build.VERSION.SDK_INT >= 19) {
                     assertThat("Third heading is level 3",
-                            node.extras.getCharSequence("AccessibilityNodeInfo.roleDescription").toString(),
+                            node.extras.getCharSequence("AccessibilityNodeInfo.roleDescription")!!.toString(),
                             equalTo("heading level 3"))
                 }
             }
