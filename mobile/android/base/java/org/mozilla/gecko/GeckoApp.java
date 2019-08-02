@@ -1019,6 +1019,7 @@ public abstract class GeckoApp extends GeckoActivity
                 .setInjectorCredentials(getResources().getString(R.string.ouinet_injector_credentials))
                 .setInjectorTlsCert(injectorCert)
                 .setTlsCaCertStorePath("file:///android_asset/ceno/cacert.pem")
+                .setCacheType(getResources().getString(R.string.ouinet_cache_type))
                 .build();
 
         if (injectorCert != null) {

@@ -9,4 +9,5 @@
     <string name="ouinet_injector_endpoint">5.196.75.194:7077</string>
     <string name="ouinet_injector_credentials">ouinet-test:Phohdaiti6Limahque4foi1aivaF6oca</string>
     <string name="ouinet_injector_tls_cert"></string>
+    <string name="ouinet_cache_type">bep5-http</string>
 </resources>
