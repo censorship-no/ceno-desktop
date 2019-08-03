@@ -243,7 +243,7 @@ repositories {
 }
 
 dependencies {
-    implementation(name: "ouinet-debug", ext: 'aar')
+    implementation(name: "${System.env.OUINET_LIBRARY}", ext: 'aar')
     implementation "com.android.support:support-v4:$support_library_version"
     implementation "com.android.support:appcompat-v7:$support_library_version"
     implementation "com.android.support:cardview-v7:$support_library_version"
