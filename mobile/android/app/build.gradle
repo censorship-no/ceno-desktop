@@ -16,10 +16,6 @@ if (mozconfig.substs.MOZILLA_OFFICIAL) {
     }
 }
 
-String getProp(String propName, String defValue) {
-    (project.hasProperty(propName) && project.getProperty(propName)) ? project.getProperty(propName) : defValue
-}
-
 android {
     compileSdkVersion project.ext.compileSdkVersion
 
@@ -62,21 +58,6 @@ android {
         abortOnError true
     }
 
-    signingConfigs {
-       debug {
-           storeFile file("${System.env.HOME}/.android/debug.keystore")
-           keyAlias 'androiddebugkey'
-           keyPassword 'android'
-           storePassword 'android'
-       }
-       release {
-           storeFile file(getProp("RELEASE_STORE_FILE"  , "unused"))
-           storePassword getProp("RELEASE_STORE_PASSWORD", "")
-           keyAlias getProp("RELEASE_KEY_ALIAS", "")
-           keyPassword getProp("RELEASE_KEY_PASSWORD", "")
-       }
-    }
-
     buildTypes {
         // We have the following difficult situation.  Minification (Proguard) is only available per
         // Android-Gradle `buildType`.  Instrumentation (Robocop) is only available for exactly one
@@ -113,7 +94,6 @@ android {
         }
         release {
             debuggable isDebuggable
-            signingConfig signingConfigs.release
         }
     }
 
