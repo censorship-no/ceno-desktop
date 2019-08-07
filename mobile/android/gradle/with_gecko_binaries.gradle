@@ -9,7 +9,7 @@ evaluationDependsOn(':annotations')
 ext.configureVariantWithGeckoBinaries = { variant ->
     // :app needs the full Fennec omni.ja, whereas other projects need the
     // GeckoView-specific omni.ja.
-    def omnijarDir = { "${topobjdir}/dist/${it}" }("app".equals(project.name) ? "fennec" : "geckoview")
+    def omnijarDir = { "${topobjdir}/dist/${it}" }("app".equals(project.name) ? "ceno" : "geckoview")
     // All projects take the same Gecko libraries, which (for historical
     // reasons) are in "fennec".
     def distDir = "${topobjdir}/dist/fennec"
