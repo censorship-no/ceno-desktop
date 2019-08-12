@@ -996,7 +996,7 @@ pref("security.certerrors.recordEventTelemetry", true);
 pref("security.certerrors.permanentOverride", true);
 pref("security.certerrors.mitm.priming.enabled", true);
 pref("security.certerrors.mitm.priming.endpoint", "https://mitmdetection.services.mozilla.com/");
-pref("security.certerrors.mitm.auto_enable_enterprise_roots", true);
+pref("security.certerrors.mitm.auto_enable_enterprise_roots", false);
 
 // Whether to start the private browsing mode at application startup
 pref("browser.privatebrowsing.autostart", false);
@@ -1235,6 +1235,7 @@ pref("services.sync.prefs.sync.dom.disable_window_flip", true);
 pref("services.sync.prefs.sync.dom.disable_window_move_resize", true);
 pref("services.sync.prefs.sync.dom.event.contextmenu.enabled", true);
 pref("services.sync.prefs.sync.extensions.update.enabled", true);
+pref("services.sync.prefs.sync.extensions.activeThemeID", true);
 pref("services.sync.prefs.sync.intl.accept_languages", true);
 pref("services.sync.prefs.sync.layout.spellcheckDefault", true);
 pref("services.sync.prefs.sync.media.autoplay.default", true);
@@ -1569,8 +1570,6 @@ pref("privacy.trackingprotection.fingerprinting.enabled", true);
 pref("privacy.trackingprotection.cryptomining.enabled", true);
 #endif
 
-pref("browser.contentblocking.allowlist.storage.enabled", true);
-
 pref("dom.storage_access.enabled", true);
 
 pref("dom.storage_access.auto_grants", true);
@@ -1578,7 +1577,6 @@ pref("dom.storage_access.max_concurrent_auto_grants", 5);
 
 // Define a set of default features for the Content Blocking UI.
 pref("browser.contentblocking.trackingprotection.control-center.ui.enabled", true);
-pref("browser.contentblocking.rejecttrackers.control-center.ui.enabled", true);
 
 pref("browser.contentblocking.control-center.ui.showBlockedLabels", true);
 pref("browser.contentblocking.control-center.ui.showAllowedLabels", false);
@@ -1621,7 +1619,7 @@ pref("browser.contentblocking.reportBreakage.url", "https://tracking-protection-
 
 pref("browser.contentblocking.introCount", 0);
 
-pref("browser.contentblocking.maxIntroCount", 5);
+pref("browser.contentblocking.maxIntroCount", 0);
 // 1800 = 30 min in seconds
 pref("browser.contentblocking.introDelaySeconds", 1800);
 
@@ -1707,10 +1705,9 @@ pref("reader.errors.includeURLs", true);
 
 pref("view_source.tab", true);
 
-pref("dom.serviceWorkers.enabled", true);
-
-// Enable Push API.
-pref("dom.push.enabled", true);
+// SW + Push intentionally disabled on ESR per bug 1557565
+pref("dom.serviceWorkers.enabled", false);
+pref("dom.push.enabled", false);
 
 // These are the thumbnail width/height set in about:newtab.
 // If you change this, ENSURE IT IS THE SAME SIZE SET

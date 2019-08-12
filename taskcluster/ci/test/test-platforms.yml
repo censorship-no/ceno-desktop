@@ -275,82 +275,49 @@ windows10-64-shippable-qr/opt:
 
 ##
 # MacOS X platforms (matching /macosx.*/)
-
-# macosx1014-64-shippable/opt:
-#    build-platform: macosx64-shippable/opt
-#    test-sets:
-#        - macosx1014-64-tests
-#        - macosx64-talos
-#        - desktop-screenshot-capture
-#        - awsy
-#        - raptor-chromium
-#        - raptor-firefox
-#        - raptor-profiling
-#        - marionette-media-tests
-
-# macosx1014-64/debug:
-#    build-platform: macosx64-shippable/opt
-#    test-sets:
-#        - macosx1014-64-tests
-#        - marionette-media-tests
-
-# macosx1014-64-devedition/opt:
-#    build-platform: macosx64-devedition-nightly/opt
-#    test-sets:
-#        - macosx1014-64-tests
-
-# macosx1014-64-shippable-qr/opt:
-#    build-platform: macosx64-shippable/opt
-#    test-sets:
-#        - macosx1014-64-qr-tests
-
-# macosx1014-64-qr/debug:
-#    build-platform: macosx64/debug
-#    test-sets:
-#        - macosx1014-64-qr-tests
-
-# macosx1014-64-ccov/debug:
-#    build-platform: macosx64-ccov/debug
-#    test-sets:
-#        - macosx1014-64-tests
-
-macosx1010-64/debug:
-    build-platform: macosx64/debug
-    test-sets:
-        - macosx64-tests
-        - marionette-media-tests
-
-macosx1010-64-shippable/opt:
+macosx1014-64-shippable/opt:
     build-platform: macosx64-shippable/opt
     test-sets:
+        - macosx1014-64-tests
         - macosx64-talos
-        - macosx64-tests
-        - desktop-screenshot-capture
+        # - desktop-screenshot-capture
         - awsy
         - raptor-chromium
         - raptor-firefox
         - raptor-profiling
         - marionette-media-tests
 
-macosx1010-64-devedition/opt:
-    build-platform: macosx64-devedition-nightly/opt
-    test-sets:
-        - macosx64-tests
-
-macosx1010-64-shippable-qr/opt:
-    build-platform: macosx64-shippable/opt
-    test-sets:
-        - macosx64-qr-tests
-
-macosx1010-64-qr/debug:
+macosx1014-64/debug:
     build-platform: macosx64/debug
     test-sets:
-        - macosx64-qr-tests
+        - macosx1014-64-tests
+        # - marionette-media-tests
 
-macosx1010-64-ccov/debug:
+macosx1014-64-devedition/opt:
+    build-platform: macosx64-devedition-nightly/opt
+    test-sets:
+        - macosx1014-64-tests
+
+macosx1014-64-shippable-qr/opt:
+    build-platform: macosx64-shippable/opt
+    test-sets:
+        - macosx1014-64-qr-tests
+
+macosx1014-64-qr/debug:
+    build-platform: macosx64/debug
+    test-sets:
+        - macosx1014-64-qr-tests
+
+macosx1014-64-ccov/debug:
     build-platform: macosx64-ccov/debug
     test-sets:
-        - macosx64-tests
+        - macosx1014-64-tests
+
+        - marionette-media-tests
+macosx1010-64-shippable/opt:
+    build-platform: macosx64-shippable/opt
+    test-sets:
+        - desktop-screenshot-capture
 
 ##
 # Android platforms (matching /android-em.*/)
@@ -364,11 +331,6 @@ android-em-4.3-arm7-api-16/debug:
 
 android-em-4.3-arm7-api-16-beta/debug:
     build-platform: android-api-16-beta/debug
-    test-sets:
-        - android-common-tests
-
-android-em-4.3-arm7-api-16-release/debug:
-    build-platform: android-api-16-release/debug
     test-sets:
         - android-common-tests
 
@@ -431,11 +393,6 @@ android-em-7.0-x86-release/opt:
 
 android-em-7.0-x86_64-beta/debug:
     build-platform: android-x86_64-beta/debug
-    test-sets:
-        - android-x86_64-tests
-
-android-em-7.0-x86_64-release/debug:
-    build-platform: android-x86_64-release/debug
     test-sets:
         - android-x86_64-tests
 

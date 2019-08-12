@@ -103,6 +103,7 @@ class ArtifactJob(object):
         'integration/mozilla-inbound',
         'releases/mozilla-beta',
         'releases/mozilla-release',
+        'releases/mozilla-esr68',
     ]
     try_tree = 'try'
 

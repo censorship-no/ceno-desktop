@@ -3666,9 +3666,19 @@ class Document : public nsINode,
  private:
   void InitializeLocalization(nsTArray<nsString>& aResourceIds);
 
-  void ParseWidthAndHeightInMetaViewport(const nsAString& aWidthString,
+  // Returns true if there is any valid value in the viewport meta tag.
+  bool ParseWidthAndHeightInMetaViewport(const nsAString& aWidthString,
                                          const nsAString& aHeightString,
-                                         const nsAString& aScaleString);
+                                         bool aIsAutoScale);
+
+  // Parse scale values in viewport meta tag for a given |aHeaderField| which
+  // represents the scale property and returns the scale value if it's valid.
+  Maybe<LayoutDeviceToScreenScale> ParseScaleInHeader(nsAtom* aHeaderField);
+
+  // Parse scale values in viewport meta tag and set the values in
+  // mScaleMinFloat, mScaleMaxFloat and mScaleFloat respectively.
+  // Returns true if there is any valid scale value in the viewport meta tag.
+  bool ParseScalesInMetaViewport();
 
   FlashClassification DocumentFlashClassificationInternal();
 
@@ -4302,8 +4312,8 @@ class Document : public nsINode,
   // have to recalculate it each time.
   bool mAllowZoom : 1;
   bool mValidScaleFloat : 1;
+  bool mValidMinScale : 1;
   bool mValidMaxScale : 1;
-  bool mScaleStrEmpty : 1;
   bool mWidthStrEmpty : 1;
 
   // Parser aborted. True if the parser of this document was forcibly
@@ -4591,7 +4601,12 @@ class Document : public nsINode,
   // Our update nesting level
   uint32_t mUpdateNestLevel;
 
-  enum ViewportType : uint8_t { DisplayWidthHeight, Specified, Unknown, Empty };
+  enum ViewportType : uint8_t {
+    DisplayWidthHeight,
+    Specified,
+    Unknown,
+    NoValidContent,
+  };
 
   ViewportType mViewportType;
 
