@@ -80,7 +80,6 @@ class DebianBootstrapper(NasmInstall, NodeInstall, StyloInstall, ClangStaticAnal
     # These are common packages for building Firefox for Android
     # (mobile/android) for all Debian-derived distros (such as Ubuntu).
     MOBILE_ANDROID_COMMON_PACKAGES = [
-        'openjdk-8-jdk-headless',  # Android's `sdkmanager` requires Java 1.8 exactly.
         'wget',  # For downloading the Android SDK and NDK.
     ]
 
