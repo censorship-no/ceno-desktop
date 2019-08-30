@@ -1013,8 +1013,7 @@ public abstract class GeckoApp extends GeckoActivity
         String injectorCert = getResources().getString(R.string.ouinet_injector_tls_cert);
 
         Config ouinetConfig = new Config.ConfigBuilder(this)
-                .setIndexBep44PubKey(getResources().getString(R.string.ouinet_index_bep44_pubkey))
-                .setIndexIpnsId(getResources().getString(R.string.ouinet_index_ipns_id))
+                .setCacheHttpPubKey(getResources().getString(R.string.ouinet_cache_http_pubkey))
                 .setInjectorEndpoint(getResources().getString(R.string.ouinet_injector_endpoint))
                 .setInjectorCredentials(getResources().getString(R.string.ouinet_injector_credentials))
                 .setInjectorTlsCert(injectorCert)
