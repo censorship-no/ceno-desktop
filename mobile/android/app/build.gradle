@@ -60,7 +60,7 @@ android {
 
     signingConfigs {
        debug {
-           storeFile file("${System.env.HOME}/.android/debug.keystore")
+           storeFile file(System.env.CENOBROWSER_DEBUG_KEYSTORE_FILE)
            keyAlias 'androiddebugkey'
            keyPassword 'android'
            storePassword 'android'
