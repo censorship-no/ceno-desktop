@@ -58,15 +58,6 @@ android {
         abortOnError true
     }
 
-    signingConfigs {
-       debug {
-           storeFile file(System.env.CENOBROWSER_DEBUG_KEYSTORE_FILE)
-           keyAlias 'androiddebugkey'
-           keyPassword 'android'
-           storePassword 'android'
-       }
-    }
-
     buildTypes {
         // We have the following difficult situation.  Minification (Proguard) is only available per
         // Android-Gradle `buildType`.  Instrumentation (Robocop) is only available for exactly one
