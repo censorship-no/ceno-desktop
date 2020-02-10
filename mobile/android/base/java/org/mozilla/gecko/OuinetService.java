@@ -31,10 +31,17 @@ public class OuinetService extends Service {
 
     private Ouinet mOuinet;
 
+    // To see whether this service is running, you may try this command:
+    // adb -s $mi shell dumpsys activity services OuinetService
     public static void startOuinetService(Context context, Config config) {
         Intent intent = new Intent(context, OuinetService.class);
         intent.putExtra(CONFIG_EXTRA, config);
         context.startService(intent);
+    }
+
+    public static void stopOuinetService(Context context) {
+        Intent intent = new Intent(context, OuinetService.class);
+        context.stopService(intent);
     }
 
     @Override
@@ -67,9 +74,12 @@ public class OuinetService extends Service {
         new Thread(new Runnable(){
             @Override
             public void run(){
-                // Start Ouinet and set proxy in a different thread to avoid strict mode violations.
-                setProxyProperties();
-                mOuinet.start();
+                synchronized (OuinetService.this) {
+                    if (mOuinet == null) return;
+                    // Start Ouinet and set proxy in a different thread to avoid strict mode violations.
+                    setProxyProperties();
+                    mOuinet.start();
+                }
             }
         }).start();
     }
@@ -119,10 +129,24 @@ public class OuinetService extends Service {
     @Override
     public void onDestroy() {
         Log.d(TAG, "Destroying service");
-        if (mOuinet != null) {
-            mOuinet.stop();
+        synchronized (this) {
+            if (mOuinet != null) {
+                Ouinet ouinet = mOuinet;
+                mOuinet = null;
+                Thread thread = new Thread(new Runnable(){
+                    @Override
+                    public void run(){
+                        ouinet.stop();
+                    }
+                });
+                thread.start();
+                try {
+                    // Wait a little to allow ouinet to finish gracefuly
+                    thread.join(3000 /* ms */);
+                } catch (Exception ex) {}
+
+            }
         }
-        mOuinet = null;
         Log.d(TAG, "Service destroyed");
     }
 }

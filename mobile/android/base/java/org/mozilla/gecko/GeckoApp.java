@@ -1365,7 +1365,11 @@ public abstract class GeckoApp extends GeckoActivity
                  * exception in the cpp code which brings up the crash handler dialog.
                  * ActivityCompat.finishAffinity(GeckoApp.this);
                  */
-                android.os.Process.killProcess(android.os.Process.myPid());
+                if (USE_SERVICE) {
+                    OuinetService.stopOuinetService(GeckoApp.this);
+                }
+                finishAndShutdown(false);
+                //android.os.Process.killProcess(android.os.Process.myPid());
             }
         };
         DialogInterface.OnClickListener doNothing = new DialogInterface.OnClickListener() {
