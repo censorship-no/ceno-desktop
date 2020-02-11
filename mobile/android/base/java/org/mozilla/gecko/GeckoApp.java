@@ -969,6 +969,38 @@ public abstract class GeckoApp extends GeckoActivity
         }
     }
 
+    public void showNoWiFiDialog() {
+        DialogInterface.OnClickListener closeApp = new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                Log.d(LOGTAG, "Closing app from dialog");
+                /**
+                 * This is the preferred way to exit the app, but it is triggering an
+                 * exception in the cpp code which brings up the crash handler dialog.
+                 * ActivityCompat.finishAffinity(GeckoApp.this);
+                 */
+                if (USE_SERVICE) {
+                    OuinetService.stopOuinetService(GeckoApp.this);
+                }
+                finishAndShutdown(false);
+                //android.os.Process.killProcess(android.os.Process.myPid());
+            }
+        };
+        DialogInterface.OnClickListener doNothing = new DialogInterface.OnClickListener() {
+           @Override
+            public void onClick(DialogInterface dialog, int which) {
+                Log.d(LOGTAG, "Dismissing dialog");
+            }
+        };
+
+        new AlertDialog.Builder(this)
+             .setTitle(R.string.wifi_disconnected_dialog_title)
+             .setMessage(R.string.wifi_disconnected_dialog_description)
+             .setNegativeButton(R.string.wifi_disconnected_dismiss_button, doNothing)
+             .setPositiveButton(R.string.no_wifi_close_button, closeApp)
+             .show();
+    }
+
     /**
      * Called when the activity is first created.
      *
@@ -1356,35 +1388,8 @@ public abstract class GeckoApp extends GeckoActivity
                 (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         NetworkInfo wifi = connectivityMgr.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
 
-        DialogInterface.OnClickListener closeApp = new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                Log.d(LOGTAG, "Closing app from dialog");
-                /**
-                 * This is the preferred way to exit the app, but it is triggering an
-                 * exception in the cpp code which brings up the crash handler dialog.
-                 * ActivityCompat.finishAffinity(GeckoApp.this);
-                 */
-                if (USE_SERVICE) {
-                    OuinetService.stopOuinetService(GeckoApp.this);
-                }
-                finishAndShutdown(false);
-                //android.os.Process.killProcess(android.os.Process.myPid());
-            }
-        };
-        DialogInterface.OnClickListener doNothing = new DialogInterface.OnClickListener() {
-           @Override
-            public void onClick(DialogInterface dialog, int which) {
-                Log.d(LOGTAG, "Dismissing dialog");
-            }
-        };
-
         if (!wifi.isConnected()) {
-            new AlertDialog.Builder(this)
-                    .setTitle(R.string.no_wifi_dialog_title)
-                    .setMessage(R.string.no_wifi_dialog_description)
-                    .setCancelable(false)
-                    .setPositiveButton(R.string.no_wifi_close_button, closeApp).show();
+            showNoWiFiDialog();
         }
 
         IntentFilter intentFilter = new IntentFilter();
@@ -1400,12 +1405,7 @@ public abstract class GeckoApp extends GeckoActivity
                 if (info.getType() == ConnectivityManager.TYPE_WIFI && !info.isConnected()) {
                     // Wifi disconnected
                     Log.d(LOGTAG, "Wifi connection lost, showing dialog");
-                    new AlertDialog.Builder(GeckoApp.this)
-                            .setTitle(R.string.wifi_disconnected_dialog_title)
-                            .setMessage(R.string.wifi_disconnected_dialog_description)
-                            .setNegativeButton(R.string.wifi_disconnected_dismiss_button, doNothing)
-                            .setPositiveButton(R.string.no_wifi_close_button, closeApp)
-                            .show();
+                    showNoWiFiDialog();
                 }
             }
         }, intentFilter);
