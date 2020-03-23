@@ -5,7 +5,6 @@
 
 <resources>
     <string name="ouinet_cache_http_pubkey">0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef</string>
-    <string name="ouinet_injector_endpoint">bep5:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef</string>
     <string name="ouinet_injector_credentials">test_user_change_me:test_password_change_me</string>
     <string name="ouinet_injector_tls_cert">-----BEGIN CERTIFICATE-----\
 [...]\

@@ -1046,7 +1046,6 @@ public abstract class GeckoApp extends GeckoActivity
 
         Config ouinetConfig = new Config.ConfigBuilder(this)
                 .setCacheHttpPubKey(getResources().getString(R.string.ouinet_cache_http_pubkey))
-                .setInjectorEndpoint(getResources().getString(R.string.ouinet_injector_endpoint))
                 .setInjectorCredentials(getResources().getString(R.string.ouinet_injector_credentials))
                 .setInjectorTlsCert(injectorCert)
                 .setTlsCaCertStorePath("file:///android_asset/ceno/cacert.pem")
