@@ -363,6 +363,14 @@ already_AddRefed<Promise> WebAuthnManager::MakeCredential(
   // TODO: Add extension list building
   nsTArray<WebAuthnExtension> extensions;
 
+  // <https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#sctn-hmac-secret-extension>
+  if (aOptions.mExtensions.mHmacCreateSecret.WasPassed()) {
+    bool hmacCreateSecret = aOptions.mExtensions.mHmacCreateSecret.Value();
+    if (hmacCreateSecret) {
+      extensions.AppendElement(WebAuthnExtensionHmacSecret(hmacCreateSecret));
+    }
+  }
+
   const auto& selection = aOptions.mAuthenticatorSelection;
   const auto& attachment = selection.mAuthenticatorAttachment;
   const AttestationConveyancePreference& attestation = aOptions.mAttestation;
@@ -524,7 +532,19 @@ already_AddRefed<Promise> WebAuthnManager::GetAssertion(
       // Serialize transports.
       if (s.mTransports.WasPassed()) {
         uint8_t transports = 0;
-        for (const auto& t : s.mTransports.Value()) {
+
+        // Transports is a string, but we match it to an enumeration so
+        // that we have forward-compatibility, ignoring unknown transports.
+        for (const nsAString& str : s.mTransports.Value()) {
+          NS_ConvertUTF16toUTF8 cStr(str);
+          int i = FindEnumStringIndexImpl(
+              cStr.get(), cStr.Length(), AuthenticatorTransportValues::strings);
+          if (i < 0 ||
+              i >= static_cast<int>(AuthenticatorTransport::EndGuard_)) {
+            continue;  // Unknown enum
+          }
+          AuthenticatorTransport t = static_cast<AuthenticatorTransport>(i);
+
           if (t == AuthenticatorTransport::Usb) {
             transports |= U2F_AUTHENTICATOR_TRANSPORT_USB;
           }
@@ -689,6 +709,16 @@ void WebAuthnManager::FinishMakeCredential(
   credential->SetType(NS_LITERAL_STRING("public-key"));
   credential->SetRawId(keyHandleBuf);
   credential->SetResponse(attestation);
+
+  // Forward client extension results.
+  for (auto& ext : aResult.Extensions()) {
+    if (ext.type() ==
+        WebAuthnExtensionResult::TWebAuthnExtensionResultHmacSecret) {
+      bool hmacCreateSecret =
+          ext.get_WebAuthnExtensionResultHmacSecret().hmacCreateSecret();
+      credential->SetClientExtensionResultHmacSecret(hmacCreateSecret);
+    }
+  }
 
   mTransaction.ref().mPromise->MaybeResolve(credential);
   ClearTransaction();

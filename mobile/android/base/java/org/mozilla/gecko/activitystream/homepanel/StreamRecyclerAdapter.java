@@ -15,26 +15,30 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
+import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.GeckoSharedPrefs;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.activitystream.ActivityStreamTelemetry;
 import org.mozilla.gecko.activitystream.homepanel.menu.ActivityStreamContextMenu;
+import org.mozilla.gecko.activitystream.homepanel.model.Highlight;
 import org.mozilla.gecko.activitystream.homepanel.model.RowModel;
 import org.mozilla.gecko.activitystream.homepanel.model.TopSite;
+import org.mozilla.gecko.activitystream.homepanel.model.TopStory;
 import org.mozilla.gecko.activitystream.homepanel.model.WebpageModel;
 import org.mozilla.gecko.activitystream.homepanel.model.WebpageRowModel;
+import org.mozilla.gecko.activitystream.homepanel.stream.FirefoxPromoBannerRow;
+import org.mozilla.gecko.activitystream.homepanel.stream.FxaBannerRow;
 import org.mozilla.gecko.activitystream.homepanel.stream.HighlightsEmptyStateRow;
 import org.mozilla.gecko.activitystream.homepanel.stream.LearnMoreRow;
-import org.mozilla.gecko.activitystream.homepanel.stream.TopPanelRow;
-import org.mozilla.gecko.activitystream.homepanel.model.TopStory;
-import org.mozilla.gecko.activitystream.homepanel.topstories.PocketStoriesLoader;
-import org.mozilla.gecko.home.HomePager;
-import org.mozilla.gecko.activitystream.homepanel.model.Highlight;
-import org.mozilla.gecko.activitystream.homepanel.stream.WebpageItemRow;
 import org.mozilla.gecko.activitystream.homepanel.stream.StreamTitleRow;
 import org.mozilla.gecko.activitystream.homepanel.stream.StreamViewHolder;
+import org.mozilla.gecko.activitystream.homepanel.stream.TopPanelRow;
+import org.mozilla.gecko.activitystream.homepanel.stream.WebpageItemRow;
+import org.mozilla.gecko.activitystream.homepanel.topstories.PocketStoriesLoader;
+import org.mozilla.gecko.fxa.FirefoxAccounts;
+import org.mozilla.gecko.home.HomePager;
 import org.mozilla.gecko.util.StringUtils;
 import org.mozilla.gecko.widget.RecyclerViewClickSupport;
 
@@ -53,6 +57,7 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
 
     private static final String LOGTAG = StringUtils.safeSubstring("Gecko" + StreamRecyclerAdapter.class.getSimpleName(), 0, 23);
 
+    private Context context;
     private Cursor topSitesCursor;
     private List<RowModel> recyclerViewModel; // List of item types backing this RecyclerView.
     private List<TopStory> topStoriesQueue;
@@ -75,7 +80,9 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
         HIGHLIGHTS_TITLE (-4),
         HIGHLIGHTS_EMPTY_STATE(-5),
         HIGHLIGHT_ITEM (-1), // There can be multiple Highlight Items so caller should handle as a special case.
-        LEARN_MORE_LINK(-6);
+        LEARN_MORE_LINK(-6),
+        FXA_BANNER(-7), //The sign in row is available only if the user is not logged in.
+        PROMO_BANNER(-7);
 
         public final int stableId;
 
@@ -89,15 +96,11 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
     }
 
     private static RowModel makeRowModelFromType(final RowItemType type) {
-        return new RowModel() {
-            @Override
-            public RowItemType getRowItemType() {
-                return type;
-            }
-        };
+        return () -> type;
     }
 
-    public StreamRecyclerAdapter() {
+    public StreamRecyclerAdapter(@NonNull final Context context) {
+        this.context = context;
         setHasStableIds(true);
         recyclerViewModel = new LinkedList<>();
 
@@ -106,10 +109,42 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
 
     public void clearAndInit() {
         recyclerViewModel.clear();
+        addBannerIfAvailable();
         for (RowItemType type : ACTIVITY_STREAM_SECTIONS) {
             recyclerViewModel.add(makeRowModelFromType(type));
         }
         topStoriesQueue = Collections.emptyList();
+    }
+
+    private void addBannerIfAvailable() {
+        final SharedPreferences sharedPreferences = GeckoSharedPrefs.forProfile(context);
+
+        if (isFirefoxPromoBannerAvailable(sharedPreferences)) {
+            recyclerViewModel.add(makeRowModelFromType(RowItemType.PROMO_BANNER));
+        } else if (isFxaBannerAvailable(sharedPreferences)) {
+            recyclerViewModel.add(makeRowModelFromType(RowItemType.FXA_BANNER));
+        }
+    }
+
+    private boolean isFxaBannerAvailable(@NonNull SharedPreferences preferences) {
+        final boolean isUserSignedInToFxA = FirefoxAccounts.firefoxAccountExistsAndSignedIn(context);
+        final boolean isDismissedByUser = preferences.getBoolean(ActivityStreamPanel.PREF_USER_DISMISSED_FXA_BANNER,
+                context.getResources().getBoolean(R.bool.pref_activitystream_user_dismissed_fxa_banner_default));
+
+        return !isUserSignedInToFxA && !isDismissedByUser;
+    }
+
+    private boolean isFirefoxPromoBannerAvailable(@NonNull SharedPreferences preferences) {
+
+        // Banner temporarily disabled. See #1623471
+        return false;
+
+//        final boolean isDismissedByUser = preferences.getBoolean(ActivityStreamPanel.PREF_USER_DISMISSED_PROMO_BANNER,
+//                context.getResources().getBoolean(R.bool.pref_activitystream_user_dismissed_promo_banner_default));
+//        final boolean isDeviceAndroidVersionSupported = AppConstants.Versions.feature21Plus;
+//        final boolean isAppChannelSupported = "org.mozilla.firefox".equals(AppConstants.ANDROID_PACKAGE_NAME);
+//
+//        return !isDismissedByUser && isDeviceAndroidVersionSupported && isAppChannelSupported;
     }
 
     void setOnUrlOpenListeners(HomePager.OnUrlOpenListener onUrlOpenListener, HomePager.OnUrlOpenInBackgroundListener onUrlOpenInBackgroundListener) {
@@ -131,36 +166,27 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
         return recyclerViewModel.get(position).getRowItemType().getViewType();
     }
 
+    @NonNull
     @Override
-    public StreamViewHolder onCreateViewHolder(final ViewGroup parent, final int type) {
+    public StreamViewHolder onCreateViewHolder(@NonNull final ViewGroup parent, final int type) {
         final LayoutInflater inflater = LayoutInflater.from(parent.getContext());
 
-        if (type == RowItemType.TOP_PANEL.getViewType()) {
-            return new TopPanelRow(inflater.inflate(TopPanelRow.LAYOUT_ID, parent, false), onUrlOpenListener, new TopPanelRow.OnCardLongClickListener() {
-                @Override
-                public boolean onLongClick(final TopSite topSite, final int absolutePosition,
-                        final View tabletContextMenuAnchor, final int faviconWidth, final int faviconHeight) {
-                    openContextMenuForTopSite(topSite, absolutePosition, tabletContextMenuAnchor, parent, faviconWidth, faviconHeight);
-                    return true;
-                }
+        if (type == RowItemType.PROMO_BANNER.getViewType()) {
+            return new FirefoxPromoBannerRow(inflater.inflate(FirefoxPromoBannerRow.LAYOUT_ID, parent, false), onUrlOpenListener);
+        } else if (type == RowItemType.FXA_BANNER.getViewType()) {
+            return new FxaBannerRow(inflater.inflate(FxaBannerRow.LAYOUT_ID, parent, false));
+        } else if (type == RowItemType.TOP_PANEL.getViewType()) {
+            return new TopPanelRow(inflater.inflate(TopPanelRow.LAYOUT_ID, parent, false), onUrlOpenListener, (topSite, absolutePosition, tabletContextMenuAnchor, faviconWidth, faviconHeight) -> {
+                openContextMenuForTopSite(topSite, absolutePosition, tabletContextMenuAnchor, parent, faviconWidth, faviconHeight);
+                return true;
             });
         } else if (type == RowItemType.TOP_STORIES_TITLE.getViewType()) {
             return new StreamTitleRow(inflater.inflate(StreamTitleRow.LAYOUT_ID, parent, false), R.string.activity_stream_topstories, R.string.activity_stream_link_more, LINK_MORE_POCKET, onUrlOpenListener);
         } else if (type == RowItemType.TOP_STORIES_ITEM.getViewType() ||
                 type == RowItemType.HIGHLIGHT_ITEM.getViewType()) {
             return new WebpageItemRow(inflater.inflate(WebpageItemRow.LAYOUT_ID, parent, false),
-                    new WebpageItemRow.OnMenuButtonClickListener() {
-                        @Override
-                        public void onMenuButtonClicked(final WebpageItemRow row, final int position) {
-                            openContextMenuForWebpageItemRow(
-                                    row, position, parent, ActivityStreamTelemetry.Contract.INTERACTION_MENU_BUTTON);
-                        }
-                    }, new WebpageItemRow.OnContentChangedListener() {
-                        @Override
-                        public void onContentChanged(int itemPosition) {
-                            notifyItemChanged(itemPosition);
-                        }
-                    }
+                    (row, position) -> openContextMenuForWebpageItemRow(
+                            row, position, parent, ActivityStreamTelemetry.Contract.INTERACTION_MENU_BUTTON), this::notifyItemChanged
             );
         } else if (type == RowItemType.HIGHLIGHTS_TITLE.getViewType()) {
             return new StreamTitleRow(inflater.inflate(StreamTitleRow.LAYOUT_ID, parent, false), R.string.activity_stream_highlights);
@@ -198,8 +224,9 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
     }
 
     @Override
-    public void onBindViewHolder(StreamViewHolder holder, int position) {
+    public void onBindViewHolder(@NonNull StreamViewHolder holder, int position) {
         int type = getItemViewType(position);
+
         if (type == RowItemType.HIGHLIGHT_ITEM.getViewType()) {
             final Highlight highlight = (Highlight) recyclerViewModel.get(position);
             ((WebpageItemRow) holder).bind(highlight, position, tilesSize);
@@ -225,7 +252,7 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
     }
 
     @Override
-    public void onViewAttachedToWindow(StreamViewHolder holder) {
+    public void onViewAttachedToWindow(@NonNull StreamViewHolder holder) {
         super.onViewAttachedToWindow(holder);
 
         if (holder instanceof WebpageItemRow) {
@@ -234,7 +261,7 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
     }
 
     @Override
-    public void onViewDetachedFromWindow(StreamViewHolder holder) {
+    public void onViewDetachedFromWindow(@NonNull StreamViewHolder holder) {
         super.onViewDetachedFromWindow(holder);
 
         if (holder instanceof WebpageItemRow) {
@@ -297,6 +324,10 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
             actionPosition = getTopStoriesIndexFromAdapterPosition(position);
             size = getNumOfTypeShown(RowItemType.TOP_STORIES_ITEM);
             referrerUri = PocketStoriesLoader.POCKET_REFERRER_URI;
+
+            final SharedPreferences prefs = GeckoSharedPrefs.forApp(v.getContext());
+            final int pocketStoriesClicked = prefs.getInt("android.not_a_preference.pocket_stories_clicked", 0);
+            prefs.edit().putInt("android.not_a_preference.pocket_stories_clicked", pocketStoriesClicked + 1).apply();
         }
 
         extras.set(ActivityStreamTelemetry.Contract.SOURCE_TYPE, sourceType)
@@ -501,7 +532,15 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
 
     public void swapTopSitesCursor(Cursor cursor) {
         this.topSitesCursor = cursor;
-        notifyItemChanged(0);
+
+        // In Bug 1570880 we've added a new sign in row as the first element in the recyclerview. If the sign in row exists,
+        // make sure to notify about the top sites changes at the appropriate position.
+        if (recyclerViewModel.get(0).getRowItemType().getViewType() == RowItemType.FXA_BANNER.getViewType() ||
+                recyclerViewModel.get(0).getRowItemType().getViewType() == RowItemType.PROMO_BANNER.getViewType()) {
+            notifyItemChanged(1);
+        } else {
+            notifyItemChanged(0);
+        }
     }
 
     @Override

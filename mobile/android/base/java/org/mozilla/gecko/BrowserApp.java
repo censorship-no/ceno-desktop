@@ -21,6 +21,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -140,6 +141,7 @@ import org.mozilla.gecko.tabs.TabHistoryFragment;
 import org.mozilla.gecko.tabs.TabHistoryPage;
 import org.mozilla.gecko.tabs.TabsPanel;
 import org.mozilla.gecko.telemetry.TelemetryCorePingDelegate;
+import org.mozilla.gecko.telemetry.TelemetryInstallationPingDelegate;
 import org.mozilla.gecko.telemetry.TelemetryUploadService;
 import org.mozilla.gecko.telemetry.measurements.SearchCountMeasurements;
 import org.mozilla.gecko.telemetry.TelemetryActivationPingDelegate;
@@ -149,7 +151,6 @@ import org.mozilla.gecko.toolbar.BrowserToolbar.CommitEventSource;
 import org.mozilla.gecko.toolbar.BrowserToolbar.TabEditingState;
 import org.mozilla.gecko.toolbar.PwaConfirm;
 import org.mozilla.gecko.updater.PostUpdateHandler;
-import org.mozilla.gecko.updater.UpdateServiceHelper;
 import org.mozilla.gecko.util.ActivityUtils;
 import org.mozilla.gecko.util.ContextUtils;
 import org.mozilla.gecko.util.DrawableUtil;
@@ -324,16 +325,17 @@ public class BrowserApp extends GeckoApp
 
     private final TelemetryCorePingDelegate mTelemetryCorePingDelegate = new TelemetryCorePingDelegate();
     private final TelemetryActivationPingDelegate mTelemetryActivationPingDelegate = new TelemetryActivationPingDelegate();
+    private final TelemetryInstallationPingDelegate mTelemetryInstallationPingDelegate = new TelemetryInstallationPingDelegate();
 
     private final List<BrowserAppDelegate> delegates = Collections.unmodifiableList(Arrays.asList(
             new ScreenshotDelegate(),
             new BookmarkStateChangeDelegate(),
             new ReaderViewBookmarkPromotion(),
-            //new PostUpdateHandler(),
             mTelemetryCorePingDelegate,
             mTelemetryActivationPingDelegate,
+            mTelemetryInstallationPingDelegate,
             new OfflineTabStatusDelegate(),
-            new AdjustBrowserAppDelegate(mTelemetryCorePingDelegate)
+            new AdjustBrowserAppDelegate(mTelemetryCorePingDelegate, mTelemetryInstallationPingDelegate)
     ));
 
     @NonNull
@@ -344,7 +346,6 @@ public class BrowserApp extends GeckoApp
 
     @Override
     public View onCreateView(final View parent, final String name, final Context context, final AttributeSet attrs) {
-
         final View view;
         if (BrowserToolbar.class.getName().equals(name)) {
             view = BrowserToolbar.create(context, attrs);
@@ -630,10 +631,6 @@ public class BrowserApp extends GeckoApp
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        Log.d(LOGTAG, "Starting PostUpdateHandler");
-        // This has to happen before the AddonManager starts,https://redmine.equalit.ie/issues/12597
-        new PostUpdateHandler().onStart(this);
-
         final Context appContext = getApplicationContext();
 
         showSplashScreen = true;
@@ -654,6 +651,11 @@ public class BrowserApp extends GeckoApp
         // layout, which GeckoApp takes care of.
         final GeckoApplication app = (GeckoApplication) getApplication();
         app.prepareLightweightTheme();
+
+        // Copying features out the APK races Gecko startup: the first time the profile is read by
+        // Gecko, it needs to find the copied features.  `super.onCreate(...)` initiates Gecko
+        // startup, so this must come first -- and be synchronous!
+        new PostUpdateHandler().onCreate(this, savedInstanceState);
 
         super.onCreate(savedInstanceState);
 
@@ -785,13 +787,13 @@ public class BrowserApp extends GeckoApp
 
         EventDispatcher.getInstance().registerUiThreadListener(this,
             "GeckoView:AccessibilityEnabled",
+            "SearchEngines:Data",
             "Menu:Open",
             "LightweightTheme:Update",
             "Tab:Added",
             "CharEncoding:Data",
             "CharEncoding:State",
             "Settings:Show",
-            "Updater:Launch",
             "Sanitize:Finished",
             "Sanitize:OpenTabs",
             "NotificationSettings:FeatureTipsStatusUpdated",
@@ -815,6 +817,8 @@ public class BrowserApp extends GeckoApp
 
         getAppEventDispatcher().registerUiThreadListener(this, "Prompt:ShowTop");
 
+        EventDispatcher.getInstance().dispatch("SearchEngines:GetVisible", null);
+
         final GeckoProfile profile = getProfile();
 
         // We want to upload the telemetry core ping as soon after startup as possible. It relies on the
@@ -830,6 +834,8 @@ public class BrowserApp extends GeckoApp
         final SuggestedSites suggestedSites = new SuggestedSites(appContext, distribution);
         db.setSuggestedSites(suggestedSites);
 
+        final int sitesPinnedToTopsites = BrowserDB.from(BrowserApp.this).getPinnedSitesCountForAS(getContentResolver());
+        GeckoSharedPrefs.forApp(getApplicationContext()).edit().putInt("android.not_a_preference.total_sites_pinned_to_topsites", sitesPinnedToTopsites).apply();
         // Remove bookmarks that were marked as soft delete
         ThreadUtils.postToBackgroundThread(new Runnable() {
             @Override
@@ -873,22 +879,6 @@ public class BrowserApp extends GeckoApp
 
         // Set the maximum bits-per-pixel the favicon system cares about.
         IconDirectoryEntry.setMaxBPP(GeckoAppShell.getScreenDepth());
-
-        // The update service is enabled for RELEASE_OR_BETA, which includes the release and beta channels.
-        // However, no updates are served.  Therefore, we don't trust the update service directly, and
-        // try to avoid prompting unnecessarily. See Bug 1232798.
-        if (!AppConstants.RELEASE_OR_BETA && UpdateServiceHelper.isUpdaterEnabled(this)) {
-            Permissions.from(this)
-                       .withPermissions(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                       .doNotPrompt()
-                       .andFallback(new Runnable() {
-                           @Override
-                           public void run() {
-                               showUpdaterPermissionSnackbar();
-                           }
-                       })
-                      .run();
-        }
 
         for (final BrowserAppDelegate delegate : delegates) {
             delegate.onCreate(this, savedInstanceState);
@@ -992,24 +982,6 @@ public class BrowserApp extends GeckoApp
 
     private static void initTelemetryUploader(final boolean isInAutomation) {
         TelemetryUploadService.setDisabled(isInAutomation);
-    }
-
-    private void showUpdaterPermissionSnackbar() {
-        SnackbarBuilder.SnackbarCallback allowCallback = new SnackbarBuilder.SnackbarCallback() {
-            @Override
-            public void onClick(View v) {
-                Permissions.from(BrowserApp.this)
-                        .withPermissions(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                        .run();
-            }
-        };
-
-        SnackbarBuilder.builder(this)
-                .message(R.string.updater_permission_text)
-                .duration(Snackbar.LENGTH_INDEFINITE)
-                .action(R.string.updater_permission_allow)
-                .callback(allowCallback)
-                .buildAndShow();
     }
 
     private Class<?> getMediaPlayerManager() {
@@ -1209,6 +1181,7 @@ public class BrowserApp extends GeckoApp
         if (isShutDownOrAbort()) {
             return;
         }
+
         // Queue this work so that the first launch of the activity doesn't
         // trigger profile init too early.
         ThreadUtils.postToBackgroundThread(new Runnable() {
@@ -1593,13 +1566,13 @@ public class BrowserApp extends GeckoApp
 
         EventDispatcher.getInstance().unregisterUiThreadListener(this,
             "GeckoView:AccessibilityEnabled",
+            "SearchEngines:Data",
             "Menu:Open",
             "LightweightTheme:Update",
             "Tab:Added",
             "CharEncoding:Data",
             "CharEncoding:State",
             "Settings:Show",
-            "Updater:Launch",
             "Sanitize:Finished",
             "Sanitize:OpenTabs",
             "NotificationSettings:FeatureTipsStatusUpdated",
@@ -1856,6 +1829,12 @@ public class BrowserApp extends GeckoApp
                 openOptionsMenu();
                 break;
 
+            case "SearchEngines:Data":
+                final GeckoBundle[] engines = message.getBundleArray("searchEngines");
+                final int totalAddedSearchEngines = engines == null ? 0 : engines.length;
+                GeckoSharedPrefs.forApp(getApplicationContext()).edit().putInt("android.not_a_preference.total_added_search_engines", totalAddedSearchEngines).apply();
+               break;
+
             case "LightweightTheme:Update":
                 mDynamicToolbar.setVisible(true, VisibilityTransition.ANIMATE);
                 break;
@@ -2034,7 +2013,6 @@ public class BrowserApp extends GeckoApp
                 final boolean hasCustomHomepanels =
                         prefs.contains(HomeConfigPrefsBackend.PREFS_CONFIG_KEY) ||
                         prefs.contains(HomeConfigPrefsBackend.PREFS_CONFIG_KEY_OLD);
-
                 Telemetry.addToHistogram("FENNEC_HOMEPANELS_CUSTOM", hasCustomHomepanels ? 1 : 0);
 
                 Telemetry.addToHistogram("FENNEC_READER_VIEW_CACHE_SIZE",
@@ -2074,31 +2052,6 @@ public class BrowserApp extends GeckoApp
                 final String title = message.getString("title");
                 final String bookmarkUrl = message.getString("url");
                 GeckoApplication.createBrowserShortcut(title, bookmarkUrl);
-                break;
-
-            case "Updater:Launch":
-                /**
-                 * Launch UI that lets the user update Firefox.
-                 *
-                 * This depends on the current channel: Release and Beta both direct to
-                 * the Google Play Store. If updating is enabled, Aurora, Nightly, and
-                 * custom builds open about:firefox, which provides an update interface.
-                 *
-                 * If updating is not enabled, this simply logs an error.
-                 */
-                if (AppConstants.RELEASE_OR_BETA) {
-                    Intent intent = new Intent(Intent.ACTION_VIEW);
-                    intent.setData(Uri.parse("market://details?id=" + getPackageName()));
-                    startActivity(intent);
-                    break;
-                }
-
-                if (AppConstants.MOZ_UPDATER) {
-                    Tabs.getInstance().loadUrlInTab(AboutPages.FIREFOX);
-                    break;
-                }
-
-                Log.w(LOGTAG, "No candidate updater found; ignoring launch request.");
                 break;
 
             case "Download:AndroidDownloadManager":
@@ -3301,6 +3254,12 @@ public class BrowserApp extends GeckoApp
         bookmark.setCheckable(true);
         bookmark.setChecked(tab.isBookmark());
         bookmark.setTitle(resolveBookmarkTitleID(tab.isBookmark()));
+        bookmark.setOnMenuItemClickListener(new MenuItem.OnMenuItemClickListener() {
+            @Override
+            public boolean onMenuItemClick(MenuItem item) {
+                return false;
+            }
+        });
 
         final boolean isPrivate = tab.isPrivate();
         // We don't use icons on GB builds so not resolving icons might conserve resources.
@@ -3549,6 +3508,8 @@ public class BrowserApp extends GeckoApp
         mBrowserToolbar.cancelEdit();
 
         if (itemId == R.id.bookmark) {
+            final int bookmarkWithStar = GeckoSharedPrefs.forApp(getApplicationContext()).getInt("android.not_a_preference.bookmarks_with_star", 0);
+            GeckoSharedPrefs.forApp(getApplicationContext()).edit().putInt("android.not_a_preference.bookmarks_with_star", bookmarkWithStar + 1).apply();
             tab = Tabs.getInstance().getSelectedTab();
             if (tab != null) {
                 final String extra;
@@ -3624,18 +3585,30 @@ public class BrowserApp extends GeckoApp
         }
 
         if (itemId == R.id.save_as_pdf) {
+            final SharedPreferences prefs = GeckoSharedPrefs.forApp(getApplicationContext());
+            final int saveAsPdf = prefs.getInt("android.not_a_preference.save_as_pdf", 0);
+            prefs.edit().putInt("android.not_a_preference.save_as_pdf", saveAsPdf + 1).apply();
+
             Telemetry.sendUIEvent(TelemetryContract.Event.SAVE, TelemetryContract.Method.MENU, "pdf");
             EventDispatcher.getInstance().dispatch("SaveAs:PDF", null);
             return true;
         }
 
         if (itemId == R.id.print) {
+            final SharedPreferences prefs = GeckoSharedPrefs.forApp(getApplicationContext());
+            final int print = prefs.getInt("android.not_a_preference.print", 0);
+            prefs.edit().putInt("android.not_a_preference.print", print + 1).apply();
+
             Telemetry.sendUIEvent(TelemetryContract.Event.SAVE, TelemetryContract.Method.MENU, "print");
             PrintHelper.printPDF(this);
             return true;
         }
 
         if (itemId == R.id.view_page_source) {
+            final SharedPreferences prefs = GeckoSharedPrefs.forApp(getApplicationContext());
+            final int viewPageSource = prefs.getInt("android.not_a_preference.view_page_source", 0);
+            prefs.edit().putInt("android.not_a_preference.view_page_source", viewPageSource + 1).apply();
+
             tab = Tabs.getInstance().getSelectedTab();
             final GeckoBundle args = new GeckoBundle(1);
             args.putInt("tabId", tab.getId());

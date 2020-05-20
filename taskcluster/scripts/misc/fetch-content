@@ -25,6 +25,11 @@ try:
 except ImportError:
     zstandard = None
 
+try:
+    import certifi
+except ImportError:
+    certifi = None
+
 
 CONCURRENCY = multiprocessing.cpu_count()
 
@@ -132,7 +137,7 @@ def stream_download(url, sha256=None, size=None):
     length = 0
 
     t0 = time.time()
-    with urllib.request.urlopen(url) as fh:
+    with urllib.request.urlopen(url, cafile=certifi.where()) if certifi else urllib.request.urlopen(url) as fh:
         if not url.endswith('.gz') and fh.info().get('Content-Encoding') == 'gzip':
             fh = gzip.GzipFile(fileobj=fh)
 
@@ -378,7 +383,7 @@ def api(root_url, service, version, path):
     if root_url == 'https://taskcluster.net':
         return 'https://{service}.taskcluster.net/{version}/{path}'.format(
                 service=service, version=version, path=path)
-    return 'https://{root_url}/api/{service}/{version}/{path}'.format(
+    return '{root_url}/api/{service}/{version}/{path}'.format(
             root_url=root_url, service=service, version=version, path=path)
 
 

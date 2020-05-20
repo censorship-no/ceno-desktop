@@ -17,6 +17,7 @@ ChromeUtils.defineModuleGetter(
 );
 
 const kPrefName = "browser.startup.homepage";
+const kDefaultHomePage = "about:home";
 
 function getHomepagePref(useDefault) {
   let homePage;
@@ -80,6 +81,14 @@ let HomePage = {
     return getHomepagePref(true);
   },
 
+  /**
+   * @returns {string}
+   *   Returns the original application homepage URL (not from prefs).
+   */
+  getOriginalDefault() {
+    return kDefaultHomePage;
+  },
+
   get overridden() {
     return Services.prefs.prefHasUserValue(kPrefName);
   },
@@ -89,14 +98,18 @@ let HomePage = {
   },
 
   get isDefault() {
-    return HomePage.get() === HomePage.getDefault();
+    return HomePage.get() === kDefaultHomePage;
   },
 
   set(value) {
     Services.prefs.setStringPref(kPrefName, value);
   },
 
-  reset() {
+  clear() {
     Services.prefs.clearUserPref(kPrefName);
+  },
+
+  reset() {
+    Services.prefs.setStringPref(kPrefName, kDefaultHomePage);
   },
 };

@@ -440,16 +440,6 @@ def _get_filter_ship_fennec(fennec_release_type, filtered_for_candidates, parame
     return filter_
 
 
-@_target_task('promote_fennec_beta')
-def target_tasks_promote_fennec_beta(full_task_graph, parameters, graph_config):
-    """Select the set of tasks required for a candidates build of fennec. The
-    beta build process involves a pipeline of builds, signing,
-    and, eventually, uploading the tasks to balrog."""
-
-    filter = _get_filter_promote_fennec(fennec_release_type='beta')
-    return [l for l, t in full_task_graph.tasks.iteritems() if filter(full_task_graph[l])]
-
-
 @_target_task('promote_fennec_release')
 def target_tasks_promote_fennec_release(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a candidates build of fennec. The
@@ -457,20 +447,6 @@ def target_tasks_promote_fennec_release(full_task_graph, parameters, graph_confi
     and, eventually, uploading the tasks to balrog."""
 
     filter = _get_filter_promote_fennec(fennec_release_type='release')
-    return [l for l, t in full_task_graph.tasks.iteritems() if filter(full_task_graph[l])]
-
-
-@_target_task('ship_fennec_beta')
-def target_tasks_ship_fennec_beta(full_task_graph, parameters, graph_config):
-    """Select the set of tasks required to ship fennec.
-    Previous build deps will be optimized out via action task."""
-    filter = _get_filter_ship_fennec(
-        fennec_release_type='beta',
-        filtered_for_candidates=target_tasks_promote_fennec_beta(
-            full_task_graph, parameters, graph_config,
-        ),
-        parameters=parameters,
-    )
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(full_task_graph[l])]
 
 
@@ -502,28 +478,6 @@ def target_tasks_pine(full_task_graph, parameters, graph_config):
         # disable non-pine and nightly tasks
         if standard_filter(task, parameters) or filter_out_nightly(task, parameters):
             return True
-    return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
-
-
-@_target_task('nightly_fennec')
-def target_tasks_nightly_fennec(full_task_graph, parameters, graph_config):
-    """Select the set of tasks required for a nightly build of fennec. The
-    nightly build process involves a pipeline of builds, signing,
-    and, eventually, uploading the tasks to balrog."""
-    def filter(task):
-        # XXX Starting 68, we ship Fennec outside of mozilla-central, but geckoview must remain
-        # shipped from there
-        if task.kind == 'beetmover-geckoview':
-            return False
-
-        if not filter_for_project(task, parameters):
-            return False
-        if task.attributes.get('shipping_product') == 'fennec':
-            if task.attributes.get('release-type') == 'nightly':
-                if not task.attributes.get('nightly', False):
-                    return False
-                return True
-
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
 
@@ -622,6 +576,18 @@ def target_tasks_nightly_asan(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t, parameters)]
 
 
+@_target_task('daily_releases')
+def target_tasks_daily_releases(full_task_graph, parameters, graph_config):
+    """Select the set of tasks required to identify if we should release.
+    If we determine that we should the task will communicate to ship-it to
+    schedule the release itself."""
+
+    def filter(task):
+        return task.kind in ['maybe-release']
+
+    return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
+
+
 @_target_task('nightly_desktop')
 def target_tasks_nightly_desktop(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of linux, mac,
@@ -687,6 +653,16 @@ def target_tasks_file_update(full_task_graph, parameters, graph_config):
     def filter(task):
         # For now any task in the repo-update kind is ok
         return task.kind in ['repo-update']
+    return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
+
+
+@_target_task('l10n_bump')
+def target_tasks_l10n_bump(full_task_graph, parameters, graph_config):
+    """Select the set of tasks required to perform l10n bumping.
+    """
+    def filter(task):
+        # For now any task in the repo-update kind is ok
+        return task.kind in ['l10n-bump']
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
 

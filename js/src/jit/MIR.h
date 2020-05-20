@@ -3581,8 +3581,11 @@ class MCreateThis : public MBinaryInstruction,
   TRIVIAL_NEW_WRAPPERS
   NAMED_OPERANDS((0, getCallee), (1, getNewTarget))
 
-  // Although creation of |this| modifies global state, it is safely repeatable.
-  AliasSet getAliasSet() const override { return AliasSet::None(); }
+  // Performs a property read from |newTarget| iff |newTarget| is a JSFunction
+  // with an own |.prototype| property.
+  AliasSet getAliasSet() const override {
+    return AliasSet::Load(AliasSet::Any);
+  }
   bool possiblyCalls() const override { return true; }
 };
 
@@ -6431,14 +6434,12 @@ class MDefFun : public MBinaryInstruction, public ObjectPolicy<0>::Data {
 
 class MRegExp : public MNullaryInstruction {
   CompilerGCPointer<RegExpObject*> source_;
-  bool mustClone_;
   bool hasShared_;
 
   MRegExp(TempAllocator& alloc, CompilerConstraintList* constraints,
           RegExpObject* source, bool hasShared)
       : MNullaryInstruction(classOpcode),
         source_(source),
-        mustClone_(true),
         hasShared_(hasShared) {
     setResultType(MIRType::Object);
     setResultTypeSet(MakeSingletonTypeSet(alloc, constraints, source));
@@ -6448,8 +6449,6 @@ class MRegExp : public MNullaryInstruction {
   INSTRUCTION_HEADER(RegExp)
   TRIVIAL_NEW_WRAPPERS_WITH_ALLOC
 
-  void setDoNotClone() { mustClone_ = false; }
-  bool mustClone() const { return mustClone_; }
   bool hasShared() const { return hasShared_; }
   RegExpObject* source() const { return source_; }
   AliasSet getAliasSet() const override { return AliasSet::None(); }
@@ -6667,8 +6666,6 @@ class MClassConstructor : public MNullaryInstruction {
   TRIVIAL_NEW_WRAPPERS
 
   jsbytecode* pc() const { return pc_; }
-
-  AliasSet getAliasSet() const override { return AliasSet::None(); }
 };
 
 class MModuleMetadata : public MNullaryInstruction {
@@ -7792,12 +7789,6 @@ class MStoreElementHole
   TRIVIAL_NEW_WRAPPERS
   NAMED_OPERANDS((0, object), (1, elements), (2, index), (3, value))
 
-  AliasSet getAliasSet() const override {
-    // StoreElementHole can update the initialized length, the array length
-    // or reallocate obj->elements.
-    return AliasSet::Store(AliasSet::ObjectFields | AliasSet::Element);
-  }
-
   ALLOW_CLONE(MStoreElementHole)
 };
 
@@ -7824,9 +7815,6 @@ class MFallibleStoreElement
   TRIVIAL_NEW_WRAPPERS
   NAMED_OPERANDS((0, object), (1, elements), (2, index), (3, value))
 
-  AliasSet getAliasSet() const override {
-    return AliasSet::Store(AliasSet::ObjectFields | AliasSet::Element);
-  }
   bool needsHoleCheck() const { return needsHoleCheck_; }
 
   ALLOW_CLONE(MFallibleStoreElement)

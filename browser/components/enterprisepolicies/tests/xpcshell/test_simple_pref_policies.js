@@ -90,6 +90,20 @@ const POLICIES_TESTS = [
     },
   },
 
+  {
+    policies: {
+      EnableTrackingProtection: {
+        Cryptomining: true,
+        Fingerprinting: true,
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "privacy.trackingprotection.cryptomining.enabled": true,
+      "privacy.trackingprotection.fingerprinting.enabled": true,
+    },
+  },
+
   // POLICY: OverrideFirstRunPage
   {
     policies: { OverrideFirstRunPage: "https://www.example.com/" },
@@ -107,9 +121,38 @@ const POLICIES_TESTS = [
           SPNEGO: true,
           NTLM: true,
         },
+        AllowProxies: {
+          SPNEGO: false,
+          NTLM: false,
+        },
       },
     },
     lockedPrefs: {
+      "network.negotiate-auth.trusted-uris": "a.com, b.com",
+      "network.negotiate-auth.delegation-uris": "a.com, b.com",
+      "network.automatic-ntlm-auth.trusted-uris": "a.com, b.com",
+      "network.automatic-ntlm-auth.allow-non-fqdn": true,
+      "network.negotiate-auth.allow-non-fqdn": true,
+      "network.automatic-ntlm-auth.allow-proxies": false,
+      "network.negotiate-auth.allow-proxies": false,
+    },
+  },
+
+  // POLICY: Authentication (unlocked)
+  {
+    policies: {
+      Authentication: {
+        SPNEGO: ["a.com", "b.com"],
+        Delegated: ["a.com", "b.com"],
+        NTLM: ["a.com", "b.com"],
+        AllowNonFQDN: {
+          SPNEGO: true,
+          NTLM: true,
+        },
+        Locked: false,
+      },
+    },
+    unlockedPrefs: {
       "network.negotiate-auth.trusted-uris": "a.com, b.com",
       "network.negotiate-auth.delegation-uris": "a.com, b.com",
       "network.automatic-ntlm-auth.trusted-uris": "a.com, b.com",
@@ -312,18 +355,80 @@ const POLICIES_TESTS = [
     },
   },
 
+  // POLICY: SanitizeOnShutdown using Locked
+  {
+    policies: {
+      SanitizeOnShutdown: {
+        Cache: true,
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "privacy.sanitize.sanitizeOnShutdown": true,
+      "privacy.clearOnShutdown.cache": true,
+    },
+    unlockedPrefs: {
+      "privacy.clearOnShutdown.cookies": false,
+      "privacy.clearOnShutdown.downloads": false,
+      "privacy.clearOnShutdown.formdata": false,
+      "privacy.clearOnShutdown.history": false,
+      "privacy.clearOnShutdown.sessions": false,
+    },
+  },
+
+  {
+    policies: {
+      SanitizeOnShutdown: {
+        Cache: true,
+        Cookies: false,
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "privacy.sanitize.sanitizeOnShutdown": true,
+      "privacy.clearOnShutdown.cache": true,
+      "privacy.clearOnShutdown.cookies": false,
+    },
+    unlockedPrefs: {
+      "privacy.clearOnShutdown.downloads": false,
+      "privacy.clearOnShutdown.formdata": false,
+      "privacy.clearOnShutdown.history": false,
+      "privacy.clearOnShutdown.sessions": false,
+    },
+  },
+
+  {
+    policies: {
+      SanitizeOnShutdown: {
+        Cache: true,
+        Locked: false,
+      },
+    },
+    unlockedPrefs: {
+      "privacy.sanitize.sanitizeOnShutdown": true,
+      "privacy.clearOnShutdown.cache": true,
+      "privacy.clearOnShutdown.cookies": false,
+      "privacy.clearOnShutdown.downloads": false,
+      "privacy.clearOnShutdown.formdata": false,
+      "privacy.clearOnShutdown.history": false,
+      "privacy.clearOnShutdown.sessions": false,
+    },
+  },
+
   // POLICY: DNSOverHTTPS Locked
   {
     policies: {
       DNSOverHTTPS: {
         Enabled: true,
         ProviderURL: "http://example.com/provider",
+        ExcludedDomains: ["example.com", "example.org"],
         Locked: true,
       },
     },
     lockedPrefs: {
       "network.trr.mode": 2,
       "network.trr.uri": "http://example.com/provider",
+      "network.trr.excluded-domains": "example.com,example.org",
     },
   },
 
@@ -333,11 +438,13 @@ const POLICIES_TESTS = [
       DNSOverHTTPS: {
         Enabled: false,
         ProviderURL: "http://example.com/provider",
+        ExcludedDomains: ["example.com", "example.org"],
       },
     },
     unlockedPrefs: {
       "network.trr.mode": 5,
       "network.trr.uri": "http://example.com/provider",
+      "network.trr.excluded-domains": "example.com,example.org",
     },
   },
 
@@ -440,6 +547,94 @@ const POLICIES_TESTS = [
     lockedPrefs: {
       "browser.newtabpage.activity-stream.feeds.snippets": false,
       "browser.newtabpage.activity-stream.feeds.section.topstories": false,
+    },
+  },
+
+  // POLICY: OfferToSaveLoginsDefault
+  {
+    policies: {
+      OfferToSaveLoginsDefault: false,
+    },
+    unlockedPrefs: {
+      "signon.rememberSignons": false,
+    },
+  },
+
+  // POLICY: UserMessaging
+  {
+    policies: {
+      UserMessaging: {
+        ExtensionRecommendations: false,
+      },
+    },
+    unlockedPrefs: {
+      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons": false,
+    },
+  },
+
+  {
+    policies: {
+      UserMessaging: {
+        FeatureRecommendations: false,
+      },
+    },
+    unlockedPrefs: {
+      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features": false,
+    },
+  },
+
+  // POLICY: Permissions->Autoplay
+  {
+    policies: {
+      Permissions: {
+        Autoplay: {
+          Default: "allow-audio-video",
+          Locked: true,
+        },
+      },
+    },
+    lockedPrefs: {
+      "media.autoplay.default": 0,
+    },
+  },
+
+  {
+    policies: {
+      Permissions: {
+        Autoplay: {
+          Default: "block-audio",
+        },
+      },
+    },
+    unlockedPrefs: {
+      "media.autoplay.default": 1,
+    },
+  },
+
+  {
+    policies: {
+      Permissions: {
+        Autoplay: {
+          Default: "block-audio-video",
+        },
+      },
+    },
+    unlockedPrefs: {
+      "media.autoplay.default": 5,
+    },
+  },
+
+  // POLICY: EncryptedMediaExtensions
+
+  {
+    policies: {
+      EncryptedMediaExtensions: {
+        Enabled: false,
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "media.eme.enabled": false,
     },
   },
 ];

@@ -145,7 +145,6 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mDocument(aDocument),
       mMedium(aType == eContext_Galley ? nsGkAtoms::screen : nsGkAtoms::print),
       mMediaEmulated(mMedium),
-      mLinkHandler(nullptr),
       mInflationDisabledForShrinkWrap(false),
       mSystemFontScale(1.0),
       mTextZoom(1.0),
@@ -826,7 +825,7 @@ nsIWidget* nsPresContext::GetNearestWidget(nsPoint* aOffset) {
   return frame->GetView()->GetNearestWidget(aOffset);
 }
 
-nsIWidget* nsPresContext::GetRootWidget() {
+nsIWidget* nsPresContext::GetRootWidget() const {
   NS_ENSURE_TRUE(mPresShell, nullptr);
   nsViewManager* vm = mPresShell->GetViewManager();
   if (!vm) {
@@ -1141,9 +1140,6 @@ nsIDocShell* nsPresContext::GetDocShell() const {
   return mDocument->GetDocShell();
 }
 
-/* virtual */
-void nsPresContext::Detach() { SetLinkHandler(nullptr); }
-
 bool nsPresContext::BidiEnabled() const { return Document()->GetBidiEnabled(); }
 
 void nsPresContext::SetBidiEnabled() const { Document()->SetBidiEnabled(); }
@@ -1383,11 +1379,10 @@ void nsPresContext::UIResolutionChangedSync() {
   }
 }
 
-/*static*/
+/* static */
 bool nsPresContext::UIResolutionChangedSubdocumentCallback(
-    dom::Document* aDocument, void* aData) {
-  nsPresContext* pc = aDocument->GetPresContext();
-  if (pc) {
+    dom::Document& aDocument, void* aData) {
+  if (nsPresContext* pc = aDocument.GetPresContext()) {
     // For subdocuments, we want to apply the parent's scale, because there
     // are cases where the subdoc's device context is connected to a widget
     // that has an out-of-date resolution (it's on a different screen, but
@@ -1506,10 +1501,10 @@ void nsPresContext::PostRebuildAllStyleDataEvent(nsChangeHint aExtraHint,
   RestyleManager()->PostRebuildAllStyleDataEvent(aExtraHint, aRestyleHint);
 }
 
-static bool MediaFeatureValuesChangedAllDocumentsCallback(Document* aDocument,
+static bool MediaFeatureValuesChangedAllDocumentsCallback(Document& aDocument,
                                                           void* aChange) {
   auto* change = static_cast<const MediaFeatureChange*>(aChange);
-  if (nsPresContext* pc = aDocument->GetPresContext()) {
+  if (nsPresContext* pc = aDocument.GetPresContext()) {
     pc->MediaFeatureValuesChangedAllDocuments(*change);
   }
   return true;
@@ -1810,11 +1805,10 @@ void nsPresContext::FireDOMPaintEvent(
                                     static_cast<Event*>(event), this, nullptr);
 }
 
-static bool MayHavePaintEventListenerSubdocumentCallback(Document* aDocument,
+static bool MayHavePaintEventListenerSubdocumentCallback(Document& aDocument,
                                                          void* aData) {
   bool* result = static_cast<bool*>(aData);
-  nsPresContext* pc = aDocument->GetPresContext();
-  if (pc) {
+  if (nsPresContext* pc = aDocument.GetPresContext()) {
     *result = pc->MayHavePaintEventListenerInSubDocument();
 
     // If we found a paint event listener, then we can stop enumerating
@@ -1981,23 +1975,19 @@ struct NotifyDidPaintSubdocumentCallbackClosure {
   TransactionId mTransactionId;
   const mozilla::TimeStamp& mTimeStamp;
 };
-bool nsPresContext::NotifyDidPaintSubdocumentCallback(dom::Document* aDocument,
+bool nsPresContext::NotifyDidPaintSubdocumentCallback(dom::Document& aDocument,
                                                       void* aData) {
-  NotifyDidPaintSubdocumentCallbackClosure* closure =
-      static_cast<NotifyDidPaintSubdocumentCallbackClosure*>(aData);
-  nsPresContext* pc = aDocument->GetPresContext();
-  if (pc) {
+  auto* closure = static_cast<NotifyDidPaintSubdocumentCallbackClosure*>(aData);
+  if (nsPresContext* pc = aDocument.GetPresContext()) {
     pc->NotifyDidPaintForSubtree(closure->mTransactionId, closure->mTimeStamp);
   }
   return true;
 }
 
 bool nsPresContext::NotifyRevokingDidPaintSubdocumentCallback(
-    dom::Document* aDocument, void* aData) {
-  NotifyDidPaintSubdocumentCallbackClosure* closure =
-      static_cast<NotifyDidPaintSubdocumentCallbackClosure*>(aData);
-  nsPresContext* pc = aDocument->GetPresContext();
-  if (pc) {
+    dom::Document& aDocument, void* aData) {
+  auto* closure = static_cast<NotifyDidPaintSubdocumentCallbackClosure*>(aData);
+  if (nsPresContext* pc = aDocument.GetPresContext()) {
     pc->NotifyRevokingDidPaint(closure->mTransactionId);
   }
   return true;
@@ -2466,12 +2456,6 @@ nsRootPresContext::~nsRootPresContext() {
   NS_ASSERTION(mRegisteredPlugins.Count() == 0,
                "All plugins should have been unregistered");
   CancelApplyPluginGeometryTimer();
-}
-
-/* virtual */
-void nsRootPresContext::Detach() {
-  // XXXmats maybe also CancelApplyPluginGeometryTimer(); ?
-  nsPresContext::Detach();
 }
 
 void nsRootPresContext::RegisterPluginForGeometryUpdates(nsIContent* aPlugin) {

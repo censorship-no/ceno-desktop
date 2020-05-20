@@ -52,7 +52,6 @@ class nsITimer;
 class nsIContent;
 class nsIFrame;
 class nsFrameManager;
-class nsILinkHandler;
 class nsAtom;
 class nsIRunnable;
 class gfxFontFeatureValueSet;
@@ -199,9 +198,17 @@ class nsPresContext : public nsISupports,
 
   /**
    * Returns the root widget for this.
-   * Note that the widget is a mediater with IME.
    */
-  nsIWidget* GetRootWidget();
+  nsIWidget* GetRootWidget() const;
+
+  /**
+   * Returns the widget which may have native focus and handles text input
+   * like keyboard input, IME, etc.
+   */
+  nsIWidget* GetTextInputHandlingWidget() const {
+    // Currently, root widget for each PresContext handles text input.
+    return GetRootWidget();
+  }
 
   /**
    * Return the presentation context for the root of the view manager
@@ -346,17 +353,6 @@ class nsPresContext : public nsISupports,
   nsISupports* GetContainerWeak() const;
 
   nsIDocShell* GetDocShell() const;
-
-  // XXX this are going to be replaced with set/get container
-  void SetLinkHandler(nsILinkHandler* aHandler) { mLinkHandler = aHandler; }
-  nsILinkHandler* GetLinkHandler() { return mLinkHandler; }
-
-  /**
-   * Detach this pres context - i.e. cancel relevant timers,
-   * SetLinkHandler(null), etc.
-   * Only to be used by the DocumentViewer.
-   */
-  virtual void Detach();
 
   /**
    * Get the visible area associated with this presentation context.
@@ -1015,8 +1011,8 @@ class nsPresContext : public nsISupports,
   // aData here is a pointer to a double that holds the CSS to device-pixel
   // scale factor from the parent, which will be applied to the subdocument's
   // device context instead of retrieving a scale from the widget.
-  static bool UIResolutionChangedSubdocumentCallback(
-      mozilla::dom::Document* aDocument, void* aData);
+  static bool UIResolutionChangedSubdocumentCallback(mozilla::dom::Document&,
+                                                     void* aData);
 
   void SetImgAnimations(nsIContent* aParent, uint16_t aMode);
   void SetSMILAnimations(mozilla::dom::Document* aDoc, uint16_t aNewMode,
@@ -1032,10 +1028,10 @@ class nsPresContext : public nsISupports,
 
   void UpdateCharSet(NotNull<const Encoding*> aCharSet);
 
-  static bool NotifyDidPaintSubdocumentCallback(
-      mozilla::dom::Document* aDocument, void* aData);
-  static bool NotifyRevokingDidPaintSubdocumentCallback(
-      mozilla::dom::Document* aDocument, void* aData);
+  static bool NotifyDidPaintSubdocumentCallback(mozilla::dom::Document&,
+                                                void* aData);
+  static bool NotifyRevokingDidPaintSubdocumentCallback(mozilla::dom::Document&,
+                                                        void* aData);
 
  public:
   // Used by the PresShell to force a reflow when some aspect of font info
@@ -1116,10 +1112,6 @@ class nsPresContext : public nsISupports,
       "always a static atom") mMedium;  // initialized by subclass ctors
   RefPtr<nsAtom> mMediaEmulated;
   RefPtr<gfxFontFeatureValueSet> mFontFeatureValuesLookup;
-
-  // This pointer is nulled out through SetLinkHandler() in the destructors of
-  // the classes which set it. (using SetLinkHandler() again).
-  nsILinkHandler* MOZ_NON_OWNING_REF mLinkHandler;
 
  public:
   // The following are public member variables so that we can use them
@@ -1286,7 +1278,6 @@ class nsRootPresContext final : public nsPresContext {
  public:
   nsRootPresContext(mozilla::dom::Document* aDocument, nsPresContextType aType);
   virtual ~nsRootPresContext();
-  virtual void Detach() override;
 
   /**
    * Registers a plugin to receive geometry updates (position and clip

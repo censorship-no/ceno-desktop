@@ -16,6 +16,8 @@ const { AppConstants } = ChromeUtils.import(
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
+  AboutPrivateBrowsingHandler:
+    "resource:///modules/aboutpages/AboutPrivateBrowsingHandler.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   HeadlessShell: "resource:///modules/HeadlessShell.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
@@ -505,6 +507,9 @@ nsBrowserContentHandler.prototype = {
         false
       );
       if (privateWindowParam) {
+        // Ensure we initialize the handler before trying to load
+        // about:privatebrowsing.
+        AboutPrivateBrowsingHandler.init();
         let forcePrivate = true;
         let resolvedURI;
         if (!PrivateBrowsingUtils.enabled) {
@@ -530,6 +535,9 @@ nsBrowserContentHandler.prototype = {
       }
       // NS_ERROR_INVALID_ARG is thrown when flag exists, but has no param.
       if (cmdLine.handleFlag("private-window", false)) {
+        // Ensure we initialize the handler before trying to load
+        // about:privatebrowsing.
+        AboutPrivateBrowsingHandler.init();
         openBrowserWindow(
           cmdLine,
           gSystemPrincipal,
@@ -792,17 +800,16 @@ nsBrowserContentHandler.prototype = {
 
   /* nsICommandLineValidator */
   validate: function bch_validate(cmdLine) {
-    // Other handlers may use osint so only handle the osint flag if the url
-    // flag is also present and the command line is valid.
-    var osintFlagIdx = cmdLine.findFlag("osint", false);
     var urlFlagIdx = cmdLine.findFlag("url", false);
     if (
       urlFlagIdx > -1 &&
-      (osintFlagIdx > -1 ||
-        cmdLine.state == Ci.nsICommandLine.STATE_REMOTE_EXPLICIT)
+      cmdLine.state == Ci.nsICommandLine.STATE_REMOTE_EXPLICIT
     ) {
       var urlParam = cmdLine.getArgument(urlFlagIdx + 1);
-      if (cmdLine.length != urlFlagIdx + 2 || /firefoxurl:/i.test(urlParam)) {
+      if (
+        cmdLine.length != urlFlagIdx + 2 ||
+        /firefoxurl(-[a-f0-9]+)?:/i.test(urlParam)
+      ) {
         throw Cr.NS_ERROR_ABORT;
       }
       var isDefault = false;
@@ -819,7 +826,6 @@ nsBrowserContentHandler.prototype = {
         // We don't have to show the instruction page.
         throw Cr.NS_ERROR_ABORT;
       }
-      cmdLine.handleFlag("osint", false);
     }
   },
 };

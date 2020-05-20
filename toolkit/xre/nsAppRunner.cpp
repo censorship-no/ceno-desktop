@@ -221,6 +221,7 @@
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "GeneratedJNIWrappers.h"
+#  include "mozilla/jni/Utils.h"  // for mozilla::jni::IsFennec()
 #endif
 
 #if defined(MOZ_SANDBOX)
@@ -256,8 +257,8 @@ char** gArgv;
 
 #include "buildid.h"
 
-static const char gToolkitVersion[] = NS_STRINGIFY(GRE_MILESTONE);
-static const char gToolkitBuildID[] = NS_STRINGIFY(MOZ_BUILDID);
+static const char gToolkitVersion[] = MOZ_STRINGIFY(GRE_MILESTONE);
+static const char gToolkitBuildID[] = MOZ_STRINGIFY(MOZ_BUILDID);
 
 static nsIProfileLock* gProfileLock;
 
@@ -851,7 +852,7 @@ nsXULAppInfo::GetIsOfficialBranding(bool* aResult) {
 
 NS_IMETHODIMP
 nsXULAppInfo::GetDefaultUpdateChannel(nsACString& aResult) {
-  aResult.AssignLiteral(NS_STRINGIFY(MOZ_UPDATE_CHANNEL));
+  aResult.AssignLiteral(MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL));
   return NS_OK;
 }
 
@@ -1452,7 +1453,7 @@ static inline void DumpVersion() {
 
   // Use the displayed version
   // For example, for beta, we would display 42.0b2 instead of 42.0
-  printf("%s", NS_STRINGIFY(MOZ_APP_VERSION_DISPLAY));
+  printf("%s", MOZ_STRINGIFY(MOZ_APP_VERSION_DISPLAY));
 
   if (gAppData->copyright) {
     printf(", %s", (const char*)gAppData->copyright);
@@ -1983,26 +1984,12 @@ static nsresult SelectProfile(nsToolkitProfileService* aProfileSvc,
 
   // reset-profile and migration args need to be checked before any profiles are
   // chosen below.
-  ArgResult ar = CheckArg("reset-profile", nullptr,
-                          CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
-  if (ar == ARG_BAD) {
-    PR_fprintf(PR_STDERR,
-               "Error: argument --reset-profile is invalid when argument "
-               "--osint is specified\n");
-    return NS_ERROR_FAILURE;
-  }
+  ArgResult ar = CheckArg("reset-profile");
   if (ar == ARG_FOUND) {
     gDoProfileReset = true;
   }
 
-  ar = CheckArg("migration", nullptr,
-                CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
-  if (ar == ARG_BAD) {
-    PR_fprintf(PR_STDERR,
-               "Error: argument --migration is invalid when argument --osint "
-               "is specified\n");
-    return NS_ERROR_FAILURE;
-  }
+  ar = CheckArg("migration");
   if (ar == ARG_FOUND) {
     gDoMigration = true;
   }
@@ -2174,7 +2161,8 @@ static void SubmitDowngradeTelemetry(const nsCString& aLastVersion,
       w.StringProperty("buildId", gAppData->buildID);
       w.StringProperty("name", gAppData->name);
       w.StringProperty("version", gAppData->version);
-      w.StringProperty("displayVersion", NS_STRINGIFY(MOZ_APP_VERSION_DISPLAY));
+      w.StringProperty("displayVersion",
+                       MOZ_STRINGIFY(MOZ_APP_VERSION_DISPLAY));
       w.StringProperty("vendor", gAppData->vendor);
       w.StringProperty("platformVersion", gToolkitVersion);
 #  ifdef TARGET_XPCOM_ABI
@@ -2305,7 +2293,7 @@ static ReturnAbortOnError CheckDowngrade(nsIFile* aProfileDir,
     nsCString profileName;
     profileName.AssignLiteral("default");
 #  ifdef MOZ_DEDICATED_PROFILES
-    profileName.Append("-" NS_STRINGIFY(MOZ_UPDATE_CHANNEL));
+    profileName.Append("-" MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL));
 #  endif
     nsCOMPtr<nsIToolkitProfile> newProfile;
     rv = aProfileSvc->CreateUniqueProfile(nullptr, profileName,
@@ -3137,8 +3125,7 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
 
   // Check for application.ini overrides
   const char* override = nullptr;
-  ar = CheckArg("override", &override,
-                CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
+  ar = CheckArg("override", &override);
   if (ar == ARG_BAD) {
     Output(true, "Incorrect number of arguments passed to --override");
     return 1;
@@ -3235,7 +3222,7 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
       CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::BuildID,
                                          nsDependentCString(mAppData->buildID));
 
-    nsDependentCString releaseChannel(NS_STRINGIFY(MOZ_UPDATE_CHANNEL));
+    nsDependentCString releaseChannel(MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL));
     CrashReporter::AnnotateCrashReport(
         CrashReporter::Annotation::ReleaseChannel, releaseChannel);
 #ifdef MOZ_LINKER
@@ -3425,14 +3412,7 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
   // Handle --no-remote and --new-instance command line arguments. Setup
   // the environment to better accommodate other components and various
   // restart scenarios.
-  ar = CheckArg("no-remote", nullptr,
-                CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
-  if (ar == ARG_BAD) {
-    PR_fprintf(PR_STDERR,
-               "Error: argument --no-remote is invalid when argument --osint "
-               "is specified\n");
-    return 1;
-  }
+  ar = CheckArg("no-remote");
   if (ar == ARG_FOUND || EnvHasValue("MOZ_NO_REMOTE")) {
     mDisableRemoteClient = true;
     mDisableRemoteServer = true;
@@ -3441,14 +3421,7 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
     }
   }
 
-  ar = CheckArg("new-instance", nullptr,
-                CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
-  if (ar == ARG_BAD) {
-    PR_fprintf(PR_STDERR,
-               "Error: argument --new-instance is invalid when argument "
-               "--osint is specified\n");
-    return 1;
-  }
+  ar = CheckArg("new-instance");
   if (ar == ARG_FOUND || EnvHasValue("MOZ_NEW_INSTANCE")) {
     mDisableRemoteClient = true;
   }
@@ -3459,15 +3432,7 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
   CheckArg("new-instance");
 #endif
 
-  ar = CheckArg("offline", nullptr,
-                CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
-  if (ar == ARG_BAD) {
-    PR_fprintf(PR_STDERR,
-               "Error: argument --offline is invalid when argument --osint is "
-               "specified\n");
-    return 1;
-  }
-
+  ar = CheckArg("offline");
   if (ar || EnvHasValue("XRE_START_OFFLINE")) {
     mStartOffline = true;
   }
@@ -3665,7 +3630,7 @@ static void SetShutdownChecks() {
   gShutdownChecks = SCM_CRASH;
 #  endif  // MOZ_CODE_COVERAGE
 #else
-  const char* releaseChannel = NS_STRINGIFY(MOZ_UPDATE_CHANNEL);
+  const char* releaseChannel = MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL);
   if (strcmp(releaseChannel, "nightly") == 0 ||
       strcmp(releaseChannel, "default") == 0) {
     gShutdownChecks = SCM_RECORD;
@@ -3764,7 +3729,7 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
   mozilla::Telemetry::InitIOReporting(gAppData->xreDirectory);
 #  else
   {
-    const char* releaseChannel = NS_STRINGIFY(MOZ_UPDATE_CHANNEL);
+    const char* releaseChannel = MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL);
     if (strcmp(releaseChannel, "nightly") == 0 ||
         strcmp(releaseChannel, "default") == 0) {
       mozilla::Telemetry::InitIOReporting(gAppData->xreDirectory);
@@ -4664,9 +4629,12 @@ nsresult XREMain::XRE_mainRun() {
  *            .app/Contents/Resources.
  */
 int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
+  gArgc = argc;
+  gArgv = argv;
+
   ScopedLogging log;
 
-  mozilla::LogModule::Init(argc, argv);
+  mozilla::LogModule::Init(gArgc, gArgv);
 
 #ifdef MOZ_CODE_COVERAGE
   CodeCoverageHandler::Init();
@@ -4676,9 +4644,6 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
   AUTO_PROFILER_LABEL("XREMain::XRE_main", OTHER);
 
   nsresult rv = NS_OK;
-
-  gArgc = argc;
-  gArgv = argv;
 
   if (aConfig.appData) {
     mAppData = MakeUnique<XREAppData>(*aConfig.appData);
@@ -4905,13 +4870,10 @@ nsresult XRE_InitCommandLine(int aArgc, char* aArgv[]) {
   recordreplay::parent::InitializeUIProcess(gArgc, gArgv);
 
   const char* path = nullptr;
-  ArgResult ar = CheckArg("greomni", &path,
-                          CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
+  ArgResult ar = CheckArg("greomni", &path);
   if (ar == ARG_BAD) {
     PR_fprintf(PR_STDERR,
-               "Error: argument --greomni requires a path argument or the "
-               "--osint argument was specified with the --appomni argument "
-               "which is invalid\n");
+               "Error: argument --greomni requires a path argument\n");
     return NS_ERROR_FAILURE;
   }
 
@@ -4924,13 +4886,10 @@ nsresult XRE_InitCommandLine(int aArgc, char* aArgv[]) {
     return rv;
   }
 
-  ar = CheckArg("appomni", &path,
-                CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
+  ar = CheckArg("appomni", &path);
   if (ar == ARG_BAD) {
     PR_fprintf(PR_STDERR,
-               "Error: argument --appomni requires a path argument or the "
-               "--osint argument was specified with the --appomni argument "
-               "which is invalid\n");
+               "Error: argument --appomni requires a path argument\n");
     return NS_ERROR_FAILURE;
   }
 
@@ -4961,7 +4920,12 @@ GeckoProcessType XRE_GetProcessType() {
 }
 
 bool XRE_IsE10sParentProcess() {
+#ifdef MOZ_WIDGET_ANDROID
+  return XRE_IsParentProcess() && mozilla::jni::IsAvailable() &&
+         !mozilla::jni::IsFennec() && BrowserTabsRemoteAutostart();
+#else
   return XRE_IsParentProcess() && BrowserTabsRemoteAutostart();
+#endif
 }
 
 #define GECKO_PROCESS_TYPE(enum_name, string_name, xre_name, bin_type) \

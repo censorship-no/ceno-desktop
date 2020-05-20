@@ -33,19 +33,14 @@ public class LeanplumVariables {
     private static Resources appResources;
 
     private static final String FIRSTRUN_WELCOME_PANEL_GROUP_NAME = "FirstRun Welcome Panel";
-    private static final String FIRSTRUN_PRIVACY_PANEL_GROUP_NAME = "FirstRun Privacy Panel";
     private static final String FIRSTRUN_CUSTOMIZE_PANEL_GROUP_NAME = "FirstRun Customize Panel";
     private static final String FIRSTRUN_SYNC_PANEL_GROUP_NAME = "FirstRun Sync Panel";
+    private static final String FIRSTRUN_SEND_TAB_PANEL_GROUP_NAME = "FirstRun Send Tab Panel";
 
     @Variable(group = FIRSTRUN_WELCOME_PANEL_GROUP_NAME) public static String welcomePanelTitle;
     @Variable(group = FIRSTRUN_WELCOME_PANEL_GROUP_NAME) public static String welcomePanelMessage;
     @Variable(group = FIRSTRUN_WELCOME_PANEL_GROUP_NAME) public static String welcomePanelSubtext;
     @DrawableRes private static int welcomeDrawableId;
-
-    @Variable(group = FIRSTRUN_PRIVACY_PANEL_GROUP_NAME) public static String privacyPanelTitle;
-    @Variable(group = FIRSTRUN_PRIVACY_PANEL_GROUP_NAME) public static String privacyPanelMessage;
-    @Variable(group = FIRSTRUN_PRIVACY_PANEL_GROUP_NAME) public static String privacyPanelSubtext;
-    @DrawableRes private static int privacyDrawableId;
 
     @Variable(group = FIRSTRUN_CUSTOMIZE_PANEL_GROUP_NAME) public static String customizePanelTitle;
     @Variable(group = FIRSTRUN_CUSTOMIZE_PANEL_GROUP_NAME) public static String customizePanelMessage;
@@ -56,6 +51,11 @@ public class LeanplumVariables {
     @Variable(group = FIRSTRUN_SYNC_PANEL_GROUP_NAME) public static String syncPanelMessage;
     @Variable(group = FIRSTRUN_SYNC_PANEL_GROUP_NAME) public static String syncPanelSubtext;
     @DrawableRes private static int syncDrawableId;
+
+    @Variable(group = FIRSTRUN_SEND_TAB_PANEL_GROUP_NAME) public static String sendTabPanelTitle;
+    @Variable(group = FIRSTRUN_SEND_TAB_PANEL_GROUP_NAME) public static String sendTabPanelMessage;
+    @Variable(group = FIRSTRUN_SEND_TAB_PANEL_GROUP_NAME) public static String sendTabPanelSubtext;
+    @DrawableRes private static int sendTabDrawableId;
 
     /**
      * Allows constructing and/or returning an already constructed instance of this class
@@ -82,21 +82,18 @@ public class LeanplumVariables {
 
         // Same titles for the screens of the old / new onboarding UX.
         welcomePanelTitle = appResources.getString(R.string.firstrun_panel_title_welcome);
-        privacyPanelTitle = appResources.getString(R.string.firstrun_panel_title_privacy);
         customizePanelTitle = appResources.getString(R.string.firstrun_panel_title_customize);
 
         // The new Onboarding UX uses different messages and images. Only if they are localized.
         OnboardingResources onboardingUtil = OnboardingResources.getInstance(context);
         syncPanelTitle = onboardingUtil.getSyncTitle();
 
+        sendTabPanelTitle = appResources.getString(R.string.firstrun_sendtab_title);
+
         if (onboardingUtil.useNewOnboarding()) {
             welcomePanelMessage = onboardingUtil.getWelcomeMessage();
             welcomePanelSubtext = onboardingUtil.getWelcomeSubtext();
             welcomeDrawableId = R.drawable.firstrun_welcome2;
-
-            privacyPanelMessage = FirstrunPanel.NO_MESSAGE;
-            privacyPanelSubtext = onboardingUtil.getPrivacySubtext();
-            privacyDrawableId = R.drawable.firstrun_private2;
 
             syncPanelMessage = FirstrunPanel.NO_MESSAGE;
             syncPanelSubtext = onboardingUtil.getSyncSubtext();
@@ -106,10 +103,6 @@ public class LeanplumVariables {
             welcomePanelSubtext = appResources.getString(R.string.firstrun_urlbar_subtext);
             welcomeDrawableId = R.drawable.firstrun_welcome;
 
-            privacyPanelMessage = appResources.getString(R.string.firstrun_privacy_message);
-            privacyPanelSubtext = appResources.getString(R.string.firstrun_privacy_subtext);
-            privacyDrawableId = R.drawable.firstrun_private;
-
             customizePanelMessage = appResources.getString(R.string.firstrun_customize_message);
             customizePanelSubtext = appResources.getString(R.string.firstrun_customize_subtext);
             customizingDrawableId = R.drawable.firstrun_data;
@@ -118,14 +111,14 @@ public class LeanplumVariables {
             syncPanelSubtext = appResources.getString(R.string.firstrun_sync_subtext);
             syncDrawableId = R.drawable.firstrun_sync;
         }
+
+        sendTabPanelMessage = FirstrunPanel.NO_MESSAGE;
+        sendTabPanelSubtext = appResources.getString(R.string.firstrun_sendtab_message);
+        sendTabDrawableId = R.drawable.firstrun_sendtab;
     }
 
     public static int getWelcomeImage() {
         return welcomeDrawableId;
-    }
-
-    public static int getPrivacyImage() {
-        return privacyDrawableId;
     }
 
     public static int getCustomizingImage() {
@@ -134,6 +127,10 @@ public class LeanplumVariables {
 
     public static int getSyncImage() {
         return syncDrawableId;
+    }
+
+    public static int getSendTabImage() {
+        return sendTabDrawableId;
     }
 
 }

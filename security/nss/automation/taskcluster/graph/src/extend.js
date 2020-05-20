@@ -139,7 +139,8 @@ queue.map(task => {
   }
 
   // Windows is slow.
-  if (task.platform == "windows2012-64" && task.tests == "chains") {
+  if ((task.platform == "windows2012-32" || task.platform == "windows2012-64") &&
+      task.tests == "chains") {
     task.maxRunTime = 7200;
   }
 
@@ -830,7 +831,7 @@ async function scheduleTestBuilds(name, base, args = "") {
 
 async function scheduleWindows(name, base, build_script) {
   base = merge(base, {
-    workerType: "nss-win2012r2",
+    workerType: "win2012r2",
     env: {
       PATH: "c:\\mozilla-build\\bin;c:\\mozilla-build\\python;" +
 	    "c:\\mozilla-build\\msys\\local\\bin;c:\\mozilla-build\\7zip;" +
@@ -840,7 +841,9 @@ async function scheduleWindows(name, base, build_script) {
 	    "c:\\mozilla-build\\moztools-x64\\bin;c:\\mozilla-build\\wget",
       DOMSUF: "localdomain",
       HOST: "localhost",
-    }
+    },
+    features: ["taskclusterProxy"],
+    scopes: ["project:releng:services/tooltool/api/download/internal"],
   });
 
   // Build base definition.

@@ -60,11 +60,11 @@ job_description_schema = Schema({
     Optional('run-on-projects'): task_description_schema['run-on-projects'],
     Optional('shipping-phase'): task_description_schema['shipping-phase'],
     Optional('shipping-product'): task_description_schema['shipping-product'],
-    Optional('coalesce'): task_description_schema['coalesce'],
     Optional('always-target'): task_description_schema['always-target'],
     Exclusive('optimization', 'optimization'): task_description_schema['optimization'],
     Optional('needs-sccache'): task_description_schema['needs-sccache'],
     Optional('release-artifacts'): task_description_schema['release-artifacts'],
+    Optional('priority'): task_description_schema['priority'],
 
     # The "when" section contains descriptions of the circumstances under which
     # this task should be included in the task graph.  This will be converted

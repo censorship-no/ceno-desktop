@@ -19,8 +19,8 @@ job-defaults:
         nightly: true
     worker-type:
         by-project:
-            mozilla-central: scriptworker-prov-v1/bouncer-v1
-            default: scriptworker-prov-v1/bouncer-dev
+            mozilla-central: scriptworker-k8s/gecko-3-bouncer
+            default: scriptworker-k8s/gecko-1-bouncer
     worker:
         implementation: bouncer-locations
     scopes:
@@ -35,7 +35,7 @@ job-defaults:
     treeherder:
         symbol: BncLoc
         kind: other
-        tier: 2
+        tier: 1
 
 jobs:
     firefox:
@@ -49,6 +49,8 @@ jobs:
             - firefox-nightly-latest-l10n-ssl
             - firefox-nightly-msi-latest-ssl
             - firefox-nightly-msi-latest-l10n-ssl
+            - firefox-nightly-pkg-latest-ssl
+            - firefox-nightly-pkg-latest-l10n-ssl
         treeherder:
             platform: firefox-release/opt
     fennec:
@@ -62,8 +64,8 @@ jobs:
             platform: fennec-release/opt
         worker-type:
             by-project:
-                mozilla-esr68: scriptworker-prov-v1/bouncer-v1
-                default: scriptworker-prov-v1/bouncer-dev
+                mozilla-esr68: scriptworker-k8s/gecko-3-bouncer
+                default: scriptworker-k8s/gecko-1-bouncer
         scopes:
             by-project:
                 mozilla-esr68:

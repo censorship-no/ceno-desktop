@@ -210,7 +210,7 @@ pref("extensions.update.background.url", "https://versioncheck-bg.addons.mozilla
 /* preferences for the Get Add-ons pane */
 pref("extensions.getAddons.cache.enabled", true);
 pref("extensions.getAddons.search.browseURL", "https://addons.mozilla.org/%LOCALE%/android/search?q=%TERMS%&platform=%OS%&appver=%VERSION%");
-pref("extensions.getAddons.browseAddons", "https://addons.mozilla.org/%LOCALE%/firefox/collections/4757633/mob/?page=1&collection_sort=-popularity");
+pref("extensions.getAddons.browseAddons", "https://addons.mozilla.org/%LOCALE%/android/collections/4757633/mob/?page=1&collection_sort=-popularity");
 pref("extensions.getAddons.get.url", "https://services.addons.mozilla.org/api/v3/addons/search/?guid=%IDS%&lang=%LOCALE%");
 pref("extensions.getAddons.compatOverides.url", "https://services.addons.mozilla.org/api/v3/addons/compat-override/?guid=%IDS%&lang=%LOCALE%");
 pref("extensions.getAddons.langpacks.url", "https://services.addons.mozilla.org/api/v3/addons/language-tools/?app=android&type=language&appversion=%VERSION%");
@@ -475,15 +475,6 @@ pref("ui.threedshadow", "#aea194");
 pref("ui.window", "#efebe7");
 pref("ui.windowtext", "#101010");
 pref("ui.windowframe", "#efebe7");
-
-/* prefs used by the update timer system (including blocklist pings) */
-pref("app.update.timerFirstInterval", 30000); // milliseconds
-pref("app.update.timerMinimumDelay", 30); // seconds
-
-// used by update service to decide whether or not to
-// automatically download an update
-pref("app.update.autodownload", "wifi");
-pref("app.update.url.android", "https://aus5.mozilla.org/update/4/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%MOZ_VERSION%/update.xml");
 
 #ifdef MOZ_UPDATER
 /* prefs used specifically for updating the app */
@@ -859,6 +850,7 @@ pref("media.navigator.permission.device", true);
 
 // Allow system add-on updates
 pref("extensions.systemAddon.update.url", "https://aus5.mozilla.org/update/3/SystemAddons/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
+pref("extensions.systemAddon.update.enabled", true);
 
 // E10s stuff. We don't support 'file' or 'priveleged' process types.
 pref("browser.tabs.remote.separateFileUriProcess", false);

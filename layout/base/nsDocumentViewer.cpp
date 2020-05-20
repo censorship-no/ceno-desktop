@@ -29,7 +29,6 @@
 #include "nsGenericHTMLElement.h"
 #include "nsStubMutationObserver.h"
 
-#include "nsILinkHandler.h"
 #include "nsISelectionListener.h"
 #include "mozilla/dom/Selection.h"
 #include "nsContentUtils.h"
@@ -493,7 +492,9 @@ class AutoPrintEventDispatcher {
  private:
   void DispatchEventToWindowTree(const nsAString& aEvent) {
     nsTArray<nsCOMPtr<Document>> targets;
-    CollectDocuments(mTop, &targets);
+    if (mTop) {
+      CollectDocuments(*mTop, &targets);
+    }
     for (nsCOMPtr<Document>& doc : targets) {
       nsContentUtils::DispatchTrustedEvent(doc, doc->GetWindow(), aEvent,
                                            CanBubble::eNo, Cancelable::eNo,
@@ -501,12 +502,10 @@ class AutoPrintEventDispatcher {
     }
   }
 
-  static bool CollectDocuments(Document* aDocument, void* aData) {
-    if (aDocument) {
-      static_cast<nsTArray<nsCOMPtr<Document>>*>(aData)->AppendElement(
-          aDocument);
-      aDocument->EnumerateSubDocuments(CollectDocuments, aData);
-    }
+  static bool CollectDocuments(Document& aDocument, void* aData) {
+    static_cast<nsTArray<nsCOMPtr<Document>>*>(aData)->AppendElement(
+        &aDocument);
+    aDocument.EnumerateSubDocuments(CollectDocuments, aData);
     return true;
   }
 
@@ -949,13 +948,6 @@ nsresult nsDocumentViewer::InitInternal(nsIWidget* aParentWidget,
 
   nsCOMPtr<nsIInterfaceRequestor> requestor(mContainer);
   if (requestor) {
-    if (mPresContext) {
-      nsCOMPtr<nsILinkHandler> linkHandler;
-      requestor->GetInterface(NS_GET_IID(nsILinkHandler),
-                              getter_AddRefs(linkHandler));
-      mPresContext->SetLinkHandler(linkHandler);
-    }
-
     // Set script-context-owner in the document
 
     nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(requestor);
@@ -1484,11 +1476,6 @@ static void AttachContainerRecurse(nsIDocShell* aShell) {
     if (doc) {
       doc->SetContainer(static_cast<nsDocShell*>(aShell));
     }
-    RefPtr<nsPresContext> pc = viewer->GetPresContext();
-    if (pc) {
-      nsCOMPtr<nsILinkHandler> handler = do_QueryInterface(aShell);
-      pc->SetLinkHandler(handler);
-    }
     if (PresShell* presShell = viewer->GetPresShell()) {
       presShell->SetForwardingContainer(WeakPtr<nsDocShell>());
     }
@@ -1641,13 +1628,8 @@ static void DetachContainerRecurse(nsIDocShell* aShell) {
   nsCOMPtr<nsIContentViewer> viewer;
   aShell->GetContentViewer(getter_AddRefs(viewer));
   if (viewer) {
-    Document* doc = viewer->GetDocument();
-    if (doc) {
+    if (Document* doc = viewer->GetDocument()) {
       doc->SetContainer(nullptr);
-    }
-    RefPtr<nsPresContext> pc = viewer->GetPresContext();
-    if (pc) {
-      pc->Detach();
     }
     if (PresShell* presShell = viewer->GetPresShell()) {
       auto weakShell = static_cast<nsDocShell*>(aShell);
@@ -1788,9 +1770,6 @@ nsDocumentViewer::Destroy() {
 
     if (mDocument) {
       mDocument->SetContainer(nullptr);
-    }
-    if (mPresContext) {
-      mPresContext->Detach();
     }
     if (mPresShell) {
       mPresShell->SetForwardingContainer(mContainer);
@@ -2202,14 +2181,6 @@ nsDocumentViewer::Show(void) {
                            mPresContext->DevPixelsToAppUnits(mBounds.height)),
                     containerView);
     if (NS_FAILED(rv)) return rv;
-
-    if (mPresContext && base_win) {
-      nsCOMPtr<nsILinkHandler> linkHandler(do_GetInterface(base_win));
-
-      if (linkHandler) {
-        mPresContext->SetLinkHandler(linkHandler);
-      }
-    }
 
     if (mPresContext) {
       Hide();
@@ -2637,7 +2608,6 @@ NS_IMETHODIMP nsDocumentViewer::SetCommandNode(nsINode* aNode) {
   root->SetPopupNode(aNode);
   return NS_OK;
 }
-
 void nsDocumentViewer::CallChildren(CallChildFunc aFunc, void* aClosure) {
   nsCOMPtr<nsIDocShell> docShell(mContainer);
   if (docShell) {
@@ -2689,9 +2659,9 @@ static void SetChildOverrideDPPX(nsIContentViewer* aChild, void* aClosure) {
   aChild->SetOverrideDPPX(ZoomInfo->mZoom);
 }
 
-static bool SetExtResourceTextZoom(Document* aDocument, void* aClosure) {
+static bool SetExtResourceTextZoom(Document& aDocument, void* aClosure) {
   // Would it be better to enumerate external resource viewers instead?
-  nsPresContext* ctxt = aDocument->GetPresContext();
+  nsPresContext* ctxt = aDocument.GetPresContext();
   if (ctxt) {
     struct ZoomInfo* ZoomInfo = static_cast<struct ZoomInfo*>(aClosure);
     ctxt->SetTextZoom(ZoomInfo->mZoom);
@@ -2700,9 +2670,9 @@ static bool SetExtResourceTextZoom(Document* aDocument, void* aClosure) {
   return true;
 }
 
-static bool SetExtResourceFullZoom(Document* aDocument, void* aClosure) {
+static bool SetExtResourceFullZoom(Document& aDocument, void* aClosure) {
   // Would it be better to enumerate external resource viewers instead?
-  nsPresContext* ctxt = aDocument->GetPresContext();
+  nsPresContext* ctxt = aDocument.GetPresContext();
   if (ctxt) {
     struct ZoomInfo* ZoomInfo = static_cast<struct ZoomInfo*>(aClosure);
     ctxt->SetFullZoom(ZoomInfo->mZoom);
@@ -2711,8 +2681,8 @@ static bool SetExtResourceFullZoom(Document* aDocument, void* aClosure) {
   return true;
 }
 
-static bool SetExtResourceOverrideDPPX(Document* aDocument, void* aClosure) {
-  nsPresContext* ctxt = aDocument->GetPresContext();
+static bool SetExtResourceOverrideDPPX(Document& aDocument, void* aClosure) {
+  nsPresContext* ctxt = aDocument.GetPresContext();
   if (ctxt) {
     struct ZoomInfo* ZoomInfo = static_cast<struct ZoomInfo*>(aClosure);
     ctxt->SetOverrideDPPX(ZoomInfo->mZoom);
@@ -2928,8 +2898,8 @@ nsDocumentViewer::GetAuthorStyleDisabled(bool* aStyleDisabled) {
   return NS_OK;
 }
 
-static bool ExtResourceEmulateMedium(Document* aDocument, void* aClosure) {
-  nsPresContext* ctxt = aDocument->GetPresContext();
+static bool ExtResourceEmulateMedium(Document& aDocument, void* aClosure) {
+  nsPresContext* ctxt = aDocument.GetPresContext();
   if (ctxt) {
     const nsAString* mediaType = static_cast<nsAString*>(aClosure);
     ctxt->EmulateMedium(*mediaType);
@@ -2958,9 +2928,9 @@ nsDocumentViewer::EmulateMedium(const nsAString& aMediaType) {
   return NS_OK;
 }
 
-static bool ExtResourceStopEmulatingMedium(Document* aDocument,
+static bool ExtResourceStopEmulatingMedium(Document& aDocument,
                                            void* aClosure) {
-  nsPresContext* ctxt = aDocument->GetPresContext();
+  nsPresContext* ctxt = aDocument.GetPresContext();
   if (ctxt) {
     ctxt->StopEmulatingMedium();
   }
@@ -4196,7 +4166,6 @@ void nsDocumentViewer::DestroyPresShell() {
 }
 
 void nsDocumentViewer::DestroyPresContext() {
-  mPresContext->Detach();
   mPresContext = nullptr;
 }
 
