@@ -323,6 +323,9 @@ var gHomePane = {
         if (startupPref.value === gMainPane.STARTUP_PREF_BLANK) {
           Services.prefs.clearUserPref(startupPref.id);
         }
+        if (HomePage.getDefault() != HomePage.getOriginalDefault()) {
+          HomePage.clear();
+        }
         this._renderCustomSettings({ shouldShow: true });
         break;
     }

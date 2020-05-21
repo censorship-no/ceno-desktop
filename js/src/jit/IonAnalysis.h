@@ -49,8 +49,6 @@ MOZ_MUST_USE bool EliminateDeadCode(MIRGenerator* mir, MIRGraph& graph);
 
 MOZ_MUST_USE bool ApplyTypeInformation(MIRGenerator* mir, MIRGraph& graph);
 
-MOZ_MUST_USE bool MakeMRegExpHoistable(MIRGenerator* mir, MIRGraph& graph);
-
 void RenumberBlocks(MIRGraph& graph);
 
 MOZ_MUST_USE bool AccountForCFGChanges(MIRGenerator* mir, MIRGraph& graph,
@@ -163,8 +161,8 @@ MCompare* ConvertLinearInequality(TempAllocator& alloc, MBasicBlock* block,
                                   const LinearSum& sum);
 
 MOZ_MUST_USE bool AnalyzeNewScriptDefiniteProperties(
-    JSContext* cx, HandleFunction fun, ObjectGroup* group,
-    HandlePlainObject baseobj,
+    JSContext* cx, DPAConstraintInfo& constraintInfo, HandleFunction fun,
+    ObjectGroup* group, HandlePlainObject baseobj,
     Vector<TypeNewScriptInitializer>* initializerList);
 
 MOZ_MUST_USE bool AnalyzeArgumentsUsage(JSContext* cx, JSScript* script);

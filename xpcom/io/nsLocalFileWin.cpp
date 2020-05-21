@@ -56,6 +56,7 @@
 #include "mozIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsIWidget.h"
+#include "mozilla/ShellHeaderOnlyUtils.h"
 #include "mozilla/WidgetUtils.h"
 
 using namespace mozilla;
@@ -1695,12 +1696,12 @@ nsresult nsLocalFile::CopySingleFile(nsIFile* aSourceFile, nsIFile* aDestParent,
 
     // Pass the flag COPY_FILE_NO_BUFFERING to CopyFileEx as we may be copying
     // to a SMBV2 remote drive. Without this parameter subsequent append mode
-    // file writes can cause the resultant file to become corrupt. We only need to
-    // do this if the major version of Windows is > 5(Only Windows Vista and above
-    // can support SMBV2).  With a 7200RPM hard drive:
-    // Copying a 1KB file with COPY_FILE_NO_BUFFERING takes about 30-60ms.
-    // Copying a 1KB file without COPY_FILE_NO_BUFFERING takes < 1ms.
-    // So we only use COPY_FILE_NO_BUFFERING when we have a remote drive.
+    // file writes can cause the resultant file to become corrupt. We only need
+    // to do this if the major version of Windows is > 5(Only Windows Vista and
+    // above can support SMBV2).  With a 7200RPM hard drive: Copying a 1KB file
+    // with COPY_FILE_NO_BUFFERING takes about 30-60ms. Copying a 1KB file
+    // without COPY_FILE_NO_BUFFERING takes < 1ms. So we only use
+    // COPY_FILE_NO_BUFFERING when we have a remote drive.
     DWORD dwCopyFlags = COPY_FILE_ALLOW_DECRYPTED_DESTINATION;
     bool path1Remote, path2Remote;
     if (!IsRemoteFilePath(filePath.get(), path1Remote) ||
@@ -3040,73 +3041,49 @@ nsLocalFile::Launch() {
   }
 
   // use the app registry name to launch a shell execute....
-  SHELLEXECUTEINFOW seinfo;
-  memset(&seinfo, 0, sizeof(seinfo));
-  seinfo.cbSize = sizeof(SHELLEXECUTEINFOW);
-  seinfo.fMask = SEE_MASK_ASYNCOK;
-  seinfo.hwnd = GetMostRecentNavigatorHWND();
-  seinfo.lpVerb = nullptr;
-  seinfo.lpFile = mResolvedPath.get();
-  seinfo.lpParameters = nullptr;
-  seinfo.lpDirectory = nullptr;
-  seinfo.nShow = SW_SHOWNORMAL;
+  _bstr_t execPath(mResolvedPath.get());
+
+  _variant_t args;
+  // Pass VT_ERROR/DISP_E_PARAMNOTFOUND to omit an optional RPC parameter
+  // to execute a file with the default verb.
+  _variant_t verbDefault(DISP_E_PARAMNOTFOUND, VT_ERROR);
+  _variant_t showCmd(SW_SHOWNORMAL);
 
   // Use the directory of the file we're launching as the working
   // directory. That way if we have a self extracting EXE it won't
   // suggest to extract to the install directory.
+  wchar_t* workingDirectoryPtr = nullptr;
   WCHAR workingDirectory[MAX_PATH + 1] = {L'\0'};
   wcsncpy(workingDirectory, mResolvedPath.get(), MAX_PATH);
   if (PathRemoveFileSpecW(workingDirectory)) {
-    seinfo.lpDirectory = workingDirectory;
+    workingDirectoryPtr = workingDirectory;
   } else {
     NS_WARNING("Could not set working directory for launched file.");
   }
 
-  if (ShellExecuteExW(&seinfo)) {
-    return NS_OK;
-  }
-  DWORD r = GetLastError();
-  // if the file has no association, we launch windows'
-  // "what do you want to do" dialog
-  if (r == SE_ERR_NOASSOC) {
-    nsAutoString shellArg;
-    shellArg.AssignLiteral(u"shell32.dll,OpenAs_RunDLL ");
-    shellArg.Append(mResolvedPath);
-    seinfo.lpFile = L"RUNDLL32.EXE";
-    seinfo.lpParameters = shellArg.get();
-    if (ShellExecuteExW(&seinfo)) {
-      return NS_OK;
-    }
-    r = GetLastError();
-  }
-  if (r < 32) {
-    switch (r) {
-      case 0:
-      case SE_ERR_OOM:
-        return NS_ERROR_OUT_OF_MEMORY;
-      case ERROR_FILE_NOT_FOUND:
-        return NS_ERROR_FILE_NOT_FOUND;
-      case ERROR_PATH_NOT_FOUND:
-        return NS_ERROR_FILE_UNRECOGNIZED_PATH;
-      case ERROR_BAD_FORMAT:
-        return NS_ERROR_FILE_CORRUPTED;
-      case SE_ERR_ACCESSDENIED:
-        return NS_ERROR_FILE_ACCESS_DENIED;
-      case SE_ERR_ASSOCINCOMPLETE:
-      case SE_ERR_NOASSOC:
-        return NS_ERROR_UNEXPECTED;
-      case SE_ERR_DDEBUSY:
-      case SE_ERR_DDEFAIL:
-      case SE_ERR_DDETIMEOUT:
-        return NS_ERROR_NOT_AVAILABLE;
-      case SE_ERR_DLLNOTFOUND:
-        return NS_ERROR_FAILURE;
-      case SE_ERR_SHARE:
-        return NS_ERROR_FILE_IS_LOCKED;
-      default:
-        return NS_ERROR_FILE_EXECUTION_FAILED;
+  // Ask Explorer to ShellExecute on our behalf, as some applications such as
+  // Skype for Business do not start correctly when inheriting our process's
+  // migitation policies.
+  // It does not work in a special environment such as Citrix.  In such a case
+  // we fall back to launching an application as a child process.  We need to
+  // find a way to handle the combination of these interop issues.
+  mozilla::LauncherVoidResult shellExecuteOk = mozilla::ShellExecuteByExplorer(
+      execPath, args, verbDefault, workingDirectoryPtr, showCmd);
+  if (shellExecuteOk.isErr()) {
+    SHELLEXECUTEINFOW seinfo = {sizeof(SHELLEXECUTEINFOW)};
+    seinfo.fMask = SEE_MASK_ASYNCOK;
+    seinfo.hwnd = GetMostRecentNavigatorHWND();
+    seinfo.lpVerb = nullptr;
+    seinfo.lpFile = mResolvedPath.get();
+    seinfo.lpParameters = nullptr;
+    seinfo.lpDirectory = workingDirectoryPtr;
+    seinfo.nShow = SW_SHOWNORMAL;
+
+    if (!ShellExecuteExW(&seinfo)) {
+      return NS_ERROR_FILE_EXECUTION_FAILED;
     }
   }
+
   return NS_OK;
 }
 

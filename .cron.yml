@@ -5,6 +5,19 @@
 ---
 
 jobs:
+    - name: daily-releases
+      job:
+          type: decision-task
+          treeherder-symbol: RPd
+          target-tasks-method: daily_releases
+      run-on-projects:
+          - mozilla-esr68
+      when:
+          by-project:
+              # No default branch
+              mozilla-esr68:
+                  - {weekday: 'Monday', hour: 4, minute: 0}
+
     - name: nightly-desktop
       job:
           type: decision-task
@@ -69,22 +82,6 @@ jobs:
           - mozilla-central
       when: []  # never (hook only)
 
-    - name: nightly-android
-      job:
-          type: decision-task
-          treeherder-symbol: Na
-          target-tasks-method: nightly_fennec
-          include-push-tasks: true
-          android-release-type: nightly
-      run-on-projects:
-          - mozilla-esr68
-      when:
-          by-project:
-              # Fennec Nightly builds ship from ESR68
-              # Other branches ship only GeckoView
-              mozilla-esr68: [{hour: 10, minute: 0}]
-              # No default
-
     - name: ship-geckoview
       job:
           type: decision-task
@@ -140,18 +137,23 @@ jobs:
           treeherder-symbol: Rel
           target-tasks-method: cron_bouncer_check
       run-on-projects:
+          - mozilla-central
           - mozilla-beta
           - mozilla-release
+          - mozilla-esr68
       when:
           by-project:
               # No default branch
+              mozilla-central:
+                  - {hour: 7, minute: 0}
+                  - {hour: 19, minute: 0}
               mozilla-beta:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
               mozilla-release:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
-              mozilla-esr60:
+              mozilla-esr68:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
 
@@ -164,7 +166,6 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr60
           - mozilla-esr68
       when:
           - {weekday: 'Monday', hour: 10, minute: 0}
@@ -182,3 +183,15 @@ jobs:
               # No default branch
               mozilla-central:
                   - {weekday: 'Monday', hour: 10, minute: 0}
+
+    - name: l10n-bumper
+      job:
+          type: decision-task
+          treeherder-symbol: l10n-bump
+          target-tasks-method: l10n_bump
+      run-on-projects:
+          - mozilla-central
+          - mozilla-beta
+          - mozilla-esr68
+      when:
+          - {minute: 45}

@@ -2558,11 +2558,10 @@ bool nsDisplayList::ComputeVisibilityForSublist(
   return anyVisible;
 }
 
-static bool TriggerPendingAnimationsOnSubDocuments(Document* aDocument,
+static bool TriggerPendingAnimationsOnSubDocuments(Document& aDoc,
                                                    void* aReadyTime) {
-  PendingAnimationTracker* tracker = aDocument->GetPendingAnimationTracker();
-  if (tracker) {
-    PresShell* presShell = aDocument->GetPresShell();
+  if (PendingAnimationTracker* tracker = aDoc.GetPendingAnimationTracker()) {
+    PresShell* presShell = aDoc.GetPresShell();
     // If paint-suppression is in effect then we haven't finished painting
     // this document yet so we shouldn't start animations
     if (!presShell || !presShell->IsPaintingSuppressed()) {
@@ -2570,12 +2569,12 @@ static bool TriggerPendingAnimationsOnSubDocuments(Document* aDocument,
       tracker->TriggerPendingAnimationsOnNextTick(readyTime);
     }
   }
-  aDocument->EnumerateSubDocuments(TriggerPendingAnimationsOnSubDocuments,
-                                   aReadyTime);
+  aDoc.EnumerateSubDocuments(TriggerPendingAnimationsOnSubDocuments,
+                             aReadyTime);
   return true;
 }
 
-static void TriggerPendingAnimations(Document* aDocument,
+static void TriggerPendingAnimations(Document& aDocument,
                                      const TimeStamp& aReadyTime) {
   MOZ_ASSERT(!aReadyTime.IsNull(),
              "Animation ready time is not set. Perhaps we're using a layer"
@@ -2800,7 +2799,8 @@ already_AddRefed<LayerManager> nsDisplayList::PaintRoot(
 
     aBuilder->SetIsCompositingCheap(prevIsCompositingCheap);
     if (document && widgetTransaction) {
-      TriggerPendingAnimations(document, layerManager->GetAnimationReadyTime());
+      TriggerPendingAnimations(*document,
+                               layerManager->GetAnimationReadyTime());
     }
 
     if (presContext->RefreshDriver()->HasScheduleFlush()) {
@@ -2900,7 +2900,7 @@ already_AddRefed<LayerManager> nsDisplayList::PaintRoot(
   aBuilder->SetIsCompositingCheap(temp);
 
   if (document && widgetTransaction) {
-    TriggerPendingAnimations(document, layerManager->GetAnimationReadyTime());
+    TriggerPendingAnimations(*document, layerManager->GetAnimationReadyTime());
   }
 
   nsIntRegion invalid;
@@ -7053,19 +7053,12 @@ already_AddRefed<Layer> nsDisplayFixedPosition::BuildLayer(
   // layer). This is the same as the display items' reference frame.
   nsRect anchorRect;
   if (viewportFrame) {
+    anchorRect.SizeTo(viewportFrame->GetSize());
     // Fixed position frames are reflowed into the scroll-port size if one has
     // been set.
-    if (presContext->PresShell()->IsVisualViewportSizeSet()) {
-      anchorRect.SizeTo(presContext->PresShell()->GetVisualViewportSize());
-    } else {
-      anchorRect.SizeTo(viewportFrame->GetSize());
-    }
-
-    // Expand the size to the layout viewport size if necessary.
-    const nsSize layoutViewportSize =
-        presContext->PresShell()->GetLayoutViewportSize();
-    if (anchorRect.Size() < layoutViewportSize) {
-      anchorRect.SizeTo(layoutViewportSize);
+    if (const ViewportFrame* viewport = do_QueryFrame(viewportFrame)) {
+      anchorRect.SizeTo(
+          viewport->AdjustViewportSizeForFixedPosition(anchorRect));
     }
   } else {
     // A display item directly attached to the viewport.

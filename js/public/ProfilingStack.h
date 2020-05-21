@@ -16,18 +16,8 @@
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
 
-#ifdef JS_BROKEN_GCC_ATTRIBUTE_WARNING
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wattributes"
-#endif  // JS_BROKEN_GCC_ATTRIBUTE_WARNING
-
 class JS_PUBLIC_API JSTracer;
-
-#ifdef JS_BROKEN_GCC_ATTRIBUTE_WARNING
-#  pragma GCC diagnostic pop
-#endif  // JS_BROKEN_GCC_ATTRIBUTE_WARNING
-
-class ProfilingStack;
+class JS_FRIEND_API ProfilingStack;
 
 // This file defines the classes ProfilingStack and ProfilingStackFrame.
 // The ProfilingStack manages an array of ProfilingStackFrames.
@@ -386,7 +376,7 @@ JS_FRIEND_API void SetProfilingThreadCallbacks(
 // - When popping an old frame, the only operation is the decrementing of the
 //   stack pointer, which is obviously atomic.
 //
-class ProfilingStack final {
+class JS_FRIEND_API ProfilingStack final {
  public:
   ProfilingStack() : stackPointer(0) {}
 

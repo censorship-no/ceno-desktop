@@ -5,6 +5,7 @@
 
 package org.mozilla.gecko;
 
+import org.mozilla.gecko.activitystream.homepanel.stream.FirefoxPromoBannerRow;
 import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.TelemetryContract.Event;
@@ -15,11 +16,14 @@ import org.mozilla.gecko.mma.MmaDelegate;
 
 import android.util.Log;
 
+import static org.mozilla.gecko.mma.MmaDelegate.DISMISSED_FIREFOX_PROMO_BANNER;
 import static org.mozilla.gecko.mma.MmaDelegate.INTERACT_WITH_SEARCH_URL_AREA;
 import static org.mozilla.gecko.mma.MmaDelegate.OPENED_BOOKMARK;
+import static org.mozilla.gecko.mma.MmaDelegate.OPENED_FIREFOX_PROMO_BANNER;
 import static org.mozilla.gecko.mma.MmaDelegate.SAVED_BOOKMARK;
 import static org.mozilla.gecko.mma.MmaDelegate.SAVED_LOGIN_AND_PASSWORD;
 import static org.mozilla.gecko.mma.MmaDelegate.SCREENSHOT;
+import static org.mozilla.gecko.mma.MmaDelegate.SIGN_UP_DISMISS;
 
 
 @RobocopTarget
@@ -105,6 +109,14 @@ public class Telemetry {
             MmaDelegate.track(SCREENSHOT);
         } else if (eventName.equalsIgnoreCase(Event.ACTION.toString()) && method == Method.DOORHANGER && extras.equals("login-positive")) {
             MmaDelegate.track(SAVED_LOGIN_AND_PASSWORD);
+        } else if (eventName.equalsIgnoreCase(Event.ACTION.toString()) && method == Method.BUTTON && extras.equals("awesomescreen-signup-dismiss")) {
+            MmaDelegate.track(SIGN_UP_DISMISS);
+        } else if (eventName.equalsIgnoreCase(Event.ACTION.toString()) && method == Method.BUTTON &&
+                extras.equals(FirefoxPromoBannerRow.FIREFOX_PROMO_OPEN_EVENT)) {
+            MmaDelegate.track(OPENED_FIREFOX_PROMO_BANNER);
+        } else if (eventName.equalsIgnoreCase(Event.ACTION.toString()) && method == Method.BUTTON &&
+                extras.equals(FirefoxPromoBannerRow.FIREFOX_PROMO_DISMISS_EVENT)) {
+            MmaDelegate.track(DISMISSED_FIREFOX_PROMO_BANNER);
         }
     }
 }

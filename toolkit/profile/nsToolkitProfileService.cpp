@@ -14,6 +14,7 @@
 #ifdef XP_WIN
 #  include <windows.h>
 #  include <shlobj.h>
+#  include "mozilla/PolicyChecks.h"
 #endif
 #ifdef XP_UNIX
 #  include <unistd.h>
@@ -389,7 +390,7 @@ nsToolkitProfileService::nsToolkitProfileService()
       mCreatedAlternateProfile(false),
       mStartupReason(NS_LITERAL_STRING("unknown")),
       mMaybeLockProfile(false),
-      mUpdateChannel(NS_STRINGIFY(MOZ_UPDATE_CHANNEL)),
+      mUpdateChannel(MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL)),
       mProfileDBExists(false),
       mProfileDBFileSize(0),
       mProfileDBModifiedTime(0),
@@ -1254,8 +1255,7 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
 
   // Check the -profile command line argument. It accepts a single argument that
   // gives the path to use for the profile.
-  ArgResult ar = CheckArg(*aArgc, aArgv, "profile", &arg,
-                          CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
+  ArgResult ar = CheckArg(*aArgc, aArgv, "profile", &arg);
   if (ar == ARG_BAD) {
     PR_fprintf(PR_STDERR, "Error: argument --profile requires a path\n");
     return NS_ERROR_FAILURE;
@@ -1298,8 +1298,7 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
   // Check the -createprofile command line argument. It accepts a single
   // argument that is either the name for the new profile or the name followed
   // by the path to use.
-  ar = CheckArg(*aArgc, aArgv, "createprofile", &arg,
-                CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
+  ar = CheckArg(*aArgc, aArgv, "createprofile", &arg, CheckArgFlag::RemoveArg);
   if (ar == ARG_BAD) {
     PR_fprintf(PR_STDERR,
                "Error: argument --createprofile requires a profile name\n");
@@ -1369,14 +1368,7 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
     return NS_ERROR_SHOW_PROFILE_MANAGER;
   }
 
-  ar = CheckArg(*aArgc, aArgv, "profilemanager", (const char**)nullptr,
-                CheckArgFlag::CheckOSInt | CheckArgFlag::RemoveArg);
-  if (ar == ARG_BAD) {
-    PR_fprintf(PR_STDERR,
-               "Error: argument --profilemanager is invalid when argument "
-               "--osint is specified\n");
-    return NS_ERROR_FAILURE;
-  }
+  ar = CheckArg(*aArgc, aArgv, "profilemanager");
   if (ar == ARG_FOUND) {
     return NS_ERROR_SHOW_PROFILE_MANAGER;
   }
@@ -1819,9 +1811,15 @@ bool nsToolkitProfileService::IsSnapEnvironment() {
  * application versions to different locations, some application sandboxing
  * systems as well as enterprise deployments. This environment variable provides
  * a way to opt out of dedicated profiles for these cases.
+ *
+ * For Windows, we provide a policy to accomplish the same thing.
  */
 bool nsToolkitProfileService::UseLegacyProfiles() {
-  return !!PR_GetEnv("MOZ_LEGACY_PROFILES");
+  bool legacyProfiles = !!PR_GetEnv("MOZ_LEGACY_PROFILES");
+#ifdef XP_WIN
+  legacyProfiles |= PolicyCheckBoolean(L"LegacyProfiles");
+#endif
+  return legacyProfiles;
 }
 
 struct FindInstallsClosure {

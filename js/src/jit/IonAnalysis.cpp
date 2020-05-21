@@ -2263,298 +2263,6 @@ bool jit::ApplyTypeInformation(MIRGenerator* mir, MIRGraph& graph) {
   return true;
 }
 
-// Check if `def` is only the N-th operand of `useDef`.
-static inline size_t IsExclusiveNthOperand(MDefinition* useDef, size_t n,
-                                           MDefinition* def) {
-  uint32_t num = useDef->numOperands();
-  if (n >= num || useDef->getOperand(n) != def) {
-    return false;
-  }
-
-  for (uint32_t i = 0; i < num; i++) {
-    if (i == n) {
-      continue;
-    }
-    if (useDef->getOperand(i) == def) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-static size_t IsExclusiveThisArg(MCall* call, MDefinition* def) {
-  return IsExclusiveNthOperand(call, MCall::IndexOfThis(), def);
-}
-
-static size_t IsExclusiveFirstArg(MCall* call, MDefinition* def) {
-  return IsExclusiveNthOperand(call, MCall::IndexOfArgument(0), def);
-}
-
-static bool IsRegExpHoistableCall(CompileRuntime* runtime, MCall* call,
-                                  MDefinition* def) {
-  if (call->isConstructing()) {
-    return false;
-  }
-
-  JSAtom* name;
-  if (WrappedFunction* fun = call->getSingleTarget()) {
-    if (!fun->isSelfHostedBuiltin()) {
-      return false;
-    }
-
-    // Avoid accessing `JSFunction.flags_` via `JSFunction::isExtended`.
-    if (!fun->isExtended()) {
-      return false;
-    }
-    name = GetClonedSelfHostedFunctionNameOffMainThread(fun->rawJSFunction());
-  } else {
-    MDefinition* funDef = call->getFunction();
-    if (funDef->isDebugCheckSelfHosted()) {
-      funDef = funDef->toDebugCheckSelfHosted()->input();
-    }
-    if (funDef->isTypeBarrier()) {
-      funDef = funDef->toTypeBarrier()->input();
-    }
-
-    if (!funDef->isCallGetIntrinsicValue()) {
-      return false;
-    }
-    name = funDef->toCallGetIntrinsicValue()->name();
-  }
-
-  // Hoistable only if the RegExp is the first argument of RegExpBuiltinExec.
-  if (name == runtime->names().RegExpBuiltinExec ||
-      name == runtime->names().UnwrapAndCallRegExpBuiltinExec ||
-      name == runtime->names().RegExpMatcher ||
-      name == runtime->names().RegExpTester ||
-      name == runtime->names().RegExpSearcher) {
-    return IsExclusiveFirstArg(call, def);
-  }
-
-  if (name == runtime->names().RegExp_prototype_Exec ||
-      name == runtime->names().CallRegExpMethodIfWrapped) {
-    return IsExclusiveThisArg(call, def);
-  }
-
-  return false;
-}
-
-static bool CanCompareRegExp(MCompare* compare, MDefinition* def) {
-  MDefinition* value;
-  if (compare->lhs() == def) {
-    value = compare->rhs();
-  } else {
-    MOZ_ASSERT(compare->rhs() == def);
-    value = compare->lhs();
-  }
-
-  // Comparing two regexp that weren't cloned will give different result
-  // than if they were cloned.
-  if (value->mightBeType(MIRType::Object)) {
-    return false;
-  }
-
-  // Make sure @@toPrimitive is not called which could notice
-  // the difference between a not cloned/cloned regexp.
-
-  JSOp op = compare->jsop();
-  // Strict equality comparison won't invoke @@toPrimitive.
-  if (op == JSOP_STRICTEQ || op == JSOP_STRICTNE) {
-    return true;
-  }
-
-  if (op != JSOP_EQ && op != JSOP_NE) {
-    // Relational comparison always invoke @@toPrimitive.
-    MOZ_ASSERT(IsRelationalOp(op));
-    return false;
-  }
-
-  // Loose equality comparison can invoke @@toPrimitive.
-  if (value->mightBeType(MIRType::Boolean) ||
-      value->mightBeType(MIRType::String) ||
-      value->mightBeType(MIRType::Int32) ||
-      value->mightBeType(MIRType::Double) ||
-      value->mightBeType(MIRType::Float32) ||
-      value->mightBeType(MIRType::Symbol) ||
-      value->mightBeType(MIRType::BigInt)) {
-    return false;
-  }
-
-  return true;
-}
-
-static inline void SetNotInWorklist(MDefinitionVector& worklist) {
-  for (size_t i = 0; i < worklist.length(); i++) {
-    worklist[i]->setNotInWorklist();
-  }
-}
-
-static bool IsRegExpHoistable(MIRGenerator* mir, MDefinition* regexp,
-                              MDefinitionVector& worklist, bool* hoistable) {
-  MOZ_ASSERT(worklist.length() == 0);
-
-  if (!worklist.append(regexp)) {
-    return false;
-  }
-  regexp->setInWorklist();
-
-  for (size_t i = 0; i < worklist.length(); i++) {
-    MDefinition* def = worklist[i];
-    if (mir->shouldCancel("IsRegExpHoistable outer loop")) {
-      return false;
-    }
-
-    for (MUseIterator use = def->usesBegin(); use != def->usesEnd(); use++) {
-      if (mir->shouldCancel("IsRegExpHoistable inner loop")) {
-        return false;
-      }
-
-      // Ignore resume points. At this point all uses are listed.
-      // No DCE or GVN or something has happened.
-      if (use->consumer()->isResumePoint()) {
-        continue;
-      }
-
-      MDefinition* useDef = use->consumer()->toDefinition();
-
-      // Step through a few white-listed ops.
-      if (useDef->isPhi() || useDef->isFilterTypeSet() ||
-          useDef->isGuardShape()) {
-        if (useDef->isInWorklist()) {
-          continue;
-        }
-
-        if (!worklist.append(useDef)) {
-          return false;
-        }
-        useDef->setInWorklist();
-        continue;
-      }
-
-      // Instructions that doesn't invoke unknown code that may modify
-      // RegExp instance or pass it to elsewhere.
-      if (useDef->isRegExpMatcher() || useDef->isRegExpTester() ||
-          useDef->isRegExpSearcher()) {
-        if (IsExclusiveNthOperand(useDef, 0, def)) {
-          continue;
-        }
-      } else if (useDef->isLoadFixedSlot() || useDef->isTypeOf()) {
-        continue;
-      } else if (useDef->isCompare()) {
-        if (CanCompareRegExp(useDef->toCompare(), def)) {
-          continue;
-        }
-      }
-      // Instructions that modifies `lastIndex` property.
-      else if (useDef->isStoreFixedSlot()) {
-        if (IsExclusiveNthOperand(useDef, 0, def)) {
-          MStoreFixedSlot* store = useDef->toStoreFixedSlot();
-          if (store->slot() == RegExpObject::lastIndexSlot()) {
-            continue;
-          }
-        }
-      } else if (useDef->isSetPropertyCache()) {
-        if (IsExclusiveNthOperand(useDef, 0, def)) {
-          MSetPropertyCache* setProp = useDef->toSetPropertyCache();
-          if (setProp->idval()->isConstant()) {
-            Value propIdVal = setProp->idval()->toConstant()->toJSValue();
-            if (propIdVal.isString()) {
-              CompileRuntime* runtime = mir->runtime;
-              if (propIdVal.toString() == runtime->names().lastIndex) {
-                continue;
-              }
-            }
-          }
-        }
-      }
-      // MCall is safe only for some known safe functions.
-      else if (useDef->isCall()) {
-        if (IsRegExpHoistableCall(mir->runtime, useDef->toCall(), def)) {
-          continue;
-        }
-      }
-
-      // Everything else is unsafe.
-      SetNotInWorklist(worklist);
-      worklist.clear();
-      *hoistable = false;
-
-      return true;
-    }
-  }
-
-  SetNotInWorklist(worklist);
-  worklist.clear();
-  *hoistable = true;
-  return true;
-}
-
-bool jit::MakeMRegExpHoistable(MIRGenerator* mir, MIRGraph& graph) {
-  // If we are compiling try blocks, regular expressions may be observable
-  // from catch blocks (which Ion does not compile). For now just disable the
-  // pass in this case.
-  if (graph.hasTryBlock()) {
-    return true;
-  }
-
-  MDefinitionVector worklist(graph.alloc());
-
-  for (ReversePostorderIterator block(graph.rpoBegin());
-       block != graph.rpoEnd(); block++) {
-    if (mir->shouldCancel("MakeMRegExpHoistable outer loop")) {
-      return false;
-    }
-
-    for (MDefinitionIterator iter(*block); iter; iter++) {
-      if (!*iter) {
-        MOZ_CRASH("confirm bug 1263794.");
-      }
-
-      if (mir->shouldCancel("MakeMRegExpHoistable inner loop")) {
-        return false;
-      }
-
-      if (!iter->isRegExp()) {
-        continue;
-      }
-
-      MRegExp* regexp = iter->toRegExp();
-
-      bool hoistable = false;
-      if (!IsRegExpHoistable(mir, regexp, worklist, &hoistable)) {
-        return false;
-      }
-
-      if (!hoistable) {
-        continue;
-      }
-
-      // Make MRegExp hoistable
-      regexp->setMovable();
-      regexp->setDoNotClone();
-
-      // That would be incorrect for global/sticky, because lastIndex
-      // could be wrong.  Therefore setting the lastIndex to 0. That is
-      // faster than a not movable regexp.
-      RegExpObject* source = regexp->source();
-      if (source->sticky() || source->global()) {
-        if (!graph.alloc().ensureBallast()) {
-          return false;
-        }
-        MConstant* zero = MConstant::New(graph.alloc(), Int32Value(0));
-        regexp->block()->insertAfter(regexp, zero);
-
-        MStoreFixedSlot* lastIndex = MStoreFixedSlot::New(
-            graph.alloc(), regexp, RegExpObject::lastIndexSlot(), zero);
-        regexp->block()->insertAfter(zero, lastIndex);
-      }
-    }
-  }
-
-  return true;
-}
-
 void jit::RenumberBlocks(MIRGraph& graph) {
   size_t id = 0;
   for (ReversePostorderIterator block(graph.rpoBegin());
@@ -4373,9 +4081,9 @@ MCompare* jit::ConvertLinearInequality(TempAllocator& alloc, MBasicBlock* block,
   return compare;
 }
 
-static bool AnalyzePoppedThis(JSContext* cx, ObjectGroup* group,
-                              MDefinition* thisValue, MInstruction* ins,
-                              bool definitelyExecuted,
+static bool AnalyzePoppedThis(JSContext* cx, DPAConstraintInfo& constraintInfo,
+                              ObjectGroup* group, MDefinition* thisValue,
+                              MInstruction* ins, bool definitelyExecuted,
                               HandlePlainObject baseobj,
                               Vector<TypeNewScriptInitializer>* initializerList,
                               Vector<PropertyName*>* accessedProperties,
@@ -4416,7 +4124,12 @@ static bool AnalyzePoppedThis(JSContext* cx, ObjectGroup* group,
     }
 
     RootedId id(cx, NameToId(setprop->name()));
-    if (!AddClearDefiniteGetterSetterForPrototypeChain(cx, group, id)) {
+    bool added = false;
+    if (!AddClearDefiniteGetterSetterForPrototypeChain(cx, constraintInfo,
+                                                       group, id, &added)) {
+      return false;
+    }
+    if (!added) {
       // The prototype chain already contains a getter/setter for this
       // property, or type information is too imprecise.
       return true;
@@ -4482,7 +4195,12 @@ static bool AnalyzePoppedThis(JSContext* cx, ObjectGroup* group,
       return false;
     }
 
-    if (!AddClearDefiniteGetterSetterForPrototypeChain(cx, group, id)) {
+    bool added = false;
+    if (!AddClearDefiniteGetterSetterForPrototypeChain(cx, constraintInfo,
+                                                       group, id, &added)) {
+      return false;
+    }
+    if (!added) {
       // The |this| value can escape if any property reads it does go
       // through a getter.
       return true;
@@ -4506,8 +4224,8 @@ static int CmpInstructions(const void* a, const void* b) {
 }
 
 bool jit::AnalyzeNewScriptDefiniteProperties(
-    JSContext* cx, HandleFunction fun, ObjectGroup* group,
-    HandlePlainObject baseobj,
+    JSContext* cx, DPAConstraintInfo& constraintInfo, HandleFunction fun,
+    ObjectGroup* group, HandlePlainObject baseobj,
     Vector<TypeNewScriptInitializer>* initializerList) {
   MOZ_ASSERT(cx->zone()->types.activeAnalysis);
 
@@ -4682,9 +4400,9 @@ bool jit::AnalyzeNewScriptDefiniteProperties(
 
     bool handled = false;
     size_t slotSpan = baseobj->slotSpan();
-    if (!AnalyzePoppedThis(cx, group, thisValue, ins, definitelyExecuted,
-                           baseobj, initializerList, &accessedProperties,
-                           &handled)) {
+    if (!AnalyzePoppedThis(cx, constraintInfo, group, thisValue, ins,
+                           definitelyExecuted, baseobj, initializerList,
+                           &accessedProperties, &handled)) {
       return false;
     }
     if (!handled) {
@@ -4702,7 +4420,6 @@ bool jit::AnalyzeNewScriptDefiniteProperties(
     // contingent on the correct frames being inlined. Add constraints to
     // invalidate the definite properties if additional functions could be
     // called at the inline frame sites.
-    Vector<MBasicBlock*> exitBlocks(cx);
     for (MBasicBlockIterator block(graph.begin()); block != graph.end();
          block++) {
       // Inlining decisions made after the last new property was added to
@@ -4713,9 +4430,9 @@ bool jit::AnalyzeNewScriptDefiniteProperties(
       if (MResumePoint* rp = block->callerResumePoint()) {
         if (block->numPredecessors() == 1 &&
             block->getPredecessor(0) == rp->block()) {
-          JSScript* script = rp->block()->info().script();
-          if (!AddClearDefiniteFunctionUsesInScript(cx, group, script,
-                                                    block->info().script())) {
+          JSScript* caller = rp->block()->info().script();
+          JSScript* callee = block->info().script();
+          if (!constraintInfo.addInliningConstraint(caller, callee)) {
             return false;
           }
         }

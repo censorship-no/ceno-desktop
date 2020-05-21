@@ -1,5 +1,5 @@
-commit a5a09d3c755a339f972fb9bee3c0522995bf6449
-Author: yumaoka <y.umaoka@gmail.com>
-Date:   Fri Jul 5 00:27:25 2019 -0400
+commit 3ad70644b1a16452c60e0aa5a7e241e7ce87c98f
+Author: Yoshito Umaoka <yumaoka@users.noreply.github.com>
+Date:   Sat Apr 25 14:17:09 2020 -0400
 
-    ICU-20692 tzdata2019b update
+    ICU-21094 ICU data updates for tzdata2020a. (#11)

@@ -745,6 +745,14 @@ VARCACHE_PREF(
   bool, false
 )
 
+// This pref governs whether we run webextensions in a separate process (true)
+// or the parent/main process (false)
+VARCACHE_PREF(
+  "extensions.webextensions.remote",
+  extensions_webextensions_remote,
+  bool, false
+)
+
 //---------------------------------------------------------------------------
 // Full-screen prefs
 //---------------------------------------------------------------------------
@@ -1120,6 +1128,14 @@ VARCACHE_PREF(
 VARCACHE_PREF(
   "layout.css.moz-document.content.enabled",
    layout_css_moz_document_content_enabled,
+  bool, false
+)
+
+// Pref to control whether -moz-binding declarations are enabled in content
+// pages.
+VARCACHE_PREF(
+  "layout.css.moz-binding.content.enabled",
+   layout_css_moz_binding_content_enabled,
   bool, false
 )
 

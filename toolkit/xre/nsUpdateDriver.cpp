@@ -114,18 +114,26 @@ static void UpdateDriverSetupMacCommandLine(int& argc, char**& argv,
 }
 #endif
 
-static nsresult GetCurrentWorkingDir(char* buf, size_t size) {
+static nsresult GetCurrentWorkingDir(nsACString& aOutPath) {
   // Cannot use NS_GetSpecialDirectory because XPCOM is not yet initialized.
   // This code is duplicated from xpcom/io/SpecialSystemDirectory.cpp:
 
+  aOutPath.Truncate();
+
 #if defined(XP_WIN)
   wchar_t wpath[MAX_PATH];
-  if (!_wgetcwd(wpath, size)) return NS_ERROR_FAILURE;
-  NS_ConvertUTF16toUTF8 path(wpath);
-  strncpy(buf, path.get(), size);
+  if (!_wgetcwd(wpath, ArrayLength(wpath))) {
+    return NS_ERROR_FAILURE;
+  }
+  CopyUTF16toUTF8(nsDependentString(wpath), aOutPath);
 #else
-  if (!getcwd(buf, size)) return NS_ERROR_FAILURE;
+  char path[MAXPATHLEN];
+  if (!getcwd(path, ArrayLength(path))) {
+    return NS_ERROR_FAILURE;
+  }
+  aOutPath = path;
 #endif
+
   return NS_OK;
 }
 
@@ -185,7 +193,10 @@ static bool GetStatusFile(nsIFile* dir, nsCOMPtr<nsIFile>& result) {
 }
 
 /**
- * Get the contents of the update.status file.
+ * Get the contents of the update.status file when the update.status file can
+ * be opened with read and write access. The reason it is opened for both read
+ * and write is to prevent trying to update when the user doesn't have write
+ * access to the update directory.
  *
  * @param statusFile the status file object.
  * @param buf        the buffer holding the file contents
@@ -199,7 +210,7 @@ static bool GetStatusFileContents(nsIFile* statusFile, char (&buf)[Size]) {
       "Buffer needs to be large enough to hold the known status codes");
 
   PRFileDesc* fd = nullptr;
-  nsresult rv = statusFile->OpenNSPRFileDesc(PR_RDONLY, 0660, &fd);
+  nsresult rv = statusFile->OpenNSPRFileDesc(PR_RDWR, 0660, &fd);
   if (NS_FAILED(rv)) return false;
 
   const int32_t n = PR_Read(fd, buf, Size);
@@ -480,10 +491,10 @@ static void ApplyUpdate(nsIFile* greDir, nsIFile* updateDir, nsIFile* appDir,
   // appFilePath and workingDirPath are only used when the application will be
   // restarted.
   nsAutoCString appFilePath;
-  char workingDirPath[MAXPATHLEN];
+  nsAutoCString workingDirPath;
   if (restart) {
     // Get the path to the current working directory.
-    rv = GetCurrentWorkingDir(workingDirPath, sizeof(workingDirPath));
+    rv = GetCurrentWorkingDir(workingDirPath);
     if (NS_FAILED(rv)) {
       return;
     }
@@ -603,7 +614,7 @@ static void ApplyUpdate(nsIFile* greDir, nsIFile* updateDir, nsIFile* appDir,
   argv[3] = (char*)applyToDirPath.get();
   argv[4] = (char*)pid.get();
   if (restart && appArgc) {
-    argv[5] = workingDirPath;
+    argv[5] = (char*)workingDirPath.get();
     argv[6] = (char*)appFilePath.get();
     for (int i = 1; i < appArgc; ++i) {
       argv[6 + i] = appArgv[i];

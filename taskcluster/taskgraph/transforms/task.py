@@ -30,14 +30,15 @@ from taskgraph.util.schema import (
     OptimizationSchema,
     taskref_or_string,
 )
+from taskgraph.util.partners import get_partners_to_be_published
 from taskgraph.util.scriptworker import (
     BALROG_ACTIONS,
     get_release_config,
-    add_scope_prefix,
 )
 from taskgraph.util.signed_artifacts import get_signed_artifacts
 from voluptuous import Any, Required, Optional, Extra, Match
 from taskgraph import GECKO, MAX_DEPENDENCIES
+from taskgraph.parameters import get_version
 from ..util import docker as dockerutil
 from ..util.workertypes import get_worker_type
 
@@ -184,27 +185,6 @@ task_description_schema = Schema({
         basestring
     ),
 
-    # Coalescing provides the facility for tasks to be superseded by the same
-    # task in a subsequent commit, if the current task backlog reaches an
-    # explicit threshold. Both age and size thresholds need to be met in order
-    # for coalescing to be triggered.
-    Optional('coalesce'): {
-        # A unique identifier per job (typically a hash of the job label) in
-        # order to partition tasks into appropriate sets for coalescing. This
-        # is combined with the project in order to generate a unique coalescing
-        # key for the coalescing service.
-        'job-identifier': basestring,
-
-        # The minimum amount of time in seconds between two pending tasks with
-        # the same coalescing key, before the coalescing service will return
-        # tasks.
-        'age': int,
-
-        # The minimum number of backlogged tasks with the same coalescing key,
-        # before the coalescing service will return tasks.
-        'size': int,
-    },
-
     # The `always-target` attribute will cause the task to be included in the
     # target_task_graph regardless of filtering. Tasks included in this manner
     # will be candidates for optimization even when `optimize_target_tasks` is
@@ -231,7 +211,10 @@ task_description_schema = Schema({
     'worker': {
         Required('implementation'): basestring,
         Extra: object,
-    }
+    },
+
+    # Override the default priority for the project
+    Optional('priority'): basestring,
 })
 
 TC_TREEHERDER_SCHEMA_URL = 'https://github.com/taskcluster/taskcluster-treeherder/' \
@@ -309,10 +292,6 @@ def get_branch_repo(config):
     )]
 
 
-COALESCE_KEY = '{project}.{job-identifier}'
-SUPERSEDER_URL = 'https://coalesce.mozilla-releng.net/v1/list/{age}/{size}/{key}'
-
-
 @memoize
 def get_default_priority(graph_config, project):
     return evaluate_keyed_by(
@@ -347,24 +326,6 @@ def index_builder(name):
     return wrap
 
 
-def coalesce_key(config, task):
-    return COALESCE_KEY.format(**{
-               'project': config.params['project'],
-               'job-identifier': task['coalesce']['job-identifier'],
-           })
-
-
-def superseder_url(config, task):
-    key = coalesce_key(config, task)
-    age = task['coalesce']['age']
-    size = task['coalesce']['size']
-    return SUPERSEDER_URL.format(
-        age=age,
-        size=size,
-        key=key
-    )
-
-
 UNSUPPORTED_INDEX_PRODUCT_ERROR = """\
 The gecko-v2 product {product} is not in the list of configured products in
 `taskcluster/ci/config.yml'.
@@ -394,7 +355,6 @@ def verify_index(config, index):
     ),
 
     # worker features that should be enabled
-    Required('relengapi-proxy'): bool,
     Required('chain-of-trust'): bool,
     Required('taskcluster-proxy'): bool,
     Required('allow-ptrace'): bool,
@@ -503,9 +463,6 @@ def build_docker_worker_payload(config, task, task_def):
             raise Exception("unknown docker image type")
 
     features = {}
-
-    if worker.get('relengapi-proxy'):
-        features['relengAPIProxy'] = True
 
     if worker.get('taskcluster-proxy'):
         features['taskclusterProxy'] = True
@@ -670,10 +627,6 @@ def build_docker_worker_payload(config, task, task_def):
     if capabilities:
         payload['capabilities'] = capabilities
 
-    # coalesce / superseding
-    if 'coalesce' in task:
-        payload['supersederUrl'] = superseder_url(config, task)
-
     check_caches_are_volumes(task)
 
 
@@ -763,6 +716,7 @@ def build_docker_worker_payload(config, task, task_def):
 })
 def build_generic_worker_payload(config, task, task_def):
     worker = task['worker']
+    features = {}
 
     task_def['payload'] = {
         'command': worker['command'],
@@ -782,6 +736,12 @@ def build_generic_worker_payload(config, task, task_def):
     env = worker.get('env', {})
 
     if task.get('needs-sccache'):
+        features['taskclusterProxy'] = True
+        task_def['scopes'].append(
+            'assume:project:taskcluster:{trust_domain}:level-{level}-sccache-buckets'.format(
+                trust_domain=config.graph_config['trust-domain'],
+                level=config.params['level'])
+        )
         env['USE_SCCACHE'] = '1'
         # Disable sccache idle shutdown.
         env['SCCACHE_IDLE_TIMEOUT'] = '0'
@@ -837,8 +797,6 @@ def build_generic_worker_payload(config, task, task_def):
                 group
             ) for group in worker['os-groups']])
 
-    features = {}
-
     if worker.get('chain-of-trust'):
         features['chainOfTrust'] = True
 
@@ -853,10 +811,6 @@ def build_generic_worker_payload(config, task, task_def):
 
     if features:
         task_def['payload']['features'] = features
-
-    # coalesce / superseding
-    if 'coalesce' in task:
-        task_def['payload']['supersederUrl'] = superseder_url(config, task)
 
 
 @payload_builder('scriptworker-signing', schema={
@@ -997,12 +951,14 @@ def build_beetmover_payload(config, task, task_def):
 def build_beetmover_push_to_release_payload(config, task, task_def):
     worker = task['worker']
     release_config = get_release_config(config)
+    partners = ['{}/{}'.format(p, s) for p, s, _ in get_partners_to_be_published(config)]
 
     task_def['payload'] = {
         'maxRunTime': worker['max-run-time'],
         'product': worker['product'],
         'version': release_config['version'],
         'build_number': release_config['build_number'],
+        'partners': partners,
     }
 
 
@@ -1209,6 +1165,29 @@ def build_ship_it_shipped_payload(config, task, task_def):
     }
 
 
+@payload_builder('shipit-maybe-release', schema={
+    Required('phase'): basestring,
+    Required('product-key'): basestring,
+})
+def build_ship_it_maybe_release_payload(config, task, task_def):
+    # expect branch name, including path
+    branch = config.params['head_repository'][len('https://hg.mozilla.org/'):]
+
+    # maybe-release task runs outside of release promotion context so it
+    # doesn't have useful data in `release_config()`, hence we're reading that
+    # value directly from in-tree
+    version = get_version(version_dir='mobile/android/config/version-files/beta')
+
+    task_def['payload'] = {
+        'product': task['shipping-product'],
+        'branch': branch,
+        'phase': task['worker']['phase'],
+        'version': version,
+        'cron_revision': config.params['head_rev'],
+        'product_key': task['worker']['product-key'],
+    }
+
+
 @payload_builder('sign-and-push-addons', schema={
     Required('channel'): Any('listed', 'unlisted'),
     Required('upstream-artifacts'): [{
@@ -1232,15 +1211,29 @@ def build_sign_and_push_addons_payload(config, task, task_def):
     Optional('bump-files'): [basestring],
     Optional('repo-param-prefix'): basestring,
     Optional('dontbuild'): bool,
+    Optional('ignore-closed-tree'): bool,
     Required('force-dry-run', default=True): bool,
-    Required('push', default=False): bool
+    Required('push', default=False): bool,
+    Optional('source-repo'): basestring,
+    Optional('l10n-bump-info'): {
+        Required('name'): basestring,
+        Required('path'): basestring,
+        Required('version-path'): basestring,
+        Optional('revision-url'): basestring,
+        Optional('ignore-config'): object,
+        Required('platform-configs'): [{
+            Required('platforms'): [basestring],
+            Required('path'): basestring,
+            Optional('format'): basestring,
+        }],
+    },
 })
 def build_treescript_payload(config, task, task_def):
     worker = task['worker']
     release_config = get_release_config(config)
 
-    task_def['payload'] = {}
-    task_def.setdefault('scopes', [])
+    task_def['payload'] = {'actions': []}
+    actions = task_def['payload']['actions']
     if worker['tags']:
         tag_names = []
         product = task['shipping-product'].upper()
@@ -1259,7 +1252,7 @@ def build_treescript_payload(config, task, task_def):
             'revision': config.params['{}head_rev'.format(worker.get('repo-param-prefix', ''))],
         }
         task_def['payload']['tag_info'] = tag_info
-        task_def['scopes'].append(add_scope_prefix(config, 'treescript:action:tagging'))
+        actions.append('tag')
 
     if worker['bump']:
         if not worker['bump-files']:
@@ -1269,16 +1262,29 @@ def build_treescript_payload(config, task, task_def):
         bump_info['next_version'] = release_config['next_version']
         bump_info['files'] = worker['bump-files']
         task_def['payload']['version_bump_info'] = bump_info
-        task_def['scopes'].append(add_scope_prefix(config, 'treescript:action:version_bump'))
+        actions.append('version_bump')
+
+    if worker.get('l10n-bump-info'):
+        l10n_bump_info = {}
+        for k, v in worker['l10n-bump-info'].items():
+            l10n_bump_info[k.replace('-', '_')] = worker['l10n-bump-info'][k]
+        task_def['payload']['l10n_bump_info'] = [l10n_bump_info]
+        actions.append('l10n_bump')
 
     if worker['push']:
-        task_def['scopes'].append(add_scope_prefix(config, 'treescript:action:push'))
+        actions.append('push')
 
     if worker.get('force-dry-run'):
         task_def['payload']['dry_run'] = True
 
     if worker.get('dontbuild'):
         task_def['payload']['dontbuild'] = True
+
+    if worker.get('ignore-closed-tree') is not None:
+        task_def['payload']['ignore_closed_tree'] = worker['ignore-closed-tree']
+
+    if worker.get('source-repo'):
+        task_def['payload']['source_repo'] = worker['source-repo']
 
 
 @payload_builder('invalid', schema={
@@ -1363,7 +1369,6 @@ def set_defaults(config, tasks):
 
         worker = task['worker']
         if worker['implementation'] in ('docker-worker',):
-            worker.setdefault('relengapi-proxy', False)
             worker.setdefault('chain-of-trust', False)
             worker.setdefault('taskcluster-proxy', False)
             worker.setdefault('allow-ptrace', False)
@@ -1741,7 +1746,8 @@ def build_task(config, tasks):
         provisioner_id, worker_type = get_worker_type(
             config.graph_config,
             task['worker-type'],
-            level,
+            level=level,
+            release_level=config.params.release_level()
         )
         task['worker-type'] = '/'.join([provisioner_id, worker_type])
         project = config.params['project']
@@ -1793,10 +1799,6 @@ def build_task(config, tasks):
 
         if 'deadline-after' not in task:
             task['deadline-after'] = '1 day'
-
-        if 'coalesce' in task:
-            key = coalesce_key(config, task)
-            routes.append('coalesce.v1.' + key)
 
         if 'priority' not in task:
             task['priority'] = get_default_priority(config.graph_config, config.params['project'])

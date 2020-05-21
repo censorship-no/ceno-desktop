@@ -18,6 +18,7 @@ import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.support.v4.app.NotificationCompat;
+import android.support.v4.content.FileProvider;
 import android.support.v4.util.SimpleArrayMap;
 import android.util.Log;
 
@@ -27,7 +28,6 @@ import org.mozilla.gecko.GeckoActivityMonitor;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.mozglue.SafeIntent;
-import org.mozilla.gecko.updater.UpdateServiceHelper;
 import org.mozilla.gecko.util.BitmapUtils;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
@@ -105,10 +105,6 @@ public final class NotificationHelper implements BundleEventListener {
          */
         MEDIA,
         /**
-         * Built-in updater - use only when <code>AppConstants.MOZ_UPDATER</code> is true.
-         */
-        UPDATER,
-        /**
          * Synced tabs notification channel
          */
         SYNCED_TABS,
@@ -131,7 +127,7 @@ public final class NotificationHelper implements BundleEventListener {
     // How to determine the initialCapacity: Count all channels (including the Updater, which is
     // only added further down in initNotificationChannels), multiply by 4/3 for a maximum load
     // factor of 75 % and round up to the next multiple of two.
-    private final Map<Channel, String> mDefinedNotificationChannels = new HashMap<Channel, String>(16) {{
+    private final Map<Channel, String> mDefinedNotificationChannels = new HashMap<Channel, String>(15) {{
         final String DEFAULT_CHANNEL_TAG = "default2-notification-channel";
         put(Channel.DEFAULT, DEFAULT_CHANNEL_TAG);
 
@@ -207,11 +203,8 @@ public final class NotificationHelper implements BundleEventListener {
 
     private void initNotificationChannels() {
         final String UPDATER_CHANNEL_TAG = "updater-notification-channel";
-        if (UpdateServiceHelper.isUpdaterEnabled(mContext)) {
-            mDefinedNotificationChannels.put(Channel.UPDATER, UPDATER_CHANNEL_TAG);
-        } else {
-            mDeprecatedNotificationChannels.add(UPDATER_CHANNEL_TAG);
-        }
+        mDeprecatedNotificationChannels.add(UPDATER_CHANNEL_TAG);
+
 
         final NotificationManager notificationManager =
                 (NotificationManager) mContext.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -250,13 +243,6 @@ public final class NotificationHelper implements BundleEventListener {
                 case MEDIA: {
                     channel = new NotificationChannel(mDefinedNotificationChannels.get(definedChannel),
                             mContext.getString(R.string.media_notification_channel2),
-                            NotificationManager.IMPORTANCE_LOW);
-                }
-                break;
-
-                case UPDATER: {
-                    channel = new NotificationChannel(mDefinedNotificationChannels.get(definedChannel),
-                            mContext.getString(R.string.updater_notification_channel),
                             NotificationManager.IMPORTANCE_LOW);
                 }
                 break;
@@ -562,11 +548,20 @@ public final class NotificationHelper implements BundleEventListener {
             return null;
         }
 
-        final Uri uri = Uri.fromFile(new File(filePathDecode + fileName));
-        final Intent intent = new Intent();
-        intent.setAction(Intent.ACTION_VIEW);
-        intent.setDataAndType(uri, URLConnection.guessContentTypeFromName(uri.toString()));
+        final Intent intent = new Intent(Intent.ACTION_VIEW);
 
+        Uri uri;
+        if (AppConstants.Versions.feature24Plus) {
+            uri = FileProvider.getUriForFile(
+                    mContext,
+                    AppConstants.MOZ_FILE_PROVIDER_AUTHORITY,
+                    new File(filePathDecode + fileName)
+            );
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } else {
+            uri = Uri.fromFile(new File(filePathDecode + fileName));
+        }
+        intent.setDataAndType(uri, URLConnection.guessContentTypeFromName(uri.toString()));
         // if no one can handle this intent, let the user decide.
         final PackageManager manager = mContext.getPackageManager();
         final List<ResolveInfo> infos = manager.queryIntentActivities(intent, 0);

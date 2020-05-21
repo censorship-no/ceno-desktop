@@ -21,18 +21,16 @@
 <!ENTITY firstrun_data_message "Less data, more savings">
 <!ENTITY firstrun_data_subtext2 "Turn off images to spend less data on every site you visit.">
 <!ENTITY firstrun_sync_title "Sync">
-<!ENTITY updatednewfirstrun_sync_title "Account">
-<!ENTITY firstrun_sync_message2 "Pick up where you left off.">
+<!ENTITY firstrun_sync_message3 "Sync your bookmarks, history, and passwords to your phone.">
 <!ENTITY firstrun_sync_subtext2 "Use Sync to find the bookmarks, passwords, and other things you save to &brandShortName; on all your devices.">
 <!ENTITY newfirstrun_sync_subtext "Sync the things you save on mobile to Firefox for desktop, privately and securely.">
-<!ENTITY updatednewfirstrun_sync_subtext "Sign in to your account to get the most out of &brandShortName;">
+<!ENTITY firstrun_sendtab_title "Send Tab">
+<!ENTITY firstrun_sendtab_message "Share tabs from mobile to desktop — instantly.">
 <!ENTITY firstrun_signin_message "Get connected, get started">
-<!ENTITY firstrun_signin_button "Sign in to Sync">
-<!ENTITY newfirstrun_signin_button "Turn on Sync">
-<!ENTITY updatednewfirstrun_signin_button "Sign in to &brandShortName;">
-<!ENTITY  onboard_start_button_browser "Start Browsing">
+<!ENTITY onboard_start_button_browser "Start Browsing">
 <!ENTITY firstrun_button_notnow "Not right now">
 <!ENTITY firstrun_button_next "Next">
+<!ENTITY firstrun_signup_button "Sign up">
 
 <!ENTITY firstrun_tabqueue_title "Links">
 
@@ -474,14 +472,6 @@ shown from Android O while a tab is being queued.-->
      service is running. -->
 <!ENTITY datareporting_stumbler_notification_title "&vendorShortName; Location Service running">
 
-<!-- Localization note (pref_update_autodownload2) : This should mention downloading
-     specifically, since the pref only prevents automatic downloads and not the
-     actual notification that an update is available. -->
-<!ENTITY pref_update_autodownload3 "Automatic updates">
-<!ENTITY pref_update_autodownload_wifi "Only over Wi-Fi">
-<!ENTITY pref_update_autodownload_never "Never">
-<!ENTITY pref_update_autodownload_always "Always">
-
 <!-- Localization note (help_menu) : This string is used in the main menu-->
 <!ENTITY help_menu "Help">
 
@@ -495,6 +485,7 @@ shown from Android O while a tab is being queued.-->
 <!ENTITY share "Share">
 <!ENTITY share_title "Share via">
 <!ENTITY share_image_failed "Unable to share this image">
+<!ENTITY share_error_toast_message "Unable to share to the indicated app">
 <!ENTITY save_as_pdf "Save as PDF">
 <!ENTITY print "Print">
 <!ENTITY view_page_source "View Page Source">
@@ -749,25 +740,6 @@ just addresses the organization to follow, e.g. "This site is run by " -->
 
 <!ENTITY searchable_description "Bookmarks and history">
 
- <!-- Updater notifications -->
-<!ENTITY updater_start_title2 "Update available for &brandShortName;">
-<!ENTITY updater_start_select2 "Touch to download">
-
-<!ENTITY updater_downloading_title2 "Downloading &brandShortName;">
-<!ENTITY updater_downloading_title_failed2 "Download failed">
-<!ENTITY updater_downloading_select2 "Touch to apply update once downloaded">
-<!ENTITY updater_downloading_retry2 "Touch to retry">
-
-<!ENTITY updater_apply_title3 "Update downloaded for &brandShortName;">
-<!ENTITY updater_apply_select3 "Touch to install">
-
-<!-- Localization note (updater_permission_text): This text is shown in a notification and as a snackbar
-     if the app requires a runtime permission to download updates. Currently, the updater only sees
-     remotely advertised updates in the Nightly and Aurora channels. -->
-<!ENTITY updater_permission_text "To download files and updates, allow &brandShortName; permission to access storage.">
-<!-- LOCALIZATION NOTE (updater_permission_allow): This action is shown in a snackbar along with updater_permission_text. -->
-<!ENTITY updater_permission_allow "Allow">
-
     <!-- Guest mode -->
 <!ENTITY new_guest_session "New Guest Session">
 <!ENTITY exit_guest_session "Exit Guest Session">
@@ -878,6 +850,23 @@ just addresses the organization to follow, e.g. "This site is run by " -->
 <!ENTITY helper_triple_readerview_open_message "Bookmark Reader View items to read them offline.">
 <!ENTITY helper_triple_readerview_open_button "Add to Bookmarks">
 
+<!-- LOCALIZATION NOTE (activity_stream_signin_title, activity_stream_signin_description, activity_stream_signup_button,
+activity_stream_signin_prompt, activity_stream_signin_prompt_button):
+- These labels are shown in the Activity Stream recommending the user to sign in. -->
+<!ENTITY activity_stream_signin_title "Welcome to &brandShortName;">
+<!ENTITY activity_stream_signin_description "Start syncing bookmarks, passwords, and more with your Firefox account.">
+<!ENTITY activity_stream_signup_button "Sign up">
+<!ENTITY activity_stream_signin_prompt "Already have an account?">
+<!-- LOCALIZATION NOTE (activity_stream_signin_prompt_button): To be used in continuation of activity_stream_signin_prompt. -->
+<!ENTITY activity_stream_signin_prompt_button "Sign in.">
+
+<!-- LOCALIZATION NOTE (activity_stream_firefox_promo_title,
+     activity_stream_firefox_promo_description, activity_stream_firefox_promo_button):
+     These labels are shown in an Activity Stream banner. -->
+<!ENTITY activity_stream_firefox_promo_title "Your all-new Firefox, arriving in 2020">
+<!ENTITY activity_stream_firefox_promo_description "Coming soon: Improved performance. Enhanced tracking protection. And features designed to help you find, save, and share more of what you love online.">
+<!ENTITY activity_stream_firefox_promo_button "Take a sneak peek">
+
 <!ENTITY activity_stream_topsites "Top Sites">
 <!-- LOCALIZATION NOTE (activity_stream_topstories): &brandPocket is the brand of the company, Pocket, that is being used to provide suggestions for articles. -->
 <!ENTITY activity_stream_topstories "Recommended by &brandPocket;">
@@ -935,7 +924,6 @@ Picture-in-picture mini window -->
 <!ENTITY media_notification_channel2 "Sound and video">
 <!-- These push notifications come without a specific channel and/or name from Leanplum -->
 <!ENTITY leanplum_default_notifications_channel2 "&vendorShortName; tips and tricks">
-<!ENTITY updater_notification_channel "App updates">
 <!ENTITY synced_tabs_notification_channel "Synced tabs">
 <!-- LOCALIZATION NOTE (site_notifications_channel): This is for system notifications displayed by
 web sites through the HTML Notifications API. -->

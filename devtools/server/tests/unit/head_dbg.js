@@ -51,6 +51,13 @@ const { addDebuggerToGlobal } = ChromeUtils.import(
   "resource://gre/modules/jsdebugger.jsm"
 );
 
+const { AddonTestUtils } = ChromeUtils.import(
+  "resource://testing-common/AddonTestUtils.jsm"
+);
+const { getAppInfo } = ChromeUtils.import(
+  "resource://testing-common/AppInfo.jsm"
+);
+
 const systemPrincipal = Cc["@mozilla.org/systemprincipal;1"].createInstance(
   Ci.nsIPrincipal
 );
@@ -59,17 +66,22 @@ var { loadSubScript, loadSubScriptWithOptions } = Services.scriptloader;
 
 /**
  * Initializes any test that needs to work with add-ons.
+ *
+ * Should be called once per test script that needs to use AddonTestUtils (and
+ * not once per test task!).
  */
-function startupAddonsManager() {
+async function startupAddonsManager() {
   // Create a directory for extensions.
   const profileDir = do_get_profile().clone();
   profileDir.append("extensions");
 
-  const internalManager = Cc["@mozilla.org/addons/integration;1"]
-    .getService(Ci.nsIObserver)
-    .QueryInterface(Ci.nsITimerCallback);
+  /* global globalThis */
+  /* See Bug 1595810 to add globalThis to eslint */
+  AddonTestUtils.init(globalThis);
+  AddonTestUtils.overrideCertDB();
+  AddonTestUtils.appInfo = getAppInfo();
 
-  internalManager.observe(null, "addons-startup", null);
+  await AddonTestUtils.promiseStartupManager();
 }
 
 async function createTargetForFakeTab(title) {
@@ -926,15 +938,19 @@ async function setupTestFromUrl(url) {
  * @param Object options
  *        Optional arguments to tweak test environment
  *        - JSPrincipal principal
- *          Principal to use for the debuggee.
+ *          Principal to use for the debuggee. Defaults to systemPrincipal.
  *        - boolean doNotRunWorker
- *          If true, do not run this tests in worker debugger context.
+ *          If true, do not run this tests in worker debugger context. Defaults to false.
+ *        - bool wantXrays
+ *          Whether the debuggee wants Xray vision with respect to same-origin objects
+ *          outside the sandbox. Defaults to true.
  */
 function threadClientTest(test, options = {}) {
-  let { principal, doNotRunWorker } = options;
-  if (!principal) {
-    principal = systemPrincipal;
-  }
+  const {
+    principal = systemPrincipal,
+    doNotRunWorker = false,
+    wantXrays = true,
+  } = options;
 
   async function runThreadClientTestWithServer(server, test) {
     // Setup a server and connect a client to it.
@@ -943,7 +959,7 @@ function threadClientTest(test, options = {}) {
     // Create a custom debuggee and register it to the server.
     // We are using a custom Sandbox as debuggee. Create a new zone because
     // debugger and debuggee must be in different compartments.
-    const debuggee = Cu.Sandbox(principal, { freshZone: true });
+    const debuggee = Cu.Sandbox(principal, { freshZone: true, wantXrays });
     const scriptName = "debuggee.js";
     debuggee.__name = scriptName;
     server.addTestGlobal(debuggee);

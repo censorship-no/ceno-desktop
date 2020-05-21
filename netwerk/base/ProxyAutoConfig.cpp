@@ -16,6 +16,7 @@
 #include "nsJSUtils.h"
 #include "jsfriendapi.h"
 #include "js/CompilationAndEvaluation.h"  // JS::Compile{,DontInflate}
+#include "js/ContextOptions.h"
 #include "js/PropertySpec.h"
 #include "js/SourceText.h"  // JS::Source{Ownership,Text}
 #include "js/Utility.h"
@@ -299,17 +300,24 @@ class PACResolver final : public nsIDNSListener,
   NS_DECL_THREADSAFE_ISUPPORTS
 
   explicit PACResolver(nsIEventTarget* aTarget)
-      : mStatus(NS_ERROR_FAILURE), mMainThreadEventTarget(aTarget) {}
+      : mStatus(NS_ERROR_FAILURE),
+        mMainThreadEventTarget(aTarget),
+        mMutex("PACResolver::Mutex") {}
 
   // nsIDNSListener
   NS_IMETHOD OnLookupComplete(nsICancelable* request, nsIDNSRecord* record,
                               nsresult status) override {
-    if (mTimer) {
-      mTimer->Cancel();
-      mTimer = nullptr;
+    nsCOMPtr<nsITimer> timer;
+    {
+      MutexAutoLock lock(mMutex);
+      timer.swap(mTimer);
+      mRequest = nullptr;
     }
 
-    mRequest = nullptr;
+    if (timer) {
+      timer->Cancel();
+    }
+
     mStatus = status;
     mResponse = record;
     return NS_OK;
@@ -323,9 +331,15 @@ class PACResolver final : public nsIDNSListener,
 
   // nsITimerCallback
   NS_IMETHOD Notify(nsITimer* timer) override {
-    nsCOMPtr<nsICancelable> request(mRequest);
-    if (request) request->Cancel(NS_ERROR_NET_TIMEOUT);
-    mTimer = nullptr;
+    nsCOMPtr<nsICancelable> request;
+    {
+      MutexAutoLock lock(mMutex);
+      request.swap(mRequest);
+      mTimer = nullptr;
+    }
+    if (request) {
+      request->Cancel(NS_ERROR_NET_TIMEOUT);
+    }
     return NS_OK;
   }
 
@@ -340,6 +354,7 @@ class PACResolver final : public nsIDNSListener,
   nsCOMPtr<nsIDNSRecord> mResponse;
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
+  Mutex mMutex;
 
  private:
   ~PACResolver() = default;
@@ -562,8 +577,10 @@ static const JSFunctionSpec PACGlobalFunctions[] = {
 class JSContextWrapper {
  public:
   static JSContextWrapper* Create(uint32_t aExtraHeapSize) {
-    JSContext* cx = JS_NewContext(sContextHeapSize + aExtraHeapSize);
+    JSContext* cx = JS_NewContext(JS::DefaultHeapMaxBytes + aExtraHeapSize);
     if (NS_WARN_IF(!cx)) return nullptr;
+
+    JS::ContextOptionsRef(cx).setIon(false);
 
     JSContextWrapper* entry = new JSContextWrapper(cx);
     if (NS_FAILED(entry->Init())) {
@@ -593,8 +610,6 @@ class JSContextWrapper {
   bool IsOK() { return mOK; }
 
  private:
-  static const uint32_t sContextHeapSize = 4 << 20;  // 4 MB
-
   JSContext* mContext;
   JS::PersistentRooted<JSObject*> mGlobal;
   bool mOK;

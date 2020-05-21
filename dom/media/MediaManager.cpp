@@ -713,7 +713,8 @@ MediaDevice::MediaDevice(const RefPtr<MediaEngineSource>& aSource,
       mName(aName),
       mID(aID),
       mGroupID(aGroupID),
-      mRawID(aRawID) {
+      mRawID(aRawID),
+      mRawName(aName) {
   MOZ_ASSERT(mSource);
 }
 
@@ -731,7 +732,8 @@ MediaDevice::MediaDevice(const RefPtr<AudioDeviceInfo>& aAudioDeviceInfo,
       mName(mSinkInfo->Name()),
       mID(aID),
       mGroupID(aGroupID),
-      mRawID(aRawID) {
+      mRawID(aRawID),
+      mRawName(mSinkInfo->Name()) {
   // For now this ctor is used only for Audiooutput.
   // It could be used for Audioinput and Videoinput
   // when we do not instantiate a MediaEngineSource
@@ -742,15 +744,22 @@ MediaDevice::MediaDevice(const RefPtr<AudioDeviceInfo>& aAudioDeviceInfo,
 
 MediaDevice::MediaDevice(const RefPtr<MediaDevice>& aOther, const nsString& aID,
                          const nsString& aGroupID, const nsString& aRawID)
+    : MediaDevice(aOther, aID, aGroupID, aRawID, aOther->mName, false) {}
+
+MediaDevice::MediaDevice(const RefPtr<MediaDevice>& aOther, const nsString& aID,
+                         const nsString& aGroupID, const nsString& aRawID,
+                         const nsString& aName,
+                         bool aCompilerBugWorkaround)
     : mSource(aOther->mSource),
       mSinkInfo(aOther->mSinkInfo),
       mKind(aOther->mKind),
       mScary(aOther->mScary),
       mType(aOther->mType),
-      mName(aOther->mName),
+      mName(aName),
       mID(aID),
       mGroupID(aGroupID),
-      mRawID(aRawID) {
+      mRawID(aRawID),
+      mRawName(aOther->mRawName) {
   MOZ_ASSERT(aOther);
 }
 
@@ -819,6 +828,13 @@ NS_IMETHODIMP
 MediaDevice::GetName(nsAString& aName) {
   MOZ_ASSERT(NS_IsMainThread());
   aName.Assign(mName);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+MediaDevice::GetRawName(nsAString& aName) {
+  MOZ_ASSERT(NS_IsMainThread());
+  aName.Assign(mRawName);
   return NS_OK;
 }
 
@@ -2762,6 +2778,7 @@ RefPtr<MediaManager::StreamPromise> MediaManager::GetUserMedia(
               LOG("GetUserMedia: bad window (%" PRIu64
                   ") in post enumeration success callback 2!",
                   windowID);
+              windowListener->Remove(sourceListener);
               return StreamPromise::CreateAndReject(
                   MakeRefPtr<MediaMgrError>(MediaMgrError::Name::AbortError),
                   __func__);
@@ -2772,6 +2789,7 @@ RefPtr<MediaManager::StreamPromise> MediaManager::GetUserMedia(
                   "promise2 success callback! Calling error handler!");
               nsString constraint;
               constraint.AssignASCII(badConstraint);
+              windowListener->Remove(sourceListener);
               return StreamPromise::CreateAndReject(
                   MakeRefPtr<MediaMgrError>(
                       MediaMgrError::Name::OverconstrainedError,
@@ -2781,6 +2799,7 @@ RefPtr<MediaManager::StreamPromise> MediaManager::GetUserMedia(
             if (!devices->Length()) {
               LOG("GetUserMedia: no devices found in post enumeration promise2 "
                   "success callback! Calling error handler!");
+              windowListener->Remove(sourceListener);
               // When privacy.resistFingerprinting = true, no
               // available device implies content script is requesting
               // a fake device, so report NotAllowedError.
@@ -2797,6 +2816,7 @@ RefPtr<MediaManager::StreamPromise> MediaManager::GetUserMedia(
               for (auto& device : *devices) {
                 nsresult rv = devicesCopy->AppendElement(device);
                 if (NS_WARN_IF(NS_FAILED(rv))) {
+                  windowListener->Remove(sourceListener);
                   return StreamPromise::CreateAndReject(
                       MakeRefPtr<MediaMgrError>(
                           MediaMgrError::Name::AbortError),
@@ -2855,9 +2875,10 @@ RefPtr<MediaManager::StreamPromise> MediaManager::GetUserMedia(
 #endif
             return p;
           },
-          [](RefPtr<MediaMgrError>&& aError) {
+          [windowListener, sourceListener](RefPtr<MediaMgrError>&& aError) {
             LOG("GetUserMedia: post enumeration SelectSettings failure "
                 "callback called!");
+            windowListener->Remove(sourceListener);
             return StreamPromise::CreateAndReject(std::move(aError), __func__);
           });
 };
@@ -2969,7 +2990,12 @@ void MediaManager::AnonymizeDevices(MediaDeviceSet& aDevices,
       groupId.AppendInt(aWindowId);
       AnonymizeId(groupId, aOriginKey);
 
-      device = new MediaDevice(device, id, groupId, rawId);
+      nsString name;
+      device->GetName(name);
+      if (name.Find(NS_LITERAL_STRING("AirPods")) != -1) {
+        name = NS_LITERAL_STRING("AirPods");
+      }
+      device = new MediaDevice(device, id, groupId, rawId, name, false);
     }
   }
 }

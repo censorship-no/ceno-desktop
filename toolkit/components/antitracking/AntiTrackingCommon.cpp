@@ -428,12 +428,7 @@ void ReportBlockingToConsole(nsPIDOMWindowOuter* aWindow, nsIURI* aURI,
       aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL ||
       aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN);
 
-  nsCOMPtr<nsIDocShell> docShell = aWindow->GetDocShell();
-  if (NS_WARN_IF(!docShell)) {
-    return;
-  }
-
-  RefPtr<Document> doc = docShell->GetDocument();
+  RefPtr<Document> doc = aWindow->GetExtantDoc();
   if (NS_WARN_IF(!doc)) {
     return;
   }
@@ -514,12 +509,7 @@ void ReportUnblockingToConsole(
     return;
   }
 
-  nsCOMPtr<nsIDocShell> docShell = aWindow->GetDocShell();
-  if (NS_WARN_IF(!docShell)) {
-    return;
-  }
-
-  RefPtr<Document> doc = docShell->GetDocument();
+  RefPtr<Document> doc = aWindow->GetExtantDoc();
   if (NS_WARN_IF(!doc)) {
     return;
   }
@@ -982,6 +972,12 @@ AntiTrackingCommon::SaveFirstPartyStorageAccessGrantedForOriginOnParentProcess(
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(aAllowMode == eAllow || aAllowMode == eAllowAutoGrant ||
              aAllowMode == eAllowOnAnySite);
+
+  if (!aParentPrincipal || !aTrackingPrincipal) {
+    LOG(("Invalid input arguments passed"));
+    return FirstPartyStorageAccessGrantPromise::CreateAndReject(false,
+                                                                __func__);
+  };
 
   nsCOMPtr<nsIURI> parentPrincipalURI;
   Unused << aParentPrincipal->GetURI(getter_AddRefs(parentPrincipalURI));

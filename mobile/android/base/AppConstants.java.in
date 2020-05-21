@@ -219,13 +219,6 @@ public class AppConstants {
     false;
 //#endif
 
-    public static final boolean MOZ_UPDATER =
-//#ifdef MOZ_UPDATER
-    true;
-//#else
-    false;
-//#endif
-
     // Android Beam is only supported on API14+, so we don't even bother building
     // it if this APK doesn't include API14 support.
     public static final boolean MOZ_ANDROID_BEAM =
@@ -253,6 +246,13 @@ public class AppConstants {
 
     public static final boolean FENNEC_NIGHTLY =
 //#ifdef FENNEC_NIGHTLY
+    true;
+//#else
+    false;
+//#endif
+
+    public static final boolean FENNEC_BETA =
+//#ifdef FENNEC_BETA
     true;
 //#else
     false;

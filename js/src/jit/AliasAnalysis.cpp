@@ -120,8 +120,6 @@ static inline const MDefinition* GetObject(const MDefinition* ins) {
     case MDefinition::Opcode::SetInitializedLength:
     case MDefinition::Opcode::ArrayLength:
     case MDefinition::Opcode::SetArrayLength:
-    case MDefinition::Opcode::StoreElementHole:
-    case MDefinition::Opcode::FallibleStoreElement:
     case MDefinition::Opcode::TypedObjectDescr:
     case MDefinition::Opcode::Slots:
     case MDefinition::Opcode::Elements:
@@ -164,6 +162,7 @@ static inline const MDefinition* GetObject(const MDefinition* ins) {
     case MDefinition::Opcode::SetArgumentsObjectArg:
     case MDefinition::Opcode::GetFrameArgument:
     case MDefinition::Opcode::SetFrameArgument:
+    case MDefinition::Opcode::CreateThis:
     case MDefinition::Opcode::CompareExchangeTypedArrayElement:
     case MDefinition::Opcode::AtomicExchangeTypedArrayElement:
     case MDefinition::Opcode::AtomicTypedArrayElementBinop:
@@ -182,6 +181,8 @@ static inline const MDefinition* GetObject(const MDefinition* ins) {
     case MDefinition::Opcode::WasmStoreRef:
     case MDefinition::Opcode::ArrayJoin:
     case MDefinition::Opcode::ArraySlice:
+    case MDefinition::Opcode::StoreElementHole:
+    case MDefinition::Opcode::FallibleStoreElement:
       return nullptr;
     default:
 #ifdef DEBUG

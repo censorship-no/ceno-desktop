@@ -1782,9 +1782,9 @@ nsresult nsHttpChannel::CallOnStartRequest() {
 
     if (mListener) {
       nsCOMPtr<nsIStreamListener> deleteProtector(mListener);
+      mOnStartRequestCalled = true;
       deleteProtector->OnStartRequest(this);
     }
-
     mOnStartRequestCalled = true;
   });
 
@@ -1862,8 +1862,8 @@ nsresult nsHttpChannel::CallOnStartRequest() {
     MOZ_ASSERT(!mOnStartRequestCalled,
                "We should not call OsStartRequest twice");
     nsCOMPtr<nsIStreamListener> deleteProtector(mListener);
-    rv = deleteProtector->OnStartRequest(this);
     mOnStartRequestCalled = true;
+    rv = deleteProtector->OnStartRequest(this);
     if (NS_FAILED(rv)) return rv;
   } else {
     NS_WARNING("OnStartRequest skipped because of null listener");
@@ -5070,12 +5070,11 @@ nsresult nsHttpChannel::OpenCacheInputStream(nsICacheEntry* cacheEntry,
   }
 
   nsCOMPtr<nsIInputStream> altData;
-  int64_t altDataSize;
+  int64_t altDataSize = -1;
   if (foundAltData) {
     rv = cacheEntry->OpenAlternativeInputStream(altDataType,
                                                 getter_AddRefs(altData));
     if (NS_SUCCEEDED(rv)) {
-      LOG(("Opened alt-data input stream type=%s", altDataType.get()));
       // We have succeeded.
       mAvailableCachedAltDataType = altDataType;
       mDeliveringAltData = deliverAltData;
@@ -5083,6 +5082,10 @@ nsresult nsHttpChannel::OpenCacheInputStream(nsICacheEntry* cacheEntry,
       // Set the correct data size on the channel.
       Unused << cacheEntry->GetAltDataSize(&altDataSize);
       mAltDataLength = altDataSize;
+
+      LOG(("Opened alt-data input stream [type=%s, size=%" PRId64
+           ", deliverAltData=%d]",
+           altDataType.get(), mAltDataLength, deliverAltData));
 
       if (deliverAltData) {
         stream = altData;
@@ -6369,6 +6372,11 @@ nsHttpChannel::AsyncOpen(nsIStreamListener* aListener) {
   NS_ENSURE_ARG_POINTER(listener);
   NS_ENSURE_TRUE(!mIsPending, NS_ERROR_IN_PROGRESS);
   NS_ENSURE_TRUE(!mWasOpened, NS_ERROR_ALREADY_OPENED);
+
+  if (mCanceled) {
+    ReleaseListeners();
+    return mStatus;
+  }
 
   if (MaybeWaitForUploadStreamLength(listener, nullptr)) {
     return NS_OK;
@@ -7960,9 +7968,10 @@ nsresult nsHttpChannel::ContinueOnStopRequestAfterAuthRetry(
       MOZ_ASSERT(!mOnStartRequestCalled,
                  "We should not call OnStartRequest twice.");
       nsCOMPtr<nsIStreamListener> listener(mListener);
-      listener->OnStartRequest(this);
       mOnStartRequestCalled = true;
+      listener->OnStartRequest(this);
     } else {
+      mOnStartRequestCalled = true;
       NS_WARNING("OnStartRequest skipped because of null listener");
     }
   }
@@ -8163,9 +8172,10 @@ nsresult nsHttpChannel::ContinueOnStopRequest(nsresult aStatus, bool aIsFromNet,
     MOZ_ASSERT(mOnStartRequestCalled,
                "OnStartRequest should be called before OnStopRequest");
     MOZ_ASSERT(!mOnStopRequestCalled, "We should not call OnStopRequest twice");
-    mListener->OnStopRequest(this, aStatus);
     mOnStopRequestCalled = true;
+    mListener->OnStopRequest(this, aStatus);
   }
+  mOnStopRequestCalled = true;
 
   // The prefetch needs to be released on the main thread
   mDNSPrefetch = nullptr;

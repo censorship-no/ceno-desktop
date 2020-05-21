@@ -32,7 +32,7 @@ SRC_DIR=$TOOLCHAIN_DIR/src
 
 make_flags="-j$(nproc)"
 
-mingw_version=164990461720e0ed6ea5ea9f359d78595b1a459a
+mingw_version=1b373beec6d07478ffba33726bb3bb21f32e4411
 libunwind_version=6ee92fcc97350ae32db3172a269e9afcc2bab686
 llvm_mingw_version=c3a16814bd26aa6702e1e5b482a3d9044bb0f725
 
@@ -49,8 +49,8 @@ prepare() {
   mkdir -p $TOOLCHAIN_DIR
   touch $TOOLCHAIN_DIR/.build-clang
 
-  mkdir -p $SRC_DIR
-  pushd $SRC_DIR
+  mkdir -p $TOOLCHAIN_DIR
+  pushd $TOOLCHAIN_DIR
 
   git clone -n git://git.code.sf.net/p/mingw-w64/mingw-w64
   pushd mingw-w64
@@ -99,32 +99,34 @@ EOF
 build_mingw() {
   mkdir mingw-w64-headers
   pushd mingw-w64-headers
-  $SRC_DIR/mingw-w64/mingw-w64-headers/configure --host=$machine-w64-mingw32 \
-                                                 --enable-sdk=all \
-                                                 --enable-idl \
-                                                 --with-default-msvcrt=ucrt \
-                                                 --with-default-win32-winnt=$default_win32_winnt \
-                                                 --prefix=$CROSS_PREFIX_DIR
+  $TOOLCHAIN_DIR/mingw-w64/mingw-w64-headers/configure \
+    --host=$machine-w64-mingw32 \
+    --enable-sdk=all \
+    --enable-idl \
+    --with-default-msvcrt=ucrt \
+    --with-default-win32-winnt=$default_win32_winnt \
+    --prefix=$CROSS_PREFIX_DIR
   make $make_flags install
   popd
 
   mkdir mingw-w64-crt
   pushd mingw-w64-crt
-  $SRC_DIR/mingw-w64/mingw-w64-crt/configure --host=$machine-w64-mingw32 \
-                                             $crt_flags \
-                                             --with-default-msvcrt=ucrt \
-                                             CC="$CC" \
-                                             AR=llvm-ar \
-                                             RANLIB=llvm-ranlib \
-                                             DLLTOOL=llvm-dlltool \
-                                             --prefix=$CROSS_PREFIX_DIR
+  $TOOLCHAIN_DIR/mingw-w64/mingw-w64-crt/configure \
+    --host=$machine-w64-mingw32 \
+    $crt_flags \
+    --with-default-msvcrt=ucrt \
+    CC="$CC" \
+    AR=llvm-ar \
+    RANLIB=llvm-ranlib \
+    DLLTOOL=llvm-dlltool \
+    --prefix=$CROSS_PREFIX_DIR
   make $make_flags
   make $make_flags install
   popd
 
   mkdir widl
   pushd widl
-  $SRC_DIR/mingw-w64/mingw-w64-tools/widl/configure --target=$machine-w64-mingw32 --prefix=$INSTALL_DIR
+  $TOOLCHAIN_DIR/mingw-w64/mingw-w64-tools/widl/configure --target=$machine-w64-mingw32 --prefix=$INSTALL_DIR
   make $make_flags
   make $make_flags install
   popd
@@ -193,7 +195,7 @@ build_libcxx() {
       -DLIBUNWIND_ENABLE_CROSS_UNWINDING=FALSE \
       -DCMAKE_CXX_FLAGS="${DEBUG_FLAGS} -Wno-dll-attribute-on-redeclaration -nostdinc++ -I$SRC_DIR/libcxx/include -DPSAPI_VERSION=2" \
       -DCMAKE_C_FLAGS="-Wno-dll-attribute-on-redeclaration" \
-      $SRC_DIR/libunwind
+      $TOOLCHAIN_DIR/libunwind
   make $make_flags
   make $make_flags install
   popd
@@ -269,13 +271,35 @@ build_libcxx() {
   popd
 }
 
+build_libssp() {
+  pushd $HOME_DIR/gcc-6.4.0/
+
+  # Massage the environment for the build-libssp.sh script
+  mkdir -p ./$machine-w64-mingw32/lib
+  cp $TOOLCHAIN_DIR/llvm-mingw/libssp-Makefile .
+  sed -i 's/set -e/set -x -e -v/' $TOOLCHAIN_DIR/llvm-mingw/build-libssp.sh
+  sed -i 's/(CROSS)gcc/(CROSS)clang/' libssp-Makefile
+  sed -i 's/\$(CROSS)ar/llvm-ar/' libssp-Makefile
+  OLDPATH=$PATH
+  PATH=$INSTALL_DIR/clang/bin:$PATH
+
+  # Run the script
+  TOOLCHAIN_ARCHS=$machine $TOOLCHAIN_DIR/llvm-mingw/build-libssp.sh .
+
+  # Grab the artifacts, cleanup
+  cp $HOME_DIR/gcc-6.4.0//$machine-w64-mingw32/lib/{libssp.a,libssp_nonshared.a} $INSTALL_DIR/$machine-w64-mingw32/lib/
+  unset TOOLCHAIN_ARCHS
+  PATH=$OLDPATH
+  popd
+}
+
 build_utils() {
   pushd $INSTALL_DIR/bin/
   ln -s llvm-nm $machine-w64-mingw32-nm
   ln -s llvm-strip $machine-w64-mingw32-strip
   ln -s llvm-readobj $machine-w64-mingw32-readobj
   ln -s llvm-objcopy $machine-w64-mingw32-objcopy
-  ./clang $SRC_DIR/llvm-mingw/wrappers/windres-wrapper.c -O2 -Wl,-s -o $machine-w64-mingw32-windres
+  ./clang $TOOLCHAIN_DIR/llvm-mingw/wrappers/windres-wrapper.c -O2 -Wl,-s -o $machine-w64-mingw32-windres
   popd
 }
 
@@ -298,6 +322,7 @@ install_wrappers
 build_mingw
 build_compiler_rt
 build_libcxx
+build_libssp
 build_utils
 
 popd
