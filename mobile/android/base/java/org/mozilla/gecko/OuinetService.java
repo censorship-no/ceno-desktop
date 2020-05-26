@@ -95,9 +95,9 @@ public class OuinetService extends Service {
 
     @SuppressLint("NewApi")
     private Notification createNotification() {
-        Intent intent = OuinetBroadcastReceiver.createStopIntent(this);
-        PendingIntent pendingIntent =
-                PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+        Intent stopIntent = OuinetBroadcastReceiver.createStopIntent(this);
+        PendingIntent pendingStopIntent =
+                PendingIntent.getBroadcast(this, 0, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
         String channel_id = CHANNEL_ID;
         if (!AppConstants.Versions.preO) {
@@ -116,7 +116,7 @@ public class OuinetService extends Service {
                 .setContentTitle(getString(R.string.ceno_notification_title))
                 .setContentText(getString(R.string.ceno_notification_description))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setContentIntent(pendingIntent)
+                .setContentIntent(pendingStopIntent)
                 .setAutoCancel(true) // Close on tap.
                 .build();
     }
