@@ -95,7 +95,7 @@ public class OuinetService extends Service {
 
     @SuppressLint("NewApi")
     private Notification createNotification() {
-        Intent intent = OuinetBroadcastReceiver.createIntent(this);
+        Intent intent = OuinetBroadcastReceiver.createStopIntent(this);
         PendingIntent pendingIntent =
                 PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 

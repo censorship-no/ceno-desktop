@@ -28,7 +28,7 @@ public class OuinetBroadcastReceiver extends BroadcastReceiver {
         Process.killProcess(Process.myPid());
     }
 
-    public static Intent createIntent(Context context) {
+    public static Intent createStopIntent(Context context) {
         Intent intent = new Intent(context, OuinetBroadcastReceiver.class);
         intent.putExtra(EXTRA_ACTION_STOP, EXTRA_ACTION_STOP_VALUE);
         return intent;
