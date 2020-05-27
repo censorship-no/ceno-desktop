@@ -14,6 +14,7 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
+import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -93,11 +94,28 @@ public class OuinetService extends Service {
         System.setProperty("https.proxyPort", "8080");
     }
 
+    private Intent createHomeIntent(Context context) {
+        // Intent characteristics from `GeckoApp.launchOrBringToFront`.
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setData(Uri.parse("about:home"));
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        intent.setClassName(AppConstants.ANDROID_PACKAGE_NAME,
+                            AppConstants.MOZ_ANDROID_BROWSER_INTENT_CLASS);
+        return intent;
+    }
+
     @SuppressLint("NewApi")
     private Notification createNotification() {
+        int requestCode = 0;
+
         Intent stopIntent = OuinetBroadcastReceiver.createStopIntent(this);
         PendingIntent pendingStopIntent =
-                PendingIntent.getBroadcast(this, 0, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                PendingIntent.getBroadcast(this, requestCode++, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+        Intent homeIntent = createHomeIntent(this);
+        PendingIntent pendingHomeIntent =
+                PendingIntent.getActivity(this, requestCode++, homeIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
         String channel_id = CHANNEL_ID;
         if (!AppConstants.Versions.preO) {
@@ -118,6 +136,9 @@ public class OuinetService extends Service {
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setContentIntent(pendingStopIntent)
                 .setAutoCancel(true) // Close on tap.
+                .addAction(new NotificationCompat.Action(R.drawable.ic_globe_pm,
+                                                         getString(R.string.ceno_notification_home_description),
+                                                         pendingHomeIntent))
                 .build();
     }
 
