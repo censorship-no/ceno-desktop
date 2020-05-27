@@ -117,6 +117,10 @@ public class OuinetService extends Service {
         PendingIntent pendingHomeIntent =
                 PendingIntent.getActivity(this, requestCode++, homeIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
+        Intent purgeIntent = OuinetBroadcastReceiver.createPurgeIntent(this);
+        PendingIntent pendingPurgeIntent =
+                PendingIntent.getBroadcast(this, requestCode++, purgeIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
         String channel_id = CHANNEL_ID;
         if (!AppConstants.Versions.preO) {
             // Create a notification channel for Ouinet notifications. Recreating a notification
@@ -139,6 +143,9 @@ public class OuinetService extends Service {
                 .addAction(new NotificationCompat.Action(R.drawable.ic_globe_pm,
                                                          getString(R.string.ceno_notification_home_description),
                                                          pendingHomeIntent))
+                .addAction(new NotificationCompat.Action(R.drawable.ic_cancel_pm,
+                                                         getString(R.string.ceno_notification_purge_description),
+                                                         pendingPurgeIntent))
                 .build();
     }
 
