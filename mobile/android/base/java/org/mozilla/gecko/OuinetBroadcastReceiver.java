@@ -16,16 +16,13 @@ public class OuinetBroadcastReceiver extends BroadcastReceiver {
     // the right type check for the extras bundle.
     public static final String EXTRA_ACTION_STOP = "org.mozilla.gecko.OuinetBroadcastReceiver.STOP";
     public static final String EXTRA_ACTION_PURGE = "org.mozilla.gecko.OuinetBroadcastReceiver.PURGE";
-    public static final byte EXTRA_NONEB = 0;
-    public static final byte EXTRA_ACTION_STOP_VALUE = 1;
-    public static final byte EXTRA_ACTION_PURGE_VALUE = 1;
     private static final String TAG = "OuinetBroadcastReceiver";
 
     @Override
     public void onReceive(Context context, Intent intent) {
         Log.d(TAG, "Received intent: "+ intent +", shutting down Ouinet service");
-        boolean doStop = intent.getByteExtra(EXTRA_ACTION_STOP, EXTRA_NONEB) == EXTRA_ACTION_STOP_VALUE;
-        boolean doPurge = intent.getByteExtra(EXTRA_ACTION_PURGE, EXTRA_NONEB) == EXTRA_ACTION_PURGE_VALUE;
+        boolean doStop = intent.hasExtra(EXTRA_ACTION_STOP);
+        boolean doPurge = intent.hasExtra(EXTRA_ACTION_PURGE);
 
         if (!doStop) {
             return;  // purging only is not allowed
@@ -43,13 +40,13 @@ public class OuinetBroadcastReceiver extends BroadcastReceiver {
 
     public static Intent createStopIntent(Context context) {
         Intent intent = new Intent(context, OuinetBroadcastReceiver.class);
-        intent.putExtra(EXTRA_ACTION_STOP, EXTRA_ACTION_STOP_VALUE);
+        intent.putExtra(EXTRA_ACTION_STOP, 1);
         return intent;
     }
 
     public static Intent createPurgeIntent(Context context) {
         Intent intent = createStopIntent(context);
-        intent.putExtra(EXTRA_ACTION_PURGE, EXTRA_ACTION_PURGE_VALUE);
+        intent.putExtra(EXTRA_ACTION_PURGE, 1);
         return intent;
     }
 
