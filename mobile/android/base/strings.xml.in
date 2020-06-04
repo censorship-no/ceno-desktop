@@ -674,5 +674,8 @@
 
   <string name="ceno_notification_title">&ceno_notification_title;</string>
   <string name="ceno_notification_description">&ceno_notification_description;</string>
+  <string name="ceno_notification_home_description">&ceno_notification_home_description;</string>
+  <string name="ceno_notification_purge_description">&ceno_notification_purge_description;</string>
+  <string name="ceno_notification_purge_do_description">&ceno_notification_purge_do_description;</string>
   <string name="ceno_notification_channel_name">&ceno_notification_channel_name;</string>
 </resources>

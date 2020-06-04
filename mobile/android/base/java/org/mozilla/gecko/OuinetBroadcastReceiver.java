@@ -12,19 +12,41 @@ import java.util.Arrays;
 import java.util.List;
 
 public class OuinetBroadcastReceiver extends BroadcastReceiver {
+    // The value constants also force us to use
+    // the right type check for the extras bundle.
     public static final String EXTRA_ACTION_STOP = "org.mozilla.gecko.OuinetBroadcastReceiver.STOP";
+    public static final String EXTRA_ACTION_PURGE = "org.mozilla.gecko.OuinetBroadcastReceiver.PURGE";
     private static final String TAG = "OuinetBroadcastReceiver";
 
     @Override
     public void onReceive(Context context, Intent intent) {
         Log.d(TAG, "Received intent: "+ intent +", shutting down Ouinet service");
+        boolean doStop = intent.hasExtra(EXTRA_ACTION_STOP);
+        boolean doPurge = intent.hasExtra(EXTRA_ACTION_PURGE);
+
+        if (!doStop) {
+            return;  // purging only is not allowed
+        }
+
         killPackageProcesses(context);
+        if (doPurge) {
+            ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (am != null) {
+                am.clearApplicationUserData();
+            }
+        }
         Process.killProcess(Process.myPid());
     }
 
-    public static Intent createIntent(Context context) {
+    public static Intent createStopIntent(Context context) {
         Intent intent = new Intent(context, OuinetBroadcastReceiver.class);
-        intent.putExtra(EXTRA_ACTION_STOP, /* unused */ 1);
+        intent.putExtra(EXTRA_ACTION_STOP, 1);
+        return intent;
+    }
+
+    public static Intent createPurgeIntent(Context context) {
+        Intent intent = createStopIntent(context);
+        intent.putExtra(EXTRA_ACTION_PURGE, 1);
         return intent;
     }
 

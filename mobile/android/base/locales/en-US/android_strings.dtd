@@ -941,5 +941,8 @@ web sites through the HTML Notifications API. -->
 
 <!ENTITY ceno_notification_title "CENO Browser service">
 <!ENTITY ceno_notification_description "Tap to stop">
+<!ENTITY ceno_notification_home_description "Home">
+<!ENTITY ceno_notification_purge_description "Stop &amp; purge &#9888;">
+<!ENTITY ceno_notification_purge_do_description "Tap if sure! &#128163;">
 <!ENTITY ceno_notification_channel_name "CENO service">
 
