@@ -119,20 +119,6 @@ public class OuinetService extends Service {
 
     @SuppressLint("NewApi")
     private Notification createNotification(boolean showRealPurgeAction) {
-        int requestCode = 0;
-
-        Intent stopIntent = OuinetBroadcastReceiver.createStopIntent(this);
-        PendingIntent pendingStopIntent =
-                PendingIntent.getBroadcast(this, requestCode++, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT);
-
-        Intent homeIntent = createHomeIntent(this);
-        PendingIntent pendingHomeIntent =
-                PendingIntent.getActivity(this, requestCode++, homeIntent, PendingIntent.FLAG_UPDATE_CURRENT);
-
-        Intent showPurgeIntent = createShowPurgeIntent(this);
-        PendingIntent pendingShowPurgeIntent =
-                PendingIntent.getService(this, requestCode++, showPurgeIntent, PendingIntent.FLAG_UPDATE_CURRENT);
-
         String channel_id = CHANNEL_ID;
         if (!AppConstants.Versions.preO) {
             // Create a notification channel for Ouinet notifications. Recreating a notification
@@ -145,27 +131,38 @@ public class OuinetService extends Service {
             notificationManager.createNotificationChannel(channel);
         }
 
+        int requestCode = 0;
+        PendingIntent stopPIntent = PendingIntent.getBroadcast(this, requestCode++,
+                                                               OuinetBroadcastReceiver.createStopIntent(this),
+                                                               PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent homePIntent = PendingIntent.getActivity(this, requestCode++,
+                                                              createHomeIntent(this),
+                                                              PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent showPurgePIntent = PendingIntent.getService(this, requestCode++,
+                                                                  createShowPurgeIntent(this),
+                                                                  PendingIntent.FLAG_UPDATE_CURRENT);
+
         NotificationCompat.Builder notifb = new NotificationCompat.Builder(this, channel_id)
                 .setSmallIcon(R.drawable.ic_status_logo)
                 .setContentTitle(getString(R.string.ceno_notification_title))
                 .setContentText(getString(R.string.ceno_notification_description))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setContentIntent(pendingStopIntent)
+                .setContentIntent(stopPIntent)
                 .setAutoCancel(true) // Close on tap.
                 .addAction(R.drawable.ic_globe_pm,
                            getString(R.string.ceno_notification_home_description),
-                           pendingHomeIntent)
+                           homePIntent)
                 .addAction(R.drawable.ic_cancel_pm,
                            getString(R.string.ceno_notification_purge_description),
-                           pendingShowPurgeIntent);
-        if (showRealPurgeAction) {
-            Intent purgeIntent = OuinetBroadcastReceiver.createPurgeIntent(this);
-            PendingIntent pendingPurgeIntent =
-                PendingIntent.getBroadcast(this, requestCode++, purgeIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                           showPurgePIntent);
 
+        if (showRealPurgeAction) {
+            PendingIntent purgePIntent = PendingIntent.getBroadcast(this, requestCode++,
+                                                                    OuinetBroadcastReceiver.createPurgeIntent(this),
+                                                                    PendingIntent.FLAG_UPDATE_CURRENT);
             notifb.addAction(R.drawable.ic_cancel_pm,
                              getString(R.string.ceno_notification_purge_do_description),
-                             pendingPurgeIntent);
+                             purgePIntent);
         }
 
         return notifb.build();
