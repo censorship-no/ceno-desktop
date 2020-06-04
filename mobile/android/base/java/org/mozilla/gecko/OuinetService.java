@@ -152,20 +152,20 @@ public class OuinetService extends Service {
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setContentIntent(pendingStopIntent)
                 .setAutoCancel(true) // Close on tap.
-                .addAction(new NotificationCompat.Action(R.drawable.ic_globe_pm,
-                                                         getString(R.string.ceno_notification_home_description),
-                                                         pendingHomeIntent))
-                .addAction(new NotificationCompat.Action(R.drawable.ic_cancel_pm,
-                                                         getString(R.string.ceno_notification_purge_description),
-                                                         pendingShowPurgeIntent));
+                .addAction(R.drawable.ic_globe_pm,
+                           getString(R.string.ceno_notification_home_description),
+                           pendingHomeIntent)
+                .addAction(R.drawable.ic_cancel_pm,
+                           getString(R.string.ceno_notification_purge_description),
+                           pendingShowPurgeIntent);
         if (showRealPurgeAction) {
             Intent purgeIntent = OuinetBroadcastReceiver.createPurgeIntent(this);
             PendingIntent pendingPurgeIntent =
                 PendingIntent.getBroadcast(this, requestCode++, purgeIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-            notifb.addAction(new NotificationCompat.Action(R.drawable.ic_cancel_pm,
-                                                           getString(R.string.ceno_notification_purge_do_description),
-                                                           pendingPurgeIntent));
+            notifb.addAction(R.drawable.ic_cancel_pm,
+                             getString(R.string.ceno_notification_purge_do_description),
+                             pendingPurgeIntent);
         }
 
         return notifb.build();
