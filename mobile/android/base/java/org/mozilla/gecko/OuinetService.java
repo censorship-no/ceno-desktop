@@ -34,6 +34,8 @@ public class OuinetService extends Service {
     private static final String CHANNEL_ID = "ouinet-notification-channel";
 
     private Ouinet mOuinet;
+    private boolean hidePurgeActionPosted = false;
+    private final Object hidePurgeActionLock = new Object();
 
     // To see whether this service is running, you may try this command:
     // adb -s $mi shell dumpsys activity services OuinetService
@@ -61,12 +63,20 @@ public class OuinetService extends Service {
             startForeground(NOTIFICATION_ID, createNotification(true));
 
             // Show notification without purge action after some time.
-            new Handler(Looper.myLooper()).postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        startForeground(NOTIFICATION_ID, createNotification(false));
-                    }
-                }, 3000 /* ms */);
+            synchronized (hidePurgeActionLock) {
+                if (!hidePurgeActionPosted) {
+                    new Handler(Looper.myLooper()).postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                synchronized (hidePurgeActionLock) {
+                                    startForeground(NOTIFICATION_ID, createNotification(false));
+                                    hidePurgeActionPosted = false;
+                                }
+                            }
+                        }, 3000 /* ms */);
+                    hidePurgeActionPosted = true;
+                }
+            }
 
             return Service.START_NOT_STICKY;
         }
