@@ -58,13 +58,13 @@ public class OuinetService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent.hasExtra(HIDE_PURGE_EXTRA)) {
-            // Show notification without purge action.
+            Log.d(TAG, "Hiding purge action, intent:" + intent);
             startForeground(NOTIFICATION_ID, createNotification(false));
             return Service.START_NOT_STICKY;
         }
 
         if (intent.hasExtra(SHOW_PURGE_EXTRA)) {
-            // Show notification with purge action.
+            Log.d(TAG, "Showing purge action, intent:" + intent);
             startForeground(NOTIFICATION_ID, createNotification(true));
 
             // Show notification without purge action after some time.
