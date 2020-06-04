@@ -30,12 +30,11 @@ public class OuinetService extends Service {
     private static final String TAG = "OuinetService";
     private static final String CONFIG_EXTRA = "config";
     private static final String SHOW_PURGE_EXTRA = "show-purge";
+    private static final String HIDE_PURGE_EXTRA = "hide-purge";
     private static final int NOTIFICATION_ID = 1;
     private static final String CHANNEL_ID = "ouinet-notification-channel";
 
     private Ouinet mOuinet;
-    private boolean hidePurgeActionPosted = false;
-    private final Object hidePurgeActionLock = new Object();
 
     // To see whether this service is running, you may try this command:
     // adb -s $mi shell dumpsys activity services OuinetService
@@ -58,25 +57,29 @@ public class OuinetService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent.hasExtra(HIDE_PURGE_EXTRA)) {
+            // Show notification without purge action.
+            startForeground(NOTIFICATION_ID, createNotification(false));
+            return Service.START_NOT_STICKY;
+        }
+
         if (intent.hasExtra(SHOW_PURGE_EXTRA)) {
             // Show notification with purge action.
             startForeground(NOTIFICATION_ID, createNotification(true));
 
             // Show notification without purge action after some time.
-            synchronized (hidePurgeActionLock) {
-                if (!hidePurgeActionPosted) {
-                    new Handler(Looper.myLooper()).postDelayed(new Runnable() {
-                            @Override
-                            public void run() {
-                                synchronized (hidePurgeActionLock) {
-                                    startForeground(NOTIFICATION_ID, createNotification(false));
-                                    hidePurgeActionPosted = false;
-                                }
-                            }
-                        }, 3000 /* ms */);
-                    hidePurgeActionPosted = true;
-                }
-            }
+            PendingIntent hidePurgePIntent = PendingIntent.getService(this, 0,
+                                                                      createHidePurgeIntent(this),
+                                                                      PendingIntent.FLAG_CANCEL_CURRENT);
+            new Handler(Looper.myLooper()).postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            hidePurgePIntent.send();
+                        } catch (PendingIntent.CanceledException ce) {
+                        }
+                    }
+                }, 3000 /* ms */);
 
             return Service.START_NOT_STICKY;
         }
@@ -136,6 +139,12 @@ public class OuinetService extends Service {
     private Intent createShowPurgeIntent(Context context) {
         Intent intent = new Intent(context, OuinetService.class);
         intent.putExtra(SHOW_PURGE_EXTRA, 1);
+        return intent;
+    }
+
+    private Intent createHidePurgeIntent(Context context) {
+        Intent intent = new Intent(context, OuinetService.class);
+        intent.putExtra(HIDE_PURGE_EXTRA, 1);
         return intent;
     }
 
