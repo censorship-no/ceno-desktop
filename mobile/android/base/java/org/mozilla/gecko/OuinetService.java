@@ -17,7 +17,9 @@ import android.content.res.Resources;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.support.v4.app.NotificationCompat;
 import android.util.Log;
 
@@ -55,7 +57,17 @@ public class OuinetService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent.hasExtra(SHOW_PURGE_EXTRA)) {
+            // Show notification with purge action.
             startForeground(NOTIFICATION_ID, createNotification(true));
+
+            // Show notification without purge action after some time.
+            new Handler(Looper.myLooper()).postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        startForeground(NOTIFICATION_ID, createNotification(false));
+                    }
+                }, 3000 /* ms */);
+
             return Service.START_NOT_STICKY;
         }
 
