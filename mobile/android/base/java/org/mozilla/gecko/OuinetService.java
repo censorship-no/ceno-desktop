@@ -27,6 +27,7 @@ import ie.equalit.ouinet.Config;
 public class OuinetService extends Service {
     private static final String TAG = "OuinetService";
     private static final String CONFIG_EXTRA = "config";
+    private static final String SHOW_PURGE_EXTRA = "show-purge";
     private static final int NOTIFICATION_ID = 1;
     private static final String CHANNEL_ID = "ouinet-notification-channel";
 
@@ -53,6 +54,11 @@ public class OuinetService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent.hasExtra(SHOW_PURGE_EXTRA)) {
+            startForeground(NOTIFICATION_ID, createNotification(true));
+            return Service.START_NOT_STICKY;
+        }
+
         Log.d(TAG, "Service starting, intent:" + intent);
         if (!intent.hasExtra(CONFIG_EXTRA)) {
             throw new IllegalArgumentException("Service intent missing config extra");
@@ -66,7 +72,7 @@ public class OuinetService extends Service {
             }
             mOuinet = new Ouinet(this, config);
         }
-        startForeground(NOTIFICATION_ID, createNotification());
+        startForeground(NOTIFICATION_ID, createNotification(false));
         startOuinet();
         return Service.START_NOT_STICKY;
     }
@@ -105,8 +111,14 @@ public class OuinetService extends Service {
         return intent;
     }
 
+    private Intent createShowPurgeIntent(Context context) {
+        Intent intent = new Intent(context, OuinetService.class);
+        intent.putExtra(SHOW_PURGE_EXTRA, 1);
+        return intent;
+    }
+
     @SuppressLint("NewApi")
-    private Notification createNotification() {
+    private Notification createNotification(boolean showRealPurgeAction) {
         int requestCode = 0;
 
         Intent stopIntent = OuinetBroadcastReceiver.createStopIntent(this);
@@ -117,9 +129,9 @@ public class OuinetService extends Service {
         PendingIntent pendingHomeIntent =
                 PendingIntent.getActivity(this, requestCode++, homeIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-        Intent purgeIntent = OuinetBroadcastReceiver.createPurgeIntent(this);
-        PendingIntent pendingPurgeIntent =
-                PendingIntent.getBroadcast(this, requestCode++, purgeIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+        Intent showPurgeIntent = createShowPurgeIntent(this);
+        PendingIntent pendingShowPurgeIntent =
+                PendingIntent.getService(this, requestCode++, showPurgeIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
         String channel_id = CHANNEL_ID;
         if (!AppConstants.Versions.preO) {
@@ -133,7 +145,7 @@ public class OuinetService extends Service {
             notificationManager.createNotificationChannel(channel);
         }
 
-        return new NotificationCompat.Builder(this, channel_id)
+        NotificationCompat.Builder notifb = new NotificationCompat.Builder(this, channel_id)
                 .setSmallIcon(R.drawable.ic_status_logo)
                 .setContentTitle(getString(R.string.ceno_notification_title))
                 .setContentText(getString(R.string.ceno_notification_description))
@@ -145,8 +157,18 @@ public class OuinetService extends Service {
                                                          pendingHomeIntent))
                 .addAction(new NotificationCompat.Action(R.drawable.ic_cancel_pm,
                                                          getString(R.string.ceno_notification_purge_description),
-                                                         pendingPurgeIntent))
-                .build();
+                                                         pendingShowPurgeIntent));
+        if (showRealPurgeAction) {
+            Intent purgeIntent = OuinetBroadcastReceiver.createPurgeIntent(this);
+            PendingIntent pendingPurgeIntent =
+                PendingIntent.getBroadcast(this, requestCode++, purgeIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+            notifb.addAction(new NotificationCompat.Action(R.drawable.ic_cancel_pm,
+                                                           getString(R.string.ceno_notification_purge_do_description),
+                                                           pendingPurgeIntent));
+        }
+
+        return notifb.build();
     }
 
     @Override
