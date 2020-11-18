@@ -48,6 +48,11 @@ ifndef DEVELOPER_OPTIONS
 ifndef MOZ_DEBUG_RUST
 # Enable link-time optimization for release builds.
 cargo_rustc_flags += -C lto
+# Versions of rust >= 1.45 need -Cembed-bitcode=yes for all crates when
+# using -Clto.
+ifeq (,$(filter 1.22.% 1.23.% 1.24.% 1.25.% 1.26.% 1.27.% 1.28.% 1.29.% 1.30.% 1.31.% 1.32.% 1.33.% 1.34.% 1.35.% 1.36.% 1.37.% 1.38.% 1.39.% 1.40.% 1.41.% 1.42.% 1.43.% 1.44.%,$(RUSTC_VERSION)))
+RUSTFLAGS += -Cembed-bitcode=yes
+endif
 endif
 endif
 

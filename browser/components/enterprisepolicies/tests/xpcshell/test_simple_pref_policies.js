@@ -125,6 +125,7 @@ const POLICIES_TESTS = [
           SPNEGO: false,
           NTLM: false,
         },
+        PrivateBrowsing: true,
       },
     },
     lockedPrefs: {
@@ -135,6 +136,7 @@ const POLICIES_TESTS = [
       "network.negotiate-auth.allow-non-fqdn": true,
       "network.automatic-ntlm-auth.allow-proxies": false,
       "network.negotiate-auth.allow-proxies": false,
+      "network.auth.private-browsing-sso": true,
     },
   },
 
@@ -149,6 +151,7 @@ const POLICIES_TESTS = [
           SPNEGO: true,
           NTLM: true,
         },
+        PrivateBrowsing: true,
         Locked: false,
       },
     },
@@ -158,6 +161,7 @@ const POLICIES_TESTS = [
       "network.automatic-ntlm-auth.trusted-uris": "a.com, b.com",
       "network.automatic-ntlm-auth.allow-non-fqdn": true,
       "network.negotiate-auth.allow-non-fqdn": true,
+      "network.auth.private-browsing-sso": true,
     },
   },
 
@@ -635,6 +639,61 @@ const POLICIES_TESTS = [
     },
     lockedPrefs: {
       "media.eme.enabled": false,
+    },
+  },
+
+  // POLICY: DisabledCiphers
+  {
+    policies: {
+      DisabledCiphers: {
+        TLS_DHE_RSA_WITH_AES_128_CBC_SHA: false,
+        TLS_DHE_RSA_WITH_AES_256_CBC_SHA: false,
+        TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA: false,
+        TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA: false,
+        TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256: false,
+        TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: false,
+        TLS_RSA_WITH_AES_128_CBC_SHA: false,
+        TLS_RSA_WITH_AES_256_CBC_SHA: false,
+        TLS_RSA_WITH_3DES_EDE_CBC_SHA: false,
+      },
+    },
+    lockedPrefs: {
+      "security.ssl3.dhe_rsa_aes_128_sha": true,
+      "security.ssl3.dhe_rsa_aes_256_sha": true,
+      "security.ssl3.ecdhe_rsa_aes_128_sha": true,
+      "security.ssl3.ecdhe_rsa_aes_256_sha": true,
+      "security.ssl3.ecdhe_rsa_aes_128_gcm_sha256": true,
+      "security.ssl3.ecdhe_ecdsa_aes_128_gcm_sha256": true,
+      "security.ssl3.rsa_aes_128_sha": true,
+      "security.ssl3.rsa_aes_256_sha": true,
+      "security.ssl3.rsa_des_ede3_sha": true,
+    },
+  },
+
+  {
+    policies: {
+      DisabledCiphers: {
+        TLS_DHE_RSA_WITH_AES_128_CBC_SHA: true,
+        TLS_DHE_RSA_WITH_AES_256_CBC_SHA: true,
+        TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA: true,
+        TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA: true,
+        TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256: true,
+        TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: true,
+        TLS_RSA_WITH_AES_128_CBC_SHA: true,
+        TLS_RSA_WITH_AES_256_CBC_SHA: true,
+        TLS_RSA_WITH_3DES_EDE_CBC_SHA: true,
+      },
+    },
+    lockedPrefs: {
+      "security.ssl3.dhe_rsa_aes_128_sha": false,
+      "security.ssl3.dhe_rsa_aes_256_sha": false,
+      "security.ssl3.ecdhe_rsa_aes_128_sha": false,
+      "security.ssl3.ecdhe_rsa_aes_256_sha": false,
+      "security.ssl3.ecdhe_rsa_aes_128_gcm_sha256": false,
+      "security.ssl3.ecdhe_ecdsa_aes_128_gcm_sha256": false,
+      "security.ssl3.rsa_aes_128_sha": false,
+      "security.ssl3.rsa_aes_256_sha": false,
+      "security.ssl3.rsa_des_ede3_sha": false,
     },
   },
 ];

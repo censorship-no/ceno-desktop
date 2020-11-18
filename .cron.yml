@@ -5,19 +5,6 @@
 ---
 
 jobs:
-    - name: daily-releases
-      job:
-          type: decision-task
-          treeherder-symbol: RPd
-          target-tasks-method: daily_releases
-      run-on-projects:
-          - mozilla-esr68
-      when:
-          by-project:
-              # No default branch
-              mozilla-esr68:
-                  - {weekday: 'Monday', hour: 4, minute: 0}
-
     - name: nightly-desktop
       job:
           type: decision-task
@@ -82,18 +69,6 @@ jobs:
           - mozilla-central
       when: []  # never (hook only)
 
-    - name: ship-geckoview
-      job:
-          type: decision-task
-          treeherder-symbol: ship_geckoview_beta
-          target-tasks-method: ship_geckoview_beta
-          include-push-tasks: true
-          android-release-type: beta
-      run-on-projects:
-          - mozilla-beta
-      when: []    # never (hook only)
-
-
     - name: searchfox-index
       job:
           type: decision-task
@@ -103,7 +78,6 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr68
       when:
           - {hour: 10, minute: 0}
 
@@ -140,7 +114,6 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr68
       when:
           by-project:
               # No default branch
@@ -153,9 +126,6 @@ jobs:
               mozilla-release:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
-              mozilla-esr68:
-                  - {hour: 7, minute: 0}
-                  - {hour: 19, minute: 0}
 
     - name: periodic-update
       job:
@@ -166,7 +136,6 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr68
       when:
           - {weekday: 'Monday', hour: 10, minute: 0}
           - {weekday: 'Thursday', hour: 10, minute: 0}
@@ -192,6 +161,5 @@ jobs:
       run-on-projects:
           - mozilla-central
           - mozilla-beta
-          - mozilla-esr68
       when:
           - {minute: 45}
