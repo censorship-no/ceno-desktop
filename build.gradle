@@ -324,6 +324,3 @@ idea {
         }
     }
 }
-
-task wrapper(type: Wrapper) {
-}
