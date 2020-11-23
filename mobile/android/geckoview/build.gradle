@@ -59,6 +59,7 @@ def getBuildId() {
 
 android {
     compileSdkVersion project.ext.compileSdkVersion
+    buildToolsVersion project.ext.buildToolsVersion
 
     useLibrary 'android.test.runner'
     useLibrary 'android.test.base'
