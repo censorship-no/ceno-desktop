@@ -109,7 +109,7 @@ ext.configureLibraryVariantWithJNIWrappers = { variant, module ->
             doFirst {
                 classpath variant.javaCompile.classpath
                 // Include android.jar.
-                classpath variant.javaCompile.options.bootClasspath
+                classpath variant.javaCompile.options.bootstrapClasspath
             }
     
             main = 'org.mozilla.gecko.annotationProcessors.AnnotationProcessor'
@@ -158,7 +158,7 @@ ext.configureApplicationVariantWithJNIWrappers = { variant, module ->
             doFirst {
                 classpath variant.javaCompile.classpath
                 // Include android.jar.
-                classpath variant.javaCompile.options.bootClasspath
+                classpath variant.javaCompile.options.bootstrapClasspath
             }
         
             main = 'org.mozilla.gecko.annotationProcessors.AnnotationProcessor'

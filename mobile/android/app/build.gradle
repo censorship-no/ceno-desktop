@@ -18,6 +18,7 @@ if (mozconfig.substs.MOZILLA_OFFICIAL) {
 
 android {
     compileSdkVersion project.ext.compileSdkVersion
+    buildToolsVersion project.ext.buildToolsVersion
 
     useLibrary 'android.test.runner'
     useLibrary 'android.test.base'

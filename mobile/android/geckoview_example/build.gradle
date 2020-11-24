@@ -6,6 +6,7 @@ apply from: "${topsrcdir}/mobile/android/gradle/product_flavors.gradle"
 
 android {
     compileSdkVersion project.ext.compileSdkVersion
+    buildToolsVersion project.ext.buildToolsVersion
 
     defaultConfig {
         targetSdkVersion project.ext.targetSdkVersion
