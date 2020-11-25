@@ -175,8 +175,6 @@ public class CellScannerImplementation implements CellScanner.CellScannerImpl {
             return Collections.emptyList();
         }
 
-// BEGIN: Temporarily disable to avoid build breaking with Android API 29 as target.
-/*
         @SuppressWarnings("deprecation")
         Collection<NeighboringCellInfo> cells = mTelephonyManager.getNeighboringCellInfo();
         if (cells == null || cells.isEmpty()) {
@@ -197,9 +195,6 @@ public class CellScannerImplementation implements CellScanner.CellScannerImpl {
             }
         }
         return records;
-*/
-        return Collections.emptyList();
-// END
     }
 
 

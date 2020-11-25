@@ -71,9 +71,10 @@ project_flag('MOZ_ANDROID_BEAM',
              help='Enable NFC permission on Android',
              default=True)
 
+# Disabled as it fails to build with Android API 29 as target.
 project_flag('MOZ_ANDROID_MLS_STUMBLER',
              help='Include Mozilla Location Service Stumbler on Android',
-             default=True)
+             default=False)
 
 project_flag('MOZ_ANDROID_DOWNLOAD_CONTENT_SERVICE',
              help='Background service for downloading additional content at runtime',
