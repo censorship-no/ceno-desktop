@@ -57,13 +57,13 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Configuration;
 import android.graphics.BitmapFactory;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
-import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -173,7 +173,7 @@ public abstract class GeckoApp extends GeckoActivity
     /**
      * Used with SharedPreferences, per profile, to determine if this is the first run of
      * the application. When accessing SharedPreferences, the default value of true should be used.
-     *
+
      * Originally, this was only used for the telemetry core ping logic. To avoid
      * having to write custom migration logic, we just keep the original pref key.
      * Be aware of {@link org.mozilla.gecko.fxa.EnvironmentUtils#GECKO_PREFS_IS_FIRST_RUN}.

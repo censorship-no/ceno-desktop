@@ -32,7 +32,7 @@ import java.io.OutputStream;
  */
 public class PostUpdateHandler {
     private static final String LOGTAG = "GeckoPostUpdateHandler";
-    private static final boolean DEBUG = true;
+    private static final boolean DEBUG = false;
 
     @SuppressWarnings("try")
     public void onCreate(final BrowserApp browserApp, final Bundle savedInstanceState) {

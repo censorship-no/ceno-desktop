@@ -348,7 +348,6 @@ nsresult nsNSSCertificateDB::handleCACertDownload(NotNull<nsIArray*> x509Certs,
   bool allows = true;
 #else
   uint32_t trustBits;
-
   bool allows;
   rv = dialogs->ConfirmDownloadCACert(ctx, certToShow, &trustBits, &allows);
   if (NS_FAILED(rv)) return rv;

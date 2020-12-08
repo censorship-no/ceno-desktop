@@ -28,9 +28,9 @@ android {
             java {
                 srcDir '.'
 
-//                if (!mozconfig.substs.MOZ_INSTALL_TRACKING) {
-//                    exclude 'com/adjust/**'
-//                }
+                if (!mozconfig.substs.MOZ_INSTALL_TRACKING) {
+                    exclude 'com/adjust/**'
+                }
 
                 if (!mozconfig.substs.MOZ_ANDROID_MMA) {
                     exclude 'com/leanplum/**'

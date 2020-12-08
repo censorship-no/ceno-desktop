@@ -1339,7 +1339,7 @@ set_config('COLOR_CFLAGS', color_cflags)
 # Note that we don't need to do this with gcc, as libc++ detects gcc and
 # effectively does the same thing we are doing here.
 #
-# _LIBCPP_ALWAYS_INLINE needs a similar workarounds, since it too declares
+# _LIBCPP_ALWAYS_INLINE needs similar workarounds, since it too declares
 # hidden visibility.
 #
 # _LIBCPP_HIDE_FROM_ABI is a macro in libc++ versions in NDKs >=r19.  It too
