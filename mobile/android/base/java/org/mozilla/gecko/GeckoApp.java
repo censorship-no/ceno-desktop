@@ -993,7 +993,7 @@ public abstract class GeckoApp extends GeckoActivity
              .setTitle(R.string.wifi_disconnected_dialog_title)
              .setMessage(R.string.wifi_disconnected_dialog_description)
              .setNegativeButton(R.string.wifi_disconnected_dismiss_button, doNothing)
-             .setPositiveButton(R.string.no_wifi_close_button, closeApp)
+             .setPositiveButton(R.string.wifi_disconnected_close_button, closeApp)
              .show();
     }
 
