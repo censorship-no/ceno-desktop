@@ -930,14 +930,9 @@ web sites through the HTML Notifications API. -->
 <!ENTITY site_notifications_channel "Site notifications">
 <!ENTITY crash_handler_notifications_channel "&brandShortName; Crash Reporter">
 
-<!-- CENO wifi dialog strings -->
-<!ENTITY no_wifi_dialog_title "CENO Browser">
-<!ENTITY no_wifi_dialog_description "The CENO browser is designed to work on wifi as it uses large amounts of data. Please re-open the app when you are connected to WiFi.">
-<!ENTITY no_wifi_close_button "Close">
-
-<!ENTITY wifi_disconnected_dialog_title "CENO Browser Warning">
-<!ENTITY wifi_disconnected_dialog_description "The CENO browser is designed to work on wifi as it uses large amounts of data. It is recommended that you close the app and re-open it when you are on wifi.">
-<!ENTITY wifi_disconnected_dismiss_button "Dismiss">
+<!-- CENO Wi-Fi dialog strings -->
+<!ENTITY wifi_disconnected_dialog_title "CENO Browser warning">
+<!ENTITY wifi_disconnected_dialog_description "CENO is designed to work on Wi-Fi as it may use large amounts of data. It is recommended that you close both CENO Service and Browser and re-open the app when you are back on Wi-Fi.">
 
 <!ENTITY ceno_notification_title "CENO Browser service">
 <!ENTITY ceno_notification_description "Tap to stop">

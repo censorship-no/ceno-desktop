@@ -62,9 +62,10 @@ public class PocketStoriesLoader extends AsyncTaskLoader<List<TopStory>> {
         setPlaceholderUrl(DEFAULT_PLACEHOLDER_URL);
     }
 
-    /** Default stories for CENO, it is not using the Pocket API so these will always be shown. */
+    // Default stories for CENO, it is not using the Pocket API so these will always be shown.
     private static final String[][] DEFAULT_STORIES = {
-        /* Title, URL, Image URL */
+        // Title, URL, Image URL
+        {"CENO User Manual", "https://censorship.no/user-manual/en/", "https://censorship.no/logo_ceno.png"},
         {"صفحه اول - BBC News", "http://www.bbc.com/persian", "https://news.files.bbci.co.uk/ws/img/logos/og/persian.png"},
         {"Motherboard - Vice", "https://motherboard.vice.com/", "https://video-images.vice.com/images/channel/7/lede/MOTHERBOARD_333x333.png"},
     };

@@ -966,34 +966,17 @@ public abstract class GeckoApp extends GeckoActivity
     }
 
     public void showNoWiFiDialog() {
-        DialogInterface.OnClickListener closeApp = new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                Log.d(LOGTAG, "Closing app from dialog");
-                /**
-                 * This is the preferred way to exit the app, but it is triggering an
-                 * exception in the cpp code which brings up the crash handler dialog.
-                 * ActivityCompat.finishAffinity(GeckoApp.this);
-                 */
-                if (USE_SERVICE) {
-                    OuinetService.stopOuinetService(GeckoApp.this);
-                }
-                finishAndShutdown(false);
-                //android.os.Process.killProcess(android.os.Process.myPid());
-            }
-        };
         DialogInterface.OnClickListener doNothing = new DialogInterface.OnClickListener() {
            @Override
             public void onClick(DialogInterface dialog, int which) {
-                Log.d(LOGTAG, "Dismissing dialog");
+                Log.d(LOGTAG, "Dismissing no Wi-Fi dialog");
             }
         };
 
         new AlertDialog.Builder(this)
              .setTitle(R.string.wifi_disconnected_dialog_title)
              .setMessage(R.string.wifi_disconnected_dialog_description)
-             .setNegativeButton(R.string.wifi_disconnected_dismiss_button, doNothing)
-             .setPositiveButton(R.string.no_wifi_close_button, closeApp)
+             .setPositiveButton(R.string.button_ok, doNothing)
              .show();
     }
 
