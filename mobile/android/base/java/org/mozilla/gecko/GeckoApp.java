@@ -968,18 +968,35 @@ public abstract class GeckoApp extends GeckoActivity
     }
 
     public void showNoWiFiDialog() {
-        DialogInterface.OnClickListener doNothing = new DialogInterface.OnClickListener() {
+        if (getSharedPreferences().getBoolean(PREF_STOP_SHOWING_NO_WIFI_DIALOG, false)) {
+            return;
+        }
+
+        DialogInterface.OnClickListener dialogClickListener = new DialogInterface.OnClickListener() {
            @Override
             public void onClick(DialogInterface dialog, int which) {
-                Log.d(LOGTAG, "Dismissing no Wi-Fi dialog");
+               switch (which) {
+                   case BUTTON_POSITIVE:
+                       Log.d(LOGTAG, "Dismissing no Wi-Fi dialog");
+
+                       break;
+
+                   case BUTTON_NEGATIVE:
+                       Log.d(LOGTAG, "Stop showing no Wi-Fi dialog button pressed by user");
+                       getSharedPreferences().putBoolean(PREF_STOP_SHOWING_NO_WIFI_DIALOG, true).apply();
+
+                       break;
+
+               }
             }
         };
 
         new AlertDialog.Builder(this)
-             .setTitle(R.string.wifi_disconnected_dialog_title)
-             .setMessage(R.string.wifi_disconnected_dialog_description)
-             .setPositiveButton(R.string.button_ok, doNothing)
-             .show();
+                .setTitle(R.string.wifi_disconnected_dialog_title)
+                .setMessage(R.string.wifi_disconnected_dialog_description)
+                .setPositiveButton(R.string.button_ok, dialogClickListener)
+                .setNegativeButton(R.string.wifi_disconnected_dialog_stop_showing, dialogClickListener)
+                .show();
     }
 
     /**
