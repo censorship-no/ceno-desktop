@@ -196,7 +196,7 @@ public abstract class GeckoApp extends GeckoActivity
     // for crash loop detection purposes.
     private static final int STARTUP_PHASE_DURATION_MS = 30 * 1000;
 
-    private static final string PREF_STOP_SHOWING_NO_WIFI_DIALOG = "stopNoWifiDialog";
+    private static final String PREF_STOP_SHOWING_NO_WIFI_DIALOG = "stopNoWifiDialog";
 
     private static boolean sAlreadyLoaded;
 
