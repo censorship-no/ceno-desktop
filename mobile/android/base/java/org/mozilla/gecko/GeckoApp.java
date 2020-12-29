@@ -983,7 +983,7 @@ public abstract class GeckoApp extends GeckoActivity
 
                    case DialogInterface.BUTTON_NEGATIVE:
                        Log.d(LOGTAG, "Stop showing no Wi-Fi dialog button pressed by user");
-                       getSharedPreferences().putBoolean(PREF_STOP_SHOWING_NO_WIFI_DIALOG, true).apply();
+                       getSharedPreferences().edit().putBoolean(PREF_STOP_SHOWING_NO_WIFI_DIALOG, true).apply();
 
                        break;
 
