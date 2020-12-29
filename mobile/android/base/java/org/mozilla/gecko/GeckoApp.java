@@ -976,12 +976,12 @@ public abstract class GeckoApp extends GeckoActivity
            @Override
             public void onClick(DialogInterface dialog, int which) {
                switch (which) {
-                   case BUTTON_POSITIVE:
+                   case DialogInterface.BUTTON_POSITIVE:
                        Log.d(LOGTAG, "Dismissing no Wi-Fi dialog");
 
                        break;
 
-                   case BUTTON_NEGATIVE:
+                   case DialogInterface.BUTTON_NEGATIVE:
                        Log.d(LOGTAG, "Stop showing no Wi-Fi dialog button pressed by user");
                        getSharedPreferences().putBoolean(PREF_STOP_SHOWING_NO_WIFI_DIALOG, true).apply();
 
