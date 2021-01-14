@@ -62,14 +62,6 @@ public class PocketStoriesLoader extends AsyncTaskLoader<List<TopStory>> {
         setPlaceholderUrl(DEFAULT_PLACEHOLDER_URL);
     }
 
-    // Default stories for CENO, it is not using the Pocket API so these will always be shown.
-    private static final String[][] DEFAULT_STORIES = {
-        // Title, URL, Image URL
-        {"CENO User Manual", "https://censorship.no/user-manual/en/", "https://censorship.no/logo_ceno.png"},
-        {"صفحه اول - BBC News", "http://www.bbc.com/persian", "https://news.files.bbci.co.uk/ws/img/logos/og/persian.png"},
-        {"Motherboard - Vice", "https://motherboard.vice.com/", "https://video-images.vice.com/images/channel/7/lede/MOTHERBOARD_333x333.png"},
-    };
-
     // Pocket SharedPreferences keys
     private static final String POCKET_PREFS_FILE = "PocketStories";
     private static final String CACHE_TIMESTAMP_MILLIS_PREFIX = "timestampMillis-";
@@ -209,9 +201,9 @@ public class PocketStoriesLoader extends AsyncTaskLoader<List<TopStory>> {
 
     private static List<TopStory> makePlaceholderStories() {
         final List<TopStory> stories = new LinkedList<>();
-        for (int i = 0; i < DEFAULT_STORIES.length; i++) {
+        for (int i = 0; i < DEFAULT_COUNT; i++) {
             // Urls must be different for bookmark/pinning UI to work properly. Assume this is true for Pocket stories.
-            stories.add(new TopStory(DEFAULT_STORIES[i][0], DEFAULT_STORIES[i][1], DEFAULT_STORIES[i][2]));
+            stories.add(new TopStory(PLACEHOLDER_TITLE + i, placeholderUrl + i, null));
         }
         return stories;
     }
