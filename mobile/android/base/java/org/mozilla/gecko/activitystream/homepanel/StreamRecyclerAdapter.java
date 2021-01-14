@@ -177,8 +177,7 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
                 return true;
             });
         } else if (type == RowItemType.TOP_STORIES_TITLE.getViewType()) {
-            // A hardwired set of top stories is provided by CENO, do not refer to Pocket.
-            return new StreamTitleRow(inflater.inflate(StreamTitleRow.LAYOUT_ID, parent, false), R.string.activity_stream_topstories/*, R.string.activity_stream_link_more, LINK_MORE_POCKET, onUrlOpenListener*/);
+            return new StreamTitleRow(inflater.inflate(StreamTitleRow.LAYOUT_ID, parent, false), R.string.activity_stream_topstories, R.string.activity_stream_link_more, LINK_MORE_POCKET, onUrlOpenListener);
         } else if (type == RowItemType.TOP_STORIES_ITEM.getViewType() ||
                 type == RowItemType.HIGHLIGHT_ITEM.getViewType()) {
             return new WebpageItemRow(inflater.inflate(WebpageItemRow.LAYOUT_ID, parent, false),
