@@ -16,9 +16,11 @@
          See bug 1277379 for a initiative to move all of the HardwareUtils code over. -->
     <bool name="is_large_resource">false</bool>
 
+    <!-- Hide Pocket stories, CENO provides suggested sites instead. -->
     <bool name="pref_activitystream_pocket_enabled_default">false</bool>
     <bool name="pref_activitystream_visited_enabled_default">true</bool>
     <bool name="pref_activitystream_recentbookmarks_enabled_default">true</bool>
+    <!-- Avoid confusing CENO users with Firefox Account registration banners in home screen. -->
     <bool name="pref_activitystream_user_dismissed_fxa_banner_default">true</bool>
     <bool name="pref_activitystream_user_dismissed_promo_banner_default">false</bool>
 </resources>
