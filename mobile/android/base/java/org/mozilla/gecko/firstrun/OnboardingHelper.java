@@ -102,6 +102,10 @@ public class OnboardingHelper implements MmaDelegate.MmaVariablesChangedListener
             if (prefs.getBoolean(FirstrunAnimationContainer.PREF_FIRSTRUN_ENABLED_OLD, true) &&
                     prefs.getBoolean(FirstrunAnimationContainer.PREF_FIRSTRUN_ENABLED, true)) {
 
+                // Avoiding this for CENO altogether since there does not seem to be
+                // a clean way of disabling this permanently
+                // either with default settings or further down the code.
+                /*
                 onboardingIsPreparing = true;
                 listener.onOnboardingProcessStarted();
 
@@ -144,6 +148,7 @@ public class OnboardingHelper implements MmaDelegate.MmaVariablesChangedListener
                         });
                     }
                 }
+                */
 
                 // Ignore trying to show the Onboarding again
                 saveOnboardingShownStatus();
