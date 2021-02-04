@@ -968,6 +968,7 @@ public abstract class GeckoApp extends GeckoActivity
     }
 
     public void showNoWiFiDialog() {
+        // TODO: Only show when mobile data is in use instead of Wi-Fi.
         if (getSharedPreferences().getBoolean(PREF_STOP_SHOWING_NO_WIFI_DIALOG, false)) {
             return;
         }
@@ -977,6 +978,21 @@ public abstract class GeckoApp extends GeckoActivity
             public void onClick(DialogInterface dialog, int which) {
                switch (which) {
                    case DialogInterface.BUTTON_POSITIVE:
+                       Log.d(LOGTAG, "Stopping application from no Wi-Fi dialog");
+                       /**
+                        * This is the preferred way to exit the app, but it is triggering an
+                        * exception in the cpp code which brings up the crash handler dialog.
+                        * ActivityCompat.finishAffinity(GeckoApp.this);
+                        */
+                       if (USE_SERVICE) {
+                           OuinetService.stopOuinetService(GeckoApp.this);
+                       }
+                       finishAndShutdown(false);
+                       //android.os.Process.killProcess(android.os.Process.myPid());
+
+                       break;
+
+                   case DialogInterface.BUTTON_NEUTRAL:
                        Log.d(LOGTAG, "Dismissing no Wi-Fi dialog");
 
                        break;
@@ -994,7 +1010,8 @@ public abstract class GeckoApp extends GeckoActivity
         new AlertDialog.Builder(this)
                 .setTitle(R.string.wifi_disconnected_dialog_title)
                 .setMessage(R.string.wifi_disconnected_dialog_description)
-                .setPositiveButton(R.string.button_ok, dialogClickListener)
+                .setPositiveButton(R.string.wifi_disconnected_dialog_stop_now, dialogClickListener)
+                .setNeutralButton(R.string.wifi_disconnected_dialog_ignore, dialogClickListener)
                 .setNegativeButton(R.string.wifi_disconnected_dialog_stop_showing, dialogClickListener)
                 .show();
     }
