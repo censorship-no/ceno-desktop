@@ -995,7 +995,7 @@ public abstract class GeckoApp extends GeckoActivity
         new AlertDialog.Builder(this)
                 .setTitle(R.string.wifi_disconnected_dialog_title)
                 .setMessage(R.string.wifi_disconnected_dialog_description)
-                .setPositiveButton(R.string.button_ok, dialogClickListener)
+                .setPositiveButton(R.string.wifi_disconnected_dialog_ignore, dialogClickListener)
                 .setNegativeButton(R.string.wifi_disconnected_dialog_stop_showing, dialogClickListener)
                 .show();
     }
