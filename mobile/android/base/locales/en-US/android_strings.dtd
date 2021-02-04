@@ -933,7 +933,7 @@ web sites through the HTML Notifications API. -->
 <!-- CENO Wi-Fi dialog strings -->
 <!ENTITY wifi_disconnected_dialog_title "CENO Browser warning">
 <!ENTITY wifi_disconnected_dialog_description "It is recommended to use the CENO Browser when you have a Wi-Fi connection, as it may use more data than you expect. You may want to stop CENO when using mobile data.">
-<!ENTITY wifi_disconnected_dialog_stop_showing "Stop showing this">
+<!ENTITY wifi_disconnected_dialog_stop_showing "Do not show again">
 
 <!ENTITY ceno_notification_title "CENO Browser service">
 <!ENTITY ceno_notification_description "Tap to stop">
