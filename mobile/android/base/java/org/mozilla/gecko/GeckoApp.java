@@ -968,6 +968,7 @@ public abstract class GeckoApp extends GeckoActivity
     }
 
     public void showNoWiFiDialog() {
+        // TODO: Only show when mobile data is in use instead of Wi-Fi.
         if (getSharedPreferences().getBoolean(PREF_STOP_SHOWING_NO_WIFI_DIALOG, false)) {
             return;
         }
