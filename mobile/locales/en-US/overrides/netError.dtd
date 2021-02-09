@@ -114,14 +114,19 @@
 </ul>
 ">
 
-<!ENTITY proxyConnectFailure.title "The proxy server is refusing connections">
+<!-- <CENO> -->
+<!-- Customized for CENO as it uses a fixed proxy, namely the Ouinet client. -->
+<!ENTITY proxyConnectFailure.title "CENO's internal proxy is refusing connections">
 <!ENTITY proxyConnectFailure.longDesc "
 <ul>
-  <li>Check the proxy settings to make sure that they are correct.</li>
-  <li>Contact your network administrator to make sure the proxy server is
-    working.</li>
+  <li>If you just launched CENO, it may not have finished starting yet.
+    Please give it a few seconds and reload the page using the button below.</li>
+  <li>If this error page continues to show up after pressing the button,
+    please contact the CENO team via <code>cenoers@equalit.ie</code>
+    and report the issue. Thank you.</li>
 </ul>
 ">
+<!-- </CENO> -->
 
 <!ENTITY proxyResolveFailure.title "Unable to find the proxy server">
 <!-- LOCALIZATION NOTE (proxyResolveFailure.longDesc3) This string contains markup including widgets for enabling wifi connections.
