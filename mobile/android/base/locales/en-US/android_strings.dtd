@@ -935,7 +935,7 @@ web sites through the HTML Notifications API. -->
 <!ENTITY ceno_wifi_disconnected_dialog_title "CENO Browser warning">
 <!ENTITY ceno_wifi_disconnected_dialog_description "It is recommended to use the CENO Browser when you have a Wi-Fi connection, as it may use more data than you expect. You may want to stop CENO when using mobile data.">
 <!ENTITY ceno_wifi_disconnected_dialog_stop_now "Stop CENO now">
-<!ENTITY ceno_wifi_disconnected_dialog_ignore "Ignore">
+<!ENTITY ceno_wifi_disconnected_dialog_continue "Continue">
 <!ENTITY ceno_wifi_disconnected_dialog_stop_showing "Do not show again">
 
 <!-- Service notification and actions -->
