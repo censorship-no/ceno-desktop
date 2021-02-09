@@ -930,17 +930,19 @@ web sites through the HTML Notifications API. -->
 <!ENTITY site_notifications_channel "Site notifications">
 <!ENTITY crash_handler_notifications_channel "&brandShortName; Crash Reporter">
 
-<!-- CENO Wi-Fi dialog strings -->
+<!-- <CENO> -->
+<!-- "No Wi-Fi" dialog -->
 <!ENTITY wifi_disconnected_dialog_title "CENO Browser warning">
 <!ENTITY wifi_disconnected_dialog_description "It is recommended to use the CENO Browser when you have a Wi-Fi connection, as it may use more data than you expect. You may want to stop CENO when using mobile data.">
 <!ENTITY wifi_disconnected_dialog_stop_now "Stop CENO now">
 <!ENTITY wifi_disconnected_dialog_ignore "Ignore">
 <!ENTITY wifi_disconnected_dialog_stop_showing "Do not show again">
 
+<!-- Service notification and actions -->
 <!ENTITY ceno_notification_title "CENO Browser service">
 <!ENTITY ceno_notification_description "Tap to stop">
 <!ENTITY ceno_notification_home_description "Home">
 <!ENTITY ceno_notification_purge_description "Erase&#9888;">
 <!ENTITY ceno_notification_purge_do_description "Yes">
 <!ENTITY ceno_notification_channel_name "CENO service">
-
+<!-- </CENO> -->
