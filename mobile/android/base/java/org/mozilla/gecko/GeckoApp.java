@@ -1026,7 +1026,7 @@ public abstract class GeckoApp extends GeckoActivity
                 .setMessage(R.string.ceno_wifi_disconnected_dialog_description)
                 .setPositiveButton(R.string.ceno_wifi_disconnected_dialog_stop_now, dialogClickListener)
                 .setNeutralButton(R.string.ceno_wifi_disconnected_dialog_continue, dialogClickListener)
-                .setNegativeButton(R.string.ceno_wifi_disconnected_dialog_stop_showing, dialogClickListener)
+                .setNegativeButton(R.string.ceno_wifi_disconnected_dialog_stop_showing, dialogClickListener);
 
         mNoWiFiDialog = dialogBuilder.create();
     }
