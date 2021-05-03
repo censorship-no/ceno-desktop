@@ -44,6 +44,15 @@
                 android:textColor="@color/photon_text_secondary"/>
 
             <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="36dp"
+                android:gravity="center_horizontal"
+                android:lineSpacingMultiplier="1.3"
+                android:text="THIS IS A PRIVATE TAB :: OUISYNC"/>
+
+            <TextView
                 style="@style/TextAppearance.PrivateTab.Description"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

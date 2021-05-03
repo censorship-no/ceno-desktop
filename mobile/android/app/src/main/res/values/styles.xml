@@ -499,7 +499,7 @@
 
     <!-- TabsLayout -->
     <style name="TabsLayout">
-         <item name="android:background">@android:color/transparent</item>
+         <item name="android:background">@android:color/red</item>
          <item name="android:scrollbars">vertical</item>
     </style>
 
