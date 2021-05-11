@@ -15,6 +15,16 @@
     android:orientation="horizontal">
 
     <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_margin="@dimen/activity_stream_base_margin"
+        android:textColor="#FF858585"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        abndroid:text="TEXTO DE PRUEBA - JP"/>
+    
+    <TextView
         android:id="@+id/title_highlights"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
