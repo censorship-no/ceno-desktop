@@ -11,9 +11,8 @@
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="0dp"
-    android:layout_height="wrap_content"
+    android:layout_height="0dp"
     android:orientation="vertical">
-
 
     <TextView
         android:id="@+id/ceno_navigation_type"
@@ -23,11 +22,13 @@
         android:layout_margin="@dimen/activity_stream_base_margin"
         android:textColor="#FF858585"
         android:textSize="16sp"
-        android:textStyle="bold"/>
+        android:textStyle="bold"
+        android:text="This is a public browsing tab. Static"/>
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:layout_weight="1"
         android:orientation="horizontal">
 
         <TextView

@@ -29,7 +29,7 @@ public class StreamTitleRow extends StreamViewHolder {
         titleView.setText(titleResId);
 
         final TextView cenoNavigationTypeView = (TextView) itemView.findViewById(R.id.ceno_navigation_type);
-        cenoNavigationTypeView.setText("This is a public browsing tab. Pages opened here may be shared with other CENO users.\nPages requiring login will not work.");
+        cenoNavigationTypeView.setText("This is a public browsing tab. Pages opened here may be shared with other CENO users. Pages requiring login will not work.");
     }
 
     public StreamTitleRow(final View itemView, final @StringRes @NonNull int titleResId,
