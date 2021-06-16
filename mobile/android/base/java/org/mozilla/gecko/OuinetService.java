@@ -119,10 +119,10 @@ public class OuinetService extends Service {
     private void setProxyProperties() {
         Log.d(TAG, "Setting proxy system properties");
         System.setProperty("http.proxyHost", "127.0.0.1");
-        System.setProperty("http.proxyPort", "8080");
+        System.setProperty("http.proxyPort", "8077");
 
         System.setProperty("https.proxyHost", "127.0.0.1");
-        System.setProperty("https.proxyPort", "8080");
+        System.setProperty("https.proxyPort", "8077");
     }
 
     private Intent createHomeIntent(Context context) {

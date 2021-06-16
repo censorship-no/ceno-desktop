@@ -137,10 +137,10 @@ public abstract class GeckoApp extends GeckoActivity
 
     static {
         System.setProperty("http.proxyHost", "127.0.0.1");
-        System.setProperty("http.proxyPort", "8080");
+        System.setProperty("http.proxyPort", "8077");
 
         System.setProperty("https.proxyHost", "127.0.0.1");
-        System.setProperty("https.proxyPort", "8080");
+        System.setProperty("https.proxyPort", "8077");
     }
 
     private static final String LOGTAG = "GeckoApp";
