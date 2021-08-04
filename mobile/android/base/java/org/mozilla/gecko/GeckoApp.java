@@ -115,7 +115,6 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import ie.equalit.ouinet.Config;
-import ie.equalit.ouinet.Ouinet;
 
 import static org.mozilla.gecko.Tabs.INTENT_EXTRA_SESSION_UUID;
 import static org.mozilla.gecko.Tabs.INTENT_EXTRA_TAB_ID;
@@ -137,10 +136,10 @@ public abstract class GeckoApp extends GeckoActivity
 
     static {
         System.setProperty("http.proxyHost", "127.0.0.1");
-        System.setProperty("http.proxyPort", "8080");
+        System.setProperty("http.proxyPort", "8077");
 
         System.setProperty("https.proxyHost", "127.0.0.1");
-        System.setProperty("https.proxyPort", "8080");
+        System.setProperty("https.proxyPort", "8077");
     }
 
     private static final String LOGTAG = "GeckoApp";
@@ -228,9 +227,6 @@ public abstract class GeckoApp extends GeckoActivity
     private boolean mSessionRestoreParsingFinished = false;
 
     private boolean foregrounded = false;
-
-    private Ouinet mOuinet;
-    private boolean USE_SERVICE = true;
 
     private static final class LastSessionParser extends SessionParser {
         private JSONArray tabs;
@@ -998,9 +994,7 @@ public abstract class GeckoApp extends GeckoActivity
                          * exception in the cpp code which brings up the crash handler dialog.
                          * ActivityCompat.finishAffinity(GeckoApp.this);
                          */
-                        if (USE_SERVICE) {
-                            OuinetService.stopOuinetService(GeckoApp.this);
-                        }
+                        OuinetService.stopOuinetService(GeckoApp.this);
                         finishAndShutdown(false);
                         //android.os.Process.killProcess(android.os.Process.myPid());
 
@@ -1089,14 +1083,8 @@ public abstract class GeckoApp extends GeckoActivity
             }
         }
 
-        if (USE_SERVICE) {
-            Log.d(LOGTAG, " --------- Starting ouinet service");
-            OuinetService.startOuinetService(this, ouinetConfig);
-        } else {
-            Log.d(LOGTAG, " --------- Starting ouinet in activity");
-            mOuinet = new Ouinet(this, ouinetConfig);
-            mOuinet.start();
-        }
+        Log.d(LOGTAG, " --------- Starting ouinet service");
+        OuinetService.startOuinetService(this, ouinetConfig);
         //------------------------------------------------------------
 
         // The clock starts...now. Better hurry!
@@ -2253,14 +2241,6 @@ public abstract class GeckoApp extends GeckoActivity
     @Override
     public void onDestroy() {
         Log.d(LOGTAG, "---------------- Destroying----------------------------");
-        if (USE_SERVICE) {
-            Log.d(LOGTAG, " ---- Using service, not doing anything ---");
-        } else {
-            if (mOuinet != null) {
-                mOuinet.stop();
-                mOuinet = null;
-            }
-        }
         if (mIsAbortingAppLaunch) {
             // This build does not support the Android version of the device:
             // We did not initialize anything, so skip cleaning up.
