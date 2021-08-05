@@ -931,6 +931,10 @@ web sites through the HTML Notifications API. -->
 <!ENTITY crash_handler_notifications_channel "&brandShortName; Crash Reporter">
 
 <!-- <CENO> -->
+<!-- Home page browsing mode reminder. -->
+<!ENTITY ceno_home_mode_desc "Use normal tabs to share content with other CENO users. Otherwise use private tabs (they require some connection to the Internet). Tap here for more information.">
+<!ENTITY ceno_home_mode_link "https://censorship.no/user-manual/en/concepts/public-private.html">
+
 <!-- "No Wi-Fi" dialog -->
 <!ENTITY ceno_wifi_disconnected_dialog_title "CENO Browser notice">
 <!ENTITY ceno_wifi_disconnected_dialog_description "It is recommended to use CENO when you have a Wi-Fi connection, as it may use more data than you expect. You may want to stop CENO when using mobile data.">

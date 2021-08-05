@@ -664,6 +664,10 @@
   <string name="crash_handler_notifications_channel">&crash_handler_notifications_channel;</string>
 
   <!-- <CENO> -->
+  <!-- Home page browsing mode reminder. -->
+  <string name="ceno_home_mode_desc">&ceno_home_mode_desc;</string>
+  <string name="ceno_home_mode_link">&ceno_home_mode_link;</string>
+
   <!-- "No Wi-Fi" dialog -->
   <string name="ceno_wifi_disconnected_dialog_title">&ceno_wifi_disconnected_dialog_title;</string>
   <string name="ceno_wifi_disconnected_dialog_description">&ceno_wifi_disconnected_dialog_description;</string>
