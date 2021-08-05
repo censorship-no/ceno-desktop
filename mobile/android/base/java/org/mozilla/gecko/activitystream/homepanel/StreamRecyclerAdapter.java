@@ -64,7 +64,7 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
 
     // Content sections available on the Activity Stream page. These may be hidden if the sections are disabled.
     private final RowItemType[] ACTIVITY_STREAM_SECTIONS =
-            { RowItemType.TOP_PANEL, RowItemType.TOP_STORIES_TITLE, RowItemType.HIGHLIGHTS_TITLE, RowItemType.LEARN_MORE_LINK };
+            { RowItemType.CENO_MODE, RowItemType.TOP_PANEL, RowItemType.TOP_STORIES_TITLE, RowItemType.HIGHLIGHTS_TITLE, RowItemType.LEARN_MORE_LINK };
     public static final int MAX_TOP_STORIES = 3;
     private static final String LINK_MORE_POCKET = "https://getpocket.com/explore/trending?src=ff_android&cdn=0";
 
@@ -82,7 +82,8 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
         HIGHLIGHT_ITEM (-1), // There can be multiple Highlight Items so caller should handle as a special case.
         LEARN_MORE_LINK(-6),
         FXA_BANNER(-7), //The sign in row is available only if the user is not logged in.
-        PROMO_BANNER(-7);
+        PROMO_BANNER(-7),
+        CENO_MODE(-8);
 
         public final int stableId;
 
@@ -190,6 +191,8 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
             return new HighlightsEmptyStateRow(inflater.inflate(HighlightsEmptyStateRow.LAYOUT_ID, parent, false));
         } else if (type == RowItemType.LEARN_MORE_LINK.getViewType()) {
             return new LearnMoreRow(inflater.inflate(LearnMoreRow.LAYOUT_ID, parent, false));
+        } else if (type == RowItemType.CENO_MODE.getViewType()) {
+            return new CenoModeRow(inflater.inflate(CenoModeRow.LAYOUT_ID, parent, false));
         } else {
             throw new IllegalStateException("Missing inflation for ViewType " + type);
         }
