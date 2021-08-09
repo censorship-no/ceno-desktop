@@ -28,6 +28,7 @@ import org.mozilla.gecko.activitystream.homepanel.model.TopSite;
 import org.mozilla.gecko.activitystream.homepanel.model.TopStory;
 import org.mozilla.gecko.activitystream.homepanel.model.WebpageModel;
 import org.mozilla.gecko.activitystream.homepanel.model.WebpageRowModel;
+import org.mozilla.gecko.activitystream.homepanel.stream.CenoModeRow;
 import org.mozilla.gecko.activitystream.homepanel.stream.FirefoxPromoBannerRow;
 import org.mozilla.gecko.activitystream.homepanel.stream.FxaBannerRow;
 import org.mozilla.gecko.activitystream.homepanel.stream.HighlightsEmptyStateRow;
