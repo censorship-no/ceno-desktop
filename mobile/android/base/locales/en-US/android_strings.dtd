@@ -933,6 +933,7 @@ web sites through the HTML Notifications API. -->
 <!-- <CENO> -->
 <!-- Home page browsing mode reminder. -->
 <!ENTITY ceno_home_mode_desc "Use normal tabs to share their content with other CENO users. Otherwise use private tabs. Tap here for more information.">
+<!-- TRANSLATORS: Keep the URL as is unless the section has been translated. -->
 <!ENTITY ceno_home_mode_link "https://censorship.no/user-manual/en/concepts/public-private.html">
 
 <!-- "No Wi-Fi" dialog -->
