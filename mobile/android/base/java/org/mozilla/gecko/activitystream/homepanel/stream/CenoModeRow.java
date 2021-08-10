@@ -18,10 +18,10 @@ public class CenoModeRow extends StreamViewHolder {
     public CenoModeRow(final View itemView) {
         super(itemView);
 
-        final View learnMoreLink = itemView.findViewById(R.id.learn_more_link);
+        final View cenoModeLink = itemView.findViewById(R.id.ceno_home_mode_row);
         // TODO: Narrow down to `TextView` and set a different text
         // depending on public/private home page.
-        learnMoreLink.setOnClickListener(new View.OnClickListener() {
+        cenoModeLink.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(final View v) {
                 final Context context = GeckoAppShell.getApplicationContext();
