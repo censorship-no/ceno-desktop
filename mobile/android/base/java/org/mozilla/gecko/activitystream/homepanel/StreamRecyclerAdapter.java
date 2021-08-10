@@ -536,7 +536,9 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
         // In Bug 1570880 we've added a new sign in row as the first element in the recyclerview. If the sign in row exists,
         // make sure to notify about the top sites changes at the appropriate position.
         if (recyclerViewModel.get(0).getRowItemType().getViewType() == RowItemType.FXA_BANNER.getViewType() ||
-                recyclerViewModel.get(0).getRowItemType().getViewType() == RowItemType.PROMO_BANNER.getViewType()) {
+                recyclerViewModel.get(0).getRowItemType().getViewType() == RowItemType.PROMO_BANNER.getViewType() ||
+                // In CENO the first element may also be the browsing mode reminder row.
+                recyclerViewModel.get(0).getRowItemType().getViewType() == RowItemType.CENO_MODE.getViewType()) {
             notifyItemChanged(1);
         } else {
             notifyItemChanged(0);
