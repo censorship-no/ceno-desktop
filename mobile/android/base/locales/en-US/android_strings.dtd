@@ -936,6 +936,9 @@ web sites through the HTML Notifications API. -->
 <!-- TRANSLATORS: Keep the URL as is unless the section has been translated. -->
 <!ENTITY ceno_home_mode_link "https://censorship.no/user-manual/en/concepts/public-private.html">
 
+<!-- Extra paragraph in private tab panel. -->
+<!ENTITY ceno_private_tab_panel_description "CENO will not share content from private tabs with other users, so you can safely visit sites that require login.">
+
 <!-- "No Wi-Fi" dialog -->
 <!ENTITY ceno_wifi_disconnected_dialog_title "CENO Browser notice">
 <!ENTITY ceno_wifi_disconnected_dialog_description "It is recommended to use CENO when you have a Wi-Fi connection, as it may use more data than you expect. You may want to stop CENO when using mobile data.">
