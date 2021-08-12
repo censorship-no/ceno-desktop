@@ -47,7 +47,7 @@ class PrivateTabsPanel extends RelativeLayout implements CloseAllPanelView {
         cenoLearnMoreView.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                Tabs.getInstance().loadUrl(context.getString(R.string.ceno_home_mode_link), LOADURL_NEW_TAB | LOADURL_PRIVATE);
+                Tabs.getInstance().loadUrl(context.getString(R.string.ceno_mode_manual_link), LOADURL_NEW_TAB | LOADURL_PRIVATE);
 
                 final GeckoApp geckoApp = (GeckoApp) context;
                 geckoApp.autoHideTabs();

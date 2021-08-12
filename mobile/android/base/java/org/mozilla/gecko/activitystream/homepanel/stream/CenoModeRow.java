@@ -28,7 +28,7 @@ public class CenoModeRow extends StreamViewHolder {
             @Override
             public void onClick(final View v) {
                 final Context context = GeckoAppShell.getApplicationContext();
-                Tabs.getInstance().loadUrl(context.getString(R.string.ceno_home_mode_link));
+                Tabs.getInstance().loadUrl(context.getString(R.string.ceno_mode_manual_link));
             }
         });
     }

@@ -666,7 +666,7 @@
   <!-- <CENO> -->
   <!-- Home page browsing mode reminder. -->
   <string name="ceno_home_mode_description">&ceno_home_mode_description;</string>
-  <string name="ceno_home_mode_link">&ceno_home_mode_link;</string>
+  <string name="ceno_mode_manual_link">&ceno_mode_manual_link;</string>
 
   <!-- Extra paragraph in private tab panel. -->
   <string name="ceno_private_tab_panel_description">&ceno_private_tab_panel_description;</string>
