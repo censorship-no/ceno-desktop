@@ -19,8 +19,11 @@ public class CenoModeRow extends StreamViewHolder {
         super(itemView);
 
         final View cenoModeLink = itemView.findViewById(R.id.ceno_home_mode_row);
-        // TODO: Narrow down to `TextView` and set a different text
-        // depending on public/private home page.
+        // It would be nice to narrow down to `TextView` and set a different text
+        // depending on public/private home page,
+        // but the row is not created every time;
+        // actually I could not find any event that is reliably triggered
+        // every time that the view is shown (including creating a new tab of a different mode).
         cenoModeLink.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(final View v) {
