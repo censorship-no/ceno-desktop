@@ -40,7 +40,7 @@
                 android:layout_marginBottom="16dp"
                 android:gravity="center_horizontal"
                 android:lineSpacingMultiplier="1.3"
-                android:text="@string/private_tab_panel_description"
+                android:text="@string/ceno_private_tab_panel_description"
                 android:textColor="@color/photon_text_secondary"/>
 
             <TextView
@@ -51,7 +51,7 @@
                 android:layout_marginBottom="16dp"
                 android:gravity="center_horizontal"
                 android:lineSpacingMultiplier="1.3"
-                android:text="@string/ceno_private_tab_panel_description"
+                android:text="@string/private_tab_panel_description"
                 android:textColor="@color/photon_text_secondary"/>
 
             <TextView
