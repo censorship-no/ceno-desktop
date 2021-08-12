@@ -932,7 +932,7 @@ web sites through the HTML Notifications API. -->
 
 <!-- <CENO> -->
 <!-- Home page browsing mode reminder. -->
-<!ENTITY ceno_home_mode_desc "Content from normal tabs may be shared with other CENO users. Pages requiring login will not work. Otherwise use private tabs. Tap here to learn more.">
+<!ENTITY ceno_home_mode_desc "Use normal tabs to share content with other CENO users. Use private tabs to avoid sharing, or for pages that require login. Tap here to learn more.">
 <!-- TRANSLATORS: Keep the URL as is unless the section has been translated. -->
 <!ENTITY ceno_home_mode_link "https://censorship.no/user-manual/en/concepts/public-private.html">
 
