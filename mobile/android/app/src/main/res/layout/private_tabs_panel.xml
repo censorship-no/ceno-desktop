@@ -40,6 +40,28 @@
                 android:layout_marginBottom="16dp"
                 android:gravity="center_horizontal"
                 android:lineSpacingMultiplier="1.3"
+                android:text="@string/ceno_private_tab_panel_description"
+                android:textColor="@color/photon_text_secondary"/>
+
+            <TextView
+                style="@style/TextAppearance.PrivateTab.Description"
+                android:id="@+id/ceno_learn_more_link"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:text="@string/private_tab_learn_more"
+                android:textColor="@color/link_blue"/>
+
+            <TextView
+                style="@style/TextAppearance.PrivateTab.Description"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="16dp"
+                android:gravity="center_horizontal"
+                android:lineSpacingMultiplier="1.3"
                 android:text="@string/private_tab_panel_description"
                 android:textColor="@color/photon_text_secondary"/>
 
@@ -48,7 +70,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center_horizontal"
-                android:layout_marginBottom="36dp"
+                android:layout_marginBottom="16dp"
                 android:gravity="center_horizontal"
                 android:lineSpacingMultiplier="1.3"
                 android:text="@string/private_tab_panel_description2"

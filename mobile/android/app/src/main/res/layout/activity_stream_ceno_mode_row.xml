@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<!-- If the wrapping `FrameLayout` is not there, click events are not produced. -->
+<!-- Based on `activity_stream_learn_more_row.xml`, but margin-less. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+             android:layout_width="match_parent"
+             android:layout_height="wrap_content"
+             android:layout_marginTop="0dp"
+             android:layout_marginBottom="0dp"
+             >
+
+    <!-- Based on `activity_stream_highlights_empty_state.xml`, but link-colored. -->
+    <TextView
+            android:id="@+id/ceno_home_mode_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="@dimen/as_banner_margin"
+            android:text="@string/ceno_home_mode_description"
+            android:textColor="@color/ob_click"
+            />
+
+</FrameLayout>

@@ -43,6 +43,17 @@ class PrivateTabsPanel extends RelativeLayout implements CloseAllPanelView {
         final View emptyTabsFrame = findViewById(R.id.private_tabs_empty);
         tabsLayout.setEmptyView(emptyTabsFrame);
 
+        final View cenoLearnMoreView = findViewById(R.id.ceno_learn_more_link);
+        cenoLearnMoreView.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Tabs.getInstance().loadUrl(context.getString(R.string.ceno_mode_manual_link), LOADURL_NEW_TAB | LOADURL_PRIVATE);
+
+                final GeckoApp geckoApp = (GeckoApp) context;
+                geckoApp.autoHideTabs();
+            }
+        });
+
         final TextView learnMoreView = (TextView) findViewById(R.id.learn_more_link);
         learnMoreView.setOnClickListener(new OnClickListener() {
             @Override

@@ -28,6 +28,7 @@ import org.mozilla.gecko.activitystream.homepanel.model.TopSite;
 import org.mozilla.gecko.activitystream.homepanel.model.TopStory;
 import org.mozilla.gecko.activitystream.homepanel.model.WebpageModel;
 import org.mozilla.gecko.activitystream.homepanel.model.WebpageRowModel;
+import org.mozilla.gecko.activitystream.homepanel.stream.CenoModeRow;
 import org.mozilla.gecko.activitystream.homepanel.stream.FirefoxPromoBannerRow;
 import org.mozilla.gecko.activitystream.homepanel.stream.FxaBannerRow;
 import org.mozilla.gecko.activitystream.homepanel.stream.HighlightsEmptyStateRow;
@@ -64,7 +65,7 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
 
     // Content sections available on the Activity Stream page. These may be hidden if the sections are disabled.
     private final RowItemType[] ACTIVITY_STREAM_SECTIONS =
-            { RowItemType.TOP_PANEL, RowItemType.TOP_STORIES_TITLE, RowItemType.HIGHLIGHTS_TITLE, RowItemType.LEARN_MORE_LINK };
+            { RowItemType.CENO_MODE, RowItemType.TOP_PANEL, RowItemType.TOP_STORIES_TITLE, RowItemType.HIGHLIGHTS_TITLE, RowItemType.LEARN_MORE_LINK };
     public static final int MAX_TOP_STORIES = 3;
     private static final String LINK_MORE_POCKET = "https://getpocket.com/explore/trending?src=ff_android&cdn=0";
 
@@ -82,7 +83,8 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
         HIGHLIGHT_ITEM (-1), // There can be multiple Highlight Items so caller should handle as a special case.
         LEARN_MORE_LINK(-6),
         FXA_BANNER(-7), //The sign in row is available only if the user is not logged in.
-        PROMO_BANNER(-7);
+        PROMO_BANNER(-7),
+        CENO_MODE(-8);
 
         public final int stableId;
 
@@ -190,6 +192,8 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
             return new HighlightsEmptyStateRow(inflater.inflate(HighlightsEmptyStateRow.LAYOUT_ID, parent, false));
         } else if (type == RowItemType.LEARN_MORE_LINK.getViewType()) {
             return new LearnMoreRow(inflater.inflate(LearnMoreRow.LAYOUT_ID, parent, false));
+        } else if (type == RowItemType.CENO_MODE.getViewType()) {
+            return new CenoModeRow(inflater.inflate(CenoModeRow.LAYOUT_ID, parent, false));
         } else {
             throw new IllegalStateException("Missing inflation for ViewType " + type);
         }
@@ -532,7 +536,9 @@ public class StreamRecyclerAdapter extends RecyclerView.Adapter<StreamViewHolder
         // In Bug 1570880 we've added a new sign in row as the first element in the recyclerview. If the sign in row exists,
         // make sure to notify about the top sites changes at the appropriate position.
         if (recyclerViewModel.get(0).getRowItemType().getViewType() == RowItemType.FXA_BANNER.getViewType() ||
-                recyclerViewModel.get(0).getRowItemType().getViewType() == RowItemType.PROMO_BANNER.getViewType()) {
+                recyclerViewModel.get(0).getRowItemType().getViewType() == RowItemType.PROMO_BANNER.getViewType() ||
+                // In CENO the first element may also be the browsing mode reminder row.
+                recyclerViewModel.get(0).getRowItemType().getViewType() == RowItemType.CENO_MODE.getViewType()) {
             notifyItemChanged(1);
         } else {
             notifyItemChanged(0);
