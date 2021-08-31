@@ -15,8 +15,8 @@ allprojects {
         topsrcdir = gradle.mozconfig.topsrcdir
         topobjdir = gradle.mozconfig.topobjdir
 
-        compileSdkVersion = 29
-        buildToolsVersion = "29.0.3"
+        compileSdkVersion = 30
+        buildToolsVersion = "30.0.3"
         targetSdkVersion = tryInt(mozconfig.substs.ANDROID_TARGET_SDK)
         minSdkVersion = tryInt(mozconfig.substs.MOZ_ANDROID_MIN_SDK_VERSION)
         manifestPlaceholders = [
