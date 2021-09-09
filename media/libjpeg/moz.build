@@ -84,6 +84,10 @@ if CONFIG['LIBJPEG_TURBO_ASFLAGS']:
             'simd/arm/jsimd.c',
             'simd/arm/jsimd_neon.S',
         ]
+        if CONFIG['CC_TYPE'] == 'clang':
+            SOURCES['simd/arm/jsimd_neon.S'].flags += [
+                '-fno-integrated-as',
+            ]
     elif CONFIG['CPU_ARCH'] == 'aarch64':
         SOURCES += [
             'simd/arm64/jsimd.c',
