@@ -354,6 +354,15 @@ class Bootstrapper(object):
                                                state_dir_available,
                                                have_clone,
                                                checkout_root):
+        # The CENO build environment takes care of private packages
+        # to avoid depending on Mozilla infrastructure.
+        # This modification would not be necessary
+        # if the ``ensure_*_packages`` functions below
+        # checked for the presence of the programs.
+        if 'MOZBUILD_CENO_ENV' in os.environ:
+            print('In CENO build environment, not installing private packages.')
+            return
+
         # Install the clang packages needed for building the style system, as
         # well as the version of NodeJS that we currently support.
         # Also install the clang static-analysis package by default
