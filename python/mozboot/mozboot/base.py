@@ -827,7 +827,9 @@ class BaseBootstrapper(object):
                                 'to get version 1.8.'.format(java, output))
 
             version = version[0].split(' = ')[-1]
-            if version not in ['1.8', '8']:
+            # The CENO build environment takes care of
+            # installing and making OpenJDK 11 compatible with this build.
+            if version not in ['1.8', '8'] + (['11'] if 'MOZBUILD_CENO_ENV' in os.environ else []):
                 raise Exception('You need to have Java version 1.8 installed '
                                 '(found {} with version "{}"). '
                                 'Check the JAVA_HOME environment variable. '
