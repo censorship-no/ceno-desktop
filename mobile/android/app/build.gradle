@@ -231,6 +231,7 @@ repositories {
 
 dependencies {
     // <CENO>
+    implementation 'com.getkeepsafe.relinker:relinker:1.4.4'
     implementation(name: "${System.env.OUINET_LIBRARY}", ext: 'aar')
     // </CENO>
 
