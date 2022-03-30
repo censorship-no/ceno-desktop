@@ -966,7 +966,6 @@ public abstract class GeckoApp extends GeckoActivity
     }
 
     public void showOnMobileDataDialog() {
-        // TODO: Only show when mobile data is in use instead of Wi-Fi.
         if (getSharedPreferences().getBoolean(PREF_STOP_SHOWING_ON_MOBILE_DATA_DIALOG, false)) {
             return;
         }
