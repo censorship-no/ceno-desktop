@@ -1027,11 +1027,11 @@ public abstract class GeckoApp extends GeckoActivity
         };
 
         AlertDialog.Builder dialogBuilder = new AlertDialog.Builder(this)
-                .setTitle(R.string.ceno_wifi_disconnected_dialog_title)
-                .setMessage(R.string.ceno_wifi_disconnected_dialog_description)
-                .setPositiveButton(R.string.ceno_wifi_disconnected_dialog_stop_now, dialogClickListener)
-                .setNeutralButton(R.string.ceno_wifi_disconnected_dialog_continue, dialogClickListener)
-                .setNegativeButton(R.string.ceno_wifi_disconnected_dialog_stop_showing, dialogClickListener);
+                .setTitle(R.string.ceno_on_mobile_data_dialog_title)
+                .setMessage(R.string.ceno_on_mobile_data_dialog_description)
+                .setPositiveButton(R.string.ceno_on_mobile_data_dialog_stop_now, dialogClickListener)
+                .setNeutralButton(R.string.ceno_on_mobile_data_dialog_continue, dialogClickListener)
+                .setNegativeButton(R.string.ceno_on_mobile_data_dialog_stop_showing, dialogClickListener);
 
         mOnMobileDataDialog = dialogBuilder.create();
     }
