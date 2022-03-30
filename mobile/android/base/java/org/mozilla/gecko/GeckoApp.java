@@ -982,6 +982,18 @@ public abstract class GeckoApp extends GeckoActivity
         }
     }
 
+    public void hideNoWiFiDialog() {
+        if (mNoWiFiDialog == null) {
+            Log.d(LOGTAG, "Not hiding no Wi-Fi dialog, not yet created.");
+            return;
+        }
+
+        if (mNoWiFiDialog.isShowing()) {
+            Log.d(LOGTAG, "Hiding no Wi-Fi dialog.");
+            mNoWiFiDialog.dismiss();  // `.hide()` results in it now showing up again
+        }
+    }
+
     private void createNoWiFiDialog() {
         DialogInterface.OnClickListener dialogClickListener = new DialogInterface.OnClickListener() {
             @Override
@@ -1416,13 +1428,17 @@ public abstract class GeckoApp extends GeckoActivity
             public void onReceive(Context context, Intent intent) {
                 NetworkInfo info =
                         intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
-                if (info == null) {
+                if (info == null || info.getType() != ConnectivityManager.TYPE_WIFI) {
                     return;
                 }
-                if (info.getType() == ConnectivityManager.TYPE_WIFI && !info.isConnected()) {
+                if (!info.isConnected()) {
                     // Wifi disconnected
                     Log.d(LOGTAG, "Wifi connection lost, showing dialog");
                     showNoWiFiDialog();
+                } else {
+                    // Wifi connected
+                    Log.d(LOGTAG, "Wifi connection recovered, hiding dialog");
+                    hideNoWiFiDialog();
                 }
             }
         }, intentFilter);
