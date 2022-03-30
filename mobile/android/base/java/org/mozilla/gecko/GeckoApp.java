@@ -1415,9 +1415,9 @@ public abstract class GeckoApp extends GeckoActivity
 
         ConnectivityManager connectivityMgr =
                 (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo wifi = connectivityMgr.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+        NetworkInfo mobile_info = connectivityMgr.getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
 
-        if (!wifi.isConnected()) {
+        if (mobile_info != null && mobile_info.isConnected()) {
             showNoWiFiDialog();
         }
 
@@ -1428,16 +1428,14 @@ public abstract class GeckoApp extends GeckoActivity
             public void onReceive(Context context, Intent intent) {
                 NetworkInfo info =
                         intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
-                if (info == null || info.getType() != ConnectivityManager.TYPE_WIFI) {
+                if (info == null || info.getType() != ConnectivityManager.TYPE_MOBILE) {
                     return;
                 }
-                if (!info.isConnected()) {
-                    // Wifi disconnected
-                    Log.d(LOGTAG, "Wifi connection lost, showing dialog");
+                if (info.isConnected()) {
+                    Log.d(LOGTAG, "Mobile connection detected, showing no Wi-Fi dialog");
                     showNoWiFiDialog();
                 } else {
-                    // Wifi connected
-                    Log.d(LOGTAG, "Wifi connection recovered, hiding dialog");
+                    Log.d(LOGTAG, "Mobile connection disabled, hiding no Wi-Fi dialog");
                     hideNoWiFiDialog();
                 }
             }
