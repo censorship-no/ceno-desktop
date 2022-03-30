@@ -195,7 +195,7 @@ public abstract class GeckoApp extends GeckoActivity
     // for crash loop detection purposes.
     private static final int STARTUP_PHASE_DURATION_MS = 30 * 1000;
 
-    private static final String PREF_STOP_SHOWING_NO_WIFI_DIALOG = "stopNoWifiDialog";
+    private static final String PREF_STOP_SHOWING_ON_MOBILE_DATA_DIALOG = "stopOnMobileDataDialog";
 
     private static boolean sAlreadyLoaded;
 
@@ -207,7 +207,7 @@ public abstract class GeckoApp extends GeckoActivity
     protected Menu mMenu;
     protected boolean mIsRestoringActivity;
 
-    protected AlertDialog mNoWiFiDialog;
+    protected AlertDialog mOnMobileDataDialog;
 
     /** Tells if we're aborting app launch, e.g. if this is an unsupported device configuration. */
     protected boolean mIsAbortingAppLaunch;
@@ -965,30 +965,41 @@ public abstract class GeckoApp extends GeckoActivity
         }
     }
 
-    public void showNoWiFiDialog() {
-        // TODO: Only show when mobile data is in use instead of Wi-Fi.
-        if (getSharedPreferences().getBoolean(PREF_STOP_SHOWING_NO_WIFI_DIALOG, false)) {
+    public void showOnMobileDataDialog() {
+        if (getSharedPreferences().getBoolean(PREF_STOP_SHOWING_ON_MOBILE_DATA_DIALOG, false)) {
             return;
         }
 
-        if (mNoWiFiDialog == null) {
-            Log.d(LOGTAG, "First time the no Wi-Fi dialog is called, create.");
-            createNoWiFiDialog();
+        if (mOnMobileDataDialog == null) {
+            Log.d(LOGTAG, "First time the on mobile data dialog is called, create.");
+            createOnMobileDataDialog();
         }
 
-        if (!mNoWiFiDialog.isShowing()) {
-            Log.d(LOGTAG, "Showing no Wi-Fi dialog.");
-            mNoWiFiDialog.show();
+        if (!mOnMobileDataDialog.isShowing()) {
+            Log.d(LOGTAG, "Showing on mobile data dialog.");
+            mOnMobileDataDialog.show();
         }
     }
 
-    private void createNoWiFiDialog() {
+    public void hideOnMobileDataDialog() {
+        if (mOnMobileDataDialog == null) {
+            Log.d(LOGTAG, "Not hiding on mobile data dialog, not yet created.");
+            return;
+        }
+
+        if (mOnMobileDataDialog.isShowing()) {
+            Log.d(LOGTAG, "Hiding on mobile data dialog.");
+            mOnMobileDataDialog.dismiss();  // `.hide()` results in it now showing up again
+        }
+    }
+
+    private void createOnMobileDataDialog() {
         DialogInterface.OnClickListener dialogClickListener = new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
                 switch (which) {
                     case DialogInterface.BUTTON_POSITIVE:
-                        Log.d(LOGTAG, "Stopping application from no Wi-Fi dialog");
+                        Log.d(LOGTAG, "Stopping application from on mobile data dialog");
                         /**
                          * This is the preferred way to exit the app, but it is triggering an
                          * exception in the cpp code which brings up the crash handler dialog.
@@ -1001,13 +1012,13 @@ public abstract class GeckoApp extends GeckoActivity
                         break;
 
                     case DialogInterface.BUTTON_NEUTRAL:
-                        Log.d(LOGTAG, "Dismissing no Wi-Fi dialog");
+                        Log.d(LOGTAG, "Dismissing on mobile data dialog");
 
                         break;
 
                     case DialogInterface.BUTTON_NEGATIVE:
-                        Log.d(LOGTAG, "Stop showing no Wi-Fi dialog button pressed by user");
-                        getSharedPreferences().edit().putBoolean(PREF_STOP_SHOWING_NO_WIFI_DIALOG, true).apply();
+                        Log.d(LOGTAG, "Stop showing on mobile data dialog button pressed by user");
+                        getSharedPreferences().edit().putBoolean(PREF_STOP_SHOWING_ON_MOBILE_DATA_DIALOG, true).apply();
 
                         break;
 
@@ -1016,13 +1027,13 @@ public abstract class GeckoApp extends GeckoActivity
         };
 
         AlertDialog.Builder dialogBuilder = new AlertDialog.Builder(this)
-                .setTitle(R.string.ceno_wifi_disconnected_dialog_title)
-                .setMessage(R.string.ceno_wifi_disconnected_dialog_description)
-                .setPositiveButton(R.string.ceno_wifi_disconnected_dialog_stop_now, dialogClickListener)
-                .setNeutralButton(R.string.ceno_wifi_disconnected_dialog_continue, dialogClickListener)
-                .setNegativeButton(R.string.ceno_wifi_disconnected_dialog_stop_showing, dialogClickListener);
+                .setTitle(R.string.ceno_on_mobile_data_dialog_title)
+                .setMessage(R.string.ceno_on_mobile_data_dialog_description)
+                .setPositiveButton(R.string.ceno_on_mobile_data_dialog_stop_now, dialogClickListener)
+                .setNeutralButton(R.string.ceno_on_mobile_data_dialog_continue, dialogClickListener)
+                .setNegativeButton(R.string.ceno_on_mobile_data_dialog_stop_showing, dialogClickListener);
 
-        mNoWiFiDialog = dialogBuilder.create();
+        mOnMobileDataDialog = dialogBuilder.create();
     }
 
     /**
@@ -1403,10 +1414,10 @@ public abstract class GeckoApp extends GeckoActivity
 
         ConnectivityManager connectivityMgr =
                 (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo wifi = connectivityMgr.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+        NetworkInfo mobile_info = connectivityMgr.getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
 
-        if (!wifi.isConnected()) {
-            showNoWiFiDialog();
+        if (mobile_info != null && mobile_info.isConnected()) {
+            showOnMobileDataDialog();
         }
 
         IntentFilter intentFilter = new IntentFilter();
@@ -1416,13 +1427,15 @@ public abstract class GeckoApp extends GeckoActivity
             public void onReceive(Context context, Intent intent) {
                 NetworkInfo info =
                         intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
-                if (info == null) {
+                if (info == null || info.getType() != ConnectivityManager.TYPE_MOBILE) {
                     return;
                 }
-                if (info.getType() == ConnectivityManager.TYPE_WIFI && !info.isConnected()) {
-                    // Wifi disconnected
-                    Log.d(LOGTAG, "Wifi connection lost, showing dialog");
-                    showNoWiFiDialog();
+                if (info.isConnected()) {
+                    Log.d(LOGTAG, "Mobile connection detected, showing on mobile data dialog");
+                    showOnMobileDataDialog();
+                } else {
+                    Log.d(LOGTAG, "Mobile connection disabled, hiding on mobile data dialog");
+                    hideOnMobileDataDialog();
                 }
             }
         }, intentFilter);
