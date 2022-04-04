@@ -8,7 +8,7 @@ with Files('**'):
     BUG_COMPONENT = ('Firefox for Android', 'General')
 
 DIRS += [
-    'webcompat', 'ceno',
+    'webcompat', 'ceno', 'https-by-default/firefox',
 ]
 if not CONFIG['MOZ_UPDATE_CHANNEL'] in ('release', 'esr'):
     DIRS += [
