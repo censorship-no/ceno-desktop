@@ -127,22 +127,21 @@ public class OuinetService extends Service {
 
     private void stopOuinet() {
         synchronized (this) {
-            if (mOuinet != null) {
-                Ouinet ouinet = mOuinet;
-                mOuinet = null;
-                Thread thread = new Thread(new Runnable(){
-                    @Override
-                    public void run(){
-                        ouinet.stop();
-                    }
-                });
-                thread.start();
-                try {
-                    // Wait a little to allow ouinet to finish gracefuly
-                    thread.join(3000 /* ms */);
-                } catch (Exception ex) {}
+            if (mOuinet == null) return;
 
-            }
+            Ouinet ouinet = mOuinet;
+            mOuinet = null;
+            Thread thread = new Thread(new Runnable(){
+                @Override
+                public void run(){
+                    ouinet.stop();
+                }
+            });
+            thread.start();
+            try {
+                // Wait a little to allow ouinet to finish gracefuly
+                thread.join(3000 /* ms */);
+            } catch (Exception ex) {}
         }
     }
 
