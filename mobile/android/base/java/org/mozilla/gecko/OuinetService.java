@@ -140,7 +140,7 @@ public class OuinetService extends Service {
             thread.start();
             try {
                 // Wait a little to allow ouinet to finish gracefuly
-                thread.join(3000 /* ms */);
+                thread.join(10000 /* ms */);  // average stop takes 5 seconds
             } catch (Exception ex) {}
         }
     }
