@@ -28,13 +28,18 @@ public class OuinetBroadcastReceiver extends BroadcastReceiver {
             return;  // purging only is not allowed
         }
 
-        killPackageProcesses(context);
-        if (doPurge) {
+        if (!doPurge) {
+            OuinetService.stopOuinetService(context);  // shut down gracefully
+        } else {
+            // Shut down the service the hard way
+            // to prevent it from creating files after clearing app data.
+            killPackageProcesses(context);
             ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
             if (am != null) {
                 am.clearApplicationUserData();
             }
         }
+
         Process.killProcess(Process.myPid());
     }
 
