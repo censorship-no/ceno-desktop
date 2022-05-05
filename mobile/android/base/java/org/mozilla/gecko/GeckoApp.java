@@ -2253,7 +2253,6 @@ public abstract class GeckoApp extends GeckoActivity
 
     @Override
     public void onDestroy() {
-        Log.d(LOGTAG, "---------------- Destroying----------------------------");
         if (mIsAbortingAppLaunch) {
             // This build does not support the Android version of the device:
             // We did not initialize anything, so skip cleaning up.
