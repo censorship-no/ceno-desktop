@@ -125,6 +125,27 @@ public class OuinetService extends Service {
         System.setProperty("https.proxyPort", "8077");
     }
 
+    private void stopOuinet() {
+        synchronized (this) {
+            if (mOuinet != null) {
+                Ouinet ouinet = mOuinet;
+                mOuinet = null;
+                Thread thread = new Thread(new Runnable(){
+                    @Override
+                    public void run(){
+                        ouinet.stop();
+                    }
+                });
+                thread.start();
+                try {
+                    // Wait a little to allow ouinet to finish gracefuly
+                    thread.join(3000 /* ms */);
+                } catch (Exception ex) {}
+
+            }
+        }
+    }
+
     private Intent createHomeIntent(Context context) {
         // Intent characteristics from `GeckoApp.launchOrBringToFront`.
         Intent intent = new Intent(Intent.ACTION_VIEW);
@@ -207,24 +228,7 @@ public class OuinetService extends Service {
     @Override
     public void onDestroy() {
         Log.d(TAG, "Destroying service");
-        synchronized (this) {
-            if (mOuinet != null) {
-                Ouinet ouinet = mOuinet;
-                mOuinet = null;
-                Thread thread = new Thread(new Runnable(){
-                    @Override
-                    public void run(){
-                        ouinet.stop();
-                    }
-                });
-                thread.start();
-                try {
-                    // Wait a little to allow ouinet to finish gracefuly
-                    thread.join(3000 /* ms */);
-                } catch (Exception ex) {}
-
-            }
-        }
+        stopOuinet();
         Log.d(TAG, "Service destroyed");
     }
 }
