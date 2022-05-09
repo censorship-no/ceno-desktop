@@ -1,5 +1,6 @@
 package org.mozilla.gecko;
 
+import org.mozilla.gecko.util.GeckoBundle;
 
 import android.app.ActivityManager;
 import android.content.BroadcastReceiver;
@@ -30,6 +31,21 @@ public class OuinetBroadcastReceiver extends BroadcastReceiver {
 
         if (!doPurge) {
             OuinetService.stopOuinetService(context);  // shut down gracefully
+
+            //Process.killProcess(Process.myPid());  // very harsh
+
+            //GeckoThread.forceQuit();  // slightly better
+            //GeckoApplication.shutdown(null);  // probably similar
+
+            // Gentler, but the simplification implies
+            // ignoring user settings on what data to clear on explicit quit.
+            // See `GeckoApp.onOptionsItemSelected()`.
+            final GeckoBundle res = new GeckoBundle(2);
+            res.putBundle("sanitize", new GeckoBundle(0));
+            res.putBoolean("dontSaveSession", false);
+            EventDispatcher.getInstance().dispatch("Browser:Quit", res);
+
+            //GeckoApp.getInstance().onMenuItemClick(R.id.quit);  // if only...
         } else {
             // Shut down the service the hard way
             // to prevent it from creating files after clearing app data.
@@ -38,9 +54,8 @@ public class OuinetBroadcastReceiver extends BroadcastReceiver {
             if (am != null) {
                 am.clearApplicationUserData();
             }
+            Process.killProcess(Process.myPid());
         }
-
-        Process.killProcess(Process.myPid());
     }
 
     public static Intent createStopIntent(Context context) {
