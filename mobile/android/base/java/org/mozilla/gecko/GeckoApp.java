@@ -1440,6 +1440,14 @@ public abstract class GeckoApp extends GeckoActivity
                         hideOnMobileDataDialog();
                     }
                 }
+
+                // Restart the Ouinet client whenever connectivity has changed and become stable.
+                NetworkInfo.State state = info.getState();
+                if (state == NetworkInfo.State.CONNECTED || state == NetworkInfo.State.DISCONNECTED) {
+                    OuinetService.stopOuinetService(GeckoApp.this);
+                    // TODO: Insert a pause / check client state.
+                    OuinetService.startOuinetService(GeckoApp.this, mOuinetConfig);
+                }
             }
         }, intentFilter);
     }
