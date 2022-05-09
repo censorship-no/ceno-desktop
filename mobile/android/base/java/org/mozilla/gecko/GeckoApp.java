@@ -207,6 +207,7 @@ public abstract class GeckoApp extends GeckoActivity
     protected Menu mMenu;
     protected boolean mIsRestoringActivity;
 
+    protected Config mOuinetConfig;
     protected AlertDialog mOnMobileDataDialog;
 
     /** Tells if we're aborting app launch, e.g. if this is an unsupported device configuration. */
@@ -1079,7 +1080,8 @@ public abstract class GeckoApp extends GeckoActivity
         //------------------------------------------------------------
         String injectorCert = getResources().getString(R.string.ouinet_injector_tls_cert);
 
-        Config ouinetConfig = new Config.ConfigBuilder(this)
+        // Keep the configuration, in case we need to restart the client later on.
+        mOuinetConfig = new Config.ConfigBuilder(this)
                 .setCacheHttpPubKey(getResources().getString(R.string.ouinet_cache_http_pubkey))
                 .setInjectorCredentials(getResources().getString(R.string.ouinet_injector_credentials))
                 .setInjectorTlsCert(injectorCert)
@@ -1095,7 +1097,7 @@ public abstract class GeckoApp extends GeckoActivity
         }
 
         Log.d(LOGTAG, " --------- Starting ouinet service");
-        OuinetService.startOuinetService(this, ouinetConfig);
+        OuinetService.startOuinetService(this, mOuinetConfig);
         //------------------------------------------------------------
 
         // The clock starts...now. Better hurry!
@@ -1216,7 +1218,7 @@ public abstract class GeckoApp extends GeckoActivity
         final GeckoSession session = new GeckoSession(
                 new GeckoSessionSettings.Builder()
                         .chromeUri("chrome://browser/content/browser.xul")
-                        .ouinetClientRootCertificate(ouinetConfig.getCaRootCertPath())
+                        .ouinetClientRootCertificate(mOuinetConfig.getCaRootCertPath())
                         .build());
         session.setContentDelegate(this);
 
