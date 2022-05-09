@@ -1429,15 +1429,16 @@ public abstract class GeckoApp extends GeckoActivity
             public void onReceive(Context context, Intent intent) {
                 NetworkInfo info =
                         intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
-                if (info == null || info.getType() != ConnectivityManager.TYPE_MOBILE) {
-                    return;
-                }
-                if (info.isConnected()) {
-                    Log.d(LOGTAG, "Mobile connection detected, showing on mobile data dialog");
-                    showOnMobileDataDialog();
-                } else {
-                    Log.d(LOGTAG, "Mobile connection disabled, hiding on mobile data dialog");
-                    hideOnMobileDataDialog();
+                if (info == null) return;
+
+                if (info.getType() == ConnectivityManager.TYPE_MOBILE) {
+                    if (info.isConnected()) {
+                        Log.d(LOGTAG, "Mobile connection detected, showing on mobile data dialog");
+                        showOnMobileDataDialog();
+                    } else {
+                        Log.d(LOGTAG, "Mobile connection disabled, hiding on mobile data dialog");
+                        hideOnMobileDataDialog();
+                    }
                 }
             }
         }, intentFilter);
