@@ -207,6 +207,7 @@ public abstract class GeckoApp extends GeckoActivity
     protected Menu mMenu;
     protected boolean mIsRestoringActivity;
 
+    protected Config mOuinetConfig;
     protected AlertDialog mOnMobileDataDialog;
 
     /** Tells if we're aborting app launch, e.g. if this is an unsupported device configuration. */
@@ -1079,7 +1080,8 @@ public abstract class GeckoApp extends GeckoActivity
         //------------------------------------------------------------
         String injectorCert = getResources().getString(R.string.ouinet_injector_tls_cert);
 
-        Config ouinetConfig = new Config.ConfigBuilder(this)
+        // Keep the configuration, in case we need to restart the client later on.
+        mOuinetConfig = new Config.ConfigBuilder(this)
                 .setCacheHttpPubKey(getResources().getString(R.string.ouinet_cache_http_pubkey))
                 .setInjectorCredentials(getResources().getString(R.string.ouinet_injector_credentials))
                 .setInjectorTlsCert(injectorCert)
@@ -1095,7 +1097,7 @@ public abstract class GeckoApp extends GeckoActivity
         }
 
         Log.d(LOGTAG, " --------- Starting ouinet service");
-        OuinetService.startOuinetService(this, ouinetConfig);
+        OuinetService.startOuinetService(this, mOuinetConfig);
         //------------------------------------------------------------
 
         // The clock starts...now. Better hurry!
@@ -1216,7 +1218,7 @@ public abstract class GeckoApp extends GeckoActivity
         final GeckoSession session = new GeckoSession(
                 new GeckoSessionSettings.Builder()
                         .chromeUri("chrome://browser/content/browser.xul")
-                        .ouinetClientRootCertificate(ouinetConfig.getCaRootCertPath())
+                        .ouinetClientRootCertificate(mOuinetConfig.getCaRootCertPath())
                         .build());
         session.setContentDelegate(this);
 
@@ -1427,15 +1429,24 @@ public abstract class GeckoApp extends GeckoActivity
             public void onReceive(Context context, Intent intent) {
                 NetworkInfo info =
                         intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
-                if (info == null || info.getType() != ConnectivityManager.TYPE_MOBILE) {
-                    return;
+                if (info == null) return;
+
+                if (info.getType() == ConnectivityManager.TYPE_MOBILE) {
+                    if (info.isConnected()) {
+                        Log.d(LOGTAG, "Mobile connection detected, showing on mobile data dialog");
+                        showOnMobileDataDialog();
+                    } else {
+                        Log.d(LOGTAG, "Mobile connection disabled, hiding on mobile data dialog");
+                        hideOnMobileDataDialog();
+                    }
                 }
-                if (info.isConnected()) {
-                    Log.d(LOGTAG, "Mobile connection detected, showing on mobile data dialog");
-                    showOnMobileDataDialog();
-                } else {
-                    Log.d(LOGTAG, "Mobile connection disabled, hiding on mobile data dialog");
-                    hideOnMobileDataDialog();
+
+                // Restart the Ouinet client whenever connectivity has changed and become stable.
+                NetworkInfo.State state = info.getState();
+                if (state == NetworkInfo.State.CONNECTED || state == NetworkInfo.State.DISCONNECTED) {
+                    OuinetService.stopOuinetService(GeckoApp.this);
+                    // TODO: Insert a pause / check client state.
+                    OuinetService.startOuinetService(GeckoApp.this, mOuinetConfig);
                 }
             }
         }, intentFilter);
@@ -2253,7 +2264,6 @@ public abstract class GeckoApp extends GeckoActivity
 
     @Override
     public void onDestroy() {
-        Log.d(LOGTAG, "---------------- Destroying----------------------------");
         if (mIsAbortingAppLaunch) {
             // This build does not support the Android version of the device:
             // We did not initialize anything, so skip cleaning up.
