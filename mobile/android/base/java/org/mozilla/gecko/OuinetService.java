@@ -189,9 +189,6 @@ public class OuinetService extends Service {
         PendingIntent homePIntent = PendingIntent.getActivity(this, requestCode++,
                                                               createHomeIntent(this),
                                                               PendingIntent.FLAG_UPDATE_CURRENT);
-        PendingIntent showPurgePIntent = PendingIntent.getService(this, requestCode++,
-                                                                  createShowPurgeIntent(this),
-                                                                  PendingIntent.FLAG_UPDATE_CURRENT);
 
         NotificationCompat.Builder notifb = new NotificationCompat.Builder(this, channel_id)
                 .setSmallIcon(R.drawable.ic_status_logo)
@@ -202,18 +199,24 @@ public class OuinetService extends Service {
                 .setAutoCancel(true) // Close on tap.
                 .addAction(R.drawable.ic_globe_pm,
                            getString(R.string.ceno_notification_home_description),
-                           homePIntent)
-                .addAction(R.drawable.ic_cancel_pm,
-                           getString(R.string.ceno_notification_purge_description),
-                           showPurgePIntent);
+                           homePIntent);
 
-        if (showRealPurgeAction) {
-            PendingIntent purgePIntent = PendingIntent.getBroadcast(this, requestCode++,
-                                                                    OuinetBroadcastReceiver.createPurgeIntent(this),
-                                                                    PendingIntent.FLAG_UPDATE_CURRENT);
+        if (OuinetBroadcastReceiver.canPurge()) {
+            PendingIntent showPurgePIntent = PendingIntent.getService(this, requestCode++,
+                                                                      createShowPurgeIntent(this),
+                                                                      PendingIntent.FLAG_UPDATE_CURRENT);
             notifb.addAction(R.drawable.ic_cancel_pm,
-                             getString(R.string.ceno_notification_purge_do_description),
-                             purgePIntent);
+                             getString(R.string.ceno_notification_purge_description),
+                             showPurgePIntent);
+
+            if (showRealPurgeAction) {
+                PendingIntent purgePIntent = PendingIntent.getBroadcast(this, requestCode++,
+                                                                        OuinetBroadcastReceiver.createPurgeIntent(this),
+                                                                        PendingIntent.FLAG_UPDATE_CURRENT);
+                notifb.addAction(R.drawable.ic_cancel_pm,
+                                 getString(R.string.ceno_notification_purge_do_description),
+                                 purgePIntent);
+            }
         }
 
         return notifb.build();

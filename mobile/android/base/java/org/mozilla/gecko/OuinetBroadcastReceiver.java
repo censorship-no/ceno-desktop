@@ -6,6 +6,7 @@ import android.app.ActivityManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Process;
 import android.util.Log;
 
@@ -19,6 +20,14 @@ public class OuinetBroadcastReceiver extends BroadcastReceiver {
     public static final String EXTRA_ACTION_PURGE = "org.mozilla.gecko.OuinetBroadcastReceiver.PURGE";
     private static final String TAG = "OuinetBroadcastReceiver";
 
+    // Use this to check that this system supports the purge operation.
+    // Only offer a purge feature if the device actually supports it,
+    // otherwise the user may have the false impression that the action does purge the data,
+    // while it only makes the app crash, and the data stays there.
+    public static boolean canPurge() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT;
+    }
+
     @Override
     public void onReceive(Context context, Intent intent) {
         Log.d(TAG, "Received intent: "+ intent +", shutting down Ouinet service");
@@ -30,6 +39,11 @@ public class OuinetBroadcastReceiver extends BroadcastReceiver {
         }
 
         if (doPurge) {
+            if (!canPurge()) {
+                Log.e(TAG, "Received purge intent but SDK is too old, imminent crash!");
+                // Let the application crash on the missing `ActivityManager.clearApplicationUserData()`
+                // to let the user know that something is not ok.
+            }
             // Shut down the service the hard way
             // to prevent it from creating files after clearing app data.
             killPackageProcesses(context);
