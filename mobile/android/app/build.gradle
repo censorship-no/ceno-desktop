@@ -234,7 +234,12 @@ repositories {
 dependencies {
     // <CENO>
     implementation 'com.getkeepsafe.relinker:relinker:1.4.4'
-    implementation(name: "${System.env.OUINET_LIBRARY}", ext: 'aar')
+    if (System.getenv('OUINET_LIBRARY')) {
+        implementation(name: "${System.env.OUINET_LIBRARY}", ext: 'aar')
+    } else {
+        def ouinet_latest_version = file('../../../../ouinet/version.txt').text.trim()
+        implementation "ie.equalit.ouinet:ouinet-${System.env.OUINET_ABI}:${ouinet_latest_version}"
+    }
     // </CENO>
 
     implementation "com.android.support:support-v4:$support_library_version"
