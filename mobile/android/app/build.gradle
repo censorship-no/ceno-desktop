@@ -237,8 +237,7 @@ dependencies {
     if (System.getenv('OUINET_LIBRARY')) {
         implementation(name: "${System.env.OUINET_LIBRARY}", ext: 'aar')
     } else {
-        def ouinet_latest_version = file('../../../../ouinet/version.txt').text.trim()
-        implementation "ie.equalit.ouinet:ouinet-${System.env.OUINET_ABI}:${ouinet_latest_version}"
+        implementation "ie.equalit.ouinet:ouinet-${System.env.OUINET_ABI}:${System.env.OUINET_VERSION}"
     }
     // </CENO>
 
