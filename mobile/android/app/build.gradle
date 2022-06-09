@@ -223,8 +223,10 @@ android {
 
 // <CENO>
 repositories {
-    flatDir {
-        dirs "${System.env.OUINET_BUILDDIR}"
+    if (System.getenv('OUINET_BUILDDIR')) {
+        flatDir {
+            dirs "${System.env.OUINET_BUILDDIR}"
+        }
     }
 }
 // </CENO>
@@ -232,7 +234,11 @@ repositories {
 dependencies {
     // <CENO>
     implementation 'com.getkeepsafe.relinker:relinker:1.4.4'
-    implementation(name: "${System.env.OUINET_LIBRARY}", ext: 'aar')
+    if (System.getenv('OUINET_LIBRARY')) {
+        implementation(name: "${System.env.OUINET_LIBRARY}", ext: 'aar')
+    } else {
+        implementation "ie.equalit.ouinet:ouinet-${System.env.OUINET_ABI}:${System.env.OUINET_VERSION}"
+    }
     // </CENO>
 
     implementation "com.android.support:support-v4:$support_library_version"
