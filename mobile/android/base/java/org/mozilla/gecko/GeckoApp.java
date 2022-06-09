@@ -1079,6 +1079,15 @@ public abstract class GeckoApp extends GeckoActivity
         // Ouinet
         //------------------------------------------------------------
         String injectorCert = getResources().getString(R.string.ouinet_injector_tls_cert);
+        Set<String> btBootstrapExtras = null;
+        {
+            HashSet<String> btbsxs = new HashSet<>();
+            for (String x : getResources().getString(R.string.ouinet_bt_bootstrap_extras).split(" "))
+                if (x.length() > 0)
+                    btbsxs.add(x);
+            if (btbsxs.size() > 0)
+                btBootstrapExtras = btbsxs;
+        }
 
         // Keep the configuration, in case we need to restart the client later on.
         mOuinetConfig = new Config.ConfigBuilder(this)
@@ -1087,6 +1096,7 @@ public abstract class GeckoApp extends GeckoActivity
                 .setInjectorTlsCert(injectorCert)
                 .setTlsCaCertStorePath("file:///android_asset/ceno/cacert.pem")
                 .setCacheType(getResources().getString(R.string.ouinet_cache_type))
+                .setBtBootstrapExtras(btBootstrapExtras)
                 .build();
 
         if (injectorCert != null) {
