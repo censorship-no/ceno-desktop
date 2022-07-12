@@ -73,6 +73,7 @@ import android.provider.ContactsContract;
 import android.support.annotation.NonNull;
 import android.support.annotation.WorkerThread;
 import android.support.design.widget.Snackbar;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
@@ -1081,8 +1082,27 @@ public abstract class GeckoApp extends GeckoActivity
         String injectorCert = getResources().getString(R.string.ouinet_injector_tls_cert);
         Set<String> btBootstrapExtras = null;
         {
+            // Attempt to get ISO 3166-1 alpha-2 country code from telephony manager,
+            // fall back to locale country otherwise.
+            String countryIsoCode = "";
+            TelephonyManager tm = (TelephonyManager) getApplicationContext().getSystemService(Context.TELEPHONY_SERVICE);
+            if (tm != null)  // prefer operator location to SIM card location (e.g. when roaming)
+                countryIsoCode = tm.getNetworkCountryIso();
+            if (countryIsoCode.isEmpty())  // no telephony or unavaiable country code
+                countryIsoCode = Locale.getDefault().getCountry();
+            countryIsoCode = countryIsoCode.toUpperCase();  // just in case
+
+            // Attempt country-specific `R.string.ouinet_bt_bootstrap_extras_XX`,
+            // fall back to `R.string.ouinet_bt_bootstrap_extras` otherwise.
+            final String btbsxsRName = "ouinet_bt_bootstrap_extras";
+            int btbsxsRId = 0;  // invalid resource id
+            if (!countryIsoCode.isEmpty())
+                btbsxsRId = getResources().getIdentifier(btbsxsRName + "_" + countryIsoCode, "string", getPackageName());
+            if (btbsxsRId == 0)
+                btbsxsRId = getResources().getIdentifier(btbsxsRName, "string", getPackageName());
+
             HashSet<String> btbsxs = new HashSet<>();
-            for (String x : getResources().getString(R.string.ouinet_bt_bootstrap_extras).split(" "))
+            for (String x : getResources().getString(btbsxsRId).split(" "))
                 if (x.length() > 0)
                     btbsxs.add(x);
             if (btbsxs.size() > 0)
