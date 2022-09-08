@@ -453,12 +453,25 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       getSettings().setAllowInsecureConnections(level);
       return this;
     }
+
+    /**
+     * Path to a root CA certificate file which GeckoView will load into x509 certdb
+     *
+     * @param rootCertificate Path to root CA certificate file in DER or PEM format to read from or
+     *     <code>null</code> to use leave the certdb unchanged
+     * @return This Builder instance.
+     */
+    public @NonNull Builder rootCertificate(final @Nullable String rootCertificate) {
+      getSettings().mRootCertificate = rootCertificate;
+      return this;
+    }
   }
 
   private GeckoRuntime mRuntime;
   /* package */ String[] mArgs;
   /* package */ Bundle mExtras;
   /* package */ String mConfigFilePath;
+  /* package */ String mRootCertificate;
 
   /* package */ ContentBlocking.Settings mContentBlocking;
 
@@ -569,10 +582,12 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     mRequestedLocales = settings.mRequestedLocales;
     mConfigFilePath = settings.mConfigFilePath;
     mTelemetryProxy = settings.mTelemetryProxy;
+    mRootCertificate = settings.mRootCertificate;
   }
 
   /* package */ void commit() {
     commitLocales();
+    commitRootCertificate();
     commitResetPrefs();
   }
 
@@ -1232,6 +1247,36 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     return this;
   }
 
+  /**
+   * Get path to a root CA certificate file which GeckoView will load into x509 certdb
+   *
+   * @return Path to root CA certificate file in DER or PEM format to be read from
+   */
+  public @Nullable String getRootCertificate() {
+    return mRootCertificate;
+  }
+
+  /**
+   * Set path to a root CA certificate file which GeckoView will load into x509 certdb
+   *
+   * @param rootCertificate Path to root CA certificate file in DER or PEM format to read from or
+   *     <code>null</code> to use leave the certdb unchanged
+   */
+  public void setRootCertificate(final @Nullable String rootCertificate) {
+    mRootCertificate = rootCertificate;
+    commitRootCertificate();
+  }
+
+  private void commitRootCertificate() {
+    if (mRootCertificate == "") {
+      return;
+    } else {
+      final GeckoBundle data = new GeckoBundle(1);
+      data.putString("rootCertificate", mRootCertificate);
+      EventDispatcher.getInstance().dispatch("GeckoView:SetRootCertificate", data);
+    }
+  }
+
   // For internal use only
   /* protected */ @NonNull
   GeckoRuntimeSettings setProcessCount(final int processCount) {
@@ -1255,6 +1300,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     out.writeString(mCrashHandler != null ? mCrashHandler.getName() : null);
     out.writeStringArray(mRequestedLocales);
     out.writeString(mConfigFilePath);
+    out.writeString(mRootCertificate);
   }
 
   // AIDL code may call readFromParcel even though it's not part of Parcelable.
@@ -1286,6 +1332,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
 
     mRequestedLocales = source.createStringArray();
     mConfigFilePath = source.readString();
+    mRootCertificate = source.readString();
   }
 
   public static final Parcelable.Creator<GeckoRuntimeSettings> CREATOR =
