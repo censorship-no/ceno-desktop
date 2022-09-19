@@ -22,8 +22,41 @@
 
 namespace mozilla::net {
 
+bool Http2StreamTunnel::DispatchRelease() {
+  if (OnSocketThread()) {
+    return false;
+  }
+
+  gSocketTransportService->Dispatch(
+      NewNonOwningRunnableMethod("net::Http2StreamTunnel::Release", this,
+                                 &Http2StreamTunnel::Release),
+      NS_DISPATCH_NORMAL);
+
+  return true;
+}
+
 NS_IMPL_ADDREF_INHERITED(Http2StreamTunnel, Http2StreamBase)
-NS_IMPL_RELEASE_INHERITED(Http2StreamTunnel, Http2StreamBase)
+NS_IMETHODIMP_(MozExternalRefCountType)
+Http2StreamTunnel::Release() {
+  nsrefcnt count = mRefCnt - 1;
+  if (DispatchRelease()) {
+    // Redispatched to the socket thread.
+    return count;
+  }
+
+  MOZ_ASSERT(0 != mRefCnt, "dup release");
+  count = --mRefCnt;
+  NS_LOG_RELEASE(this, count, "Http2StreamTunnel");
+
+  if (0 == count) {
+    mRefCnt = 1;
+    delete (this);
+    return 0;
+  }
+
+  return count;
+}
+
 NS_INTERFACE_MAP_BEGIN(Http2StreamTunnel)
   NS_INTERFACE_MAP_ENTRY(nsITransport)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(Http2StreamTunnel)
@@ -173,7 +206,7 @@ FWD_TS_T_PTR(GetPeerAddr, mozilla::net::NetAddr);
 FWD_TS_T_PTR(GetSelfAddr, mozilla::net::NetAddr);
 FWD_TS_T_ADDREF(GetScriptablePeerAddr, nsINetAddr);
 FWD_TS_T_ADDREF(GetScriptableSelfAddr, nsINetAddr);
-FWD_TS_T_ADDREF(GetSecurityInfo, nsISupports);
+FWD_TS_T_ADDREF(GetTlsSocketControl, nsISSLSocketControl);
 FWD_TS_T_PTR(GetConnectionFlags, uint32_t);
 FWD_TS_T(SetConnectionFlags, uint32_t);
 FWD_TS_T(SetIsPrivate, bool);
@@ -265,7 +298,7 @@ already_AddRefed<nsHttpConnection> Http2StreamTunnel::CreateHttpConnection(
                  gHttpHandler->ConnMgr()->MaxRequestDelay(), this, mInput,
                  mOutput, true, NS_OK, aCallbacks, aRtt, false);
   MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-
+  mTransaction = httpTransaction;
   return conn.forget();
 }
 
@@ -315,12 +348,11 @@ nsresult Http2StreamTunnel::GenerateHeaders(nsCString& aCompressedData,
 
 OutputStreamTunnel::OutputStreamTunnel(Http2StreamTunnel* aStream) {
   mWeakStream = do_GetWeakReference(aStream);
-  mSocketThread = NS_GetCurrentThread();
 }
 
 OutputStreamTunnel::~OutputStreamTunnel() {
-  NS_ProxyRelease("OutputStreamTunnel::~OutputStreamTunnel", mSocketThread,
-                  mWeakStream.forget());
+  NS_ProxyRelease("OutputStreamTunnel::~OutputStreamTunnel",
+                  gSocketTransportService, mWeakStream.forget());
 }
 
 nsresult OutputStreamTunnel::OnSocketReady(nsresult condition) {
@@ -468,12 +500,11 @@ OutputStreamTunnel::AsyncWait(nsIOutputStreamCallback* callback, uint32_t flags,
 
 InputStreamTunnel::InputStreamTunnel(Http2StreamTunnel* aStream) {
   mWeakStream = do_GetWeakReference(aStream);
-  mSocketThread = NS_GetCurrentThread();
 }
 
 InputStreamTunnel::~InputStreamTunnel() {
-  NS_ProxyRelease("InputStreamTunnel::~InputStreamTunnel", mSocketThread,
-                  mWeakStream.forget());
+  NS_ProxyRelease("InputStreamTunnel::~InputStreamTunnel",
+                  gSocketTransportService, mWeakStream.forget());
 }
 
 nsresult InputStreamTunnel::OnSocketReady(nsresult condition) {

@@ -16,6 +16,8 @@
 
 namespace js {
 
+class ErrorContext;
+
 namespace frontend {
 class ParserAtomsTable;
 class TaggedParserAtomIndex;
@@ -33,7 +35,7 @@ template <size_t EltSize>
 inline size_t GrowEltsAggressively(size_t aOldElts, size_t aIncr) {
   mozilla::CheckedInt<size_t> required =
       mozilla::CheckedInt<size_t>(aOldElts) + aIncr;
-  if (!required.isValid()) {
+  if (!(required * 2).isValid()) {
     return 0;
   }
   required = mozilla::RoundUpPow2(required.value());
@@ -352,7 +354,7 @@ class StringBuffer {
   /* Identical to finishString() except that an atom is created. */
   JSAtom* finishAtom();
   frontend::TaggedParserAtomIndex finishParserAtom(
-      frontend::ParserAtomsTable& parserAtoms);
+      frontend::ParserAtomsTable& parserAtoms, ErrorContext* ec);
 
   /*
    * Creates a raw string from the characters in this buffer.  The string is

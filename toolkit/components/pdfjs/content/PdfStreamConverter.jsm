@@ -468,6 +468,16 @@ class ChromeActions {
       case "tagged":
         lazy.PdfJsTelemetry.onTagged(probeInfo.tagged);
         break;
+      case "editing":
+        lazy.PdfJsTelemetry.onEditing(probeInfo.data.type);
+        break;
+      case "buttons":
+        const id = probeInfo.data.id.replace(
+          /([A-Z])/g,
+          c => `_${c.toLowerCase()}`
+        );
+        lazy.PdfJsTelemetry.onButtons(id);
+        break;
     }
   }
 
@@ -616,7 +626,6 @@ class ChromeActions {
       doc.editorStates = {
         isEditing: false,
         isEmpty: true,
-        hasEmptyClipboard: true,
         hasSomethingToUndo: false,
         hasSomethingToRedo: false,
         hasSelectedEditor: false,

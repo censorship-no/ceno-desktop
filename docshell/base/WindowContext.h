@@ -85,9 +85,6 @@ class BrowsingContextGroup;
   /* Whether the principal of this window is for a local                 \
    * IP address */                                                       \
   FIELD(IsLocalIP, bool)                                                 \
-  /* Whether the corresponding document has `loading='lazy'`             \
-   * images; It won't become false if the image becomes non-lazy */      \
-  FIELD(HadLazyLoadImage, bool)                                          \
   /* Whether any of the windows in the subtree rooted at this window has \
    * active peer connections or not (only set on the top window). */     \
   FIELD(HasActivePeerConnections, bool)                                  \
@@ -103,7 +100,7 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   MOZ_DECL_SYNCED_CONTEXT(WindowContext, MOZ_EACH_WC_FIELD)
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(WindowContext)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(WindowContext)
 
  public:
   static already_AddRefed<WindowContext> GetById(uint64_t aInnerWindowId);
@@ -146,6 +143,12 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   bool IsTop() const;
 
   Span<RefPtr<BrowsingContext>> Children() { return mChildren; }
+
+  // The filtered version of `Children()`, which contains no browsing contexts
+  // for synthetic documents as created by object loading content.
+  Span<RefPtr<BrowsingContext>> NonSyntheticChildren() {
+    return mNonSyntheticChildren;
+  }
 
   // Cast this object to it's parent-process canonical form.
   WindowGlobalParent* Canonical();
@@ -199,8 +202,6 @@ class WindowContext : public nsISupports, public nsWrapperCache {
 
   bool CanShowPopup();
 
-  bool HadLazyLoadImage() const { return GetHadLazyLoadImage(); }
-
   bool AllowJavascript() const { return GetAllowJavascript(); }
   bool CanExecuteScripts() const { return mCanExecuteScripts; }
 
@@ -218,6 +219,12 @@ class WindowContext : public nsISupports, public nsWrapperCache {
 
   void AppendChildBrowsingContext(BrowsingContext* aBrowsingContext);
   void RemoveChildBrowsingContext(BrowsingContext* aBrowsingContext);
+
+  // Update non-synthetic children based on whether `aBrowsingContext`
+  // is synthetic or not. Regardless the synthetic of `aBrowsingContext`, it is
+  // kept in this WindowContext's all children list.
+  void UpdateChildSynthetic(BrowsingContext* aBrowsingContext,
+                            bool aIsSynthetic);
 
   // Send a given `BaseTransaction` object to the correct remote.
   void SendCommitTransaction(ContentParent* aParent,
@@ -290,9 +297,6 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   bool CanSet(FieldIndex<IDX_IsLocalIP>, const bool& aValue,
               ContentParent* aSource);
 
-  bool CanSet(FieldIndex<IDX_HadLazyLoadImage>, const bool& aValue,
-              ContentParent* aSource);
-
   bool CanSet(FieldIndex<IDX_AllowJavascript>, bool aValue,
               ContentParent* aSource);
   void DidSet(FieldIndex<IDX_AllowJavascript>, bool aOldValue);
@@ -330,6 +334,15 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   // `mBrowsingContext`, and should only be performed through the
   // `AppendChildBrowsingContext` and `RemoveChildBrowsingContext` methods.
   nsTArray<RefPtr<BrowsingContext>> mChildren;
+
+  // --- NEVER CHANGE `mNonSyntheticChildren` DIRECTLY! ---
+  // Same reason as for mChildren.
+  // mNonSyntheticChildren contains the same browsing contexts except browsing
+  // contexts created by the synthetic document for object loading contents
+  // loading images. This is used to discern browsing contexts created when
+  // loading images in <object> or <embed> elements, so that they can be hidden
+  // from named targeting, `Window.frames` etc.
+  nsTArray<RefPtr<BrowsingContext>> mNonSyntheticChildren;
 
   bool mIsDiscarded = false;
   bool mIsInProcess = false;

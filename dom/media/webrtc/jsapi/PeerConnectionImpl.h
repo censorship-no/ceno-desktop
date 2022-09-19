@@ -177,7 +177,7 @@ class PeerConnectionImpl final
       const mozilla::dom::GlobalObject* aGlobal = nullptr);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PeerConnectionImpl)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PeerConnectionImpl)
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -463,6 +463,8 @@ class PeerConnectionImpl final
 
   already_AddRefed<dom::Promise> OnSetDescriptionSuccess(
       dom::RTCSdpType aSdpType, bool aRemote, ErrorResult& aError);
+
+  void OnSetDescriptionError();
 
   bool IsClosed() const;
   // called when DTLS connects; we only need this once

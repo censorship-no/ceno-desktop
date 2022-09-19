@@ -27,7 +27,7 @@ pushd "$ROOT" || exit
 git fetch origin
 git checkout "$1"
 
-npm install --ignore-scripts
+npm install --legacy-peer-deps --ignore-scripts
 
 gulp mozcentral
 
@@ -35,10 +35,8 @@ popd || exit
 
 
 mkdir -p "$ROOT/build/mozcentral/browser/extensions/pdfjs/"
-touch "$ROOT/build/mozcentral/browser/extensions/pdfjs/README.mozilla"
 
 cp "$ROOT/build/mozcentral/browser/extensions/pdfjs/content/LICENSE" "$GECKO_PATH/toolkit/components/pdfjs/"
-cp "$ROOT/build/mozcentral/browser/extensions/pdfjs/content/README.mozilla" "$GECKO_PATH/toolkit/components/pdfjs/"
 cp "$ROOT/build/mozcentral/browser/extensions/pdfjs/content/PdfJsDefaultPreferences.jsm" "$GECKO_PATH/toolkit/components/pdfjs/content/PdfJsDefaultPreferences.jsm"
 rsync -a -v --delete "$ROOT/build/mozcentral/browser/extensions/pdfjs/content/build/" "$GECKO_PATH/toolkit/components/pdfjs/content/build/"
 rsync -a -v --delete "$ROOT/build/mozcentral/browser/extensions/pdfjs/content/web/" "$GECKO_PATH/toolkit/components/pdfjs/content/web/"

@@ -35,6 +35,22 @@ pictureinpicture-subtitles-cmd =
 
 ##
 
+pictureinpicture-fullscreen-cmd =
+  .aria-label = Fullscreen
+  .title = Fullscreen (double-click)
+
+pictureinpicture-exit-fullscreen-cmd =
+  .aria-label = Exit fullscreen
+  .title = Exit fullscreen (double-click)
+
+pictureinpicture-seekbackward-cmd =
+  .aria-label = Backward
+  .title = Backward (←)
+
+pictureinpicture-seekforward-cmd =
+  .aria-label = Forward
+  .title = Forward (→)
+
 pictureinpicture-subtitles-label = Subtitles
 
 pictureinpicture-font-size-label = Font size

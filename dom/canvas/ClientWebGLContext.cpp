@@ -28,7 +28,6 @@
 #include "mozilla/layers/TextureClientSharedSurface.h"
 #include "mozilla/layers/WebRenderUserData.h"
 #include "mozilla/layers/WebRenderCanvasRenderer.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_webgl.h"
@@ -800,7 +799,7 @@ bool ClientWebGLContext::CreateHostContext(const uvec2& requestedSize) {
   {
     webgl::TypedQuad initVal;
     const float fData[4] = {0, 0, 0, 1};
-    memcpy(initVal.data, fData, sizeof(initVal.data));
+    memcpy(initVal.data.data(), fData, initVal.data.size());
     state.mGenericVertexAttribs.resize(limits.maxVertexAttribs, initVal);
   }
 
@@ -897,12 +896,10 @@ ClientWebGLContext::SetContextOptions(JSContext* cx,
   if (attributes.mAntialias.WasPassed()) {
     newOpts.antialias = attributes.mAntialias.Value();
   }
-
+  newOpts.ignoreColorSpace = true;
   if (attributes.mColorSpace.WasPassed()) {
-    newOpts.colorSpace = attributes.mColorSpace.Value();
-  }
-  if (StaticPrefs::gfx_color_management_native_srgb()) {
     newOpts.ignoreColorSpace = false;
+    newOpts.colorSpace = attributes.mColorSpace.Value();
   }
 
   // Don't do antialiasing if we've disabled MSAA.
@@ -2149,30 +2146,20 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
   // -
 
   if (!debug) {
-    const auto GetPref = [&](const char* const name) {
-      Maybe<std::string> ret;
-      nsCString overrideVal;
-      const auto res = Preferences::GetCString(name, overrideVal);
-      if (NS_SUCCEEDED(res) && overrideVal.Length() > 0) {
-        ret = Some(ToString(overrideVal));
-      }
-      return ret;
-    };
-
     const auto GetUnmaskedRenderer = [&]() {
-      auto ret = GetPref("webgl.override-unmasked-renderer");
-      if (!ret) {
-        ret = GetString(LOCAL_GL_RENDERER);
+      const auto prefLock = StaticPrefs::webgl_override_unmasked_renderer();
+      if (!prefLock->IsEmpty()) {
+        return Some(ToString(*prefLock));
       }
-      return ret;
+      return GetString(LOCAL_GL_RENDERER);
     };
 
     const auto GetUnmaskedVendor = [&]() {
-      auto ret = GetPref("webgl.override-unmasked-vendor");
-      if (!ret) {
-        ret = GetString(LOCAL_GL_VENDOR);
+      const auto prefLock = StaticPrefs::webgl_override_unmasked_vendor();
+      if (!prefLock->IsEmpty()) {
+        return Some(ToString(*prefLock));
       }
-      return ret;
+      return GetString(LOCAL_GL_VENDOR);
     };
 
     // -
@@ -2780,7 +2767,7 @@ void ClientWebGLContext::ClearBufferTv(const GLenum buffer,
   webgl::TypedQuad data;
   data.type = type;
 
-  auto dataSize = sizeof(data.data);
+  auto dataSize = data.data.size();
   switch (buffer) {
     case LOCAL_GL_COLOR:
       break;
@@ -2804,7 +2791,7 @@ void ClientWebGLContext::ClearBufferTv(const GLenum buffer,
     return;
   }
 
-  memcpy(data.data, view.begin().get() + byteOffset.value(), dataSize);
+  memcpy(data.data.data(), view.begin().get() + byteOffset.value(), dataSize);
   Run<RPROC(ClearBufferTv)>(buffer, drawBuffer, data);
 
   AfterDrawCall();
@@ -4550,15 +4537,17 @@ void ClientWebGLContext::GetVertexAttrib(JSContext* cx, GLuint index,
       switch (attrib.type) {
         case webgl::AttribBaseType::Float:
           obj = dom::Float32Array::Create(
-              cx, this, 4, reinterpret_cast<const float*>(attrib.data));
+              cx, this, 4, reinterpret_cast<const float*>(attrib.data.data()));
           break;
         case webgl::AttribBaseType::Int:
           obj = dom::Int32Array::Create(
-              cx, this, 4, reinterpret_cast<const int32_t*>(attrib.data));
+              cx, this, 4,
+              reinterpret_cast<const int32_t*>(attrib.data.data()));
           break;
         case webgl::AttribBaseType::Uint:
           obj = dom::Uint32Array::Create(
-              cx, this, 4, reinterpret_cast<const uint32_t*>(attrib.data));
+              cx, this, 4,
+              reinterpret_cast<const uint32_t*>(attrib.data.data()));
           break;
         case webgl::AttribBaseType::Boolean:
           MOZ_CRASH("impossible");
@@ -4752,7 +4741,7 @@ void ClientWebGLContext::VertexAttrib4Tv(GLuint index, webgl::AttribBaseType t,
 
   auto& attrib = list[index];
   attrib.type = t;
-  memcpy(attrib.data, src.begin().get(), sizeof(attrib.data));
+  memcpy(attrib.data.data(), src.begin().get(), attrib.data.size());
 
   Run<RPROC(VertexAttrib4T)>(index, attrib);
 }
@@ -6055,23 +6044,21 @@ void ClientWebGLContext::GetUniformIndices(
   const auto& res = GetLinkResult(prog);
   auto ret = nsTArray<GLuint>(uniformNames.Length());
 
-  std::unordered_map<std::string, size_t> retIdByName;
-  retIdByName.reserve(ret.Length());
+  for (const auto& queriedNameU16 : uniformNames) {
+    const auto queriedName = ToString(NS_ConvertUTF16toUTF8(queriedNameU16));
+    const auto impliedProperArrayQueriedName = queriedName + "[0]";
 
-  for (const auto i : IntegerRange(uniformNames.Length())) {
-    const auto& name = uniformNames[i];
-    auto nameU8 = ToString(NS_ConvertUTF16toUTF8(name));
-    retIdByName.insert({std::move(nameU8), i});
-    ret.AppendElement(LOCAL_GL_INVALID_INDEX);
-  }
-
-  GLuint i = 0;
-  for (const auto& cur : res.active.activeUniforms) {
-    const auto maybeRetId = MaybeFind(retIdByName, cur.name);
-    if (maybeRetId) {
-      ret[*maybeRetId] = i;
+    GLuint activeId = LOCAL_GL_INVALID_INDEX;
+    for (const auto i : IntegerRange(res.active.activeUniforms.size())) {
+      // O(N^2) ok for small N.
+      const auto& activeInfoForI = res.active.activeUniforms[i];
+      if (queriedName == activeInfoForI.name ||
+          impliedProperArrayQueriedName == activeInfoForI.name) {
+        activeId = i;
+        break;
+      }
     }
-    i += 1;
+    ret.AppendElement(activeId);
   }
 
   retval.SetValue(std::move(ret));

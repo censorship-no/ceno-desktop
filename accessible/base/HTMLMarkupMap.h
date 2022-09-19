@@ -24,6 +24,8 @@ MARKUPMAP(abbr, New_HyperText, 0)
 
 MARKUPMAP(acronym, New_HyperText, 0)
 
+MARKUPMAP(address, New_HyperText, roles::GROUPING)
+
 MARKUPMAP(article, New_HyperText, roles::ARTICLE, Attr(xmlroles, article))
 
 MARKUPMAP(aside, New_HyperText, roles::LANDMARK)
@@ -331,12 +333,16 @@ MARKUPMAP(
     },
     0)
 
+MARKUPMAP(sub, New_HyperText, roles::SUBSCRIPT)
+
 MARKUPMAP(
     summary,
     [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
       return new HTMLSummaryAccessible(aElement, aContext->Document());
     },
     roles::SUMMARY)
+
+MARKUPMAP(sup, New_HyperText, roles::SUPERSCRIPT)
 
 MARKUPMAP(
     table,

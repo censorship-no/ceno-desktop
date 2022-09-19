@@ -12,6 +12,7 @@
 #include "mozilla/EnumTypeTraits.h"
 #include "mozilla/PRemoteDecoderManagerChild.h"
 #include "mozilla/layers/VideoBridgeUtils.h"
+#include "mozilla/ipc/UtilityProcessSandboxing.h"
 
 namespace mozilla {
 
@@ -22,10 +23,19 @@ enum class RemoteDecodeIn {
   Unspecified,
   RddProcess,
   GpuProcess,
-  UtilityProcess,
-
+  UtilityProcess_Generic,
+  UtilityProcess_AppleMedia,
+  UtilityProcess_WMF,
+  UtilityProcess_MFMediaEngineCDM,
   SENTINEL,
 };
+
+enum class TrackSupport {
+  None,
+  Audio,
+  Video,
+};
+using TrackSupportSet = EnumSet<TrackSupport, uint8_t>;
 
 class RemoteDecoderManagerChild final
     : public PRemoteDecoderManagerChild,
@@ -54,6 +64,10 @@ class RemoteDecoderManagerChild final
 
   // Can be called from any thread.
   static nsISerialEventTarget* GetManagerThread();
+
+  // Return the track support information based on the location of the remote
+  // process. Thread-safe.
+  static TrackSupportSet GetTrackSupport(RemoteDecodeIn aLocation);
 
   // Can be called from any thread, dispatches the request to the IPDL thread
   // internally and will be ignored if the IPDL actor has been destroyed.
@@ -85,10 +99,11 @@ class RemoteDecoderManagerChild final
   void RunWhenGPUProcessRecreated(already_AddRefed<Runnable> aTask);
 
   RemoteDecodeIn Location() const { return mLocation; }
-  layers::VideoBridgeSource GetSource() const;
 
-  // A thread-safe method to launch the RDD process if it hasn't launched yet.
-  static RefPtr<GenericNonExclusivePromise> LaunchRDDProcessIfNeeded();
+  // A thread-safe method to launch the utility process if it hasn't launched
+  // yet.
+  static RefPtr<GenericNonExclusivePromise> LaunchUtilityProcessIfNeeded(
+      RemoteDecodeIn aLocation);
 
  protected:
   void InitIPDL();
@@ -113,13 +128,12 @@ class RemoteDecoderManagerChild final
   static RefPtr<PlatformDecoderModule::CreateDecoderPromise> Construct(
       RefPtr<RemoteDecoderChild>&& aChild, RemoteDecodeIn aLocation);
 
-  static void OpenForRDDProcess(
-      Endpoint<PRemoteDecoderManagerChild>&& aEndpoint);
-  static void OpenForGPUProcess(
-      Endpoint<PRemoteDecoderManagerChild>&& aEndpoint);
-  static void OpenForUtilityProcess(
-      Endpoint<PRemoteDecoderManagerChild>&& aEndpoint);
-  static RefPtr<GenericNonExclusivePromise> LaunchUtilityProcessIfNeeded();
+  static void OpenRemoteDecoderManagerChildForProcess(
+      Endpoint<PRemoteDecoderManagerChild>&& aEndpoint,
+      RemoteDecodeIn aLocation);
+
+  // A thread-safe method to launch the RDD process if it hasn't launched yet.
+  static RefPtr<GenericNonExclusivePromise> LaunchRDDProcessIfNeeded();
 
   RefPtr<RemoteDecoderManagerChild> mIPDLSelfRef;
   // The location for decoding, Rdd or Gpu process.

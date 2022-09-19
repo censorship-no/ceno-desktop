@@ -112,6 +112,7 @@ namespace css {
 struct URLValue;
 }  // namespace css
 namespace dom {
+struct CheckVisibilityOptions;
 struct CustomElementData;
 struct SetHTMLOptions;
 struct GetAnimationsOptions;
@@ -297,6 +298,11 @@ class Element : public FragmentOrElement {
    * @param aShadowRoot The ShadowRoot to be bound to this element.
    */
   void SetShadowRoot(ShadowRoot* aShadowRoot);
+
+  void SetLastRememberedBSize(float aBSize);
+  void SetLastRememberedISize(float aISize);
+  void RemoveLastRememberedBSize();
+  void RemoveLastRememberedISize();
 
   /**
    * Make focus on this element.
@@ -1310,6 +1316,24 @@ class Element : public FragmentOrElement {
     const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
     return slots ? slots->mShadowRoot.get() : nullptr;
   }
+
+  const Maybe<float> GetLastRememberedBSize() const {
+    const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
+    return slots ? slots->mLastRememberedBSize : Nothing();
+  }
+  const Maybe<float> GetLastRememberedISize() const {
+    const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
+    return slots ? slots->mLastRememberedISize : Nothing();
+  }
+  bool HasLastRememberedBSize() const {
+    return GetLastRememberedBSize().isSome();
+  }
+  bool HasLastRememberedISize() const {
+    return GetLastRememberedISize().isSome();
+  }
+
+  // https://drafts.csswg.org/cssom-view-1/#dom-element-checkvisibility
+  MOZ_CAN_RUN_SCRIPT bool CheckVisibility(const CheckVisibilityOptions&);
 
  private:
   // DO NOT USE THIS FUNCTION directly in C++. This function is supposed to be

@@ -673,11 +673,10 @@ nsSize nsBoxFrame::GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) {
   return size;
 }
 
-nscoord nsBoxFrame::GetXULFlex() {
+int32_t nsBoxFrame::GetXULFlex() {
   if (XULNeedsRecalc(mFlex)) {
-    nsIFrame::AddXULFlex(this, mFlex);
+    mFlex = nsIFrame::ComputeXULFlex(this);
   }
-
   return mFlex;
 }
 
@@ -818,14 +817,6 @@ void nsBoxFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
   }
 }
 
-/* virtual */
-nsContainerFrame* nsBoxFrame::GetContentInsertionFrame() {
-  if (HasAnyStateBits(NS_STATE_BOX_WRAPS_KIDS_IN_BLOCK)) {
-    return PrincipalChildList().FirstChild()->GetContentInsertionFrame();
-  }
-  return nsContainerFrame::GetContentInsertionFrame();
-}
-
 nsresult nsBoxFrame::AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                                       int32_t aModType) {
   nsresult rv =
@@ -844,9 +835,9 @@ nsresult nsBoxFrame::AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
       aAttribute == nsGkAtoms::align || aAttribute == nsGkAtoms::valign ||
       aAttribute == nsGkAtoms::minwidth || aAttribute == nsGkAtoms::maxwidth ||
       aAttribute == nsGkAtoms::minheight ||
-      aAttribute == nsGkAtoms::maxheight || aAttribute == nsGkAtoms::flex ||
-      aAttribute == nsGkAtoms::orient || aAttribute == nsGkAtoms::pack ||
-      aAttribute == nsGkAtoms::dir || aAttribute == nsGkAtoms::equalsize) {
+      aAttribute == nsGkAtoms::maxheight || aAttribute == nsGkAtoms::orient ||
+      aAttribute == nsGkAtoms::pack || aAttribute == nsGkAtoms::dir ||
+      aAttribute == nsGkAtoms::equalsize) {
     if (aAttribute == nsGkAtoms::align || aAttribute == nsGkAtoms::valign ||
         aAttribute == nsGkAtoms::orient || aAttribute == nsGkAtoms::pack ||
         aAttribute == nsGkAtoms::dir) {
@@ -998,12 +989,6 @@ nsresult nsBoxFrame::GetFrameName(nsAString& aResult) const {
   return MakeFrameName(u"Box"_ns, aResult);
 }
 #endif
-
-void nsBoxFrame::AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) {
-  if (HasAnyStateBits(NS_STATE_BOX_WRAPS_KIDS_IN_BLOCK)) {
-    aResult.AppendElement(OwnedAnonBox(PrincipalChildList().FirstChild()));
-  }
-}
 
 nsresult nsBoxFrame::LayoutChildAt(nsBoxLayoutState& aState, nsIFrame* aBox,
                                    const nsRect& aRect) {

@@ -16,24 +16,17 @@ const { Module } = ChromeUtils.import(
 
 const lazy = {};
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  addDebuggerToGlobal: "resource://gre/modules/jsdebugger.jsm",
-
   deserialize: "chrome://remote/content/webdriver-bidi/RemoteValue.jsm",
   error: "chrome://remote/content/shared/webdriver/Errors.jsm",
   getFramesFromStack: "chrome://remote/content/shared/Stack.jsm",
   isChromeFrame: "chrome://remote/content/shared/Stack.jsm",
   serialize: "chrome://remote/content/webdriver-bidi/RemoteValue.jsm",
   stringify: "chrome://remote/content/webdriver-bidi/RemoteValue.jsm",
-});
-
-XPCOMUtils.defineLazyGetter(lazy, "dbg", () => {
-  // eslint-disable-next-line mozilla/reject-globalThis-modification
-  lazy.addDebuggerToGlobal(globalThis);
-  return new Debugger();
+  WindowRealm: "chrome://remote/content/webdriver-bidi/Realm.jsm",
 });
 
 /**
- * @typedef {Object} EvaluationStatus
+ * @typedef {string} EvaluationStatus
  **/
 
 /**
@@ -48,25 +41,28 @@ const EvaluationStatus = {
 };
 
 class ScriptModule extends Module {
-  #global;
+  #defaultRealm;
+  #realms;
 
   constructor(messageHandler) {
     super(messageHandler);
 
-    this.#global = lazy.dbg.makeGlobalObjectReference(
-      this.messageHandler.window
-    );
-    lazy.dbg.enableAsyncStack(this.messageHandler.window);
+    this.#defaultRealm = new lazy.WindowRealm(this.messageHandler.window);
+
+    // Maps sandbox names to instances of window realms.
+    this.#realms = new Map();
   }
 
   destroy() {
-    if (this.messageHandler.window) {
-      lazy.dbg.disableAsyncStack(this.messageHandler.window);
+    this.#defaultRealm.destroy();
+
+    for (const realm of this.#realms.values()) {
+      realm.destroy();
     }
-    this.#global = null;
+    this.#realms = null;
   }
 
-  #buildExceptionDetails(exception, stack) {
+  #buildExceptionDetails(exception, stack, realm, resultOwnership) {
     exception = this.#toRawObject(exception);
     const frames = lazy.getFramesFromStack(stack) || [];
 
@@ -86,15 +82,22 @@ class ScriptModule extends Module {
 
     return {
       columnNumber: stack.column,
-      exception: lazy.serialize(exception, 1),
+      exception: lazy.serialize(
+        exception,
+        1,
+        resultOwnership,
+        new Map(),
+        realm
+      ),
       lineNumber: stack.line - 1,
       stackTrace: { callFrames },
       text: lazy.stringify(exception),
     };
   }
 
-  async #buildReturnValue(rv, awaitPromise) {
+  async #buildReturnValue(rv, realm, awaitPromise, resultOwnership) {
     let evaluationStatus, exception, result, stack;
+
     if ("return" in rv) {
       evaluationStatus = EvaluationStatus.Normal;
       if (
@@ -107,10 +110,12 @@ class ScriptModule extends Module {
           // Force wrapping the promise resolution result in a Debugger.Object
           // wrapper for consistency with the synchronous codepath.
           const asyncResult = await rv.return.unsafeDereference();
-          result = this.#global.makeDebuggeeValue(asyncResult);
+          result = realm.globalObjectReference.makeDebuggeeValue(asyncResult);
         } catch (asyncException) {
           evaluationStatus = EvaluationStatus.Throw;
-          exception = this.#global.makeDebuggeeValue(asyncException);
+          exception = realm.globalObjectReference.makeDebuggeeValue(
+            asyncException
+          );
           stack = rv.return.promiseResolutionSite;
         }
       } else {
@@ -129,12 +134,25 @@ class ScriptModule extends Module {
       case EvaluationStatus.Normal:
         return {
           evaluationStatus,
-          result: lazy.serialize(this.#toRawObject(result), 1),
+          result: lazy.serialize(
+            this.#toRawObject(result),
+            1,
+            resultOwnership,
+            new Map(),
+            realm
+          ),
+          realmId: realm.id,
         };
       case EvaluationStatus.Throw:
         return {
           evaluationStatus,
-          exceptionDetails: this.#buildExceptionDetails(exception, stack),
+          exceptionDetails: this.#buildExceptionDetails(
+            exception,
+            stack,
+            realm,
+            resultOwnership
+          ),
+          realmId: realm.id,
         };
       default:
         throw new lazy.error.UnsupportedOperationError(
@@ -143,12 +161,22 @@ class ScriptModule extends Module {
     }
   }
 
-  #cloneAsDebuggerObject(obj) {
-    // To use an object created in the priviledged Debugger compartment from the
-    // the content compartment, we need to first clone it into the target
-    // compartment and then retrieve the corresponding Debugger.Object wrapper.
-    const proxyObject = Cu.cloneInto(obj, this.messageHandler.window);
-    return this.#global.makeDebuggeeValue(proxyObject);
+  #getRealmFromSandboxName(sandboxName) {
+    if (sandboxName === null) {
+      return this.#defaultRealm;
+    }
+
+    if (this.#realms.has(sandboxName)) {
+      return this.#realms.get(sandboxName);
+    }
+
+    const realm = new lazy.WindowRealm(this.messageHandler.window, {
+      sandboxName,
+    });
+
+    this.#realms.set(sandboxName, realm);
+
+    return realm;
   }
 
   #toRawObject(maybeDebuggerObject) {
@@ -181,6 +209,12 @@ class ScriptModule extends Module {
    *     The arguments to pass to the function call.
    * @param {string} functionDeclaration
    *     The body of the function to call.
+   * @param {string=} realmId [not supported]
+   *     The id of the realm.
+   * @param {OwnershipModel} resultOwnership
+   *     The ownership model to use for the results of this evaluation.
+   * @param {string=} sandbox
+   *     The name of the sandbox.
    * @param {RemoteValue=} thisParameter
    *     The value of the this keyword for the function call.
    *
@@ -196,31 +230,48 @@ class ScriptModule extends Module {
       awaitPromise,
       commandArguments = null,
       functionDeclaration,
+      resultOwnership,
+      sandbox: sandboxName = null,
       thisParameter = null,
     } = options;
 
+    const realm = this.#getRealmFromSandboxName(sandboxName);
+
     const deserializedArguments =
-      commandArguments != null
-        ? commandArguments.map(a => lazy.deserialize(a))
+      commandArguments !== null
+        ? commandArguments.map(arg => lazy.deserialize(realm, arg))
         : [];
 
     const deserializedThis =
-      thisParameter != null ? lazy.deserialize(thisParameter) : null;
+      thisParameter !== null ? lazy.deserialize(realm, thisParameter) : null;
 
-    const expression = `(${functionDeclaration}).apply(__bidi_this, __bidi_args)`;
-
-    const rv = this.#global.executeInGlobalWithBindings(
-      expression,
-      {
-        __bidi_args: this.#cloneAsDebuggerObject(deserializedArguments),
-        __bidi_this: this.#cloneAsDebuggerObject(deserializedThis),
-      },
-      {
-        url: this.messageHandler.window.document.baseURI,
-      }
+    const rv = realm.executeInGlobalWithBindings(
+      functionDeclaration,
+      deserializedArguments,
+      deserializedThis
     );
 
-    return this.#buildReturnValue(rv, awaitPromise);
+    return this.#buildReturnValue(rv, realm, awaitPromise, resultOwnership);
+  }
+
+  /**
+   * Delete the provided handles from the realm corresponding to the provided
+   * sandbox name.
+   *
+   * @param {Object=} options
+   * @param {Array<string>} handles
+   *     Array of handle ids to disown.
+   * @param {string=} realmId [not supported]
+   *     The id of the realm.
+   * @param {string=} sandbox
+   *     The name of the sandbox.
+   */
+  disownHandles(options) {
+    const { handles, sandbox: sandboxName = null } = options;
+    const realm = this.#getRealmFromSandboxName(sandboxName);
+    for (const handle of handles) {
+      realm.removeObjectHandle(handle);
+    }
   }
 
   /**
@@ -232,6 +283,12 @@ class ScriptModule extends Module {
    *     expression to resolve, if this return value is a Promise.
    * @param {string} expression
    *     The expression to evaluate.
+   * @param {string=} realmId [not supported]
+   *     The id of the realm.
+   * @param {OwnershipModel} resultOwnership
+   *     The ownership model to use for the results of this evaluation.
+   * @param {string=} sandbox
+   *     The name of the sandbox.
    *
    * @return {Object}
    *     - evaluationStatus {EvaluationStatus} One of "normal", "throw".
@@ -241,12 +298,33 @@ class ScriptModule extends Module {
    *     RemoteValue if the evaluation status was "normal".
    */
   async evaluateExpression(options) {
-    const { awaitPromise, expression } = options;
-    const rv = this.#global.executeInGlobal(expression, {
-      url: this.messageHandler.window.document.baseURI,
-    });
+    const {
+      awaitPromise,
+      expression,
+      resultOwnership,
+      sandbox: sandboxName = null,
+    } = options;
 
-    return this.#buildReturnValue(rv, awaitPromise);
+    const realm = this.#getRealmFromSandboxName(sandboxName);
+    const rv = realm.executeInGlobal(expression);
+
+    return this.#buildReturnValue(rv, realm, awaitPromise, resultOwnership);
+  }
+
+  /**
+   * Get realms for the current window global.
+   *
+   * @return {Array<Object>}
+   *     - context {BrowsingContext} The browsing context, associated with the realm.
+   *     - id {string} The realm unique identifier.
+   *     - origin {string} The serialization of an origin.
+   *     - sandbox {string=} The name of the sandbox.
+   *     - type {RealmType.Window} The window realm type.
+   */
+  getWindowRealms() {
+    return [this.#defaultRealm, ...this.#realms.values()].map(realm =>
+      realm.getInfo()
+    );
   }
 }
 

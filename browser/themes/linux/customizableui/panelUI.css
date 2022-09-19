@@ -4,24 +4,8 @@
 
 @import "chrome://browser/skin/customizableui/panelUI-shared.css";
 
-#customizationui-widget-panel[viewId="PanelUI-profiler"][type="arrow"][side="top"],
-#customizationui-widget-panel[viewId="PanelUI-profiler"][type="arrow"][side="bottom"] {
-  margin-inline: -13px;
-}
-
-#customizationui-widget-panel[viewId="PanelUI-profiler"][type="arrow"][side="left"],
-#customizationui-widget-panel[viewId="PanelUI-profiler"][type="arrow"][side="right"] {
-  margin-block: -13px;
-}
-
 #notification-popup {
   margin-block: -4px;
-}
-
-#PlacesToolbar menupopup,
-#BMB_bookmarksPopup menupopup {
-  appearance: none;
-  background-color: transparent;
 }
 
 #BMB_bookmarksPopup menupopup {
@@ -30,21 +14,18 @@
 
 #PlacesToolbar menupopup {
   color: var(--arrowpanel-color);
-  padding: 5px 4px 4px;
-  margin-top: -4px;
+  --panel-background: var(--arrowpanel-background);
+  --panel-border-color: var(--arrowpanel-border-color);
 }
 
-#PlacesToolbar menupopup::part(content) {
-  box-shadow: 0 0 4px hsla(0, 0%, 0%, 0.2);
-  background: var(--arrowpanel-background);
-  border: 1px solid var(--arrowpanel-border-color);
-  margin-top: -1px
+menupopup::part(drop-indicator) {
+  /* To account for the shadow margin + border of the panel */
+  margin-inline-start: 5px;
 }
 
 /* Styled differently to allow for user interaction with menu separator */
 #PlacesToolbar menupopup[placespopup="true"] menuseparator {
   appearance: none !important;
-  -moz-default-appearance: menuseparator !important;
 }
 
 menuitem.subviewbutton {

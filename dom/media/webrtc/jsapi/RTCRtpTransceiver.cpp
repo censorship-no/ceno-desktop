@@ -128,10 +128,11 @@ struct ConduitControlState : public AudioConduitControlInterface,
 
 MOZ_MTLOG_MODULE("RTCRtpTransceiver")
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(RTCRtpTransceiver)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(RTCRtpTransceiver)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(RTCRtpTransceiver)
   if (tmp->mHandlingUnlink) {
     tmp->BreakCycles();
+    tmp->mHandlingUnlink = false;
   }
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -140,7 +141,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(RTCRtpTransceiver)
                                     mSender, mDtlsTransport,
                                     mLastStableDtlsTransport)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(RTCRtpTransceiver)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(RTCRtpTransceiver)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(RTCRtpTransceiver)

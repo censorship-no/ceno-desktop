@@ -44,7 +44,7 @@ search:
       description: Query parameters values for search engine configurations.
 urlbar:
   description: The Address Bar
-  owner: adw@mozilla.com
+  owner: search-and-suggest-program@mozilla.com
   hasExposure: true
   exposureDescription: >-
     The timing of the exposure event depends on the experiment, but generally
@@ -91,6 +91,10 @@ urlbar:
       type: boolean
       fallbackPref: browser.urlbar.merino.enabled
       description: Whether Merino is enabled as a quick suggest source
+    merinoEndpointURL:
+      type: string
+      fallbackPref: browser.urlbar.merino.endpointURL
+      description: The Merino endpoint URL, not including parameters.
     merinoTimeoutMs:
       type: int
       fallbackPref: browser.urlbar.merino.timeoutMs
@@ -293,12 +297,24 @@ pocketNewtab:
       description: >-
         A save to Pocket button inside the card, shown on the card thumbnail, on
         hover.
+    saveToPocketCardRegions:
+      type: string
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.saveToPocketCardRegions
+      description: >-
+        CSV string of regions that support the save to Pocket button inside the card.
     hideDescriptions:
       type: boolean
       fallbackPref: >-
         browser.newtabpage.activity-stream.discoverystream.hideDescriptions.enabled
       description: >-
         Hide or display descriptions for Pocket stories on newtab.
+    hideDescriptionsRegions:
+      type: string
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.hideDescriptionsRegions
+      description: >-
+        CSV string of regions that hide descriptions for Pocket stories on newtab.
     compactGrid:
       type: boolean
       fallbackPref: >-
@@ -386,10 +402,6 @@ saveToPocket:
   hasExposure: false
   isEarlyStartup: true
   variables:
-    layoutRefresh:
-      type: boolean
-      fallbackPref: extensions.pocket.refresh.layout.enabled
-      description: Enable the new Pocket panels.
     emailButton:
       type: boolean
       fallbackPref: extensions.pocket.refresh.emailButton.enabled
@@ -576,3 +588,41 @@ glean:
       type: "boolean"
       fallbackPref: "browser.newtabpage.ping.enabled"
       description: "Whether to submit the 'newtab' ping"
+majorRelease2022:
+  description: Major Release 2022
+  owner: firefoxview@mozilla.com
+  hasExposure: false
+  isEarlyStartup: true
+  variables:
+    feltPrivacyPBMDarkTheme:
+      type: boolean
+      fallbackPref: "browser.theme.dark-private-windows"
+      description: "Use dark theme variant for PBM windows. This is only supported if the theme sets darkTheme data."
+    feltPrivacyPBMNewIndicator:
+      type: boolean
+      fallbackPref: "browser.privatebrowsing.enable-new-indicator"
+      description: "Enables the new private browsing indicator."
+    feltPrivacyPBMNewLogo:
+      type: boolean
+      fallbackPref: "browser.privatebrowsing.enable-new-logo"
+      description: "Enables the new about:privatebrowsing logo."
+    feltPrivacyShowPreferencesSection:
+      type: boolean
+      fallbackPref: "browser.privacySegmentation.preferences.show"
+      description: "Controls visibility of the privacy segmentation preferences section."
+    feltPrivacyWindowSeparation:
+      type: boolean
+      fallbackPref: "browser.privateWindowSeparation.enabled"
+      description: "Whether or not private browsing windows use a separate icon in the Windows taskbar"
+    colorwayCloset:
+      type: boolean
+      fallbackPref: "browser.theme.colorway-closet"
+      description: "Whether or not to show the colorway closet modal"
+    firefoxView:
+      type: boolean
+      fallbackPref: "browser.tabs.firefox-view"
+      description: "Whether or not to show the firefox view tab"
+    onboarding:
+      type: boolean
+      fallbackPref: "browser.majorrelease.onboarding"
+      description: "Whether or not to use the MR2022 onboarding settings."

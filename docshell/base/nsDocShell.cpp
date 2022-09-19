@@ -931,6 +931,19 @@ StopDetector::GetStatus(nsresult* aStatus) {
   return NS_OK;
 }
 
+NS_IMETHODIMP StopDetector::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP StopDetector::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP StopDetector::CancelWithReason(nsresult aStatus,
+                                             const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
+}
+
 NS_IMETHODIMP
 StopDetector::Cancel(nsresult aStatus) {
   mCanceled = true;
@@ -4101,6 +4114,7 @@ nsDocShell::Reload(uint32_t aReloadFlags) {
     if (!XRE_IsParentProcess()) {
       RefPtr<nsDocShell> docShell(this);
       nsCOMPtr<nsIContentViewer> cv(mContentViewer);
+      NS_ENSURE_STATE(cv);
 
       bool okToUnload = true;
       MOZ_TRY(cv->PermitUnload(&okToUnload));
@@ -6756,6 +6770,8 @@ nsresult nsDocShell::CreateAboutBlankContentViewer(
       // Copy our sandbox flags to the document. These are immutable
       // after being set here.
       blankDoc->SetSandboxFlags(sandboxFlags);
+
+      blankDoc->InitFeaturePolicy();
 
       // create a content viewer for us and the new document
       docFactory->CreateInstanceForDocument(
@@ -13284,7 +13300,8 @@ nsDocShell::ResumeRedirectedLoad(uint64_t aIdentifier, int32_t aHistoryIndex) {
                        nsDOMNavigationTiming* aTiming) {
         MOZ_ASSERT(aLoadState->GetPendingRedirectedChannel());
         if (NS_WARN_IF(self->mIsBeingDestroyed)) {
-          aLoadState->GetPendingRedirectedChannel()->Cancel(NS_BINDING_ABORTED);
+          aLoadState->GetPendingRedirectedChannel()->CancelWithReason(
+              NS_BINDING_ABORTED, "nsDocShell::mIsBeingDestroyed"_ns);
           return NS_BINDING_ABORTED;
         }
 

@@ -3300,6 +3300,23 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "animation-composition": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-composition"
+    ],
+    "supports": [],
+    "values": [
+      "accumulate",
+      "add",
+      "inherit",
+      "initial",
+      "replace",
+      "revert",
+      "revert-layer",
+      "unset"
+    ]
+  },
   "animation-delay": {
     "isInherited": false,
     "subproperties": [
@@ -11755,10 +11772,6 @@ exports.PREFERENCES = [
   [
     "scrollbar-gutter",
     "layout.css.scrollbar-gutter.enabled"
-  ],
-  [
-    "-webkit-line-clamp",
-    "layout.css.webkit-line-clamp.enabled"
   ],
   [
     "overflow-clip-box-block",

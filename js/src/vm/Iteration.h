@@ -16,10 +16,11 @@
 
 #include "builtin/SelfHostingDefines.h"
 #include "gc/Barrier.h"
-#include "vm/Stack.h"
+#include "vm/NativeObject.h"
 
 namespace js {
 
+class ArrayObject;
 class PlainObject;
 class PropertyIteratorObject;
 
@@ -547,6 +548,9 @@ class IteratorHelperObject : public NativeObject {
 };
 
 IteratorHelperObject* NewIteratorHelper(JSContext* cx);
+
+bool IterableToArray(JSContext* cx, HandleValue iterable,
+                     MutableHandle<ArrayObject*> array);
 
 } /* namespace js */
 

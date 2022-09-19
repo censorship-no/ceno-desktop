@@ -346,15 +346,17 @@ class PresShell final : public nsStubDocumentObserver,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult Initialize();
 
   /**
-   * Reflow the frame model into a new width and height.  The
+   * Schedule a reflow for the frame model into a new width and height.  The
    * coordinates for aWidth and aHeight must be in standard nscoord's.
+   *
+   * Returns whether layout might have changed.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult
-  ResizeReflow(nscoord aWidth, nscoord aHeight,
-               ResizeReflowOptions = ResizeReflowOptions::NoOption);
-  MOZ_CAN_RUN_SCRIPT nsresult ResizeReflowIgnoreOverride(nscoord aWidth,
-                                                         nscoord aHeight,
-                                                         ResizeReflowOptions);
+  MOZ_CAN_RUN_SCRIPT void ResizeReflow(
+      nscoord aWidth, nscoord aHeight,
+      ResizeReflowOptions = ResizeReflowOptions::NoOption);
+  MOZ_CAN_RUN_SCRIPT bool ResizeReflowIgnoreOverride(
+      nscoord aWidth, nscoord aHeight,
+      ResizeReflowOptions = ResizeReflowOptions::NoOption);
 
   /**
    * Add this pres shell to the refresh driver to be observed for resize
@@ -382,9 +384,16 @@ class PresShell final : public nsStubDocumentObserver,
    * This is what ResizeReflowIgnoreOverride does when not shrink-wrapping (that
    * is, when ResizeReflowOptions::BSizeLimit is not specified).
    */
-  void SimpleResizeReflow(nscoord aWidth, nscoord aHeight, ResizeReflowOptions);
+  bool SimpleResizeReflow(nscoord aWidth, nscoord aHeight);
 
  public:
+  /**
+   * Updates pending layout, assuming reasonable (up-to-date, or mid-update for
+   * container queries) styling of the page. Returns whether a reflow did not
+   * get interrupted (and thus layout should be considered fully up-to-date).
+   */
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool DoFlushLayout(bool aInterruptible);
+
   /**
    * Note that the assumptions that determine whether we need a mobile viewport
    * manager may have changed.
@@ -1154,6 +1163,7 @@ class PresShell final : public nsStubDocumentObserver,
   bool HasHandledUserInput() const { return mHasHandledUserInput; }
 
   MOZ_CAN_RUN_SCRIPT void FireResizeEvent();
+  MOZ_CAN_RUN_SCRIPT void FireResizeEventSync();
 
   void NativeAnonymousContentRemoved(nsIContent* aAnonContent);
 
@@ -1260,6 +1270,11 @@ class PresShell final : public nsStubDocumentObserver,
   NS_IMETHOD RepaintSelection(RawSelectionType aRawSelectionType) override;
   void SelectionWillTakeFocus() override;
   void SelectionWillLoseFocus() override;
+
+  // Implements the "focus fix-up rule". Returns true if the focus moved (in
+  // which case we might need to update layout again).
+  // See https://github.com/whatwg/html/issues/8225
+  MOZ_CAN_RUN_SCRIPT bool FixUpFocus();
 
   /**
    * Set a "resolution" for the document, which if not 1.0 will
@@ -1730,6 +1745,18 @@ class PresShell final : public nsStubDocumentObserver,
   void NotifyDestroyingFrame(nsIFrame* aFrame);
 
   bool GetZoomableByAPZ() const;
+
+  /**
+   * If this frame has content hidden via `content-visibilty` that has a pending
+   * reflow, force the content to reflow immediately.
+   */
+  void EnsureReflowIfFrameHasHiddenContent(nsIFrame*);
+
+  /**
+   * Whether or not this presshell is  is forcing a reflow of hidden content in
+   * this frame via EnsureReflowIfFrameHasHiddenContent().
+   */
+  bool IsForcingLayoutForHiddenContent(const nsIFrame*) const;
 
  private:
   ~PresShell();
@@ -2989,6 +3016,8 @@ class PresShell final : public nsStubDocumentObserver,
   nsTHashSet<nsIScrollableFrame*> mPendingScrollAnchorSelection;
   nsTHashSet<nsIScrollableFrame*> mPendingScrollAnchorAdjustment;
   nsTHashSet<nsIScrollableFrame*> mPendingScrollResnap;
+
+  nsTHashSet<nsIContent*> mHiddenContentInForcedLayout;
 
   nsCallbackEventRequest* mFirstCallbackEventRequest = nullptr;
   nsCallbackEventRequest* mLastCallbackEventRequest = nullptr;

@@ -567,9 +567,12 @@ void nsAccessibilityService::ContentRemoved(PresShell* aPresShell,
 void nsAccessibilityService::TableLayoutGuessMaybeChanged(
     PresShell* aPresShell, nsIContent* aContent) {
   if (DocAccessible* document = GetDocAccessible(aPresShell)) {
-    if (LocalAccessible* accessible = document->GetAccessible(aContent)) {
-      document->FireDelayedEvent(
-          nsIAccessibleEvent::EVENT_TABLE_STYLING_CHANGED, accessible);
+    if (LocalAccessible* acc = document->GetAccessible(aContent)) {
+      if (LocalAccessible* table = nsAccUtils::TableFor(acc)) {
+        document->FireDelayedEvent(
+            nsIAccessibleEvent::EVENT_TABLE_STYLING_CHANGED, table);
+        document->QueueCacheUpdate(table, CacheDomain::Table);
+      }
     }
   }
 }

@@ -149,8 +149,8 @@ GPUParent* GPUParent::GetSingleton() {
 #endif
 }
 
-bool GPUParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
-                     mozilla::ipc::ScopedPort aPort) {
+bool GPUParent::Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
+                     const char* aParentBuildID) {
   // Initialize the thread manager before starting IPC. Otherwise, messages
   // may be posted to the main thread and we won't be able to process them.
   if (NS_WARN_IF(NS_FAILED(nsThreadManager::get().Init()))) {
@@ -158,7 +158,7 @@ bool GPUParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
   }
 
   // Now it's safe to start IPC.
-  if (NS_WARN_IF(!Open(std::move(aPort), aParentPid))) {
+  if (NS_WARN_IF(!aEndpoint.Bind(this))) {
     return false;
   }
 
@@ -431,8 +431,13 @@ mozilla::ipc::IPCResult GPUParent::RecvInitImageBridge(
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvInitVideoBridge(
-    Endpoint<PVideoBridgeParent>&& aEndpoint) {
-  VideoBridgeParent::Open(std::move(aEndpoint), VideoBridgeSource::RddProcess);
+    Endpoint<PVideoBridgeParent>&& aEndpoint,
+    const layers::VideoBridgeSource& aSource) {
+  // For GPU decoding, the video bridge would be opened in
+  // `VideoBridgeChild::StartupForGPUProcess`.
+  MOZ_ASSERT(aSource == layers::VideoBridgeSource::RddProcess ||
+             aSource == layers::VideoBridgeSource::MFMediaEngineCDMProcess);
+  VideoBridgeParent::Open(std::move(aEndpoint), aSource);
   return IPC_OK();
 }
 
@@ -691,8 +696,8 @@ void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
         // This could be running on either the Compositor or the Renderer
         // thread.
         CanvasManagerParent::Shutdown();
-        RemoteTextureMap::Shutdown();
         CompositorThreadHolder::Shutdown();
+        RemoteTextureMap::Shutdown();
         // There is a case that RenderThread exists when gfxVars::UseWebRender()
         // is false. This could happen when WebRender was fallbacked to
         // compositor.

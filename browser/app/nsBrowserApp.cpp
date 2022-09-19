@@ -10,6 +10,7 @@
 #include "mozilla/Bootstrap.h"
 #include "mozilla/ProcessType.h"
 #include "mozilla/RuntimeExceptionModule.h"
+#include "mozilla/ScopeExit.h"
 #include "BrowserDefines.h"
 #if defined(XP_WIN)
 #  include <windows.h>
@@ -208,14 +209,11 @@ static int do_main(int argc, char* argv[], char* envp[]) {
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   sandbox::BrokerServices* brokerServices =
       sandboxing::GetInitializedBrokerServices();
-  sandboxing::PermissionsService* permissionsService =
-      sandboxing::GetPermissionsService();
   if (!brokerServices) {
     Output("Couldn't initialize the broker services.\n");
     return 255;
   }
   config.sandboxBrokerServices = brokerServices;
-  config.sandboxPermissionsService = permissionsService;
 #endif
 
 #ifdef LIBFUZZER
@@ -291,6 +289,11 @@ int main(int argc, char* argv[], char* envp[]) {
 
   AUTO_BASE_PROFILER_INIT;
   AUTO_BASE_PROFILER_LABEL("nsBrowserApp main", OTHER);
+
+  // Make sure we unregister the runtime exception module before returning.
+  // We do this here to cover both registers for child and main processes.
+  auto unregisterRuntimeExceptionModule =
+      MakeScopeExit([] { CrashReporter::UnregisterRuntimeExceptionModule(); });
 
 #ifdef MOZ_BROWSER_CAN_BE_CONTENTPROC
   // We are launching as a content process, delegate to the appropriate

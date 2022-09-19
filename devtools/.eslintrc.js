@@ -23,23 +23,11 @@ module.exports = {
     },
     {
       files: [
-        "client/shared/*.jsm",
         // Allow non-camelcase so that run_test doesn't produce a warning.
         "**/test*/**/*",
       ],
       rules: {
         camelcase: "off",
-      },
-    },
-    {
-      files: [
-        "client/framework/**",
-        "client/shared/*.jsm",
-        "client/shared/widgets/*.jsm",
-        "client/storage/VariablesView.jsm",
-      ],
-      rules: {
-        "consistent-return": "off",
       },
     },
     {
@@ -49,13 +37,7 @@ module.exports = {
       },
     },
     {
-      files: [
-        "client/framework/**",
-        "client/shared/*.jsm",
-        "client/shared/widgets/*.jsm",
-        "client/storage/VariablesView.jsm",
-        "shared/webconsole/test/chrome/*.html",
-      ],
+      files: ["client/framework/**", "shared/webconsole/test/chrome/*.html"],
       rules: {
         "mozilla/no-aArgs": "off",
       },
@@ -67,11 +49,7 @@ module.exports = {
       },
     },
     {
-      files: [
-        "client/framework/**",
-        "client/shared/widgets/*.jsm",
-        "client/storage/VariablesView.jsm",
-      ],
+      files: ["client/framework/**"],
       rules: {
         "no-shadow": "off",
       },

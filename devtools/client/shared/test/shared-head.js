@@ -60,7 +60,6 @@ const { loader, require } = ChromeUtils.import(
 // and so it loaded first before anything else and isn't having access to Services global.
 // Whereas many head.js files from mochitest import this file via loadSubScript
 // and already expose Services as a global.
-var Services = this.Services || require("Services");
 
 const { gDevTools } = require("devtools/client/framework/devtools");
 const {
@@ -330,9 +329,6 @@ function highlighterTestActorBootstrap() {
     "resource://devtools/shared/loader/Loader.jsm"
   );
   _require(HIGHLIGHTER_TEST_ACTOR_URL);
-
-  /* eslint-disable-next-line no-shadow */
-  const Services = _require("Services");
 
   const actorRegistryObserver = subject => {
     const actorRegistry = subject.wrappedJSObject;
@@ -1516,8 +1512,13 @@ function colorAt(image, x, y) {
 let allDownloads = [];
 /**
  * Returns a Promise that resolves when a new screenshot is available in the download folder.
+ *
+ * @param {Object} [options]
+ * @param {Boolean} options.isWindowPrivate: Set to true if the window from which the screenshot
+ *                  is taken is a private window. This will ensure that we check that the
+ *                  screenshot appears in the private window, not the non-private one (See Bug 1783373)
  */
-async function waitUntilScreenshot() {
+async function waitUntilScreenshot({ isWindowPrivate = false } = {}) {
   const { Downloads } = require("resource://gre/modules/Downloads.jsm");
   const list = await Downloads.getList(Downloads.ALL);
 
@@ -1528,6 +1529,14 @@ async function waitUntilScreenshot() {
         if (allDownloads.includes(download)) {
           return;
         }
+
+        is(
+          !!download.source.isPrivate,
+          isWindowPrivate,
+          `The download occured in the expected${
+            isWindowPrivate ? " private" : ""
+          } window`
+        );
 
         allDownloads.push(download);
         resolve(download.target.path);
@@ -1545,10 +1554,10 @@ async function waitUntilScreenshot() {
 async function resetDownloads() {
   info("Reset downloads");
   const { Downloads } = require("resource://gre/modules/Downloads.jsm");
-  const publicList = await Downloads.getList(Downloads.PUBLIC);
-  const downloads = await publicList.getAll();
+  const downloadList = await Downloads.getList(Downloads.ALL);
+  const downloads = await downloadList.getAll();
   for (const download of downloads) {
-    publicList.remove(download);
+    downloadList.remove(download);
     await download.finalize(true);
   }
   allDownloads = [];

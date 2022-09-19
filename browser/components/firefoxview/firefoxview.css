@@ -6,14 +6,13 @@
 :root {
   --content-area-padding-inline: 24px;
   --content-area-padding-block: 16px;
-  --sidebar-width: 200px;
   --header-spacing: 40px;
   --footer-spacing: 80px;
   --card-border-zap-gradient: linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%);
 
+  --success-fill-color: #2AC3A2;
   --success-background-color: #87FFD1;
-  --success-border-color: #2AC3A2;
-  --success-color: #15141A;
+  --success-box-text-color: #15141A;
 
   --colorways-figure-size: 225px;
   --colorways-grid-template-areas:
@@ -36,6 +35,7 @@
   --colorways-no-collection-notice-justify-content: center;
   --colorways-no-collection-notice-margin: 0;
   --colorways-no-collection-notice-width: auto;
+  --colorways-no-collection-notice-text-color: #FFF;
 
   --info-icon-background-color: #0090ED;
 }
@@ -56,6 +56,11 @@ body {
   --fxview-text-secondary-color: color-mix(in srgb, currentColor 80%, transparent);
   --newtab-background-color-secondary: #FFF;
   --colorways-no-collection-notice-bg-color: transparent;
+
+  /* ensure utility button hover states match those of the rest of the page */
+  --in-content-button-background-hover: var(--fxview-element-hover-color);
+  --in-content-button-background-active: var(--fxview-element-active-color);
+
   display: flex;
   justify-content: center;
   padding-block: var(--header-spacing) var(--footer-spacing);
@@ -66,15 +71,17 @@ body {
   color: var(--newtab-text-primary-color);
 }
 
-body[lwt-newtab-brighttext] {
-  --fxview-element-hover-color: color-mix(in srgb, var(--fxview-background-color) 80%, white);
-  --fxview-element-active-color: color-mix(in srgb, var(--fxview-background-color) 60%, white);
-  --newtab-background-color-secondary: #42414d;
+@media (prefers-color-scheme: dark) {
+  body {
+    --fxview-element-hover-color: color-mix(in srgb, var(--fxview-background-color) 80%, white);
+    --fxview-element-active-color: color-mix(in srgb, var(--fxview-background-color) 60%, white);
+    --newtab-background-color-secondary: #42414d;
+  }
 }
 
 h1 {
   color: var(--newtab-text-primary-color);
-  font-weight: 500;
+  font-weight: 600;
   font-size: 1.5em;
 }
 
@@ -84,16 +91,17 @@ h1 {
 }
 
 body > nav {
-  flex: 0 0 var(--sidebar-width);
+  flex: 0 0 auto;
 }
 
 body > main {
   flex: 1 1 auto;
   display: grid;
   grid-template-columns: 2fr 1fr;
+  grid-template-rows: max-content 1fr;
 }
 
-body > main > section {
+body > main > details {
   grid-column: 1;
 }
 
@@ -105,7 +113,6 @@ body > main > aside {
 @media (max-width: 76rem) {
   :host,
   :root {
-    --sidebar-width: 40px;
     --content-area-padding-inline: 12px;
   }
   .brand-logo > .brand-feature-name {
@@ -117,7 +124,7 @@ body > main > aside {
   body {
     --colorways-no-collection-notice-bg-color: var(--newtab-background-color-secondary);
   }
-  body > main > section,
+  body > main > details,
   body > main > aside {
     grid-column: 1 / -1;
     grid-row: auto;
@@ -140,6 +147,7 @@ body > main > aside {
     --colorways-no-collection-notice-justify-content: flex-start;
     --colorways-no-collection-notice-margin: 1px;
     --colorways-no-collection-notice-width: 100%;
+    --colorways-no-collection-notice-text-color: inherit;
   }
 }
 
@@ -171,7 +179,8 @@ body > main > aside {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 1.5em;
+  font-size: 1.75em;
+  white-space: nowrap;
 }
 
 .brand-logo > .brand-icon {
@@ -185,6 +194,7 @@ body > main > aside {
 .brand-logo > .brand-feature-name {
   margin-inline-start: 8px;
   flex: 1 1 auto;
+  font-weight: 600;
 }
 
 #colorways {
@@ -238,6 +248,7 @@ body > main > aside {
   align-items: center;
   font-size: 2em;
   background-color: var(--colorways-no-collection-notice-bg-color);
+  color: var(--colorways-no-collection-notice-text-color);
 }
 
 #no-current-colorway-collection-notice,
@@ -259,16 +270,14 @@ body > main > aside {
   margin-top: 0.3em;
   margin-inline-end: 0.5em;
   padding: 0;
-  font-size: 1.8em;
-  font-weight: bold;
 }
 
 #colorways-collection-expiry-date {
   display: inline-block;
-  background: linear-gradient(to right, purple, pink, orange);
+  background: var(--card-border-zap-gradient);
   background-origin: border-box;
+  border: 1px solid transparent;
   border-radius: 1.5em;
-  padding: 1px;
   margin: 0.8em 0;
 }
 
@@ -299,6 +308,18 @@ body > main > aside {
   display: none !important;
 }
 
+button.ghost-button,
+button.ghost-button:not(.semi-transparent):enabled:is(:hover, :active) {
+  color: inherit;
+}
+
+@media (prefers-contrast) {
+  button.ghost-button:not(.semi-transparent):enabled:is(:hover, :active) {
+    background-color: ButtonText;
+    color: ButtonFace;
+  }
+}
+
 button.primary {
   white-space: nowrap;
   min-width: fit-content;
@@ -311,7 +332,7 @@ button.close {
 }
 
 .card,
-.synced-tab-li,
+.synced-tab-a,
 .synced-tab-li-placeholder,
 .empty-container {
   background-color: var(--newtab-background-color-secondary);
@@ -336,19 +357,34 @@ button.close {
 }
 
 .placeholder-content {
+  color: var(--fxview-text-secondary-color);
   text-align: center;
   padding: 24px 16px;
 }
 
 .page-section-header {
+  column-gap: 16px;
+  cursor: pointer;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   grid-template-rows: 1fr auto;
-  column-gap: 16px;
-
   grid-template-areas:
       "head head head head head head head twisty"
       "desc desc desc desc desc desc desc desc";
+  list-style-type: none;
+  padding-inline-start: 8px;
+}
+
+@media (prefers-contrast) {
+  .page-section-header {
+    color: ButtonText;
+    background-color: ButtonFace;
+  }
+  .page-section-header:focus-visible {
+    box-shadow: none;
+    outline: var(--in-content-focus-outline);
+    outline-offset: var(--in-content-focus-outline-offset);
+  }
 }
 
 .page-section-header > h1 {
@@ -357,16 +393,64 @@ button.close {
   padding-block: 4px;
 }
 
+/* the twisty is just an ornament; the whole summary parent node is clickable */
 .page-section-header > .twisty {
+  background-image: url("chrome://global/skin/icons/arrow-down.svg");
+  display: inline-block;
   grid-area: twisty;
+  align-self: center;
   justify-self: end;
+  padding-block: 4px;
+  padding-inline: 8px;
+  fill: currentColor;
+  border-radius: 4px;
   margin-block: 0;
-  min-width: 32px;
-  padding-inline: 7px;
+  margin-inline-end: 4px;
+}
+
+@media (prefers-contrast) {
+  .page-section-header > .twisty {
+    border: 1px solid currentColor;
+  }
+}
+
+details[open] > .page-section-header > .twisty {
+  background-image: url("chrome://global/skin/icons/arrow-up.svg");
+}
+
+.page-section-header:hover > .twisty {
+  background-color: var(--fxview-element-hover-color);
+}
+
+.page-section-header:hover:active > .twisty {
+  background-color: var(--fxview-element-active-color);
 }
 
 .page-section-header > .section-description {
   grid-area: desc;
+}
+
+.card-body {
+  display: flex;
+  flex-grow: 1;
+  align-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+@media only screen and (max-width: 45rem) {
+  .card-body {
+    flex-wrap: wrap;
+  }
+}
+
+.card-body > button.primary {
+  margin-inline-start: 0;
+  z-index: 1;
+}
+
+.card-body > .step-content,
+.zap-card > button.close {
+  z-index: 1;
 }
 
 .setup-step {
@@ -378,15 +462,14 @@ button.close {
 .zap-card {
   border: none;
   position: relative;
-  z-index: 0;
 }
 .zap-card::before {
   content: "";
   position: absolute;
-  z-index: -1;
   inset: 0;
-  padding: 1px; /* the "border" thickness */
+  border: 1px solid transparent;
   border-radius: 4px;
+  background-origin: border-box;
   background-image: var(--card-border-zap-gradient);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
@@ -396,15 +479,11 @@ button.close {
   margin-block: 0 8px;
 }
 
-.setup-step > .step-body {
-  display: flex;
-  align-content: space-between;
-  align-items: center;
+.setup-step > .card-body {
   margin-block: 8px;
   padding-block: 8px;
 }
-
-.setup-step > .step-body > .step-content {
+.setup-step > .card-body > .step-content {
   flex: 1 1 auto;
 }
 
@@ -414,13 +493,33 @@ button.close {
   margin-block: 0 8px;
 }
 
-.setup-step > footer > progress {
+.step-progress {
+  background-color: #E0E0E6;
+  border-radius: 8px;
+  border-style: none;
+  height: 8px;
   margin-block: 0 8px;
+  margin-inline: 0 2px;
+}
+
+.step-progress::-moz-progress-bar {
+  background-color: var(--success-fill-color);
+  border-radius: 8px;
+}
+
+@media (prefers-contrast) {
+  .step-progress {
+    background-color: SelectedItem;
+    border: 1px solid SelectedItemText;
+  }
+
+  .step-progress::-moz-progress-bar {
+    background-color: SelectedItemText;
+  }
 }
 
 .message-box {
   display: flex;
-  align-content: space-between;
   align-items: center;
   margin-block: 8px;
   gap: 8px;
@@ -441,8 +540,8 @@ button.close {
 
 .confirmation-message-box {
   background-color: var(--success-background-color);
-  color: var(--success-color);
-  border-color: var(--success-border-color);
+  color: var(--success-box-text-color);
+  border-color: var(--success-fill-color);
 }
 .confirmation-message-box > .message-content {
   text-align: center;
@@ -451,9 +550,21 @@ button.close {
   font-size: inherit;
   display: inline;
 }
+/* ensure we get the local color values as container doesnt change color with theme */
 .confirmation-message-box > .icon-button {
-  /* ensure we get the local color value as container doesnt change color with theme */
   color: inherit;
+}
+.confirmation-message-box > button.icon-button:enabled:is(:hover, :active) {
+  background-color: color-mix(in srgb, var(--success-background-color) 90%, currentColor);
+}
+@media (prefers-contrast) {
+  .confirmation-message-box > button.icon-button {
+    border-color: ButtonText;
+  }
+  .confirmation-message-box > button.icon-button:enabled:is(:hover, :active) {
+    background-color: ButtonText;
+    color: ButtonFace;
+  }
 }
 
 /* 117px is the total height of the collapsible-tabs-container; setting that size
@@ -483,61 +594,97 @@ button.close {
 
 .closed-tabs-list {
   padding-inline-start: 0;
+  display: grid;
+  grid-template-columns: min-content repeat(5, 1fr) min-content;
+  column-gap: 8px;
+  row-gap: 8px;
 }
 
 .closed-tab-li {
   display: grid;
-  grid-template-columns: min-content repeat(8, 1fr);
-  column-gap: 16px;
+  grid-template-columns: subgrid;
+  grid-column: span 7;
   padding: 8px;
   cursor: pointer;
+  align-items: center;
 }
 
-.closed-tab-li:hover,
-.ghost-button:hover {
-  background-color: var(--fxview-element-hover-color) !important;
+@media (prefers-contrast) {
+  .closed-tab-li {
+    color: ButtonText;
+    border-radius: 4px;
+    border: 1px solid ButtonText;
+  }
 }
 
-.ghost-button:active,
+.closed-tab-li:hover {
+  background-color: var(--fxview-element-hover-color);
+}
+
 .closed-tab-li:active {
-  background-color: var(--fxview-element-active-color) !important;
+  background-color: var(--fxview-element-active-color);
+}
+
+.closed-tab-li:focus-visible {
+  box-shadow: none;
+  outline: var(--in-content-focus-outline);
+  outline-offset: var(--in-content-focus-outline-offset);
+  border-radius: 4px;
 }
 
 .closed-tab-li-title {
-  grid-column: span 5;
-  padding-inline-start: 2px;
+  grid-column: span 3;
+  padding-inline-start: 10px;
   font-weight: 500;
 }
 
 .closed-tab-li-url {
   grid-column: span 2;
+  padding-inline-start: 8px;
   text-decoration-line: underline;
 }
 
 .closed-tab-li-time {
+  white-space: nowrap;
   text-align: end;
+}
+
+.synced-tab-a,
+.synced-tab-a:hover,
+.synced-tab-a:active,
+.synced-tab-a:hover:active,
+.synced-tab-a:visited {
+  color: inherit;
+  text-decoration: none;
+  height: 100%;
+}
+
+@media (prefers-contrast) {
+  .synced-tab-a:focus-visible {
+    box-shadow: none;
+    outline: var(--in-content-focus-outline);
+    outline-offset: var(--in-content-focus-outline-offset);
+  }
 }
 
 .closed-tab-li-url,
 .closed-tab-li-time,
 .synced-tab-li-device,
 .synced-tab-li-url,
-.synced-tab-li-time,
-.synced-tab-li-url-device {
+.synced-tab-li-time {
   font-weight: 400;
   color: var(--fxview-text-secondary-color);
 }
 
 .closed-tab-li-title,
 .closed-tab-li-url,
-.synced-tab-li:not(:first-child) > .synced-tab-li-title,
-.synced-tab-li-device,
-.synced-tab-li-url-device {
+.synced-tab-li:not(:first-child) > .synced-tab-a > .synced-tab-li-title,
+.synced-tab-li-device {
   overflow: hidden;
 }
 
 .closed-tab-li-title,
-.synced-tab-li:not(:first-child) > .synced-tab-li-title,
+.synced-tab-li:not(:first-child) > .synced-tab-a > .synced-tab-li-title,
 .synced-tab-li-device {
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -561,35 +708,37 @@ button.close {
       "first third";
 }
 
-.synced-tab-li,
+.synced-tab-a,
 .synced-tab-li-placeholder {
   box-sizing: border-box;
   border-radius: 4px;
   padding: 10px;
   display: grid;
   grid-template-columns: min-content repeat(2, 1fr) minmax(min-content, auto);
-  grid-template-rows: auto auto;
+  grid-template-rows: auto;
   grid-template-areas:
-  "favicon title title title"
-  "favicon url-device url-device time"
+    "favicon title title title"
+    "favicon domain domain domain"
+    "favicon device device time"
 }
 
-.synced-tab-li:hover {
+.synced-tab-a:hover {
   box-shadow: 0px 2px 14px var(--fxview-contrast-border);
-  cursor: pointer;
 }
 
-.synced-tab-li:not(:first-child) {
+.synced-tab-li:not(:first-child) > .synced-tab-a {
   align-content: center;
 }
 
 @media only screen and (max-width: 60rem) {
-  .synced-tab-li {
+  .synced-tab-li > .synced-tab-a,
+  .synced-tab-li-placeholder {
     grid-template-areas:
-    "favicon title title title"
-    "favicon url-device url-device url-device"
+      "favicon title title title"
+      "favicon domain domain domain"
+      "favicon device device device"
   }
-  .synced-tab-li:not(:first-child) > .synced-tab-li-time {
+  .synced-tab-li:not(:first-child) > .synced-tab-a > .synced-tab-li-time {
     display: none;
   }
 }
@@ -613,7 +762,7 @@ button.close {
 }
 
 .li-placeholder-domain {
-  grid-area: url-device;
+  grid-area: domain;
   height: 8px;
   width: 100%;
 }
@@ -627,15 +776,18 @@ button.close {
 }
 
 .synced-tab-li:first-child {
-  padding-top: 20px;
   grid-area: first;
+}
+
+.synced-tab-li:first-child > .synced-tab-a {
+  padding-top: 20px;
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: auto;
   grid-template-areas:
-  "favicon favicon badge badge"
-  "title title title title"
-  "domain domain domain time"
-  "device device device time";
+    "favicon badge badge badge"
+    "title title title title"
+    "domain domain domain domain"
+    "device device device time";
 }
 
 .synced-tab-li:nth-child(2) {
@@ -648,18 +800,22 @@ button.close {
 
 .synced-tab-li-url,
 .synced-tab-li-device,
-.synced-tab-li-time,
-.synced-tab-li:not(:first-child) > .synced-tab-li-title {
+.synced-tab-li:not(:first-child) > .synced-tab-a > .synced-tab-li-title {
   font-size: .85em;
+}
+
+.synced-tab-li-time {
+  font-size: .75em;
 }
 
 .synced-tab-li-url {
   text-decoration-line: underline;
+  grid-area: domain;
+  align-self: end;
 }
 
-.synced-tab-li:first-child > .synced-tab-li-url {
-  align-self: end;
-  grid-area: domain;
+.synced-tab-li:not(:first-child) > .synced-tab-a > .synced-tab-li-url {
+  margin-top: 4px;
 }
 
 .synced-tab-li-title {
@@ -667,22 +823,17 @@ button.close {
   font-weight: 500;
 }
 
-.synced-tab-li:first-child > .synced-tab-li-title {
+.synced-tab-li:first-child > .synced-tab-a > .synced-tab-li-title {
   color: inherit;
   padding-top: 5px;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  height: 2.5em;
+  align-self: start;
 }
 
-.synced-tab-li-url-device {
-  grid-area: url-device;
-  padding-top: 4px
-}
-
-.synced-tab-li:first-child > .synced-tab-li-device {
+.synced-tab-li-device {
   grid-area: device;
   margin-top: 5px;
 }
@@ -691,9 +842,10 @@ button.close {
   grid-area: time;
   justify-self: end;
   align-self: end;
+  white-space: nowrap;
 }
 
-.synced-tab-li:first-child > .synced-tab-li-time {
+.synced-tab-li:first-child > .synced-tab-a > .synced-tab-li-time {
   align-self: center;
 }
 
@@ -713,15 +865,6 @@ button.close {
   display: inline-block;
   -moz-context-properties: fill;
   fill: currentColor;
-}
-
-/* the ordering of these two arrow icons is important for the toggleContainer to work correctly */
-.arrow-up {
-  background-image: url("chrome://global/skin/icons/arrow-up.svg");
-}
-
-.arrow-down {
-  background-image: url("chrome://global/skin/icons/arrow-down.svg");
 }
 
 .history {
@@ -787,26 +930,25 @@ button.close {
 
 .last-active-badge {
   height: 1.25em;
-  width: 6em;
   background-color: #E3FFF3;
   grid-area: badge;
   border-radius: 2em;
   justify-self: end;
   text-align: center;
-  padding-bottom: 5px;
+  padding: 0.3em 1em;
+  font-size: 0.75em;
 }
 
 .dot {
   height: 8px;
   width: 8px;
-  background-color: #2AC3A2;
+  background-color: var(--success-fill-color);
   border-radius: 50%;
   display: inline-block;
 }
 
 .badge-text {
   font-weight: 400;
-  font-size: .75em;
   letter-spacing: 0.02em;
   margin-inline-start: 4px;
   color: #000000;

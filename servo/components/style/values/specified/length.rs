@@ -19,7 +19,7 @@ use crate::values::generics::NonNegative;
 use crate::values::specified::calc::{self, CalcNode};
 use crate::values::specified::NonNegativeNumber;
 use crate::values::CSSFloat;
-use crate::Zero;
+use crate::{Zero, ZeroNoPercent};
 use app_units::Au;
 use cssparser::{Parser, Token};
 use std::cmp;
@@ -91,25 +91,23 @@ impl FontBaseSize {
 impl FontRelativeLength {
     /// Return true if this is a zero value.
     fn is_zero(&self) -> bool {
+        self.unitless_value() == 0.
+    }
+
+    /// Return the unitless, raw value.
+    fn unitless_value(&self) -> CSSFloat {
         match *self {
             FontRelativeLength::Em(v) |
             FontRelativeLength::Ex(v) |
             FontRelativeLength::Ch(v) |
             FontRelativeLength::Cap(v) |
             FontRelativeLength::Ic(v) |
-            FontRelativeLength::Rem(v) => v == 0.,
+            FontRelativeLength::Rem(v) => v,
         }
     }
 
     fn is_negative(&self) -> bool {
-        match *self {
-            FontRelativeLength::Em(v) |
-            FontRelativeLength::Ex(v) |
-            FontRelativeLength::Ch(v) |
-            FontRelativeLength::Cap(v) |
-            FontRelativeLength::Ic(v) |
-            FontRelativeLength::Rem(v) => v < 0.,
-        }
+        self.unitless_value() < 0.
     }
 
     fn try_sum(&self, other: &Self) -> Result<Self, ()> {
@@ -166,7 +164,8 @@ impl FontRelativeLength {
         ) -> FontMetrics {
             context
                 .font_metrics_provider
-                .query(context, base_size, orientation)
+                .query(context, base_size, orientation,
+                       false /* retrieve_math_scales */)
         }
 
         let reference_font_size = base_size.resolve(context);
@@ -410,13 +409,16 @@ pub enum ViewportPercentageLength {
 impl ViewportPercentageLength {
     /// Return true if this is a zero value.
     fn is_zero(&self) -> bool {
-        let (_, _, v) = self.unpack();
-        v == 0.
+        self.unitless_value() == 0.
     }
 
     fn is_negative(&self) -> bool {
-        let (_, _, v) = self.unpack();
-        v < 0.
+        self.unitless_value() < 0.
+    }
+
+    /// Return the unitless, raw value.
+    fn unitless_value(&self) -> CSSFloat {
+        self.unpack().2
     }
 
     fn unpack(&self) -> (ViewportVariant, ViewportUnit, CSSFloat) {
@@ -665,7 +667,8 @@ pub enum AbsoluteLength {
 }
 
 impl AbsoluteLength {
-    fn is_zero(&self) -> bool {
+    /// Return the unitless, raw value.
+    fn unitless_value(&self) -> CSSFloat {
         match *self {
             AbsoluteLength::Px(v) |
             AbsoluteLength::In(v) |
@@ -673,20 +676,16 @@ impl AbsoluteLength {
             AbsoluteLength::Mm(v) |
             AbsoluteLength::Q(v) |
             AbsoluteLength::Pt(v) |
-            AbsoluteLength::Pc(v) => v == 0.,
+            AbsoluteLength::Pc(v) => v,
         }
     }
 
+    fn is_zero(&self) -> bool {
+        self.unitless_value() == 0.
+    }
+
     fn is_negative(&self) -> bool {
-        match *self {
-            AbsoluteLength::Px(v) |
-            AbsoluteLength::In(v) |
-            AbsoluteLength::Cm(v) |
-            AbsoluteLength::Mm(v) |
-            AbsoluteLength::Q(v) |
-            AbsoluteLength::Pt(v) |
-            AbsoluteLength::Pc(v) => v < 0.,
-        }
+        self.unitless_value() < 0.
     }
 
     /// Convert this into a pixel value.
@@ -803,6 +802,16 @@ impl Mul<CSSFloat> for NoCalcLength {
 }
 
 impl NoCalcLength {
+    /// Return the unitless, raw value.
+    pub fn unitless_value(&self) -> CSSFloat {
+        match *self {
+            NoCalcLength::Absolute(v) => v.unitless_value(),
+            NoCalcLength::FontRelative(v) => v.unitless_value(),
+            NoCalcLength::ViewportPercentage(v) => v.unitless_value(),
+            NoCalcLength::ServoCharacterWidth(c) => c.0 as f32,
+        }
+    }
+
     /// Returns whether the value of this length without unit is less than zero.
     pub fn is_negative(&self) -> bool {
         match *self {
@@ -1497,6 +1506,15 @@ impl Zero for LengthPercentage {
             LengthPercentage::Length(l) => l.is_zero(),
             LengthPercentage::Percentage(p) => p.0 == 0.0,
             LengthPercentage::Calc(_) => false,
+        }
+    }
+}
+
+impl ZeroNoPercent for LengthPercentage {
+    fn is_zero_no_percent(&self) -> bool {
+        match *self {
+            LengthPercentage::Percentage(_) => false,
+            _ => self.is_zero(),
         }
     }
 }

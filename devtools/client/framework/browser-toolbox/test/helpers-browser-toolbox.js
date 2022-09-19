@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { BrowserToolboxLauncher } = ChromeUtils.import(
-  "resource://devtools/client/framework/browser-toolbox/Launcher.jsm"
+const { BrowserToolboxLauncher } = ChromeUtils.importESModule(
+  "resource://devtools/client/framework/browser-toolbox/Launcher.sys.mjs"
 );
 const { DevToolsClient } = require("devtools/client/devtools-client");
 
@@ -61,9 +61,13 @@ async function initBrowserToolboxTask({
   ).PromiseTestUtils.allowMatchingRejectionsGlobally(/File closed/);
 
   let process;
+  let dbgProcess;
   if (!existingProcessClose) {
-    process = await new Promise(onRun => {
-      BrowserToolboxLauncher.init({ onRun, overwritePreferences: true });
+    [process, dbgProcess] = await new Promise(resolve => {
+      BrowserToolboxLauncher.init({
+        onRun: (_process, _dbgProcess) => resolve([_process, _dbgProcess]),
+        overwritePreferences: true,
+      });
     });
     ok(true, "Browser toolbox started");
     is(
@@ -205,12 +209,12 @@ async function initBrowserToolboxTask({
   async function destroy() {
     // No need to do anything if `destroy` was already called.
     if (destroyed) {
-      return null;
+      return;
     }
 
     const closePromise = existingProcessClose
       ? existingProcessClose()
-      : process._dbgProcess.wait();
+      : dbgProcess.wait();
     evaluateExpression("gToolbox.destroy()").catch(e => {
       // Ignore connection close as the toolbox destroy may destroy
       // everything quickly enough so that evaluate request is still pending

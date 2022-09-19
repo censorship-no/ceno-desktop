@@ -2495,6 +2495,15 @@ void nsFrameLoader::PropagateIsUnderHiddenEmbedderElement(
   }
 }
 
+void nsFrameLoader::UpdateRemoteStyle(
+    mozilla::StyleImageRendering aImageRendering) {
+  MOZ_DIAGNOSTIC_ASSERT(IsRemoteFrame());
+
+  if (auto* browserBridgeChild = GetBrowserBridgeChild()) {
+    browserBridgeChild->SendUpdateRemoteStyle(aImageRendering);
+  }
+}
+
 void nsFrameLoader::UpdateBaseWindowPositionAndSize(
     nsSubDocumentFrame* aIFrame) {
   nsCOMPtr<nsIBaseWindow> baseWindow = GetDocShell(IgnoreErrors());
@@ -2867,20 +2876,6 @@ BrowserBridgeChild* nsFrameLoader::GetBrowserBridgeChild() const {
 mozilla::layers::LayersId nsFrameLoader::GetLayersId() const {
   MOZ_ASSERT(mIsRemoteFrame);
   return mRemoteBrowser->GetLayersId();
-}
-
-void nsFrameLoader::ActivateFrameEvent(const nsAString& aType, bool aCapture,
-                                       ErrorResult& aRv) {
-  auto* browserParent = GetBrowserParent();
-  if (!browserParent) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-
-  bool ok = browserParent->SendActivateFrameEvent(aType, aCapture);
-  if (!ok) {
-    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
-  }
 }
 
 nsresult nsFrameLoader::DoRemoteStaticClone(nsFrameLoader* aStaticCloneOf,

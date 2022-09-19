@@ -1325,12 +1325,11 @@ nsresult nsHttpConnectionMgr::TryDispatchTransaction(
   // look for existing spdy connection - that's always best because it is
   // essentially pipelining without head of line blocking
 
-  RefPtr<HttpConnectionBase> conn =
-      GetH2orH3ActiveConn(ent,
-                          (!StaticPrefs::network_http_http2_enabled() ||
-                           (caps & NS_HTTP_DISALLOW_SPDY)),
-                          (!StaticPrefs::network_http_http3_enable() ||
-                           (caps & NS_HTTP_DISALLOW_HTTP3)));
+  RefPtr<HttpConnectionBase> conn = GetH2orH3ActiveConn(
+      ent,
+      (!StaticPrefs::network_http_http2_enabled() ||
+       (caps & NS_HTTP_DISALLOW_SPDY)),
+      (!nsHttpHandler::IsHttp3Enabled() || (caps & NS_HTTP_DISALLOW_HTTP3)));
   if (conn) {
     if (trans->IsWebsocketUpgrade() && !conn->CanAcceptWebsocket()) {
       // This is a websocket transaction and we already have a h2 connection
@@ -1676,7 +1675,8 @@ nsresult nsHttpConnectionMgr::ProcessNewTransaction(nsHttpTransaction* trans) {
 
   bool isWildcard = false;
   ConnectionEntry* ent = GetOrCreateConnectionEntry(
-      ci, false, trans->Caps() & NS_HTTP_DISALLOW_SPDY,
+      ci, trans->Caps() & NS_HTTP_DISALLOW_HTTP2_PROXY,
+      trans->Caps() & NS_HTTP_DISALLOW_SPDY,
       trans->Caps() & NS_HTTP_DISALLOW_HTTP3, &isWildcard);
   MOZ_ASSERT(ent);
 
@@ -1724,18 +1724,28 @@ nsresult nsHttpConnectionMgr::ProcessNewTransaction(nsHttpTransaction* trans) {
     RefPtr<HttpConnectionBase> conn = GetH2orH3ActiveConn(ent, false, true);
     RefPtr<nsHttpConnection> connTCP = do_QueryObject(conn);
     if (ci->UsingHttpsProxy() && ci->UsingConnect()) {
-      RefPtr<nsHttpConnection> newTunnel;
-      connTCP->CreateTunnelStream(trans, getter_AddRefs(newTunnel));
+      LOG(("About to create new tunnel conn from [%p]", connTCP.get()));
       ConnectionEntry* specificEnt = mCT.GetWeak(ci->HashKey());
+
       if (!specificEnt) {
         RefPtr<nsHttpConnectionInfo> clone(ci->Clone());
         specificEnt = new ConnectionEntry(clone);
         mCT.InsertOrUpdate(clone->HashKey(), RefPtr{specificEnt});
       }
-      specificEnt->InsertIntoActiveConns(newTunnel);
-      trans->SetConnection(nullptr);
-      newTunnel->SetInSpdyTunnel();
-      rv = DispatchTransaction(specificEnt, trans, newTunnel);
+
+      ent = specificEnt;
+      bool atLimit = AtActiveConnectionLimit(ent, trans->Caps());
+      if (atLimit) {
+        rv = NS_ERROR_NOT_AVAILABLE;
+      } else {
+        RefPtr<nsHttpConnection> newTunnel;
+        connTCP->CreateTunnelStream(trans, getter_AddRefs(newTunnel));
+
+        ent->InsertIntoActiveConns(newTunnel);
+        trans->SetConnection(nullptr);
+        newTunnel->SetInSpdyTunnel();
+        rv = DispatchTransaction(ent, trans, newTunnel);
+      }
     } else {
       rv = DispatchTransaction(ent, trans, connTCP);
     }
@@ -3398,10 +3408,15 @@ void nsHttpConnectionMgr::DoSpeculativeConnectionInternal(
        !aEnt->IdleConnectionsLength()) &&
       !(keepAlive && aEnt->RestrictConnections()) &&
       !AtActiveConnectionLimit(aEnt, aTrans->Caps())) {
-    DebugOnly<nsresult> rv = aEnt->CreateDnsAndConnectSocket(
-        aTrans, aTrans->Caps(), true, isFromPredictor, false, allow1918,
-        nullptr);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    nsresult rv = aEnt->CreateDnsAndConnectSocket(aTrans, aTrans->Caps(), true,
+                                                  isFromPredictor, false,
+                                                  allow1918, nullptr);
+    if (NS_FAILED(rv)) {
+      LOG(
+          ("DoSpeculativeConnectionInternal Transport socket creation "
+           "failure: %" PRIx32 "\n",
+           static_cast<uint32_t>(rv)));
+    }
   } else {
     LOG(
         ("DoSpeculativeConnectionInternal Transport "

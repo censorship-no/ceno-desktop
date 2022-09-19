@@ -7,6 +7,7 @@
 #include "gtest/gtest.h"
 #include "gmock/gmock.h"
 #include "mozilla/AbstractThread.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Document.h"
@@ -173,16 +174,14 @@ class ThreadMetrics : public ::testing::Test {
   uint32_t mDispatchCount;
 };
 
-// Disabled on Windows x64 due to high failure rate in bug 1745116
-#if !defined(_WIN64)
 TEST_F(ThreadMetrics, CollectMetrics) {
   nsresult rv;
   initScheduler();
 
   // Dispatching a runnable that will last for +50ms
-  nsCOMPtr<nsIRunnable> runnable = new TimedRunnable(25, 25);
+  RefPtr<TimedRunnable> runnable = new TimedRunnable(25, 25);
   rv = Dispatch(runnable);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   // Flush the queue
   ProcessAllEvents();
@@ -199,9 +198,8 @@ TEST_F(ThreadMetrics, CollectMetrics) {
 
   // Did we get incremented in the docgroup ?
   uint64_t duration = mCounter->GetExecutionDuration();
-  ASSERT_GE(duration, 50000u);
+  ASSERT_GE(duration, runnable->TotalSlept());
 }
-#endif
 
 TEST_F(ThreadMetrics, CollectRecursiveMetrics) {
   nsresult rv;
@@ -214,7 +212,7 @@ TEST_F(ThreadMetrics, CollectRecursiveMetrics) {
   nsCOMPtr<nsIRunnable> nested = new TimedRunnable(400, 0);
   runnable->AddNestedRunnable({nested});
   rv = Dispatch(runnable);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   // Flush the queue
   ProcessAllEvents();
@@ -252,7 +250,7 @@ TEST_F(ThreadMetrics, CollectMultipleRecursiveMetrics) {
   }
 
   rv = Dispatch(runnable);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   // Flush the queue
   ProcessAllEvents();
@@ -292,7 +290,7 @@ TEST_F(ThreadMetrics, CollectMultipleRecursiveMetricsWithTwoDocgroups) {
   runnable->AddNestedRunnable({nested2});
 
   rv = Dispatch(runnable);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   // Flush the queue
   ProcessAllEvents();

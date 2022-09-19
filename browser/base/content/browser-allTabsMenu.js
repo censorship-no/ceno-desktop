@@ -15,7 +15,8 @@ var gTabsPanel = {
   kElements: {
     allTabsButton: "alltabs-button",
     allTabsView: "allTabsMenu-allTabsView",
-    allTabsViewTabs: "allTabsMenu-allTabsViewTabs",
+    allTabsViewTabs: "allTabsMenu-allTabsView-tabs",
+    dropIndicator: "allTabsMenu-dropIndicator",
     containerTabsView: "allTabsMenu-containerTabsView",
     hiddenTabsButton: "allTabsMenu-hiddenTabsButton",
     hiddenTabsView: "allTabsMenu-hiddenTabsView",
@@ -56,6 +57,7 @@ var gTabsPanel = {
       containerNode: this.allTabsViewTabs,
       filterFn: tab =>
         !tab.hidden && (!tab.pinned || (showPinnedTabs && tab.pinned)),
+      dropIndicator: this.dropIndicator,
     });
 
     this.allTabsView.addEventListener("ViewShowing", e => {
@@ -139,6 +141,12 @@ var gTabsPanel = {
   },
 
   showAllTabsPanel(event) {
+    // Note that event may be null.
+
+    // Only space and enter should open the popup, ignore other keypresses:
+    if (event?.type == "keypress" && event.key != "Enter" && event.key != " ") {
+      return;
+    }
     this.init();
     if (this.canOpen) {
       PanelUI.showSubView(

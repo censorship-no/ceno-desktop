@@ -301,7 +301,7 @@ nsPopupLevel nsMenuPopupFrame::PopupLevel(bool aIsNoAutoHide) const {
   return sDefaultLevelIsTop ? ePopupLevelTop : ePopupLevelParent;
 }
 
-void nsMenuPopupFrame::EnsureWidget(bool aRecreate) {
+void nsMenuPopupFrame::PrepareWidget(bool aRecreate) {
   nsView* ourView = GetView();
   if (aRecreate) {
     if (auto* widget = GetWidget()) {
@@ -314,14 +314,11 @@ void nsMenuPopupFrame::EnsureWidget(bool aRecreate) {
   if (!ourView->HasWidget()) {
     CreateWidgetForView(ourView);
   }
-}
-
-static Maybe<ColorScheme> GetWidgetColorScheme(const nsMenuPopupFrame* aFrame) {
-  const auto& scheme = aFrame->StyleUI()->mColorScheme.bits;
-  if (!scheme) {
-    return Nothing();
+  if (nsIWidget* widget = GetWidget()) {
+    // This won't dynamically update the color scheme changes while the widget
+    // is shown, but it's good enough.
+    widget->SetColorScheme(Some(LookAndFeel::ColorSchemeForFrame(this)));
   }
-  return Some(LookAndFeel::ColorSchemeForFrame(aFrame));
 }
 
 nsresult nsMenuPopupFrame::CreateWidgetForView(nsView* aView) {
@@ -397,7 +394,6 @@ nsresult nsMenuPopupFrame::CreateWidgetForView(nsView* aView) {
   widget->SetWindowShadowStyle(GetShadowStyle());
   widget->SetWindowOpacity(StyleUIReset()->mWindowOpacity);
   widget->SetWindowTransform(ComputeWidgetTransform());
-  widget->SetColorScheme(GetWidgetColorScheme(this));
 
   // most popups don't have a title so avoid setting the title if there isn't
   // one
@@ -504,12 +500,6 @@ void nsMenuPopupFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
   if (newUI.mMozWindowTransform != oldUI.mMozWindowTransform) {
     if (nsIWidget* widget = GetWidget()) {
       widget->SetWindowTransform(ComputeWidgetTransform());
-    }
-  }
-
-  if (StyleUI()->mColorScheme != aOldStyle->StyleUI()->mColorScheme) {
-    if (nsIWidget* widget = GetWidget()) {
-      widget->SetColorScheme(GetWidgetColorScheme(this));
     }
   }
 
@@ -806,7 +796,7 @@ void nsMenuPopupFrame::InitializePopup(nsIContent* aAnchorContent,
                                        bool aAttributesOverride) {
   auto* widget = GetWidget();
   bool recreateWidget = widget && widget->NeedsRecreateToReshow();
-  EnsureWidget(recreateWidget);
+  PrepareWidget(recreateWidget);
 
   mPopupState = ePopupShowing;
   mAnchorContent = aAnchorContent;
@@ -819,6 +809,7 @@ void nsMenuPopupFrame::InitializePopup(nsIContent* aAnchorContent,
   mHFlip = false;
   mAlignmentOffset = 0;
   mPositionedOffset = 0;
+  mPositionedByMoveToRect = false;
 
   mAnchorType = aAnchorType;
 
@@ -944,7 +935,7 @@ void nsMenuPopupFrame::InitializePopupAtScreen(nsIContent* aTriggerContent,
                                                bool aIsContextMenu) {
   auto* widget = GetWidget();
   bool recreateWidget = widget && widget->NeedsRecreateToReshow();
-  EnsureWidget(recreateWidget);
+  PrepareWidget(recreateWidget);
 
   mPopupState = ePopupShowing;
   mAnchorContent = nullptr;
@@ -962,6 +953,7 @@ void nsMenuPopupFrame::InitializePopupAtScreen(nsIContent* aTriggerContent,
   mIsNativeMenu = false;
   mAnchorType = MenuPopupAnchorType_Point;
   mPositionedOffset = 0;
+  mPositionedByMoveToRect = false;
 }
 
 void nsMenuPopupFrame::InitializePopupAsNativeContextMenu(
@@ -982,6 +974,7 @@ void nsMenuPopupFrame::InitializePopupAsNativeContextMenu(
   mIsNativeMenu = true;
   mAnchorType = MenuPopupAnchorType_Point;
   mPositionedOffset = 0;
+  mPositionedByMoveToRect = false;
 }
 
 void nsMenuPopupFrame::InitializePopupAtRect(nsIContent* aTriggerContent,
@@ -1451,9 +1444,6 @@ nsresult nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame,
   // size will be 0.
   nsRect anchorRect;
 
-  // Width of the parent, used when aSizedToPopup is true.
-  int32_t parentWidth = 0;
-
   bool anchored = IsAnchored();
   if (anchored || aSizedToPopup) {
     // In order to deal with transforms, we need the root prescontext:
@@ -1486,9 +1476,6 @@ nsresult nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame,
 
       anchorRect = ComputeAnchorRect(rootPresContext, aAnchorFrame);
     }
-
-    // The width is needed when aSizedToPopup is true
-    parentWidth = anchorRect.width;
   }
 
   // Set the popup's size to the preferred size. Below, this size will be
@@ -1500,12 +1487,17 @@ nsresult nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame,
                  "preferred size of popup not set");
     nsSize newSize = mPrefSize;
     if (aSizedToPopup) {
-      newSize.width = parentWidth;
+      // Input margin doesn't have contents, so account for it for popup sizing
+      // purposes.
+      const nscoord inputMargin =
+          StyleUIReset()->mMozWindowInputRegionMargin.ToAppUnits();
+      newSize.width = anchorRect.width + 2 * inputMargin;
       // If we're anchoring to a rect, and the rect is smaller than the
       // preferred size of the popup, change its width accordingly.
       if (mAnchorType == MenuPopupAnchorType_Rect) {
-        newSize.width = std::max(parentWidth, mPrefSize.width);
+        newSize.width = std::max(newSize.width, mPrefSize.width);
       }
+
       // Pref size is already constrained by LayoutPopup().
       ConstrainSizeForWayland(newSize);
     }
@@ -1538,12 +1530,16 @@ nsresult nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame,
       // tell us which axis the popup is flush against in case we have to move
       // it around later. The AdjustPositionForAnchorAlign method accounts for
       // the popup's margin.
-      mUntransformedAnchorRect = anchorRect;
+      if (!mPositionedByMoveToRect) {
+        mUntransformedAnchorRect = anchorRect;
+      }
       screenPoint = AdjustPositionForAnchorAlign(anchorRect, hFlip, vFlip);
     } else {
       // with no anchor, the popup is positioned relative to the root frame
       anchorRect = rootScreenRect;
-      mUntransformedAnchorRect = anchorRect;
+      if (!mPositionedByMoveToRect) {
+        mUntransformedAnchorRect = anchorRect;
+      }
       screenPoint = anchorRect.TopLeft() + nsPoint(margin.left, margin.top);
     }
 
@@ -1580,7 +1576,9 @@ nsresult nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame,
   } else {
     screenPoint = mScreenRect.TopLeft();
     anchorRect = nsRect(screenPoint, nsSize());
-    mUntransformedAnchorRect = anchorRect;
+    if (!mPositionedByMoveToRect) {
+      mUntransformedAnchorRect = anchorRect;
+    }
 
     // Right-align RTL context menus, and apply margin and offsets as per the
     // platform conventions.
@@ -1627,13 +1625,11 @@ nsresult nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame,
           GetConstraintRect(anchorRectDevPix, rootScreenRectDevPix, popupLevel);
       nsRect sr = LayoutDeviceIntRect::ToAppUnits(screenRectDevPix, appPerDev);
 
-      // Expand the allowable screen rect by the negative margins. Note that we
-      // intentionally don't include the context menu offset in the margin here.
-      nsMargin rawMargin;
-      if (StyleMargin()->GetMargin(rawMargin)) {
-        rawMargin.EnsureAtMost(nsMargin());
-        sr.Deflate(rawMargin);
-      }
+      // Expand the allowable screen rect by the input margin (which can't be
+      // interacted with).
+      const nscoord inputMargin =
+          StyleUIReset()->mMozWindowInputRegionMargin.ToAppUnits();
+      sr.Inflate(inputMargin);
       return sr;
     }();
 
@@ -2207,8 +2203,10 @@ nsMenuFrame* nsMenuPopupFrame::FindMenuWithShortcut(KeyboardEvent* aKeyEvent,
       }
     }
 
-    if (StringBeginsWith(textKey, incrementalString,
-                         nsCaseInsensitiveStringComparator)) {
+    if (StringBeginsWith(
+            nsContentUtils::TrimWhitespace<
+                nsContentUtils::IsHTMLWhitespaceOrNBSP>(textKey, false),
+            incrementalString, nsCaseInsensitiveStringComparator)) {
       // mIncrementalString is a prefix of textKey
       nsMenuFrame* menu = do_QueryFrame(currFrame);
       if (menu) {
@@ -2311,7 +2309,7 @@ nsresult nsMenuPopupFrame::AttributeChanged(int32_t aNameSpaceID,
     // When the remote attribute changes, we need to create a new widget to
     // ensure that it has the correct compositor and transparency settings to
     // match the new value.
-    EnsureWidget(true);
+    PrepareWidget(true);
   }
 
   if (aAttribute == nsGkAtoms::followanchor) {
@@ -2409,7 +2407,8 @@ nsMargin nsMenuPopupFrame::GetMargin() const {
   return margin;
 }
 
-void nsMenuPopupFrame::MoveTo(const CSSPoint& aPos, bool aUpdateAttrs) {
+void nsMenuPopupFrame::MoveTo(const CSSPoint& aPos, bool aUpdateAttrs,
+                              bool aByMoveToRect) {
   nsIWidget* widget = GetWidget();
   nsPoint appUnitsPos = CSSPixel::ToAppUnits(aPos);
 
@@ -2434,6 +2433,7 @@ void nsMenuPopupFrame::MoveTo(const CSSPoint& aPos, bool aUpdateAttrs) {
     return;
   }
 
+  mPositionedByMoveToRect = aByMoveToRect;
   mScreenRect.MoveTo(appUnitsPos);
   if (mAnchorType == MenuPopupAnchorType_Rect) {
     // This ensures that the anchor width is still honored, to prevent it from
@@ -2487,18 +2487,23 @@ int8_t nsMenuPopupFrame::GetAlignmentPosition() const {
 
   if (mPosition == POPUPPOSITION_OVERLAP ||
       mPosition == POPUPPOSITION_AFTERPOINTER ||
-      mPosition == POPUPPOSITION_SELECTION)
+      mPosition == POPUPPOSITION_SELECTION) {
     return mPosition;
+  }
 
   int8_t position = mPosition;
 
   if (position == POPUPPOSITION_UNKNOWN) {
     switch (mPopupAnchor) {
+      case POPUPALIGNMENT_BOTTOMRIGHT:
+      case POPUPALIGNMENT_BOTTOMLEFT:
       case POPUPALIGNMENT_BOTTOMCENTER:
         position = mPopupAlignment == POPUPALIGNMENT_TOPRIGHT
                        ? POPUPPOSITION_AFTEREND
                        : POPUPPOSITION_AFTERSTART;
         break;
+      case POPUPALIGNMENT_TOPRIGHT:
+      case POPUPALIGNMENT_TOPLEFT:
       case POPUPALIGNMENT_TOPCENTER:
         position = mPopupAlignment == POPUPALIGNMENT_BOTTOMRIGHT
                        ? POPUPPOSITION_BEFOREEND

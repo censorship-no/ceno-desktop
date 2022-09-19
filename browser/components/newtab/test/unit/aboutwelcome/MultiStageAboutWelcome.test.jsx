@@ -20,6 +20,7 @@ describe("MultiStageAboutWelcome module", () => {
     metricsFlowUri: "http://localhost/",
     message_id: "DEFAULT_ABOUTWELCOME",
     utm_term: "default",
+    startScreen: 0,
   };
 
   beforeEach(async () => {
@@ -67,7 +68,11 @@ describe("MultiStageAboutWelcome module", () => {
       assert.calledTwice(impressionSpy);
       assert.equal(
         impressionSpy.firstCall.args[0],
-        `${DEFAULT_PROPS.message_id}_0_${DEFAULT_PROPS.screens[0].id}`
+        `${DEFAULT_PROPS.message_id}_0_${
+          DEFAULT_PROPS.screens[0].id
+        }_${DEFAULT_PROPS.screens
+          .map(({ id }) => id?.split("_")[1]?.[0])
+          .join("")}`
       );
       assert.equal(
         impressionSpy.secondCall.args[0],
@@ -133,6 +138,7 @@ describe("MultiStageAboutWelcome module", () => {
         metricsFlowUri: "http://localhost/",
         message_id: "DEFAULT_ABOUTWELCOME",
         utm_term: "default",
+        startScreen: 0,
       };
       const wrapper = mount(<MultiStageAboutWelcome {...AUTO_ADVANCE_PROPS} />);
       wrapper.update();
@@ -167,6 +173,7 @@ describe("MultiStageAboutWelcome module", () => {
         messageId: `${DEFAULT_PROPS.message_id}_${startScreen.id}`,
         UTMTerm: DEFAULT_PROPS.utm_term,
         flowParams: null,
+        startScreen: 0,
       };
 
       it("should render GetStarted Screen", () => {
@@ -189,6 +196,20 @@ describe("MultiStageAboutWelcome module", () => {
         };
         const wrapper = mount(<SecondaryCTA {...SCREEN_PROPS} />);
         assert.ok(wrapper.find("div.secondary_button_top"));
+      });
+
+      it("should render the arrow icon in the secondary button", () => {
+        let SCREEN_PROPS = {
+          content: {
+            title: "Step",
+            secondary_button: {
+              has_arrow_icon: true,
+              label: "test label",
+            },
+          },
+        };
+        const wrapper = mount(<SecondaryCTA {...SCREEN_PROPS} />);
+        assert.ok(wrapper.find("button[class='arrow-icon']"));
       });
 
       it("should render steps indicator", () => {

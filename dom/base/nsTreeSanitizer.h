@@ -12,9 +12,11 @@
 #include "nsTArray.h"
 #include "nsTHashSet.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/NameSpaceConstants.h"
 #include "mozilla/dom/SanitizerBinding.h"
 
 class nsIContent;
+class nsIGlobalObject;
 class nsINode;
 
 namespace mozilla {
@@ -62,7 +64,8 @@ class nsTreeSanitizer {
    * Provides additional options for usage from the Web Sanitizer API
    * which allows modifying the allow-list from above
    */
-  void WithWebSanitizerOptions(const mozilla::dom::SanitizerConfig& aOptions);
+  void WithWebSanitizerOptions(nsIGlobalObject* aGlobal,
+                               const mozilla::dom::SanitizerConfig& aOptions);
 
   /**
    * Removes conditional CSS from this subtree.
@@ -110,6 +113,9 @@ class nsTreeSanitizer {
    */
   bool mLogRemovals;
 
+  // WindowID used for logging removals.
+  uint64_t mInnerWindowID = 0;
+
   /**
    * We have various tables of static atoms for elements and attributes.
    */
@@ -124,14 +130,44 @@ class nsTreeSanitizer {
       return aAtom->IsStatic() && GetEntry(aAtom->AsStatic());
     }
   };
-  // Use this table for user-defined lists
-  class DynamicAtomsTable : public nsTHashSet<RefPtr<nsAtom>> {
-   public:
-    explicit DynamicAtomsTable(uint32_t aLength)
-        : nsTHashSet<RefPtr<nsAtom>>(aLength) {}
 
-    bool Contains(nsAtom* aAtom) { return GetEntry(aAtom); }
+  // The name of an element combined with its namespace.
+  class ElementName : public PLDHashEntryHdr {
+   public:
+    using KeyType = const ElementName&;
+    using KeyTypePointer = const ElementName*;
+
+    explicit ElementName(KeyTypePointer aKey)
+        : mNamespaceID(aKey->mNamespaceID), mLocalName(aKey->mLocalName) {}
+    ElementName(int32_t aNamespaceID, RefPtr<nsAtom> aLocalName)
+        : mNamespaceID(aNamespaceID), mLocalName(std::move(aLocalName)) {}
+    ElementName(ElementName&&) = default;
+    ~ElementName() = default;
+
+    bool KeyEquals(KeyTypePointer aKey) const {
+      return mNamespaceID == aKey->mNamespaceID &&
+             mLocalName == aKey->mLocalName;
+    }
+
+    static KeyTypePointer KeyToPointer(KeyType aKey) { return &aKey; }
+    static PLDHashNumber HashKey(KeyTypePointer aKey) {
+      if (!aKey) {
+        return 0;
+      }
+
+      return mozilla::HashGeneric(aKey->mNamespaceID, aKey->mLocalName.get());
+    }
+
+    enum { ALLOW_MEMMOVE = true };
+
+   private:
+    int32_t mNamespaceID = kNameSpaceID_None;
+    RefPtr<nsAtom> mLocalName;
   };
+
+  using ElementNameSet = nsTHashSet<ElementName>;
+  using ElementToAttributeSetTable =
+      nsTHashMap<RefPtr<nsAtom>, mozilla::UniquePtr<ElementNameSet>>;
 
   void SanitizeChildren(nsINode* aRoot);
 
@@ -143,6 +179,7 @@ class nsTreeSanitizer {
    *         false if the element is to be kept
    */
   bool MustFlatten(int32_t aNamespace, nsAtom* aLocal);
+  bool MustFlattenForSanitizerAPI(int32_t aNamespace, nsAtom* aLocal);
 
   /**
    * Queries if an element including its children must be removed.
@@ -154,6 +191,8 @@ class nsTreeSanitizer {
    */
   bool MustPrune(int32_t aNamespace, nsAtom* aLocal,
                  mozilla::dom::Element* aElement);
+  bool MustPruneForSanitizerAPI(int32_t aNamespace, nsAtom* aLocal,
+                                mozilla::dom::Element* aElement);
 
   /**
    * Checks if a given local name (for an attribute) is on the given list
@@ -191,6 +230,11 @@ class nsTreeSanitizer {
    */
   void SanitizeAttributes(mozilla::dom::Element* aElement,
                           AllowedAttributes aAllowed);
+  // Currently only used for the Sanitizer API.
+  bool MustDropAttribute(mozilla::dom::Element* aElement,
+                         int32_t aAttrNamespace, nsAtom* aAttrLocalName);
+  bool MustDropFunkyAttribute(mozilla::dom::Element* aElement,
+                              int32_t aAttrNamespace, nsAtom* aAttrLocalName);
 
   /**
    * Remove the named URL attribute from the element if the URL fails a
@@ -232,6 +276,16 @@ class nsTreeSanitizer {
    * the element itself.
    */
   static void RemoveAllAttributesFromDescendants(mozilla::dom::Element*);
+
+  static bool MatchesElementName(ElementNameSet& aNames, int32_t aNamespace,
+                                 nsAtom* aLocalName);
+  static bool MatchesAttributeMatchList(ElementToAttributeSetTable& aMatchList,
+                                        mozilla::dom::Element& aElement,
+                                        int32_t aAttrNamespace,
+                                        nsAtom* aAttrLocalName);
+
+  static mozilla::UniquePtr<ElementNameSet> ConvertElementNames(
+      const mozilla::dom::Sequence<nsString>& aNames);
 
   /**
    * Log a Console Service message to indicate we removed something.
@@ -284,28 +338,52 @@ class nsTreeSanitizer {
   static AtomsTable* sAttributesMathML;
 
   /**
+   * The built-in baseline attribute allow list used by the Sanitizer API.
+   */
+  static AtomsTable* sBaselineAttributeAllowlist;
+
+  /**
+   * The built-in baseline element allow list used by the Sanitizer API.
+   */
+  static AtomsTable* sBaselineElementAllowlist;
+
+  /**
+   * The default configuration's attribute allow list used by the Sanitizer API.
+   */
+  static AtomsTable* sDefaultConfigurationAttributeAllowlist;
+
+  /**
+   * The default configuration's element allow list used by the Sanitizer API.
+   */
+  static AtomsTable* sDefaultConfigurationElementAllowlist;
+
+  /**
    * Reusable null principal for URL checks.
    */
   static nsIPrincipal* sNullPrincipal;
 
-  // Short-hand to determine whether this is a customized Sanitizer.
-  bool mIsCustomized = false;
+  // === Variables used to implement HTML Sanitizer API. ==
+
+  // This nsTreeSanitizer instance should behave like the Sanitizer API.
+  bool mIsForSanitizerAPI = false;
+
+  bool mAllowCustomElements = false;
+  bool mAllowUnknownMarkup = false;
 
   // An allow-list of elements to keep.
-  mozilla::UniquePtr<DynamicAtomsTable> mAllowedElements;
+  mozilla::UniquePtr<ElementNameSet> mAllowElements;
 
-  // A deny-list of elements to block.
-  mozilla::UniquePtr<DynamicAtomsTable> mBlockedElements;
+  // A deny-list of elements to block. (aka flatten)
+  mozilla::UniquePtr<ElementNameSet> mBlockElements;
+
+  // A deny-list of elements to drop. (aka prune)
+  mozilla::UniquePtr<ElementNameSet> mDropElements;
 
   // An allow-list of attributes to keep.
-  mozilla::UniquePtr<
-      nsTHashMap<RefPtr<nsAtom>, mozilla::UniquePtr<DynamicAtomsTable>>>
-      mAllowedAttributes;
+  mozilla::UniquePtr<ElementToAttributeSetTable> mAllowedAttributes;
 
   // A deny-list of attributes to drop.
-  mozilla::UniquePtr<
-      nsTHashMap<RefPtr<nsAtom>, mozilla::UniquePtr<DynamicAtomsTable>>>
-      mDroppedAttributes;
+  mozilla::UniquePtr<ElementToAttributeSetTable> mDroppedAttributes;
 };
 
 #endif  // nsTreeSanitizer_h_

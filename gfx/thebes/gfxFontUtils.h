@@ -11,6 +11,7 @@
 #include <new>
 #include <utility>
 #include "gfxPlatform.h"
+#include "harfbuzz/hb.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Casting.h"
@@ -31,9 +32,6 @@ struct gfxFontVariationInstance;
 namespace mozilla {
 class Encoding;
 class ServoStyleSet;
-namespace gfx {
-struct DeviceColor;
-}
 }  // namespace mozilla
 
 /* Bug 341128 - w32api defines min/max which causes problems with <bitset> */
@@ -790,22 +788,6 @@ struct KernTableSubtableHeaderVersion1 {
   AutoSwap_PRUint16 tupleIndex;
 };
 
-struct COLRHeader {
-  AutoSwap_PRUint16 version;
-  AutoSwap_PRUint16 numBaseGlyphRecord;
-  AutoSwap_PRUint32 offsetBaseGlyphRecord;
-  AutoSwap_PRUint32 offsetLayerRecord;
-  AutoSwap_PRUint16 numLayerRecords;
-};
-
-struct CPALHeaderVersion0 {
-  AutoSwap_PRUint16 version;
-  AutoSwap_PRUint16 numPaletteEntries;
-  AutoSwap_PRUint16 numPalettes;
-  AutoSwap_PRUint16 numColorRecords;
-  AutoSwap_PRUint32 offsetFirstColorRecord;
-};
-
 #pragma pack()
 
 // Return just the highest bit of the given value, i.e., the highest
@@ -925,6 +907,19 @@ class gfxFontUtils {
     mozilla::AutoSwap_PRUint16 length;      // String length (in bytes).
     mozilla::AutoSwap_PRUint16 offset;  // String offset from start of storage
                                         // (in bytes).
+  };
+
+  // Helper to ensure we free a font table when we return.
+  class AutoHBBlob {
+   public:
+    explicit AutoHBBlob(hb_blob_t* aBlob) : mBlob(aBlob) {}
+
+    ~AutoHBBlob() { hb_blob_destroy(mBlob); }
+
+    operator hb_blob_t*() { return mBlob; }
+
+   private:
+    hb_blob_t* const mBlob;
   };
 
   // for reading big-endian font data on either big or little-endian platforms
@@ -1150,15 +1145,6 @@ class gfxFontUtils {
 
   // generate a unique font name
   static nsresult MakeUniqueUserFontName(nsAString& aName);
-
-  // for color layer from glyph using COLR and CPAL tables
-  static bool ValidateColorGlyphs(hb_blob_t* aCOLR, hb_blob_t* aCPAL);
-  static bool GetColorGlyphLayers(
-      hb_blob_t* aCOLR, hb_blob_t* aCPAL, uint32_t aGlyphId,
-      const mozilla::gfx::DeviceColor& aDefaultColor,
-      nsTArray<uint16_t>& aGlyphs,
-      nsTArray<mozilla::gfx::DeviceColor>& aColors);
-  static bool HasColorLayersForGlyph(hb_blob_t* aCOLR, uint32_t aGlyphId);
 
   // Helper used to implement gfxFontEntry::GetVariation{Axes,Instances} for
   // platforms where the native font APIs don't provide the info we want

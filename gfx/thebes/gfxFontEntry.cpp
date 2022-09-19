@@ -88,22 +88,15 @@ gfxFontEntry::gfxFontEntry(const nsACString& aName, bool aIsStandardFace)
       mIgnoreGSUB(false),
       mSkipDefaultFeatureSpaceCheck(false),
       mSVGInitialized(false),
-      mHasSpaceFeaturesInitialized(false),
-      mHasSpaceFeatures(false),
-      mHasSpaceFeaturesKerning(false),
-      mHasSpaceFeaturesNonKerning(false),
-      mGraphiteSpaceContextualsInitialized(false),
-      mHasGraphiteSpaceContextuals(false),
-      mSpaceGlyphIsInvisible(false),
-      mSpaceGlyphIsInvisibleInitialized(false),
-      mHasGraphiteTables(false),
-      mCheckedForGraphiteTables(false),
       mHasCmapTable(false),
       mGrFaceInitialized(false),
       mCheckedForColorGlyph(false),
       mCheckedForVariationAxes(false),
-      mHasColorBitmapTable(false),
-      mCheckedForColorBitmapTables(false) {
+      mSpaceGlyphIsInvisible(LazyFlag::Uninitialized),
+      mHasGraphiteTables(LazyFlag::Uninitialized),
+      mHasGraphiteSpaceContextuals(LazyFlag::Uninitialized),
+      mHasColorBitmapTable(LazyFlag::Uninitialized),
+      mHasSpaceFeatures(SpaceFeatures::Uninitialized) {
   mTrakTable.exchange(kTrakTableUninitialized);
   memset(&mDefaultSubSpaceFeatures, 0, sizeof(mDefaultSubSpaceFeatures));
   memset(&mNonDefaultSubSpaceFeatures, 0, sizeof(mNonDefaultSubSpaceFeatures));
@@ -389,7 +382,7 @@ bool gfxFontEntry::TryGetColorGlyphs() {
   auto* colr = GetFontTable(TRUETYPE_TAG('C', 'O', 'L', 'R'));
   auto* cpal = colr ? GetFontTable(TRUETYPE_TAG('C', 'P', 'A', 'L')) : nullptr;
 
-  if (colr && cpal && gfxFontUtils::ValidateColorGlyphs(colr, cpal)) {
+  if (colr && cpal && gfx::COLRFonts::ValidateColorGlyphs(colr, cpal)) {
     if (!mCOLR.compareExchange(nullptr, colr)) {
       hb_blob_destroy(colr);
     }
@@ -656,7 +649,7 @@ tainted_opaque_gr<const void*> gfxFontEntry::GrGetTable(
         rlbox::from_opaque(aName).unverified_safe_because(
             "This is only being used to index into a hashmap, which is robust "
             "for any value. No checks needed.");
-    hb_blob_t* blob = fontEntry->GetFontTable(fontTableKey);
+    gfxFontUtils::AutoHBBlob blob(fontEntry->GetFontTable(fontTableKey));
 
     if (blob) {
       unsigned int blobLength;
@@ -670,7 +663,6 @@ tainted_opaque_gr<const void*> gfxFontEntry::GrGetTable(
         *t_aLen = blobLength;
         ret = rlbox::sandbox_const_cast<const void*>(t_tableData);
       }
-      hb_blob_destroy(blob);
     }
   }
 
@@ -773,12 +765,9 @@ bool gfxFontEntry::HasFontTable(uint32_t aTableTag) {
   return table && hb_blob_get_length(table) > 0;
 }
 
-void gfxFontEntry::CheckForGraphiteTables() {
-  mHasGraphiteTables = HasFontTable(TRUETYPE_TAG('S', 'i', 'l', 'f'));
-}
-
 tainted_boolean_hint gfxFontEntry::HasGraphiteSpaceContextuals() {
-  if (!mGraphiteSpaceContextualsInitialized) {
+  LazyFlag flag = mHasGraphiteSpaceContextuals;
+  if (flag == LazyFlag::Uninitialized) {
     auto face = GetGrFace();
     auto t_face = rlbox::from_opaque(face);
     if (t_face) {
@@ -789,20 +778,21 @@ tainted_boolean_hint gfxFontEntry::HasGraphiteSpaceContextuals() {
       // maliciously at any moment.
       tainted_boolean_hint is_not_none =
           faceInfo->space_contextuals != gr_faceinfo::gr_space_none;
-      mHasGraphiteSpaceContextuals = is_not_none.unverified_safe_because(
-          "Note ideally mHasGraphiteSpaceContextuals would be "
-          "tainted_boolean_hint, but RLBox does not yet support bitfields, so "
-          "it is not wrapped. However, its value is only ever accessed through "
-          "this function which returns a tainted_boolean_hint, so unwrapping "
-          "temporarily is safe. We remove the wrapper now and re-add it "
-          "below.");
+      flag = is_not_none.unverified_safe_because(
+                 "Note ideally mHasGraphiteSpaceContextuals would be "
+                 "tainted_boolean_hint, but RLBox does not yet support "
+                 "bitfields, so it is not wrapped. However, its value is only "
+                 "ever accessed through this function which returns a "
+                 "tainted_boolean_hint, so unwrapping temporarily is safe. "
+                 "We remove the wrapper now and re-add it below.")
+                 ? LazyFlag::Yes
+                 : LazyFlag::No;
     }
     ReleaseGrFace(face);  // always balance GetGrFace, even if face is null
-    mGraphiteSpaceContextualsInitialized = true;
+    mHasGraphiteSpaceContextuals = flag;
   }
 
-  bool ret = mHasGraphiteSpaceContextuals;
-  return tainted_boolean_hint(ret);
+  return tainted_boolean_hint(flag == LazyFlag::Yes);
 }
 
 #define FEATURE_SCRIPT_MASK 0x000000ff  // script index replaces low byte of tag
@@ -1037,15 +1027,6 @@ void gfxFontEntry::GetFeatureInfo(nsTArray<gfxFontFeatureInfo>& aFeatureInfo) {
   // supported by the font resource.
   collectForTable(HB_TAG('G', 'S', 'U', 'B'));
   collectForTable(HB_TAG('G', 'P', 'O', 'S'));
-}
-
-bool gfxFontEntry::GetColorLayersInfo(
-    uint32_t aGlyphId, const mozilla::gfx::DeviceColor& aDefaultColor,
-    nsTArray<uint16_t>& aLayerGlyphs,
-    nsTArray<mozilla::gfx::DeviceColor>& aLayerColors) {
-  return gfxFontUtils::GetColorGlyphLayers(GetCOLR(), GetCPAL(), aGlyphId,
-                                           aDefaultColor, aLayerGlyphs,
-                                           aLayerColors);
 }
 
 typedef struct {
@@ -2022,8 +2003,16 @@ bool gfxFontFamily::CheckForLegacyFamilyNames(gfxPlatformFontList* aFontList) {
   mCheckedForLegacyFamilyNames = true;
   bool added = false;
   const uint32_t kNAME = TRUETYPE_TAG('n', 'a', 'm', 'e');
-  AutoReadLock lock(mLock);
-  for (const auto& fe : mAvailableFonts) {
+  AutoTArray<RefPtr<gfxFontEntry>, 16> faces;
+  {
+    // Take a local copy of the array of font entries, because it's possible
+    // AddWithLegacyFamilyName will mutate it (and it needs to be able to take
+    // an exclusive lock on the family to do so, so we release the read lock
+    // here).
+    AutoReadLock lock(mLock);
+    faces.AppendElements(mAvailableFonts);
+  }
+  for (const auto& fe : faces) {
     if (!fe) {
       continue;
     }

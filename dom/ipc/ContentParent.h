@@ -28,6 +28,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReportingProcess.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 
@@ -58,6 +59,7 @@ class nsIRemoteTab;
 class nsITimer;
 class ParentIdleListener;
 class nsIWidget;
+class nsIX509Cert;
 
 namespace mozilla {
 class PRemoteSpellcheckEngineParent;
@@ -333,7 +335,7 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvUngrabPointer(const uint32_t& aTime);
 
   mozilla::ipc::IPCResult RecvRemovePermission(
-      const IPC::Principal& aPrincipal, const nsACString& aPermissionType,
+      nsIPrincipal* aPrincipal, const nsACString& aPermissionType,
       nsresult* aRv);
 
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(ContentParent, nsIObserver)
@@ -465,18 +467,15 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvNotifyTabDestroying(const TabId& aTabId,
                                                   const ContentParentId& aCpId);
 
-  mozilla::ipc::IPCResult RecvSetOfflinePermission(
-      const IPC::Principal& principal);
-
   mozilla::ipc::IPCResult RecvFinishShutdown();
+
+  mozilla::ipc::IPCResult RecvNotifyShutdownSuccess();
 
   void MaybeInvokeDragSession(BrowserParent* aParent);
 
   PContentPermissionRequestParent* AllocPContentPermissionRequestParent(
-      const nsTArray<PermissionRequest>& aRequests,
-      const IPC::Principal& aPrincipal,
-      const IPC::Principal& aTopLevelPrincipal,
-      const bool& aIsHandlingUserInput,
+      const nsTArray<PermissionRequest>& aRequests, nsIPrincipal* aPrincipal,
+      nsIPrincipal* aTopLevelPrincipal, const bool& aIsHandlingUserInput,
       const bool& aMaybeUnsafePermissionDelegate, const TabId& aTabId);
 
   bool DeallocPContentPermissionRequestParent(
@@ -492,9 +491,8 @@ class ContentParent final : public PContentParent,
       const uint32_t& aChromeFlags, const bool& aCalledFromJS,
       const bool& aForPrinting, const bool& aForWindowDotPrint,
       nsIURI* aURIToLoad, const nsACString& aFeatures,
-      const IPC::Principal& aTriggeringPrincipal,
-      nsIContentSecurityPolicy* aCsp, nsIReferrerInfo* aReferrerInfo,
-      const OriginAttributes& aOriginAttributes,
+      nsIPrincipal* aTriggeringPrincipal, nsIContentSecurityPolicy* aCsp,
+      nsIReferrerInfo* aReferrerInfo, const OriginAttributes& aOriginAttributes,
       CreateWindowResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvCreateWindowInDifferentProcess(
@@ -515,11 +513,11 @@ class ContentParent final : public PContentParent,
       ContentParent* aIgnoreThisCP = nullptr);
 
   mozilla::ipc::IPCResult RecvStoreAndBroadcastBlobURLRegistration(
-      const nsACString& aURI, const IPCBlob& aBlob, const Principal& aPrincipal,
+      const nsACString& aURI, const IPCBlob& aBlob, nsIPrincipal* aPrincipal,
       const Maybe<nsID>& aAgentCluster);
 
   mozilla::ipc::IPCResult RecvUnstoreAndBroadcastBlobURLUnregistration(
-      const nsACString& aURI, const Principal& aPrincipal);
+      const nsACString& aURI, nsIPrincipal* aPrincipal);
 
   mozilla::ipc::IPCResult RecvGetA11yContentId(uint32_t* aContentId);
 
@@ -529,10 +527,10 @@ class ContentParent final : public PContentParent,
   virtual int32_t Pid() const override;
 
   // PURLClassifierParent.
-  PURLClassifierParent* AllocPURLClassifierParent(const Principal& aPrincipal,
+  PURLClassifierParent* AllocPURLClassifierParent(nsIPrincipal* aPrincipal,
                                                   bool* aSuccess);
   virtual mozilla::ipc::IPCResult RecvPURLClassifierConstructor(
-      PURLClassifierParent* aActor, const Principal& aPrincipal,
+      PURLClassifierParent* aActor, nsIPrincipal* aPrincipal,
       bool* aSuccess) override;
 
   // PURLClassifierLocalParent.
@@ -700,10 +698,9 @@ class ContentParent final : public PContentParent,
    */
   static nsClassHashtable<nsCStringHashKey, nsTArray<ContentParent*>>*
       sBrowserContentParents;
-  static UniquePtr<nsTArray<ContentParent*>> sPrivateContent;
-  static UniquePtr<nsTHashMap<nsUint32HashKey, ContentParent*>>
+  static mozilla::StaticAutoPtr<nsTHashMap<nsUint32HashKey, ContentParent*>>
       sJSPluginContentParents;
-  static UniquePtr<LinkedList<ContentParent>> sContentParents;
+  static mozilla::StaticAutoPtr<LinkedList<ContentParent>> sContentParents;
 
   /**
    * In order to avoid rapidly creating and destroying content processes when
@@ -720,7 +717,7 @@ class ContentParent final : public PContentParent,
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
   // Cached Mac sandbox params used when launching content processes.
-  static UniquePtr<std::vector<std::string>> sMacSandboxParams;
+  static mozilla::StaticAutoPtr<std::vector<std::string>> sMacSandboxParams;
 #endif
 
   // Set aLoadUri to true to load aURIToLoad and to false to only create the
@@ -989,7 +986,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvSetClipboard(
       const IPCDataTransfer& aDataTransfer, const bool& aIsPrivateData,
-      const IPC::Principal& aRequestingPrincipal,
+      nsIPrincipal* aRequestingPrincipal,
       const nsContentPolicyType& aContentPolicyType,
       const int32_t& aWhichClipboard);
 
@@ -1002,6 +999,10 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvClipboardHasType(nsTArray<nsCString>&& aTypes,
                                                const int32_t& aWhichClipboard,
                                                bool* aHasType);
+
+  mozilla::ipc::IPCResult RecvClipboardHasTypesAsync(
+      nsTArray<nsCString>&& aTypes, const int32_t& aWhichClipboard,
+      ClipboardHasTypesAsyncResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvGetExternalClipboardFormats(
       const int32_t& aWhichClipboard, const bool& aPlainTextOnly,
@@ -1028,11 +1029,10 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvCloseAlert(const nsAString& aName);
 
-  mozilla::ipc::IPCResult RecvDisableNotifications(
-      const IPC::Principal& aPrincipal);
+  mozilla::ipc::IPCResult RecvDisableNotifications(nsIPrincipal* aPrincipal);
 
   mozilla::ipc::IPCResult RecvOpenNotificationSettings(
-      const IPC::Principal& aPrincipal);
+      nsIPrincipal* aPrincipal);
 
   mozilla::ipc::IPCResult RecvNotificationEvent(
       const nsAString& aType, const NotificationEventData& aData);
@@ -1117,7 +1117,7 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvCopyFavicon(nsIURI* aOldURI, nsIURI* aNewURI,
                                           const bool& aInPrivateBrowsing);
 
-  mozilla::ipc::IPCResult RecvFindImageText(ShmemImage&&,
+  mozilla::ipc::IPCResult RecvFindImageText(IPCImage&&, nsTArray<nsCString>&&,
                                             FindImageTextResolver&&);
 
   virtual void ProcessingError(Result aCode, const char* aMsgName) override;
@@ -1194,24 +1194,24 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvNotifyBenchmarkResult(const nsAString& aCodecName,
                                                     const uint32_t& aDecodeFPS);
 
-  mozilla::ipc::IPCResult RecvNotifyPushObservers(
-      const nsACString& aScope, const IPC::Principal& aPrincipal,
-      const nsAString& aMessageId);
+  mozilla::ipc::IPCResult RecvNotifyPushObservers(const nsACString& aScope,
+                                                  nsIPrincipal* aPrincipal,
+                                                  const nsAString& aMessageId);
 
   mozilla::ipc::IPCResult RecvNotifyPushObserversWithData(
-      const nsACString& aScope, const IPC::Principal& aPrincipal,
+      const nsACString& aScope, nsIPrincipal* aPrincipal,
       const nsAString& aMessageId, nsTArray<uint8_t>&& aData);
 
   mozilla::ipc::IPCResult RecvNotifyPushSubscriptionChangeObservers(
-      const nsACString& aScope, const IPC::Principal& aPrincipal);
+      const nsACString& aScope, nsIPrincipal* aPrincipal);
 
   mozilla::ipc::IPCResult RecvPushError(const nsACString& aScope,
-                                        const IPC::Principal& aPrincipal,
+                                        nsIPrincipal* aPrincipal,
                                         const nsAString& aMessage,
                                         const uint32_t& aFlags);
 
   mozilla::ipc::IPCResult RecvNotifyPushSubscriptionModifiedObservers(
-      const nsACString& aScope, const IPC::Principal& aPrincipal);
+      const nsACString& aScope, nsIPrincipal* aPrincipal);
 
   mozilla::ipc::IPCResult RecvGetFilesRequest(const nsID& aID,
                                               const nsAString& aDirectoryPath,
@@ -1239,19 +1239,18 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvBHRThreadHang(const HangDetails& aHangDetails);
 
   mozilla::ipc::IPCResult RecvAddCertException(
-      const nsACString& aSerializedCert, uint32_t aFlags,
-      const nsACString& aHostName, int32_t aPort,
+      nsIX509Cert* aCert, const nsACString& aHostName, int32_t aPort,
       const OriginAttributes& aOriginAttributes, bool aIsTemporary,
       AddCertExceptionResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvAutomaticStorageAccessPermissionCanBeGranted(
-      const Principal& aPrincipal,
+      nsIPrincipal* aPrincipal,
       AutomaticStorageAccessPermissionCanBeGrantedResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvStorageAccessPermissionGrantedForOrigin(
       uint64_t aTopLevelWindowId,
       const MaybeDiscarded<BrowsingContext>& aParentContext,
-      const Principal& aTrackingPrincipal, const nsACString& aTrackingOrigin,
+      nsIPrincipal* aTrackingPrincipal, const nsACString& aTrackingOrigin,
       const int& aAllowMode,
       const Maybe<
           ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
@@ -1260,7 +1259,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvCompleteAllowAccessFor(
       const MaybeDiscarded<BrowsingContext>& aParentContext,
-      uint64_t aTopLevelWindowId, const Principal& aTrackingPrincipal,
+      uint64_t aTopLevelWindowId, nsIPrincipal* aTrackingPrincipal,
       const nsACString& aTrackingOrigin, uint32_t aCookieBehavior,
       const ContentBlockingNotifier::StorageAccessPermissionGrantedReason&
           aReason,
@@ -1275,12 +1274,15 @@ class ContentParent final : public PContentParent,
       TestAllowStorageAccessRequestFlagResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvStoreUserInteractionAsPermission(
-      const Principal& aPrincipal);
+      nsIPrincipal* aPrincipal);
 
   mozilla::ipc::IPCResult RecvTestCookiePermissionDecided(
-      const MaybeDiscarded<BrowsingContext>& aContext,
-      const Principal& aPrincipal,
+      const MaybeDiscarded<BrowsingContext>& aContext, nsIPrincipal* aPrincipal,
       const TestCookiePermissionDecidedResolver&& aResolver);
+
+  mozilla::ipc::IPCResult RecvTestStorageAccessPermission(
+      nsIPrincipal* aEmbeddingPrincipal, const nsCString& aEmbeddedOrigin,
+      const TestStorageAccessPermissionResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvNotifyMediaPlaybackChanged(
       const MaybeDiscarded<BrowsingContext>& aContext,
@@ -1597,7 +1599,7 @@ class ContentParent final : public PContentParent,
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   mozilla::UniquePtr<SandboxBroker> mSandboxBroker;
-  static mozilla::UniquePtr<SandboxBrokerPolicyFactory>
+  static mozilla::StaticAutoPtr<SandboxBrokerPolicyFactory>
       sSandboxBrokerPolicyFactory;
 #endif
 
@@ -1645,6 +1647,8 @@ class ContentParent final : public PContentParent,
 
   static uint32_t sMaxContentProcesses;
   static Maybe<TimeStamp> sLastContentProcessLaunch;
+
+  bool mIsNotifiedShutdownSuccess = false;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(ContentParent, NS_CONTENTPARENT_IID)

@@ -514,7 +514,8 @@
       }
 
       // Set the new marginTop based on arrowscrollbox.
-      newMarginTop += scrollRect.y - this.scrollBox.getBoundingClientRect().y;
+      newMarginTop +=
+        scrollRect.y - this._indicatorBar.parentNode.getBoundingClientRect().y;
       this._indicatorBar.firstElementChild.style.marginTop =
         newMarginTop + "px";
       this._indicatorBar.hidden = false;
@@ -593,7 +594,7 @@
 
       this.setAttribute("flip", "both");
       this.setAttribute("side", "top");
-      this.setAttribute("position", "bottomcenter topright");
+      this.setAttribute("position", "bottomright topright");
     }
 
     _setSideAttribute(event) {

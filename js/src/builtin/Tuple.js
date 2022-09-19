@@ -250,7 +250,7 @@ function TupleJoin(separator) {
 
   // Steps 3-4
   var sep = ",";
-  if (separator != undefined && separator !== null) {
+  if (separator !== undefined && separator !== null) {
     let toString = IsCallable(separator.toString)
       ? separator.toString
       : std_Object_toString;
@@ -273,7 +273,7 @@ function TupleJoin(separator) {
     let element = T[k];
     // Step 7c
     var next = "";
-    if (element != undefined && element != null) {
+    if (element !== undefined && element !== null) {
       let toString = IsCallable(element.toString)
         ? element.toString
         : std_Object_toString;
@@ -567,7 +567,7 @@ function TupleFlat() {
   var depthNum = 1;
 
   /* Step 4. */
-  if (arguments.length > 0 && arguments[0] !== undefined) {
+  if (arguments.length && arguments[0] !== undefined) {
     depthNum = ToInteger(arguments[0]);
   }
 
@@ -653,10 +653,7 @@ function TupleFrom(items /*, mapFn, thisArg */) {
       k++;
     };
     /* Step 6b. */
-    /* Following Object.fromEntries(), inline AddEntriesFromiterator */
-    var iteratorRecord = MakeIteratorWrapper(items, usingIterator);
-
-    for (var nextValue of allowContentIter(iteratorRecord)) {
+    for (var nextValue of allowContentIterWith(items, usingIterator)) {
       adder(nextValue);
     }
     /* Step 6c. */

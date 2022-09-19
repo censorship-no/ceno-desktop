@@ -9519,6 +9519,7 @@ class CGPerSignatureCall(CGThing):
                         descriptor,
                         idlNode.maplikeOrSetlikeOrIterable,
                         idlNode.identifier.name,
+                        self.getArgumentNames(),
                     )
                 )
         elif idlNode.isAttr() and idlNode.type.isObservableArray():
@@ -9602,8 +9603,11 @@ class CGPerSignatureCall(CGThing):
 
         self.cgRoot = CGList(cgThings)
 
+    def getArgumentNames(self):
+        return ["arg" + str(i) for i in range(len(self.arguments))]
+
     def getArguments(self):
-        return [(a, "arg" + str(i)) for i, a in enumerate(self.arguments)]
+        return list(zip(self.arguments, self.getArgumentNames()))
 
     def processWebExtensionStubAttribute(self, idlNode, cgThings):
         nativeMethodName = "CallWebExtMethod"
@@ -19555,7 +19559,7 @@ class CGExampleClass(CGBindingImplClass):
             extradeclarations = (
                 "public:\n"
                 "  NS_DECL_CYCLE_COLLECTING_ISUPPORTS\n"
-                "  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(%s)\n"
+                "  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(%s)\n"
                 "\n" % self.nativeLeafName(descriptor)
             )
 
@@ -20006,11 +20010,11 @@ class CGJSImplClass(CGBindingImplClass):
             ]
             isupportsDecl = "NS_DECL_CYCLE_COLLECTING_ISUPPORTS\n"
             ccDecl = (
-                "NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(%s)\n" % descriptor.name
+                "NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(%s)\n" % descriptor.name
             )
             extradefinitions = fill(
                 """
-                NS_IMPL_CYCLE_COLLECTION_CLASS(${ifaceName})
+                NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(${ifaceName})
                 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(${ifaceName})
                   NS_IMPL_CYCLE_COLLECTION_UNLINK(mImpl)
                   NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
@@ -20021,7 +20025,6 @@ class CGJSImplClass(CGBindingImplClass):
                   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mImpl)
                   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
                 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-                NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(${ifaceName})
                 NS_IMPL_CYCLE_COLLECTING_ADDREF(${ifaceName})
                 NS_IMPL_CYCLE_COLLECTING_RELEASE(${ifaceName})
                 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(${ifaceName})
@@ -22107,8 +22110,10 @@ class CGIterableMethodGenerator(CGGeneric):
     using CGCallGenerator.
     """
 
-    def __init__(self, descriptor, iterable, methodName):
+    def __init__(self, descriptor, iterable, methodName, args):
         if methodName == "forEach":
+            assert len(args) == 2
+
             CGGeneric.__init__(
                 self,
                 fill(
@@ -22142,38 +22147,45 @@ class CGIterableMethodGenerator(CGGeneric):
                 ),
             )
             return
+
         if descriptor.interface.isIterable():
-            CGGeneric.__init__(
-                self,
-                fill(
-                    """
-                typedef ${iterClass} itrType;
-                RefPtr<itrType> result(new itrType(self,
-                                                   itrType::IteratorType::${itrMethod},
-                                                   &${ifaceName}Iterator_Binding::Wrap));
-                """,
-                    iterClass=iteratorNativeType(descriptor),
-                    ifaceName=descriptor.interface.identifier.name,
-                    itrMethod=methodName.title(),
-                ),
-            )
+            assert len(args) == 0
+
+            binding = descriptor.interface.identifier.name + "Iterator_Binding"
+            init = ""
         else:
             assert descriptor.interface.isAsyncIterable()
-            CGGeneric.__init__(
-                self,
-                fill(
-                    """
+
+            binding = descriptor.interface.identifier.name + "AsyncIterator_Binding"
+            init = fill(
+                """
+                {
+                  ErrorResult initError;
+                  self->InitAsyncIterator(result.get(), ${args}initError);
+                  if (initError.MaybeSetPendingException(cx, "Asynchronous iterator initialization steps for ${ifaceName} failed")) {
+                    return false;
+                  }
+                }
+                """,
+                args="".join(a + ", " for a in args),
+                ifaceName=descriptor.interface.identifier.name,
+            )
+        CGGeneric.__init__(
+            self,
+            fill(
+                """
                 typedef ${iterClass} itrType;
                 RefPtr<itrType> result(new itrType(self,
                                                    itrType::IteratorType::${itrMethod},
-                                                   &${ifaceName}AsyncIterator_Binding::Wrap));
-                self->InitAsyncIterator(result.get());
+                                                   &${binding}::Wrap));
+                $*{init}
                 """,
-                    iterClass=iteratorNativeType(descriptor),
-                    ifaceName=descriptor.interface.identifier.name,
-                    itrMethod=methodName.title(),
-                ),
-            )
+                iterClass=iteratorNativeType(descriptor),
+                itrMethod=methodName.title(),
+                binding=binding,
+                init=init,
+            ),
+        )
 
 
 def getObservableArrayBackingObject(descriptor, attr, errorReturn="return false;\n"):

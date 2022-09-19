@@ -378,7 +378,7 @@ bool nsIFrame::IsVisibleConsideringAncestors(uint32_t aFlags) const {
     nsView* view = frame->GetView();
     if (view && view->GetVisibility() == nsViewVisibility_kHide) return false;
 
-    if (this != frame && frame->IsContentHidden()) return false;
+    if (this != frame && frame->HidesContent()) return false;
 
     nsIFrame* parent = frame->GetParent();
     nsDeckFrame* deck = do_QueryFrame(parent);
@@ -721,6 +721,10 @@ void nsIFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
   }
 
+  if (disp->mContainerType) {
+    PresContext()->RegisterContainerQueryFrame(this);
+  }
+
   if (disp->IsContainLayout() && disp->GetContainSizeAxes().IsBoth() &&
       // All frames that support contain:layout also support contain:size.
       IsFrameOfType(eSupportsContainLayoutAndPaint) && !IsTableWrapperFrame()) {
@@ -801,12 +805,16 @@ void nsIFrame::DestroyFrom(nsIFrame* aDestructRoot,
 
   SVGObserverUtils::InvalidateDirectRenderingObservers(this);
 
-  if (StyleDisplay()->mPosition == StylePositionProperty::Sticky) {
-    StickyScrollContainer* ssc =
-        StickyScrollContainer::GetStickyScrollContainerForFrame(this);
-    if (ssc) {
+  const auto* disp = StyleDisplay();
+  if (disp->mPosition == StylePositionProperty::Sticky) {
+    if (auto* ssc =
+            StickyScrollContainer::GetStickyScrollContainerForFrame(this)) {
       ssc->RemoveFrame(this);
     }
+  }
+
+  if (disp->mContainerType) {
+    PresContext()->UnregisterContainerQueryFrame(this);
   }
 
   nsPresContext* presContext = PresContext();
@@ -1406,9 +1414,50 @@ void nsIFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
     }
   }
 
+  if (IsPrimaryFrame()) {
+    HandleLastRememberedSize();
+  }
+
   RemoveStateBits(NS_FRAME_SIMPLE_EVENT_REGIONS | NS_FRAME_SIMPLE_DISPLAYLIST);
 
   mMayHaveRoundedCorners = true;
+}
+
+void nsIFrame::HandleLastRememberedSize() {
+  MOZ_ASSERT(IsPrimaryFrame());
+  // Storing a last remembered size requires contain-intrinsic-size, and using
+  // a previously stored last remembered size requires content-visibility.
+  if (!StaticPrefs::layout_css_contain_intrinsic_size_enabled() ||
+      !StaticPrefs::layout_css_content_visibility_enabled()) {
+    return;
+  }
+  auto* element = Element::FromNodeOrNull(mContent);
+  if (!element) {
+    return;
+  }
+  const WritingMode wm = GetWritingMode();
+  const nsStylePosition* stylePos = StylePosition();
+  bool canRememberBSize = stylePos->ContainIntrinsicBSize(wm).IsAutoLength();
+  bool canRememberISize = stylePos->ContainIntrinsicISize(wm).IsAutoLength();
+  if (!canRememberBSize) {
+    element->RemoveLastRememberedBSize();
+  }
+  if (!canRememberISize) {
+    element->RemoveLastRememberedISize();
+  }
+  if (canRememberBSize || canRememberISize) {
+    const auto containAxes = StyleDisplay()->GetContainSizeAxes();
+    if ((canRememberBSize && !containAxes.mBContained) ||
+        (canRememberISize && !containAxes.mIContained)) {
+      bool isNonReplacedInline = IsFrameOfType(nsIFrame::eLineParticipant) &&
+                                 !IsFrameOfType(nsIFrame::eReplaced);
+      if (!isNonReplacedInline) {
+        PresContext()->Document()->ObserveForLastRememberedSize(*element);
+        return;
+      }
+    }
+  }
+  PresContext()->Document()->UnobserveForLastRememberedSize(*element);
 }
 
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
@@ -3970,7 +4019,7 @@ void nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder* aBuilder,
     return;
   }
 
-  if (IsContentHidden()) {
+  if (HidesContent()) {
     return;
   }
 
@@ -4498,28 +4547,26 @@ static StyleUserSelect UsedUserSelect(const nsIFrame* aFrame) {
 
   // Per https://drafts.csswg.org/css-ui-4/#content-selection:
   //
-  // The computed value is the specified value, except:
+  // The used value is the same as the computed value, except:
   //
-  //   1 - on editable elements where the computed value is always 'contain'
-  //       regardless of the specified value.
-  //   2 - when the specified value is auto, which computes to one of the other
-  //       values [...]
+  //    1 - on editable elements where the used value is always 'contain'
+  //        regardless of the computed value
+  //    2 - when the computed value is auto, in which case the used value is one
+  //        of the other values...
   //
   // See https://github.com/w3c/csswg-drafts/issues/3344 to see why we do this
   // at used-value time instead of at computed-value time.
-  //
-  // Also, we check for auto first to allow explicitly overriding the value for
-  // the editing host.
-  auto style = aFrame->Style()->UserSelect();
-  if (style != StyleUserSelect::Auto) {
-    return style;
-  }
 
   if (aFrame->IsTextInputFrame() || IsEditingHost(aFrame)) {
     // We don't implement 'contain' itself, but we make 'text' behave as
     // 'contain' for contenteditable and <input> / <textarea> elements anyway so
     // this is ok.
     return StyleUserSelect::Text;
+  }
+
+  auto style = aFrame->Style()->UserSelect();
+  if (style != StyleUserSelect::Auto) {
+    return style;
   }
 
   auto* parent = nsLayoutUtils::GetParentOrPlaceholderFor(aFrame);
@@ -6220,8 +6267,9 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
     }
   }
   const bool isFlexItem =
-      IsFlexItem() &&
-      !parentFrame->HasAnyStateBits(NS_STATE_FLEX_IS_EMULATING_LEGACY_BOX);
+      IsFlexItem() && !parentFrame->HasAnyStateBits(
+                          NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX |
+                          NS_STATE_FLEX_IS_EMULATING_LEGACY_MOZ_BOX);
   // This variable only gets set (and used) if isFlexItem is true.  It
   // indicates which axis (in this frame's own WM) corresponds to its
   // flex container's main axis.
@@ -6236,8 +6284,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
   const bool isOrthogonal = aWM.IsOrthogonalTo(alignCB->GetWritingMode());
   const bool isAutoISize = styleISize.IsAuto();
   const bool isAutoBSize =
-      nsLayoutUtils::IsAutoBSize(styleBSize, aCBSize.BSize(aWM)) ||
-      aFlags.contains(ComputeSizeFlag::UseAutoBSize);
+      nsLayoutUtils::IsAutoBSize(styleBSize, aCBSize.BSize(aWM));
   // Compute inline-axis size
   if (!isAutoISize) {
     auto iSizeResult = ComputeISizeValue(
@@ -6406,19 +6453,16 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
   result.ISize(aWM) = std::max(minISize, result.ISize(aWM));
 
   // Compute block-axis size
-  // (but not if we have auto bsize or if we received the "UseAutoBSize"
-  // flag -- then, we'll just stick with the bsize that we already calculated
-  // in the initial ComputeAutoSize() call. However, if we have a valid
-  // preferred aspect ratio, we still have to compute the block size because
-  // aspect ratio affects the intrinsic content size.)
+  // (but not if we have auto bsize  -- then, we'll just stick with the bsize
+  // that we already calculated in the initial ComputeAutoSize() call. However,
+  // if we have a valid preferred aspect ratio, we still have to compute the
+  // block size because aspect ratio affects the intrinsic content size.)
   if (!isAutoBSize) {
     result.BSize(aWM) = nsLayoutUtils::ComputeBSizeValue(
         aCBSize.BSize(aWM), boxSizingAdjust.BSize(aWM),
         styleBSize.AsLengthPercentage());
-  } else if (MOZ_UNLIKELY(isGridItem) &&
-             // FIXME: Any better way to refine the auto check here?
-             styleBSize.IsAuto() &&
-             !aFlags.contains(ComputeSizeFlag::UseAutoBSize) &&
+  } else if (MOZ_UNLIKELY(isGridItem) && styleBSize.IsAuto() &&
+             !aFlags.contains(ComputeSizeFlag::IsGridMeasuringReflow) &&
              !IsTrueOverflowContainer() &&
              !alignCB->IsMasonry(isOrthogonal ? eLogicalAxisInline
                                               : eLogicalAxisBlock)) {
@@ -6549,12 +6593,12 @@ LogicalSize nsIFrame::ComputeAutoSize(
   if (styleISize.IsAuto()) {
     nscoord availBased =
         aAvailableISize - aMargin.ISize(aWM) - aBorderPadding.ISize(aWM);
-    result.ISize(aWM) = ShrinkWidthToFit(aRenderingContext, availBased, aFlags);
+    result.ISize(aWM) = ShrinkISizeToFit(aRenderingContext, availBased, aFlags);
   }
   return result;
 }
 
-nscoord nsIFrame::ShrinkWidthToFit(gfxContext* aRenderingContext,
+nscoord nsIFrame::ShrinkISizeToFit(gfxContext* aRenderingContext,
                                    nscoord aISizeInCB,
                                    ComputeSizeFlags aFlags) {
   // If we're a container for font size inflation, then shrink
@@ -6594,8 +6638,7 @@ Maybe<nscoord> nsIFrame::ComputeInlineSizeFromAspectRatio(
   const StyleSize& styleBSize = aSizeOverrides.mStyleBSize
                                     ? *aSizeOverrides.mStyleBSize
                                     : StylePosition()->BSize(aWM);
-  if (aFlags.contains(ComputeSizeFlag::UseAutoBSize) ||
-      nsLayoutUtils::IsAutoBSize(styleBSize, aCBSize.BSize(aWM))) {
+  if (nsLayoutUtils::IsAutoBSize(styleBSize, aCBSize.BSize(aWM))) {
     return Nothing();
   }
 
@@ -6707,6 +6750,10 @@ void nsIFrame::DidReflow(nsPresContext* aPresContext,
                          const ReflowInput* aReflowInput) {
   NS_FRAME_TRACE(NS_FRAME_TRACE_CALLS, ("nsIFrame::DidReflow"));
 
+  if (IsHiddenByContentVisibilityOfInFlowParentForLayout()) {
+    return;
+  }
+
   SVGObserverUtils::InvalidateDirectRenderingObservers(
       this, SVGObserverUtils::INVALIDATE_REFLOW);
 
@@ -6811,7 +6858,7 @@ bool nsIFrame::IsContentDisabled() const {
   return element && element->IsDisabled();
 }
 
-bool nsIFrame::IsContentHidden() const {
+bool nsIFrame::HidesContent() const {
   if (!StyleDisplay()->IsContentVisibilityHidden()) {
     return false;
   }
@@ -6819,13 +6866,30 @@ bool nsIFrame::IsContentHidden() const {
   return IsFrameOfType(nsIFrame::eReplaced) || !StyleDisplay()->IsInlineFlow();
 }
 
-bool nsIFrame::AncestorHidesContent() const {
+bool nsIFrame::HidesContentForLayout() const {
+  return HidesContent() && !PresShell()->IsForcingLayoutForHiddenContent(this);
+}
+
+bool nsIFrame::IsHiddenByContentVisibilityOfInFlowParentForLayout() const {
+  const auto* parent = GetInFlowParent();
+  return parent && parent->HidesContentForLayout() && !Style()->IsAnonBox();
+}
+
+bool nsIFrame::IsHiddenByContentVisibilityOnAnyAncestor() const {
   if (!StaticPrefs::layout_css_content_visibility_enabled()) {
     return false;
   }
 
+  bool isAnonymousBox = Style()->IsAnonBox();
   for (nsIFrame* cur = GetInFlowParent(); cur; cur = cur->GetInFlowParent()) {
-    if (cur->IsContentHidden()) {
+    // Anonymous boxes are not hidden by the content-visibility of their first
+    // non-anonymous ancestor, but can be hidden by ancestors further up the
+    // tree.
+    if (isAnonymousBox && !cur->Style()->IsAnonBox()) {
+      isAnonymousBox = false;
+    }
+
+    if (!isAnonymousBox && cur->HidesContent()) {
       return true;
     }
   }
@@ -7803,6 +7867,11 @@ bool nsIFrame::IsBlockFrameOrSubclass() const {
   return !!thisAsBlock;
 }
 
+bool nsIFrame::IsImageFrameOrSubclass() const {
+  const nsImageFrame* asImage = do_QueryFrame(this);
+  return !!asImage;
+}
+
 static nsIFrame* GetNearestBlockContainer(nsIFrame* frame) {
   // The block wrappers we use to wrap blocks inside inlines aren't
   // described in the CSS spec.  We need to make them not be containing
@@ -8127,16 +8196,22 @@ bool nsIFrame::IsVisibleOrCollapsedForPainting() {
 }
 
 /* virtual */
-bool nsIFrame::IsEmpty() { return false; }
+bool nsIFrame::IsEmpty() {
+  return IsHiddenByContentVisibilityOfInFlowParentForLayout();
+}
 
 bool nsIFrame::CachedIsEmpty() {
-  MOZ_ASSERT(!HasAnyStateBits(NS_FRAME_IS_DIRTY),
-             "Must only be called on reflowed lines");
+  MOZ_ASSERT(!HasAnyStateBits(NS_FRAME_IS_DIRTY) ||
+                 IsHiddenByContentVisibilityOfInFlowParentForLayout(),
+             "Must only be called on reflowed lines or those hidden by "
+             "content-visibility.");
   return IsEmpty();
 }
 
 /* virtual */
-bool nsIFrame::IsSelfEmpty() { return false; }
+bool nsIFrame::IsSelfEmpty() {
+  return IsHiddenByContentVisibilityOfInFlowParentForLayout();
+}
 
 nsresult nsIFrame::GetSelectionController(nsPresContext* aPresContext,
                                           nsISelectionController** aSelCon) {
@@ -9884,12 +9959,17 @@ bool nsIFrame::FinishAndStoreOverflow(OverflowAreas& aOverflowAreas,
 
   if (anyOverflowChanged) {
     SVGObserverUtils::InvalidateDirectRenderingObservers(this);
-    if (IsBlockFrameOrSubclass() &&
-        TextOverflow::CanHaveOverflowMarkers(this)) {
-      DiscardDisplayItems(this, [](nsDisplayItem* aItem) {
-        return aItem->GetType() == DisplayItemType::TYPE_TEXT_OVERFLOW;
-      });
-      SchedulePaint(PAINT_DEFAULT);
+    if (nsBlockFrame* block = do_QueryFrame(this)) {
+      // NOTE(emilio): we need to use BeforeReflow::Yes, because we want to
+      // invalidate in cases where we _used_ to have an overflow marker and no
+      // longer do.
+      if (TextOverflow::CanHaveOverflowMarkers(
+              block, TextOverflow::BeforeReflow::Yes)) {
+        DiscardDisplayItems(this, [](nsDisplayItem* aItem) {
+          return aItem->GetType() == DisplayItemType::TYPE_TEXT_OVERFLOW;
+        });
+        SchedulePaint(PAINT_DEFAULT);
+      }
     }
   }
   return anyOverflowChanged;
@@ -10348,8 +10428,7 @@ nsIFrame::Focusable nsIFrame::IsFocusable(bool aWithMouse) {
   }
 
   PseudoStyleType pseudo = Style()->GetPseudoType();
-  if (pseudo == PseudoStyleType::anonymousFlexItem ||
-      pseudo == PseudoStyleType::anonymousGridItem) {
+  if (pseudo == PseudoStyleType::anonymousItem) {
     return {};
   }
 
@@ -10595,10 +10674,10 @@ nsSize nsIFrame::GetXULMaxSize(nsBoxLayoutState& aState) {
   return size;
 }
 
-nscoord nsIFrame::GetXULFlex() {
+int32_t nsIFrame::GetXULFlex() {
   nsBoxLayoutMetrics* metrics = BoxMetrics();
   if (XULNeedsRecalc(metrics->mFlex)) {
-    nsIFrame::AddXULFlex(this, metrics->mFlex);
+    metrics->mFlex = nsIFrame::ComputeXULFlex(this);
   }
 
   return metrics->mFlex;
@@ -11576,7 +11655,7 @@ void nsIFrame::UpdateAnimationVisibility() {
     return;
   }
 
-  bool hidden = AncestorHidesContent();
+  bool hidden = IsHiddenByContentVisibilityOnAnyAncestor();
   if (animationCollection) {
     for (auto& animation : animationCollection->mAnimations) {
       animation->SetHiddenByContentVisibility(hidden);

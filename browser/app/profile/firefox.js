@@ -277,7 +277,7 @@ pref("browser.shell.defaultBrowserCheckCount", 0);
 pref("browser.shell.setDefaultBrowserUserChoice", true);
 // When setting the default browser on Windows 10 using the UserChoice
 // registry keys, also try to set Firefox as the default PDF handler.
-pref("browser.shell.setDefaultPDFHandler", false);
+pref("browser.shell.setDefaultPDFHandler", true);
 // When setting Firefox as the default PDF handler (subject to conditions
 // above), only set Firefox as the default PDF handler when the existing handler
 // is a known browser, and not when existing handler is another PDF handler such
@@ -319,7 +319,7 @@ pref("browser.startup.preXulSkeletonUI", true);
 #endif
 
 // Show an upgrade dialog on major upgrades.
-pref("browser.startup.upgradeDialog.enabled", false);
+pref("browser.startup.upgradeDialog.enabled", true);
 
 // Don't create the hidden window during startup on
 // platforms that don't always need it (Win/Linux).
@@ -345,11 +345,7 @@ pref("browser.warnOnQuit", true);
 
 pref("browser.overlink-delay", 80);
 
-#ifdef NIGHTLY_BUILD
 pref("browser.theme.colorway-closet", true);
-#else
-pref("browser.theme.colorway-closet", false);
-#endif
 
 // Whether using `ctrl` when hitting return/enter in the URL bar
 // (or clicking 'go') should prefix 'www.' and suffix
@@ -403,6 +399,8 @@ pref("browser.urlbar.suggest.calculator",           false);
   // Enable QuickActions and its urlbar search mode button.
   pref("browser.urlbar.suggest.quickactions", true);
   pref("browser.urlbar.shortcuts.quickactions", true);
+  pref("browser.urlbar.quickactions.showPrefs", true);
+  pref("browser.urlbar.quickactions.showInZeroPrefix", true);
 #endif
 
 // When `browser.urlbar.bestMatch.enabled` is true, this controls whether best
@@ -497,6 +495,9 @@ pref("browser.urlbar.richSuggestions.tail", true);
 
 // If true, top sites may include sponsored ones.
 pref("browser.urlbar.sponsoredTopSites", false);
+
+// If true, show the search term in the URL bar for the users default engine.
+pref("browser.urlbar.showSearchTerms", false);
 
 // Controls the empty search behavior in Search Mode:
 //  0 - Show nothing
@@ -644,25 +645,24 @@ pref("browser.search.separatePrivateDefault.ui.banner.max", 0);
 pref("browser.privatebrowsing.vpnpromourl", "https://vpn.mozilla.org/?utm_source=firefox-browser&utm_medium=firefox-%CHANNEL%-browser&utm_campaign=private-browsing-vpn-link");
 
 // Enables the new private browsing indicator.
-pref("browser.privatebrowsing.enable-new-indicator", false);
+pref("browser.privatebrowsing.enable-new-indicator", true);
 
-// Whether the user is opted-in to privacy segmentation.
-pref("browser.privacySegmentation.enabled", false);
+// Enables the new about:privatebrowsing logo.
+pref("browser.privatebrowsing.enable-new-logo", true);
+
+// Whether the user has opted-in to recommended settings for data features.
+pref("browser.dataFeatureRecommendations.enabled", false);
 
 // Temporary pref to control whether or not Private Browsing windows show up
-// as separate icons in the Windows taskbar. This will be removed and become
-// the default behaviour with 106.
-pref("browser.privacySegmentation.windowSeparation.enabled", false);
+// as separate icons in the Windows taskbar.
+pref("browser.privateWindowSeparation.enabled", true);
 
 // Use dark theme variant for PBM windows. This is only supported if the theme
 // sets darkTheme data.
-pref("browser.theme.dark-private-windows", false);
+pref("browser.theme.dark-private-windows", true);
 
 // Controls visibility of the privacy segmentation preferences section.
 pref("browser.privacySegmentation.preferences.show", false);
-
-// Suffix for the SUMO learn more link for the privacy segmentation checkbox.
-pref("browser.privacySegmentation.preferences.learnMoreURLSuffix", "data-features");
 
 pref("browser.sessionhistory.max_entries", 50);
 
@@ -738,7 +738,7 @@ pref("browser.tabs.tabMinWidth", 76);
 pref("browser.tabs.secondaryTextUnsupportedLocales", "ar,bn,bo,ckb,fa,gu,he,hi,ja,km,kn,ko,lo,mr,my,ne,pa,si,ta,te,th,ur,zh");
 
 //Control the visibility of Tab Manager Menu.
-pref("browser.tabs.tabmanager.enabled", false);
+pref("browser.tabs.tabmanager.enabled", true);
 
 // When tabs opened by links in other tabs via a combination of
 // browser.link.open_newwindow being set to 3 and target="_blank" etc are
@@ -773,7 +773,8 @@ pref("browser.tabs.tooltipsShowPidAndActiveness", true);
 pref("browser.tabs.tooltipsShowPidAndActiveness", false);
 #endif
 
-pref("browser.tabs.firefox-view", false);
+pref("browser.tabs.firefox-view", true);
+pref("browser.tabs.firefox-view.logLevel", "Warn");
 
 // allow_eval_* is enabled on Firefox Desktop only at this
 // point in time
@@ -1368,6 +1369,7 @@ pref("services.sync.prefs.sync.browser.crashReports.unsubmittedCheck.autoSubmit2
 pref("services.sync.prefs.sync.browser.ctrlTab.sortByRecentlyUsed", true);
 pref("services.sync.prefs.sync.browser.discovery.enabled", true);
 pref("services.sync.prefs.sync.browser.download.useDownloadDir", true);
+pref("services.sync.prefs.sync.browser.firefox-view.feature-tour", true);
 pref("services.sync.prefs.sync.browser.formfill.enable", true);
 pref("services.sync.prefs.sync.browser.link.open_newwindow", true);
 pref("services.sync.prefs.sync.browser.menu.showViewImageInfo", true);
@@ -1561,7 +1563,9 @@ pref("browser.newtabpage.activity-stream.discoverystream.hideCardBackground.enab
 pref("browser.newtabpage.activity-stream.discoverystream.fourCardLayout.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.newFooterSection.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.saveToPocketCard.enabled", false);
+pref("browser.newtabpage.activity-stream.discoverystream.saveToPocketCardRegions", "");
 pref("browser.newtabpage.activity-stream.discoverystream.hideDescriptions.enabled", false);
+pref("browser.newtabpage.activity-stream.discoverystream.hideDescriptionsRegions", "");
 pref("browser.newtabpage.activity-stream.discoverystream.compactGrid.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.compactImages.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.imageGradient.enabled", false);
@@ -1631,7 +1635,7 @@ pref("browser.aboutwelcome.enabled", true);
 pref("browser.aboutwelcome.screens", "");
 pref("browser.aboutwelcome.skipFocus", true);
 // Used to enable template for MR 2022 Onboarding
-pref("browser.aboutwelcome.templateMR", false);
+pref("browser.aboutwelcome.templateMR", true);
 
 // The pref that controls if the What's New panel is enabled.
 pref("browser.messaging-system.whatsNewPanel.enabled", true);
@@ -1902,7 +1906,7 @@ pref("browser.contentblocking.reject-and-isolate-cookies.preferences.ui.enabled"
 //     "cookieBehaviorPBM4": cookie behaviour BEHAVIOR_REJECT_TRACKER
 //     "cookieBehaviorPBM5": cookie behaviour BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
 // One value from each section must be included in the browser.contentblocking.features.strict pref.
-pref("browser.contentblocking.features.strict", "tp,tpPrivate,cm,fp,stp,lvl2,rp,rpTop,ocsp,qps,qpsPBM");
+pref("browser.contentblocking.features.strict", "tp,tpPrivate,cookieBehavior5,cookieBehaviorPBM5,cm,fp,stp,lvl2,rp,rpTop,ocsp,qps,qpsPBM");
 
 // Hide the "Change Block List" link for trackers/tracking content in the custom
 // Content Blocking/ETP panel. By default, it will not be visible. There is also
@@ -2058,8 +2062,8 @@ pref("browser.tabs.crashReporting.includeURL", false);
 // nightly and developer edition.
 pref("extensions.experiments.enabled", false);
 
-#if defined(XP_WIN)
-  // Allows us to deprioritize the processes of background tabs at an OS level
+#if defined(XP_LINUX) || defined(XP_WIN)
+  // Allows us to adjust the priority of child processes at the OS level
   pref("dom.ipc.processPriorityManager.enabled", true);
 #endif
 
@@ -2117,9 +2121,6 @@ pref("extensions.pocket.showHome", true);
 // Control what version of the logged out doorhanger is displayed
 // Possibilities are: `control`, `control-one-button`, `variant_a`, `variant_b`, `variant_c`
 pref("extensions.pocket.loggedOutVariant", "control");
-
-// Enable the new Pocket panels.
-pref("extensions.pocket.refresh.layout.enabled", true);
 
 // Just for the new Pocket panels, enables the email signup button.
 pref("extensions.pocket.refresh.emailButton.enabled", false);
@@ -2287,11 +2288,15 @@ pref("devtools.toolbox.sidebar.width", 500);
 pref("devtools.toolbox.host", "bottom");
 pref("devtools.toolbox.previousHost", "right");
 pref("devtools.toolbox.selectedTool", "inspector");
-pref("devtools.toolbox.sideEnabled", true);
 pref("devtools.toolbox.zoomValue", "1");
 pref("devtools.toolbox.splitconsoleEnabled", false);
 pref("devtools.toolbox.splitconsoleHeight", 100);
 pref("devtools.toolbox.tabsOrder", "");
+// This is only used for local Web Extension debugging,
+// and allows to keep the window on top of all others,
+// so that you can debug the Firefox window, while keeping the devtools
+// always visible
+pref("devtools.toolbox.alwaysOnTop", true);
 
 // The fission pref for enabling the "Multiprocess Browser Toolbox", which will
 // make it possible to debug anything in Firefox (See Bug 1570639 for more information).
@@ -2713,4 +2718,6 @@ pref("browser.places.snapshots.expiration.userManaged.days", 420);
 
 // If the user has seen the Firefox View feature tour this value reflects the tour
 // message id, the id of the last screen they saw, and whether they completed the tour
-pref("browser.firefox-view.feature-tour", "{\"message\":\"\",\"screen\":\"\",\"complete\":true}");
+pref("browser.firefox-view.feature-tour", "{\"message\":\"FIREFOX_VIEW_FEATURE_TOUR\",\"screen\":\"FEATURE_CALLOUT_1\",\"complete\":false}");
+// Number of times the user visited about:firefoxview
+pref("browser.firefox-view.view-count", 0);

@@ -37,10 +37,10 @@
 #include "util/Poison.h"
 #include "vm/BigIntType.h"
 #include "vm/ErrorObject.h"
-#include "wasm/TypedObject.h"
 #include "wasm/WasmCodegenTypes.h"
 #include "wasm/WasmDebug.h"
 #include "wasm/WasmDebugFrame.h"
+#include "wasm/WasmGcObject.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmStubs.h"
 
@@ -289,8 +289,27 @@ const SymbolicAddressSignature SASigArrayNew = {SymbolicAddress::ArrayNew,
                                                 _FailOnNullPtr,
                                                 3,
                                                 {_PTR, _I32, _RoN, _END}};
+const SymbolicAddressSignature SASigArrayNewData = {
+    SymbolicAddress::ArrayNewData,
+    _RoN,
+    _FailOnNullPtr,
+    5,
+    {_PTR, _I32, _I32, _RoN, _I32, _END}};
+const SymbolicAddressSignature SASigArrayNewElem = {
+    SymbolicAddress::ArrayNewElem,
+    _RoN,
+    _FailOnNullPtr,
+    5,
+    {_PTR, _I32, _I32, _RoN, _I32, _END}};
+const SymbolicAddressSignature SASigArrayCopy = {
+    SymbolicAddress::ArrayCopy,
+    _VOID,
+    _FailOnNegI32,
+    7,
+    {_PTR, _RoN, _I32, _RoN, _I32, _I32, _I32, _END}};
 const SymbolicAddressSignature SASigRefTest = {
     SymbolicAddress::RefTest, _I32, _Infallible, 3, {_PTR, _RoN, _RoN, _END}};
+
 #define DECL_SAS_FOR_INTRINSIC(op, export, sa_name, abitype, entry, idx) \
   const SymbolicAddressSignature SASig##sa_name = {                      \
       SymbolicAddress::sa_name, _VOID, _FailOnNegI32,                    \
@@ -778,10 +797,11 @@ static int32_t CoerceInPlace_JitEntry(int funcExportIndex, Instance* instance,
   const Code& code = instance->code();
   const FuncExport& fe =
       code.metadata(code.stableTier()).funcExports[funcExportIndex];
+  const FuncType& funcType = code.metadata().getFuncExportType(fe);
 
-  for (size_t i = 0; i < fe.funcType().args().length(); i++) {
+  for (size_t i = 0; i < funcType.args().length(); i++) {
     HandleValue arg = HandleValue::fromMarkedLocation(&argv[i]);
-    switch (fe.funcType().args()[i].kind()) {
+    switch (funcType.args()[i].kind()) {
       case ValType::I32: {
         int32_t i32;
         if (!ToInt32(cx, arg, &i32)) {
@@ -813,7 +833,7 @@ static int32_t CoerceInPlace_JitEntry(int funcExportIndex, Instance* instance,
         break;
       }
       case ValType::Ref: {
-        switch (fe.funcType().args()[i].refTypeKind()) {
+        switch (funcType.args()[i].refTypeKind()) {
           case RefType::Extern:
             // Leave Object and Null alone, we will unbox inline.  All we need
             // to do is convert other values to an Object representation.
@@ -850,7 +870,7 @@ static int32_t CoerceInPlace_JitEntry(int funcExportIndex, Instance* instance,
 static BigInt* AllocateBigIntTenuredNoGC() {
   JSContext* cx = TlsContext.get();  // Cold code (the caller is elaborate)
 
-  return js::AllocateBigInt<NoGC>(cx, gc::TenuredHeap);
+  return cx->newCell<BigInt, NoGC>(gc::TenuredHeap);
 }
 
 static int64_t DivI64(uint32_t x_hi, uint32_t x_lo, uint32_t y_hi,
@@ -1257,18 +1277,28 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       *abiType = Args_General2;
       MOZ_ASSERT(*abiType == ToABIType(SASigStructNew));
       return FuncCast(Instance::structNew, *abiType);
+
     case SymbolicAddress::ArrayNew:
       *abiType = Args_General_GeneralInt32General;
       MOZ_ASSERT(*abiType == ToABIType(SASigArrayNew));
       return FuncCast(Instance::arrayNew, *abiType);
+    case SymbolicAddress::ArrayNewData:
+      *abiType = Args_General_GeneralInt32Int32GeneralInt32;
+      MOZ_ASSERT(*abiType == ToABIType(SASigArrayNewData));
+      return FuncCast(Instance::arrayNewData, *abiType);
+    case SymbolicAddress::ArrayNewElem:
+      *abiType = Args_General_GeneralInt32Int32GeneralInt32;
+      MOZ_ASSERT(*abiType == ToABIType(SASigArrayNewElem));
+      return FuncCast(Instance::arrayNewElem, *abiType);
+    case SymbolicAddress::ArrayCopy:
+      *abiType = Args_Int32_GeneralGeneralInt32GeneralInt32Int32Int32;
+      MOZ_ASSERT(*abiType == ToABIType(SASigArrayCopy));
+      return FuncCast(Instance::arrayCopy, *abiType);
+
     case SymbolicAddress::RefTest:
       *abiType = Args_Int32_GeneralGeneralGeneral;
       MOZ_ASSERT(*abiType == ToABIType(SASigRefTest));
       return FuncCast(Instance::refTest, *abiType);
-    case SymbolicAddress::InlineTypedObjectClass:
-      // The ABI type is not used here, but assigning one to avoid garbage.
-      *abiType = Args_General1;
-      return (void*)&js::InlineTypedObject::class_;
 
     case SymbolicAddress::ExceptionNew:
       *abiType = Args_General2;
@@ -1335,10 +1365,6 @@ bool wasm::IsRoundingFunction(SymbolicAddress callee, jit::RoundingMode* mode) {
 bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
   // Also see "The Wasm Builtin ABIs" in WasmFrame.h.
   switch (sym) {
-    // No thunk, because these are data addresses
-    case SymbolicAddress::InlineTypedObjectClass:
-      return false;
-
     // No thunk, because they do their work within the activation
     case SymbolicAddress::HandleThrow:  // GenerateThrowStub
     case SymbolicAddress::HandleTrap:   // GenerateTrapExit
@@ -1446,6 +1472,9 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
     case SymbolicAddress::ExceptionNew:
     case SymbolicAddress::ThrowException:
     case SymbolicAddress::ArrayNew:
+    case SymbolicAddress::ArrayNewData:
+    case SymbolicAddress::ArrayNewElem:
+    case SymbolicAddress::ArrayCopy:
     case SymbolicAddress::RefTest:
 #define OP(op, export, sa_name, abitype, entry, idx) \
   case SymbolicAddress::sa_name:

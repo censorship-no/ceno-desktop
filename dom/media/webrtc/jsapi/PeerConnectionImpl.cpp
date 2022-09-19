@@ -244,7 +244,7 @@ void PeerConnectionAutoTimer::UnregisterConnection(bool aContainedAV) {
 
 bool PeerConnectionAutoTimer::IsStopped() { return mRefCnt == 0; }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(PeerConnectionImpl)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PeerConnectionImpl)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(PeerConnectionImpl)
   tmp->Close();
   tmp->BreakCycles();
@@ -258,7 +258,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(PeerConnectionImpl)
                                     mSTSThread, mReceiveStreams, mOperations,
                                     mTransceivers, mKungFuDeathGrip)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(PeerConnectionImpl)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(PeerConnectionImpl)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(PeerConnectionImpl)
@@ -1582,6 +1581,7 @@ PeerConnectionImpl::SetLocalDescription(int32_t aAction, const char* aSDP) {
       appendHistory();
       return NS_ERROR_FAILURE;
   }
+  MOZ_ASSERT(!mUncommittedJsepSession);
   mUncommittedJsepSession.reset(mJsepSession->Clone());
   JsepSession::Result result =
       mUncommittedJsepSession->SetLocalDescription(sdpType, mLocalRequestedSDP);
@@ -1686,6 +1686,7 @@ PeerConnectionImpl::SetRemoteDescription(int32_t action, const char* aSDP) {
       return NS_ERROR_FAILURE;
   }
 
+  MOZ_ASSERT(!mUncommittedJsepSession);
   mUncommittedJsepSession.reset(mJsepSession->Clone());
   JsepSession::Result result = mUncommittedJsepSession->SetRemoteDescription(
       sdpType, mRemoteRequestedSDP);
@@ -2413,7 +2414,7 @@ void PeerConnectionImpl::DoSetDescriptionSuccessPostProcessing(
           return;
         }
 
-        MOZ_RELEASE_ASSERT(mUncommittedJsepSession);
+        MOZ_ASSERT(mUncommittedJsepSession);
 
         // Check for transceivers added by addTrack/addTransceiver while
         // a sRD/sLD was in progress
@@ -2628,6 +2629,10 @@ void PeerConnectionImpl::DoSetDescriptionSuccessPostProcessing(
         }
         aP->MaybeResolveWithUndefined();
       }));
+}
+
+void PeerConnectionImpl::OnSetDescriptionError() {
+  mUncommittedJsepSession = nullptr;
 }
 
 RTCSignalingState PeerConnectionImpl::GetSignalingState() const {

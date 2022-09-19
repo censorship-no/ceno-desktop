@@ -627,6 +627,7 @@ browser.startup:
       - 1714258
       - 1730042
       - 1754641
+      - 1781978
     description: >
       How the about:home startup cache functioned on startup.
 
@@ -641,7 +642,7 @@ browser.startup:
       8: User did not load about:home on its own by default.
       9: Cache is disabled because about:newtab preloading is disabled.
 
-    expires: "106"
+    expires: "112"
     kind: uint
     notification_emails:
       - mconley@mozilla.com
@@ -660,11 +661,12 @@ browser.startup:
       - 1714258
       - 1730042
       - 1754641
+      - 1781978
     description: >
       True if the about:home startup cache was written via the AsyncShutdown
       blocker.
 
-    expires: "106"
+    expires: "112"
     kind: boolean
     notification_emails:
       - mconley@mozilla.com
@@ -1145,6 +1147,22 @@ browser.ui.interaction:
     notification_emails:
       - shong@mozilla.com
       - dtownsend@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+
+  textrecognition_error:
+    bug_numbers:
+      - 1783261
+    description: >
+      Recorded when text recognition in images fails for some unknown reason.
+    notification_emails:
+      - gtatum@mozilla.com
+      - nordzilla@mozilla.com
+    expires: never
+    kind: uint
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -6854,6 +6872,22 @@ urlbar.picked:
       record_in_processes:
         - main
 
+    quickaction:
+      bug_numbers:
+        - 1783154
+      description: >
+        Counts how many times this result type was picked at a given index.
+      expires: never
+      kind: uint
+      keyed: true
+      notification_emails:
+        - fx-search-telemetry@mozilla.com
+      release_channel_collection: opt-out
+      products:
+        - 'firefox'
+      record_in_processes:
+        - main
+
     quicksuggest:
       bug_numbers:
         - 1761059
@@ -7449,6 +7483,24 @@ urlbar.picked.searchmode:
     record_in_processes:
       - main
 
+quickaction:
+  picked:
+    bug_numbers:
+      - 1783155
+    description: >
+      Counts how many times quickaction results were selected. The key
+      is the in the form "actionkey-N" where N is the number of characters
+      the user typed to be shown the action.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
 
 migration:
   uninstaller_profile_refresh:
@@ -8581,6 +8633,25 @@ opaque.response.blocking:
     record_in_processes:
       - 'main'
     release_channel_collection: opt-out
+
+places:
+  sponsored_visit_no_triggering_url:
+    bug_numbers:
+      - 1787961
+    description: >
+      Number of sponsored visits that could not find their triggering URL in
+      history. We expect this to be a small number just due to the navigation
+      layer manipulating URLs. A large or growing value may be a concern.
+
+    expires: never
+    kind: uint
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
 
 # NOTE: Please don't add new definitions below this point. Consider adding
 # them earlier in the file and leave the telemetry.test category as the last

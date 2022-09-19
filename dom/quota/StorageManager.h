@@ -24,6 +24,7 @@ class ErrorResult;
 
 namespace dom {
 
+class FileSystemManager;
 class Promise;
 struct StorageEstimate;
 
@@ -44,8 +45,10 @@ class StorageManager final : public nsISupports, public nsWrapperCache {
 
   already_AddRefed<Promise> GetDirectory(ErrorResult& aRv);
 
+  void Shutdown();
+
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(StorageManager)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(StorageManager)
 
   // nsWrapperCache
   virtual JSObject* WrapObject(JSContext* aCx,
@@ -53,6 +56,8 @@ class StorageManager final : public nsISupports, public nsWrapperCache {
 
  private:
   ~StorageManager();
+
+  RefPtr<FileSystemManager> mFileSystemManager;
 };
 
 }  // namespace dom

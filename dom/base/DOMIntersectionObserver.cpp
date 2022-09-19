@@ -145,19 +145,7 @@ static void LazyLoadCallback(
     MOZ_ASSERT(entry->Target()->IsHTMLElement(nsGkAtoms::img));
     if (entry->IsIntersecting()) {
       static_cast<HTMLImageElement*>(entry->Target())
-          ->StopLazyLoading(HTMLImageElement::FromIntersectionObserver::Yes,
-                            HTMLImageElement::StartLoading::Yes);
-    }
-  }
-}
-
-static void LazyLoadCallbackReachViewport(
-    const Sequence<OwningNonNull<DOMIntersectionObserverEntry>>& aEntries) {
-  for (const auto& entry : aEntries) {
-    MOZ_ASSERT(entry->Target()->IsHTMLElement(nsGkAtoms::img));
-    if (entry->IsIntersecting()) {
-      static_cast<HTMLImageElement*>(entry->Target())
-          ->LazyLoadImageReachedViewport();
+          ->StopLazyLoading(HTMLImageElement::StartLoading::Yes);
     }
   }
 }
@@ -178,7 +166,7 @@ already_AddRefed<DOMIntersectionObserver>
 DOMIntersectionObserver::CreateLazyLoadObserver(Document& aDocument) {
   RefPtr<DOMIntersectionObserver> observer =
       new DOMIntersectionObserver(aDocument, LazyLoadCallback);
-  observer->mThresholds.AppendElement(std::numeric_limits<double>::min());
+  observer->mThresholds.AppendElement(0.0f);
 
 #define SET_MARGIN(side_, side_lower_)                                 \
   observer->mRootMargin.Get(eSide##side_) = PrefMargin(                \
@@ -191,14 +179,6 @@ DOMIntersectionObserver::CreateLazyLoadObserver(Document& aDocument) {
   SET_MARGIN(Left, left);
 #undef SET_MARGIN
 
-  return observer.forget();
-}
-
-already_AddRefed<DOMIntersectionObserver>
-DOMIntersectionObserver::CreateLazyLoadObserverViewport(Document& aDocument) {
-  RefPtr<DOMIntersectionObserver> observer =
-      new DOMIntersectionObserver(aDocument, LazyLoadCallbackReachViewport);
-  observer->mThresholds.AppendElement(std::numeric_limits<double>::min());
   return observer.forget();
 }
 
@@ -633,7 +613,7 @@ IntersectionOutput DOMIntersectionObserver::Intersect(
   // true even if both the root and the target elements are in the skipped
   // contents."
   // https://drafts.csswg.org/css-contain/#cv-notes
-  if (targetFrame->AncestorHidesContent()) {
+  if (targetFrame->IsHiddenByContentVisibilityOnAnyAncestor()) {
     return {isSimilarOrigin};
   }
 

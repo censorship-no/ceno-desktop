@@ -334,6 +334,7 @@ MSG_DEF(JSMSG_PAREN_BEFORE_FORMAL,     0, JSEXN_SYNTAXERR, "missing ( before for
 MSG_DEF(JSMSG_PAREN_BEFORE_SWITCH,     0, JSEXN_SYNTAXERR, "missing ( before switch expression")
 MSG_DEF(JSMSG_PAREN_BEFORE_WITH,       0, JSEXN_SYNTAXERR, "missing ( before with-statement object")
 MSG_DEF(JSMSG_PAREN_IN_PAREN,          0, JSEXN_SYNTAXERR, "missing ) in parenthetical")
+MSG_DEF(JSMSG_PAREN_AFTER_DECORATOR,   0, JSEXN_SYNTAXERR, "missing ) in decorator expression")
 MSG_DEF(JSMSG_RC_AFTER_EXPORT_SPEC_LIST, 0, JSEXN_SYNTAXERR, "missing '}' after export specifier list")
 MSG_DEF(JSMSG_RC_AFTER_IMPORT_SPEC_LIST, 0, JSEXN_SYNTAXERR, "missing '}' after module specifier list")
 MSG_DEF(JSMSG_RESERVED_ID,             1, JSEXN_SYNTAXERR, "{0} is a reserved identifier")
@@ -388,6 +389,8 @@ MSG_DEF(JSMSG_DUPLICATE_ASSERT_KEY,    1, JSEXN_SYNTAXERR, "duplicate assert key
 MSG_DEF(JSMSG_COLON_AFTER_ASSERT_KEY,  0, JSEXN_SYNTAXERR, "missing : after assert key")
 MSG_DEF(JSMSG_ASSERT_STRING_LITERAL,   0, JSEXN_SYNTAXERR, "expected string literal")
 MSG_DEF(JSMSG_ASSERT_KEY_EXPECTED,     0, JSEXN_SYNTAXERR, "expected assertion key")
+MSG_DEF(JSMSG_DECORATOR_NAME_EXPECTED, 0, JSEXN_SYNTAXERR, "expected property name in decorator expression")
+MSG_DEF(JSMSG_CLASS_EXPECTED,          0, JSEXN_SYNTAXERR, "expected class")
 
 // UTF-8 source text encoding errors
 MSG_DEF(JSMSG_BAD_LEADING_UTF8_UNIT,   1, JSEXN_SYNTAXERR, "{0} byte doesn't begin a valid UTF-8 code point")
@@ -688,7 +691,7 @@ MSG_DEF(JSMSG_AMBIGUOUS_INDIRECT_EXPORT, 0, JSEXN_SYNTAXERR, "ambiguous indirect
 MSG_DEF(JSMSG_MISSING_IMPORT,            0, JSEXN_SYNTAXERR, "import not found")
 MSG_DEF(JSMSG_AMBIGUOUS_IMPORT,          0, JSEXN_SYNTAXERR, "ambiguous import")
 MSG_DEF(JSMSG_MISSING_EXPORT,            1, JSEXN_SYNTAXERR, "local binding for export '{0}' not found")
-MSG_DEF(JSMSG_BAD_MODULE_STATUS,         0, JSEXN_INTERNALERR, "module record has unexpected status")
+MSG_DEF(JSMSG_BAD_MODULE_STATUS,         1, JSEXN_INTERNALERR, "module record has unexpected status: {0}")
 MSG_DEF(JSMSG_DYNAMIC_IMPORT_FAILED,     0, JSEXN_TYPEERR, "error loading dynamically imported module")
 
 // Import maps

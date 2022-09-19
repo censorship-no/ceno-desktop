@@ -226,7 +226,6 @@ impl Wrench {
         no_scissor: bool,
         no_batch: bool,
         precache_shaders: bool,
-        disable_dual_source_blending: bool,
         dump_shader_source: Option<String>,
         notifier: Option<Box<dyn RenderNotifier>>,
     ) -> Self {
@@ -242,7 +241,7 @@ impl Wrench {
             ShaderPrecacheFlags::empty()
         };
 
-        let opts = webrender::RendererOptions {
+        let opts = webrender::WebRenderOptions {
             resource_override_path: shader_override_path,
             use_optimized_shaders,
             enable_subpixel_aa: !no_subpixel_aa,
@@ -253,7 +252,6 @@ impl Wrench {
             blob_image_handler: Some(Box::new(blob::CheckerboardRenderer::new(callbacks.clone()))),
             testing: true,
             max_internal_texture_size: Some(8196), // Needed for rawtest::test_resize_image.
-            allow_dual_source_blending: !disable_dual_source_blending,
             allow_advanced_blend_equation: window.is_software(),
             dump_shader_source,
             // SWGL doesn't support the GL_ALWAYS depth comparison function used by
@@ -274,7 +272,7 @@ impl Wrench {
             Box::new(Notifier(data))
         });
 
-        let (renderer, sender) = webrender::Renderer::new(
+        let (renderer, sender) = webrender::create_webrender_instance(
             window.clone_gl(),
             notifier,
             opts,

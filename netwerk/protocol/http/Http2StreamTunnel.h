@@ -49,6 +49,15 @@ class Http2StreamTunnel : public Http2StreamBase,
   void SetRequestDone() { mSendClosed = true; }
   nsresult Condition() override { return mCondition; }
   void CloseStream(nsresult reason) override;
+  void DisableSpdy() override {
+    if (mTransaction) {
+      mTransaction->DisableHttp2ForProxy();
+    }
+  }
+  void ReuseConnectionOnRestartOK(bool aReuse) override {
+    // Do nothing here. We'll never reuse the connection.
+  }
+  void MakeNonSticky() override {}
 
  protected:
   ~Http2StreamTunnel();
@@ -62,11 +71,13 @@ class Http2StreamTunnel : public Http2StreamBase,
 
  private:
   void ClearTransactionsBlockedOnTunnel();
+  bool DispatchRelease();
 
   RefPtr<OutputStreamTunnel> mOutput;
   RefPtr<InputStreamTunnel> mInput;
   nsCOMPtr<nsIInterfaceRequestor> mSecurityCallbacks;
   RefPtr<nsHttpConnectionInfo> mConnectionInfo;
+  RefPtr<nsAHttpTransaction> mTransaction;
   bool mSendClosed{false};
   nsresult mCondition{NS_OK};
 };
@@ -99,7 +110,6 @@ class OutputStreamTunnel : public nsIAsyncOutputStream {
 
   nsWeakPtr mWeakStream;
   nsCOMPtr<nsIOutputStreamCallback> mCallback;
-  nsCOMPtr<nsIEventTarget> mSocketThread;
   nsresult mCondition{NS_OK};
 };
 
@@ -122,7 +132,6 @@ class InputStreamTunnel : public nsIAsyncInputStream {
 
   nsWeakPtr mWeakStream;
   nsCOMPtr<nsIInputStreamCallback> mCallback;
-  nsCOMPtr<nsIEventTarget> mSocketThread;
   nsresult mCondition{NS_OK};
 };
 

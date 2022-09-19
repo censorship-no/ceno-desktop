@@ -167,8 +167,7 @@ interface nsISearchEngine : nsISupports
 
   /**
    * Whether or not this engine is provided by the application, e.g. it is
-   * in the list of configured search engines, or provided by a distribution
-   * set-up.
+   * in the list of configured search engines.
    */
   readonly attribute boolean isAppProvided;
 
@@ -473,6 +472,11 @@ interface nsISearchService : nsISupports
 
   Promise getDefaultPrivate();
   Promise setDefaultPrivate(in nsISearchEngine engine);
+
+  /**
+   * Whether to display the "Search in Private Window" result in the urlbar.
+   */
+  readonly attribute boolean separatePrivateDefaultUrlbarResultEnabled;
 
   /**
    * Allows the add-on manager to discover if a WebExtension based search engine

@@ -16,7 +16,6 @@
 
 #include "jsapi.h"
 
-#include "builtin/BigInt.h"
 #include "builtin/Eval.h"
 #include "builtin/SelfHostingDefines.h"
 #include "frontend/BytecodeCompiler.h"
@@ -27,7 +26,6 @@
 #include "js/UniquePtr.h"
 #include "util/StringBuffer.h"
 #include "util/Text.h"
-#include "vm/AsyncFunction.h"
 #include "vm/BooleanObject.h"
 #include "vm/DateObject.h"
 #include "vm/EqualityOperations.h"  // js::SameValue
@@ -929,7 +927,9 @@ static bool CanAddNewPropertyExcludingProtoFast(PlainObject* obj) {
     MOZ_ASSERT(!Watchtower::watchesPropertyAdd(toPlain),
                "watched objects require Watchtower calls");
     Shape* newShape = fromPlain->shape();
-    if (!toPlain->setShapeAndUpdateSlots(cx, newShape)) {
+    uint32_t oldSpan = 0;
+    uint32_t newSpan = props.length();
+    if (!toPlain->setShapeAndAddNewSlots(cx, newShape, oldSpan, newSpan)) {
       return false;
     }
     for (size_t i = props.length(); i > 0; i--) {

@@ -11,8 +11,8 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/AbuseReporter.jsm"
 );
 
-const { EnterprisePolicyTesting } = ChromeUtils.import(
-  "resource://testing-common/EnterprisePolicyTesting.jsm"
+const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
 );
 const { TelemetryTestUtils } = ChromeUtils.import(
   "resource://testing-common/TelemetryTestUtils.jsm"
@@ -73,8 +73,77 @@ add_task(async function test_context_menu() {
   const [extension] = createExtensions([{ name: "an extension" }]);
   await extension.startup();
 
-  // Open the extension panel, then open the context menu for the extension.
+  // Open the extension panel.
   await openExtensionsPanel(win);
+
+  // Get the menu button of the extension and verify the mouseover/mouseout
+  // behavior. We expect a help message to be displayed when a
+  // `secondary-button-hovered` attribute is set to `true` on the item
+  // (combined with some CSS).
+  const item = getUnifiedExtensionsItem(win, extension.id);
+  ok(item, "expected an item for the extension");
+  const menuButton = item.querySelector(".unified-extensions-item-open-menu");
+  ok(menuButton, "expected 'open menu' button");
+
+  let messageHover = item.querySelector(
+    ".unified-extensions-item-message-hover"
+  );
+
+  ok(
+    BrowserTestUtils.is_visible(
+      item.querySelector(".unified-extensions-item-message-default")
+    ),
+    "expected message to be visible"
+  );
+  ok(
+    BrowserTestUtils.is_hidden(messageHover),
+    "expected 'hover message' to be hidden"
+  );
+
+  let hovered = BrowserTestUtils.waitForEvent(menuButton, "mouseover");
+  EventUtils.synthesizeMouseAtCenter(menuButton, { type: "mouseover" }, win);
+  await hovered;
+  is(
+    item.getAttribute("secondary-button-hovered"),
+    "true",
+    "expected secondary-button-hovered attr on the item"
+  );
+  ok(
+    BrowserTestUtils.is_hidden(
+      item.querySelector(".unified-extensions-item-message-default")
+    ),
+    "expected message to be hidden"
+  );
+  ok(
+    BrowserTestUtils.is_visible(messageHover),
+    "expected 'hover message' to be visible"
+  );
+  Assert.deepEqual(
+    win.document.l10n.getAttributes(messageHover),
+    { id: "unified-extensions-item-message-manage", args: null },
+    "expected correct l10n attributes for the message displayed on secondary button hovered"
+  );
+
+  let notHovered = BrowserTestUtils.waitForEvent(menuButton, "mouseout");
+  // Move mouse somewhere else...
+  EventUtils.synthesizeMouseAtCenter(item, { type: "mouseover" }, win);
+  await notHovered;
+  ok(
+    !item.hasAttribute("secondary-button-hovered"),
+    "expected no secondary-button-hovered attr on the item"
+  );
+  ok(
+    BrowserTestUtils.is_visible(
+      item.querySelector(".unified-extensions-item-message-default")
+    ),
+    "expected message to be visible"
+  );
+  ok(
+    BrowserTestUtils.is_hidden(messageHover),
+    "expected 'hover message' to be hidden"
+  );
+
+  // Open the context menu for the extension.
   const contextMenu = await openUnifiedExtensionsContextMenu(win, extension.id);
   const doc = contextMenu.ownerDocument;
 
@@ -453,7 +522,7 @@ add_task(async function test_open_context_menu_with_keyboard() {
   // Open the context menu by focusing the button and pressing the SPACE key.
   let shown = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
   button.focus();
-  is(win.document.activeElement, button, "expected button to be focused");
+  is(button, win.document.activeElement, "expected button to be focused");
   EventUtils.synthesizeKey(" ", {}, win);
   await shown;
 
@@ -462,7 +531,7 @@ add_task(async function test_open_context_menu_with_keyboard() {
   // Open the context menu by focusing the button and pressing the ENTER key.
   shown = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
   button.focus();
-  is(win.document.activeElement, button, "expected button to be focused");
+  is(button, win.document.activeElement, "expected button to be focused");
   EventUtils.synthesizeKey("KEY_Enter", {}, win);
   await shown;
 

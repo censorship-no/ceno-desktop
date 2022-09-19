@@ -918,7 +918,7 @@ LogicalSize nsContainerFrame::ComputeAutoSize(
                                  : StylePosition()->ISize(aWM);
     if (styleISize.IsAuto()) {
       result.ISize(aWM) =
-          ShrinkWidthToFit(aRenderingContext, availBased, aFlags);
+          ShrinkISizeToFit(aRenderingContext, availBased, aFlags);
     }
   } else {
     result.ISize(aWM) = availBased;
@@ -2327,8 +2327,9 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
   auto* parentFrame = GetParent();
   const bool isGridItem = IsGridItem();
   const bool isFlexItem =
-      IsFlexItem() &&
-      !parentFrame->HasAnyStateBits(NS_STATE_FLEX_IS_EMULATING_LEGACY_BOX);
+      IsFlexItem() && !parentFrame->HasAnyStateBits(
+                          NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX |
+                          NS_STATE_FLEX_IS_EMULATING_LEGACY_MOZ_BOX);
   // This variable only gets set (and used) if isFlexItem is true.  It
   // indicates which axis (in this frame's own WM) corresponds to its
   // flex container's main axis.
@@ -2343,16 +2344,17 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
 
   // Handle intrinsic sizes and their interaction with
   // {min-,max-,}{width,height} according to the rules in
-  // http://www.w3.org/TR/CSS21/visudet.html#min-max-widths
+  // https://www.w3.org/TR/CSS22/visudet.html#min-max-widths and
+  // https://drafts.csswg.org/css-sizing-3/#intrinsic-sizes
 
   // Note: throughout the following section of the function, I avoid
   // a * (b / c) because of its reduced accuracy relative to a * b / c
   // or (a * b) / c (which are equivalent).
 
-  const bool isAutoISize = styleISize.IsAuto();
+  const bool isAutoOrMaxContentISize =
+      styleISize.IsAuto() || styleISize.IsMaxContent();
   const bool isAutoBSize =
-      nsLayoutUtils::IsAutoBSize(styleBSize, aCBSize.BSize(aWM)) ||
-      aFlags.contains(ComputeSizeFlag::UseAutoBSize);
+      nsLayoutUtils::IsAutoBSize(styleBSize, aCBSize.BSize(aWM));
 
   const auto boxSizingAdjust = stylePos->mBoxSizing == StyleBoxSizing::Border
                                    ? aBorderPadding
@@ -2364,7 +2366,7 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
   nscoord iSize, minISize, maxISize, bSize, minBSize, maxBSize;
   enum class Stretch {
     // stretch to fill the CB (preserving intrinsic ratio) in the relevant axis
-    StretchPreservingRatio,  // XXX not used yet
+    StretchPreservingRatio,
     // stretch to fill the CB in the relevant axis
     Stretch,
     // no stretching in the relevant axis
@@ -2391,7 +2393,7 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
   const bool hasIntrinsicBSize = bsizeCoord.isSome();
   nscoord intrinsicBSize = std::max(0, bsizeCoord.valueOr(0));
 
-  if (!isAutoISize) {
+  if (!isAutoOrMaxContentISize) {
     iSize = ComputeISizeValue(aRenderingContext, aWM, aCBSize, boxSizingAdjust,
                               boxSizingToMarginEdgeISize, styleISize,
                               aSizeOverrides, aFlags)
@@ -2511,7 +2513,7 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
                "Our containing block must not have unconstrained inline-size!");
 
   // Now calculate the used values for iSize and bSize:
-  if (isAutoISize) {
+  if (isAutoOrMaxContentISize) {
     if (isAutoBSize) {
       // 'auto' iSize, 'auto' bSize
 

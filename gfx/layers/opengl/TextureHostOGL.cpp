@@ -69,7 +69,7 @@ already_AddRefed<TextureHost> CreateTextureHostOGL(
 
       result = new SurfaceTextureHost(aFlags, surfaceTexture, desc.size(),
                                       desc.format(), desc.continuous(),
-                                      desc.ignoreTransform());
+                                      desc.transformOverride());
       break;
     }
     case SurfaceDescriptor::TSurfaceDescriptorAndroidHardwareBuffer: {
@@ -437,14 +437,14 @@ SurfaceTextureSource::SurfaceTextureSource(
     TextureSourceProvider* aProvider,
     mozilla::java::GeckoSurfaceTexture::Ref& aSurfTex,
     gfx::SurfaceFormat aFormat, GLenum aTarget, GLenum aWrapMode,
-    gfx::IntSize aSize, bool aIgnoreTransform)
+    gfx::IntSize aSize, Maybe<gfx::Matrix4x4> aTransformOverride)
     : mGL(aProvider->GetGLContext()),
       mSurfTex(aSurfTex),
       mFormat(aFormat),
       mTextureTarget(aTarget),
       mWrapMode(aWrapMode),
       mSize(aSize),
-      mIgnoreTransform(aIgnoreTransform) {}
+      mTransformOverride(aTransformOverride) {}
 
 void SurfaceTextureSource::BindTexture(GLenum aTextureUnit,
                                        gfx::SamplingFilter aSamplingFilter) {
@@ -468,11 +468,14 @@ gfx::Matrix4x4 SurfaceTextureSource::GetTextureTransform() {
 
   gfx::Matrix4x4 ret;
 
-  // GetTransformMatrix() returns the transform set by the producer side of
-  // the SurfaceTexture. We should ignore this if we know the transform should
-  // be identity but the producer couldn't set it correctly, like is the
-  // case for AndroidNativeWindowTextureData.
-  if (!mIgnoreTransform) {
+  // GetTransformMatrix() returns the transform set by the producer side of the
+  // SurfaceTexture that must be applied to texture coordinates when
+  // sampling. In some cases we may have set an override value, such as in
+  // AndroidNativeWindowTextureData where we own the producer side, or for
+  // MediaCodec output on devices where where we know the value is incorrect.
+  if (mTransformOverride) {
+    ret = *mTransformOverride;
+  } else {
     const auto& surf = java::sdk::SurfaceTexture::LocalRef(
         java::sdk::SurfaceTexture::Ref::From(mSurfTex));
     AndroidSurfaceTexture::GetTransformMatrix(surf, &ret);
@@ -488,13 +491,13 @@ void SurfaceTextureSource::DeallocateDeviceData() { mSurfTex = nullptr; }
 SurfaceTextureHost::SurfaceTextureHost(
     TextureFlags aFlags, mozilla::java::GeckoSurfaceTexture::Ref& aSurfTex,
     gfx::IntSize aSize, gfx::SurfaceFormat aFormat, bool aContinuousUpdate,
-    bool aIgnoreTransform)
-    : TextureHost(aFlags),
+    Maybe<Matrix4x4> aTransformOverride)
+    : TextureHost(TextureHostType::AndroidSurfaceTexture, aFlags),
       mSurfTex(aSurfTex),
       mSize(aSize),
       mFormat(aFormat),
       mContinuousUpdate(aContinuousUpdate),
-      mIgnoreTransform(aIgnoreTransform) {
+      mTransformOverride(aTransformOverride) {
   if (!mSurfTex) {
     return;
   }
@@ -563,7 +566,7 @@ void SurfaceTextureHost::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   RefPtr<wr::RenderTextureHost> texture =
       new wr::RenderAndroidSurfaceTextureHost(
-          mSurfTex, mSize, mFormat, mContinuousUpdate, mIgnoreTransform);
+          mSurfTex, mSize, mFormat, mContinuousUpdate, mTransformOverride);
   wr::RenderThread::Get()->RegisterExternalImage(aExternalImageId,
                                                  texture.forget());
 }
@@ -662,7 +665,7 @@ AndroidHardwareBufferTextureHost::Create(
 
 AndroidHardwareBufferTextureHost::AndroidHardwareBufferTextureHost(
     TextureFlags aFlags, AndroidHardwareBuffer* aAndroidHardwareBuffer)
-    : TextureHost(aFlags),
+    : TextureHost(TextureHostType::AndroidHardwareBuffer, aFlags),
       mAndroidHardwareBuffer(aAndroidHardwareBuffer),
       mEGLImage(EGL_NO_IMAGE) {}
 
@@ -857,7 +860,7 @@ gfx::Matrix4x4 EGLImageTextureSource::GetTextureTransform() {
 EGLImageTextureHost::EGLImageTextureHost(TextureFlags aFlags, EGLImage aImage,
                                          EGLSync aSync, gfx::IntSize aSize,
                                          bool hasAlpha)
-    : TextureHost(aFlags),
+    : TextureHost(TextureHostType::EGLImage, aFlags),
       mImage(aImage),
       mSync(aSync),
       mSize(aSize),
@@ -920,7 +923,7 @@ void EGLImageTextureHost::PushDisplayItems(
 GLTextureHost::GLTextureHost(TextureFlags aFlags, GLuint aTextureHandle,
                              GLenum aTarget, GLsync aSync, gfx::IntSize aSize,
                              bool aHasAlpha)
-    : TextureHost(aFlags),
+    : TextureHost(TextureHostType::GLTexture, aFlags),
       mTexture(aTextureHandle),
       mTarget(aTarget),
       mSync(aSync),

@@ -23,11 +23,20 @@ TextureClient* MacIOSurfaceImage::GetTextureClient(
     KnowsCompositor* aKnowsCompositor) {
   if (!mTextureClient) {
     BackendType backend = BackendType::NONE;
+    TextureFlags flags =
+        IsDRM() ? TextureFlags::DRM_SOURCE : TextureFlags::DEFAULT;
     mTextureClient = TextureClient::CreateWithData(
-        MacIOSurfaceTextureData::Create(mSurface, backend),
-        TextureFlags::DEFAULT, aKnowsCompositor->GetTextureForwarder());
+        MacIOSurfaceTextureData::Create(mSurface, backend), flags,
+        aKnowsCompositor->GetTextureForwarder());
   }
   return mTextureClient;
+}
+
+ColorDepth MacIOSurfaceImage::GetColorDepth() const {
+  if (!mSurface) {
+    return gfx::ColorDepth::COLOR_8;
+  }
+  return mSurface->GetColorDepth();
 }
 
 already_AddRefed<SourceSurface> MacIOSurfaceImage::GetAsSourceSurface() {

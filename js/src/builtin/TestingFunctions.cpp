@@ -9,7 +9,6 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Casting.h"
 #include "mozilla/FloatingPoint.h"
-#include "vm/ErrorContext.h"
 #ifdef JS_HAS_INTL_API
 #  include "mozilla/intl/ICU4CLibrary.h"
 #  include "mozilla/intl/Locale.h"
@@ -44,7 +43,6 @@
 #include "fdlibm.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "jsmath.h"
 
 #ifdef JS_HAS_INTL_API
 #  include "builtin/intl/CommonFunctions.h"
@@ -52,7 +50,6 @@
 #  include "builtin/intl/SharedIntlData.h"
 #endif
 #include "builtin/Promise.h"
-#include "builtin/SelfHostingDefines.h"
 #include "builtin/TestingUtility.h"  // js::ParseCompileOptions, js::ParseDebugMetadata
 #include "frontend/BytecodeCompilation.h"  // frontend::CompileGlobalScriptToExtensibleStencil, frontend::DelazifyCanonicalScriptedFunction
 #include "frontend/BytecodeCompiler.h"  // frontend::ParseModuleToExtensibleStencil
@@ -75,7 +72,6 @@
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
 #include "js/Date.h"
-#include "js/Debug.h"
 #include "js/experimental/CodeCoverage.h"      // js::GetCodeCoverageSummary
 #include "js/experimental/JSStencil.h"         // JS::Stencil
 #include "js/experimental/PCCountProfiling.h"  // JS::{Start,Stop}PCCountProfiling, JS::PurgePCCounts, JS::GetPCCountScript{Count,Summary,Contents}
@@ -90,7 +86,6 @@
 #include "js/Printf.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperties, JS_DefineProperty, JS_DefinePropertyById, JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_HasProperty, JS_SetElement, JS_SetProperty
 #include "js/PropertySpec.h"
-#include "js/RegExpFlags.h"  // JS::RegExpFlag, JS::RegExpFlags
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
 #include "js/Stack.h"
@@ -106,14 +101,12 @@
 #include "util/DifferentialTesting.h"
 #include "util/StringBuffer.h"
 #include "util/Text.h"
-#include "vm/AsyncFunction.h"
-#include "vm/AsyncIteration.h"
+#include "vm/ErrorContext.h"
 #include "vm/ErrorObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/HelperThreads.h"
 #include "vm/HelperThreadState.h"
 #include "vm/Interpreter.h"
-#include "vm/Iteration.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/PlainObject.h"    // js::PlainObject
@@ -131,7 +124,6 @@
 #include "wasm/WasmIonCompile.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmModule.h"
-#include "wasm/WasmSignalHandlers.h"
 #include "wasm/WasmValType.h"
 #include "wasm/WasmValue.h"
 
@@ -156,8 +148,6 @@ using mozilla::Tuple;
 
 using JS::AutoStableStringChars;
 using JS::CompileOptions;
-using JS::RegExpFlag;
-using JS::RegExpFlags;
 using JS::SourceOwnership;
 using JS::SourceText;
 
@@ -199,7 +189,7 @@ static bool GetRealmConfiguration(JSContext* cx, unsigned argc, Value* vp) {
   }
 
 #ifdef NIGHTLY_BUILD
-  bool arrayGrouping = cx->options().arrayGrouping();
+  bool arrayGrouping = cx->realm()->creationOptions().getArrayGroupingEnabled();
   if (!JS_SetProperty(cx, info, "enableArrayGrouping",
                       arrayGrouping ? TrueHandleValue : FalseHandleValue)) {
     return false;
@@ -207,7 +197,8 @@ static bool GetRealmConfiguration(JSContext* cx, unsigned argc, Value* vp) {
 #endif
 
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-  bool changeArrayByCopy = cx->options().changeArrayByCopy();
+  bool changeArrayByCopy =
+      cx->realm()->creationOptions().getChangeArrayByCopyEnabled();
   if (!JS_SetProperty(cx, info, "enableChangeArrayByCopy",
                       changeArrayByCopy ? TrueHandleValue : FalseHandleValue)) {
     return false;
@@ -566,6 +557,15 @@ static bool GetBuildConfiguration(JSContext* cx, unsigned argc, Value* vp) {
   value = BooleanValue(false);
 #endif
   if (!JS_SetProperty(cx, info, "new-set-methods", value)) {
+    return false;
+  }
+
+#ifdef ENABLE_DECORATORS
+  value = BooleanValue(true);
+#else
+  value = BooleanValue(false);
+#endif
+  if (!JS_SetProperty(cx, info, "decorators", value)) {
     return false;
   }
 
@@ -1082,8 +1082,8 @@ static bool WasmGlobalFromArrayBuffer(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Copy the bytes from buffer into a tagged val
-  wasm::RootedVal val(cx, valType);
-  val.get().readFromRootedLocation(buffer->dataPointer());
+  wasm::RootedVal val(cx);
+  val.get().initFromRootedLocation(valType, buffer->dataPointer());
 
   // Create the global object
   RootedObject proto(
@@ -2651,7 +2651,7 @@ class HasChildTracer final : public JS::CallbackTracer {
   RootedValue child_;
   bool found_;
 
-  void onChild(JS::GCCellPtr thing) override {
+  void onChild(JS::GCCellPtr thing, const char* name) override {
     if (thing.asCell() == child_.toGCThing()) {
       found_ = true;
     }
@@ -6309,7 +6309,8 @@ static bool CompileToStencil(JSContext* cx, uint32_t argc, Value* vp) {
     return false;
   }
 
-  if (!SetSourceOptions(cx, stencil->source, displayURL, sourceMapURL)) {
+  MainThreadErrorContext ec(cx);
+  if (!SetSourceOptions(cx, &ec, stencil->source, displayURL, sourceMapURL)) {
     return false;
   }
 
@@ -6446,22 +6447,24 @@ static bool CompileToStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
 
   /* Compile the script text to stencil. */
   MainThreadErrorContext ec(cx);
+  frontend::NoScopeBindingCache scopeCache;
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
   UniquePtr<frontend::ExtensibleCompilationStencil> stencil;
   if (isModule) {
     stencil = frontend::ParseModuleToExtensibleStencil(
-        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), srcBuf);
+        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
+        srcBuf);
   } else {
     stencil = frontend::CompileGlobalScriptToExtensibleStencil(
-        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), srcBuf,
-        ScopeKind::Global);
+        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
+        srcBuf, ScopeKind::Global);
   }
   if (!stencil) {
     return false;
   }
 
-  if (!SetSourceOptions(cx, stencil->source, displayURL, sourceMapURL)) {
+  if (!SetSourceOptions(cx, &ec, stencil->source, displayURL, sourceMapURL)) {
     return false;
   }
 
@@ -6524,9 +6527,10 @@ static bool EvalStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   /* Prepare the CompilationStencil for decoding. */
+  MainThreadErrorContext ec(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
-  if (!input.get().initForGlobal(cx)) {
+  if (!input.get().initForGlobal(cx, &ec)) {
     return false;
   }
   frontend::CompilationStencil stencil(nullptr);
@@ -6534,7 +6538,8 @@ static bool EvalStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   /* Deserialize the stencil from XDR. */
   JS::TranscodeRange xdrRange(xdrObj->buffer(), xdrObj->bufferLength());
   bool succeeded = false;
-  if (!stencil.deserializeStencils(cx, input.get(), xdrRange, &succeeded)) {
+  if (!stencil.deserializeStencils(cx, &ec, input.get(), xdrRange,
+                                   &succeeded)) {
     return false;
   }
   if (!succeeded) {
@@ -7264,6 +7269,83 @@ static bool TimeSinceCreation(JSContext* cx, unsigned argc, Value* vp) {
       (mozilla::TimeStamp::Now() - mozilla::TimeStamp::ProcessCreation())
           .ToMilliseconds();
   args.rval().setNumber(when);
+  return true;
+}
+
+static bool GetInnerMostEnvironmentObject(JSContext* cx, unsigned argc,
+                                          Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  FrameIter iter(cx);
+  if (iter.done()) {
+    args.rval().setNull();
+    return true;
+  }
+
+  args.rval().setObjectOrNull(iter.environmentChain(cx));
+  return true;
+}
+
+static bool GetEnclosingEnvironmentObject(JSContext* cx, unsigned argc,
+                                          Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  if (!args.requireAtLeast(cx, "getEnclosingEnvironmentObject", 1)) {
+    return false;
+  }
+
+  if (!args[0].isObject()) {
+    args.rval().setUndefined();
+    return true;
+  }
+
+  JSObject* envObj = &args[0].toObject();
+
+  if (envObj->is<EnvironmentObject>()) {
+    EnvironmentObject* env = &envObj->as<EnvironmentObject>();
+    args.rval().setObject(env->enclosingEnvironment());
+    return true;
+  }
+
+  if (envObj->is<DebugEnvironmentProxy>()) {
+    DebugEnvironmentProxy* envProxy = &envObj->as<DebugEnvironmentProxy>();
+    args.rval().setObject(envProxy->enclosingEnvironment());
+    return true;
+  }
+
+  args.rval().setNull();
+  return true;
+}
+
+static bool GetEnvironmentObjectType(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  if (!args.requireAtLeast(cx, "getEnvironmentObjectType", 1)) {
+    return false;
+  }
+
+  if (!args[0].isObject()) {
+    args.rval().setUndefined();
+    return true;
+  }
+
+  JSObject* envObj = &args[0].toObject();
+
+  if (envObj->is<EnvironmentObject>()) {
+    EnvironmentObject* env = &envObj->as<EnvironmentObject>();
+    JSString* str = JS_NewStringCopyZ(cx, env->typeString());
+    args.rval().setString(str);
+    return true;
+  }
+  if (envObj->is<DebugEnvironmentProxy>()) {
+    DebugEnvironmentProxy* envProxy = &envObj->as<DebugEnvironmentProxy>();
+    EnvironmentObject* env = &envProxy->environment();
+    char buf[256] = {'\0'};
+    SprintfLiteral(buf, "[DebugProxy] %s", env->typeString());
+    JSString* str = JS_NewStringCopyZ(cx, buf);
+    args.rval().setString(str);
+    return true;
+  }
+
+  args.rval().setUndefined();
   return true;
 }
 
@@ -8999,6 +9081,18 @@ JS_FN_HELP("isInStencilCache", IsInStencilCache, 1, 0,
 JS_FN_HELP("waitForStencilCache", WaitForStencilCache, 1, 0,
 "waitForStencilCache(fun)",
 "  Block main thread execution until the function is made available in the cache."),
+
+JS_FN_HELP("getInnerMostEnvironmentObject", GetInnerMostEnvironmentObject, 0, 0,
+"getInnerMostEnvironmentObject()",
+"  Return the inner-most environment object for current execution."),
+
+JS_FN_HELP("getEnclosingEnvironmentObject", GetEnclosingEnvironmentObject, 1, 0,
+"getEnclosingEnvironmentObject(env)",
+"  Return the enclosing environment object for given environment object."),
+
+JS_FN_HELP("getEnvironmentObjectType", GetEnvironmentObjectType, 1, 0,
+"getEnvironmentObjectType(env)",
+"  Return a string represents the type of given environment object."),
 
     JS_FS_HELP_END
 };

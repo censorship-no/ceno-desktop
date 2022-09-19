@@ -3366,7 +3366,8 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::IndexedGetterOuter(
   BrowsingContext* bc = GetBrowsingContext();
   NS_ENSURE_TRUE(bc, nullptr);
 
-  Span<RefPtr<BrowsingContext>> children = bc->Children();
+  Span<RefPtr<BrowsingContext>> children = bc->NonSyntheticChildren();
+
   if (aIndex < children.Length()) {
     return WindowProxyHolder(children[aIndex]);
   }
@@ -3495,9 +3496,8 @@ nsresult nsGlobalWindowOuter::GetInnerSize(CSSSize& aSize) {
 
   // Whether or not the css viewport has been overridden, we can get the
   // correct value by looking at the visible area of the presContext.
-  RefPtr<nsViewManager> viewManager = presShell->GetViewManager();
-  if (viewManager) {
-    viewManager->FlushDelayedResize(false);
+  if (RefPtr<nsViewManager> viewManager = presShell->GetViewManager()) {
+    viewManager->FlushDelayedResize();
   }
 
   // FIXME: Bug 1598487 - Return the layout viewport instead of the ICB.
@@ -3994,7 +3994,7 @@ double nsGlobalWindowOuter::GetScrollYOuter() { return GetScrollXY(false).y; }
 
 uint32_t nsGlobalWindowOuter::Length() {
   BrowsingContext* bc = GetBrowsingContext();
-  return bc ? bc->Children().Length() : 0;
+  return bc ? bc->NonSyntheticChildren().Length() : 0;
 }
 
 Nullable<WindowProxyHolder> nsGlobalWindowOuter::GetTopOuter() {
@@ -5091,14 +5091,17 @@ void nsGlobalWindowOuter::PrintOuter(ErrorResult& aError) {
 #ifdef NS_PRINTING
   RefPtr<BrowsingContext> top =
       mBrowsingContext ? mBrowsingContext->Top() : nullptr;
-  bool oldIsPrinting = top && top->GetIsPrinting();
+  if (NS_WARN_IF(top && top->GetIsPrinting())) {
+    return;
+  }
+
   if (top) {
     Unused << top->SetIsPrinting(true);
   }
 
   auto unset = MakeScopeExit([&] {
     if (top) {
-      Unused << top->SetIsPrinting(oldIsPrinting);
+      Unused << top->SetIsPrinting(false);
     }
   });
 
@@ -5251,8 +5254,7 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::Print(
       }
     }
 
-    // TODO(emilio): Should dispatch this to OOP iframes too.
-    AutoPrintEventDispatcher dispatcher(*docToPrint);
+    AutoPrintEventDispatcher dispatcher(*docToPrint, ps, /* aIsTop = */ true);
 
     nsAutoScriptBlocker blockScripts;
     RefPtr<Document> clone = docToPrint->CreateStaticClone(
@@ -7473,8 +7475,7 @@ void nsGlobalWindowOuter::MaybeResetWindowName(Document* aNewDocument) {
     // is the same. But, it won't be the case for non-Fission mode that the
     // first about:blank will be loaded with a null principal and the
     // window.name will be reset when loading the test page.
-    if (mDoc && mDoc->NodePrincipal()->EqualsConsideringDomain(
-                    aNewDocument->NodePrincipal())) {
+    if (mDoc && mDoc->NodePrincipal()->Equals(aNewDocument->NodePrincipal())) {
       return;
     }
 
@@ -7580,7 +7581,6 @@ nsPIDOMWindowOuter::nsPIDOMWindowOuter(uint64_t aWindowID)
       mModalStateDepth(0),
       mSuppressEventHandlingDepth(0),
       mIsBackground(false),
-      mDesktopModeViewport(false),
       mIsRootOuterWindow(false),
       mInnerWindow(nullptr),
       mWindowID(aWindowID),

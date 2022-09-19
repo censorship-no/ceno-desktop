@@ -10,12 +10,10 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/TextUtils.h"
 
-#include "gc/Barrier.h"
 #include "gc/MaybeRooted.h"
 #include "js/Class.h"
 #include "js/experimental/TypedData.h"  // js::detail::TypedArrayLengthSlot
-#include "js/Result.h"
-#include "js/ScalarType.h"  // js::Scalar::Type
+#include "js/ScalarType.h"              // js::Scalar::Type
 #include "vm/ArrayBufferObject.h"
 #include "vm/ArrayBufferViewObject.h"
 #include "vm/JSObject.h"
@@ -165,11 +163,6 @@ class TypedArrayObject : public ArrayBufferViewObject {
   static bool set_impl(JSContext* cx, const CallArgs& args);
   static bool copyWithin_impl(JSContext* cx, const CallArgs& args);
 };
-
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-extern JSObject* GetTypedArrayConstructorFromKind(JSContext* cx,
-                                                  Scalar::Type type);
-#endif
 
 extern TypedArrayObject* NewTypedArrayWithTemplateAndLength(
     JSContext* cx, HandleObject templateObj, int32_t len);

@@ -795,6 +795,10 @@ ITypeInfo* MsaaAccessible::GetTI(LCID lcid) {
 
 /* static */
 MsaaAccessible* MsaaAccessible::GetFrom(Accessible* aAcc) {
+  if (!aAcc) {
+    return nullptr;
+  }
+
   if (RemoteAccessible* remoteAcc = aAcc->AsRemote()) {
     return reinterpret_cast<MsaaAccessible*>(remoteAcc->GetWrapper());
   }
@@ -858,8 +862,8 @@ MsaaAccessible::QueryInterface(REFIID iid, void** ppv) {
       return E_NOINTERFACE;
     }
     *ppv = static_cast<IEnumVARIANT*>(new ChildrenEnumVariant(this));
-  } else if (IID_ISimpleDOMNode == iid && localAcc) {
-    if (!localAcc->HasOwnContent() && !localAcc->IsDoc()) {
+  } else if (IID_ISimpleDOMNode == iid) {
+    if (mAcc->IsDoc() || (localAcc && !localAcc->HasOwnContent())) {
       return E_NOINTERFACE;
     }
 
@@ -1263,15 +1267,9 @@ MsaaAccessible::get_accFocus(
   if (!mAcc) {
     return CO_E_OBJNOTCONNECTED;
   }
-  LocalAccessible* localAcc = LocalAcc();
-  if (!localAcc) {
-    return E_NOTIMPL;  // XXX Not supported for RemoteAccessible yet.
-  }
-
   // Return the current IAccessible child that has focus
-  LocalAccessible* focusedAccessible = localAcc->FocusedChild();
-
-  if (focusedAccessible == localAcc) {
+  Accessible* focusedAccessible = mAcc->FocusedChild();
+  if (focusedAccessible == mAcc) {
     pvarChild->vt = VT_I4;
     pvarChild->lVal = CHILDID_SELF;
   } else if (focusedAccessible) {

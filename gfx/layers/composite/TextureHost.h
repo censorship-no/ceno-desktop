@@ -71,6 +71,7 @@ class TextureSourceOGL;
 class TextureSourceD3D11;
 class DataTextureSource;
 class PTextureParent;
+class RemoteTextureHostWrapper;
 class TextureParent;
 class WebRenderTextureHost;
 class WrappingTextureSourceYCbCrBasic;
@@ -349,6 +350,21 @@ class DataTextureSource : public TextureSource {
   uint32_t mUpdateSerial;
 };
 
+enum class TextureHostType : int8_t {
+  Unknown = 0,
+  Buffer,
+  DXGI,
+  DXGIYCbCr,
+  DcompSurface,
+  DMABUF,
+  MacIOSurface,
+  AndroidSurfaceTexture,
+  AndroidHardwareBuffer,
+  EGLImage,
+  GLTexture,
+  Last
+};
+
 /**
  * TextureHost is a thin abstraction over texture data that need to be shared
  * between the content process and the compositor process. It is the
@@ -389,7 +405,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   friend class AtomicRefCountedWithFinalize<TextureHost>;
 
  public:
-  explicit TextureHost(TextureFlags aFlags);
+  TextureHost(TextureHostType aType, TextureFlags aFlags);
 
  protected:
   virtual ~TextureHost();
@@ -588,6 +604,9 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   AsAndroidHardwareBufferTextureHost() {
     return nullptr;
   }
+  virtual RemoteTextureHostWrapper* AsRemoteTextureHostWrapper() {
+    return nullptr;
+  }
 
   virtual bool IsWrappingBufferTextureHost() { return false; }
 
@@ -671,6 +690,8 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
     return false;
   }
 
+  virtual TextureHostType GetTextureHostType() { return mTextureHostType; }
+
   // Our WebRender backend may impose restrictions on whether textures are
   // prepared as native textures or not, or it may have no restriction at
   // all. This enumerates those possibilities.
@@ -715,6 +736,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   // for Compositor.
   void CallNotifyNotUsed();
 
+  TextureHostType mTextureHostType;
   PTextureParent* mActor;
   RefPtr<TextureReadLock> mReadLock;
   TextureFlags mFlags;
@@ -726,6 +748,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   std::function<void()> mDestroyedCallback;
 
   friend class Compositor;
+  friend class RemoteTextureHostWrapper;
   friend class TextureParent;
   friend class TextureSourceProvider;
   friend class GPUVideoTextureHost;

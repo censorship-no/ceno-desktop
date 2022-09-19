@@ -52,6 +52,13 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
             "d3d11/CompositorD3D11.cpp",
             "d3d11/DeviceAttachmentsD3D11.cpp",
         ]
+    if CONFIG["MOZ_WMF_MEDIA_ENGINE"]:
+        EXPORTS.mozilla.layers += [
+            "DcompSurfaceImage.h",
+        ]
+        UNIFIED_SOURCES += [
+            "DcompSurfaceImage.cpp",
+        ]
 
 EXPORTS.gfxipc += [
     "ipc/ShadowLayerUtils.h",
@@ -121,6 +128,7 @@ EXPORTS.mozilla.layers += [
     "composite/FrameUniformityData.h",
     "composite/GPUVideoTextureHost.h",
     "composite/ImageComposite.h",
+    "composite/RemoteTextureHostWrapper.h",
     "composite/TextureHost.h",
     "CompositionRecorder.h",
     "Compositor.h",
@@ -345,6 +353,7 @@ UNIFIED_SOURCES += [
     "composite/FrameUniformityData.cpp",
     "composite/GPUVideoTextureHost.cpp",
     "composite/ImageComposite.cpp",
+    "composite/RemoteTextureHostWrapper.cpp",
     "CompositionRecorder.cpp",
     "Compositor.cpp",
     "CompositorAnimationStorage.cpp",

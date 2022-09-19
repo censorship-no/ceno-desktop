@@ -13,7 +13,6 @@ loader.require("devtools/client/framework/devtools-browser");
 
 var { gDevTools } = require("devtools/client/framework/devtools");
 var { Toolbox } = require("devtools/client/framework/toolbox");
-var Services = require("Services");
 var { DevToolsClient } = require("devtools/client/devtools-client");
 var { PrefsHelper } = require("devtools/client/shared/prefs");
 const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
@@ -24,11 +23,12 @@ const L10N = new LocalizationHelper(
 const env = Cc["@mozilla.org/process/environment;1"].getService(
   Ci.nsIEnvironment
 );
-loader.lazyImporter(
-  this,
-  "BrowserToolboxLauncher",
-  "resource://devtools/client/framework/browser-toolbox/Launcher.jsm"
-);
+
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserToolboxLauncher:
+    "resource://devtools/client/framework/browser-toolbox/Launcher.sys.mjs",
+});
 
 // Timeout to wait before we assume that a connect() timed out without an error.
 // In milliseconds. (With the Debugger pane open, this has been reported to last
@@ -81,6 +81,10 @@ var connect = async function() {
     "devtools.webconsole.input.context",
     env.get("MOZ_BROWSER_TOOLBOX_INPUT_CONTEXT") === "1"
   );
+  // Similar, but for the Browser Toolbox mode
+  if (env.get("MOZ_BROWSER_TOOLBOX_FORCE_MULTIPROCESS") === "1") {
+    Services.prefs.setCharPref("devtools.browsertoolbox.scope", "everything");
+  }
 
   const port = env.get("MOZ_BROWSER_TOOLBOX_PORT");
 
@@ -123,7 +127,6 @@ function setPrefDefaults() {
     "devtools.command-button-noautohide.enabled",
     true
   );
-  Services.prefs.setBoolPref("layout.css.emulate-moz-box-with-flex", false);
 
   // We force enabling the performance panel in the browser toolbox.
   Services.prefs.setBoolPref("devtools.performance.enabled", true);
@@ -143,6 +146,7 @@ window.addEventListener(
     gShortcuts = new KeyShortcuts({ window });
     gShortcuts.on("CmdOrCtrl+W", onCloseCommand);
     gShortcuts.on("CmdOrCtrl+Alt+Shift+I", onDebugBrowserToolbox);
+    gShortcuts.on("CmdOrCtrl+Alt+R", onReloadBrowser);
 
     const statusMessageContainer = document.getElementById(
       "status-message-title"
@@ -183,7 +187,14 @@ function onCloseCommand(event) {
  * running in the parent process. i.e. frontend code.
  */
 function onDebugBrowserToolbox() {
-  BrowserToolboxLauncher.init();
+  lazy.BrowserToolboxLauncher.init();
+}
+
+/**
+ * Replicate the local-build-only key shortcut to reload the browser
+ */
+function onReloadBrowser() {
+  gToolbox.commands.targetCommand.reloadTopLevelTarget();
 }
 
 async function openToolbox(descriptorFront) {

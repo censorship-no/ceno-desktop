@@ -9,7 +9,6 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/PodOperations.h"
 
-#include <algorithm>
 #include <type_traits>
 
 #include "builtin/RegExp.h"
@@ -22,18 +21,16 @@
 #include "js/Object.h"                // JS::GetBuiltinClass
 #include "js/RegExp.h"
 #include "js/RegExpFlags.h"  // JS::RegExpFlags
-#include "js/StableStringChars.h"
 #include "util/StringBuffer.h"
+#include "vm/ErrorContext.h"
 #include "vm/MatchPairs.h"
+#include "vm/PlainObject.h"
 #include "vm/RegExpStatics.h"
 #include "vm/StringType.h"
-#ifdef DEBUG
-#  include "util/Unicode.h"
-#endif
 #include "vm/WellKnownAtom.h"  // js_*_str
 
+#include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
-#include "vm/NativeObject-inl.h"
 #include "vm/Shape-inl.h"
 
 using namespace js;
@@ -211,7 +208,8 @@ RegExpObject* RegExpObject::create(JSContext* cx, Handle<JSAtom*> source,
   frontend::DummyTokenStream dummyTokenStream(cx, &ec, dummyOptions);
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
-  if (!irregexp::CheckPatternSyntax(cx, dummyTokenStream, source, flags)) {
+  if (!irregexp::CheckPatternSyntax(cx, cx->stackLimitForCurrentPrincipal(),
+                                    dummyTokenStream, source, flags)) {
     return nullptr;
   }
 
@@ -927,12 +925,10 @@ RegExpShared* RegExpZone::get(JSContext* cx, Handle<JSAtom*> source,
     return *p;
   }
 
-  auto shared = Allocate<RegExpShared>(cx);
+  auto* shared = cx->newCell<RegExpShared>(source, flags);
   if (!shared) {
     return nullptr;
   }
-
-  new (shared) RegExpShared(source, flags);
 
   if (!p.add(cx, set_, Key(source, flags), shared)) {
     return nullptr;
@@ -1202,8 +1198,8 @@ JS_PUBLIC_API bool JS::CheckRegExpSyntax(JSContext* cx, const char16_t* chars,
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
 
   mozilla::Range<const char16_t> source(chars, length);
-  bool success =
-      irregexp::CheckPatternSyntax(cx, dummyTokenStream, source, flags);
+  bool success = irregexp::CheckPatternSyntax(
+      cx, cx->stackLimitForCurrentPrincipal(), dummyTokenStream, source, flags);
   error.set(UndefinedValue());
   if (!success) {
     // We can fail because of OOM or over-recursion even if the syntax is valid.

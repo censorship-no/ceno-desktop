@@ -55,11 +55,6 @@ static void MOZ_FORMAT_PRINTF(2, 3)
   LOG("%s", markerString.get());
 }
 
-static const GUID CLSID_CMSVPXDecMFT = {
-    0xe3aaf548,
-    0xc9a4,
-    0x4c6e,
-    {0x23, 0x4d, 0x5a, 0xda, 0x37, 0x4b, 0x00, 0x00}};
 static const GUID CLSID_CMSAACDecMFT = {
     0x32D186A7,
     0x218F,
@@ -105,9 +100,13 @@ void WMFDecoderModule::Init() {
     // Always allow DXVA in the GPU process.
     sDXVAEnabled = true;
   } else if (XRE_IsRDDProcess()) {
-    // Only allows DXVA if we have an image device. We may have explicitly
-    // disabled its creation following an earlier RDD process crash.
-    sDXVAEnabled = !!DeviceManagerDx::Get()->GetImageDevice();
+    // Hardware accelerated decoding is explicitly only done in the GPU process
+    // to avoid copying textures whenever possible. Previously, detecting
+    // whether the video bridge was set up could be done with the following:
+    // sDXVAEnabled = !!DeviceManagerDx::Get()->GetImageDevice();
+    // The video bridge was previously broken due to initialization order
+    // issues. For more information see Bug 1763880.
+    sDXVAEnabled = false;
   } else {
     // Only allow DXVA in the UI process if we aren't in e10s Firefox
     sDXVAEnabled = !mozilla::BrowserTabsRemoteAutostart();
@@ -311,6 +310,10 @@ bool WMFDecoderModule::SupportsColorDepth(
 media::DecodeSupportSet WMFDecoderModule::Supports(
     const SupportDecoderParams& aParams,
     DecoderDoctorDiagnostics* aDiagnostics) const {
+  // This should only be supported by MFMediaEngineDecoderModule.
+  if (aParams.mMediaEngineId) {
+    return media::DecodeSupport::Unsupported;
+  }
   // In GPU process, only support decoding if video. This only gives a hint of
   // what the GPU decoder *may* support. The actual check will occur in
   // CreateVideoDecoder.

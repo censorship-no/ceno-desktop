@@ -61,13 +61,6 @@ static inline void jemalloc_stats(jemalloc_stats_t* aStats) {
 }
 #  endif
 
-// Temporary configurator for experiment associated with bug 1716727.
-#  if defined(XP_WIN)
-MOZ_JEMALLOC_API void mozjemalloc_experiment_set_always_stall(bool);
-#  else
-static inline void mozjemalloc_experiment_set_always_stall(bool){};
-#  endif
-
 #endif  // MOZ_MEMORY
 
 #define NOTHROW_MALLOC_DECL(name, return_type, ...) \

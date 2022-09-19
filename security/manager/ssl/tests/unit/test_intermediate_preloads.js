@@ -6,9 +6,6 @@
 "use strict";
 do_get_profile(); // must be called before getting nsIX509CertDB
 
-const { RemoteSettings } = ChromeUtils.import(
-  "resource://services-settings/remote-settings.js"
-);
 const { RemoteSecuritySettings } = ChromeUtils.import(
   "resource://gre/modules/psm/RemoteSecuritySettings.jsm"
 );
@@ -18,9 +15,6 @@ const { TestUtils } = ChromeUtils.import(
 const { IntermediatePreloadsClient } = RemoteSecuritySettings.init();
 
 let server;
-
-let intermediate1Data;
-let intermediate2Data;
 
 const INTERMEDIATES_DL_PER_POLL_PREF =
   "security.remote_settings.intermediates.downloads_per_poll";
@@ -290,9 +284,6 @@ add_task(async function test_preload_basic() {
     certificateUsageSSLServer
   );
 
-  let certStorage = Cc["@mozilla.org/security/certstorage;1"].getService(
-    Ci.nsICertStorage
-  );
   let intermediateBytes = readFile(
     do_get_file("test_intermediate_preloads/int.pem")
   );
@@ -346,7 +337,7 @@ add_task(async function test_preload_basic() {
 
   let localDB = await IntermediatePreloadsClient.client.db;
   let data = await localDB.list();
-  ok(data.length > 0, "should have some entries");
+  ok(!!data.length, "should have some entries");
   // simulate a sync (syncAndDownload doesn't actually... sync.)
   await IntermediatePreloadsClient.client.emit("sync", {
     data: {
@@ -411,7 +402,7 @@ add_task(async function test_delete() {
 
   let localDB = await IntermediatePreloadsClient.client.db;
   let data = await localDB.list();
-  ok(data.length > 0, "should have some entries");
+  ok(!!data.length, "should have some entries");
   let subject = data[0].subjectDN;
   let certStorage = Cc["@mozilla.org/security/certstorage;1"].getService(
     Ci.nsICertStorage

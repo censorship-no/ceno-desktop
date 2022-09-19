@@ -1088,7 +1088,7 @@
   operands:
     str: WordSized
     index: WordSized
-  num_temps: 1
+  num_temps: 2
 
 # Convert uint16 character code to a string.
 - name: FromCharCode
@@ -1103,13 +1103,64 @@
     codePoint: WordSized
   num_temps: 2
 
-# Calls the ToLowerCase or ToUpperCase case conversion function.
-- name: StringConvertCase
+# Search for the first index of the search string.
+- name: StringIndexOf
+  result_type: WordSized
+  operands:
+    string: WordSized
+    searchString: WordSized
+  call_instruction: true
+
+# Test if a string starts with the search string
+- name: StringStartsWith
+  result_type: WordSized
+  operands:
+    string: WordSized
+    searchString: WordSized
+  call_instruction: true
+
+# Test if a string starts with the constant search string
+- name: StringStartsWithInline
+  result_type: WordSized
+  operands:
+    string: WordSized
+  arguments:
+    searchString: JSLinearString*
+  num_temps: 1
+
+# Test if a string ends with the search string
+- name: StringEndsWith
+  result_type: WordSized
+  operands:
+    string: WordSized
+    searchString: WordSized
+  call_instruction: true
+
+# Test if a string ends with the constant search string
+- name: StringEndsWithInline
+  result_type: WordSized
+  operands:
+    string: WordSized
+  arguments:
+    searchString: JSLinearString*
+  num_temps: 1
+
+# Calls the ToLowerCase case conversion function. Inlines the case conversion
+# when possible.
+- name: StringToLowerCase
+  result_type: WordSized
+  operands:
+    string: WordSized
+  num_temps: 5
+  mir_op: StringConvertCase
+
+# Calls the ToUpperCase case conversion function.
+- name: StringToUpperCase
   result_type: WordSized
   operands:
     string: WordSized
   call_instruction: true
-  mir_op: true
+  mir_op: StringConvertCase
 
 - name: StringSplit
   result_type: WordSized
@@ -2058,33 +2109,20 @@
 
 - name: NewLexicalEnvironmentObject
   result_type: WordSized
-  operands:
-    enclosing: WordSized
-  call_instruction: true
-  mir_op: true
-
-- name: CopyLexicalEnvironmentObject
-  result_type: WordSized
-  operands:
-    env: WordSized
-  call_instruction: true
+  num_temps: 1
   mir_op: true
 
 - name: NewClassBodyEnvironmentObject
   result_type: WordSized
-  operands:
-    enclosing: WordSized
-  call_instruction: true
+  num_temps: 1
   mir_op: true
 
 - name: NewVarEnvironmentObject
   result_type: WordSized
-  operands:
-    enclosing: WordSized
-  call_instruction: true
+  num_temps: 1
   mir_op: true
 
-- name: CallSetElement
+- name: MegamorphicSetElement
   operands:
     object: WordSized
     index: BoxedValue
@@ -2320,6 +2358,13 @@
     value: BoxedValue
   num_temps: 1
   mir_op: PostWriteElementBarrier
+
+# Assert in debug mode that a post write barrier can be elided.
+- name: AssertCanElidePostWriteBarrier
+  operands:
+    object: WordSized
+    value: BoxedValue
+  num_temps: 1
 
 # Guard against an object's identity.
 - name: GuardObjectIdentity
@@ -3138,6 +3183,14 @@
   operands:
     object: WordSized
     index: WordSized
+  call_instruction: true
+
+- name: CallNativeGetElementSuper
+  result_type: BoxedValue
+  operands:
+    object: WordSized
+    index: WordSized
+    receiver: BoxedValue
   call_instruction: true
 
 - name: CallObjectHasSparseElement

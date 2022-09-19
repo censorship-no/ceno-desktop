@@ -202,7 +202,7 @@
 
   <form purpose="saved input with id and not name"
         id="form103">
-    <input type="text" id="test3">
+    <input type="text" name="test3">
     <button type="submit">Submit</button>
   </form>
 
@@ -352,7 +352,7 @@ for (const form of document.forms) {
   form.addEventListener("submit", e => e.preventDefault());
 }
 
-add_task(async function checkInitialState() {
+add_setup(async () => {
   await updateFormHistory([
     { op: "remove" },
   ]);

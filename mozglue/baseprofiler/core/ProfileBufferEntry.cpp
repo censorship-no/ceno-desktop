@@ -231,7 +231,11 @@ bool UniqueStacks::FrameKey::NormalFrameData::operator==(
          mColumn == aOther.mColumn && mCategoryPair == aOther.mCategoryPair;
 }
 
-UniqueStacks::UniqueStacks() : mUniqueStrings(MakeUnique<UniqueJSONStrings>()) {
+UniqueStacks::UniqueStacks()
+    : mUniqueStrings(MakeUnique<UniqueJSONStrings>(
+          FailureLatchInfallibleSource::Singleton())),
+      mFrameTableWriter(FailureLatchInfallibleSource::Singleton()),
+      mStackTableWriter(FailureLatchInfallibleSource::Singleton()) {
   mFrameTableWriter.StartBareList();
   mStackTableWriter.StartBareList();
 }
@@ -320,15 +324,6 @@ void UniqueStacks::StreamNonJITFrame(const FrameKey& aFrame) {
     writer.IntElement(SUBCATEGORY, info.mSubcategoryIndex);
   }
 }
-
-struct CStringWriteFunc : public JSONWriteFunc {
-  std::string& mBuffer;  // The struct must not outlive this buffer
-  explicit CStringWriteFunc(std::string& aBuffer) : mBuffer(aBuffer) {}
-
-  void Write(const Span<const char>& aStr) override {
-    mBuffer.append(aStr.data(), aStr.size());
-  }
-};
 
 struct ProfileSample {
   uint32_t mStack;

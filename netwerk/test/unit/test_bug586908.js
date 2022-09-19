@@ -7,7 +7,6 @@ const { MockRegistrar } = ChromeUtils.import(
 
 var httpserv = null;
 
-const CID = Components.ID("{5645d2c1-d6d8-4091-b117-fe7ee4027db7}");
 XPCOMUtils.defineLazyGetter(this, "systemSettings", function() {
   return {
     QueryInterface: ChromeUtils.generateQI(["nsISystemProxySettings"]),
@@ -68,7 +67,8 @@ function redirect(metadata, response) {
   // If called second time, just return the PAC but set failed-flag
   if (called) {
     failed = true;
-    return pac(metadata, response);
+    pac(metadata, response);
+    return;
   }
 
   called = true;

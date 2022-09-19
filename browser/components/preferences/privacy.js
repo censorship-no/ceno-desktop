@@ -203,6 +203,10 @@ Preferences.addAll([
 
   // Windows SSO
   { id: "network.http.windows-sso.enabled", type: "bool" },
+
+  // Quick Actions
+  { id: "browser.urlbar.quickactions.showPrefs", type: "bool" },
+  { id: "browser.urlbar.suggest.quickactions", type: "bool" },
 ]);
 
 // Study opt out
@@ -215,13 +219,10 @@ if (AppConstants.MOZ_DATA_REPORTING) {
   ]);
 }
 // Privacy segmentation section
-Preferences.addAll([
-  {
-    id: "browser.privacySegmentation.preferences.show",
-    type: "bool",
-  },
-  { id: "browser.privacySegmentation.enabled", type: "bool" },
-]);
+Preferences.add({
+  id: "browser.dataFeatureRecommendations.enabled",
+  type: "bool",
+});
 
 // Data Choices tab
 if (AppConstants.MOZ_CRASHREPORTER) {
@@ -470,6 +471,19 @@ var gPrivacyPane = {
         Services.prefs.removeObserver(pref, trackingProtectionObserver);
       }
     });
+  },
+
+  _initQuickActionsSection() {
+    let showPref = Preferences.get("browser.urlbar.quickactions.showPrefs");
+    let showQuickActionsGroup = () => {
+      document.getElementById("quickActionsBox").hidden = !showPref.value;
+    };
+    showPref.on("change", showQuickActionsGroup);
+    showQuickActionsGroup();
+
+    document
+      .getElementById("quickActionsLink")
+      .setAttribute("href", UrlbarProviderQuickActions.helpUrl);
   },
 
   syncFromHttpsOnlyPref() {
@@ -2073,6 +2087,7 @@ var gPrivacyPane = {
     }
 
     this._updateFirefoxSuggestSection(true);
+    this._initQuickActionsSection();
   },
 
   /**
@@ -2735,9 +2750,8 @@ var gPrivacyPane = {
   initDataCollection() {
     if (
       !AppConstants.MOZ_DATA_REPORTING &&
-      !Services.prefs.getBoolPref(
-        "browser.privacySegmentation.preferences.show",
-        false
+      !NimbusFeatures.majorRelease2022.getVariable(
+        "feltPrivacyShowPreferencesSection"
       )
     ) {
       // Nothing to control in the data collection section, remove it.
@@ -2768,29 +2782,23 @@ var gPrivacyPane = {
   },
 
   initPrivacySegmentation() {
-    // Learn more link
-    document
-      .getElementById("privacy-segmentation-learn-more-link")
-      .setAttribute(
-        "href",
-        Services.urlFormatter.formatURLPref("app.support.baseURL") +
-          Services.prefs.getStringPref(
-            "browser.privacySegmentation.preferences.learnMoreURLSuffix"
-          )
-      );
-
     // Section visibility
-    let visibilityPref = Preferences.get(
-      "browser.privacySegmentation.preferences.show"
-    );
     let section = document.getElementById("privacySegmentationSection");
     let updatePrivacySegmentationSectionVisibilityState = () => {
-      section.hidden = !visibilityPref.value;
+      section.hidden = !NimbusFeatures.majorRelease2022.getVariable(
+        "feltPrivacyShowPreferencesSection"
+      );
     };
-    visibilityPref.on(
-      "change",
+
+    NimbusFeatures.majorRelease2022.onUpdate(
       updatePrivacySegmentationSectionVisibilityState
     );
+    window.addEventListener("unload", () => {
+      NimbusFeatures.majorRelease2022.off(
+        updatePrivacySegmentationSectionVisibilityState
+      );
+    });
+
     updatePrivacySegmentationSectionVisibilityState();
   },
 

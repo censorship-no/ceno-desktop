@@ -280,6 +280,7 @@ class nsWindow final : public nsBaseWidget {
   GdkWindow* GetToplevelGdkWindow() const;
   GtkWidget* GetGtkWidget() const { return mShell; }
   nsIFrame* GetFrame() const;
+  nsWindow* GetEffectiveParent();
   bool IsDestroyed() const { return mIsDestroyed; }
   bool IsPopup() const;
   bool IsWaylandPopup() const;
@@ -352,6 +353,12 @@ class nsWindow final : public nsBaseWidget {
                                          float aScale,
                                          LayoutDeviceIntPoint aPoint,
                                          int32_t aModifierFlags) override;
+
+  nsresult SynthesizeNativeTouchpadPan(TouchpadGesturePhase aEventPhase,
+                                       LayoutDeviceIntPoint aPoint,
+                                       double aDeltaX, double aDeltaY,
+                                       int32_t aModifierFlags,
+                                       nsIObserver* aObserver) override;
 
   void GetCompositorWidgetInitData(
       mozilla::widget::CompositorWidgetInitData* aInitData) override;
@@ -444,6 +451,12 @@ class nsWindow final : public nsBaseWidget {
   void PauseCompositorFlickering();
   bool IsWaitingForCompositorResume();
 
+  // Force hide this window, remove compositor etc. to avoid
+  // rendering queue blocking (see Bug 1782948).
+  void ClearRenderingQueue();
+
+  bool ApplyEnterLeaveMutterWorkaround();
+
  protected:
   virtual ~nsWindow();
 
@@ -513,6 +526,9 @@ class nsWindow final : public nsBaseWidget {
 
   void AddCSDDecorationSize(int* aWidth, int* aHeight);
 
+  void CreateAndPutGdkScrollEvent(mozilla::LayoutDeviceIntPoint aPoint,
+                                  double aDeltaX, double aDeltaY);
+
   nsCString mGtkWindowAppName;
   nsCString mGtkWindowRoleName;
   void RefreshWindowClass();
@@ -525,7 +541,7 @@ class nsWindow final : public nsBaseWidget {
       COMPOSITOR_ENABLED};
   // This is used in COMPOSITOR_PAUSED_FLICKERING mode only to resume compositor
   // in some reasonable time when page content is not updated.
-  int mCompositorPauseTimeoutID = 0;
+  guint mCompositorPauseTimeoutID = 0;
 
   // The actual size mode that's in effect.
   nsSizeMode mSizeMode = nsSizeMode_Normal;
@@ -559,6 +575,15 @@ class nsWindow final : public nsBaseWidget {
 
   // Used for synthesizing touchpad pinch gestures
   TouchpadPinchGestureState mCurrentSynthesizedTouchpadPinch;
+
+  // Used for synthesizing touchpad pan gestures
+  struct TouchpadPanGestureState {
+    mozilla::Maybe<TouchpadGesturePhase> mTouchpadGesturePhase;
+    uint64_t mSavedObserver = 0;
+  };
+
+  // Used for synthesizing touchpad pan gestures
+  TouchpadPanGestureState mCurrentSynthesizedTouchpadPan;
 
   // for touch event handling
   nsRefPtrHashtable<nsPtrHashKey<GdkEventSequence>, mozilla::dom::Touch>
@@ -792,6 +817,8 @@ class nsWindow final : public nsBaseWidget {
   bool WaylandPopupIsMenu();
   bool WaylandPopupIsContextMenu();
   bool WaylandPopupIsPermanent();
+  // First popup means it's attached directly to toplevel window
+  bool WaylandPopupIsFirst();
   bool IsWidgetOverflowWindow();
   void RemovePopupFromHierarchyList();
   void ShowWaylandPopupWindow();
@@ -799,6 +826,7 @@ class nsWindow final : public nsBaseWidget {
   void ShowWaylandToplevelWindow();
   void HideWaylandToplevelWindow();
   void WaylandPopupHideTooltips();
+  void WaylandPopupCloseOrphanedPopups();
   void AppendPopupToHierarchyList(nsWindow* aToplevelWindow);
   void WaylandPopupHierarchyHideTemporary();
   void WaylandPopupHierarchyShowTemporaryHidden();
@@ -813,7 +841,10 @@ class nsWindow final : public nsBaseWidget {
   void CloseAllPopupsBeforeRemotePopup();
   void WaylandPopupHideClosedPopups();
   void WaylandPopupMove();
+  void WaylandPopupPrepareForMove();
   bool WaylandPopupRemoveNegativePosition(int* aX = nullptr, int* aY = nullptr);
+  bool WaylandPopupCheckAndGetAnchor(GdkRectangle* aPopupAnchor);
+  bool WaylandPopupAnchorAdjustForParentPopup(GdkRectangle* aPopupAnchor);
   nsWindow* WaylandPopupGetTopmostWindow();
   bool IsPopupInLayoutPopupChain(nsTArray<nsIWidget*>* aLayoutWidgetHierarchy,
                                  bool aMustMatchParent);

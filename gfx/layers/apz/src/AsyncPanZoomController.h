@@ -415,6 +415,7 @@ class AsyncPanZoomController {
    * Clear any overscroll on this APZC.
    */
   void ClearOverscroll();
+  void ClearPhysicalOverscroll();
 
   /**
    * Returns whether this APZC is for an element marked with the 'scrollgrab'
@@ -575,6 +576,9 @@ class AsyncPanZoomController {
   SampleTime GetFrameTime() const;
 
   bool IsZero(const ParentLayerPoint& aPoint) const;
+  bool IsZero(ParentLayerCoord aCoord) const;
+
+  bool FuzzyGreater(ParentLayerCoord aCoord1, ParentLayerCoord aCoord2) const;
 
  private:
   // Get whether the horizontal content of the honoured target of auto-dir
@@ -1710,6 +1714,10 @@ class AsyncPanZoomController {
   bool IsInOverscrollGutter(const ParentLayerPoint& aHitTestPoint) const;
 
   bool IsOverscrolled() const;
+
+  // IsPhysicallyOverscrolled() checks whether the APZC is overscrolled
+  // by an overscroll effect which applies a transform to the APZC's contents.
+  bool IsPhysicallyOverscrolled() const;
 
  private:
   bool IsInInvalidOverscroll() const;

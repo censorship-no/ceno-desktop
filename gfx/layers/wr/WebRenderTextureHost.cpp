@@ -37,7 +37,8 @@ class ScheduleHandleRenderTextureOps : public wr::NotificationHandler {
 WebRenderTextureHost::WebRenderTextureHost(
     TextureFlags aFlags, TextureHost* aTexture,
     const wr::ExternalImageId& aExternalImageId)
-    : TextureHost(aFlags), mWrappedTextureHost(aTexture) {
+    : TextureHost(TextureHostType::Unknown, aFlags),
+      mWrappedTextureHost(aTexture) {
   MOZ_ASSERT(mWrappedTextureHost);
   // The wrapped textureHost will be used in WebRender, and the WebRender could
   // run at another thread. It's hard to control the life-time when gecko
@@ -46,8 +47,7 @@ WebRenderTextureHost::WebRenderTextureHost(
   // DEALLOCATE_CLIENT flag here. If the buffer deallocation is controlled by
   // parent, we could do something to make sure the wrapped textureHost is not
   // used by WebRender and then release it.
-  MOZ_ASSERT(!(aFlags & TextureFlags::DEALLOCATE_CLIENT) ||
-             (aFlags & TextureFlags::REMOTE_TEXTURE));
+  MOZ_ASSERT(!(aFlags & TextureFlags::DEALLOCATE_CLIENT));
   MOZ_COUNT_CTOR(WebRenderTextureHost);
 
   mExternalImageId = Some(aExternalImageId);
@@ -105,6 +105,9 @@ void WebRenderTextureHost::NotifyNotUsed() {
     wr::RenderThread::Get()->NotifyNotUsed(GetExternalImageKey());
   }
 #endif
+  if (mWrappedTextureHost->AsRemoteTextureHostWrapper()) {
+    mWrappedTextureHost->NotifyNotUsed();
+  }
   TextureHost::NotifyNotUsed();
 }
 
@@ -193,6 +196,10 @@ mozilla::ipc::FileDescriptor WebRenderTextureHost::GetAndResetReleaseFence() {
 
 AndroidHardwareBuffer* WebRenderTextureHost::GetAndroidHardwareBuffer() const {
   return mWrappedTextureHost->GetAndroidHardwareBuffer();
+}
+
+TextureHostType WebRenderTextureHost::GetTextureHostType() {
+  return mWrappedTextureHost->GetTextureHostType();
 }
 
 }  // namespace mozilla::layers

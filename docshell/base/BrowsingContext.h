@@ -85,6 +85,19 @@ enum class ExplicitActiveStatus : uint8_t {
   EndGuard_,
 };
 
+struct EmbedderColorSchemes {
+  PrefersColorSchemeOverride mUsed{};
+  PrefersColorSchemeOverride mPreferred{};
+
+  bool operator==(const EmbedderColorSchemes& aOther) const {
+    return mUsed == aOther.mUsed && mPreferred == aOther.mPreferred;
+  }
+
+  bool operator!=(const EmbedderColorSchemes& aOther) const {
+    return !(*this == aOther);
+  }
+};
+
 // Fields are, by default, settable by any process and readable by any process.
 // Racy sets will be resolved as-if they occurred in the order the parent
 // process finds out about them.
@@ -161,6 +174,7 @@ enum class ExplicitActiveStatus : uint8_t {
   FIELD(UseGlobalHistory, bool)                                               \
   FIELD(TargetTopLevelLinkClicksToBlankInternal, bool)                        \
   FIELD(FullscreenAllowedByOwner, bool)                                       \
+  FIELD(ForceDesktopViewport, bool)                                           \
   /*                                                                          \
    * "is popup" in the spec.                                                  \
    * Set only on top browsing contexts.                                       \
@@ -215,7 +229,7 @@ enum class ExplicitActiveStatus : uint8_t {
   FIELD(PrefersColorSchemeOverride, dom::PrefersColorSchemeOverride)          \
   /* prefers-color-scheme override based on the color-scheme style of our     \
    * <browser> embedder element. */                                           \
-  FIELD(EmbedderColorScheme, dom::PrefersColorSchemeOverride)                 \
+  FIELD(EmbedderColorSchemes, EmbedderColorSchemes)                           \
   FIELD(DisplayMode, dom::DisplayMode)                                        \
   /* The number of entries added to the session history because of this       \
    * browsing context. */                                                     \
@@ -234,7 +248,14 @@ enum class ExplicitActiveStatus : uint8_t {
   /* This field only gets incrememented when we start navigations in the      \
    * parent process. This is used for keeping track of the racing navigations \
    * between the parent and content processes. */                             \
-  FIELD(ParentInitiatedNavigationEpoch, uint64_t)
+  FIELD(ParentInitiatedNavigationEpoch, uint64_t)                             \
+  /* This browsing context is for a synthetic image document wrapping an      \
+   * image embedded in <object> or <embed>. */                                \
+  FIELD(SyntheticDocumentContainer, bool)                                     \
+  /* If true, this document is embedded within a content document,  either    \
+   * loaded in the parent (e.g. about:addons or the devtools toolbox), or in  \
+   * a content process. */                                                    \
+  FIELD(EmbeddedInContentDocument, bool)
 
 // BrowsingContext, in this context, is the cross process replicated
 // environment in which information about documents is stored. In
@@ -366,6 +387,10 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   Element* GetEmbedderElement() const { return mEmbedderElement; }
   void SetEmbedderElement(Element* aEmbedder);
 
+  // Return true if the type of the embedder element is either object
+  // or embed, false otherwise.
+  bool IsEmbedderTypeObjectOrEmbed();
+
   // Called after the BrowingContext has been embedded in a FrameLoader. This
   // happens after `SetEmbedderElement` is called on the BrowsingContext and
   // after the BrowsingContext has been set on the FrameLoader.
@@ -488,6 +513,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   Span<RefPtr<BrowsingContext>> Children() const;
   void GetChildren(nsTArray<RefPtr<BrowsingContext>>& aChildren);
 
+  Span<RefPtr<BrowsingContext>> NonSyntheticChildren() const;
+
   const nsTArray<RefPtr<WindowContext>>& GetWindowContexts() {
     return mWindowContexts;
   }
@@ -577,6 +604,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
                                 : ExplicitActiveStatus::Inactive,
                       aRv);
   }
+
+  bool ForceDesktopViewport() const { return GetForceDesktopViewport(); }
 
   bool AuthorStyleDisabledDefault() const {
     return GetAuthorStyleDisabledDefault();
@@ -855,7 +884,7 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   void HistoryGo(int32_t aOffset, uint64_t aHistoryEpoch,
                  bool aRequireUserInteraction, bool aUserActivation,
-                 std::function<void(int32_t&&)>&& aResolver);
+                 std::function<void(Maybe<int32_t>&&)>&& aResolver);
 
   bool ShouldUpdateSessionHistory(uint32_t aLoadType);
 
@@ -1030,8 +1059,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     return IsTop();
   }
 
-  bool CanSet(FieldIndex<IDX_EmbedderColorScheme>,
-              dom::PrefersColorSchemeOverride, ContentParent* aSource) {
+  bool CanSet(FieldIndex<IDX_EmbedderColorSchemes>, const EmbedderColorSchemes&,
+              ContentParent* aSource) {
     return CheckOnlyEmbedderCanSet(aSource);
   }
 
@@ -1042,8 +1071,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   void DidSet(FieldIndex<IDX_InRDMPane>, bool aOldValue);
 
-  void DidSet(FieldIndex<IDX_EmbedderColorScheme>,
-              dom::PrefersColorSchemeOverride aOldValue);
+  void DidSet(FieldIndex<IDX_EmbedderColorSchemes>,
+              EmbedderColorSchemes&& aOldValue);
 
   void DidSet(FieldIndex<IDX_PrefersColorSchemeOverride>,
               dom::PrefersColorSchemeOverride aOldValue);
@@ -1171,8 +1200,23 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
                       ContentParent* aSource);
   void DidSet(FieldIndex<IDX_AllowJavascript>, bool aOldValue);
 
+  bool CanSet(FieldIndex<IDX_ForceDesktopViewport>, bool aValue,
+              ContentParent* aSource) {
+    return IsTop() && XRE_IsParentProcess();
+  }
+
+  // TODO(emilio): Maybe handle the flag being set dynamically without
+  // navigating? The previous code didn't do it tho, and a reload is probably
+  // worth it regardless.
+  // void DidSet(FieldIndex<IDX_ForceDesktopViewport>, bool aOldValue);
+
   bool CanSet(FieldIndex<IDX_HasRestoreData>, bool aNewValue,
               ContentParent* aSource);
+
+  bool CanSet(FieldIndex<IDX_EmbeddedInContentDocument>, bool,
+              ContentParent* aSource) {
+    return CheckOnlyEmbedderCanSet(aSource);
+  }
 
   template <size_t I, typename T>
   bool CanSet(FieldIndex<I>, const T&, ContentParent*) {
@@ -1193,6 +1237,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   bool CanSet(FieldIndex<IDX_IsInBFCache>, bool, ContentParent* aSource);
   void DidSet(FieldIndex<IDX_IsInBFCache>);
+
+  void DidSet(FieldIndex<IDX_SyntheticDocumentContainer>);
 
   // Allow if the process attemping to set field is the same as the owning
   // process. Deprecated. New code that might use this should generally be moved

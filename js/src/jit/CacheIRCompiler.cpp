@@ -1541,6 +1541,21 @@ bool CacheIRCompiler::emitGuardIsUndefined(ValOperandId inputId) {
   return true;
 }
 
+bool CacheIRCompiler::emitGuardIsNotUninitializedLexical(ValOperandId valId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  ValueOperand val = allocator.useValueRegister(masm, valId);
+
+  FailurePath* failure;
+  if (!addFailurePath(&failure)) {
+    return false;
+  }
+
+  masm.branchTestMagicValue(Assembler::Equal, val, JS_UNINITIALIZED_LEXICAL,
+                            failure->label());
+  return true;
+}
+
 bool CacheIRCompiler::emitGuardBooleanToInt32(ValOperandId inputId,
                                               Int32OperandId resultId) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
@@ -3445,7 +3460,8 @@ bool CacheIRCompiler::emitLoadStringCharCodeResult(StringOperandId strId,
   Register str = allocator.useRegister(masm, strId);
   Register index = allocator.useRegister(masm, indexId);
   AutoScratchRegisterMaybeOutput scratch1(allocator, masm, output);
-  AutoScratchRegister scratch2(allocator, masm);
+  AutoScratchRegisterMaybeOutputType scratch2(allocator, masm, output);
+  AutoScratchRegister scratch3(allocator, masm);
 
   FailurePath* failure;
   if (!addFailurePath(&failure)) {
@@ -3455,7 +3471,8 @@ bool CacheIRCompiler::emitLoadStringCharCodeResult(StringOperandId strId,
   // Bounds check, load string char.
   masm.spectreBoundsCheck32(index, Address(str, JSString::offsetOfLength()),
                             scratch1, failure->label());
-  masm.loadStringChar(str, index, scratch1, scratch2, failure->label());
+  masm.loadStringChar(str, index, scratch1, scratch2, scratch3,
+                      failure->label());
 
   masm.tagValue(JSVAL_TYPE_INT32, scratch1, output.valueReg());
   return true;
@@ -3474,6 +3491,60 @@ bool CacheIRCompiler::emitNewStringObjectResult(uint32_t templateObjectOffset,
 
   using Fn = JSObject* (*)(JSContext*, HandleString);
   callvm.call<Fn, NewStringObject>();
+  return true;
+}
+
+bool CacheIRCompiler::emitStringIndexOfResult(StringOperandId strId,
+                                              StringOperandId searchStrId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  AutoCallVM callvm(masm, this, allocator);
+
+  Register str = allocator.useRegister(masm, strId);
+  Register searchStr = allocator.useRegister(masm, searchStrId);
+
+  callvm.prepare();
+  masm.Push(searchStr);
+  masm.Push(str);
+
+  using Fn = bool (*)(JSContext*, HandleString, HandleString, int32_t*);
+  callvm.call<Fn, js::StringIndexOf>();
+  return true;
+}
+
+bool CacheIRCompiler::emitStringStartsWithResult(StringOperandId strId,
+                                                 StringOperandId searchStrId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  AutoCallVM callvm(masm, this, allocator);
+
+  Register str = allocator.useRegister(masm, strId);
+  Register searchStr = allocator.useRegister(masm, searchStrId);
+
+  callvm.prepare();
+  masm.Push(searchStr);
+  masm.Push(str);
+
+  using Fn = bool (*)(JSContext*, HandleString, HandleString, bool*);
+  callvm.call<Fn, js::StringStartsWith>();
+  return true;
+}
+
+bool CacheIRCompiler::emitStringEndsWithResult(StringOperandId strId,
+                                               StringOperandId searchStrId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  AutoCallVM callvm(masm, this, allocator);
+
+  Register str = allocator.useRegister(masm, strId);
+  Register searchStr = allocator.useRegister(masm, searchStrId);
+
+  callvm.prepare();
+  masm.Push(searchStr);
+  masm.Push(str);
+
+  using Fn = bool (*)(JSContext*, HandleString, HandleString, bool*);
+  callvm.call<Fn, js::StringEndsWith>();
   return true;
 }
 
@@ -7558,6 +7629,28 @@ bool CacheIRCompiler::emitCallNativeGetElementResult(ObjOperandId objId,
 
   masm.Push(index);
   masm.Push(TypedOrValueRegister(MIRType::Object, AnyRegister(obj)));
+  masm.Push(obj);
+
+  using Fn = bool (*)(JSContext*, Handle<NativeObject*>, HandleValue, int32_t,
+                      MutableHandleValue);
+  callvm.call<Fn, NativeGetElement>();
+
+  return true;
+}
+
+bool CacheIRCompiler::emitCallNativeGetElementSuperResult(
+    ObjOperandId objId, Int32OperandId indexId, ValOperandId receiverId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoCallVM callvm(masm, this, allocator);
+
+  Register obj = allocator.useRegister(masm, objId);
+  Register index = allocator.useRegister(masm, indexId);
+  ValueOperand receiver = allocator.useValueRegister(masm, receiverId);
+
+  callvm.prepare();
+
+  masm.Push(index);
+  masm.Push(receiver);
   masm.Push(obj);
 
   using Fn = bool (*)(JSContext*, Handle<NativeObject*>, HandleValue, int32_t,

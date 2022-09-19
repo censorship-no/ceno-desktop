@@ -64,7 +64,7 @@ bool ExternalHelperAppParent::Init(
     nsIURI* aReferrer, BrowsingContext* aContext,
     const bool& aShouldCloseWindow) {
   nsresult rv = mozilla::ipc::LoadInfoArgsToLoadInfo(aLoadInfoArgs,
-                                       getter_AddRefs(mLoadInfo));
+                                                     getter_AddRefs(mLoadInfo));
   if (NS_FAILED(rv)) {
     return false;
   }
@@ -200,6 +200,20 @@ NS_IMETHODIMP
 ExternalHelperAppParent::GetStatus(nsresult* aResult) {
   *aResult = mStatus;
   return NS_OK;
+}
+
+NS_IMETHODIMP ExternalHelperAppParent::SetCanceledReason(
+    const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP ExternalHelperAppParent::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP ExternalHelperAppParent::CancelWithReason(
+    nsresult aStatus, const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
 }
 
 NS_IMETHODIMP

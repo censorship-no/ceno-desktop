@@ -21,6 +21,7 @@
 #include "js/Value.h"
 #include "json/json.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
 #include "mozilla/dom/Promise.h"
@@ -39,6 +40,12 @@
 #include "platform.h"
 #include "shared-libraries.h"
 #include "zlib.h"
+
+#ifndef ANDROID
+#  include <cstdio>
+#else
+#  include <android/log.h>
+#endif
 
 using namespace mozilla;
 
@@ -299,31 +306,20 @@ nsProfiler::GetProfile(double aSinceTime, char** aProfile) {
   return NS_OK;
 }
 
-namespace {
-struct StringWriteFunc : public JSONWriteFunc {
-  nsAString& mBuffer;  // This struct must not outlive this buffer
-  explicit StringWriteFunc(nsAString& buffer) : mBuffer(buffer) {}
-
-  void Write(const Span<const char>& aStr) override {
-    mBuffer.Append(NS_ConvertUTF8toUTF16(aStr.data(), aStr.size()));
-  }
-};
-}  // namespace
-
 NS_IMETHODIMP
 nsProfiler::GetSharedLibraries(JSContext* aCx,
                                JS::MutableHandle<JS::Value> aResult) {
   JS::Rooted<JS::Value> val(aCx);
   {
-    nsString buffer;
-    JSONWriter w(MakeUnique<StringWriteFunc>(buffer),
-                 JSONWriter::SingleLineStyle);
+    JSONStringWriteFunc<nsCString> buffer;
+    JSONWriter w(buffer, JSONWriter::SingleLineStyle);
     w.StartArrayElement();
     AppendSharedLibraries(w);
     w.EndArray();
+    NS_ConvertUTF8toUTF16 buffer16(buffer.StringCRef());
     MOZ_ALWAYS_TRUE(JS_ParseJSON(aCx,
-                                 static_cast<const char16_t*>(buffer.get()),
-                                 buffer.Length(), &val));
+                                 static_cast<const char16_t*>(buffer16.get()),
+                                 buffer16.Length(), &val));
   }
   JS::Rooted<JSObject*> obj(aCx, &val.toObject());
   if (!obj) {
@@ -338,13 +334,13 @@ nsProfiler::GetActiveConfiguration(JSContext* aCx,
                                    JS::MutableHandle<JS::Value> aResult) {
   JS::Rooted<JS::Value> jsValue(aCx);
   {
-    nsString buffer;
-    JSONWriter writer(MakeUnique<StringWriteFunc>(buffer),
-                      JSONWriter::SingleLineStyle);
+    JSONStringWriteFunc<nsCString> buffer;
+    JSONWriter writer(buffer, JSONWriter::SingleLineStyle);
     profiler_write_active_configuration(writer);
+    NS_ConvertUTF8toUTF16 buffer16(buffer.StringCRef());
     MOZ_ALWAYS_TRUE(JS_ParseJSON(aCx,
-                                 static_cast<const char16_t*>(buffer.get()),
-                                 buffer.Length(), &jsValue));
+                                 static_cast<const char16_t*>(buffer16.get()),
+                                 buffer16.Length(), &jsValue));
   }
   if (jsValue.isNull()) {
     aResult.setNull();
@@ -421,7 +417,7 @@ nsProfiler::GetProfileDataAsync(double aSinceTime, JSContext* aCx,
             JSContext* cx = jsapi.cx();
 
             // Now parse the JSON so that we resolve with a JS Object.
-            JS::RootedValue val(cx);
+            JS::Rooted<JS::Value> val(cx);
             {
               NS_ConvertUTF8toUTF16 js_string(aResult);
               if (!JS_ParseJSON(cx,
@@ -430,7 +426,7 @@ nsProfiler::GetProfileDataAsync(double aSinceTime, JSContext* aCx,
                 if (!jsapi.HasException()) {
                   promise->MaybeReject(NS_ERROR_DOM_UNKNOWN_ERR);
                 } else {
-                  JS::RootedValue exn(cx);
+                  JS::Rooted<JS::Value> exn(cx);
                   DebugOnly<bool> gotException = jsapi.StealException(&exn);
                   MOZ_ASSERT(gotException);
 
@@ -489,7 +485,7 @@ nsProfiler::GetProfileDataAsArrayBuffer(double aSinceTime, JSContext* aCx,
                 cx, aResult.Length(),
                 reinterpret_cast<const uint8_t*>(aResult.Data()));
             if (typedArray) {
-              JS::RootedValue val(cx, JS::ObjectValue(*typedArray));
+              JS::Rooted<JS::Value> val(cx, JS::ObjectValue(*typedArray));
               promise->MaybeResolve(val);
             } else {
               promise->MaybeReject(NS_ERROR_OUT_OF_MEMORY);
@@ -591,7 +587,7 @@ nsProfiler::GetProfileDataAsGzippedArrayBuffer(double aSinceTime,
             JSObject* typedArray = dom::ArrayBuffer::Create(
                 cx, outBuff.Length(), outBuff.Elements());
             if (typedArray) {
-              JS::RootedValue val(cx, JS::ObjectValue(*typedArray));
+              JS::Rooted<JS::Value> val(cx, JS::ObjectValue(*typedArray));
               promise->MaybeResolve(val);
             } else {
               promise->MaybeReject(NS_ERROR_OUT_OF_MEMORY);
@@ -695,18 +691,18 @@ nsProfiler::GetSymbolTable(const nsACString& aDebugPath,
 
             JSContext* cx = jsapi.cx();
 
-            JS::RootedObject addrsArray(
+            JS::Rooted<JSObject*> addrsArray(
                 cx, dom::Uint32Array::Create(cx, aSymbolTable.mAddrs.Length(),
                                              aSymbolTable.mAddrs.Elements()));
-            JS::RootedObject indexArray(
+            JS::Rooted<JSObject*> indexArray(
                 cx, dom::Uint32Array::Create(cx, aSymbolTable.mIndex.Length(),
                                              aSymbolTable.mIndex.Elements()));
-            JS::RootedObject bufferArray(
+            JS::Rooted<JSObject*> bufferArray(
                 cx, dom::Uint8Array::Create(cx, aSymbolTable.mBuffer.Length(),
                                             aSymbolTable.mBuffer.Elements()));
 
             if (addrsArray && indexArray && bufferArray) {
-              JS::RootedObject tuple(cx, JS::NewArrayObject(cx, 3));
+              JS::Rooted<JSObject*> tuple(cx, JS::NewArrayObject(cx, 3));
               JS_SetElement(cx, tuple, 0, addrsArray);
               JS_SetElement(cx, tuple, 1, indexArray);
               JS_SetElement(cx, tuple, 2, bufferArray);
@@ -1139,7 +1135,8 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
     return GatheringPromise::CreateAndReject(NS_ERROR_OUT_OF_MEMORY, __func__);
   }
 
-  mWriter.emplace();
+  mFailureLatchSource.emplace();
+  mWriter.emplace(*mFailureLatchSource);
 
   UniquePtr<ProfilerCodeAddressService> service =
       profiler_code_address_service_for_presymbolication();
@@ -1374,6 +1371,18 @@ void nsProfiler::FinishGathering() {
   // Close the root object of the generated JSON.
   mWriter->End();
 
+  if (const char* failure = mWriter->GetFailure(); failure) {
+#ifndef ANDROID
+    fprintf(stderr, "JSON generation failure: %s", failure);
+#else
+    __android_log_print(ANDROID_LOG_INFO, "GeckoProfiler",
+                        "JSON generation failure: %s", failure);
+#endif
+    NS_WARNING("Error during JSON generation, probably OOM.");
+    ResetGathering(NS_ERROR_OUT_OF_MEMORY);
+    return;
+  }
+
   // And try to resolve the promise with the profile JSON.
   const size_t len = mWriter->ChunkedWriteFunc().Length();
   if (len >= scLengthMax) {
@@ -1401,11 +1410,15 @@ void nsProfiler::FinishGathering() {
 
   // Here, we have enough space reserved in `result`, starting at
   // `resultBeginWriting`, copy the JSON profile there.
-  mWriter->ChunkedWriteFunc().CopyDataIntoLazilyAllocatedBuffer(
-      [&](size_t aBufferLen) -> char* {
-        MOZ_RELEASE_ASSERT(aBufferLen == len + 1);
-        return resultBeginWriting;
-      });
+  if (!mWriter->ChunkedWriteFunc().CopyDataIntoLazilyAllocatedBuffer(
+          [&](size_t aBufferLen) -> char* {
+            MOZ_RELEASE_ASSERT(aBufferLen == len + 1);
+            return resultBeginWriting;
+          })) {
+    NS_WARNING("Could not copy profile JSON, probably OOM.");
+    ResetGathering(NS_ERROR_FILE_TOO_BIG);
+    return;
+  }
   MOZ_ASSERT(*(result.Data() + len) == '\0',
              "We still expected a null at the end of the string buffer");
 
@@ -1429,4 +1442,5 @@ void nsProfiler::ResetGathering(nsresult aPromiseRejectionIfPending) {
     mGatheringTimer = nullptr;
   }
   mWriter.reset();
+  mFailureLatchSource.reset();
 }

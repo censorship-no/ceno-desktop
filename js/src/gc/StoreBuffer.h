@@ -17,9 +17,12 @@
 #include "ds/LifoAlloc.h"
 #include "gc/Nursery.h"
 #include "js/AllocPolicy.h"
-#include "js/MemoryMetrics.h"
 #include "js/UniquePtr.h"
 #include "threading/Mutex.h"
+
+namespace JS {
+struct GCSizes;
+}
 
 namespace js {
 
@@ -659,7 +662,7 @@ MOZ_ALWAYS_INLINE void PostWriteBarrier(T** vp, T* prev, T* next) {
     return;
   }
 
-  MOZ_ASSERT(!IsInsideNursery(next));
+  MOZ_ASSERT_IF(next, !IsInsideNursery(next));
 }
 
 // Used when we don't have a specific edge to put in the store buffer.

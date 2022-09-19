@@ -276,7 +276,9 @@ async function runBackgroundTask(commandLine) {
       Glean.backgroundUpdate.clientId.set(telemetryClientID);
 
       try {
-        defaultProfileTargetingSnapshot = await lazy.BackgroundTasksUtils.readFirefoxMessagingSystemTargetingSnapshot();
+        defaultProfileTargetingSnapshot = await lazy.BackgroundTasksUtils.readFirefoxMessagingSystemTargetingSnapshot(
+          lock
+        );
       } catch (f) {
         if (DOMException.isInstance(f) && f.name === "NotFoundError") {
           lazy.log.info(
@@ -391,7 +393,10 @@ async function runBackgroundTask(commandLine) {
       // Now that we've pumped the update loop, we can start Nimbus and the Firefox Messaging System
       // and see if we should message the user.  This minimizes the risk of messaging impacting the
       // function of the background update system.
-      await lazy.BackgroundTasksUtils.enableNimbus(commandLine);
+      await lazy.BackgroundTasksUtils.enableNimbus(
+        commandLine,
+        defaultProfileTargetingSnapshot.environment
+      );
 
       await lazy.BackgroundTasksUtils.enableFirefoxMessagingSystem(
         defaultProfileTargetingSnapshot.environment
@@ -402,7 +407,7 @@ async function runBackgroundTask(commandLine) {
       //
       // Most meaningful issues with the Nimbus/experiments system will be reported via Glean
       // events.
-      lazy.log.warning(
+      lazy.log.warn(
         `${SLUG}: exception raised from Nimbus/Firefox Messaging System`,
         f
       );

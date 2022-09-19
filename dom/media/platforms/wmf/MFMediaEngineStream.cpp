@@ -13,20 +13,23 @@
 namespace mozilla {
 
 // Don't use this log on the task queue, because it would be racy for `mStream`.
-#define WLOGV(msg, ...)                                           \
-  MOZ_LOG(gMFMediaEngineLog, LogLevel::Verbose,                   \
-          ("MFMediaEngineStreamWrapper for stream %p (%s), " msg, \
-           mStream.Get(), mStream->GetDescriptionName().get(), ##__VA_ARGS__))
+#define WLOGV(msg, ...)                                                   \
+  MOZ_LOG(gMFMediaEngineLog, LogLevel::Verbose,                           \
+          ("MFMediaEngineStreamWrapper for stream %p (%s, id=%lu), " msg, \
+           mStream.Get(), mStream->GetDescriptionName().get(),            \
+           mStream->DescriptorId(), ##__VA_ARGS__))
 
-#define SLOG(msg, ...)                          \
-  MOZ_LOG(gMFMediaEngineLog, LogLevel::Debug,   \
-          ("MFMediaStream=%p (%s), " msg, this, \
-           this->GetDescriptionName().get(), ##__VA_ARGS__))
+#define SLOG(msg, ...)                              \
+  MOZ_LOG(                                          \
+      gMFMediaEngineLog, LogLevel::Debug,           \
+      ("MFMediaStream=%p (%s, id=%lu), " msg, this, \
+       this->GetDescriptionName().get(), this->DescriptorId(), ##__VA_ARGS__))
 
-#define SLOGV(msg, ...)                         \
-  MOZ_LOG(gMFMediaEngineLog, LogLevel::Verbose, \
-          ("MFMediaStream=%p (%s), " msg, this, \
-           this->GetDescriptionName().get(), ##__VA_ARGS__))
+#define SLOGV(msg, ...)                             \
+  MOZ_LOG(                                          \
+      gMFMediaEngineLog, LogLevel::Verbose,         \
+      ("MFMediaStream=%p (%s, id=%lu), " msg, this, \
+       this->GetDescriptionName().get(), this->DescriptorId(), ##__VA_ARGS__))
 
 using Microsoft::WRL::ComPtr;
 
@@ -48,9 +51,14 @@ RefPtr<MediaDataDecoder::DecodePromise> MFMediaEngineStreamWrapper::Decode(
   Unused << mTaskQueue->Dispatch(NS_NewRunnableFunction(
       "MFMediaEngineStreamWrapper::Decode",
       [sample = RefPtr{aSample}, stream]() { stream->NotifyNewData(sample); }));
-
-  // We don't return a real data, all data would be processed inside the media
-  // engine. We return an empty data back instead.
+  // TODO : for video, we should only resolve the promise when we get the dcomp
+  // handle.
+  RefPtr<MediaData> outputData = mStream->OutputData(aSample);
+  if (outputData) {
+    return DecodePromise::CreateAndResolve(DecodedData{outputData}, __func__);
+  }
+  // The stream don't support returning output, all data would be processed
+  // inside the media engine. We return an empty data back instead.
   MOZ_ASSERT(mFakeDataCreator->Type() == mStream->TrackType());
   return mFakeDataCreator->Decode(aSample);
 }
@@ -97,6 +105,12 @@ nsCString MFMediaEngineStreamWrapper::GetDescriptionName() const {
   return mStream ? mStream->GetDescriptionName() : nsLiteralCString("none");
 }
 
+MediaDataDecoder::ConversionRequired
+MFMediaEngineStreamWrapper::NeedsConversion() const {
+  return mStream ? mStream->NeedsConversion()
+                 : MediaDataDecoder::ConversionRequired::kNeedNone;
+}
+
 MFMediaEngineStreamWrapper::FakeDecodedDataCreator::FakeDecodedDataCreator(
     const CreateDecoderParams& aParams) {
   if (aParams.mConfig.IsVideo()) {
@@ -119,10 +133,7 @@ MFMediaEngineStreamWrapper::FakeDecodedDataCreator::FakeDecodedDataCreator(
 }
 
 MFMediaEngineStream::MFMediaEngineStream()
-    : mIsShutdown(false),
-      mIsSelected(false),
-      mReceivedEOS(false),
-      mShouldServeSmamples(false) {}
+    : mIsShutdown(false), mIsSelected(false), mReceivedEOS(false) {}
 
 MFMediaEngineStream::~MFMediaEngineStream() { MOZ_ASSERT(IsShutdown()); }
 
@@ -130,20 +141,22 @@ HRESULT MFMediaEngineStream::RuntimeClassInitialize(
     uint64_t aStreamId, const TrackInfo& aInfo, MFMediaSource* aParentSource) {
   mParentSource = aParentSource;
   mTaskQueue = aParentSource->GetTaskQueue();
+  mStreamId = aStreamId;
   RETURN_IF_FAILED(wmf::MFCreateEventQueue(&mMediaEventQueue));
-  RETURN_IF_FAILED(GenerateStreamDescriptor(aStreamId, aInfo));
+
+  ComPtr<IMFMediaType> mediaType;
+  // The inherited stream would return different type based on their media info.
+  RETURN_IF_FAILED(CreateMediaType(aInfo, mediaType.GetAddressOf()));
+  RETURN_IF_FAILED(GenerateStreamDescriptor(mediaType));
   SLOG("Initialized %s (id=%" PRIu64 ", descriptorId=%lu)",
        GetDescriptionName().get(), aStreamId, mStreamDescriptorId);
   return S_OK;
 }
 
-HRESULT MFMediaEngineStream::GenerateStreamDescriptor(uint64_t aStreamId,
-                                                      const TrackInfo& aInfo) {
-  ComPtr<IMFMediaType> mediaType;
-  // The inherited stream would return different type based on their media info.
-  RETURN_IF_FAILED(CreateMediaType(aInfo, mediaType.GetAddressOf()));
+HRESULT MFMediaEngineStream::GenerateStreamDescriptor(
+    ComPtr<IMFMediaType>& aMediaType) {
   RETURN_IF_FAILED(wmf::MFCreateStreamDescriptor(
-      aStreamId, 1 /* stream amount */, mediaType.GetAddressOf(),
+      mStreamId, 1 /* stream amount */, aMediaType.GetAddressOf(),
       &mStreamDescriptor));
   RETURN_IF_FAILED(
       mStreamDescriptor->GetStreamIdentifier(&mStreamDescriptorId));
@@ -160,7 +173,18 @@ HRESULT MFMediaEngineStream::Start(const PROPVARIANT* aPosition) {
   }
   SLOG("Start");
   RETURN_IF_FAILED(QueueEvent(MEStreamStarted, GUID_NULL, S_OK, aPosition));
-  mShouldServeSmamples = true;
+  Unused << mTaskQueue->Dispatch(NS_NewRunnableFunction(
+      "MFMediaEngineStream::Start", [self = RefPtr{this}, aPosition, this]() {
+        if (const bool isFromCurrentPosition = aPosition->vt == VT_EMPTY;
+            !isFromCurrentPosition && IsEnded()) {
+          SLOG("Stream restarts again from a new position, reset EOS");
+          mReceivedEOS = false;
+        } else if (!IsEnded()) {
+          // Process pending requests (if any) which happened when the stream
+          // wasn't allowed to serve samples. Eg. stream is paused.
+          ReplySampleRequestIfPossible();
+        }
+      }));
   return S_OK;
 }
 
@@ -172,7 +196,6 @@ HRESULT MFMediaEngineStream::Seek(const PROPVARIANT* aPosition) {
   }
   SLOG("Seek");
   RETURN_IF_FAILED(QueueEvent(MEStreamSeeked, GUID_NULL, S_OK, aPosition));
-  mShouldServeSmamples = true;
   return S_OK;
 }
 
@@ -184,7 +207,6 @@ HRESULT MFMediaEngineStream::Stop() {
   }
   SLOG("Stop");
   RETURN_IF_FAILED(QueueEvent(MEStreamStopped, GUID_NULL, S_OK, nullptr));
-  mShouldServeSmamples = false;
   return S_OK;
 }
 
@@ -196,7 +218,6 @@ HRESULT MFMediaEngineStream::Pause() {
   }
   SLOG("Pause");
   RETURN_IF_FAILED(QueueEvent(MEStreamPaused, GUID_NULL, S_OK, nullptr));
-  mShouldServeSmamples = false;
   return S_OK;
 }
 
@@ -251,15 +272,6 @@ IFACEMETHODIMP MFMediaEngineStream::RequestSample(IUnknown* aToken) {
     return MF_E_SHUTDOWN;
   }
 
-  if (IsEnded()) {
-    SLOG("RequestSample, EOS");
-    MOZ_ASSERT(mRawDataQueue.GetSize() == 0);
-    RETURN_IF_FAILED(mMediaEventQueue->QueueEventParamUnk(
-        MEEndOfStream, GUID_NULL, S_OK, nullptr));
-    mEndedEvent.Notify(TrackType());
-    return S_OK;
-  }
-
   ComPtr<IUnknown> token = aToken;
   ComPtr<MFMediaEngineStream> self = this;
   Unused << mTaskQueue->Dispatch(NS_NewRunnableFunction(
@@ -268,7 +280,7 @@ IFACEMETHODIMP MFMediaEngineStream::RequestSample(IUnknown* aToken) {
         mSampleRequestTokens.push(token);
         SLOGV("RequestSample, token amount=%zu", mSampleRequestTokens.size());
         ReplySampleRequestIfPossible();
-        if (!HasEnoughRawData() && mParentSource) {
+        if (!HasEnoughRawData() && mParentSource && !IsEnded()) {
           SLOGV("Dispatch a sample request, queue duration=%" PRId64,
                 mRawDataQueue.Duration());
           mParentSource->mRequestSampleEvent.Notify(
@@ -280,6 +292,21 @@ IFACEMETHODIMP MFMediaEngineStream::RequestSample(IUnknown* aToken) {
 
 void MFMediaEngineStream::ReplySampleRequestIfPossible() {
   AssertOnTaskQueue();
+  if (IsEnded()) {
+    // We have no more sample to return, clean all pending requests.
+    while (!mSampleRequestTokens.empty()) {
+      mSampleRequestTokens.pop();
+    }
+
+    SLOG("Notify end events");
+    MOZ_ASSERT(mRawDataQueue.GetSize() == 0);
+    MOZ_ASSERT(mSampleRequestTokens.empty());
+    RETURN_VOID_IF_FAILED(mMediaEventQueue->QueueEventParamUnk(
+        MEEndOfStream, GUID_NULL, S_OK, nullptr));
+    mEndedEvent.Notify(TrackType());
+    return;
+  }
+
   if (mSampleRequestTokens.empty() || mRawDataQueue.GetSize() == 0) {
     return;
   }
@@ -423,6 +450,7 @@ void MFMediaEngineStream::NotifyEndOfStream() {
   }
   SLOG("EOS");
   mReceivedEOS = true;
+  ReplySampleRequestIfPossible();
 }
 
 bool MFMediaEngineStream::IsEnded() const {
@@ -439,6 +467,7 @@ RefPtr<MediaDataDecoder::FlushPromise> MFMediaEngineStream::Flush() {
   }
   SLOG("Flush");
   mRawDataQueue.Reset();
+  mReceivedEOS = false;
   return MediaDataDecoder::FlushPromise::CreateAndResolve(true, __func__);
 }
 

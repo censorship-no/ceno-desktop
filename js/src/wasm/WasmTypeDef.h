@@ -101,15 +101,6 @@ class FuncType {
     return args_.appendAll(src.args_) && results_.appendAll(src.results_);
   }
 
-  void renumber(const RenumberVector& renumbering) {
-    for (auto& arg : args_) {
-      arg.renumber(renumbering);
-    }
-    for (auto& result : results_) {
-      result.renumber(renumbering);
-    }
-  }
-
   ValType arg(unsigned i) const { return args_[i]; }
   const ValTypeVector& args() const { return args_; }
   ValType result(unsigned i) const { return results_[i]; }
@@ -223,12 +214,6 @@ class StructType {
     return true;
   }
 
-  void renumber(const RenumberVector& renumbering) {
-    for (auto& field : fields_) {
-      field.type.renumber(renumbering);
-    }
-  }
-
   bool isDefaultable() const {
     for (auto& field : fields_) {
       if (!field.type.isDefaultable()) {
@@ -246,8 +231,22 @@ class StructType {
 using StructTypeVector = Vector<StructType, 0, SystemAllocPolicy>;
 using StructTypePtrVector = Vector<const StructType*, 0, SystemAllocPolicy>;
 
-// Utility for computing field offset and alignments, and total size for structs
-// and tags.
+// Utility for computing field offset and alignments, and total size for
+// structs and tags.  This is complicated by fact that a WasmStructObject has
+// an inline area, which is used first, and if that fills up an optional
+// C++-heap-allocated outline area is used.  We need to be careful not to
+// split any data item across the boundary.  This is ensured as follows:
+//
+// (1) the possible field sizes are 1, 2, 4, 8 and 16 only.
+// (2) each field is "naturally aligned" -- aligned to its size.
+// (3) MaxInlineBytes (the size of the inline area) % 16 == 0.
+//
+// From (1) and (2), it follows that all fields are placed so that their first
+// and last bytes fall within the same 16-byte chunk.  That is,
+// offset_of_first_byte_of_field / 16 == offset_of_last_byte_of_field / 16.
+//
+// Given that, it follows from (3) that all fields fall completely within
+// either the inline or outline areas; no field crosses the boundary.
 class StructLayout {
   CheckedInt32 sizeSoFar = 0;
   uint32_t structAlignment = 1;
@@ -284,10 +283,6 @@ class ArrayType {
     elementType_ = src.elementType_;
     isMutable_ = src.isMutable_;
     return true;
-  }
-
-  void renumber(const RenumberVector& renumbering) {
-    elementType_.renumber(renumbering);
   }
 
   bool isDefaultable() const { return elementType_.isDefaultable(); }
@@ -441,30 +436,11 @@ class TypeDef {
     return arrayType_;
   }
 
-  void renumber(const RenumberVector& renumbering) {
-    switch (kind_) {
-      case TypeDefKind::Func:
-        funcType_.renumber(renumbering);
-        break;
-      case TypeDefKind::Struct:
-        structType_.renumber(renumbering);
-        break;
-      case TypeDefKind::Array:
-        arrayType_.renumber(renumbering);
-        break;
-      case TypeDefKind::None:
-        break;
-    }
-  }
-
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   WASM_DECLARE_FRIEND_SERIALIZE(TypeDef);
 };
 
 using TypeDefVector = Vector<TypeDef, 0, SystemAllocPolicy>;
-
-template <typename T>
-using DerivedTypeDefVector = Vector<T, 0, SystemAllocPolicy>;
 
 // A type cache maintains a cache of equivalence and subtype relations between
 // wasm types. This is required for the computation of equivalence and subtyping
@@ -545,8 +521,7 @@ class TypeContext : public AtomicRefCounted<TypeContext> {
   TypeContext(const FeatureArgs& features, TypeDefVector&& types)
       : features_(features), types_(std::move(types)) {}
 
-  template <typename T>
-  [[nodiscard]] bool cloneDerived(const DerivedTypeDefVector<T>& source) {
+  [[nodiscard]] bool clone(const TypeDefVector& source) {
     MOZ_ASSERT(types_.length() == 0);
     if (!types_.resize(source.length())) {
       return false;
@@ -772,20 +747,6 @@ class TypeHandle {
 // is the value given by 'rtt.canon $t' for each type definition. As each entry
 // is given a unique value and no canonicalization is done (which would require
 // hash-consing of infinite-trees), this is not yet spec compliant.
-//
-// # wasm::Metadata and renumbering
-//
-// Once module compilation is finished, types are transfered to wasm::Metadata
-// for use during runtime. Only non-immediate function and GC types are
-// transfered, creating a new index space for types. Types are 'renumbered' to
-// account for this. The map from source type index to renumbered type index is
-// transferred with wasm::Metadata and used for constant expressions that have
-// encoded source type indices. All other uses of type indices, such as in
-// function, global, and table types are renumbered.
-//
-// The renumbering map itself is an array from source type index to renumbered
-// type index. For types that are immediates, the renumbered type index is
-// UINT32_MAX.
 //
 // # wasm::Instance and the global type context
 //

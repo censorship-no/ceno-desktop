@@ -1161,8 +1161,8 @@ static bool IsMarqueeScrollbox(const nsIFrame& aScrollFrame) {
 /* virtual */
 nscoord nsHTMLScrollFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord result = [&] {
-    if (StyleDisplay()->GetContainSizeAxes().mIContained) {
-      return 0;
+    if (const Maybe<nscoord> containISize = ContainIntrinsicISize()) {
+      return *containISize;
     }
     if (MOZ_UNLIKELY(IsMarqueeScrollbox(*this))) {
       return 0;
@@ -1176,10 +1176,10 @@ nscoord nsHTMLScrollFrame::GetMinISize(gfxContext* aRenderingContext) {
 
 /* virtual */
 nscoord nsHTMLScrollFrame::GetPrefISize(gfxContext* aRenderingContext) {
+  const Maybe<nscoord> containISize = ContainIntrinsicISize();
   nscoord result =
-      StyleDisplay()->GetContainSizeAxes().mIContained
-          ? 0
-          : mHelper.mScrolledFrame->GetPrefISize(aRenderingContext);
+      containISize ? *containISize
+                   : mHelper.mScrolledFrame->GetPrefISize(aRenderingContext);
   DISPLAY_PREF_INLINE_SIZE(this, result);
   return NSCoordSaturatingAdd(
       result, IntrinsicScrollbarGutterSizeAtInlineEdges(aRenderingContext));
@@ -1601,8 +1601,14 @@ nsMargin ScrollFrameHelper::GetDesiredScrollbarSizes(nsBoxLayoutState* aState) {
                "computations");
 
   nsMargin result(0, 0, 0, 0);
+  ScrollStyles styles = GetScrollStylesFromFrame();
 
-  if (mVScrollbarBox) {
+  const auto& style = *nsLayoutUtils::StyleForScrollbar(mOuter);
+  if (style.StyleUIReset()->ScrollbarWidth() == StyleScrollbarWidth::None) {
+    return {};
+  }
+
+  if (mVScrollbarBox && styles.mVertical != StyleOverflow::Hidden) {
     nsSize size = mVScrollbarBox->GetXULPrefSize(*aState);
     nsIFrame::AddXULMargin(mVScrollbarBox, size);
     if (IsScrollbarOnRight())
@@ -1611,7 +1617,7 @@ nsMargin ScrollFrameHelper::GetDesiredScrollbarSizes(nsBoxLayoutState* aState) {
       result.right = size.width;
   }
 
-  if (mHScrollbarBox) {
+  if (mHScrollbarBox && styles.mHorizontal != StyleOverflow::Hidden) {
     nsSize size = mHScrollbarBox->GetXULPrefSize(*aState);
     nsIFrame::AddXULMargin(mHScrollbarBox, size);
     // We don't currently support any scripts that would require a scrollbar
@@ -1923,7 +1929,7 @@ nsSize nsXULScrollFrame::GetXULPrefSize(nsBoxLayoutState& aState) {
 }
 
 nsSize nsXULScrollFrame::GetXULMinSize(nsBoxLayoutState& aState) {
-  nsSize min = mHelper.mScrolledFrame->GetXULMinSizeForScrollArea(aState);
+  nsSize min(0, 0);
 
   ScrollStyles styles = GetScrollStyles();
 
@@ -1931,14 +1937,18 @@ nsSize nsXULScrollFrame::GetXULMinSize(nsBoxLayoutState& aState) {
     nsSize vSize = mHelper.mVScrollbarBox->GetXULMinSize(aState);
     AddXULMargin(mHelper.mVScrollbarBox, vSize);
     min.width += vSize.width;
-    if (min.height < vSize.height) min.height = vSize.height;
+    if (min.height < vSize.height) {
+      min.height = vSize.height;
+    }
   }
 
   if (mHelper.mHScrollbarBox && styles.mHorizontal == StyleOverflow::Scroll) {
     nsSize hSize = mHelper.mHScrollbarBox->GetXULMinSize(aState);
     AddXULMargin(mHelper.mHScrollbarBox, hSize);
     min.height += hSize.height;
-    if (min.width < hSize.width) min.width = hSize.width;
+    if (min.width < hSize.width) {
+      min.width = hSize.width;
+    }
   }
 
   AddXULBorderAndPadding(min);
@@ -1996,7 +2006,8 @@ class ScrollFrameHelper::AsyncSmoothMSDScroll final
                        const nsSize& aInitialVelocity, const nsRect& aRange,
                        const mozilla::TimeStamp& aStartTime,
                        nsPresContext* aPresContext,
-                       UniquePtr<ScrollSnapTargetIds> aSnapTargetIds)
+                       UniquePtr<ScrollSnapTargetIds> aSnapTargetIds,
+                       ScrollTriggeredByScript aTriggeredByScript)
       : mXAxisModel(aInitialPosition.x, aInitialDestination.x,
                     aInitialVelocity.width,
                     StaticPrefs::layout_css_scroll_behavior_spring_constant(),
@@ -2009,7 +2020,8 @@ class ScrollFrameHelper::AsyncSmoothMSDScroll final
         mLastRefreshTime(aStartTime),
         mCallee(nullptr),
         mOneDevicePixelInAppUnits(aPresContext->DevPixelsToAppUnits(1)),
-        mSnapTargetIds(std::move(aSnapTargetIds)) {
+        mSnapTargetIds(std::move(aSnapTargetIds)),
+        mTriggeredByScript(aTriggeredByScript) {
     Telemetry::SetHistogramRecordingEnabled(
         Telemetry::FX_REFRESH_DRIVER_SYNC_SCROLL_FRAME_DELAY_MS, true);
   }
@@ -2027,9 +2039,11 @@ class ScrollFrameHelper::AsyncSmoothMSDScroll final
                    NSToCoordRound(mYAxisModel.GetPosition()));
   }
 
-  void SetDestination(const nsPoint& aDestination) {
+  void SetDestination(const nsPoint& aDestination,
+                      ScrollTriggeredByScript aTriggeredByScript) {
     mXAxisModel.SetDestination(static_cast<int32_t>(aDestination.x));
     mYAxisModel.SetDestination(static_cast<int32_t>(aDestination.y));
+    mTriggeredByScript = aTriggeredByScript;
   }
 
   void SetRange(const nsRect& aRange) { mRange = aRange; }
@@ -2102,6 +2116,10 @@ class ScrollFrameHelper::AsyncSmoothMSDScroll final
     return std::move(mSnapTargetIds);
   }
 
+  bool WasTriggeredByScript() const {
+    return mTriggeredByScript == ScrollTriggeredByScript::Yes;
+  }
+
  private:
   // Private destructor, to discourage deletion outside of Release():
   ~AsyncSmoothMSDScroll() {
@@ -2120,6 +2138,7 @@ class ScrollFrameHelper::AsyncSmoothMSDScroll final
   ScrollFrameHelper* mCallee;
   nscoord mOneDevicePixelInAppUnits;
   UniquePtr<ScrollSnapTargetIds> mSnapTargetIds;
+  ScrollTriggeredByScript mTriggeredByScript;
 };
 
 // AsyncScroll has ref counting.
@@ -2128,10 +2147,12 @@ class ScrollFrameHelper::AsyncScroll final : public nsARefreshObserver {
   typedef mozilla::TimeStamp TimeStamp;
   typedef mozilla::TimeDuration TimeDuration;
 
-  explicit AsyncScroll(UniquePtr<ScrollSnapTargetIds> aSnapTargetIds)
+  explicit AsyncScroll(UniquePtr<ScrollSnapTargetIds> aSnapTargetIds,
+                       ScrollTriggeredByScript aTriggeredByScript)
       : mOrigin(ScrollOrigin::NotSpecified),
         mCallee(nullptr),
-        mSnapTargetIds(std::move(aSnapTargetIds)) {
+        mSnapTargetIds(std::move(aSnapTargetIds)),
+        mTriggeredByScript(aTriggeredByScript) {
     Telemetry::SetHistogramRecordingEnabled(
         Telemetry::FX_REFRESH_DRIVER_SYNC_SCROLL_FRAME_DELAY_MS, true);
   }
@@ -2228,9 +2249,14 @@ class ScrollFrameHelper::AsyncScroll final : public nsARefreshObserver {
     return std::move(mSnapTargetIds);
   }
 
+  bool WasTriggeredByScript() const {
+    return mTriggeredByScript == ScrollTriggeredByScript::Yes;
+  }
+
  private:
   ScrollFrameHelper* mCallee;
   UniquePtr<ScrollSnapTargetIds> mSnapTargetIds;
+  ScrollTriggeredByScript mTriggeredByScript;
 
   nsRefreshDriver* RefreshDriver(ScrollFrameHelper* aCallee) {
     return aCallee->mOuter->PresContext()->RefreshDriver();
@@ -2355,6 +2381,7 @@ ScrollFrameHelper::ScrollFrameHelper(nsContainerFrame* aOuter, bool aIsRoot)
       mMinimumScaleSizeChanged(false),
       mProcessingScrollEvent(false),
       mApzAnimationRequested(false),
+      mApzAnimationTriggeredByScriptRequested(false),
       mReclampVVOffsetInReflowFinished(false),
       mMayScheduleScrollAnimations(false),
 #ifdef MOZ_WIDGET_ANDROID
@@ -2444,10 +2471,27 @@ void ScrollFrameHelper::AsyncScrollCallback(ScrollFrameHelper* aInstance,
                                  aInstance->mAsyncScroll->TakeSnapTargetIds());
 }
 
+void ScrollFrameHelper::SetTransformingByAPZ(bool aTransforming) {
+  if (mTransformingByAPZ && !aTransforming) {
+    PostScrollEndEvent();
+  }
+  mTransformingByAPZ = aTransforming;
+  if (!mozilla::css::TextOverflow::HasClippedTextOverflow(mOuter) ||
+      mozilla::css::TextOverflow::HasBlockEllipsis(mScrolledFrame)) {
+    // If the block has some overflow marker stuff we should kick off a paint
+    // because we have special behaviour for it when APZ scrolling is active.
+    mOuter->SchedulePaint();
+  }
+}
+
 void ScrollFrameHelper::CompleteAsyncScroll(
     const nsRect& aRange, UniquePtr<ScrollSnapTargetIds> aSnapTargetIds,
     ScrollOrigin aOrigin) {
   SetLastSnapTargetIds(std::move(aSnapTargetIds));
+
+  bool isNotHandledByApz =
+      nsLayoutUtils::CanScrollOriginClobberApz(aOrigin) ||
+      ScrollAnimationState().contains(AnimationState::MainThread);
 
   // Apply desired destination range since this is the last step of scrolling.
   RemoveObservers();
@@ -2459,7 +2503,17 @@ void ScrollFrameHelper::CompleteAsyncScroll(
   // We are done scrolling, set our destination to wherever we actually ended
   // up scrolling to.
   mDestination = GetScrollPosition();
-  PostScrollEndEvent();
+  // Post a `scrollend` event for scrolling not handled by APZ, including:
+  //
+  //  - programmatic instant scrolls
+  //  - the end of a smooth scroll animation running on the main thread
+  //
+  // For scrolling handled by APZ, the `scrollend` event is posted in
+  // SetTransformingByAPZ() when the APZC is transitioning from a transforming
+  // to a non-transforming state (e.g. a transition from PANNING to NOTHING).
+  if (isNotHandledByApz) {
+    PostScrollEndEvent();
+  }
 }
 
 bool ScrollFrameHelper::HasBgAttachmentLocal() const {
@@ -2640,14 +2694,16 @@ void ScrollFrameHelper::ScrollToWithOrigin(nsPoint aScrollPosition,
 
       mAsyncSmoothMSDScroll = new AsyncSmoothMSDScroll(
           GetScrollPosition(), mDestination, currentVelocity,
-          GetLayoutScrollRange(), now, presContext, std::move(snapTargetIds));
+          GetLayoutScrollRange(), now, presContext, std::move(snapTargetIds),
+          aParams.mTriggeredByScript);
 
       mAsyncSmoothMSDScroll->SetRefreshObserver(this);
     } else {
       // A previous smooth MSD scroll is still in progress, so we just need to
       // update its range and destination.
       mAsyncSmoothMSDScroll->SetRange(GetLayoutScrollRange());
-      mAsyncSmoothMSDScroll->SetDestination(mDestination);
+      mAsyncSmoothMSDScroll->SetDestination(mDestination,
+                                            aParams.mTriggeredByScript);
     }
 
     return;
@@ -2659,7 +2715,8 @@ void ScrollFrameHelper::ScrollToWithOrigin(nsPoint aScrollPosition,
   }
 
   if (!mAsyncScroll) {
-    mAsyncScroll = new AsyncScroll(std::move(snapTargetIds));
+    mAsyncScroll =
+        new AsyncScroll(std::move(snapTargetIds), aParams.mTriggeredByScript);
     mAsyncScroll->SetRefreshObserver(this);
   }
 
@@ -3819,7 +3876,8 @@ void ScrollFrameHelper::MaybeCreateTopLayerAndWrapRootItems(
         rootStyleFrame->StyleEffects()->HasBackdropFilters() &&
         rootStyleFrame->IsVisibleForPainting();
 
-    if (rootStyleFrame->StyleEffects()->HasFilters()) {
+    if (rootStyleFrame->StyleEffects()->HasFilters() &&
+        !aBuilder->IsForGenerateGlyphMask()) {
       SerializeList();
       rootResultList.AppendNewToTop<nsDisplayFilters>(
           aBuilder, mOuter, &rootResultList, rootStyleFrame,
@@ -4647,6 +4705,8 @@ void ScrollFrameHelper::NotifyApzTransaction() {
   mAllowScrollOriginDowngrade = true;
   mApzScrollPos = GetScrollPosition();
   mApzAnimationRequested = IsLastScrollUpdateAnimating();
+  mApzAnimationTriggeredByScriptRequested =
+      IsLastScrollUpdateTriggeredByScriptAnimating();
   mScrollUpdates.Clear();
   if (mIsRoot) {
     mOuter->PresShell()->SetResolutionUpdated(false);
@@ -7473,20 +7533,54 @@ bool ScrollFrameHelper::IsLastScrollUpdateAnimating() const {
   return false;
 }
 
+bool ScrollFrameHelper::IsLastScrollUpdateTriggeredByScriptAnimating() const {
+  if (!mScrollUpdates.IsEmpty()) {
+    const ScrollPositionUpdate& lastUpdate = mScrollUpdates.LastElement();
+    if (lastUpdate.WasTriggeredByScript() &&
+        (mScrollUpdates.LastElement().GetMode() == ScrollMode::Smooth ||
+         mScrollUpdates.LastElement().GetMode() == ScrollMode::SmoothMsd)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 using AnimationState = nsIScrollableFrame::AnimationState;
 EnumSet<AnimationState> ScrollFrameHelper::ScrollAnimationState() const {
   EnumSet<AnimationState> retval;
   if (IsApzAnimationInProgress()) {
     retval += AnimationState::APZInProgress;
+    if (mCurrentAPZScrollAnimationType ==
+        APZScrollAnimationType::TriggeredByScript) {
+      retval += AnimationState::TriggeredByScript;
+    }
   }
+
   if (mApzAnimationRequested) {
     retval += AnimationState::APZRequested;
+    if (mApzAnimationTriggeredByScriptRequested) {
+      retval += AnimationState::TriggeredByScript;
+    }
   }
+
   if (IsLastScrollUpdateAnimating()) {
     retval += AnimationState::APZPending;
+    if (IsLastScrollUpdateTriggeredByScriptAnimating()) {
+      retval += AnimationState::TriggeredByScript;
+    }
   }
-  if (mAsyncScroll || mAsyncSmoothMSDScroll) {
+  if (mAsyncScroll) {
     retval += AnimationState::MainThread;
+    if (mAsyncScroll->WasTriggeredByScript()) {
+      retval += AnimationState::TriggeredByScript;
+    }
+  }
+
+  if (mAsyncSmoothMSDScroll) {
+    retval += AnimationState::MainThread;
+    if (mAsyncSmoothMSDScroll->WasTriggeredByScript()) {
+      retval += AnimationState::TriggeredByScript;
+    }
   }
   return retval;
 }
@@ -7499,6 +7593,7 @@ void ScrollFrameHelper::ResetScrollInfoIfNeeded(
   if (aGeneration == mScrollGeneration) {
     mLastScrollOrigin = ScrollOrigin::None;
     mApzAnimationRequested = false;
+    mApzAnimationTriggeredByScriptRequested = false;
   }
 
   mScrollGenerationOnApz = aGenerationOnApz;
@@ -7699,8 +7794,8 @@ ScrollFrameHelper::GetAvailableScrollingDirectionsForUserInputEvents() const {
 static void AppendScrollPositionsForSnap(
     const nsIFrame* aFrame, const nsIFrame* aScrolledFrame,
     const nsRect& aScrolledRect, const nsMargin& aScrollPadding,
-    WritingMode aWritingModeOnScroller, ScrollSnapInfo& aSnapInfo,
-    ScrollFrameHelper::SnapTargetSet* aSnapTargets) {
+    const nsRect& aScrollRange, WritingMode aWritingModeOnScroller,
+    ScrollSnapInfo& aSnapInfo, ScrollFrameHelper::SnapTargetSet* aSnapTargets) {
   ScrollSnapTargetId targetId = ScrollSnapUtils::GetTargetIdFor(aFrame);
 
   nsRect snapArea =
@@ -7735,10 +7830,13 @@ static void AppendScrollPositionsForSnap(
 
   LogicalRect logicalTargetRect(writingMode, snapArea, aSnapInfo.mSnapportSize);
   LogicalSize logicalSnapportRect(writingMode, aSnapInfo.mSnapportSize);
+  LogicalRect logicalScrollRange(aWritingModeOnScroller, aScrollRange,
+                                 // The origin of this logical coordinate system
+                                 // what we need here is (0, 0), so we use an
+                                 // empty size.
+                                 nsSize());
 
   Maybe<nscoord> blockDirectionPosition;
-  Maybe<nscoord> inlineDirectionPosition;
-
   const nsStyleDisplay* styleDisplay = aFrame->StyleDisplay();
   nscoord containerBSize = logicalSnapportRect.BSize(writingMode);
   switch (styleDisplay->mScrollSnapAlign.block) {
@@ -7749,20 +7847,21 @@ static void AppendScrollPositionsForSnap(
           writingMode.IsVerticalRL() ? -logicalTargetRect.BStart(writingMode)
                                      : logicalTargetRect.BStart(writingMode));
       break;
-    case StyleScrollSnapAlignKeyword::End:
-      if (writingMode.IsVerticalRL()) {
-        blockDirectionPosition.emplace(containerBSize -
-                                       logicalTargetRect.BEnd(writingMode));
-      } else {
-        // What we need here is the scroll position instead of the snap position
-        // itself, so we need, for example, the top edge of the scroll port
-        // on horizontal-tb when the frame is positioned at the bottom edge of
-        // the scroll port. For this reason we subtract containerBSize from
-        // BEnd of the target.
-        blockDirectionPosition.emplace(logicalTargetRect.BEnd(writingMode) -
-                                       containerBSize);
-      }
+    case StyleScrollSnapAlignKeyword::End: {
+      nscoord candidate = std::clamp(
+          // What we need here is the scroll position instead of the snap
+          // position itself, so we need, for example, the top edge of the
+          // scroll port on horizontal-tb when the frame is positioned at
+          // the bottom edge of the scroll port. For this reason we subtract
+          // containerBSize from BEnd of the target and clamp it inside the
+          // scrollable range.
+          logicalTargetRect.BEnd(writingMode) - containerBSize,
+          logicalScrollRange.BStart(writingMode),
+          logicalScrollRange.BEnd(writingMode));
+      blockDirectionPosition.emplace(writingMode.IsVerticalRL() ? -candidate
+                                                                : candidate);
       break;
+    }
     case StyleScrollSnapAlignKeyword::Center: {
       nscoord targetCenter = (logicalTargetRect.BStart(writingMode) +
                               logicalTargetRect.BEnd(writingMode)) /
@@ -7770,15 +7869,16 @@ static void AppendScrollPositionsForSnap(
       nscoord halfSnapportSize = containerBSize / 2;
       // Get the center of the target to align with the center of the snapport
       // depending on direction.
-      if (writingMode.IsVerticalRL()) {
-        blockDirectionPosition.emplace(halfSnapportSize - targetCenter);
-      } else {
-        blockDirectionPosition.emplace(targetCenter - halfSnapportSize);
-      }
+      nscoord candidate = std::clamp(targetCenter - halfSnapportSize,
+                                     logicalScrollRange.BStart(writingMode),
+                                     logicalScrollRange.BEnd(writingMode));
+      blockDirectionPosition.emplace(writingMode.IsVerticalRL() ? -candidate
+                                                                : candidate);
       break;
     }
   }
 
+  Maybe<nscoord> inlineDirectionPosition;
   nscoord containerISize = logicalSnapportRect.ISize(writingMode);
   switch (styleDisplay->mScrollSnapAlign.inline_) {
     case StyleScrollSnapAlignKeyword::None:
@@ -7789,16 +7889,22 @@ static void AppendScrollPositionsForSnap(
               ? -logicalTargetRect.IStart(writingMode)
               : logicalTargetRect.IStart(writingMode));
       break;
-    case StyleScrollSnapAlignKeyword::End:
-      if (writingMode.IsInlineReversed()) {
-        inlineDirectionPosition.emplace(containerISize -
-                                        logicalTargetRect.IEnd(writingMode));
-      } else {
-        // Same as above BEnd case, we subtract containerISize.
-        inlineDirectionPosition.emplace(logicalTargetRect.IEnd(writingMode) -
-                                        containerISize);
-      }
+    case StyleScrollSnapAlignKeyword::End: {
+      nscoord candidate = std::clamp(
+          // Same as above BEnd case, we subtract containerISize.
+          //
+          // Note that the logical scroll range is mapped to [0, x] range even
+          // if it's in RTL contents. So for example, if the physical range is
+          // [-200, 0], it's mapped to [0, 200], i.e. IStart() is 0, IEnd() is
+          // 200. So we can just use std::clamp with the same arguments in both
+          // RTL/LTR cases.
+          logicalTargetRect.IEnd(writingMode) - containerISize,
+          logicalScrollRange.IStart(writingMode),
+          logicalScrollRange.IEnd(writingMode));
+      inlineDirectionPosition.emplace(
+          writingMode.IsInlineReversed() ? -candidate : candidate);
       break;
+    }
     case StyleScrollSnapAlignKeyword::Center: {
       nscoord targetCenter = (logicalTargetRect.IStart(writingMode) +
                               logicalTargetRect.IEnd(writingMode)) /
@@ -7806,11 +7912,11 @@ static void AppendScrollPositionsForSnap(
       nscoord halfSnapportSize = containerISize / 2;
       // Get the center of the target to align with the center of the snapport
       // depending on direction.
-      if (writingMode.IsInlineReversed()) {
-        inlineDirectionPosition.emplace(halfSnapportSize - targetCenter);
-      } else {
-        inlineDirectionPosition.emplace(targetCenter - halfSnapportSize);
-      }
+      nscoord candidate = std::clamp(targetCenter - halfSnapportSize,
+                                     logicalScrollRange.IStart(writingMode),
+                                     logicalScrollRange.IEnd(writingMode));
+      inlineDirectionPosition.emplace(
+          writingMode.IsInlineReversed() ? -candidate : candidate);
       break;
     }
   }
@@ -7838,8 +7944,9 @@ static void AppendScrollPositionsForSnap(
  */
 static void CollectScrollPositionsForSnap(
     nsIFrame* aFrame, nsIFrame* aScrolledFrame, const nsRect& aScrolledRect,
-    const nsMargin& aScrollPadding, WritingMode aWritingModeOnScroller,
-    ScrollSnapInfo& aSnapInfo, ScrollFrameHelper::SnapTargetSet* aSnapTargets) {
+    const nsMargin& aScrollPadding, const nsRect& aScrollRange,
+    WritingMode aWritingModeOnScroller, ScrollSnapInfo& aSnapInfo,
+    ScrollFrameHelper::SnapTargetSet* aSnapTargets) {
   // Snap positions only affect the nearest ancestor scroll container on the
   // element's containing block chain.
   nsIScrollableFrame* sf = do_QueryFrame(aFrame);
@@ -7854,13 +7961,13 @@ static void CollectScrollPositionsForSnap(
               StyleScrollSnapAlignKeyword::None ||
           styleDisplay->mScrollSnapAlign.block !=
               StyleScrollSnapAlignKeyword::None) {
-        AppendScrollPositionsForSnap(f, aScrolledFrame, aScrolledRect,
-                                     aScrollPadding, aWritingModeOnScroller,
-                                     aSnapInfo, aSnapTargets);
+        AppendScrollPositionsForSnap(
+            f, aScrolledFrame, aScrolledRect, aScrollPadding, aScrollRange,
+            aWritingModeOnScroller, aSnapInfo, aSnapTargets);
       }
-      CollectScrollPositionsForSnap(f, aScrolledFrame, aScrolledRect,
-                                    aScrollPadding, aWritingModeOnScroller,
-                                    aSnapInfo, aSnapTargets);
+      CollectScrollPositionsForSnap(
+          f, aScrolledFrame, aScrolledRect, aScrollPadding, aScrollRange,
+          aWritingModeOnScroller, aSnapInfo, aSnapTargets);
     }
   }
 }
@@ -7934,9 +8041,9 @@ layers::ScrollSnapInfo ScrollFrameHelper::ComputeScrollSnapInfo() {
   result.InitializeScrollSnapStrictness(writingMode, disp);
 
   result.mSnapportSize = GetSnapportSize();
-  CollectScrollPositionsForSnap(mScrolledFrame, mScrolledFrame,
-                                GetScrolledRect(), GetScrollPadding(),
-                                writingMode, result, &mSnapTargets);
+  CollectScrollPositionsForSnap(
+      mScrolledFrame, mScrolledFrame, GetScrolledRect(), GetScrollPadding(),
+      GetLayoutScrollRange(), writingMode, result, &mSnapTargets);
   return result;
 }
 

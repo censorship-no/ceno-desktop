@@ -28,9 +28,12 @@ class RenderAndroidSurfaceTextureHost;
 class RenderCompositor;
 class RenderDXGITextureHost;
 class RenderDXGIYCbCrTextureHost;
+class RenderDcompSurfaceTextureHost;
 class RenderMacIOSurfaceTextureHost;
 class RenderBufferTextureHost;
 class RenderTextureHostSWGL;
+
+GLenum ToGlTexFilter(wr::ImageRendering);
 
 void ActivateBindAndTexParameteri(gl::GLContext* aGL, GLenum aActiveTexture,
                                   GLenum aBindTarget, GLuint aBindTexture,
@@ -70,6 +73,11 @@ class RenderTextureHost {
   // Returns true when RenderTextureHost needs SyncObjectHost::Synchronize()
   // call, before its usage.
   virtual bool SyncObjectNeeded() { return false; }
+  // Returns true when this texture was generated from a DRM-protected source.
+  bool IsFromDRMSource() { return mIsFromDRMSource; }
+  void SetIsFromDRMSource(bool aIsFromDRMSource) {
+    mIsFromDRMSource = aIsFromDRMSource;
+  }
 
   virtual size_t Bytes() = 0;
 
@@ -88,6 +96,10 @@ class RenderTextureHost {
 
   virtual RenderTextureHostSWGL* AsRenderTextureHostSWGL() { return nullptr; }
 
+  virtual RenderDcompSurfaceTextureHost* AsRenderDcompSurfaceTextureHost() {
+    return nullptr;
+  }
+
  protected:
   virtual ~RenderTextureHost();
 
@@ -101,6 +113,8 @@ class RenderTextureHost {
       gfx::IntSize aTextureSize) const;
 
   wr::ImageRendering mCachedRendering;
+
+  bool mIsFromDRMSource;
 };
 
 }  // namespace wr

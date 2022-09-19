@@ -28,7 +28,7 @@ class TestInterfaceAsyncIterableDoubleUnion final : public nsISupports,
                                                     public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(
       TestInterfaceAsyncIterableDoubleUnion)
 
   explicit TestInterfaceAsyncIterableDoubleUnion(nsPIDOMWindowInner* aParent);
@@ -39,7 +39,7 @@ class TestInterfaceAsyncIterableDoubleUnion final : public nsISupports,
       const GlobalObject& aGlobal, ErrorResult& rv);
 
   using Iterator = AsyncIterableIterator<TestInterfaceAsyncIterableDoubleUnion>;
-  void InitAsyncIterator(Iterator* aIterator);
+  void InitAsyncIterator(Iterator* aIterator, ErrorResult& aError);
   void DestroyAsyncIterator(Iterator* aIterator);
   already_AddRefed<Promise> GetNextPromise(JSContext* aCx, Iterator* aIterator,
                                            ErrorResult& aRv);

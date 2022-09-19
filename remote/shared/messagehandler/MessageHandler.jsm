@@ -30,22 +30,14 @@ XPCOMUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
  * A ContextDescriptor object provides information to decide if a broadcast or
  * a session data item should be applied to a specific MessageHandler context.
  *
- * TODO: At the moment we only support one value: { type: "all", id: "all" },
- * but the format of the ContextDescriptor object is designed to fit more
- * complex values.
- * As soon as we start supporting broadcasts targeting only a part of the
- * context tree, we will add additional context types. This work will begin with
- * Bug 1725111, where we will support filtering on a single navigable. It will
- * be later expanded to filter on a worker, a webextension, a process etc...
- *
  * @typedef {Object} ContextDescriptor
  * @property {ContextDescriptorType} type
  *     The type of context
  * @property {String=} id
  *     Unique id of a given context for the provided type.
  *     For ContextDescriptorType.All, id can be ommitted.
- *     For ContextDescriptorType.TopBrowsingContext, the id should be a
- *     WindowManager UUID created by `getIdForBrowser`.
+ *     For ContextDescriptorType.TopBrowsingContext, the id should be the
+ *     browserId corresponding to a top-level browsing context.
  */
 
 /**
@@ -57,6 +49,23 @@ const ContextDescriptorType = {
   All: "All",
   TopBrowsingContext: "TopBrowsingContext",
 };
+
+/**
+ * A ContextInfo identifies a given context that can be linked to a MessageHandler
+ * instance. It should be used to identify events coming from this context.
+ *
+ * It can either be provided by the MessageHandler itself, when the event is
+ * emitted from the context it relates to.
+ *
+ * Or it can be assembled manually, for instance when emitting an event which
+ * relates to a window global from the root layer (eg browsingContext.contextCreated).
+ *
+ * @typedef {Object} ContextInfo
+ * @property {String} contextId
+ *     Unique id of the MessageHandler corresponding to this context.
+ * @property {String} type
+ *     One of MessageHandler.type.
+ */
 
 /**
  * MessageHandler instances are dedicated to handle both Commands and Events
@@ -82,6 +91,12 @@ const ContextDescriptorType = {
  * session id as well as some other context information.
  */
 class MessageHandler extends EventEmitter {
+  #context;
+  #contextId;
+  #eventsDispatcher;
+  #moduleCache;
+  #sessionId;
+
   /**
    * Create a new MessageHandler instance.
    *
@@ -93,28 +108,28 @@ class MessageHandler extends EventEmitter {
   constructor(sessionId, context) {
     super();
 
-    this._moduleCache = new lazy.ModuleCache(this);
+    this.#moduleCache = new lazy.ModuleCache(this);
 
-    this._sessionId = sessionId;
-    this._context = context;
-    this._contextId = this.constructor.getIdFromContext(context);
-    this._eventsDispatcher = new lazy.EventsDispatcher(this);
+    this.#sessionId = sessionId;
+    this.#context = context;
+    this.#contextId = this.constructor.getIdFromContext(context);
+    this.#eventsDispatcher = new lazy.EventsDispatcher(this);
   }
 
   get context() {
-    return this._context;
+    return this.#context;
   }
 
   get contextId() {
-    return this._contextId;
+    return this.#contextId;
   }
 
   get eventsDispatcher() {
-    return this._eventsDispatcher;
+    return this.#eventsDispatcher;
   }
 
   get moduleCache() {
-    return this._moduleCache;
+    return this.#moduleCache;
   }
 
   get name() {
@@ -122,15 +137,15 @@ class MessageHandler extends EventEmitter {
   }
 
   get sessionId() {
-    return this._sessionId;
+    return this.#sessionId;
   }
 
   destroy() {
     lazy.logger.trace(
       `MessageHandler ${this.constructor.type} for session ${this.sessionId} is being destroyed`
     );
-    this._eventsDispatcher.destroy();
-    this._moduleCache.destroy();
+    this.#eventsDispatcher.destroy();
+    this.#moduleCache.destroy();
 
     // At least the MessageHandlerRegistry will be expecting this event in order
     // to remove the instance from the registry when destroyed.
@@ -147,26 +162,26 @@ class MessageHandler extends EventEmitter {
    *     form [module name].[event name].
    * @param {Object} data
    *     The event's data.
-   * @param {Object=} options
-   * @param {boolean=} options.isProtocolEvent
-   *     Flag that indicates if it is a protocol or internal event.
-   *     Defaults to `false`.
+   * @param {ContextInfo=} contextInfo
+   *     The event's context info, used to identify the origin of the event.
+   *     If not provided, the context info of the current MessageHandler will be
+   *     used.
    */
-  emitEvent(name, data, options = {}) {
-    const { isProtocolEvent = false } = options;
+  emitEvent(name, data, contextInfo) {
+    // If no contextInfo field is provided on the event, extract it from the
+    // MessageHandler instance.
+    contextInfo = contextInfo || this.#getContextInfo();
 
+    // Events are emitted both under their own name for consumers listening to
+    // a specific and as `message-handler-event` for consumers which need to
+    // catch all events.
+    this.emit(name, data, contextInfo);
     this.emit("message-handler-event", {
       name,
+      contextInfo,
       data,
-      isProtocolEvent,
       sessionId: this.sessionId,
     });
-
-    // Internal events should also be emitted using their original event name
-    // for ease of use.
-    if (!isProtocolEvent) {
-      this.emit(name, data);
-    }
   }
 
   /**
@@ -211,7 +226,7 @@ class MessageHandler extends EventEmitter {
    *     An array of Module classes.
    */
   getAllModuleClasses(moduleName, destination) {
-    return this._moduleCache.getAllModuleClasses(moduleName, destination);
+    return this.#moduleCache.getAllModuleClasses(moduleName, destination);
   }
 
   /**
@@ -236,7 +251,7 @@ class MessageHandler extends EventEmitter {
       );
     }
 
-    const module = this._moduleCache.getModuleInstance(moduleName, destination);
+    const module = this.#moduleCache.getModuleInstance(moduleName, destination);
     if (module && module.supportsMethod(commandName)) {
       return module[commandName](params, destination);
     }
@@ -313,5 +328,19 @@ class MessageHandler extends EventEmitter {
     return this.getAllModuleClasses(moduleName, destination).some(cls =>
       cls.supportsMethod(commandName)
     );
+  }
+
+  /**
+   * Return the context information for this MessageHandler instance, which
+   * can be used to identify the origin of an event.
+   *
+   * @return {ContextInfo}
+   *     The context information for this MessageHandler.
+   */
+  #getContextInfo() {
+    return {
+      contextId: this.contextId,
+      type: this.constructor.type,
+    };
   }
 }

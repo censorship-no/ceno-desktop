@@ -98,6 +98,7 @@ include = [
   "FillRule",
   "FontDisplay",
   "FontFaceSourceListComponent",
+  "FontFaceSourceTechFlags",
   "FontLanguageOverride",
   "GenericFontFamily",
   "FontFamily",
@@ -147,6 +148,7 @@ include = [
   "ZIndex",
   "TransformOrigin",
   "LineBreak",
+  "LineClamp",
   "WordBreak",
   "Contain",
   "ContainerType",
@@ -935,4 +937,10 @@ renaming_overrides_prefixing = true
 "ScrollTimelineName" = """
  public:
   StyleScrollTimelineName(): _0(RefPtr<nsAtom>(nsGkAtoms::_empty).forget()) {}
+"""
+
+"FontFaceSourceTechFlags" = """
+  inline static StyleFontFaceSourceTechFlags Empty() {
+    return StyleFontFaceSourceTechFlags{0};
+  }
 """

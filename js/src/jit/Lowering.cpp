@@ -1072,6 +1072,20 @@ static inline bool CanEmitCompareAtUses(MInstruction* ins) {
   return iter == ins->usesEnd();
 }
 
+static bool CanCompareCharactersInline(const JSLinearString* linear) {
+  size_t length = linear->length();
+
+  // Limit the number of inline instructions used for character comparisons. Use
+  // the same instruction limit for both encodings, i.e. two-byte uses half the
+  // limit of Latin-1 strings.
+  constexpr size_t Latin1StringCompareCutoff = 32;
+  constexpr size_t TwoByteStringCompareCutoff = 16;
+
+  return length > 0 &&
+         (linear->hasLatin1Chars() ? length <= Latin1StringCompareCutoff
+                                   : length <= TwoByteStringCompareCutoff);
+}
+
 void LIRGenerator::visitCompare(MCompare* comp) {
   MDefinition* left = comp->lhs();
   MDefinition* right = comp->rhs();
@@ -1097,19 +1111,8 @@ void LIRGenerator::visitCompare(MCompare* comp) {
 
       if (constant) {
         JSLinearString* linear = &constant->toString()->asLinear();
-        size_t length = linear->length();
 
-        // Limit the number of inline instructions used for character
-        // comparisons. Use the same instruction limit for both encodings, i.e.
-        // two-byte uses half the limit of Latin-1 strings.
-        constexpr size_t Latin1StringCompareCutoff = 32;
-        constexpr size_t TwoByteStringCompareCutoff = 16;
-
-        bool canCompareInline =
-            length > 0 &&
-            (linear->hasLatin1Chars() ? length <= Latin1StringCompareCutoff
-                                      : length <= TwoByteStringCompareCutoff);
-        if (canCompareInline) {
+        if (CanCompareCharactersInline(linear)) {
           MDefinition* input = left->isConstant() ? right : left;
 
           auto* lir = new (alloc()) LCompareSInline(useRegister(input), linear);
@@ -2269,8 +2272,8 @@ void LIRGenerator::visitCharCodeAt(MCharCodeAt* ins) {
   MOZ_ASSERT(str->type() == MIRType::String);
   MOZ_ASSERT(idx->type() == MIRType::Int32);
 
-  LCharCodeAt* lir =
-      new (alloc()) LCharCodeAt(useRegister(str), useRegister(idx), temp());
+  LCharCodeAt* lir = new (alloc())
+      LCharCodeAt(useRegister(str), useRegister(idx), temp(), temp());
   define(lir, ins);
   assignSafepoint(lir, ins);
 }
@@ -2297,13 +2300,92 @@ void LIRGenerator::visitFromCodePoint(MFromCodePoint* ins) {
   assignSafepoint(lir, ins);
 }
 
+void LIRGenerator::visitStringIndexOf(MStringIndexOf* ins) {
+  auto* string = ins->string();
+  MOZ_ASSERT(string->type() == MIRType::String);
+
+  auto* searchStr = ins->searchString();
+  MOZ_ASSERT(searchStr->type() == MIRType::String);
+
+  auto* lir = new (alloc())
+      LStringIndexOf(useRegisterAtStart(string), useRegisterAtStart(searchStr));
+  defineReturn(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGenerator::visitStringStartsWith(MStringStartsWith* ins) {
+  auto* string = ins->string();
+  MOZ_ASSERT(string->type() == MIRType::String);
+
+  auto* searchStr = ins->searchString();
+  MOZ_ASSERT(searchStr->type() == MIRType::String);
+
+  if (searchStr->isConstant()) {
+    JSLinearString* linear = &searchStr->toConstant()->toString()->asLinear();
+
+    if (CanCompareCharactersInline(linear)) {
+      auto* lir = new (alloc())
+          LStringStartsWithInline(useRegister(string), temp(), linear);
+      define(lir, ins);
+      assignSafepoint(lir, ins);
+      return;
+    }
+  }
+
+  auto* lir = new (alloc()) LStringStartsWith(useRegisterAtStart(string),
+                                              useRegisterAtStart(searchStr));
+  defineReturn(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGenerator::visitStringEndsWith(MStringEndsWith* ins) {
+  auto* string = ins->string();
+  MOZ_ASSERT(string->type() == MIRType::String);
+
+  auto* searchStr = ins->searchString();
+  MOZ_ASSERT(searchStr->type() == MIRType::String);
+
+  if (searchStr->isConstant()) {
+    JSLinearString* linear = &searchStr->toConstant()->toString()->asLinear();
+
+    if (CanCompareCharactersInline(linear)) {
+      auto* lir = new (alloc())
+          LStringEndsWithInline(useRegister(string), temp(), linear);
+      define(lir, ins);
+      assignSafepoint(lir, ins);
+      return;
+    }
+  }
+
+  auto* lir = new (alloc()) LStringEndsWith(useRegisterAtStart(string),
+                                            useRegisterAtStart(searchStr));
+  defineReturn(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
 void LIRGenerator::visitStringConvertCase(MStringConvertCase* ins) {
   MOZ_ASSERT(ins->string()->type() == MIRType::String);
 
-  auto* lir =
-      new (alloc()) LStringConvertCase(useRegisterAtStart(ins->string()));
-  defineReturn(lir, ins);
-  assignSafepoint(lir, ins);
+  if (ins->mode() == MStringConvertCase::LowerCase) {
+#ifdef JS_CODEGEN_X86
+    // Due to lack of registers on x86, we reuse the string register as
+    // temporary. As a result we only need four temporary registers and take a
+    // bogus temporary as the fifth argument.
+    LDefinition temp4 = LDefinition::BogusTemp();
+#else
+    LDefinition temp4 = temp();
+#endif
+    auto* lir = new (alloc())
+        LStringToLowerCase(useRegister(ins->string()), temp(), temp(), temp(),
+                           temp4, tempByteOpRegister());
+    define(lir, ins);
+    assignSafepoint(lir, ins);
+  } else {
+    auto* lir =
+        new (alloc()) LStringToUpperCase(useRegisterAtStart(ins->string()));
+    defineReturn(lir, ins);
+    assignSafepoint(lir, ins);
+  }
 }
 
 void LIRGenerator::visitStart(MStart* start) {}
@@ -3052,48 +3134,24 @@ void LIRGenerator::visitSetFunName(MSetFunName* ins) {
 
 void LIRGenerator::visitNewLexicalEnvironmentObject(
     MNewLexicalEnvironmentObject* ins) {
-  MDefinition* enclosing = ins->enclosing();
-  MOZ_ASSERT(enclosing->type() == MIRType::Object);
+  auto* lir = new (alloc()) LNewLexicalEnvironmentObject(temp());
 
-  LNewLexicalEnvironmentObject* lir =
-      new (alloc()) LNewLexicalEnvironmentObject(useRegisterAtStart(enclosing));
-
-  defineReturn(lir, ins);
-  assignSafepoint(lir, ins);
-}
-
-void LIRGenerator::visitCopyLexicalEnvironmentObject(
-    MCopyLexicalEnvironmentObject* ins) {
-  MDefinition* env = ins->env();
-  MOZ_ASSERT(env->type() == MIRType::Object);
-
-  LCopyLexicalEnvironmentObject* lir =
-      new (alloc()) LCopyLexicalEnvironmentObject(useRegisterAtStart(env));
-
-  defineReturn(lir, ins);
+  define(lir, ins);
   assignSafepoint(lir, ins);
 }
 
 void LIRGenerator::visitNewClassBodyEnvironmentObject(
     MNewClassBodyEnvironmentObject* ins) {
-  MDefinition* enclosing = ins->enclosing();
-  MOZ_ASSERT(enclosing->type() == MIRType::Object);
+  auto* lir = new (alloc()) LNewClassBodyEnvironmentObject(temp());
 
-  LNewClassBodyEnvironmentObject* lir = new (alloc())
-      LNewClassBodyEnvironmentObject(useRegisterAtStart(enclosing));
-
-  defineReturn(lir, ins);
+  define(lir, ins);
   assignSafepoint(lir, ins);
 }
 
 void LIRGenerator::visitNewVarEnvironmentObject(MNewVarEnvironmentObject* ins) {
-  MDefinition* enclosing = ins->enclosing();
-  MOZ_ASSERT(enclosing->type() == MIRType::Object);
+  auto* lir = new (alloc()) LNewVarEnvironmentObject(temp());
 
-  auto* lir =
-      new (alloc()) LNewVarEnvironmentObject(useRegisterAtStart(enclosing));
-
-  defineReturn(lir, ins);
+  define(lir, ins);
   assignSafepoint(lir, ins);
 }
 
@@ -3329,6 +3387,13 @@ void LIRGenerator::visitPostWriteElementBarrier(MPostWriteElementBarrier* ins) {
       // Other instruction types cannot hold nursery pointers.
       break;
   }
+}
+
+void LIRGenerator::visitAssertCanElidePostWriteBarrier(
+    MAssertCanElidePostWriteBarrier* ins) {
+  auto* lir = new (alloc()) LAssertCanElidePostWriteBarrier(
+      useRegister(ins->object()), useBox(ins->value()), temp());
+  add(lir, ins);
 }
 
 void LIRGenerator::visitArrayLength(MArrayLength* ins) {
@@ -3684,6 +3749,9 @@ void LIRGenerator::visitStoreElementHole(MStoreElementHole* ins) {
     }
   }
 
+  if (ins->needsNegativeIntCheck()) {
+    assignSnapshot(lir, ins->bailoutKind());
+  }
   add(lir, ins);
   assignSafepoint(lir, ins);
 }
@@ -4732,14 +4800,14 @@ void LIRGenerator::visitSetPropertyCache(MSetPropertyCache* ins) {
   assignSafepoint(lir, ins);
 }
 
-void LIRGenerator::visitCallSetElement(MCallSetElement* ins) {
+void LIRGenerator::visitMegamorphicSetElement(MMegamorphicSetElement* ins) {
   MOZ_ASSERT(ins->object()->type() == MIRType::Object);
   MOZ_ASSERT(ins->index()->type() == MIRType::Value);
   MOZ_ASSERT(ins->value()->type() == MIRType::Value);
 
-  LCallSetElement* lir = new (alloc())
-      LCallSetElement(useRegisterAtStart(ins->object()),
-                      useBoxAtStart(ins->index()), useBoxAtStart(ins->value()));
+  auto* lir = new (alloc()) LMegamorphicSetElement(
+      useRegisterAtStart(ins->object()), useBoxAtStart(ins->index()),
+      useBoxAtStart(ins->value()));
   add(lir, ins);
   assignSafepoint(lir, ins);
 }
@@ -5500,6 +5568,10 @@ void LIRGenerator::visitWasmCall(MWasmCallT ins) {
     lir->setOperand(ins->numArgs(),
                     useFixedAtStart(index, WasmTableCallIndexReg));
   }
+  if (ins->callee().isFuncRef()) {
+    MDefinition* ref = ins->getOperand(ins->numArgs());
+    lir->setOperand(ins->numArgs(), useFixedAtStart(ref, WasmCallRefReg));
+  }
 
   add(lir, ins);
   assignWasmSafepoint(lir);
@@ -6012,6 +6084,23 @@ void LIRGenerator::visitCallNativeGetElement(MCallNativeGetElement* ins) {
 
   auto* lir = new (alloc()) LCallNativeGetElement(useRegisterAtStart(object),
                                                   useRegisterAtStart(index));
+  defineReturn(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGenerator::visitCallNativeGetElementSuper(
+    MCallNativeGetElementSuper* ins) {
+  MDefinition* object = ins->object();
+  MOZ_ASSERT(object->type() == MIRType::Object);
+
+  MDefinition* index = ins->index();
+  MOZ_ASSERT(index->type() == MIRType::Int32);
+
+  MDefinition* receiver = ins->receiver();
+
+  auto* lir = new (alloc()) LCallNativeGetElementSuper(
+      useRegisterAtStart(object), useRegisterAtStart(index),
+      useBoxAtStart(receiver));
   defineReturn(lir, ins);
   assignSafepoint(lir, ins);
 }

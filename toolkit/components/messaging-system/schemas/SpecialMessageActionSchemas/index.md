@@ -21,6 +21,12 @@ For snippets, you should add the action type in `button_action` and any addition
 
 Opens the applications menu.
 
+### `OPEN_FIREFOX_VIEW`
+
+* args: (none)
+
+Opens the Firefox View pseudo-tab.
+
 ### `OPEN_PRIVATE_BROWSER_WINDOW`
 
 * args: (none)
@@ -268,8 +274,8 @@ Action for setting various browser prefs
 
 Prefs that can be changed with this action are:
 
-- `browser.privacySegmentation.enabled`
-- `browser.privacySegmentation.windowSeparation.enabled`
+- `browser.dataFeatureRecommendations.enabled`
+- `browser.privateWindowSeparation.enabled`
 - `browser.startup.homepage`
 
 * args:
@@ -310,3 +316,9 @@ Action for running multiple actions. Actions should be included in an array of a
   }
 }
 ```
+
+### `CLICK_ELEMENT`
+
+* args: `string` A CSS selector for the HTML element to be clicked
+
+Selects an element in the current Window's document and triggers a click action

@@ -41,6 +41,15 @@
       <hbox flex="1" align="end" class="toolbar-items">
         <toolbartabstop/>
         <hbox id="TabsToolbar-customization-target" flex="1">
+          <toolbarbutton id="firefox-view-button"
+                         class="toolbarbutton-1 chromeclass-toolbar-additional"
+                         data-l10n-id="toolbar-button-firefox-view"
+                         role="tab"
+                         oncommand="FirefoxViewHandler.openTab(event);"
+                         onmousedown="FirefoxViewHandler.openTab(event);"
+                         cui-areatype="toolbar"
+                         removable="true"/>
+
           <tabs id="tabbrowser-tabs"
                 is="tabbrowser-tabs"
                 flex="1"
@@ -83,6 +92,7 @@
           <toolbarbutton id="alltabs-button"
                          class="toolbarbutton-1 chromeclass-toolbar-additional tabs-alltabs-button"
                          badged="true"
+                         onkeypress="gTabsPanel.showAllTabsPanel(event);"
                          onmousedown="gTabsPanel.showAllTabsPanel(event);"
                          data-l10n-id="tabs-toolbar-list-all-tabs"
                          removable="false"/>
@@ -155,7 +165,7 @@
         </toolbarbutton>
       </toolbaritem>
       <toolbarspring cui-areatype="toolbar" class="chromeclass-toolbar-additional"/>
-      <toolbaritem id="urlbar-container" flex="400" persist="width"
+      <toolbaritem id="urlbar-container" persist="width"
                    removable="false"
                    class="chromeclass-location" overflows="false">
         <toolbartabstop/>
@@ -424,16 +434,6 @@
       </toolbarbutton>
     </hbox>
 
-    <toolbaritem id="unified-extensions" removable="false">
-      <toolbarbutton id="unified-extensions-button"
-                     class="toolbarbutton-1"
-                     data-l10n-id="unified-extensions-button"
-                     hidden="true"
-                     onkeypress="gUnifiedExtensions.togglePanel(event)"
-                     onmousedown="gUnifiedExtensions.togglePanel(event)"
-                     removable="false" />
-    </toolbaritem>
-
     <toolbarbutton id="nav-bar-overflow-button"
                    class="toolbarbutton-1 chromeclass-toolbar-additional overflow-button"
                    skipintoolbarset="true"
@@ -442,6 +442,15 @@
         <image class="toolbarbutton-animatable-image"/>
       </box>
     </toolbarbutton>
+
+    <toolbarbutton id="unified-extensions-button"
+                   class="toolbarbutton-1"
+                   data-l10n-id="unified-extensions-button"
+                   hidden="true"
+                   onkeypress="gUnifiedExtensions.togglePanel(event)"
+                   onmousedown="gUnifiedExtensions.togglePanel(event)"
+                   overflows="false"
+                   removable="false"/>
 
     <toolbaritem id="PanelUI-button"
                  removable="false">
@@ -655,7 +664,6 @@
                  class="chromeclass-toolbar-additional"
                  data-l10n-id="navbar-search"
                  align="center"
-                 flex="175"
                  persist="width">
       <toolbartabstop/>
       <searchbar id="searchbar" flex="1"/>

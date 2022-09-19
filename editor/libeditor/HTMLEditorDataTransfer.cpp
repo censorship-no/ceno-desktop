@@ -14,8 +14,8 @@
 #include "HTMLEditHelpers.h"
 #include "HTMLEditUtils.h"
 #include "InternetCiter.h"
+#include "PendingStyles.h"
 #include "SelectionState.h"
-#include "TypeInState.h"
 #include "WSRunObject.h"
 
 #include "mozilla/dom/Comment.h"
@@ -635,12 +635,21 @@ nsresult HTMLEditor::HTMLWithContextInserter::Run(
 
     if (aClearStyle) {
       // pasting does not inherit local inline styles
-      EditResult result = mHTMLEditor.ClearStyleAt(
-          EditorDOMPoint(mHTMLEditor.SelectionRef().AnchorRef()), nullptr,
-          nullptr, SpecifiedStyle::Preserve);
-      if (result.Failed()) {
+      Result<EditorDOMPoint, nsresult> pointToPutCaretOrError =
+          mHTMLEditor.ClearStyleAt(
+              EditorDOMPoint(mHTMLEditor.SelectionRef().AnchorRef()), nullptr,
+              nullptr, SpecifiedStyle::Preserve);
+      if (MOZ_UNLIKELY(pointToPutCaretOrError.isErr())) {
         NS_WARNING("HTMLEditor::ClearStyleAt() failed");
-        return result.Rv();
+        return pointToPutCaretOrError.unwrapErr();
+      }
+      if (pointToPutCaretOrError.inspect().IsSet()) {
+        nsresult rv =
+            mHTMLEditor.CollapseSelectionTo(pointToPutCaretOrError.unwrap());
+        if (NS_FAILED(rv)) {
+          NS_WARNING("EditorBase::CollapseSelectionTo() failed");
+          return rv;
+        }
       }
     }
   } else {
@@ -742,7 +751,7 @@ nsresult HTMLEditor::HTMLWithContextInserter::Run(
   if (pointToInsert.IsInTextNode()) {
     const SplitNodeResult splitNodeResult =
         mHTMLEditor.SplitNodeDeepWithTransaction(
-            MOZ_KnownLive(*pointToInsert.GetContainerAsContent()),
+            MOZ_KnownLive(*pointToInsert.ContainerAs<nsIContent>()),
             pointToInsert, SplitAtEdges::eAllowToCreateEmptyContainer);
     if (splitNodeResult.isErr()) {
       NS_WARNING("HTMLEditor::SplitNodeDeepWithTransaction() failed");
@@ -835,7 +844,7 @@ HTMLEditor::HTMLWithContextInserter::InsertContents(
   const RefPtr<const Element> maybeNonEditableBlockElement =
       pointToInsert.IsInContentNode()
           ? HTMLEditUtils::GetInclusiveAncestorElement(
-                *pointToInsert.ContainerAsContent(),
+                *pointToInsert.ContainerAs<nsIContent>(),
                 HTMLEditUtils::ClosestBlockElement)
           : nullptr;
 

@@ -8,8 +8,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
 });
 XPCOMUtils.defineLazyGetter(this, "ExtensionManagement", () => {
   const { Management } = ChromeUtils.import(
@@ -19,13 +19,6 @@ XPCOMUtils.defineLazyGetter(this, "ExtensionManagement", () => {
 });
 
 add_task(async function test() {
-  CustomizableUI.addWidgetToArea(
-    "screenshot-button",
-    CustomizableUI.AREA_NAVBAR
-  );
-  let screenshotBtn = document.getElementById("screenshot-button");
-  Assert.ok(screenshotBtn, "The screenshots button was added to the nav bar");
-
   let observerSpy = sinon.spy();
   let notifierSpy = sinon.spy();
 

@@ -290,6 +290,8 @@ OpKind wasm::Classify(OpBytes op) {
       WASM_FUNCTION_REFERENCES_OP(OpKind::RefAsNonNull);
     case Op::BrOnNull:
       WASM_FUNCTION_REFERENCES_OP(OpKind::BrOnNull);
+    case Op::BrOnNonNull:
+      WASM_FUNCTION_REFERENCES_OP(OpKind::BrOnNonNull);
     case Op::RefEq:
       WASM_GC_OP(OpKind::Comparison);
     case Op::GcPrefix: {
@@ -309,8 +311,13 @@ OpKind wasm::Classify(OpBytes op) {
           WASM_GC_OP(OpKind::StructSet);
         case GcOp::ArrayNew:
           WASM_GC_OP(OpKind::ArrayNew);
+        case GcOp::ArrayNewFixed:
+          WASM_GC_OP(OpKind::ArrayNewFixed);
         case GcOp::ArrayNewDefault:
           WASM_GC_OP(OpKind::ArrayNewDefault);
+        case GcOp::ArrayNewData:
+        case GcOp::ArrayNewElem:
+          WASM_GC_OP(OpKind::ArrayNewData);
         case GcOp::ArrayGet:
         case GcOp::ArrayGetS:
         case GcOp::ArrayGetU:
@@ -319,6 +326,8 @@ OpKind wasm::Classify(OpBytes op) {
           WASM_GC_OP(OpKind::ArraySet);
         case GcOp::ArrayLen:
           WASM_GC_OP(OpKind::ArrayLen);
+        case GcOp::ArrayCopy:
+          WASM_GC_OP(OpKind::ArrayCopy);
         case GcOp::RefTest:
           WASM_GC_OP(OpKind::RefTest);
         case GcOp::RefCast:
@@ -781,4 +790,45 @@ OpKind wasm::Classify(OpBytes op) {
 #  undef WASM_GC_OP
 #  undef WASM_REF_OP
 
-#endif
+#endif  // DEBUG
+
+bool UnsetLocalsState::init(const ValTypeVector& locals, size_t numParams) {
+  MOZ_ASSERT(setLocalsStack_.empty());
+
+  // Find the first and total count of non-defaultable locals.
+  size_t firstNonDefaultable = UINT32_MAX;
+  size_t countNonDefaultable = 0;
+  for (size_t i = numParams; i < locals.length(); i++) {
+    if (!locals[i].isDefaultable()) {
+      firstNonDefaultable = std::min(i, firstNonDefaultable);
+      countNonDefaultable++;
+    }
+  }
+  firstNonDefaultLocal_ = firstNonDefaultable;
+  if (countNonDefaultable == 0) {
+    // No locals to track, saving CPU cycles.
+    MOZ_ASSERT(firstNonDefaultable == UINT32_MAX);
+    return true;
+  }
+
+  // setLocalsStack_ cannot be deeper than amount of non-defaultable locals.
+  if (!setLocalsStack_.reserve(countNonDefaultable)) {
+    return false;
+  }
+
+  // Allocate a bitmap for locals starting at the first non-defaultable local.
+  size_t bitmapSize =
+      ((locals.length() - firstNonDefaultable) + (WordBits - 1)) / WordBits;
+  if (!unsetLocals_.resize(bitmapSize)) {
+    return false;
+  }
+  memset(unsetLocals_.begin(), 0, bitmapSize * WordSize);
+  for (size_t i = firstNonDefaultable; i < locals.length(); i++) {
+    if (!locals[i].isDefaultable()) {
+      size_t localUnsetIndex = i - firstNonDefaultable;
+      unsetLocals_[localUnsetIndex / WordBits] |=
+          1 << (localUnsetIndex % WordBits);
+    }
+  }
+  return true;
+}

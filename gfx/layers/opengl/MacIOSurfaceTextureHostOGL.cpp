@@ -17,7 +17,7 @@ namespace layers {
 
 MacIOSurfaceTextureHostOGL::MacIOSurfaceTextureHostOGL(
     TextureFlags aFlags, const SurfaceDescriptorMacIOSurface& aDescriptor)
-    : TextureHost(aFlags) {
+    : TextureHost(TextureHostType::MacIOSurface, aFlags) {
   MOZ_COUNT_CTOR(MacIOSurfaceTextureHostOGL);
   mSurface = MacIOSurface::LookupSurface(aDescriptor.surfaceId(),
                                          !aDescriptor.isOpaque(),
@@ -74,6 +74,9 @@ void MacIOSurfaceTextureHostOGL::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   RefPtr<wr::RenderTextureHost> texture =
       new wr::RenderMacIOSurfaceTextureHost(GetMacIOSurface());
+
+  bool isDRM = (bool)(mFlags & TextureFlags::DRM_SOURCE);
+  texture->SetIsFromDRMSource(isDRM);
 
   wr::RenderThread::Get()->RegisterExternalImage(aExternalImageId,
                                                  texture.forget());

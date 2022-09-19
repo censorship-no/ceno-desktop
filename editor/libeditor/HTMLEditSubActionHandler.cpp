@@ -16,7 +16,7 @@
 #include "EditorUtils.h"
 #include "HTMLEditHelpers.h"
 #include "HTMLEditUtils.h"
-#include "TypeInState.h"  // for SpecifiedStyle
+#include "PendingStyles.h"  // for SpecifiedStyle
 #include "WSRunObject.h"
 
 #include "mozilla/Assertions.h"
@@ -68,17 +68,13 @@
 #include "nsThreadUtils.h"
 #include "nsUnicharUtils.h"
 
-// Workaround for windows headers
-#ifdef SetProp
-#  undef SetProp
-#endif
-
 class nsISupports;
 
 namespace mozilla {
 
 using namespace dom;
 using EmptyCheckOption = HTMLEditUtils::EmptyCheckOption;
+using EmptyCheckOptions = HTMLEditUtils::EmptyCheckOptions;
 using LeafNodeType = HTMLEditUtils::LeafNodeType;
 using LeafNodeTypes = HTMLEditUtils::LeafNodeTypes;
 using StyleDifference = HTMLEditUtils::StyleDifference;
@@ -90,7 +86,8 @@ using WalkTreeOption = HTMLEditUtils::WalkTreeOption;
  *  first some helpful functors we will use
  ********************************************************/
 
-static bool IsStyleCachePreservingSubAction(EditSubAction aEditSubAction) {
+static bool IsPendingStyleCachePreservingSubAction(
+    EditSubAction aEditSubAction) {
   switch (aEditSubAction) {
     case EditSubAction::eDeleteSelectedContent:
     case EditSubAction::eInsertLineBreak:
@@ -224,7 +221,7 @@ void HTMLEditor::OnStartToHandleTopLevelEditSubAction(
       break;
     default:
       cacheInlineStyles =
-          IsStyleCachePreservingSubAction(aTopLevelEditSubAction);
+          IsPendingStyleCachePreservingSubAction(aTopLevelEditSubAction);
       break;
   }
   if (cacheInlineStyles) {
@@ -455,7 +452,7 @@ nsresult HTMLEditor::OnEndHandlingTopLevelEditSubActionInternal() {
     // intentionally.
     if (TopLevelEditSubActionDataRef().mNeedsToCleanUpEmptyElements) {
       nsresult rv = RemoveEmptyNodesIn(
-          MOZ_KnownLive(*TopLevelEditSubActionDataRef().mChangedRange));
+          EditorDOMRange(*TopLevelEditSubActionDataRef().mChangedRange));
       if (NS_FAILED(rv)) {
         NS_WARNING("HTMLEditor::RemoveEmptyNodesIn() failed");
         return rv;
@@ -491,8 +488,8 @@ nsresult HTMLEditor::OnEndHandlingTopLevelEditSubActionInternal() {
             return NS_ERROR_FAILURE;
           }
         }
-        if (EditorUtils::IsEditableContent(*pointToAdjust.ContainerAsContent(),
-                                           EditorType::HTML)) {
+        if (EditorUtils::IsEditableContent(
+                *pointToAdjust.ContainerAs<nsIContent>(), EditorType::HTML)) {
           AutoTrackDOMPoint trackPointToAdjust(RangeUpdaterRef(),
                                                &pointToAdjust);
           nsresult rv =
@@ -518,7 +515,7 @@ nsresult HTMLEditor::OnEndHandlingTopLevelEditSubActionInternal() {
         EditorDOMPoint atStart =
             TopLevelEditSubActionDataRef().mSelectedRange->StartPoint();
         if (atStart != pointToAdjust && atStart.IsInContentNode() &&
-            EditorUtils::IsEditableContent(*atStart.ContainerAsContent(),
+            EditorUtils::IsEditableContent(*atStart.ContainerAs<nsIContent>(),
                                            EditorType::HTML)) {
           AutoTrackDOMPoint trackPointToAdjust(RangeUpdaterRef(),
                                                &pointToAdjust);
@@ -541,7 +538,7 @@ nsresult HTMLEditor::OnEndHandlingTopLevelEditSubActionInternal() {
         if (!TopLevelEditSubActionDataRef().mSelectedRange->Collapsed() &&
             atEnd != pointToAdjust && atEnd != atStart &&
             atEnd.IsInContentNode() &&
-            EditorUtils::IsEditableContent(*atEnd.ContainerAsContent(),
+            EditorUtils::IsEditableContent(*atEnd.ContainerAs<nsIContent>(),
                                            EditorType::HTML)) {
           nsresult rv =
               WhiteSpaceVisibilityKeeper::NormalizeVisibleWhiteSpacesAt(*this,
@@ -602,7 +599,7 @@ nsresult HTMLEditor::OnEndHandlingTopLevelEditSubActionInternal() {
         break;
       default:
         reapplyCachedStyle =
-            IsStyleCachePreservingSubAction(GetTopLevelEditSubAction());
+            IsPendingStyleCachePreservingSubAction(GetTopLevelEditSubAction());
         break;
     }
 
@@ -636,14 +633,16 @@ nsresult HTMLEditor::OnEndHandlingTopLevelEditSubActionInternal() {
 
     // But the cached inline styles should be restored from type-in-state later.
     if (reapplyCachedStyle) {
-      DebugOnly<nsresult> rvIgnored = mTypeInState->UpdateSelState(*this);
-      NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
-                           "TypeInState::UpdateSelState() failed, but ignored");
+      DebugOnly<nsresult> rvIgnored =
+          mPendingStylesToApplyToNewContent->UpdateSelState(*this);
+      NS_WARNING_ASSERTION(
+          NS_SUCCEEDED(rvIgnored),
+          "PendingStyles::UpdateSelState() failed, but ignored");
       rvIgnored = ReapplyCachedStyles();
       NS_WARNING_ASSERTION(
           NS_SUCCEEDED(rvIgnored),
           "HTMLEditor::ReapplyCachedStyles() failed, but ignored");
-      TopLevelEditSubActionDataRef().mCachedInlineStyles->Clear();
+      TopLevelEditSubActionDataRef().mCachedPendingStyles->Clear();
     }
   }
 
@@ -779,7 +778,7 @@ nsresult HTMLEditor::EnsureCaretNotAfterInvisibleBRElement() {
 
   const RefPtr<const Element> blockElementAtSelectionStart =
       HTMLEditUtils::GetInclusiveAncestorElement(
-          *atSelectionStart.ContainerAsContent(),
+          *atSelectionStart.ContainerAs<nsIContent>(),
           HTMLEditUtils::ClosestBlockElement);
   const RefPtr<const Element> parentBlockElementOfBRElement =
       HTMLEditUtils::GetAncestorElement(*previousBRElement,
@@ -951,8 +950,8 @@ nsresult HTMLEditor::PrepareInlineStylesForCaret() {
   }
   // For most actions we want to clear the cached styles, but there are
   // exceptions
-  if (!IsStyleCachePreservingSubAction(GetTopLevelEditSubAction())) {
-    TopLevelEditSubActionDataRef().mCachedInlineStyles->Clear();
+  if (!IsPendingStyleCachePreservingSubAction(GetTopLevelEditSubAction())) {
+    TopLevelEditSubActionDataRef().mCachedPendingStyles->Clear();
   }
   return NS_OK;
 }
@@ -1056,11 +1055,11 @@ EditActionResult HTMLEditor::HandleInsertText(
     while (!HTMLEditUtils::CanNodeContain(*pointToInsert.GetContainer(),
                                           *nsGkAtoms::textTagName)) {
       if (NS_WARN_IF(pointToInsert.GetContainer() == editingHost) ||
-          NS_WARN_IF(!pointToInsert.GetContainerParentAsContent())) {
+          NS_WARN_IF(!pointToInsert.GetContainerParentAs<nsIContent>())) {
         NS_WARNING("Selection start point couldn't have text nodes");
         return EditActionHandled(NS_ERROR_FAILURE);
       }
-      pointToInsert.Set(pointToInsert.ContainerAsContent());
+      pointToInsert.Set(pointToInsert.ContainerAs<nsIContent>());
     }
   }
 
@@ -1120,7 +1119,7 @@ EditActionResult HTMLEditor::HandleInsertText(
   // is our text going to be PREformatted?
   // We remember this so that we know how to handle tabs.
   const bool isWhiteSpaceCollapsible = !EditorUtils::IsWhiteSpacePreformatted(
-      *pointToInsert.ContainerAsContent());
+      *pointToInsert.ContainerAs<nsIContent>());
 
   // turn off the edit listener: we know how to
   // build the "doc changed range" ourselves, and it's
@@ -1564,7 +1563,7 @@ EditActionResult HTMLEditor::InsertParagraphSeparatorAsSubAction(
 
   if (IsMailEditor()) {
     if (RefPtr<Element> mailCiteElement = GetMostDistantAncestorMailCiteElement(
-            *pointToInsert.ContainerAsContent())) {
+            *pointToInsert.ContainerAs<nsIContent>())) {
       // Split any mailcites in the way.  Should we abort this if we encounter
       // table cell boundaries?
       Result<EditorDOMPoint, nsresult> atNewBRElementOrError =
@@ -1599,7 +1598,7 @@ EditActionResult HTMLEditor::InsertParagraphSeparatorAsSubAction(
   if (aEditingHost.GetParentElement() &&
       HTMLEditUtils::IsSimplyEditableNode(*aEditingHost.GetParentElement()) &&
       !nsContentUtils::ContentIsFlattenedTreeDescendantOf(
-          pointToInsert.ContainerAsContent(), &aEditingHost)) {
+          pointToInsert.ContainerAs<nsIContent>(), &aEditingHost)) {
     return EditActionHandled(NS_ERROR_EDITOR_NO_EDITABLE_RANGE);
   }
 
@@ -1654,7 +1653,7 @@ EditActionResult HTMLEditor::InsertParagraphSeparatorAsSubAction(
   // is an inline element, we should insert <br> simply.
   RefPtr<Element> editableBlockElement =
       HTMLEditUtils::GetInclusiveAncestorElement(
-          *pointToInsert.ContainerAsContent(),
+          *pointToInsert.ContainerAs<nsIContent>(),
           HTMLEditUtils::ClosestEditableBlockElement);
 
   // If we cannot insert a <p>/<div> element at the selection, we should insert
@@ -1759,7 +1758,7 @@ EditActionResult HTMLEditor::InsertParagraphSeparatorAsSubAction(
     blockElementToPutCaret = suggestBlockElementToPutCaretOrError.unwrap();
 
     editableBlockElement = HTMLEditUtils::GetInclusiveAncestorElement(
-        *pointToInsert.ContainerAsContent(),
+        *pointToInsert.ContainerAs<nsIContent>(),
         HTMLEditUtils::ClosestEditableBlockElement);
     if (NS_WARN_IF(!editableBlockElement)) {
       return EditActionIgnored(NS_ERROR_UNEXPECTED);
@@ -2118,7 +2117,7 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::HandleInsertLinefeed(
   // The node may not be able to have a text node so that we need to check it
   // here.
   if (!pointToInsert.IsInTextNode() &&
-      !HTMLEditUtils::CanNodeContain(*pointToInsert.ContainerAsContent(),
+      !HTMLEditUtils::CanNodeContain(*pointToInsert.ContainerAs<nsIContent>(),
                                      *nsGkAtoms::textTagName)) {
     NS_WARNING(
         "HTMLEditor::HandleInsertLinefeed() couldn't insert a linefeed because "
@@ -2252,7 +2251,7 @@ HTMLEditor::HandleInsertParagraphInMailCiteElement(
           forwardScanFromPointToSplitResult.PointAfterContent<EditorDOMPoint>();
     }
 
-    if (NS_WARN_IF(!pointToSplit.GetContainerAsContent())) {
+    if (NS_WARN_IF(!pointToSplit.IsInContentNode())) {
       return SplitNodeResult(NS_ERROR_FAILURE);
     }
 
@@ -2562,17 +2561,18 @@ void HTMLEditor::ExtendRangeToDeleteWithNormalizingWhiteSpaces(
   //               following text nodes, white-spaces in following text node are
   //               normalized instead.
   const bool removingLastCharOfStartNode =
-      aStartToDelete.ContainerAsText() != aEndToDelete.ContainerAsText() ||
+      aStartToDelete.ContainerAs<Text>() != aEndToDelete.ContainerAs<Text>() ||
       (aEndToDelete.IsEndOfContainer() && followingCharPoint.IsSet());
   const bool maybeNormalizePrecedingWhiteSpaces =
       !removingLastCharOfStartNode && precedingCharPoint.IsSet() &&
       !precedingCharPoint.IsEndOfContainer() &&
-      precedingCharPoint.ContainerAsText() ==
-          aStartToDelete.ContainerAsText() &&
+      precedingCharPoint.ContainerAs<Text>() ==
+          aStartToDelete.ContainerAs<Text>() &&
       precedingCharPoint.IsCharCollapsibleASCIISpaceOrNBSP();
   const bool maybeNormalizeFollowingWhiteSpaces =
       followingCharPoint.IsSet() && !followingCharPoint.IsEndOfContainer() &&
-      (followingCharPoint.ContainerAsText() == aEndToDelete.ContainerAsText() ||
+      (followingCharPoint.ContainerAs<Text>() ==
+           aEndToDelete.ContainerAs<Text>() ||
        removingLastCharOfStartNode) &&
       followingCharPoint.IsCharCollapsibleASCIISpaceOrNBSP();
 
@@ -2587,7 +2587,7 @@ void HTMLEditor::ExtendRangeToDeleteWithNormalizingWhiteSpaces(
     Maybe<uint32_t> previousCharOffsetOfWhiteSpaces =
         HTMLEditUtils::GetPreviousNonCollapsibleCharOffset(
             precedingCharPoint, {WalkTextOption::TreatNBSPsCollapsible});
-    startToNormalize.Set(precedingCharPoint.ContainerAsText(),
+    startToNormalize.Set(precedingCharPoint.ContainerAs<Text>(),
                          previousCharOffsetOfWhiteSpaces.isSome()
                              ? previousCharOffsetOfWhiteSpaces.value() + 1
                              : 0);
@@ -2598,10 +2598,10 @@ void HTMLEditor::ExtendRangeToDeleteWithNormalizingWhiteSpaces(
         HTMLEditUtils::GetInclusiveNextNonCollapsibleCharOffset(
             followingCharPoint, {WalkTextOption::TreatNBSPsCollapsible});
     if (nextCharOffsetOfWhiteSpaces.isSome()) {
-      endToNormalize.Set(followingCharPoint.ContainerAsText(),
+      endToNormalize.Set(followingCharPoint.ContainerAs<Text>(),
                          nextCharOffsetOfWhiteSpaces.value());
     } else {
-      endToNormalize.SetToEndOf(followingCharPoint.ContainerAsText());
+      endToNormalize.SetToEndOf(followingCharPoint.ContainerAs<Text>());
     }
     MOZ_ASSERT(!endToNormalize.IsStartOfContainer());
   }
@@ -2622,20 +2622,21 @@ void HTMLEditor::ExtendRangeToDeleteWithNormalizingWhiteSpaces(
   // Next, compute number of white-spaces in start/end node.
   uint32_t lengthInStartNode = 0, lengthInEndNode = 0;
   if (startToNormalize.IsSet()) {
-    MOZ_ASSERT(startToNormalize.ContainerAsText() ==
-               aStartToDelete.ContainerAsText());
+    MOZ_ASSERT(startToNormalize.ContainerAs<Text>() ==
+               aStartToDelete.ContainerAs<Text>());
     lengthInStartNode = aStartToDelete.Offset() - startToNormalize.Offset();
     MOZ_ASSERT(lengthInStartNode);
   }
   if (endToNormalize.IsSet()) {
     lengthInEndNode =
-        endToNormalize.ContainerAsText() == aEndToDelete.ContainerAsText()
+        endToNormalize.ContainerAs<Text>() == aEndToDelete.ContainerAs<Text>()
             ? endToNormalize.Offset() - aEndToDelete.Offset()
             : endToNormalize.Offset();
     MOZ_ASSERT(lengthInEndNode);
     // If we normalize white-spaces in a text node, we can replace all of them
     // with one ReplaceTextTransaction.
-    if (endToNormalize.ContainerAsText() == aStartToDelete.ContainerAsText()) {
+    if (endToNormalize.ContainerAs<Text>() ==
+        aStartToDelete.ContainerAs<Text>()) {
       lengthInStartNode += lengthInEndNode;
       lengthInEndNode = 0;
     }
@@ -2713,12 +2714,12 @@ HTMLEditor::DeleteTextAndNormalizeSurroundingWhiteSpaces(
   // Note that the container text node of startToDelete may be removed from
   // the tree if it becomes empty.  Therefore, we need to track the point.
   EditorDOMPoint newCaretPosition;
-  if (aStartToDelete.ContainerAsText() == aEndToDelete.ContainerAsText()) {
+  if (aStartToDelete.ContainerAs<Text>() == aEndToDelete.ContainerAs<Text>()) {
     newCaretPosition = aEndToDelete.To<EditorDOMPoint>();
   } else if (aDeleteDirection == DeleteDirection::Forward) {
-    newCaretPosition.SetToEndOf(aStartToDelete.ContainerAsText());
+    newCaretPosition.SetToEndOf(aStartToDelete.ContainerAs<Text>());
   } else {
-    newCaretPosition.Set(aEndToDelete.ContainerAsText(), 0u);
+    newCaretPosition.Set(aEndToDelete.ContainerAs<Text>(), 0u);
   }
 
   // Then, modify the text nodes in the range.
@@ -2728,27 +2729,27 @@ HTMLEditor::DeleteTextAndNormalizeSurroundingWhiteSpaces(
     // Use ReplaceTextTransaction if we need to normalize white-spaces in
     // the first text node.
     if (!normalizedWhiteSpacesInFirstNode.IsEmpty()) {
-      EditorDOMPoint trackingEndToDelete(endToDelete.ContainerAsText(),
+      EditorDOMPoint trackingEndToDelete(endToDelete.ContainerAs<Text>(),
                                          endToDelete.Offset());
       {
         AutoTrackDOMPoint trackEndToDelete(RangeUpdaterRef(),
                                            &trackingEndToDelete);
         uint32_t lengthToReplaceInFirstTextNode =
-            startToDelete.ContainerAsText() ==
-                    trackingEndToDelete.ContainerAsText()
+            startToDelete.ContainerAs<Text>() ==
+                    trackingEndToDelete.ContainerAs<Text>()
                 ? trackingEndToDelete.Offset() - startToDelete.Offset()
-                : startToDelete.ContainerAsText()->TextLength() -
+                : startToDelete.ContainerAs<Text>()->TextLength() -
                       startToDelete.Offset();
         nsresult rv = ReplaceTextWithTransaction(
-            MOZ_KnownLive(*startToDelete.ContainerAsText()),
+            MOZ_KnownLive(*startToDelete.ContainerAs<Text>()),
             startToDelete.Offset(), lengthToReplaceInFirstTextNode,
             normalizedWhiteSpacesInFirstNode);
         if (NS_FAILED(rv)) {
           NS_WARNING("HTMLEditor::ReplaceTextWithTransaction() failed");
           return Err(rv);
         }
-        if (startToDelete.ContainerAsText() ==
-            trackingEndToDelete.ContainerAsText()) {
+        if (startToDelete.ContainerAs<Text>() ==
+            trackingEndToDelete.ContainerAs<Text>()) {
           MOZ_ASSERT(normalizedWhiteSpacesInLastNode.IsEmpty());
           break;  // There is no more text which we need to delete.
         }
@@ -2760,12 +2761,12 @@ HTMLEditor::DeleteTextAndNormalizeSurroundingWhiteSpaces(
         return Err(NS_ERROR_EDITOR_UNEXPECTED_DOM_TREE);
       }
       MOZ_ASSERT(trackingEndToDelete.IsInTextNode());
-      endToDelete.Set(trackingEndToDelete.ContainerAsText(),
+      endToDelete.Set(trackingEndToDelete.ContainerAs<Text>(),
                       trackingEndToDelete.Offset());
       // If the remaining range was modified by mutation event listener,
       // we should stop handling the deletion.
       startToDelete =
-          EditorDOMPointInText::AtEndOf(*startToDelete.ContainerAsText());
+          EditorDOMPointInText::AtEndOf(*startToDelete.ContainerAs<Text>());
       if (MayHaveMutationEventListeners(
               NS_EVENT_BITS_MUTATION_CHARACTERDATAMODIFIED) &&
           NS_WARN_IF(!startToDelete.IsBefore(endToDelete))) {
@@ -2775,13 +2776,13 @@ HTMLEditor::DeleteTextAndNormalizeSurroundingWhiteSpaces(
     // Delete ASCII whiteSpaces in the range simpley if there are some text
     // nodes which we don't need to replace their text.
     if (normalizedWhiteSpacesInLastNode.IsEmpty() ||
-        startToDelete.ContainerAsText() != endToDelete.ContainerAsText()) {
+        startToDelete.ContainerAs<Text>() != endToDelete.ContainerAs<Text>()) {
       // If we need to replace text in the last text node, we should
       // delete text before its previous text node.
       EditorDOMPointInText endToDeleteExceptReplaceRange =
           normalizedWhiteSpacesInLastNode.IsEmpty()
               ? endToDelete
-              : EditorDOMPointInText(endToDelete.ContainerAsText(), 0);
+              : EditorDOMPointInText(endToDelete.ContainerAs<Text>(), 0);
       if (startToDelete != endToDeleteExceptReplaceRange) {
         nsresult rv = DeleteTextAndTextNodesWithTransaction(
             startToDelete, endToDeleteExceptReplaceRange, aTreatEmptyTextNodes);
@@ -2811,11 +2812,11 @@ HTMLEditor::DeleteTextAndNormalizeSurroundingWhiteSpaces(
     // Replace ASCII whiteSpaces in the range and following character in the
     // last text node.
     MOZ_ASSERT(!normalizedWhiteSpacesInLastNode.IsEmpty());
-    MOZ_ASSERT(startToDelete.ContainerAsText() ==
-               endToDelete.ContainerAsText());
+    MOZ_ASSERT(startToDelete.ContainerAs<Text>() ==
+               endToDelete.ContainerAs<Text>());
     nsresult rv = ReplaceTextWithTransaction(
-        MOZ_KnownLive(*startToDelete.ContainerAsText()), startToDelete.Offset(),
-        endToDelete.Offset() - startToDelete.Offset(),
+        MOZ_KnownLive(*startToDelete.ContainerAs<Text>()),
+        startToDelete.Offset(), endToDelete.Offset() - startToDelete.Offset(),
         normalizedWhiteSpacesInLastNode);
     if (NS_FAILED(rv)) {
       NS_WARNING("HTMLEditor::ReplaceTextWithTransaction() failed");
@@ -2837,7 +2838,7 @@ HTMLEditor::DeleteTextAndNormalizeSurroundingWhiteSpaces(
   if (!newCaretPosition.IsInTextNode()) {
     if (const Element* editableBlockElementOrInlineEditingHost =
             HTMLEditUtils::GetInclusiveAncestorElement(
-                *newCaretPosition.ContainerAsContent(),
+                *newCaretPosition.ContainerAs<nsIContent>(),
                 HTMLEditUtils::
                     ClosestEditableBlockElementOrInlineEditingHost)) {
       Element* editingHost = ComputeEditingHost();
@@ -2904,13 +2905,14 @@ nsresult HTMLEditor::InsertBRElementIfHardLineIsEmptyAndEndsWithBlockBoundary(
   MOZ_ASSERT(IsEditActionDataAvailable());
   MOZ_ASSERT(aPointToInsert.IsSet());
 
-  if (!aPointToInsert.GetContainerAsContent()) {
+  if (!aPointToInsert.IsInContentNode()) {
     return NS_OK;
   }
 
   // If container of the point is not in a block, we don't need to put a
   // `<br>` element here.
-  if (!HTMLEditUtils::IsBlockElement(*aPointToInsert.ContainerAsContent())) {
+  if (!HTMLEditUtils::IsBlockElement(
+          *aPointToInsert.ContainerAs<nsIContent>())) {
     return NS_OK;
   }
 
@@ -3437,7 +3439,7 @@ EditActionResult HTMLEditor::ConvertContentAroundRangesToList(
         // If we've not met a list element, set current list element to the
         // parent of current list item element.
         if (!curList) {
-          curList = atContent.GetContainerAsElement();
+          curList = atContent.GetContainerAs<Element>();
           NS_WARNING_ASSERTION(
               HTMLEditUtils::IsAnyListElement(curList),
               "Current list item parent is not a list element");
@@ -3902,7 +3904,7 @@ HTMLEditor::FormatBlockContainerWithTransaction(
       // We are removing blocks (going to "body text")
       const RefPtr<Element> editableBlockElement =
           HTMLEditUtils::GetInclusiveAncestorElement(
-              *pointToInsertBlock.ContainerAsContent(),
+              *pointToInsertBlock.ContainerAs<nsIContent>(),
               HTMLEditUtils::ClosestEditableBlockElement);
       if (!editableBlockElement) {
         NS_WARNING(
@@ -4337,7 +4339,7 @@ nsresult HTMLEditor::HandleCSSIndentAroundRanges(AutoRangeArray& aRanges,
     MOZ_ASSERT(atCaret.IsInContentNode());
     Element* const editableBlockElement =
         HTMLEditUtils::GetInclusiveAncestorElement(
-            *atCaret.ContainerAsContent(),
+            *atCaret.ContainerAs<nsIContent>(),
             HTMLEditUtils::ClosestEditableBlockElement);
     if (editableBlockElement &&
         HTMLEditUtils::IsListItem(editableBlockElement)) {
@@ -4397,7 +4399,7 @@ nsresult HTMLEditor::HandleCSSIndentAroundRanges(AutoRangeArray& aRanges,
         pointToPutCaret.IsSet()
             ? std::move(pointToPutCaret)
             : aRanges.GetFirstRangeStartPoint<EditorDOMPoint>();
-    if (NS_WARN_IF(!pointToPutCaret.IsSet())) {
+    if (NS_WARN_IF(!pointToInsertDivElement.IsSet())) {
       return NS_ERROR_FAILURE;
     }
 
@@ -5563,6 +5565,7 @@ SplitRangeOffFromNodeResult HTMLEditor::SplitRangeOffFromBlock(
   MOZ_ASSERT(EditorUtils::IsDescendantOf(aStartOfMiddleElement, aBlockElement));
   MOZ_ASSERT(EditorUtils::IsDescendantOf(aEndOfMiddleElement, aBlockElement));
 
+  EditorDOMPoint pointToPutCaret;
   // Split at the start.
   SplitNodeResult splitAtStartResult = SplitNodeDeepWithTransaction(
       aBlockElement, EditorDOMPoint(&aStartOfMiddleElement),
@@ -5575,6 +5578,8 @@ SplitRangeOffFromNodeResult HTMLEditor::SplitRangeOffFromBlock(
       splitAtStartResult.isOk(),
       "HTMLEditor::SplitNodeDeepWithTransaction(SplitAtEdges::"
       "eDoNotCreateEmptyContainer) at start of middle element failed");
+  splitAtStartResult.MoveCaretPointTo(pointToPutCaret,
+                                      {SuggestCaret::OnlyIfHasSuggestion});
 
   // Split at after the end
   auto atAfterEnd = EditorDOMPoint::After(aEndOfMiddleElement);
@@ -5588,9 +5593,29 @@ SplitRangeOffFromNodeResult HTMLEditor::SplitRangeOffFromBlock(
       splitAtEndResult.isOk(),
       "HTMLEditor::SplitNodeDeepWithTransaction(SplitAtEdges::"
       "eDoNotCreateEmptyContainer) after end of middle element failed");
+  splitAtEndResult.MoveCaretPointTo(pointToPutCaret,
+                                    {SuggestCaret::OnlyIfHasSuggestion});
 
-  return SplitRangeOffFromNodeResult(std::move(splitAtStartResult),
-                                     std::move(splitAtEndResult));
+  if (splitAtStartResult.DidSplit() && splitAtEndResult.DidSplit()) {
+    // Note that the middle node can be computed only with the latter split
+    // result.
+    return SplitRangeOffFromNodeResult(splitAtStartResult.GetPreviousContent(),
+                                       splitAtEndResult.GetPreviousContent(),
+                                       splitAtEndResult.GetNextContent(),
+                                       std::move(pointToPutCaret));
+  }
+  if (splitAtStartResult.DidSplit()) {
+    return SplitRangeOffFromNodeResult(splitAtStartResult.GetPreviousContent(),
+                                       splitAtStartResult.GetNextContent(),
+                                       nullptr, std::move(pointToPutCaret));
+  }
+  if (splitAtEndResult.DidSplit()) {
+    return SplitRangeOffFromNodeResult(
+        nullptr, splitAtEndResult.GetPreviousContent(),
+        splitAtEndResult.GetNextContent(), std::move(pointToPutCaret));
+  }
+  return SplitRangeOffFromNodeResult(nullptr, &aBlockElement, nullptr,
+                                     std::move(pointToPutCaret));
 }
 
 SplitRangeOffFromNodeResult HTMLEditor::OutdentPartOfBlock(
@@ -5606,7 +5631,7 @@ SplitRangeOffFromNodeResult HTMLEditor::OutdentPartOfBlock(
     return SplitRangeOffFromNodeResult(NS_ERROR_EDITOR_DESTROYED);
   }
 
-  if (!splitResult.GetMiddleContentAsElement()) {
+  if (!splitResult.GetMiddleContentAs<Element>()) {
     NS_WARNING(
         "HTMLEditor::SplitRangeOffFromBlock() didn't return middle content");
     splitResult.IgnoreCaretPointSuggestion();
@@ -5631,9 +5656,10 @@ SplitRangeOffFromNodeResult HTMLEditor::OutdentPartOfBlock(
   }
 
   if (aBlockIndentedWith == BlockIndentedWith::HTML) {
+    // MOZ_KnownLive: perhaps, it does not work with template methods.
     Result<EditorDOMPoint, nsresult> unwrapBlockElementResult =
         RemoveBlockContainerWithTransaction(
-            MOZ_KnownLive(*splitResult.GetMiddleContentAsElement()));
+            MOZ_KnownLive(*splitResult.GetMiddleContentAs<Element>()));
     if (MOZ_UNLIKELY(unwrapBlockElementResult.isErr())) {
       NS_WARNING("HTMLEditor::RemoveBlockContainerWithTransaction() failed");
       return SplitRangeOffFromNodeResult(unwrapBlockElementResult.inspectErr());
@@ -5650,13 +5676,15 @@ SplitRangeOffFromNodeResult HTMLEditor::OutdentPartOfBlock(
                                        splitResult.GetRightContent());
   }
 
-  if (!splitResult.GetMiddleContentAsElement()) {
+  if (!splitResult.GetMiddleContentAs<Element>()) {
     return splitResult;
   }
 
+  // MOZ_KnownLive: perhaps, it does not work with template methods.
   const Result<EditorDOMPoint, nsresult> pointToPutCaretOrError =
-      ChangeMarginStart(MOZ_KnownLive(*splitResult.GetMiddleContentAsElement()),
-                        ChangeMargin::Decrease, aEditingHost);
+      ChangeMarginStart(
+          MOZ_KnownLive(*splitResult.GetMiddleContentAs<Element>()),
+          ChangeMargin::Decrease, aEditingHost);
   if (MOZ_UNLIKELY(pointToPutCaretOrError.isErr())) {
     NS_WARNING("HTMLEditor::ChangeMarginStart(ChangeMargin::Decrease) failed");
     return SplitRangeOffFromNodeResult(pointToPutCaretOrError.inspectErr());
@@ -5745,7 +5773,7 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::CreateStyleForInsertText(
     const EditorDOMPoint& aPointToInsertText) {
   MOZ_ASSERT(IsEditActionDataAvailable());
   MOZ_ASSERT(aPointToInsertText.IsSetAndValid());
-  MOZ_ASSERT(mTypeInState);
+  MOZ_ASSERT(mPendingStylesToApplyToNewContent);
 
   const RefPtr<Element> documentRootElement = GetDocument()->GetRootElement();
   if (NS_WARN_IF(!documentRootElement)) {
@@ -5753,38 +5781,44 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::CreateStyleForInsertText(
   }
 
   // process clearing any styles first
-  UniquePtr<PropItem> item = mTypeInState->TakeClearProperty();
+  UniquePtr<PendingStyle> pendingStyle =
+      mPendingStylesToApplyToNewContent->TakeClearingStyle();
 
   EditorDOMPoint pointToPutCaret(aPointToInsertText);
   {
     // Transactions may set selection, but we will set selection if necessary.
     AutoTransactionsConserveSelection dontChangeMySelection(*this);
 
-    while (item && pointToPutCaret.GetContainer() != documentRootElement) {
-      EditResult result =
-          ClearStyleAt(pointToPutCaret, MOZ_KnownLive(item->tag),
-                       MOZ_KnownLive(item->attr), item->specifiedStyle);
-      if (result.Failed()) {
+    while (pendingStyle &&
+           pointToPutCaret.GetContainer() != documentRootElement) {
+      // MOZ_KnownLive because we own pendingStyle which guarantees the lifetime
+      // of its members.
+      Result<EditorDOMPoint, nsresult> pointToPutCaretOrError =
+          ClearStyleAt(pointToPutCaret, MOZ_KnownLive(pendingStyle->GetTag()),
+                       MOZ_KnownLive(pendingStyle->GetAttribute()),
+                       pendingStyle->GetSpecifiedStyle());
+      if (MOZ_UNLIKELY(pointToPutCaretOrError.isErr())) {
         NS_WARNING("HTMLEditor::ClearStyleAt() failed");
-        return Err(result.Rv());
+        return pointToPutCaretOrError;
       }
-      pointToPutCaret = result.PointRefToCollapseSelection();
-      item = mTypeInState->TakeClearProperty();
+      pointToPutCaret = pointToPutCaretOrError.unwrap();
+      pendingStyle = mPendingStylesToApplyToNewContent->TakeClearingStyle();
     }
   }
 
   // then process setting any styles
-  const int32_t relFontSize = mTypeInState->TakeRelativeFontSize();
-  item = mTypeInState->TakeSetProperty();
+  const int32_t relFontSize =
+      mPendingStylesToApplyToNewContent->TakeRelativeFontSize();
+  pendingStyle = mPendingStylesToApplyToNewContent->TakePreservedStyle();
 
-  if (item || relFontSize) {
+  if (pendingStyle || relFontSize) {
     // we have at least one style to add; make a new text node to insert style
     // nodes above.
     EditorDOMPoint pointToInsertTextNode(pointToPutCaret);
     if (pointToInsertTextNode.IsInTextNode()) {
       // if we are in a text node, split it
       SplitNodeResult splitTextNodeResult = SplitNodeDeepWithTransaction(
-          MOZ_KnownLive(*pointToInsertTextNode.GetContainerAsText()),
+          MOZ_KnownLive(*pointToInsertTextNode.ContainerAs<Text>()),
           pointToInsertTextNode, SplitAtEdges::eAllowToCreateEmptyContainer);
       if (splitTextNodeResult.isErr()) {
         NS_WARNING(
@@ -5801,7 +5835,7 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::CreateStyleForInsertText(
     }
     if (!pointToInsertTextNode.IsInContentNode() ||
         !HTMLEditUtils::IsContainerNode(
-            *pointToInsertTextNode.ContainerAsContent())) {
+            *pointToInsertTextNode.ContainerAs<nsIContent>())) {
       return pointToPutCaret;
     }
     RefPtr<Text> newEmptyTextNode = CreateTextNode(u""_ns);
@@ -5819,14 +5853,15 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::CreateStyleForInsertText(
     pointToPutCaret.Set(newEmptyTextNode, 0u);
 
     if (relFontSize) {
-      // dir indicated bigger versus smaller.  1 = bigger, -1 = smaller
-      HTMLEditor::FontSize dir = relFontSize > 0 ? HTMLEditor::FontSize::incr
-                                                 : HTMLEditor::FontSize::decr;
-      for (int32_t j = 0; j < DeprecatedAbs(relFontSize); j++) {
+      HTMLEditor::FontSize incrementOrDecrement =
+          relFontSize > 0 ? HTMLEditor::FontSize::incr
+                          : HTMLEditor::FontSize::decr;
+      for ([[maybe_unused]] uint32_t j : IntegerRange(Abs(relFontSize))) {
         const CreateElementResult wrapTextInBigOrSmallElementResult =
-            RelativeFontChangeOnTextNode(dir, *newEmptyTextNode, 0, UINT32_MAX);
+            SetFontSizeOnTextNode(*newEmptyTextNode, 0, UINT32_MAX,
+                                  incrementOrDecrement);
         if (wrapTextInBigOrSmallElementResult.isErr()) {
-          NS_WARNING("HTMLEditor::RelativeFontChangeOnTextNode() failed");
+          NS_WARNING("HTMLEditor::SetFontSizeOnTextNode() failed");
           return Err(wrapTextInBigOrSmallElementResult.inspectErr());
         }
         // We don't need to update here because we'll suggest caret position
@@ -5836,10 +5871,16 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::CreateStyleForInsertText(
       }
     }
 
-    while (item) {
+    while (pendingStyle) {
+      // MOZ_KnownLive(...ContainerAs<nsIContent>()) because pointToPutCaret()
+      // grabs the result.
+      // MOZ_KnownLive(pendingStyle->*) because we own pendingStyle which
+      // guarantees the lifetime of its members.
       Result<EditorDOMPoint, nsresult> setStyleResult = SetInlinePropertyOnNode(
-          MOZ_KnownLive(*pointToPutCaret.GetContainerAsContent()),
-          MOZ_KnownLive(*item->tag), MOZ_KnownLive(item->attr), item->value);
+          MOZ_KnownLive(*pointToPutCaret.ContainerAs<nsIContent>()),
+          MOZ_KnownLive(*pendingStyle->GetTag()),
+          MOZ_KnownLive(pendingStyle->GetAttribute()),
+          pendingStyle->AttributeValueOrCSSValueRef());
       if (MOZ_UNLIKELY(setStyleResult.isErr())) {
         NS_WARNING("HTMLEditor::SetInlinePropertyOnNode() failed");
         return Err(setStyleResult.unwrapErr());
@@ -5847,7 +5888,7 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::CreateStyleForInsertText(
       // We don't need to update here because we'll suggest caret position which
       // is computed above.
       MOZ_ASSERT(pointToPutCaret.IsSet());
-      item = mTypeInState->TakeSetProperty();
+      pendingStyle = mPendingStylesToApplyToNewContent->TakePreservedStyle();
     }
   }
 
@@ -6280,8 +6321,8 @@ CreateElementResult HTMLEditor::AlignNodesAndDescendants(
           // MOZ_KnownLive(*styledListOrListItemElement): An element of
           // aArrayOfContents which is array of OwningNonNull.
           Result<int32_t, nsresult> result =
-              mCSSEditUtils->SetCSSEquivalentToHTMLStyleWithTransaction(
-                  MOZ_KnownLive(*styledListOrListItemElement), nullptr,
+              CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction(
+                  *this, MOZ_KnownLive(*styledListOrListItemElement), nullptr,
                   nsGkAtoms::align, &aAlignType);
           if (result.isErr()) {
             if (result.inspectErr() == NS_ERROR_EDITOR_DESTROYED) {
@@ -6811,7 +6852,7 @@ HTMLEditor::SplitParentInlineElementsAtRangeEdges(RangeItem& aRangeItem) {
       if (pointToPutCaret.IsInContentNode() &&
           MOZ_UNLIKELY(
               editingHost !=
-              ComputeEditingHost(*pointToPutCaret.GetContainerAsContent()))) {
+              ComputeEditingHost(*pointToPutCaret.ContainerAs<nsIContent>()))) {
         NS_WARNING(
             "HTMLEditor::SplitNodeDeepWithTransaction(SplitAtEdges::"
             "eDoNotCreateEmptyContainer) caused changing editing host");
@@ -7068,8 +7109,8 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInHeadingElement(
     return SplitNodeResult(NS_ERROR_EDITOR_UNEXPECTED_DOM_TREE);
   }
 
-  TopLevelEditSubActionDataRef().mCachedInlineStyles->Clear();
-  mTypeInState->ClearAllProps();
+  TopLevelEditSubActionDataRef().mCachedPendingStyles->Clear();
+  mPendingStylesToApplyToNewContent->ClearAllStyles();
 
   // Create a paragraph if the right heading element is not followed by an
   // editable <br> element.
@@ -7140,7 +7181,7 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInParagraph(
     if (aCandidatePointToSplit.IsStartOfContainer()) {
       EditorDOMPoint candidatePoint(aCandidatePointToSplit);
       for (nsIContent* container =
-               aCandidatePointToSplit.GetContainerAsContent();
+               aCandidatePointToSplit.GetContainerAs<nsIContent>();
            container && container != &aParentDivOrP;
            container = container->GetParent()) {
         if (HTMLEditUtils::IsLink(container)) {
@@ -7176,7 +7217,7 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInParagraph(
           aCandidatePointToSplit.IsBRElementAtEndOfContainer();
       EditorDOMPoint candidatePoint(aCandidatePointToSplit);
       for (nsIContent* container =
-               aCandidatePointToSplit.GetContainerAsContent();
+               aCandidatePointToSplit.GetContainerAs<nsIContent>();
            container && container != &aParentDivOrP;
            container = container->GetParent()) {
         if (HTMLEditUtils::IsLink(container)) {
@@ -7225,7 +7266,7 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInParagraph(
       //       previous `if` block.
       brElement =
           HTMLBRElement::FromNodeOrNull(HTMLEditUtils::GetPreviousSibling(
-              *pointToSplit.ContainerAsText(),
+              *pointToSplit.ContainerAs<Text>(),
               {WalkTreeOption::IgnoreNonEditableNode}));
       if (!brElement || HTMLEditUtils::IsInvisibleBRElement(*brElement) ||
           EditorUtils::IsPaddingBRElementForEmptyLastLine(*brElement)) {
@@ -7259,7 +7300,7 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInParagraph(
       //       direct child of the paragraph.  For using the simplest path, we
       //       just need to update `pointToSplit` in the case.
       brElement = HTMLBRElement::FromNodeOrNull(HTMLEditUtils::GetNextSibling(
-          *pointToSplit.ContainerAsText(),
+          *pointToSplit.ContainerAs<Text>(),
           {WalkTreeOption::IgnoreNonEditableNode}));
       if (!brElement || HTMLEditUtils::IsInvisibleBRElement(*brElement) ||
           EditorUtils::IsPaddingBRElementForEmptyLastLine(*brElement)) {
@@ -7270,7 +7311,7 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInParagraph(
                                              GetSplitNodeDirection());
         }
         const EditorDOMPoint pointToInsertBR =
-            EditorDOMPoint::After(*pointToSplit.ContainerAsText());
+            EditorDOMPoint::After(*pointToSplit.ContainerAs<Text>());
         MOZ_ASSERT(pointToInsertBR.IsSet());
         CreateElementResult insertBRElementResult =
             InsertBRElement(WithTransaction::Yes, pointToInsertBR);
@@ -7345,7 +7386,7 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInParagraph(
       // We need to put new <br> after the left node if given node was split
       // above.
       const EditorDOMPoint pointToInsertBR =
-          EditorDOMPoint::After(*pointToSplit.ContainerAsContent());
+          EditorDOMPoint::After(*pointToSplit.ContainerAs<nsIContent>());
       MOZ_ASSERT(pointToInsertBR.IsSet());
       CreateElementResult insertBRElementResult =
           InsertBRElement(WithTransaction::Yes, pointToInsertBR);
@@ -8581,16 +8622,16 @@ nsresult HTMLEditor::CacheInlineStyles(nsIContent& aContent) {
   MOZ_ASSERT(IsTopLevelEditSubActionDataAvailable());
 
   nsresult rv = GetInlineStyles(
-      aContent, *TopLevelEditSubActionDataRef().mCachedInlineStyles);
+      aContent, *TopLevelEditSubActionDataRef().mCachedPendingStyles);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::GetInlineStyles() failed");
   return rv;
 }
 
-nsresult HTMLEditor::GetInlineStyles(nsIContent& aContent,
-                                     AutoStyleCacheArray& aStyleCacheArray) {
+nsresult HTMLEditor::GetInlineStyles(
+    nsIContent& aContent, AutoPendingStyleCacheArray& aPendingStyleCacheArray) {
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(aStyleCacheArray.IsEmpty());
+  MOZ_ASSERT(aPendingStyleCacheArray.IsEmpty());
 
   bool useCSS = IsCSSEnabled();
 
@@ -8625,22 +8666,23 @@ nsresult HTMLEditor::GetInlineStyles(nsIContent& aContent,
       attribute = nullptr;
     }
     // If type-in state is set, don't intervene
-    bool typeInSet, unused;
-    mTypeInState->GetTypingState(typeInSet, unused, tag, attribute, nullptr);
-    if (typeInSet) {
+    const PendingStyleState styleState =
+        mPendingStylesToApplyToNewContent->GetStyleState(*tag, attribute);
+    if (styleState != PendingStyleState::NotUpdated) {
       continue;
     }
     bool isSet = false;
     nsString value;  // Don't use nsAutoString here because it requires memcpy
-                     // at creating new StyleCache instance.
+                     // at creating new PendingStyleCache instance.
     // Don't use CSS for <font size>, we don't support it usefully (bug 780035)
     if (!useCSS || (property == nsGkAtoms::size)) {
       isSet = HTMLEditUtils::IsInlineStyleSetByElement(
           aContent, *tag, attribute, nullptr, &value);
     } else {
       Result<bool, nsresult> isComputedCSSEquivalentToHTMLInlineStyleOrError =
-          mCSSEditUtils->IsComputedCSSEquivalentToHTMLInlineStyleSet(
-              aContent, MOZ_KnownLive(tag), MOZ_KnownLive(attribute), value);
+          CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet(
+              *this, aContent, MOZ_KnownLive(tag), MOZ_KnownLive(attribute),
+              value);
       if (isComputedCSSEquivalentToHTMLInlineStyleOrError.isErr()) {
         NS_WARNING(
             "CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet failed");
@@ -8649,7 +8691,8 @@ nsresult HTMLEditor::GetInlineStyles(nsIContent& aContent,
       isSet = isComputedCSSEquivalentToHTMLInlineStyleOrError.unwrap();
     }
     if (isSet) {
-      aStyleCacheArray.AppendElement(StyleCache(tag, attribute, value));
+      aPendingStyleCacheArray.AppendElement(
+          PendingStyleCache(*tag, attribute, value));
     }
   }
   return NS_OK;
@@ -8662,7 +8705,7 @@ nsresult HTMLEditor::ReapplyCachedStyles() {
   // been removed.  If so, add typeinstate for them, so that they will be
   // reinserted when new content is added.
 
-  if (TopLevelEditSubActionDataRef().mCachedInlineStyles->IsEmpty() ||
+  if (TopLevelEditSubActionDataRef().mCachedPendingStyles->IsEmpty() ||
       !SelectionRef().RangeCount()) {
     return NS_OK;
   }
@@ -8681,7 +8724,7 @@ nsresult HTMLEditor::ReapplyCachedStyles() {
     return NS_OK;
   }
 
-  AutoStyleCacheArray styleCacheArrayAtInsertionPoint;
+  AutoPendingStyleCacheArray styleCacheArrayAtInsertionPoint;
   nsresult rv =
       GetInlineStyles(*startContainerContent, styleCacheArrayAtInsertionPoint);
   if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
@@ -8692,15 +8735,18 @@ nsresult HTMLEditor::ReapplyCachedStyles() {
     return NS_OK;
   }
 
-  for (StyleCache& styleCacheBeforeEdit :
-       *TopLevelEditSubActionDataRef().mCachedInlineStyles) {
+  for (PendingStyleCache& styleCacheBeforeEdit :
+       *TopLevelEditSubActionDataRef().mCachedPendingStyles) {
     bool isFirst = false, isAny = false, isAll = false;
     nsAutoString currentValue;
     if (useCSS) {
       // check computed style first in css case
+      // MOZ_KnownLive(styleCacheBeforeEdit.*) because they are nsStaticAtom
+      // and its instances are alive until shutting down.
       Result<bool, nsresult> isComputedCSSEquivalentToHTMLInlineStyleOrError =
-          mCSSEditUtils->IsComputedCSSEquivalentToHTMLInlineStyleSet(
-              *startContainerContent, MOZ_KnownLive(styleCacheBeforeEdit.Tag()),
+          CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet(
+              *this, *startContainerContent,
+              MOZ_KnownLive(&styleCacheBeforeEdit.TagRef()),
               MOZ_KnownLive(styleCacheBeforeEdit.GetAttribute()), currentValue);
       if (isComputedCSSEquivalentToHTMLInlineStyleOrError.isErr()) {
         NS_WARNING(
@@ -8712,30 +8758,33 @@ nsresult HTMLEditor::ReapplyCachedStyles() {
     }
     if (!isAny) {
       // then check typeinstate and html style
+      // MOZ_KnownLive(styleCacheBeforeEdit.*) because they are nsStaticAtom
+      // and its instances are alive until shutting down.
       nsresult rv = GetInlinePropertyBase(
-          MOZ_KnownLive(*styleCacheBeforeEdit.Tag()),
+          MOZ_KnownLive(styleCacheBeforeEdit.TagRef()),
           MOZ_KnownLive(styleCacheBeforeEdit.GetAttribute()),
-          &styleCacheBeforeEdit.Value(), &isFirst, &isAny, &isAll,
-          &currentValue);
+          &styleCacheBeforeEdit.AttributeValueOrCSSValueRef(), &isFirst, &isAny,
+          &isAll, &currentValue);
       if (NS_FAILED(rv)) {
         NS_WARNING("HTMLEditor::GetInlinePropertyBase() failed");
         return rv;
       }
     }
     // This style has disappeared through deletion.  Let's add the styles to
-    // mTypeInState when same style isn't applied to the node already.
-    if (isAny && !IsStyleCachePreservingSubAction(GetTopLevelEditSubAction())) {
+    // mPendingStylesToApplyToNewContent when same style isn't applied to the
+    // node already.
+    if (isAny &&
+        !IsPendingStyleCachePreservingSubAction(GetTopLevelEditSubAction())) {
       continue;
     }
-    AutoStyleCacheArray::index_type index =
+    AutoPendingStyleCacheArray::index_type index =
         styleCacheArrayAtInsertionPoint.IndexOf(
-            styleCacheBeforeEdit.Tag(), styleCacheBeforeEdit.GetAttribute());
-    if (index == AutoStyleCacheArray::NoIndex ||
-        styleCacheBeforeEdit.Value() !=
-            styleCacheArrayAtInsertionPoint.ElementAt(index).Value()) {
-      mTypeInState->SetProp(styleCacheBeforeEdit.Tag(),
-                            styleCacheBeforeEdit.GetAttribute(),
-                            styleCacheBeforeEdit.Value());
+            styleCacheBeforeEdit.TagRef(), styleCacheBeforeEdit.GetAttribute());
+    if (index == AutoPendingStyleCacheArray::NoIndex ||
+        styleCacheBeforeEdit.AttributeValueOrCSSValueRef() !=
+            styleCacheArrayAtInsertionPoint.ElementAt(index)
+                .AttributeValueOrCSSValueRef()) {
+      mPendingStylesToApplyToNewContent->PreserveStyle(styleCacheBeforeEdit);
     }
   }
   return NS_OK;
@@ -8891,7 +8940,7 @@ nsresult HTMLEditor::AdjustCaretPositionAndEnsurePaddingBRElement(
   }
 
   // If selection start is not editable, climb up the tree until editable one.
-  while (!EditorUtils::IsEditableContent(*point.ContainerAsContent(),
+  while (!EditorUtils::IsEditableContent(*point.ContainerAs<nsIContent>(),
                                          EditorType::HTML)) {
     point.Set(point.GetContainer());
     if (NS_WARN_IF(!point.IsInContentNode())) {
@@ -8905,7 +8954,7 @@ nsresult HTMLEditor::AdjustCaretPositionAndEnsurePaddingBRElement(
   //     caret if the block element is now empty?
   if (Element* const editableBlockElement =
           HTMLEditUtils::GetInclusiveAncestorElement(
-              *point.ContainerAsContent(),
+              *point.ContainerAs<nsIContent>(),
               HTMLEditUtils::ClosestEditableBlockElement)) {
     if (editableBlockElement &&
         HTMLEditUtils::IsEmptyNode(
@@ -8973,7 +9022,8 @@ nsresult HTMLEditor::AdjustCaretPositionAndEnsurePaddingBRElement(
     // element at end of the block.
     const Element* const blockElementContainingCaret =
         HTMLEditUtils::GetInclusiveAncestorElement(
-            *point.ContainerAsContent(), HTMLEditUtils::ClosestBlockElement);
+            *point.ContainerAs<nsIContent>(),
+            HTMLEditUtils::ClosestBlockElement);
     const Element* const blockElementContainingPreviousEditableContent =
         HTMLEditUtils::GetAncestorElement(*previousEditableContent,
                                           HTMLEditUtils::ClosestBlockElement);
@@ -8982,7 +9032,7 @@ nsresult HTMLEditor::AdjustCaretPositionAndEnsurePaddingBRElement(
     if (blockElementContainingCaret &&
         blockElementContainingCaret ==
             blockElementContainingPreviousEditableContent &&
-        point.ContainerAsContent()->GetEditingHost() ==
+        point.ContainerAs<nsIContent>()->GetEditingHost() ==
             previousEditableContent->GetEditingHost() &&
         previousEditableContent &&
         previousEditableContent->IsHTMLElement(nsGkAtoms::br)) {
@@ -9087,7 +9137,7 @@ nsresult HTMLEditor::AdjustCaretPositionAndEnsurePaddingBRElement(
   return rv;
 }
 
-nsresult HTMLEditor::RemoveEmptyNodesIn(nsRange& aRange) {
+nsresult HTMLEditor::RemoveEmptyNodesIn(const EditorDOMRange& aRange) {
   MOZ_ASSERT(IsEditActionDataAvailable());
   MOZ_ASSERT(aRange.IsPositioned());
 
@@ -9118,98 +9168,158 @@ nsresult HTMLEditor::RemoveEmptyNodesIn(nsRange& aRange) {
   // find all the _examined_ children empty, but still not have an empty
   // parent.
 
+  const RawRangeBoundary endOfRange = [&]() {
+    // If the range is not collapsed and end of the range is start of a
+    // container, it means that the inclusive ancestor empty element may be
+    // created by splitting the left nodes.
+    if (aRange.Collapsed() || !aRange.IsInContentNodes() ||
+        !aRange.EndRef().IsStartOfContainer()) {
+      return aRange.EndRef().ToRawRangeBoundary();
+    }
+    nsINode* const commonAncestor =
+        nsContentUtils::GetClosestCommonInclusiveAncestor(
+            aRange.StartRef().ContainerAs<nsIContent>(),
+            aRange.EndRef().ContainerAs<nsIContent>());
+    if (!commonAncestor) {
+      return aRange.EndRef().ToRawRangeBoundary();
+    }
+    nsIContent* maybeRightContent = nullptr;
+    for (nsIContent* content : aRange.EndRef()
+                                   .ContainerAs<nsIContent>()
+                                   ->InclusiveAncestorsOfType<nsIContent>()) {
+      if (!HTMLEditUtils::IsSimplyEditableNode(*content) ||
+          content == commonAncestor) {
+        break;
+      }
+      if (aRange.StartRef().ContainerAs<nsIContent>() == content) {
+        break;
+      }
+      EmptyCheckOptions options = {EmptyCheckOption::TreatListItemAsVisible,
+                                   EmptyCheckOption::TreatTableCellAsVisible};
+      if (!HTMLEditUtils::IsBlockElement(*content)) {
+        options += EmptyCheckOption::TreatSingleBRElementAsVisible;
+      }
+      if (!HTMLEditUtils::IsEmptyNode(*content, options)) {
+        break;
+      }
+      maybeRightContent = content;
+    }
+    if (!maybeRightContent) {
+      return aRange.EndRef().ToRawRangeBoundary();
+    }
+    return EditorRawDOMPoint::After(*maybeRightContent).ToRawRangeBoundary();
+  }();
+
   PostContentIterator postOrderIter;
-  nsresult rv = postOrderIter.Init(&aRange);
+  nsresult rv =
+      postOrderIter.Init(aRange.StartRef().ToRawRangeBoundary(), endOfRange);
   if (NS_FAILED(rv)) {
     NS_WARNING("PostContentIterator::Init() failed");
     return rv;
   }
 
   AutoTArray<OwningNonNull<nsIContent>, 64> arrayOfEmptyContents,
-      arrayOfEmptyCites, skipList;
+      arrayOfEmptyCites;
 
-  // Check for empty nodes
-  for (; !postOrderIter.IsDone(); postOrderIter.Next()) {
-    MOZ_ASSERT(postOrderIter.GetCurrentNode()->IsContent());
+  // Collect empty nodes first.
+  {
+    const bool isMailEditor = IsMailEditor();
+    AutoTArray<OwningNonNull<nsIContent>, 64> knownNonEmptyContents;
+    Maybe<AutoRangeArray> maybeSelectionRanges;
+    for (; !postOrderIter.IsDone(); postOrderIter.Next()) {
+      MOZ_ASSERT(postOrderIter.GetCurrentNode()->IsContent());
 
-    nsIContent* content = postOrderIter.GetCurrentNode()->AsContent();
-    nsIContent* parentContent = content->GetParent();
+      nsIContent* content = postOrderIter.GetCurrentNode()->AsContent();
+      nsIContent* parentContent = content->GetParent();
 
-    size_t idx = skipList.IndexOf(content);
-    if (idx != skipList.NoIndex) {
-      // This node is on our skip list.  Skip processing for this node, and
-      // replace its value in the skip list with the value of its parent
-      if (parentContent) {
-        skipList[idx] = parentContent;
+      size_t idx = knownNonEmptyContents.IndexOf(content);
+      if (idx != decltype(knownNonEmptyContents)::NoIndex) {
+        // This node is on our skip list.  Skip processing for this node, and
+        // replace its value in the skip list with the value of its parent
+        if (parentContent) {
+          knownNonEmptyContents[idx] = parentContent;
+        }
+        continue;
       }
-      continue;
-    }
 
-    bool isCandidate = false;
-    bool isMailCite = false;
-    if (content->IsElement()) {
-      if (content->IsHTMLElement(nsGkAtoms::body)) {
-        // Don't delete the body
-      } else if ((isMailCite =
-                      HTMLEditUtils::IsMailCite(*content->AsElement())) ||
-                 content->IsHTMLElement(nsGkAtoms::a) ||
-                 HTMLEditUtils::IsInlineStyle(content) ||
-                 HTMLEditUtils::IsAnyListElement(content) ||
-                 content->IsHTMLElement(nsGkAtoms::div)) {
-        // Only consider certain nodes to be empty for purposes of removal
-        isCandidate = true;
-      } else if (HTMLEditUtils::IsFormatNode(content) ||
-                 HTMLEditUtils::IsListItem(content) ||
-                 content->IsHTMLElement(nsGkAtoms::blockquote)) {
-        // These node types are candidates if selection is not in them.  If
-        // it is one of these, don't delete if selection inside.  This is so
-        // we can create empty headings, etc., for the user to type into.
-        AutoRangeArray selectionRanges(SelectionRef());
-        isCandidate =
-            !selectionRanges
-                 .IsAtLeastOneContainerOfRangeBoundariesInclusiveDescendantOf(
-                     *content);
-      }
-    }
+      const bool isEmptyNode = [&]() {
+        if (!content->IsElement()) {
+          return false;
+        }
+        const bool isMailCite =
+            isMailEditor && HTMLEditUtils::IsMailCite(*content->AsElement());
+        const bool isCandidate = [&]() {
+          if (content->IsHTMLElement(nsGkAtoms::body)) {
+            // Don't delete the body
+            return false;
+          }
+          if (isMailCite || content->IsHTMLElement(nsGkAtoms::a) ||
+              HTMLEditUtils::IsInlineStyle(content) ||
+              HTMLEditUtils::IsAnyListElement(content) ||
+              content->IsHTMLElement(nsGkAtoms::div)) {
+            // Only consider certain nodes to be empty for purposes of removal
+            return true;
+          }
+          if (HTMLEditUtils::IsFormatNode(content) ||
+              HTMLEditUtils::IsListItem(content) ||
+              content->IsHTMLElement(nsGkAtoms::blockquote)) {
+            // These node types are candidates if selection is not in them.  If
+            // it is one of these, don't delete if selection inside.  This is so
+            // we can create empty headings, etc., for the user to type into.
+            if (maybeSelectionRanges.isNothing()) {
+              maybeSelectionRanges.emplace(SelectionRef());
+            }
+            return !maybeSelectionRanges
+                        ->IsAtLeastOneContainerOfRangeBoundariesInclusiveDescendantOf(
+                            *content);
+          }
+          return false;
+        }();
 
-    bool isEmptyNode = false;
-    if (isCandidate) {
-      // We delete mailcites even if they have a solo br in them.  Other
-      // nodes we require to be empty.
-      HTMLEditUtils::EmptyCheckOptions options{
-          EmptyCheckOption::TreatListItemAsVisible,
-          EmptyCheckOption::TreatTableCellAsVisible};
-      if (!isMailCite) {
-        options += EmptyCheckOption::TreatSingleBRElementAsVisible;
-      }
-      isEmptyNode = HTMLEditUtils::IsEmptyNode(*content, options);
-      if (isEmptyNode) {
+        if (!isCandidate) {
+          return false;
+        }
+
+        // We delete mailcites even if they have a solo br in them.  Other
+        // nodes we require to be empty.
+        HTMLEditUtils::EmptyCheckOptions options{
+            EmptyCheckOption::TreatListItemAsVisible,
+            EmptyCheckOption::TreatTableCellAsVisible};
+        if (!isMailCite) {
+          options += EmptyCheckOption::TreatSingleBRElementAsVisible;
+        }
+        if (!HTMLEditUtils::IsEmptyNode(*content, options)) {
+          return false;
+        }
+
         if (isMailCite) {
           // mailcites go on a separate list from other empty nodes
           arrayOfEmptyCites.AppendElement(*content);
-        } else {
+        }
+        // Don't delete non-editable nodes in this method because this is a
+        // clean up method to remove unnecessary nodes of the result of
+        // editing.  So, we shouldn't delete non-editable nodes which were
+        // there before editing.  Additionally, if the element is some special
+        // elements such as <body>, we shouldn't delete it.
+        else if (HTMLEditUtils::IsSimplyEditableNode(*content) &&
+                 HTMLEditUtils::IsRemovableNode(*content)) {
           arrayOfEmptyContents.AppendElement(*content);
         }
+        return true;
+      }();
+      if (!isEmptyNode && parentContent) {
+        knownNonEmptyContents.AppendElement(*parentContent);
       }
-    }
-
-    if (!isEmptyNode && parentContent) {
-      // put parent on skip list
-      skipList.AppendElement(*parentContent);
-    }
+    }  // end of the for-loop iterating with postOrderIter
   }
 
   // now delete the empty nodes
   for (OwningNonNull<nsIContent>& emptyContent : arrayOfEmptyContents) {
-    // XXX Shouldn't we check whether it's removable from its parent??
-    if (HTMLEditUtils::IsSimplyEditableNode(emptyContent)) {
-      // MOZ_KnownLive because 'arrayOfEmptyContents' is guaranteed to keep it
-      // alive.
-      nsresult rv = DeleteNodeWithTransaction(MOZ_KnownLive(emptyContent));
-      if (NS_FAILED(rv)) {
-        NS_WARNING("EditorBase::DeleteNodeWithTransaction() failed");
-        return rv;
-      }
+    // MOZ_KnownLive due to bug 1622253
+    nsresult rv = DeleteNodeWithTransaction(MOZ_KnownLive(emptyContent));
+    if (NS_FAILED(rv)) {
+      NS_WARNING("EditorBase::DeleteNodeWithTransaction() failed");
+      return rv;
     }
   }
 
@@ -9707,9 +9817,9 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::RemoveAlignFromDescendants(
         // which is OwningNonNull.
         nsAutoString dummyCssValue;
         Result<EditorDOMPoint, nsresult> pointToPutCaretOrError =
-            mCSSEditUtils->RemoveCSSInlineStyleWithTransaction(
-                MOZ_KnownLive(*styledBlockOrHRElement), nsGkAtoms::textAlign,
-                dummyCssValue);
+            CSSEditUtils::RemoveCSSInlineStyleWithTransaction(
+                *this, MOZ_KnownLive(*styledBlockOrHRElement),
+                nsGkAtoms::textAlign, dummyCssValue);
         if (MOZ_UNLIKELY(pointToPutCaretOrError.isErr())) {
           NS_WARNING(
               "CSSEditUtils::RemoveCSSInlineStyleWithTransaction(nsGkAtoms::"
@@ -9896,8 +10006,8 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ChangeMarginStart(
       // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
       // be guaranteed by caller because of MOZ_CAN_RUN_SCRIPT method.
       // MOZ_KnownLive(merginProperty): It's nsStaticAtom.
-      nsresult rv = mCSSEditUtils->SetCSSPropertyWithTransaction(
-          MOZ_KnownLive(*styledElement), MOZ_KnownLive(marginProperty),
+      nsresult rv = CSSEditUtils::SetCSSPropertyWithTransaction(
+          *this, MOZ_KnownLive(*styledElement), MOZ_KnownLive(marginProperty),
           newValue);
       if (rv == NS_ERROR_EDITOR_DESTROYED) {
         NS_WARNING(
@@ -9916,8 +10026,9 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ChangeMarginStart(
     // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must
     // be guaranteed by caller because of MOZ_CAN_RUN_SCRIPT method.
     // MOZ_KnownLive(merginProperty): It's nsStaticAtom.
-    nsresult rv = mCSSEditUtils->RemoveCSSPropertyWithTransaction(
-        MOZ_KnownLive(*styledElement), MOZ_KnownLive(marginProperty), value);
+    nsresult rv = CSSEditUtils::RemoveCSSPropertyWithTransaction(
+        *this, MOZ_KnownLive(*styledElement), MOZ_KnownLive(marginProperty),
+        value);
     if (rv == NS_ERROR_EDITOR_DESTROYED) {
       NS_WARNING(
           "CSSEditUtils::RemoveCSSPropertyWithTransaction() destroyed the "

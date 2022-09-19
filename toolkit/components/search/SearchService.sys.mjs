@@ -663,7 +663,7 @@ export class SearchService {
       });
     }
 
-    if (engineToRemove._isAppProvided) {
+    if (engineToRemove.isAppProvided) {
       // Just hide it (the "hidden" setter will notify) and remove its alias to
       // avoid future conflicts with other engines.
       engineToRemove.hidden = true;
@@ -1241,6 +1241,14 @@ export class SearchService {
         "separatePrivateDefault.ui.enabled",
       false,
       this.#onSeparateDefaultPrefChanged.bind(this)
+    );
+
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "separatePrivateDefaultUrlbarResultEnabled",
+      lazy.SearchUtils.BROWSER_SEARCH_PREF +
+        "separatePrivateDefault.urlbarResult.enabled",
+      false
     );
 
     // We need to catch the region being updated
@@ -2003,7 +2011,7 @@ export class SearchService {
 
     let skippedEngines = 0;
     for (let engineJSON of enginesCache) {
-      // We renamed isBuiltin to isAppProvided in 1631898,
+      // We renamed isBuiltin to isAppProvided in bug 1631898,
       // keep checking isBuiltin for older settings.
       if (engineJSON._isAppProvided || engineJSON._isBuiltin) {
         ++skippedEngines;
@@ -2796,9 +2804,9 @@ export class SearchService {
         this.defaultPrivateEngine,
         lazy.SearchUtils.MODIFIED_TYPE.DEFAULT_PRIVATE
       );
-      // Also update the telemetry data.
-      this.#recordTelemetryData();
     }
+    // Update the telemetry data.
+    this.#recordTelemetryData();
   }
 
   #getEngineInfo(engine) {

@@ -19,7 +19,9 @@
 #include "js/RegExpFlags.h"  // JS::RegExpFlag, JS::RegExpFlags
 #include "util/StringBuffer.h"
 #include "util/Unicode.h"
+#include "vm/ErrorContext.h"
 #include "vm/JSContext.h"
+#include "vm/RegExpObject.h"
 #include "vm/RegExpStatics.h"
 #include "vm/SelfHosting.h"
 #include "vm/WellKnownAtom.h"  // js_*_str
@@ -345,7 +347,8 @@ static bool CheckPatternSyntaxSlow(JSContext* cx, Handle<JSAtom*> pattern,
   MainThreadErrorContext ec(cx);
   CompileOptions options(cx);
   frontend::DummyTokenStream dummyTokenStream(cx, &ec, options);
-  return irregexp::CheckPatternSyntax(cx, dummyTokenStream, pattern, flags);
+  return irregexp::CheckPatternSyntax(cx, cx->stackLimitForCurrentPrincipal(),
+                                      dummyTokenStream, pattern, flags);
 }
 
 static RegExpShared* CheckPatternSyntax(JSContext* cx, Handle<JSAtom*> pattern,

@@ -203,8 +203,8 @@ gImageView.getCellProperties = function(row, col) {
   var props = "";
   if (
     !checkProtocol(data) ||
-    item instanceof HTMLEmbedElement ||
-    (item instanceof HTMLObjectElement && !item.type.startsWith("image/"))
+    HTMLEmbedElement.isInstance(item) ||
+    (HTMLObjectElement.isInstance(item) && !item.type.startsWith("image/"))
   ) {
     props += "broken";
   }
@@ -720,9 +720,9 @@ function saveMedia() {
     if (url) {
       var titleKey = "SaveImageTitle";
 
-      if (item instanceof HTMLVideoElement) {
+      if (HTMLVideoElement.isInstance(item)) {
         titleKey = "SaveVideoTitle";
-      } else if (item instanceof HTMLAudioElement) {
+      } else if (HTMLAudioElement.isInstance(item)) {
         titleKey = "SaveAudioTitle";
       }
 
@@ -833,17 +833,17 @@ function onImageSelect() {
     previewBox.collapsed = true;
     mediaSaveBox.collapsed = true;
     splitter.collapsed = true;
-    tree.flex = 1;
+    tree.setAttribute("flex", "1");
   } else if (count > 1) {
     splitter.collapsed = true;
     previewBox.collapsed = true;
     mediaSaveBox.collapsed = false;
-    tree.flex = 1;
+    tree.setAttribute("flex", "1");
   } else {
     mediaSaveBox.collapsed = true;
     splitter.collapsed = false;
     previewBox.collapsed = false;
-    tree.flex = 0;
+    tree.setAttribute("flex", "0");
     makePreview(getSelectedRows(tree)[0]);
   }
 }

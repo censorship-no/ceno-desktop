@@ -23,7 +23,7 @@ namespace mozilla::dom {
 
 LazyLogModule gSenderLog("RTCRtpSender");
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(RTCRtpSender)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(RTCRtpSender)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(RTCRtpSender)
   // We do not do anything here, we wait for BreakCycles to be called
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
@@ -32,7 +32,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(RTCRtpSender)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow, mPc, mSenderTrack, mTransceiver,
                                     mStreams, mDtmf)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(RTCRtpSender)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(RTCRtpSender)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(RTCRtpSender)
@@ -258,14 +257,11 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal() {
                 remote.mRoundTripTime.Construct(
                     static_cast<double>(audioStats->rtt_ms) / 1000.0);
               }
-              /*
-               * Potential new stats that are now available upstream.
               remote.mFractionLost.Construct(audioStats->fraction_lost);
               remote.mTotalRoundTripTime.Construct(
                   double(aReportBlockData.sum_rtt_ms()) / 1000);
               remote.mRoundTripTimeMeasurements.Construct(
                   aReportBlockData.num_rtts());
-               */
               if (!report->mRemoteInboundRtpStreamStats.AppendElement(
                       std::move(remote), fallible)) {
                 mozalloc_handle_oom(0);
@@ -328,25 +324,23 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal() {
                   *streamStats->report_block_data;
               RTCRemoteInboundRtpStreamStats remote;
               remote.mJitter.Construct(
-                  static_cast<double>(streamStats->rtcp_stats.jitter) /
+                  static_cast<double>(rtcpReportData.report_block().jitter) /
                   webrtc::kVideoPayloadTypeFrequency);
               remote.mPacketsLost.Construct(
-                  streamStats->rtcp_stats.packets_lost);
+                  rtcpReportData.report_block().packets_lost);
               if (rtcpReportData.has_rtt()) {
                 remote.mRoundTripTime.Construct(
                     static_cast<double>(rtcpReportData.last_rtt_ms()) / 1000.0);
               }
               constructCommonRemoteInboundRtpStats(remote, rtcpReportData);
-              /*
-               * Potential new stats that are now available upstream.
               remote.mTotalRoundTripTime.Construct(
                   streamStats->report_block_data->sum_rtt_ms() / 1000.0);
               remote.mFractionLost.Construct(
-                  static_cast<float>(streamStats->rtcp_stats.fraction_lost) /
+                  static_cast<float>(
+                      rtcpReportData.report_block().fraction_lost) /
                   (1 << 8));
               remote.mRoundTripTimeMeasurements.Construct(
-                  streamStats->report_block_data.num_rtts());
-               */
+                  streamStats->report_block_data->num_rtts());
               if (!report->mRemoteInboundRtpStreamStats.AppendElement(
                       std::move(remote), fallible)) {
                 mozalloc_handle_oom(0);

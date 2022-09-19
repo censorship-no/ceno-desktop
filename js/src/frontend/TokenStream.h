@@ -211,13 +211,14 @@
 #include "js/UniquePtr.h"
 #include "js/Vector.h"
 #include "util/Unicode.h"
-#include "vm/ErrorContext.h"
 #include "vm/ErrorReporting.h"
 
 struct JS_PUBLIC_API JSContext;
 struct KeywordInfo;
 
 namespace js {
+
+class ErrorContext;
 
 namespace frontend {
 
@@ -904,7 +905,7 @@ class TokenStreamAnyChars : public TokenStreamShared {
    * 2) line-of-context-related fields and return true.  The caller *must*
    * fill in the line/column number; filling the line of context is optional.
    */
-  bool fillExceptingContext(ErrorMetadata* err, uint32_t offset);
+  bool fillExceptingContext(ErrorMetadata* err, uint32_t offset) const;
 
   MOZ_ALWAYS_INLINE void updateFlagsForEOL() { flags.isDirtyLine = false; }
 
@@ -1011,15 +1012,15 @@ class TokenStreamAnyChars : public TokenStreamShared {
   }
 
   // Compute error metadata for an error at no offset.
-  void computeErrorMetadataNoOffset(ErrorMetadata* err);
+  void computeErrorMetadataNoOffset(ErrorMetadata* err) const;
 
   // ErrorReporter API Helpers
 
   // Provide minimal set of error reporting API given we cannot use
   // ErrorReportMixin here. "report" prefix is added to avoid conflict with
   // ErrorReportMixin methods in TokenStream class.
-  void reportErrorNoOffset(unsigned errorNumber, ...);
-  void reportErrorNoOffsetVA(unsigned errorNumber, va_list* args);
+  void reportErrorNoOffset(unsigned errorNumber, ...) const;
+  void reportErrorNoOffsetVA(unsigned errorNumber, va_list* args) const;
 
   const JS::ReadOnlyCompileOptions& options() const { return options_; }
 
@@ -1501,7 +1502,7 @@ class SourceUnits {
                                            size_t encodingSpecificTokenOffset,
                                            size_t* utf16TokenOffset,
                                            size_t encodingSpecificWindowLength,
-                                           size_t* utf16WindowLength);
+                                           size_t* utf16WindowLength) const;
 };
 
 template <>
@@ -1568,6 +1569,7 @@ using CharBuffer = Vector<char16_t, 32>;
 class TokenStreamCharsShared {
  protected:
   JSContext* cx;
+  ErrorContext* ec;
 
   /**
    * Buffer transiently used to store sequences of identifier or string code
@@ -1580,8 +1582,9 @@ class TokenStreamCharsShared {
   ParserAtomsTable* parserAtoms;
 
  protected:
-  explicit TokenStreamCharsShared(JSContext* cx, ParserAtomsTable* parserAtoms)
-      : cx(cx), charBuffer(cx), parserAtoms(parserAtoms) {}
+  explicit TokenStreamCharsShared(JSContext* cx, ErrorContext* ec,
+                                  ParserAtomsTable* parserAtoms)
+      : cx(cx), ec(ec), charBuffer(cx), parserAtoms(parserAtoms) {}
 
   [[nodiscard]] bool copyCharBufferTo(
       JSContext* cx, UniquePtr<char16_t[], JS::FreePolicy>* destination);
@@ -1598,7 +1601,7 @@ class TokenStreamCharsShared {
 
   TaggedParserAtomIndex drainCharBufferIntoAtom() {
     // Add to parser atoms table.
-    auto atom = this->parserAtoms->internChar16(cx, charBuffer.begin(),
+    auto atom = this->parserAtoms->internChar16(ec, charBuffer.begin(),
                                                 charBuffer.length());
     charBuffer.clear();
     return atom;
@@ -1627,8 +1630,9 @@ class TokenStreamCharsBase : public TokenStreamCharsShared {
   // End of fields.
 
  protected:
-  TokenStreamCharsBase(JSContext* cx, ParserAtomsTable* parserAtoms,
-                       const Unit* units, size_t length, size_t startOffset);
+  TokenStreamCharsBase(JSContext* cx, ErrorContext* ec,
+                       ParserAtomsTable* parserAtoms, const Unit* units,
+                       size_t length, size_t startOffset);
 
   /**
    * Convert a non-EOF code unit returned by |getCodeUnit()| or
@@ -1701,7 +1705,8 @@ class TokenStreamCharsBase : public TokenStreamCharsShared {
    * This function is quite internal, and you probably should be calling one
    * of its existing callers instead.
    */
-  [[nodiscard]] bool addLineOfContext(ErrorMetadata* err, uint32_t offset);
+  [[nodiscard]] bool addLineOfContext(ErrorMetadata* err,
+                                      uint32_t offset) const;
 };
 
 template <>
@@ -1726,14 +1731,14 @@ template <>
 MOZ_ALWAYS_INLINE TaggedParserAtomIndex
 TokenStreamCharsBase<char16_t>::atomizeSourceChars(
     mozilla::Span<const char16_t> units) {
-  return this->parserAtoms->internChar16(cx, units.data(), units.size());
+  return this->parserAtoms->internChar16(ec, units.data(), units.size());
 }
 
 template <>
 /* static */ MOZ_ALWAYS_INLINE TaggedParserAtomIndex
 TokenStreamCharsBase<mozilla::Utf8Unit>::atomizeSourceChars(
     mozilla::Span<const mozilla::Utf8Unit> units) {
-  return this->parserAtoms->internUtf8(cx, units.data(), units.size());
+  return this->parserAtoms->internUtf8(ec, units.data(), units.size());
 }
 
 template <typename Unit>
@@ -1992,7 +1997,8 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
    * Return true if the caller can compute a line of context from the token
    * stream.  Otherwise return false.
    */
-  [[nodiscard]] bool fillExceptingContext(ErrorMetadata* err, uint32_t offset) {
+  [[nodiscard]] bool fillExceptingContext(ErrorMetadata* err,
+                                          uint32_t offset) const {
     if (anyCharsAccess().fillExceptingContext(err, offset)) {
       computeLineAndColumn(offset, &err->lineNumber, &err->columnNumber);
       return true;
@@ -2125,7 +2131,7 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
    * more readable.
    */
   [[nodiscard]] bool internalComputeLineOfContext(ErrorMetadata* err,
-                                                  uint32_t offset) {
+                                                  uint32_t offset) const {
     // We only have line-start information for the current line.  If the error
     // is on a different line, we can't easily provide context.  (This means
     // any error in a multi-line token, e.g. an unterminated multiline string
@@ -2491,7 +2497,8 @@ class MOZ_STACK_CLASS TokenStreamSpecific
   friend class TokenStreamPosition;
 
  public:
-  TokenStreamSpecific(JSContext* cx, ParserAtomsTable* parserAtoms,
+  TokenStreamSpecific(JSContext* cx, ErrorContext* ec,
+                      ParserAtomsTable* parserAtoms,
                       const JS::ReadOnlyCompileOptions& options,
                       const Unit* units, size_t length);
 
@@ -2518,16 +2525,6 @@ class MOZ_STACK_CLASS TokenStreamSpecific
  public:
   // Implement ErrorReporter.
 
-  void lineAndColumnAt(size_t offset, uint32_t* line,
-                       uint32_t* column) const final {
-    computeLineAndColumn(offset, line, column);
-  }
-
-  void currentLineAndColumn(uint32_t* line, uint32_t* column) const final {
-    computeLineAndColumn(anyCharsAccess().currentToken().pos.begin, line,
-                         column);
-  }
-
   bool isOnThisLine(size_t offset, uint32_t lineNum,
                     bool* onThisLine) const final {
     return anyCharsAccess().srcCoords.isOnThisLine(offset, lineNum, onThisLine);
@@ -2541,12 +2538,6 @@ class MOZ_STACK_CLASS TokenStreamSpecific
 
   uint32_t columnAt(size_t offset) const final {
     return computeColumn(anyCharsAccess().lineToken(offset), offset);
-  }
-
-  bool hasTokenizationStarted() const final;
-
-  const char* getFilename() const final {
-    return anyCharsAccess().getFilename();
   }
 
  private:
@@ -2568,7 +2559,7 @@ class MOZ_STACK_CLASS TokenStreamSpecific
   }
 
   [[nodiscard]] bool computeErrorMetadata(
-      ErrorMetadata* err, const ErrorOffset& errorOffset) override;
+      ErrorMetadata* err, const ErrorOffset& errorOffset) const override;
 
  private:
   void reportInvalidEscapeError(uint32_t offset, InvalidEscapeType type) {
@@ -2938,7 +2929,7 @@ class MOZ_STACK_CLASS TokenStream
               size_t length, StrictModeGetter* smg)
       : TokenStreamAnyChars(cx, ec, options, smg),
         TokenStreamSpecific<Unit, TokenStreamAnyCharsAccess>(
-            cx, parserAtoms, options, units, length) {}
+            cx, ec, parserAtoms, options, units, length) {}
 };
 
 class MOZ_STACK_CLASS DummyTokenStream final : public TokenStream {

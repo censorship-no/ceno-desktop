@@ -421,7 +421,7 @@ var ExtensionsUI = {
         return false;
       }
 
-      let popupOptions = {
+      let options = {
         hideClose: true,
         popupIconURL: icon || DEFAULT_EXTENSION_ICON,
         popupIconClass: icon ? "" : "addon-warning-icon",
@@ -454,14 +454,23 @@ var ExtensionsUI = {
         },
       ];
 
+      if (browser.ownerGlobal.gUnifiedExtensions.isEnabled) {
+        options.popupOptions = {
+          position: "bottomright topright",
+        };
+      }
+
       window.PopupNotifications.show(
         browser,
         "addon-webext-permissions",
         strings.header,
-        "addons-notification-icon",
+        browser.ownerGlobal.gUnifiedExtensions.getPopupAnchorID(
+          browser,
+          window
+        ),
         action,
         secondaryActions,
-        popupOptions
+        options
       );
     });
 
@@ -472,7 +481,7 @@ var ExtensionsUI = {
 
   showDefaultSearchPrompt(target, strings, icon) {
     return new Promise(resolve => {
-      let popupOptions = {
+      let options = {
         hideClose: true,
         popupIconURL: icon || DEFAULT_EXTENSION_ICON,
         persistent: true,
@@ -503,6 +512,7 @@ var ExtensionsUI = {
       ];
 
       let { browser, window } = getTabBrowser(target);
+
       window.PopupNotifications.show(
         browser,
         "addon-webext-defaultsearch",
@@ -510,7 +520,7 @@ var ExtensionsUI = {
         "addons-notification-icon",
         action,
         secondaryActions,
-        popupOptions
+        options
       );
     });
   },

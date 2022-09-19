@@ -350,7 +350,7 @@ nsresult RangeUpdater::SelAdjSplitNode(nsIContent& aOriginalContent,
 
 nsresult RangeUpdater::SelAdjJoinNodes(
     const EditorRawDOMPoint& aStartOfRightContent,
-    const nsIContent& aRemovedContent, uint32_t aOffsetOfRemovedContent,
+    const nsIContent& aRemovedContent, uint32_t aOffsetOfJoinedContent,
     JoinNodesDirection aJoinNodesDirection) {
   MOZ_ASSERT(aStartOfRightContent.IsSetAndValid());
 
@@ -366,14 +366,14 @@ nsresult RangeUpdater::SelAdjJoinNodes(
   auto AdjustDOMPoint = [&](nsCOMPtr<nsINode>& aContainer,
                             uint32_t& aOffset) -> void {
     if (aContainer == aStartOfRightContent.GetContainerParent()) {
-      // If the point is in common parent of joined content nodes and the
-      // point is after the removed point, decrease the offset.
-      if (aOffset > aOffsetOfRemovedContent) {
+      // If the point is in common parent of joined content nodes and it pointed
+      // after the right content node, decrease the offset.
+      if (aOffset > aOffsetOfJoinedContent) {
         aOffset--;
       }
-      // If it pointed the removed content node, move to start of right content
-      // which was moved from the removed content.
-      else if (aOffset == aOffsetOfRemovedContent) {
+      // If it pointed the right content node, adjust it to point ex-first
+      // content of the right node.
+      else if (aOffset == aOffsetOfJoinedContent) {
         aContainer = aStartOfRightContent.GetContainer();
         aOffset = aStartOfRightContent.Offset();
       }
@@ -532,30 +532,30 @@ void RangeUpdater::DidMoveNode(const nsINode& aOldParent, uint32_t aOldOffset,
     // Do nothing if moving nodes is occurred while changing the container.
     return;
   }
+  auto AdjustDOMPoint = [&](nsCOMPtr<nsINode>& aNode, uint32_t& aOffset) {
+    if (aNode == &aOldParent) {
+      // If previously pointed the moved content, it should keep pointing it.
+      if (aOffset == aOldOffset) {
+        aNode = const_cast<nsINode*>(&aNewParent);
+        aOffset = aNewOffset;
+      } else if (aOffset > aOldOffset) {
+        aOffset--;
+      }
+      return;
+    }
+    if (aNode == &aNewParent) {
+      if (aOffset > aNewOffset) {
+        aOffset++;
+      }
+    }
+  };
   for (RefPtr<RangeItem>& rangeItem : mArray) {
     if (NS_WARN_IF(!rangeItem)) {
       return;
     }
 
-    // like a delete in aOldParent
-    if (rangeItem->mStartContainer == &aOldParent &&
-        rangeItem->mStartOffset > aOldOffset) {
-      rangeItem->mStartOffset--;
-    }
-    if (rangeItem->mEndContainer == &aOldParent &&
-        rangeItem->mEndOffset > aOldOffset) {
-      rangeItem->mEndOffset--;
-    }
-
-    // and like an insert in aNewParent
-    if (rangeItem->mStartContainer == &aNewParent &&
-        rangeItem->mStartOffset > aNewOffset) {
-      rangeItem->mStartOffset++;
-    }
-    if (rangeItem->mEndContainer == &aNewParent &&
-        rangeItem->mEndOffset > aNewOffset) {
-      rangeItem->mEndOffset++;
-    }
+    AdjustDOMPoint(rangeItem->mStartContainer, rangeItem->mStartOffset);
+    AdjustDOMPoint(rangeItem->mEndContainer, rangeItem->mEndOffset);
   }
 }
 

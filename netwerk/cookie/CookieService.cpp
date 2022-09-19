@@ -8,6 +8,7 @@
 #include "CookieLogging.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ContentBlockingNotifier.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/Promise.h"
@@ -1236,6 +1237,18 @@ bool CookieService::CanSetCookie(
     return newCookie;
   }
 
+  if (!CheckHiddenPrefix(aCookieData)) {
+    COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, savedCookieHeader,
+                      "failed the CheckHiddenPrefix tests");
+    CookieLogging::LogMessageToConsole(
+        aCRC, aHostURI, nsIScriptError::warningFlag, CONSOLE_REJECTION_CATEGORY,
+        "CookieRejectedInvalidPrefix"_ns,
+        AutoTArray<nsString, 1>{
+            NS_ConvertUTF8toUTF16(aCookieData.name()),
+        });
+    return newCookie;
+  }
+
   // magic prefix checks. MUST be run after CheckDomain() and CheckPath()
   if (!CheckPrefixes(aCookieData, potentiallyTurstworthy)) {
     COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, savedCookieHeader,
@@ -1866,6 +1879,25 @@ bool CookieService::CheckDomain(CookieStruct& aCookieData, nsIURI* aHostURI,
   return true;
 }
 
+// static
+bool CookieService::CheckHiddenPrefix(CookieStruct& aCookieData) {
+  // If a cookie is nameless, then its value must not start with
+  // `__Host-` or `__Secure-`
+  if (!aCookieData.name().IsEmpty()) {
+    return true;
+  }
+
+  if (StringBeginsWith(aCookieData.value(), "__Host-"_ns)) {
+    return false;
+  }
+
+  if (StringBeginsWith(aCookieData.value(), "__Secure-"_ns)) {
+    return false;
+  }
+
+  return true;
+}
+
 namespace {
 nsAutoCString GetPathFromURI(nsIURI* aHostURI) {
   // strip down everything after the last slash to get the path,
@@ -1942,7 +1974,7 @@ bool CookieService::CheckPath(CookieStruct& aCookieData,
 // CheckPrefixes
 //
 // Reject cookies whose name starts with the magic prefixes from
-// https://tools.ietf.org/html/draft-ietf-httpbis-cookie-prefixes-00
+// https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis
 // if they do not meet the criteria required by the prefix.
 //
 // Must not be called until after CheckDomain() and CheckPath() have
@@ -2080,8 +2112,23 @@ CookieService::CookieExistsNative(const nsACString& aHost,
                                   const nsACString& aName,
                                   OriginAttributes* aOriginAttributes,
                                   bool* aFoundCookie) {
+  nsCOMPtr<nsICookie> cookie;
+  nsresult rv = GetCookieNative(aHost, aPath, aName, aOriginAttributes,
+                                getter_AddRefs(cookie));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  *aFoundCookie = cookie != nullptr;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP_(nsresult)
+CookieService::GetCookieNative(const nsACString& aHost, const nsACString& aPath,
+                               const nsACString& aName,
+                               OriginAttributes* aOriginAttributes,
+                               nsICookie** aCookie) {
   NS_ENSURE_ARG_POINTER(aOriginAttributes);
-  NS_ENSURE_ARG_POINTER(aFoundCookie);
+  NS_ENSURE_ARG_POINTER(aCookie);
 
   if (!IsInitialized()) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -2094,8 +2141,16 @@ CookieService::CookieExistsNative(const nsACString& aHost,
 
   CookieListIter iter{};
   CookieStorage* storage = PickStorage(*aOriginAttributes);
-  *aFoundCookie = storage->FindCookie(baseDomain, *aOriginAttributes, aHost,
-                                      aName, aPath, iter);
+  bool foundCookie = storage->FindCookie(baseDomain, *aOriginAttributes, aHost,
+                                         aName, aPath, iter);
+
+  if (foundCookie) {
+    RefPtr<Cookie> cookie = iter.Cookie();
+    NS_ENSURE_TRUE(cookie, NS_ERROR_NULL_POINTER);
+
+    cookie.forget(aCookie);
+  }
+
   return NS_OK;
 }
 

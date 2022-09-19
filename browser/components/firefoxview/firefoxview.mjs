@@ -4,11 +4,10 @@
 
 "use strict";
 
-import { showFeatureCallout } from "./featureCallout.mjs";
-
 window.addEventListener("DOMContentLoaded", () => {
+  Services.telemetry.setEventRecordingEnabled("firefoxview", true);
+  Services.telemetry.recordEvent("firefoxview", "entered", "firefoxview", null);
   document.getElementById("recently-closed-tabs-container").onLoad();
-  showFeatureCallout("FIREFOX_VIEW_FEATURE_TOUR");
 });
 
 window.addEventListener("unload", () => {

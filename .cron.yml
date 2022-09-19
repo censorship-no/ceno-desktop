@@ -29,8 +29,6 @@ jobs:
           - mozilla-central
       when:
           by-project:
-              # `l10n-bumper` job should have enough time to finish before this
-              # job runs
               mozilla-central: [{hour: 10, minute: 0}, {hour: 22, minute: 0}]
               # No default
 
@@ -231,6 +229,28 @@ jobs:
           - {weekday: 'Monday', hour: 8, minute: 0}
           - {weekday: 'Thursday', hour: 8, minute: 0}
 
+    - name: daily-beta-perf
+      job:
+          type: decision-task
+          treeherder-symbol: d-perf
+          target-tasks-method: daily_beta_perf
+          include-push-tasks: true
+      run-on-projects:
+          - mozilla-beta
+      when:
+          - {hour: 16, minute: 0}
+
+    - name: weekly-release-perf
+      job:
+          type: decision-task
+          treeherder-symbol: w-perf
+          target-tasks-method: weekly_release_perf
+          include-push-tasks: true
+      run-on-projects:
+          - mozilla-release
+      when:
+          - {weekday: 'Friday', hour: 16, minute: 0}
+
     - name: raptor-tp6m
       job:
           type: decision-task
@@ -277,12 +297,14 @@ jobs:
           treeherder-symbol: l10n-bump
           target-tasks-method: l10n_bump
       run-on-projects:
+          - autoland
           - mozilla-central
           - mozilla-beta
       when:
           by-project:
               # 3h15m before launch of `nightly-desktop`
-              mozilla-central: [{hour: 6, minute: 45}, {hour: 18, minute: 45}]
+              autoland: [{hour: 6, minute: 45}, {hour: 18, minute: 45}]
+              mozilla-central: []
               # 3h15m before launch of `daily-releases`
               mozilla-beta: [{hour: 18, minute: 45}]
               # No default

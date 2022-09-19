@@ -13,7 +13,7 @@ use crate::internal_pings::InternalPings;
 use crate::metrics::{self, ExperimentMetric, Metric, MetricType, PingType, RecordedExperiment};
 use crate::ping::PingMaker;
 use crate::storage::{StorageManager, INTERNAL_STORAGE};
-use crate::upload::{PingUploadManager, PingUploadTask, UploadResult};
+use crate::upload::{PingUploadManager, PingUploadTask, UploadResult, UploadTaskAction};
 use crate::util::{local_now_with_offset, sanitize_application_id};
 use crate::{
     scheduler, system, CommonMetricData, ErrorKind, InternalConfiguration, Lifetime, Result,
@@ -53,6 +53,9 @@ pub fn setup_glean(glean: Glean) -> Result<()> {
     Ok(())
 }
 
+/// Execute `f` passing the global Glean object.
+///
+/// Panics if the global Glean object has not been set.
 pub fn with_glean<F, R>(f: F) -> R
 where
     F: FnOnce(&Glean) -> R,
@@ -62,6 +65,9 @@ where
     f(&lock)
 }
 
+/// Execute `f` passing the global Glean object mutable.
+///
+/// Panics if the global Glean object has not been set.
 pub fn with_glean_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut Glean) -> R,
@@ -69,6 +75,19 @@ where
     let glean = global_glean().expect("Global Glean object not initialized");
     let mut lock = glean.lock().unwrap();
     f(&mut lock)
+}
+
+/// Execute `f` passing the global Glean object if it has been set.
+///
+/// Returns `None` if the global Glean object has not been set.
+/// Returns `Some(T)` otherwise.
+pub fn with_opt_glean<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&Glean) -> R,
+{
+    let glean = global_glean()?;
+    let lock = glean.lock().unwrap();
+    Some(f(&lock))
 }
 
 /// The object holding meta information about a Glean instance.
@@ -546,9 +565,13 @@ impl Glean {
     ///
     /// * `uuid` - The UUID of the ping in question.
     /// * `status` - The upload result.
-    pub fn process_ping_upload_response(&self, uuid: &str, status: UploadResult) {
+    pub fn process_ping_upload_response(
+        &self,
+        uuid: &str,
+        status: UploadResult,
+    ) -> UploadTaskAction {
         self.upload_manager
-            .process_ping_upload_response(self, uuid, status);
+            .process_ping_upload_response(self, uuid, status)
     }
 
     /// Takes a snapshot for the given store and optionally clear it.

@@ -217,6 +217,13 @@ def create_parser(mach_interface=False):
         help="What features to enable in the profiler",
     )
     add_arg(
+        "--extra-profiler-run",
+        dest="extra_profiler_run",
+        action="store_true",
+        default=False,
+        help="Run the tests again with profiler enabled after the main run.",
+    )
+    add_arg(
         "--symbolsPath",
         dest="symbols_path",
         help="Path to the symbols for the build we are testing",
@@ -567,16 +574,8 @@ def verify_options(parser, args):
             )
 
     if args.fission:
-        if args.app not in DESKTOP_APPS and not args.fission_mobile:
-            print(
-                "Fission is currently disabled by default in mobile, "
-                "use --enable-fission-mobile to enable it"
-            )
-            args.fission = False
-            args.extra_prefs.append("fission.autostart=false")
-        else:
-            print("Fission enabled through browser preferences")
-            args.extra_prefs.append("fission.autostart=true")
+        print("Fission enabled through browser preferences")
+        args.extra_prefs.append("fission.autostart=true")
     else:
         print("Fission disabled through browser preferences")
         args.extra_prefs.append("fission.autostart=false")

@@ -1120,51 +1120,6 @@ bool IonCacheIRCompiler::emitFrameIsConstructingResult() {
   MOZ_CRASH("Baseline-specific op");
 }
 
-bool IonCacheIRCompiler::emitLoadEnvironmentFixedSlotResult(
-    ObjOperandId objId, uint32_t offsetOffset) {
-  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
-  AutoOutputRegister output(*this);
-  Register obj = allocator.useRegister(masm, objId);
-  int32_t offset = int32StubField(offsetOffset);
-
-  FailurePath* failure;
-  if (!addFailurePath(&failure)) {
-    return false;
-  }
-
-  // Check for uninitialized lexicals.
-  Address slot(obj, offset);
-  masm.branchTestMagic(Assembler::Equal, slot, failure->label());
-
-  // Load the value.
-  masm.loadTypedOrValue(slot, output);
-  return true;
-}
-
-bool IonCacheIRCompiler::emitLoadEnvironmentDynamicSlotResult(
-    ObjOperandId objId, uint32_t offsetOffset) {
-  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
-  AutoOutputRegister output(*this);
-  Register obj = allocator.useRegister(masm, objId);
-  int32_t offset = int32StubField(offsetOffset);
-  AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
-
-  FailurePath* failure;
-  if (!addFailurePath(&failure)) {
-    return false;
-  }
-
-  masm.loadPtr(Address(obj, NativeObject::offsetOfSlots()), scratch);
-
-  // Check for uninitialized lexicals.
-  Address slot(scratch, offset);
-  masm.branchTestMagic(Assembler::Equal, slot, failure->label());
-
-  // Load the value.
-  masm.loadTypedOrValue(slot, output);
-  return true;
-}
-
 bool IonCacheIRCompiler::emitLoadConstantStringResult(uint32_t strOffset) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   MOZ_CRASH("not used in ion");
@@ -1364,7 +1319,8 @@ bool IonCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
   Register str = allocator.useRegister(masm, strId);
   Register index = allocator.useRegister(masm, indexId);
   AutoScratchRegisterMaybeOutput scratch1(allocator, masm, output);
-  AutoScratchRegister scratch2(allocator, masm);
+  AutoScratchRegisterMaybeOutputType scratch2(allocator, masm, output);
+  AutoScratchRegister scratch3(allocator, masm);
 
   FailurePath* failure;
   if (!addFailurePath(&failure)) {
@@ -1374,7 +1330,8 @@ bool IonCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
   // Bounds check, load string char.
   masm.spectreBoundsCheck32(index, Address(str, JSString::offsetOfLength()),
                             scratch1, failure->label());
-  masm.loadStringChar(str, index, scratch1, scratch2, failure->label());
+  masm.loadStringChar(str, index, scratch1, scratch2, scratch3,
+                      failure->label());
 
   // Load StaticString for this char. For larger code units perform a VM call.
   Label vmCall;
@@ -1397,6 +1354,7 @@ bool IonCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
                                  liveVolatileFloatRegs());
     volatileRegs.takeUnchecked(scratch1);
     volatileRegs.takeUnchecked(scratch2);
+    volatileRegs.takeUnchecked(scratch3);
     volatileRegs.takeUnchecked(output);
     masm.PushRegsInMask(volatileRegs);
 
@@ -1680,7 +1638,7 @@ bool IonCacheIRCompiler::emitMegamorphicSetElement(ObjOperandId objId,
 
   using Fn = bool (*)(JSContext*, HandleObject, HandleValue, HandleValue,
                       HandleValue, bool);
-  callVM<Fn, SetObjectElementWithReceiver>(masm);
+  callVM<Fn, SetElementMegamorphic>(masm);
   return true;
 }
 

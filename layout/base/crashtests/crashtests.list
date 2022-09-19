@@ -316,7 +316,7 @@ load 543648-1.html
 load 560447-1.html
 load 564063-1.html
 load 569018-1.html
-pref(layout.css.xul-display-values.content.enabled,true) load 570038-1.html
+load chrome://reftest/content/crashtests/layout/base/crashtests/570038-1.html
 load chrome://reftest/content/crashtests/layout/base/crashtests/572003.xhtml
 load 572582-1.xhtml
 load 576649-1.html
@@ -565,6 +565,7 @@ load 1729581.html
 load 1734007.html
 load 1745860.html
 pref(layout.accessiblecaret.enabled,true) load 1746989.html
+skip-if(Android) load 1747277-1.html
 load 1752649.html
 load 1753779.html
 pref(layout.css.backdrop-filter.enabled,true) load 1755790.html

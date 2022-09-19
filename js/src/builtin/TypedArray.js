@@ -1176,6 +1176,23 @@ function TypedArraySome(callbackfn /*, thisArg*/) {
 // Inlining this enables inlining of the callback function.
 SetIsInlinableLargeFunction(TypedArraySome);
 
+// To satisfy step 6.b from TypedArray SortCompare described in 23.2.3.29 the
+// user supplied comparefn is wrapped.
+function TypedArraySortCompare(comparefn) {
+  return function(x, y) {
+    // Step 6.b.i.
+    var v = +callContentFunction(comparefn, undefined, x, y);
+
+    // Step 6.b.ii.
+    if (v !== v) {
+      return 0;
+    }
+
+    // Step 6.b.iii.
+    return v;
+  };
+}
+
 // ES2019 draft rev 8a16cb8d18660a1106faae693f0f39b9f1a30748
 // 22.2.3.26 %TypedArray%.prototype.sort ( comparefn )
 function TypedArraySort(comparefn) {
@@ -1215,22 +1232,18 @@ function TypedArraySort(comparefn) {
     return TypedArrayNativeSort(obj);
   }
 
-  // To satisfy step 2 from TypedArray SortCompare described in 22.2.3.26
-  // the user supplied comparefn is wrapped.
-  var wrappedCompareFn = function(x, y) {
-    // Step a.
-    var v = +callContentFunction(comparefn, undefined, x, y);
+  // Steps 5-6.
+  var wrappedCompareFn = TypedArraySortCompare(comparefn);
 
-    // Step b.
-    if (v !== v) {
-      return 0;
-    }
+  // Step 7.
+  var sorted = MergeSortTypedArray(obj, len, wrappedCompareFn);
 
-    // Step c.
-    return v;
-  };
+  // Move the sorted elements into the array.
+  for (var i = 0; i < len; i++) {
+    obj[i] = sorted[i];
+  }
 
-  return MergeSortTypedArray(obj, len, wrappedCompareFn);
+  return obj;
 }
 
 // ES2017 draft rev f8a9be8ea4bd97237d176907a1e3080dce20c68f
@@ -1410,8 +1423,6 @@ function TypedArrayAt(index) {
     );
   }
   GetAttachedArrayBuffer(obj);
-
-  // If we got here, `this` is either a typed array or a wrapper for one.
 
   // Step 3.
   var len = TypedArrayLength(obj);
@@ -2048,14 +2059,13 @@ function SharedArrayBufferSlice(start, end) {
 // https://github.com/tc39/proposal-change-array-by-copy
 function TypedArrayCreateSameType(exemplar, length) {
   // Step 1. Assert: exemplar is an Object that has [[TypedArrayName]] and [[ContentType]] internal slots.
-  let contentType = GetTypedArrayKind(exemplar);
   assert(
-    contentType !== undefined,
+    IsPossiblyWrappedTypedArray(exemplar),
     "in TypedArrayCreateSameType, exemplar does not have a [[ContentType]] internal slot"
   );
 
   // Step 2. Let constructor be the intrinsic object listed in column one of Table 63 for exemplar.[[TypedArrayName]].
-  let constructor = GetTypedArrayConstructorFromKind(contentType);
+  let constructor = ConstructorForTypedArray(exemplar);
 
   // Step 4 omitted. Assert: result has [[TypedArrayName]] and [[ContentType]] internal slots. - guaranteed by the TypedArray implementation
   // Step 5 omitted. Assert: result.[[ContentType]] is exemplar.[[ContentType]]. - guaranteed by the typed array implementation
@@ -2077,6 +2087,8 @@ function TypedArrayToReversed() {
     );
   }
 
+  GetAttachedArrayBuffer(this);
+
   // Step 1. Let O be the this value.
   var O = this;
 
@@ -2096,23 +2108,11 @@ function TypedArrayToReversed() {
     // Step 5.c. Let fromValue be ! Get(O, from).
     var fromValue = O[from];
     // Step 5.d. Perform ! Set(A, k, kValue, true).
-    DefineDataProperty(A, k, fromValue);
+    A[k] = fromValue;
   }
 
   // Step 7. Return A.
   return A;
-}
-
-// ES2022 draft rev d03c1ec6e235a5180fa772b6178727c17974cb14
-// 10.4.5.9 IsValidIntegerIndex ( O, index )
-function isValidIntegerIndex(a, index) {
-  return (
-    !IsDetachedBuffer(ViewedArrayBufferIfReified(a)) &&
-    Number_isInteger(index) &&
-    !SameValue(index, -0) &&
-    index >= 0 &&
-    index < TypedArrayLength(a)
-  );
 }
 
 // https://github.com/tc39/proposal-change-array-by-copy
@@ -2129,63 +2129,72 @@ function TypedArrayWith(index, value) {
     );
   }
 
+  GetAttachedArrayBuffer(this);
+
   // Step 1. Let O be the this value.
-  let O = this;
+  var O = this;
 
   // Step 3. Let len be O.[[ArrayLength]].
-  let len = TypedArrayLength(O);
+  var len = TypedArrayLength(O);
 
   // Step 4. Let relativeIndex be ? ToIntegerOrInfinity(index).
-  let relativeIndex = ToInteger(index);
+  var relativeIndex = ToInteger(index);
 
-  // Step 5. If relativeIndex ≥ 0, let actualIndex be relativeIndex.
   var actualIndex;
   if (relativeIndex >= 0) {
+    // Step 5. If relativeIndex ≥ 0, let actualIndex be relativeIndex.
     actualIndex = relativeIndex;
   } else {
     // Step 6. Else, let actualIndex be len + relativeIndex.
     actualIndex = len + relativeIndex;
   }
 
-  // Step 7. If ! IsValidIntegerIndex(O, 𝔽(actualIndex)) is false, throw a RangeError exception.
-  /* This check is an inlined version of the IsValidIntegerIndex abstract operation. */
-  if (actualIndex >= len || actualIndex < 0) {
+  var kind = GetTypedArrayKind(O);
+  if (kind === TYPEDARRAY_KIND_BIGINT64 || kind === TYPEDARRAY_KIND_BIGUINT64) {
+    // Step 7. If O.[[ContentType]] is BigInt, set value to ? ToBigInt(value).
+    value = ToBigInt(value);
+  } else {
+    // Step 8. Else, set value to ? ToNumber(value).
+    value = ToNumber(value);
+  }
+
+  // Reload the array length in case the underlying buffer has been detached.
+  len = TypedArrayLength(O);
+  assert(
+    !IsDetachedBuffer(ViewedArrayBufferIfReified(O)) || len === 0,
+    "length is set to zero when the buffer has been detached"
+  );
+
+  // Step 9. If ! IsValidIntegerIndex(O, 𝔽(actualIndex)) is false, throw a RangeError exception.
+  // This check is an inlined version of the IsValidIntegerIndex abstract operation.
+  if (actualIndex < 0 || actualIndex >= len) {
     ThrowRangeError(JSMSG_BAD_INDEX);
   }
 
-  // Step 8. Let A be ? TypedArrayCreateSameType(O, « 𝔽(len) »).
+  // Step 10. Let A be ? TypedArrayCreateSameType(O, « 𝔽(len) »).
   var A = TypedArrayCreateSameType(O, len);
 
-  // Step 9. Let k be 0.
-  // Step 10. Repeat, while k < len,
+  // Step 11. Let k be 0.
+  // Step 12. Repeat, while k < len,
   for (var k = 0; k < len; k++) {
-    // Step 10.a. omitted - Let Pk be ! ToString(𝔽(k)).
+    // Step 12.a. omitted - Let Pk be ! ToString(𝔽(k)).
     // k coerced to String by property access
-    // Step 10.b. If k is actualIndex, then i. Perform ? Set(A, k, value, true).
-    /* Step 10.c. Else, i. Let fromValue be ! Get(O, k).
-     *                  ii. Perform ! Set(A, k, fromValue, true).
-     */
-    var fromValue = k == actualIndex ? value : O[k];
-    DefineDataProperty(A, k, fromValue);
+
+    // Step 12.b. If k is actualIndex, let fromValue be value.
+    // Step 12.c. Else, let fromValue be ! Get(O, Pk).
+    var fromValue = k === actualIndex ? value : O[k];
+
+    // Step 12.d. Perform ! Set(A, Pk, fromValue, true).
+    A[k] = fromValue;
   }
 
-  /* Step 11. */
+  // Step 13.
   return A;
 }
 
 // https://github.com/tc39/proposal-change-array-by-copy
 // TypedArray.prototype.toSorted()
 function TypedArrayToSorted(comparefn) {
-  // Step 3. Perform ? ValidateTypedArray(this)
-  if (!IsObject(this) || !IsTypedArray(this)) {
-    return callFunction(
-      CallTypedArrayMethodIfWrapped,
-      this,
-      "TypedArrayToSorted",
-      comparefn
-    );
-  }
-
   // Step 1. If comparefn is not undefined and IsCallable(comparefn) is false, throw a TypeError exception.
   if (comparefn !== undefined) {
     if (!IsCallable(comparefn)) {
@@ -2196,134 +2205,62 @@ function TypedArrayToSorted(comparefn) {
   // Step 2. Let O be the this value.
   var O = this;
 
+  // Step 3. Perform ? ValidateTypedArray(this).
+  var isTypedArray = IsTypedArrayEnsuringArrayBuffer(O);
+
   // Step 4. omitted.  Let buffer be obj.[[ViewedArrayBuffer]].
+  // FIXME: Draft spec not synched with https://github.com/tc39/ecma262/pull/2723
 
   // Step 5. Let len be O.[[ArrayLength]].
-  var len = TypedArrayLength(O);
-
-  // Step 6. Let A be ? TypedArrayCreateSameType(O, « 𝔽(len) »).
-  var A = TypedArrayCreateSameType(O, len);
-
-  /* Steps 7-11 not followed exactly; this implementation copies the list and then
-   * sorts the copy, rather than calling a sort method that copies the list and then
-   * copying the result again */
-  // Equivalent to steps 10-11
-  for (var k = 0; k < len; k++) {
-    A[k] = O[k];
-  }
-
-  // Equivalent to steps 8-9 and 12
-  return callFunction(
-    CallTypedArrayMethodIfWrapped,
-    A,
-    comparefn,
-    "TypedArraySort"
-  );
-}
-
-// https://github.com/tc39/proposal-change-array-by-copy
-// TypedArray.prototype.toSpliced()
-function TypedArrayToSpliced(start, deleteCount, ...items) {
-  // Step 2. Perform ? ValidateTypedArray(this)
-  if (!IsObject(this) || !IsTypedArray(this)) {
-    return callFunction(
+  var len;
+  if (isTypedArray) {
+    len = TypedArrayLength(O);
+  } else {
+    len = callFunction(
       CallTypedArrayMethodIfWrapped,
-      this,
-      "TypedArrayToSpliced",
-      start,
-      deleteCount,
-      items
+      O,
+      "TypedArrayLengthMethod"
     );
   }
 
-  // Step 1. Let O be ? ToObject(this value).
-  let O = this;
+  // Arrays with less than two elements remain unchanged when sorted.
+  if (len <= 1) {
+    // Step 6. Let A be ? TypedArrayCreateSameType(O, « 𝔽(len) »).
+    var A = TypedArrayCreateSameType(O, len);
 
-  // Step 3. Let len be ? LengthOfArrayLike(O)
-  let len = TypedArrayLength(O);
+    // Steps 7-11.
+    if (len > 0) {
+      A[0] = O[0];
+    }
 
-  // Step 4. Let relativeStart be ? ToIntegerOrInfinity(start)
-  let relativeStart = ToInteger(start);
-
-  // Step 5. If relativeStart is -∞, let actualStart be 0.
-  var actualStart;
-  if (!Global_isFinite(relativeStart) && relativeStart < 0) {
-    actualStart = 0;
-  } else if (relativeStart < 0) {
-    // Step 6. Else if relativeStart < 0, let actualStart be max(len + relativeStart, 0).
-    actualStart = std_Math_max(len + relativeStart, 0);
-  } else {
-    // Step 7. Else, let actualStart be min(relativeStart, len).
-    actualStart = std_Math_min(relativeStart, len);
+    // Step 12.
+    return A;
   }
 
-  // Step 8. Let insertCount be the number of elements in items.
-  let insertCount = items.length;
+  if (comparefn === undefined) {
+    // Step 6. Let A be ? TypedArrayCreateSameType(O, « 𝔽(len) »).
+    var A = TypedArrayCreateSameType(O, len);
 
-  var actualDeleteCount;
-  // Step 9. If start is not present, then let actualDeleteCount be 0.
-  if (arguments.length < 1) {
-    actualDeleteCount = 0;
-  } else if (arguments.length < 2) {
-    // Step 10. Else if deleteCount is not present, then let actualDeleteCount be len - actualStart.
-    actualDeleteCount = len - actualStart;
-  } else {
-    // Step 11.a. Else, let dc be ? ToIntegerOrInfinity(deleteCount)
-    var dc = ToInteger(deleteCount);
-    // Step 11.b. Let actualDeleteCount be the result of clamping dc between 0 and len - actualStart.
-    actualDeleteCount = std_Math_min(len - actualStart, std_Math_max(0, dc));
+    // Steps 7-11 not followed exactly; this implementation copies the list and then
+    // sorts the copy, rather than calling a sort method that copies the list and then
+    // copying the result again.
+
+    // Equivalent to steps 10-11.
+    for (var k = 0; k < len; k++) {
+      A[k] = O[k];
+    }
+
+    // Equivalent to steps 7-9 and 12.
+    return TypedArrayNativeSort(A);
   }
 
-  // Step 12. Let newLen be len + insertCount - actualDeleteCount.
-  let newLen = len + insertCount - actualDeleteCount;
+  // Steps 7-8.
+  var wrappedCompareFn = TypedArraySortCompare(comparefn);
 
-  // Step 13. Let A be ? TypedArrayCreateSameType(O, « 𝔽(newLen) »).
-  let A = TypedArrayCreateSameType(O, newLen);
-
-  // Step 14. Let i be 0.
-  var i = 0;
-
-  // Step 15. Let r be actualStart + actualDeleteCount.
-  var r = actualStart + actualDeleteCount;
-
-  // Step 16. Repeat, while i < actualStart,
-  // Copy all the items before actualStart
-  while (i < actualStart) {
-    // Step 16.a. omitted - Let Pi be ! ToString(𝔽(i)).
-    // i coerced to String by property access
-    // Step 16.b. Let iValue be ! Get(src, i)
-    var iValue = O[i];
-    // Step 16.c. Perform ! Set(target, i, iValue, true)
-    // Step 16.d. Set i to i + 1
-    DefineDataProperty(A, i++, iValue);
-  }
-
-  // Step 17. For each element E of items, do
-  // Copy all the new items.
-  for (var j = 0; j < insertCount; j++) {
-    // Step 17.a. omitted - Let Pi be ! ToString(𝔽(i)).
-    // i coerced to String by property access
-    // Step 17.b. Perform ? Set(A, i, E, true).
-    // Step 17.c. Set i to i + 1.
-    DefineDataProperty(A, i++, items[j]);
-  }
-
-  // Step 18. Repeat, while r < newLen,
-  // Copy all the items after the deleted / added items
-  while (i < newLen) {
-    // Step 18.a. omitted - Let Pi be ! ToString(𝔽(i)).
-    // i coerced to String by property access
-    // Step 18.b. omitted - Let from be ! ToString(𝔽(r)).
-    // r coerced to String by property access
-    // Step 18.c. Let fromValue be ! Get(O, r).
-    // Step 18.f. Set r to r + 1.
-    let fromValue = O[r++];
-    // Step 18.d. Perform ! Set(A, i, fromValue, true)
-    // Step 18.e. Set i to i + 1.
-    DefineDataProperty(A, i++, fromValue);
-  }
-
-  // Step 19. Return A.
-  return A;
+  // Steps 6 and 9-12.
+  //
+  // MergeSortTypedArray returns a sorted copy - exactly what we need to return.
+  return MergeSortTypedArray(O, len, wrappedCompareFn);
 }
+
 #endif

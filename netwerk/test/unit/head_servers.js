@@ -25,6 +25,7 @@ class BaseNodeHTTPServerCode {
     resp.setHeader("Content-Length", response.length);
     resp.writeHead(404);
     resp.end(response);
+    return undefined;
   }
 }
 
@@ -218,28 +219,48 @@ class BaseProxyCode {
       return;
     }
 
+    let url = new URL(req.url);
     const http = require("http");
-    http
-      .get(req.url, { method: req.method }, proxyresp => {
-        res.writeHead(
-          proxyresp.statusCode,
-          proxyresp.statusMessage,
-          proxyresp.headers
-        );
-        let rawData = "";
-        proxyresp.on("data", chunk => {
-          rawData += chunk;
-        });
-        proxyresp.on("end", () => {
-          res.end(rawData);
-        });
-      })
+    let preq = http
+      .request(
+        {
+          method: req.method,
+          path: url.pathname,
+          port: url.port,
+          host: url.hostname,
+          protocol: url.protocol,
+        },
+        proxyresp => {
+          res.writeHead(
+            proxyresp.statusCode,
+            proxyresp.statusMessage,
+            proxyresp.headers
+          );
+          let rawData = "";
+          proxyresp.on("data", chunk => {
+            rawData += chunk;
+          });
+          proxyresp.on("end", () => {
+            res.end(rawData);
+          });
+        }
+      )
       .on("error", e => {
         console.log(`sock err: ${e}`);
       });
+    if (req.method != "POST") {
+      preq.end();
+    } else {
+      req.on("data", chunk => preq.write(chunk));
+      req.on("end", () => preq.end());
+    }
   }
 
   static onConnect(req, clientSocket, head) {
+    if (global.connect_handler) {
+      global.connect_handler(req, clientSocket, head);
+      return;
+    }
     const net = require("net");
     // Connect to an origin server
     const { port, hostname } = new URL(`https://${req.url}`);
@@ -258,6 +279,10 @@ class BaseProxyCode {
         // The socket will error out when we kill the connection
         // just ignore it.
       });
+    clientSocket.on("error", e => {
+      // Sometimes we got ECONNRESET error on windows platform.
+      // Ignore it for now.
+    });
   }
 }
 
@@ -292,6 +317,10 @@ class BaseHTTPProxy extends BaseNodeServer {
   async stop() {
     this.unregisterFilter();
     await super.stop();
+  }
+
+  async registerConnectHandler(handler) {
+    return this.execute(`global.connect_handler = ${handler.toString()}`);
   }
 }
 
@@ -357,6 +386,7 @@ class NodeHTTPProxyServer extends BaseHTTPProxy {
     await this.execute(BaseProxyCode);
     await this.execute(HTTPProxyCode);
     await this.execute(ADB);
+    await this.execute(`global.connect_handler = null;`);
     this._port = await this.execute(`HTTPProxyCode.startServer(${port})`);
 
     this.registerFilter();
@@ -394,6 +424,7 @@ class NodeHTTPSProxyServer extends BaseHTTPProxy {
     await this.execute(BaseProxyCode);
     await this.execute(HTTPSProxyCode);
     await this.execute(ADB);
+    await this.execute(`global.connect_handler = null;`);
     this._port = await this.execute(`HTTPSProxyCode.startServer(${port})`);
 
     this.registerFilter();
@@ -411,6 +442,7 @@ class HTTP2ProxyCode {
     };
     const http2 = require("http2");
     global.proxy = http2.createSecureServer(options);
+    global.socketCounts = {};
     this.setupProxy();
 
     await global.proxy.listen(port);
@@ -427,27 +459,47 @@ class HTTP2ProxyCode {
     global.proxy.on("stream", (stream, headers) => {
       if (headers[":scheme"] === "http") {
         const http = require("http");
-        let url = `${headers[":scheme"]}://${headers[":authority"]}${headers[":path"]}`;
-        http
-          .get(url, { method: headers[":method"] }, proxyresp => {
-            let headers = Object.assign({}, proxyresp.headers);
-            // Filter out some prohibited headers.
-            ["connection", "transfer-encoding", "keep-alive"].forEach(prop => {
-              delete headers[prop];
-            });
-            stream.respond(
-              Object.assign({ ":status": proxyresp.statusCode }, headers)
-            );
-            proxyresp.on("data", chunk => {
-              stream.write(chunk);
-            });
-            proxyresp.on("end", () => {
-              stream.end();
-            });
-          })
+        let url = new URL(
+          `${headers[":scheme"]}://${headers[":authority"]}${headers[":path"]}`
+        );
+        let req = http
+          .request(
+            {
+              method: headers[":method"],
+              path: headers[":path"],
+              port: url.port,
+              host: url.hostname,
+              protocol: url.protocol,
+            },
+            proxyresp => {
+              let proxyheaders = Object.assign({}, proxyresp.headers);
+              // Filter out some prohibited headers.
+              ["connection", "transfer-encoding", "keep-alive"].forEach(
+                prop => {
+                  delete proxyheaders[prop];
+                }
+              );
+              stream.respond(
+                Object.assign({ ":status": proxyresp.statusCode }, proxyheaders)
+              );
+              proxyresp.on("data", chunk => {
+                stream.write(chunk);
+              });
+              proxyresp.on("end", () => {
+                stream.end();
+              });
+            }
+          )
           .on("error", e => {
             console.log(`sock err: ${e}`);
           });
+
+        if (headers[":method"] != "POST") {
+          req.end();
+        } else {
+          stream.on("data", chunk => req.write(chunk));
+          stream.on("end", () => req.end());
+        }
         return;
       }
       if (headers[":method"] !== "CONNECT") {
@@ -462,6 +514,8 @@ class HTTP2ProxyCode {
       const net = require("net");
       const socket = net.connect(port, "127.0.0.1", () => {
         try {
+          global.socketCounts[socket.remotePort] =
+            (global.socketCounts[socket.remotePort] || 0) + 1;
           stream.respond({ ":status": 200 });
           socket.pipe(stream);
           stream.pipe(socket);
@@ -473,18 +527,24 @@ class HTTP2ProxyCode {
       const http2 = require("http2");
       socket.on("error", error => {
         const status = error.errno == "ENOTFOUND" ? 404 : 502;
-        console.log(`responsing with http_code='${status}'`);
         try {
-          stream.respond({ ":status": status });
+          // If we already sent headers when the socket connected
+          // then sending the status again would throw.
+          if (!stream.sentHeaders) {
+            stream.respond({ ":status": status });
+          }
           stream.end();
         } catch (exception) {
           stream.close(http2.constants.NGHTTP2_CONNECT_ERROR);
         }
       });
+      stream.on("close", () => {
+        socket.end();
+      });
       socket.on("close", () => {
         stream.close();
       });
-      stream.on("close", () => {
+      stream.on("end", () => {
         socket.end();
       });
       stream.on("aborted", () => {
@@ -494,6 +554,10 @@ class HTTP2ProxyCode {
         console.log("RESPONSE STREAM ERROR", error);
       });
     });
+  }
+
+  static socketCount(port) {
+    return global.socketCounts[port];
   }
 }
 
@@ -508,9 +572,79 @@ class NodeHTTP2ProxyServer extends BaseHTTPProxy {
     await this.execute(BaseProxyCode);
     await this.execute(HTTP2ProxyCode);
     await this.execute(ADB);
+    await this.execute(`global.connect_handler = null;`);
     this._port = await this.execute(`HTTP2ProxyCode.startServer(${port})`);
 
     this.registerFilter();
+  }
+
+  async socketCount(port) {
+    let count = this.execute(`HTTP2ProxyCode.socketCount(${port})`);
+    return count;
+  }
+}
+
+// websocket server
+
+class NodeWebSocketServerCode extends BaseNodeHTTPServerCode {
+  static messageHandler(data) {
+    if (global.wsInputHandler) {
+      global.wsInputHandler(data);
+      return;
+    }
+
+    global.ws.send("test");
+  }
+
+  static async startServer(port) {
+    const fs = require("fs");
+    const options = {
+      key: fs.readFileSync(__dirname + "/http2-cert.key"),
+      cert: fs.readFileSync(__dirname + "/http2-cert.pem"),
+    };
+    const https = require("https");
+    global.server = https.createServer(
+      options,
+      BaseNodeHTTPServerCode.globalHandler
+    );
+
+    let node_ws_root = `${__dirname}/../node-ws`;
+    const WebSocket = require(`${node_ws_root}/lib/websocket`);
+    WebSocket.Server = require(`${node_ws_root}/lib/websocket-server`);
+    global.webSocketServer = new WebSocket.Server({ server: global.server });
+    global.webSocketServer.on("connection", function connection(ws) {
+      global.ws = ws;
+      ws.on("message", NodeWebSocketServerCode.messageHandler);
+    });
+
+    await global.server.listen(port);
+    let serverPort = global.server.address().port;
+    await ADB.forwardPort(serverPort);
+
+    return serverPort;
+  }
+}
+
+class NodeWebSocketServer extends BaseNodeServer {
+  _protocol = "wss";
+  /// Starts the server
+  /// @port - default 0
+  ///    when provided, will attempt to listen on that port.
+  async start(port = 0) {
+    this.processId = await NodeServer.fork();
+
+    await this.execute(BaseNodeHTTPServerCode);
+    await this.execute(NodeWebSocketServerCode);
+    await this.execute(ADB);
+    this._port = await this.execute(
+      `NodeWebSocketServerCode.startServer(${port})`
+    );
+    await this.execute(`global.path_handlers = {};`);
+    await this.execute(`global.wsInputHandler = null;`);
+  }
+
+  async registerMessageHandler(handler) {
+    return this.execute(`global.wsInputHandler = ${handler.toString()}`);
   }
 }
 

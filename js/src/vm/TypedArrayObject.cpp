@@ -7,7 +7,6 @@
 #include "vm/TypedArrayObject-inl.h"
 #include "vm/TypedArrayObject.h"
 
-#include "mozilla/Alignment.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/IntegerTypeTraits.h"
 #include "mozilla/PodOperations.h"
@@ -17,7 +16,6 @@
 #include <iterator>
 #include <limits>
 #include <numeric>
-#include <string>
 #include <string.h>
 #include <string_view>
 #if !defined(XP_WIN) && !defined(__wasi__)
@@ -30,9 +28,7 @@
 
 #include "builtin/Array.h"
 #include "builtin/DataViewObject.h"
-#include "builtin/TypedArrayConstants.h"
 #include "gc/Barrier.h"
-#include "gc/Marking.h"
 #include "gc/MaybeRooted.h"
 #include "jit/InlinableNatives.h"
 #include "js/Conversions.h"
@@ -48,7 +44,6 @@
 #include "vm/ArrayBufferObject.h"
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
 #include "vm/GlobalObject.h"
-#include "vm/Interpreter.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/PIC.h"
@@ -58,13 +53,10 @@
 #include "vm/WrapperObject.h"
 
 #include "gc/Nursery-inl.h"
-#include "gc/StoreBuffer-inl.h"
 #include "vm/ArrayBufferObject-inl.h"
 #include "vm/Compartment-inl.h"
 #include "vm/GeckoProfiler-inl.h"
-#include "vm/JSAtom-inl.h"
 #include "vm/NativeObject-inl.h"
-#include "vm/Shape-inl.h"
 
 using namespace js;
 
@@ -1026,20 +1018,6 @@ JS_FOR_EACH_TYPED_ARRAY(CREATE_TYPE_FOR_TYPED_ARRAY)
 
 } /* anonymous namespace */
 
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-JSObject* js::GetTypedArrayConstructorFromKind(JSContext* cx,
-                                               Scalar::Type type) {
-#  define TYPED_ARRAY_CONSTRUCTOR(_, T, N)                          \
-    if (type == Scalar::N) {                                        \
-      return N##Array::createConstructor(cx, N##Array::protoKey()); \
-    }
-  JS_FOR_EACH_TYPED_ARRAY(TYPED_ARRAY_CONSTRUCTOR)
-#  undef TYPED_ARRAY_CONSTRUCTOR
-
-  MOZ_CRASH("Unsupported TypedArray type");
-}
-#endif
-
 TypedArrayObject* js::NewTypedArrayWithTemplateAndLength(
     JSContext* cx, HandleObject templateObj, int32_t len) {
   MOZ_ASSERT(templateObj->is<TypedArrayObject>());
@@ -1893,36 +1871,24 @@ bool TypedArrayObject::copyWithin(JSContext* cx, unsigned argc, Value* vp) {
     JS_SELF_HOSTED_FN("toString", "ArrayToString", 0, 0),
     JS_SELF_HOSTED_FN("toLocaleString", "TypedArrayToLocaleString", 2, 0),
     JS_SELF_HOSTED_FN("at", "TypedArrayAt", 1, 0),
-    JS_FS_END};
-
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-const JSFunctionSpec changeArrayByCopyProtoFunctions[] = {
     JS_SELF_HOSTED_FN("toReversed", "TypedArrayToReversed", 0, 0),
     JS_SELF_HOSTED_FN("toSorted", "TypedArrayToSorted", 1, 0),
     JS_SELF_HOSTED_FN("with", "TypedArrayWith", 2, 0),
-    JS_SELF_HOSTED_FN("toSpliced", "TypedArrayToSpliced", 3, 0),
-
-    JS_FS_END};
 #endif
-
-static bool TypedArrayProtoFinish(JSContext* cx, JS::HandleObject ctor,
-                                  JS::HandleObject proto) {
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-  if (cx->options().changeArrayByCopy()) {
-    if (!js::DefineFunctions(cx, proto, changeArrayByCopyProtoFunctions)) {
-      return false;
-    }
-  }
-#endif
-  return true;
-}
+    JS_FS_END,
+};
 
 /* static */ const JSFunctionSpec TypedArrayObject::staticFunctions[] = {
     JS_SELF_HOSTED_FN("from", "TypedArrayStaticFrom", 3, 0),
-    JS_SELF_HOSTED_FN("of", "TypedArrayStaticOf", 0, 0), JS_FS_END};
+    JS_SELF_HOSTED_FN("of", "TypedArrayStaticOf", 0, 0),
+    JS_FS_END,
+};
 
 /* static */ const JSPropertySpec TypedArrayObject::staticProperties[] = {
-    JS_SELF_HOSTED_SYM_GET(species, "$TypedArraySpecies", 0), JS_PS_END};
+    JS_SELF_HOSTED_SYM_GET(species, "$TypedArraySpecies", 0),
+    JS_PS_END,
+};
 
 static JSObject* CreateSharedTypedArrayPrototype(JSContext* cx,
                                                  JSProtoKey key) {
@@ -1937,12 +1903,16 @@ static const ClassSpec TypedArrayObjectSharedTypedArrayPrototypeClassSpec = {
     TypedArrayObject::staticProperties,
     TypedArrayObject::protoFunctions,
     TypedArrayObject::protoAccessors,
-    TypedArrayProtoFinish,
-    ClassSpec::DontDefineConstructor};
+    nullptr,
+    ClassSpec::DontDefineConstructor,
+};
 
 /* static */ const JSClass TypedArrayObject::sharedTypedArrayPrototypeClass = {
-    "TypedArrayPrototype", JSCLASS_HAS_CACHED_PROTO(JSProto_TypedArray),
-    JS_NULL_CLASS_OPS, &TypedArrayObjectSharedTypedArrayPrototypeClassSpec};
+    "TypedArrayPrototype",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_TypedArray),
+    JS_NULL_CLASS_OPS,
+    &TypedArrayObjectSharedTypedArrayPrototypeClassSpec,
+};
 
 namespace {
 

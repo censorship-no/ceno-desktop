@@ -729,6 +729,10 @@ bool MacOSFontEntry::SupportsOpenTypeFeature(Script aScript, uint32_t aFeatureTa
     if (!cgFont) {
       return mHasAATSmallCaps;
     }
+
+    CrashReporter::AutoAnnotateCrashReport autoFontName(CrashReporter::Annotation::FontName,
+                                                        FamilyName());
+
     AutoCFRelease<CTFontRef> ctFont = CTFontCreateWithGraphicsFont(cgFont, 0.0, nullptr, nullptr);
     if (ctFont) {
       AutoCFRelease<CFArrayRef> features = CTFontCopyFeatures(ctFont);
@@ -1717,6 +1721,9 @@ gfxFontEntry* gfxMacPlatformFontList::LookupLocalFont(nsPresContext* aPresContex
 
   nsAutoreleasePool localPool;
 
+  CrashReporter::AutoAnnotateCrashReport autoFontName(CrashReporter::Annotation::FontName,
+                                                      aFontName);
+
   NSString* faceName = GetNSStringForString(NS_ConvertUTF8toUTF16(aFontName));
 
   // lookup face based on postscript or full name
@@ -1781,6 +1788,9 @@ gfxFontEntry* gfxMacPlatformFontList::MakePlatformFont(const nsACString& aFontNa
   if (NS_FAILED(rv)) {
     return nullptr;
   }
+
+  CrashReporter::AutoAnnotateCrashReport autoFontName(CrashReporter::Annotation::FontName,
+                                                      aFontName);
 
   AutoCFRelease<CGDataProviderRef> provider =
       ::CGDataProviderCreateWithData(nullptr, aFontData, aLength, &ReleaseData);
@@ -1896,8 +1906,8 @@ void gfxMacPlatformFontList::LookupSystemFont(LookAndFeel::FontID aSystemFontID,
 // used to load system-wide font info on off-main thread
 class MacFontInfo final : public FontInfoData {
  public:
-  MacFontInfo(bool aLoadOtherNames, bool aLoadFaceNames, bool aLoadCmaps)
-      : FontInfoData(aLoadOtherNames, aLoadFaceNames, aLoadCmaps) {}
+  MacFontInfo(bool aLoadOtherNames, bool aLoadFaceNames, bool aLoadCmaps, RecursiveMutex& aLock)
+      : FontInfoData(aLoadOtherNames, aLoadFaceNames, aLoadCmaps), mLock(aLock) {}
 
   virtual ~MacFontInfo() = default;
 
@@ -1908,11 +1918,18 @@ class MacFontInfo final : public FontInfoData {
 
   // loads font data for all members of a given family
   virtual void LoadFontFamilyData(const nsACString& aFamilyName);
+
+  RecursiveMutex& mLock;
 };
 
 void MacFontInfo::LoadFontFamilyData(const nsACString& aFamilyName) {
   CrashReporter::AutoAnnotateCrashReport autoFontName(CrashReporter::Annotation::FontName,
                                                       aFamilyName);
+  // Prevent this from running concurrently with CGFont operations on the main thread,
+  // because the macOS font cache is fragile with concurrent access. This appears to be
+  // a vulnerability within CoreText in versions of macOS before macOS 13. In time, we
+  // can remove this lock.
+  RecursiveMutexAutoLock lock(mLock);
 
   // family name ==> CTFontDescriptor
   NSString* famName = GetNSStringForString(NS_ConvertUTF8toUTF16(aFamilyName));
@@ -2006,7 +2023,7 @@ already_AddRefed<FontInfoData> gfxMacPlatformFontList::CreateFontInfoData() {
       !UsesSystemFallback() || gfxPlatform::GetPlatform()->UseCmapsDuringSystemFallback();
 
   mLock.AssertCurrentThreadIn();
-  RefPtr<MacFontInfo> fi = new MacFontInfo(true, NeedFullnamePostscriptNames(), loadCmaps);
+  RefPtr<MacFontInfo> fi = new MacFontInfo(true, NeedFullnamePostscriptNames(), loadCmaps, mLock);
   return fi.forget();
 }
 
@@ -2029,8 +2046,10 @@ void gfxMacPlatformFontList::GetFacesInitDataForFamily(const fontlist::Family* a
                                                        bool aLoadCmaps) const {
   nsAutoreleasePool localPool;
 
-  NS_ConvertUTF8toUTF16 name(aFamily->Key().AsString(SharedFontList()));
-  NSString* family = GetNSStringForString(name);
+  auto name = aFamily->Key().AsString(SharedFontList());
+  NSString* family = GetNSStringForString(NS_ConvertUTF8toUTF16(name));
+
+  CrashReporter::AutoAnnotateCrashReport autoFontName(CrashReporter::Annotation::FontName, name);
 
   // returns an array of [psname, style name, weight, traits] elements, goofy api
   NSArray* fontfaces = [sFontManager availableMembersOfFontFamily:family];

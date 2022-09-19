@@ -2748,7 +2748,7 @@ class nsIFrame : public nsQueryFrame {
    * Utility function for ComputeAutoSize implementations.  Return
    * max(GetMinISize(), min(aISizeInCB, GetPrefISize()))
    */
-  nscoord ShrinkWidthToFit(gfxContext* aRenderingContext, nscoord aISizeInCB,
+  nscoord ShrinkISizeToFit(gfxContext* aRenderingContext, nscoord aISizeInCB,
                            mozilla::ComputeSizeFlags aFlags);
 
  public:
@@ -3146,15 +3146,30 @@ class nsIFrame : public nsQueryFrame {
   bool IsContentDisabled() const;
 
   /**
-   * Whether the content is hidden via the `content-visibilty` property.
+   * Whether this frame hides its contents via the `content-visibility`
+   * property.
    */
-  bool IsContentHidden() const;
+  bool HidesContent() const;
+
+  /**
+   * Whether this frame hides its contents via the `content-visibility`
+   * property, while doing layout. This might be true when `HidesContent()` is
+   * true in the case that hidden content is being forced to lay out by position
+   * or size queries from script.
+   */
+  bool HidesContentForLayout() const;
 
   /**
    * Returns true if this frame is entirely hidden due the `content-visibility`
    * property on an ancestor.
    */
-  bool AncestorHidesContent() const;
+  bool IsHiddenByContentVisibilityOnAnyAncestor() const;
+
+  /**
+   * Returns true is this frame is hidden by its first unskipped in flow
+   * ancestor due to `content-visibility`.
+   */
+  bool IsHiddenByContentVisibilityOfInFlowParentForLayout() const;
 
   /**
    * Get the "type" of the frame.
@@ -3317,6 +3332,12 @@ class nsIFrame : public nsQueryFrame {
    * subclasses.
    */
   bool IsBlockFrameOrSubclass() const;
+
+  /**
+   * Returns true if the frame is an instance of nsImageFrame or one of its
+   * subclasses.
+   */
+  bool IsImageFrameOrSubclass() const;
 
   /**
    * Returns true if the frame is an instance of SVGGeometryFrame or one
@@ -3967,12 +3988,14 @@ class nsIFrame : public nsQueryFrame {
     }
   }
 
-  Maybe<nscoord> ContainIntrinsicBSize() const {
-    return StyleDisplay()->GetContainSizeAxes().ContainIntrinsicBSize(*this);
+  Maybe<nscoord> ContainIntrinsicBSize(nscoord aNoneValue = 0) const {
+    return StyleDisplay()->GetContainSizeAxes().ContainIntrinsicBSize(
+        *this, aNoneValue);
   }
 
-  Maybe<nscoord> ContainIntrinsicISize() const {
-    return StyleDisplay()->GetContainSizeAxes().ContainIntrinsicISize(*this);
+  Maybe<nscoord> ContainIntrinsicISize(nscoord aNoneValue = 0) const {
+    return StyleDisplay()->GetContainSizeAxes().ContainIntrinsicISize(
+        *this, aNoneValue);
   }
 
  protected:
@@ -4263,13 +4286,7 @@ class nsIFrame : public nsQueryFrame {
    */
   virtual nsSize GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState);
 
-  /**
-   * This returns the minimum size for the scroll area if this frame is
-   * being scrolled. Usually it's (0,0).
-   */
-  virtual nsSize GetXULMinSizeForScrollArea(nsBoxLayoutState& aBoxLayoutState);
-
-  virtual nscoord GetXULFlex();
+  virtual int32_t GetXULFlex();
   virtual nscoord GetXULBoxAscent(nsBoxLayoutState& aBoxLayoutState);
   virtual bool IsXULCollapsed();
   // This does not alter the overflow area. If the caller is changing
@@ -4314,7 +4331,7 @@ class nsIFrame : public nsQueryFrame {
                             bool& aHeightSet);
   static bool AddXULMaxSize(nsIFrame* aBox, nsSize& aSize, bool& aWidth,
                             bool& aHeightSet);
-  static bool AddXULFlex(nsIFrame* aBox, nscoord& aFlex);
+  static int32_t ComputeXULFlex(nsIFrame* aBox);
 
   void AddXULBorderAndPadding(nsSize& aSize);
 
@@ -4965,6 +4982,15 @@ class nsIFrame : public nsQueryFrame {
    * Copies aWM to mWritingMode on 'this' and all its ancestors.
    */
   inline void PropagateWritingModeToSelfAndAncestors(mozilla::WritingMode aWM);
+
+  /**
+   * Observes or unobserves the element with an internal ResizeObserver,
+   * depending on whether it needs to update its last remembered size.
+   * Also removes a previously stored last remembered size if the element
+   * can no longer have it.
+   * @see {@link https://drafts.csswg.org/css-sizing-4/#last-remembered}
+   */
+  void HandleLastRememberedSize();
 
  protected:
   static void DestroyAnonymousContent(nsPresContext* aPresContext,

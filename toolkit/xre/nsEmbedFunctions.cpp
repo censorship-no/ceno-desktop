@@ -5,7 +5,6 @@
 #include "mozilla/DebugOnly.h"
 
 #include "nsXULAppAPI.h"
-#include "mozmemory.h"
 
 #include <stdlib.h>
 #if defined(MOZ_WIDGET_GTK)
@@ -152,12 +151,10 @@ using mozilla::gmp::GMPProcessChild;
 using mozilla::ipc::TestShellCommandParent;
 using mozilla::ipc::TestShellParent;
 
-using mozilla::startup::sChildProcessType;
-
 namespace mozilla::_ipdltest {
 // Set in IPDLUnitTest.cpp when running gtests.
 UniquePtr<mozilla::ipc::ProcessChild> (*gMakeIPDLUnitTestProcessChild)(
-    base::ProcessId) = nullptr;
+    base::ProcessId, const nsID&) = nullptr;
 }  // namespace mozilla::_ipdltest
 
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
@@ -268,16 +265,6 @@ void XRE_SetAndroidChildFds(JNIEnv* env, const XRE_AndroidChildFds& fds) {
 
 void XRE_SetProcessType(const char* aProcessTypeString) {
   SetGeckoProcessType(aProcessTypeString);
-
-#ifdef MOZ_MEMORY
-  // For the parent process, we're probably willing to accept an apparent
-  // lockup in preference to a crash. Always stall and retry.
-  //
-  // For child processes, an obvious OOM-crash may be preferable to slow
-  // performance. Retry at most once per process, then give up.
-  mozjemalloc_experiment_set_always_stall(sChildProcessType ==
-                                          GeckoProcessType_Default);
-#endif
 }
 
 #if defined(XP_WIN)
@@ -553,6 +540,16 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   base::ProcessId parentPID = strtol(parentPIDString, &end, 10);
   MOZ_ASSERT(!*end, "invalid parent PID");
 
+  // They also get the initial message channel ID passed in the same manner.
+  const char* const messageChannelIdString = aArgv[aArgc - 1];
+  MOZ_ASSERT(messageChannelIdString, "NULL MessageChannel Id");
+  --aArgc;
+
+  nsID messageChannelId{};
+  if (!messageChannelId.Parse(messageChannelIdString)) {
+    return NS_ERROR_FAILURE;
+  }
+
 #if defined(XP_WIN)
   // On Win7+, when not running as an MSIX package, register the application
   // user model id passed in by parent. This ensures windows created by the
@@ -649,44 +646,50 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
 
         case GeckoProcessType_Content:
           ioInterposerGuard.emplace();
-          process = MakeUnique<ContentProcess>(parentPID);
+          process = MakeUnique<ContentProcess>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_IPDLUnitTest:
           MOZ_RELEASE_ASSERT(mozilla::_ipdltest::gMakeIPDLUnitTestProcessChild,
                              "xul-gtest not loaded!");
-          process =
-              mozilla::_ipdltest::gMakeIPDLUnitTestProcessChild(parentPID);
+          process = mozilla::_ipdltest::gMakeIPDLUnitTestProcessChild(
+              parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_GMPlugin:
-          process = MakeUnique<gmp::GMPProcessChild>(parentPID);
+          process =
+              MakeUnique<gmp::GMPProcessChild>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_GPU:
-          process = MakeUnique<gfx::GPUProcessImpl>(parentPID);
+          process =
+              MakeUnique<gfx::GPUProcessImpl>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_VR:
-          process = MakeUnique<gfx::VRProcessChild>(parentPID);
+          process =
+              MakeUnique<gfx::VRProcessChild>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_RDD:
-          process = MakeUnique<RDDProcessImpl>(parentPID);
+          process = MakeUnique<RDDProcessImpl>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_Socket:
           ioInterposerGuard.emplace();
-          process = MakeUnique<net::SocketProcessImpl>(parentPID);
+          process =
+              MakeUnique<net::SocketProcessImpl>(parentPID, messageChannelId);
           break;
 
         case GeckoProcessType_Utility:
-          process = MakeUnique<ipc::UtilityProcessImpl>(parentPID);
+          process =
+              MakeUnique<ipc::UtilityProcessImpl>(parentPID, messageChannelId);
           break;
 
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
         case GeckoProcessType_RemoteSandboxBroker:
-          process = MakeUnique<RemoteSandboxBrokerProcessChild>(parentPID);
+          process = MakeUnique<RemoteSandboxBrokerProcessChild>(
+              parentPID, messageChannelId);
           break;
 #endif
 
@@ -750,7 +753,7 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
 }
 
 MessageLoop* XRE_GetIOMessageLoop() {
-  if (sChildProcessType == GeckoProcessType_Default) {
+  if (GetGeckoProcessType() == GeckoProcessType_Default) {
     return BrowserProcessSubThread::GetMessageLoop(BrowserProcessSubThread::IO);
   }
   return IOThreadChild::message_loop();

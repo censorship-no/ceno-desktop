@@ -7,19 +7,12 @@
 ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 var { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
-let prefs;
 let h2Port;
 let h3Port;
-let listen;
 
-const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
-  Ci.nsIDNSService
-);
 const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"
 ].getService(Ci.nsICertOverrideService);
-
-const defaultOriginAttributes = {};
 
 function setup() {
   let env = Cc["@mozilla.org/process/environment;1"].getService(
@@ -52,16 +45,6 @@ registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.dns.localDomains");
   Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
 });
-
-function makeChan(url) {
-  let chan = NetUtil.newChannel({
-    uri: url,
-    loadUsingSystemPrincipal: true,
-    contentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
-  }).QueryInterface(Ci.nsIHttpChannel);
-  chan.loadFlags = Ci.nsIChannel.LOAD_INITIAL_DOCUMENT_URI;
-  return chan;
-}
 
 function makeChan(url) {
   let chan = NetUtil.newChannel({
@@ -124,6 +107,7 @@ add_task(async function testH3CoalescingWithSpeculativeConnection() {
 add_task(async function testH3CoalescingWithoutSpeculativeConnection() {
   Services.prefs.setIntPref("network.http.speculative-parallel-limit", 0);
   Services.obs.notifyObservers(null, "net:cancel-all-connections");
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
   await new Promise(resolve => setTimeout(resolve, 1000));
   await H3CoalescingTest("baz.h3_coalescing.org", "qux.h3_coalescing.org");
 });

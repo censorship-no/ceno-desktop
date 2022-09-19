@@ -88,10 +88,23 @@ button,
 checkbox,
 menulist,
 radiogroup,
+richlistbox,
 tree,
 browser,
 editor,
-iframe {
+iframe,
+label:is(.text-link, [onclick]),
+tab[selected="true"]:not([ignorefocus="true"]) {
+  -moz-user-focus: normal;
+}
+
+/* Avoid losing focus on tabs by keeping them focusable, since some browser
+ * tests rely on this.
+ *
+ * TODO(emilio): Remove this and fix the tests / front-end code:
+ *  * browser/base/content/test/general/browser_tabfocus.js
+ */
+tab:focus {
   -moz-user-focus: normal;
 }
 
@@ -116,10 +129,6 @@ label {
 
 description {
   display: flow-root;
-}
-
-label.text-link, label[onclick] {
-  -moz-user-focus: normal;
 }
 
 label html|span.accesskey {
@@ -150,11 +159,17 @@ iframe {
   display: inline;
 }
 
-@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
-  browser,
-  editor,
-  iframe {
-    display: block;
+@media (-moz-box-flexbox-emulation) {
+  *|*:root {
+    -moz-box-layout: flex;
+  }
+}
+
+@media not (-moz-box-flexbox-emulation) {
+  /* These elements create nsButtonBoxFrame, so force legacy layout in
+   * descendants for now. Bug 1790920 is the real fix. */
+  thumb, radio, checkbox, button, scrollbarbutton, treecolpicker {
+    -moz-box-layout: legacy;
   }
 }
 
@@ -165,6 +180,7 @@ browser {
   justify-self: stretch;
   min-height: 0;
   min-width: 0;
+  contain: size;
 }
 
 /*********** popup notification ************/
@@ -406,8 +422,6 @@ treechildren {
 
 tree {
   -moz-box-orient: vertical;
-  width: 10px;
-  height: 10px;
 }
 
 tree[hidecolumnpicker="true"] treecolpicker {
@@ -473,10 +487,6 @@ tab {
   -moz-box-pack: center;
 }
 
-tab[selected="true"]:not([ignorefocus="true"]) {
-  -moz-user-focus: normal;
-}
-
 tabpanels {
   display: -moz-deck;
 }
@@ -510,19 +520,12 @@ search-textbox {
   resize: none;
 }
 
-@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
-  html|*.textbox-input {
-    /* Be block-level, so that -moz-box-flex can take effect, when we are an item
-       in a -moz-box being emulated by modified modern flex. */
-    display: block;
-  }
-}
-
 /********** autocomplete textbox **********/
 
 .autocomplete-richlistbox {
   -moz-user-focus: ignore;
   overflow-x: hidden !important;
+  -moz-box-flex: 1;
 }
 
 .autocomplete-richlistitem {
@@ -622,7 +625,6 @@ wizardpage {
 /********** Rich Listbox ********/
 
 richlistbox {
-  -moz-user-focus: normal;
   -moz-box-orient: vertical;
 }
 
@@ -654,22 +656,5 @@ button, image {
 [pack="center"] { -moz-box-pack: center !important; }
 [pack="end"] { -moz-box-pack: end !important; }
 
-@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
-  /* This isn't a real solution for [flex] and [ordinal], but it covers enough
-     cases to render the browser chrome for us to test emulated flex mode without
-     mass-changing existing markup and CSS.
-     If we get attr() in Bug 435426 this could  work for all cases. */
-  [flex="1"] { -moz-box-flex: 1; }
-  [flex="2"] { -moz-box-flex: 2; }
-  [flex="3"] { -moz-box-flex: 3; }
-  [flex="4"] { -moz-box-flex: 4; }
-  [flex="5"] { -moz-box-flex: 5; }
-  [flex="6"] { -moz-box-flex: 6; }
-  [flex="7"] { -moz-box-flex: 7; }
-  [flex="8"] { -moz-box-flex: 8; }
-  [flex="9"] { -moz-box-flex: 9; }
-  [flex="100"] { -moz-box-flex: 100; }
-  [flex="400"] { -moz-box-flex: 400; }
-  [flex="1000"] { -moz-box-flex: 1000; }
-  [flex="10000"] { -moz-box-flex: 10000; }
-}
+[flex="0"] { -moz-box-flex: 0 !important; }
+[flex="1"] { -moz-box-flex: 1 !important; }

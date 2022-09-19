@@ -108,7 +108,6 @@ class ProviderQuickSuggest extends UrlbarProvider {
   constructor(...args) {
     super(...args);
 
-    lazy.UrlbarQuickSuggest.init();
     lazy.UrlbarQuickSuggest.on("config-set", () =>
       this._validateImpressionStats()
     );
@@ -871,7 +870,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
 
     // Get the endpoint URL. It's empty by default when running tests so they
     // don't hit the network.
-    let endpointString = lazy.UrlbarPrefs.get("merino.endpointURL");
+    let endpointString = lazy.UrlbarPrefs.get("merinoEndpointURL");
     if (!endpointString) {
       return null;
     }
@@ -888,6 +887,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
       MERINO_PARAMS.SEQUENCE_NUMBER,
       this._merinoSequenceNumber
     );
+    this._merinoSequenceNumber++;
 
     let clientVariants = lazy.UrlbarPrefs.get("merino.clientVariants");
     if (clientVariants) {
@@ -955,15 +955,6 @@ class ProviderQuickSuggest extends UrlbarProvider {
           response = await fetch(url, { signal: controller.signal });
           TelemetryStopwatch.finish(TELEMETRY_MERINO_LATENCY, queryContext);
           maybeRecordResponse(response.ok ? "success" : "http_error");
-
-          // Increment the sequence number only after the fetch successfully
-          // completes. It should not be incremented if the fetch is aborted or
-          // fails due to a network error. The server should not see gaps in
-          // sequence numbers for searches it never received. In particular, as
-          // the user quickly types a search string and we start a search after
-          // each new character, some of those searches may cancel previous ones
-          // before their fetches complete or even start.
-          this._merinoSequenceNumber++;
         } catch (error) {
           TelemetryStopwatch.cancel(TELEMETRY_MERINO_LATENCY, queryContext);
           if (error.name != "AbortError") {

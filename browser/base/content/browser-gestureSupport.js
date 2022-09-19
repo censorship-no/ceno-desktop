@@ -428,7 +428,24 @@ var gGestureSupport = {
    *        The direction for the swipe event
    */
   processSwipeEvent: function GS_processSwipeEvent(aEvent, aDir) {
-    this._doAction(aEvent, ["swipe", aDir.toLowerCase()]);
+    let dir = aDir.toLowerCase();
+    // This is a bit of a hack. Ideally we would like our pref names to not
+    // associate a direction (eg left) with a history action (eg back), and
+    // instead name them something like HistoryLeft/Right and then intercept
+    // that in this file and turn it into the back or forward command, but
+    // that involves sending whether we are in LTR or not into _doAction and
+    // _getCommand and then having them recognize that these command needs to
+    // be interpreted differently for rtl/ltr (but not other commands), which
+    // seems more brittle (have to keep all the places in sync) and more code.
+    // So we'll just live with presenting the wrong semantics in the prefs.
+    if (!gHistorySwipeAnimation.isLTR) {
+      if (dir == "right") {
+        dir = "left";
+      } else if (dir == "left") {
+        dir = "right";
+      }
+    }
+    this._doAction(aEvent, ["swipe", dir]);
   },
 
   /**
@@ -484,7 +501,7 @@ var gGestureSupport = {
    *        The MozRotateGestureUpdate event triggering this call
    */
   rotate(aEvent) {
-    if (!(window.content.document instanceof ImageDocument)) {
+    if (!ImageDocument.isInstance(window.content.document)) {
       return;
     }
 
@@ -506,7 +523,7 @@ var gGestureSupport = {
    * Perform a rotation end for ImageDocuments
    */
   rotateEnd() {
-    if (!(window.content.document instanceof ImageDocument)) {
+    if (!ImageDocument.isInstance(window.content.document)) {
       return;
     }
 
@@ -590,7 +607,7 @@ var gGestureSupport = {
       return;
     }
 
-    if (!(window.content.document instanceof ImageDocument)) {
+    if (!ImageDocument.isInstance(window.content.document)) {
       return;
     }
 
@@ -620,7 +637,7 @@ var gGestureSupport = {
   _clearCompleteRotation() {
     let contentElement =
       window.content.document &&
-      window.content.document instanceof ImageDocument &&
+      ImageDocument.isInstance(window.content.document) &&
       window.content.document.body &&
       window.content.document.body.firstElementChild;
     if (!contentElement) {

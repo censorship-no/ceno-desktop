@@ -63,7 +63,7 @@ class nsBoxFrame : public nsContainerFrame {
   virtual nsSize GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) override;
   virtual nsSize GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) override;
   virtual nsSize GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) override;
-  virtual nscoord GetXULFlex() override;
+  virtual int32_t GetXULFlex() override;
   virtual nscoord GetXULBoxAscent(nsBoxLayoutState& aBoxLayoutState) override;
   virtual Valignment GetXULVAlign() const override { return mValign; }
   virtual Halignment GetXULHAlign() const override { return mHalign; }
@@ -97,8 +97,6 @@ class nsBoxFrame : public nsContainerFrame {
                             const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
-
-  virtual nsContainerFrame* GetContentInsertionFrame() override;
 
   virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
@@ -146,11 +144,6 @@ class nsBoxFrame : public nsContainerFrame {
   void WrapListsInRedirector(nsDisplayListBuilder* aBuilder,
                              const nsDisplayListSet& aIn,
                              const nsDisplayListSet& aOut);
-
-  /**
-   * Return our wrapper block, if any.
-   */
-  void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
 
   // Gets a next / prev sibling accounting for ordinal group. Slow, please avoid
   // usage if possible.

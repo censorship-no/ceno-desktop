@@ -9,7 +9,6 @@
  */
 
 const { Ci } = require("chrome");
-const Services = require("Services");
 
 loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
 loader.lazyRequireGetter(
@@ -64,7 +63,6 @@ class ActorReadyGeckoProfilerInterface {
         "stackwalk",
         "cpu",
         "responsiveness",
-        "leaf",
       ],
       threads: options.threads || ["GeckoMain", "Compositor"],
       activeTabID: RecordingUtils.getActiveBrowserID(),

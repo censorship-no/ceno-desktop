@@ -180,8 +180,9 @@ pref("dom.keyboardevent.keypress.hack.use_legacy_keycode_and_charcode.addl", "")
 // explanation for the detail.
 pref("dom.mouseevent.click.hack.use_legacy_non-primary_dispatch", "");
 
-// Enable experimental text recognition features for supported OSes.
-pref("dom.text-recognition.enabled", false);
+// Text recognition is a platform dependent feature, so even if this preference is
+// enabled here, the feature may not be visible in all browsers.
+pref("dom.text-recognition.enabled", true);
 
 // Fastback caching - if this pref is negative, then we calculate the number
 // of content viewers to cache based on the amount of available memory.
@@ -220,11 +221,7 @@ pref("browser.triple_click_selects_paragraph", true);
 pref("pdfjs.annotationMode", 2);
 
 // Enable editing in the PDF viewer.
-#ifdef EARLY_BETA_OR_EARLIER
-  pref("pdfjs.annotationEditorMode", 0);
-#else
-  pref("pdfjs.annotationEditorMode", -1);
-#endif
+pref("pdfjs.annotationEditorMode", 0);
 
 // Enable JavaScript support in the PDF viewer.
 pref("pdfjs.enableScripting", true);
@@ -298,6 +295,7 @@ pref("media.videocontrols.picture-in-picture.video-toggle.position", "right");
 pref("media.videocontrols.picture-in-picture.video-toggle.has-used", false);
 pref("media.videocontrols.picture-in-picture.display-text-tracks.toggle.enabled", true);
 pref("media.videocontrols.picture-in-picture.display-text-tracks.size", "medium");
+pref("media.videocontrols.picture-in-picture.improved-video-controls.enabled", false);
 pref("media.videocontrols.keyboard-tab-to-all-controls", true);
 
 #ifdef MOZ_WEBRTC
@@ -687,16 +685,16 @@ pref("toolkit.telemetry.debugSlowSql", false);
 // Whether to use the unified telemetry behavior, requires a restart.
 pref("toolkit.telemetry.unified", true);
 // AsyncShutdown delay before crashing in case of shutdown freeze
-#if !defined(MOZ_ASAN) && !defined(MOZ_TSAN)
-  pref("toolkit.asyncshutdown.crash_timeout", 60000); // 1 minute
+// ASan, TSan and code coverage builds can be considerably slower. Extend the
+// grace period for both the asyncshutdown and the terminator.
+#if defined(MOZ_ASAN)
+  pref("toolkit.asyncshutdown.crash_timeout", 300000); // 5 minutes
+#elif defined(MOZ_TSAN)
+  pref("toolkit.asyncshutdown.crash_timeout", 360000); // 6 minutes
+#elif defined(MOZ_CODE_COVERAGE)
+  pref("toolkit.asyncshutdown.crash_timeout", 180000); // 3 minutes
 #else
-  // ASan and TSan builds can be considerably slower. Extend the grace period
-  // of both asyncshutdown and the terminator.
-  #if defined(MOZ_TSAN)
-    pref("toolkit.asyncshutdown.crash_timeout", 360000); // 6 minutes
-  #else
-    pref("toolkit.asyncshutdown.crash_timeout", 300000); // 5 minutes
-  #endif
+  pref("toolkit.asyncshutdown.crash_timeout", 60000); // 1 minute
 #endif // !defined(MOZ_ASAN) && !defined(MOZ_TSAN)
 // Extra logging for AsyncShutdown barriers and phases
 pref("toolkit.asyncshutdown.log", false);
@@ -1046,7 +1044,7 @@ pref("javascript.options.mem.gc_low_frequency_heap_growth", 150);
 pref("javascript.options.mem.gc_balanced_heap_limits", false);
 
 // JSGC_HEAP_GROWTH_FACTOR
-pref("javascript.options.mem.gc_heap_growth_factor", 40);
+pref("javascript.options.mem.gc_heap_growth_factor", 50);
 
 // JSGC_ALLOCATION_THRESHOLD
 pref("javascript.options.mem.gc_allocation_threshold_mb", 27);
@@ -1079,9 +1077,6 @@ pref("javascript.options.shared_memory", true);
 
 pref("javascript.options.throw_on_debuggee_would_run", false);
 pref("javascript.options.dump_stack_on_debuggee_would_run", false);
-
-// Dynamic module import.
-pref("javascript.options.dynamicImport", true);
 
 // advanced prefs
 pref("image.animation_mode",                "normal");
@@ -2074,9 +2069,16 @@ pref("extensions.blocklist.addonItemURL", "https://addons.mozilla.org/%LOCALE%/%
 // blocking them.
 pref("extensions.blocklist.level", 2);
 // Whether event pages should be enabled for "manifest_version: 2" extensions.
-pref("extensions.eventPages.enabled", false);
+pref("extensions.eventPages.enabled", true);
+// Whether MV3 restrictions for actions popup urls should be extended to MV2 extensions
+// (only allowing same extension urls to be used as action popup urls).
+pref("extensions.manifestV2.actionsPopupURLRestricted", false);
 // Whether "manifest_version: 3" extensions should be allowed to install successfully.
-pref("extensions.manifestV3.enabled", false);
+#ifdef EARLY_BETA_OR_EARLIER
+  pref("extensions.manifestV3.enabled", true);
+#else
+  pref("extensions.manifestV3.enabled", false);
+#endif
 // Whether to enable the unified extensions feature.
 pref("extensions.unifiedExtensions.enabled", false);
 
@@ -3451,7 +3453,6 @@ pref("signon.includeOtherSubdomainsInLookup",     true);
 // This temporarily prevents the primary password to reprompt for autocomplete.
 pref("signon.masterPasswordReprompt.timeout_ms", 900000); // 15 Minutes
 pref("signon.showAutoCompleteFooter",             false);
-pref("signon.showAutoCompleteOrigins",            true);
 
 // Satchel (Form Manager) prefs
 pref("browser.formfill.debug",            false);
@@ -3476,13 +3477,6 @@ pref("toolkit.zoomManager.zoomValues", ".3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.7,2
 // by ImageAcceptHeader() in nsHttpHandler.cpp. If set, this pref overrides it.
 // There is also network.http.accept which works in scope of document.
 pref("image.http.accept", "");
-
-//
-// Image memory management prefs
-//
-
-pref("webgl.renderer-string-override", "");
-pref("webgl.vendor-string-override", "");
 
 // sendbuffer of 0 means use OS default, sendbuffer unset means use
 // gecko default which varies depending on windows version and is OS
@@ -3615,10 +3609,10 @@ pref("extensions.webcompat-reporter.newIssueEndpoint", "https://webcompat.com/is
 #endif
 
 // Add-on content security policies.
-pref("extensions.webextensions.base-content-security-policy", "script-src 'self' https://* http://localhost:* http://127.0.0.1:* moz-extension: blob: filesystem: 'unsafe-eval' 'wasm-unsafe-eval' 'unsafe-inline'; object-src 'self' moz-extension: blob: filesystem:;");
-pref("extensions.webextensions.base-content-security-policy.v3", "script-src 'self' 'wasm-unsafe-eval' http://localhost:* http://127.0.0.1:*; object-src 'self';");
-pref("extensions.webextensions.default-content-security-policy", "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';");
-pref("extensions.webextensions.default-content-security-policy.v3", "script-src 'self'; object-src 'self';");
+pref("extensions.webextensions.base-content-security-policy", "script-src 'self' https://* http://localhost:* http://127.0.0.1:* moz-extension: blob: filesystem: 'unsafe-eval' 'wasm-unsafe-eval' 'unsafe-inline';");
+pref("extensions.webextensions.base-content-security-policy.v3", "script-src 'self' 'wasm-unsafe-eval';");
+pref("extensions.webextensions.default-content-security-policy", "script-src 'self' 'wasm-unsafe-eval';");
+pref("extensions.webextensions.default-content-security-policy.v3", "script-src 'self';");
 
 
 pref("network.buffer.cache.count", 24);
@@ -3903,7 +3897,7 @@ pref("browser.search.log", false);
 pref("browser.search.update", true);
 pref("browser.search.suggest.enabled", true);
 pref("browser.search.suggest.enabled.private", false);
-pref("browser.search.separatePrivateDefault", false);
+pref("browser.search.separatePrivateDefault", true);
 pref("browser.search.separatePrivateDefault.ui.enabled", false);
 pref("browser.search.removeEngineInfobar.enabled", true);
 
@@ -4401,6 +4395,26 @@ pref("extensions.formautofill.creditCards.hideui", false);
 // 2:Fathom in c++ implementation
 pref("extensions.formautofill.creditCards.heuristics.mode", 2);
 pref("extensions.formautofill.creditCards.heuristics.confidenceThreshold", "0.5");
+
+// Confidence threshold hold to determin whether a credit card form is valid when
+// the form only contains a credit card number field.
+#ifdef EARLY_BETA_OR_EARLIER
+// Set the credit card number only confidence threshold to the same value as the default
+// confidence threshold. This means as long as a form contains a cc-number fieild, we consider it
+// as a valid credit card form.
+pref("extensions.formautofill.creditCards.heuristics.numberOnly.confidenceThreshold", "0.5");
+#else
+pref("extensions.formautofill.creditCards.heuristics.numberOnly.confidenceThreshold", "0.95");
+#endif
+
+// When enabled, a credit card form with cc-name and cc-exp fields is considered as a valid credit
+// card form, regardless of the existence of a cc-number field
+#ifdef NIGHTLY_BUILD
+pref("extensions.formautofill.creditCards.heuristics.nameExpirySection.enabled", true);
+#else
+pref("extensions.formautofill.creditCards.heuristics.nameExpirySection.enabled", false);
+#endif
+
 // Pref for shield/heartbeat to recognize users who have used Credit Card
 // Autofill. The valid values can be:
 // 0: none
@@ -4417,3 +4431,15 @@ pref("extensions.formautofill.loglevel", "Warn");
 pref("toolkit.osKeyStore.loglevel", "Warn");
 
 pref("extensions.formautofill.supportRTL", false);
+
+// Controls the log level for CookieBannerListService.jsm.
+pref("cookiebanners.listService.logLevel", "Error");
+
+// Contorls the log level for Cookie Banner Auto Clicking.
+pref("cookiebanners.bannerClicking.logLevel", "Error");
+
+// Array of test rules for cookie banner handling as a JSON string. They will be
+// inserted in addition to regular rules and may override them when setting the
+// same domain. Every array item should be a valid CookieBannerRule. See
+// CookieBannerRule.schema.json.
+pref("cookiebanners.listService.testRules", "[]");

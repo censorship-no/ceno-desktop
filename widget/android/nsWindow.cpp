@@ -38,6 +38,7 @@
 #include "WidgetUtils.h"
 #include "WindowRenderer.h"
 
+#include "mozilla/EventForwards.h"
 #include "nsAppShell.h"
 #include "nsContentUtils.h"
 #include "nsFocusManager.h"
@@ -397,7 +398,7 @@ class NPZCSupport final
       return INPUT_RESULT_IGNORED;
     }
 
-    PostInputEvent([input, result](nsWindow* window) {
+    PostInputEvent([input = std::move(input), result](nsWindow* window) {
       WidgetWheelEvent wheelEvent = input.ToWidgetEvent(window);
       window->ProcessUntransformedAPZEvent(&wheelEvent, result);
     });
@@ -574,7 +575,7 @@ class NPZCSupport final
       return INPUT_RESULT_IGNORED;
     }
 
-    PostInputEvent([input, result](nsWindow* window) {
+    PostInputEvent([input = std::move(input), result](nsWindow* window) {
       WidgetMouseEvent mouseEvent = input.ToWidgetEvent(window);
       window->ProcessUntransformedAPZEvent(&mouseEvent, result);
     });
@@ -845,43 +846,37 @@ class NPZCSupport final
     }
 
     // Dispatch APZ input event on Gecko thread.
-    PostInputEvent([aInput, result](nsWindow* window) {
-      WidgetTouchEvent touchEvent = aInput.ToWidgetEvent(window);
+    PostInputEvent([input = std::move(aInput), result](nsWindow* window) {
+      WidgetTouchEvent touchEvent = input.ToWidgetEvent(window);
       window->ProcessUntransformedAPZEvent(&touchEvent, result);
       window->DispatchHitTest(touchEvent);
     });
 
+    if (result.GetStatus() == nsEventStatus_eIgnore) {
+      if (aReturnResult) {
+        aReturnResult->Complete(java::PanZoomController::InputResultDetail::New(
+            INPUT_RESULT_UNHANDLED,
+            java::PanZoomController::SCROLLABLE_FLAG_NONE,
+            java::PanZoomController::OVERSCROLL_FLAG_NONE));
+      }
+      return;
+    }
+
+    MOZ_ASSERT(result.GetStatus() == nsEventStatus_eConsumeDoDefault);
+
     if (aReturnResult && result.GetHandledResult() != Nothing()) {
       // We know conclusively that the root APZ handled this or not and
       // don't need to do any more work.
-      switch (result.GetStatus()) {
-        case nsEventStatus_eIgnore:
-          aReturnResult->Complete(
-              java::PanZoomController::InputResultDetail::New(
-                  INPUT_RESULT_UNHANDLED,
-                  java::PanZoomController::SCROLLABLE_FLAG_NONE,
-                  java::PanZoomController::OVERSCROLL_FLAG_NONE));
-          break;
-        case nsEventStatus_eConsumeDoDefault:
-          aReturnResult->Complete(
-              ConvertAPZHandledResult(result.GetHandledResult().value()));
-          break;
-        default:
-          MOZ_ASSERT_UNREACHABLE("Unexpected nsEventStatus");
-          aReturnResult->Complete(
-              java::PanZoomController::InputResultDetail::New(
-                  INPUT_RESULT_UNHANDLED,
-                  java::PanZoomController::SCROLLABLE_FLAG_NONE,
-                  java::PanZoomController::OVERSCROLL_FLAG_NONE));
-          break;
-      }
+      aReturnResult->Complete(
+          ConvertAPZHandledResult(result.GetHandledResult().value()));
     }
   }
 };
 
 NS_IMPL_ISUPPORTS(AndroidView, nsIAndroidEventDispatcher, nsIAndroidView)
 
-nsresult AndroidView::GetInitData(JSContext* aCx, JS::MutableHandleValue aOut) {
+nsresult AndroidView::GetInitData(JSContext* aCx,
+                                  JS::MutableHandle<JS::Value> aOut) {
   if (!mInitData) {
     aOut.setNull();
     return NS_OK;

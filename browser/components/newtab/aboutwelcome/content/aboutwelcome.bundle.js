@@ -41,7 +41,9 @@ const AboutWelcomeUtils = {
   },
 
   sendImpressionTelemetry(messageId, context) {
-    window.AWSendEventTelemetry({
+    var _window$AWSendEventTe, _window;
+
+    (_window$AWSendEventTe = (_window = window).AWSendEventTelemetry) === null || _window$AWSendEventTe === void 0 ? void 0 : _window$AWSendEventTe.call(_window, {
       event: "IMPRESSION",
       event_context: { ...context,
         page
@@ -51,6 +53,8 @@ const AboutWelcomeUtils = {
   },
 
   sendActionTelemetry(messageId, elementId, eventName = "CLICK_BUTTON") {
+    var _window$AWSendEventTe2, _window2;
+
     const ping = {
       event: eventName,
       event_context: {
@@ -59,7 +63,7 @@ const AboutWelcomeUtils = {
       },
       message_id: messageId
     };
-    window.AWSendEventTelemetry(ping);
+    (_window$AWSendEventTe2 = (_window2 = window).AWSendEventTelemetry) === null || _window$AWSendEventTe2 === void 0 ? void 0 : _window$AWSendEventTe2.call(_window2, ping);
   },
 
   async fetchFlowParams(metricsFlowUri) {
@@ -173,7 +177,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(3);
 /* harmony import */ var _MultiStageProtonScreen__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(6);
 /* harmony import */ var _LanguageSwitcher__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(10);
-/* harmony import */ var _asrouter_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(11);
+/* harmony import */ var _asrouter_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(13);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -189,17 +193,19 @@ const MultiStageAboutWelcome = props => {
   let {
     screens
   } = props;
-  const [index, setScreenIndex] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(0);
+  const [index, setScreenIndex] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(props.startScreen);
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
-    // Send impression ping when respective screen first renders
+    const screenInitials = screens.map(({
+      id
+    }) => {
+      var _id$split$;
+
+      return id === null || id === void 0 ? void 0 : (_id$split$ = id.split("_")[1]) === null || _id$split$ === void 0 ? void 0 : _id$split$[0];
+    }).join(""); // Send impression ping when respective screen first renders
+
     screens.forEach((screen, order) => {
       if (index === order) {
-        _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendImpressionTelemetry(`${props.message_id}_${order}_${screen.id}`);
-      } // For feature callouts, send an update when a new screen will render
-
-
-      if (window.AWNewScreen) {
-        window.AWNewScreen(index);
+        _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendImpressionTelemetry(`${props.message_id}_${order}_${screen.id}_${screenInitials}`);
       }
     }); // Remember that a new screen has loaded for browser navigation
 
@@ -288,8 +294,10 @@ const MultiStageAboutWelcome = props => {
   const [topSites, setTopSites] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]);
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
     (async () => {
-      let DEFAULT_SITES = await window.AWGetDefaultSites();
-      const importable = JSON.parse(await window.AWGetImportableSites());
+      var _window$AWGetDefaultS, _window, _window$AWGetImportab, _window2;
+
+      let DEFAULT_SITES = await ((_window$AWGetDefaultS = (_window = window).AWGetDefaultSites) === null || _window$AWGetDefaultS === void 0 ? void 0 : _window$AWGetDefaultS.call(_window));
+      const importable = JSON.parse((await ((_window$AWGetImportab = (_window2 = window).AWGetImportableSites) === null || _window$AWGetImportab === void 0 ? void 0 : _window$AWGetImportab.call(_window2))) || "[]");
       const showImportable = useImportable && importable.length >= 5;
 
       if (!importTelemetrySent.current) {
@@ -347,6 +355,7 @@ const MultiStageAboutWelcome = props => {
       activeTheme: activeTheme,
       initialTheme: initialTheme,
       setActiveTheme: setActiveTheme,
+      setInitialTheme: setInitialTheme,
       autoAdvance: screen.auto_advance,
       negotiatedLanguage: negotiatedLanguage,
       langPackInstallPhase: langPackInstallPhase
@@ -354,7 +363,10 @@ const MultiStageAboutWelcome = props => {
   })));
 };
 const SecondaryCTA = props => {
+  var _props$content$second;
+
   let targetElement = props.position ? `secondary_button_${props.position}` : `secondary_button`;
+  const buttonStyling = (_props$content$second = props.content.secondary_button) !== null && _props$content$second !== void 0 && _props$content$second.has_arrow_icon ? `secondary text-link arrow-icon` : `secondary text-link`;
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     className: props.position ? `secondary-cta ${props.position}` : "secondary-cta"
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
@@ -362,7 +374,7 @@ const SecondaryCTA = props => {
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null)), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     text: props.content[targetElement].label
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-    className: "secondary text-link",
+    className: buttonStyling,
     value: targetElement,
     onClick: props.handleAction
   })));
@@ -432,9 +444,7 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
     let {
       props
     } = this;
-    let {
-      value
-    } = event.currentTarget;
+    const value = event.currentTarget.value ?? event.currentTarget.getAttribute("value");
     let targetContent = props.content[value] || props.content.tiles || props.content.languageSwitcher;
 
     if (!(targetContent && targetContent.action)) {
@@ -463,6 +473,12 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       let themeToUse = action.theme === "<event>" ? event.currentTarget.value : this.props.initialTheme || action.theme;
       this.props.setActiveTheme(themeToUse);
       window.AWSelectTheme(themeToUse);
+    } // If the action has persistActiveTheme: true, we set the initial theme to the currently active theme
+    // so that it can be reverted to in the event that the user navigates away from the screen
+
+
+    if (action.persistActiveTheme) {
+      this.props.setInitialTheme(this.props.activeTheme);
     }
 
     if (action.navigate) {
@@ -559,6 +575,8 @@ const Localized = ({
   const textNodes = props.children; // Pick desired fluent or raw/plain text to render.
 
   if (text.string_id) {
+    // Set the key so React knows not to reuse when switching to plain text.
+    props.key = text.string_id;
     props["data-l10n-id"] = text.string_id;
     if (text.args) props["data-l10n-args"] = JSON.stringify(text.args);
   } else if (text.raw) {
@@ -593,19 +611,24 @@ const Localized = ({
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "MultiStageProtonScreen": () => (/* binding */ MultiStageProtonScreen),
+/* harmony export */   "ProtonScreenActionButtons": () => (/* binding */ ProtonScreenActionButtons),
 /* harmony export */   "ProtonScreen": () => (/* binding */ ProtonScreen)
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
 /* harmony import */ var _MSLocalized__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(5);
-/* harmony import */ var _Colorways__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(7);
+/* harmony import */ var _MRColorways__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(7);
 /* harmony import */ var _MobileDownloads__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(8);
 /* harmony import */ var _Themes__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(9);
 /* harmony import */ var _MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(4);
 /* harmony import */ var _LanguageSwitcher__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(10);
+/* harmony import */ var _CTAParagraph__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(11);
+/* harmony import */ var _HeroImage__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(12);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
 
 
 
@@ -654,20 +677,53 @@ const MultiStageProtonScreen = props => {
     langPackInstallPhase: props.langPackInstallPhase
   });
 };
+const ProtonScreenActionButtons = props => {
+  var _content$checkbox, _content$primary_butt, _content$primary_butt2;
+
+  const {
+    content
+  } = props;
+  const defaultValue = (_content$checkbox = content.checkbox) === null || _content$checkbox === void 0 ? void 0 : _content$checkbox.defaultValue;
+  const [isChecked, setIsChecked] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(defaultValue || false);
+
+  if (!content.primary_button && !content.secondary_button) {
+    return null;
+  }
+
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: `action-buttons ${content.dual_action_buttons ? "dual-action-buttons" : ""}`
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    text: (_content$primary_butt = content.primary_button) === null || _content$primary_butt === void 0 ? void 0 : _content$primary_butt.label
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
+    className: "primary" // Whether or not the checkbox is checked determines which action
+    // should be handled. By setting value here, we indicate to
+    // this.handleAction() where in the content tree it should take
+    // the action to execute from.
+    ,
+    value: isChecked ? "checkbox" : "primary_button",
+    disabled: ((_content$primary_butt2 = content.primary_button) === null || _content$primary_butt2 === void 0 ? void 0 : _content$primary_butt2.disabled) === true,
+    onClick: props.handleAction
+  })), content.checkbox ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "checkbox-container"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("input", {
+    type: "checkbox",
+    id: "action-checkbox",
+    checked: isChecked,
+    onChange: () => {
+      setIsChecked(!isChecked);
+    }
+  }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    text: content.checkbox.label
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("label", {
+    htmlFor: "action-checkbox"
+  }))) : null, content.secondary_button ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_5__.SecondaryCTA, {
+    content: content,
+    handleAction: props.handleAction
+  }) : null);
+};
 class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureComponent) {
   componentDidMount() {
     this.mainContentHeader.focus();
-  }
-
-  getLogoStyle({
-    imageURL,
-    height
-  }) {
-    let style = {
-      height
-    };
-    style.backgroundImage = imageURL ? `url(${imageURL})` : null;
-    return style;
   }
 
   getScreenClassName(isFirstCenteredScreen, isLastCenteredScreen, includeNoodles) {
@@ -675,11 +731,41 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     return `${isFirstCenteredScreen ? `dialog-initial` : ``} ${isLastCenteredScreen ? `dialog-last` : ``} ${includeNoodles ? `with-noodles` : ``} ${screenClass}`;
   }
 
+  renderLogo({
+    imageURL = "chrome://branding/content/about-logo.svg",
+    darkModeImageURL,
+    reducedMotionImageURL,
+    darkModeReducedMotionImageURL,
+    alt = "",
+    height
+  }) {
+    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("picture", {
+      className: "logo-container"
+    }, darkModeReducedMotionImageURL ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
+      srcSet: darkModeReducedMotionImageURL,
+      media: "(prefers-color-scheme: dark) and (prefers-reduced-motion: reduce)"
+    }) : null, darkModeImageURL ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
+      srcSet: darkModeImageURL,
+      media: "(prefers-color-scheme: dark)"
+    }) : null, reducedMotionImageURL ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
+      srcSet: reducedMotionImageURL,
+      media: "(prefers-reduced-motion: reduce)"
+    }) : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
+      className: "brand-logo",
+      style: {
+        height
+      },
+      src: imageURL,
+      alt: alt,
+      role: alt ? null : "presentation"
+    }));
+  }
+
   renderContentTiles() {
     const {
       content
     } = this.props;
-    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, content.tiles && content.tiles.type === "colorway" && content.tiles.colorways ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_Colorways__WEBPACK_IMPORTED_MODULE_2__.Colorways, {
+    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, content.tiles && content.tiles.type === "colorway" && content.tiles.colorways ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MRColorways__WEBPACK_IMPORTED_MODULE_2__.Colorways, {
       content: content,
       activeTheme: this.props.activeTheme,
       handleAction: this.props.handleAction
@@ -730,9 +816,12 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: "section-secondary",
       style: content.background ? {
-        background: content.background
+        background: content.background,
+        "--mr-secondary-background-position-y": content.split_narrow_bkg_position
       } : {}
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    }, content.hero_image ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_HeroImage__WEBPACK_IMPORTED_MODULE_8__.HeroImage, {
+      url: content.hero_image.url
+    }) : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: "message-text"
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: "spacer-top"
@@ -744,11 +833,11 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       text: content.help_text
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
       className: "attrib-text"
-    })));
+    }))));
   }
 
   render() {
-    var _this$props$appAndSys, _content$primary_butt, _content$primary_butt2;
+    var _this$props$appAndSys;
 
     const {
       autoAdvance,
@@ -767,6 +856,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     // by checking if screen order is even or odd.
 
     const screenClassName = isCenterPosition ? this.getScreenClassName(isFirstCenteredScreen, isLastCenteredScreen, includeNoodles) : "";
+    const currentStep = this.props.order + 1;
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("main", {
       className: `screen ${this.props.id || ""} ${screenClassName} ${textColorClass}`,
       role: "dialog",
@@ -787,10 +877,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       style: content.background && isCenterPosition ? {
         background: content.background
       } : {}
-    }, content.dismiss_button ? this.renderDismissButton() : null, content.logo ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: `brand-logo`,
-      style: this.getLogoStyle(content.logo)
-    }) : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    }, content.dismiss_button ? this.renderDismissButton() : null, content.logo ? this.renderLogo(content.logo) : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: `${isRtamo ? "rtamo-icon" : "hide-rtamo-icon"}`
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
       className: `${isTheme ? "rtamo-theme-icon" : ""}`,
@@ -812,27 +899,22 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
         "addon-name": this.props.addonName,
         ...((_this$props$appAndSys = this.props.appAndSystemLocaleInfo) === null || _this$props$appAndSys === void 0 ? void 0 : _this$props$appAndSys.displayNames)
       })
-    }))), this.renderContentTiles(), this.renderLanguageSwitcher(), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: "action-buttons"
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-      text: (_content$primary_butt = content.primary_button) === null || _content$primary_butt === void 0 ? void 0 : _content$primary_butt.label
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-      className: "primary",
-      value: "primary_button",
-      disabled: ((_content$primary_butt2 = content.primary_button) === null || _content$primary_butt2 === void 0 ? void 0 : _content$primary_butt2.disabled) === true,
-      onClick: this.props.handleAction
-    })), content.secondary_button ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_5__.SecondaryCTA, {
+    })), content.cta_paragraph ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_CTAParagraph__WEBPACK_IMPORTED_MODULE_7__.CTAParagraph, {
+      content: content.cta_paragraph,
+      handleAction: this.props.handleAction
+    }) : null), this.renderContentTiles(), this.renderLanguageSwitcher(), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ProtonScreenActionButtons, {
       content: content,
       handleAction: this.props.handleAction
-    }) : null)), hideStepsIndicator ? null : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    })), hideStepsIndicator ? null : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: `steps ${content.progress_bar ? "progress-bar" : ""}`,
       "data-l10n-id": "onboarding-welcome-steps-indicator2",
       "data-l10n-args": JSON.stringify({
-        current: this.props.order,
+        current: currentStep,
         total
       }),
+      "data-l10n-attrs": "aria-valuetext",
       role: "meter",
-      "aria-valuenow": this.props.order,
+      "aria-valuenow": currentStep,
       "aria-valuemin": 1,
       "aria-valuemax": total
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_5__.StepsIndicator, {
@@ -849,8 +931,9 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "VariationsCircle": () => (/* binding */ VariationsCircle),
+/* harmony export */   "ColorwayDescription": () => (/* binding */ ColorwayDescription),
 /* harmony export */   "computeColorWay": () => (/* binding */ computeColorWay),
+/* harmony export */   "computeVariationIndex": () => (/* binding */ computeVariationIndex),
 /* harmony export */   "Colorways": () => (/* binding */ Colorways)
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
@@ -860,124 +943,120 @@ __webpack_require__.r(__webpack_exports__);
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
- // Click of variation should call handle action
-// passing 'colorway-variationId' theme name as event target value
-// For default colorway , theme value passed to handle action
-// includes just variation.id e.g. Light, Dark, Automatic
 
-const VariationsCircle = props => {
+const ColorwayDescription = props => {
   const {
-    activeTheme,
-    colorway,
-    colorwayText,
-    nextColor,
-    setVariation,
-    transition,
-    variations
+    colorway
   } = props;
-  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    className: `colorway-variations ${colorway} ${transition}`,
-    next: nextColor
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    className: "variations-disc"
-  }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-    text: colorwayText
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    className: "colorway-text"
-  })), variations === null || variations === void 0 ? void 0 : variations.map(({
-    id,
+
+  if (!colorway) {
+    return null;
+  }
+
+  const {
     label,
-    tooltip,
     description
-  }) => /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-    key: id,
-    text: typeof tooltip === "object" ? tooltip : {}
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("label", {
-    className: "theme colorway",
-    title: label
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-    text: typeof description === "object" ? description : {}
-  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("input", {
-    type: "radio",
-    value: colorway === "default" ? id : `${colorway}-${id}`,
-    checked: activeTheme === null || activeTheme === void 0 ? void 0 : activeTheme.includes(id),
-    name: "variationSelect",
-    className: "sr-only input",
-    onClick: setVariation
-  })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-    text: label
+  } = colorway;
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    text: description
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    className: `text variation-button ${activeTheme !== null && activeTheme !== void 0 && activeTheme.includes(id) ? " selected" : ""}`
-  }))))));
-}; // Return colorway as "default" for default theme variations Automatic, Light, Dark
-// and Alpenglow theme which is not supported in Colorway picker
+    className: "colorway-text",
+    "data-l10n-args": JSON.stringify({
+      colorwayName: label
+    })
+  }));
+}; // Return colorway as "default" for default theme variations Automatic, Light, Dark,
+// Alpenglow theme and legacy colorways which is not supported in Colorway picker.
 // For themes other then default, theme names exist in
 // format colorway-variationId inside LIGHT_WEIGHT_THEMES in AboutWelcomeParent
 
 function computeColorWay(themeName, systemVariations) {
-  return !themeName || themeName === "alpenglow" || systemVariations.find(variation => themeName === variation.id) ? "default" : themeName.split("-")[0];
+  return !themeName || themeName === "alpenglow" || systemVariations.includes(themeName) ? "default" : themeName.split("-")[0];
+} // Set variationIndex based off activetheme value e.g. 'light', 'expressionist-soft'
+
+function computeVariationIndex(themeName, systemVariations, variations, defaultVariationIndex) {
+  // Check if themeName is in systemVariations, if yes choose variationIndex by themeName
+  let index = systemVariations.findIndex(theme => theme === themeName);
+
+  if (index >= 0) {
+    return index;
+  } // If themeName is one of the colorways, select variation index from colorways
+
+
+  let variation = themeName === null || themeName === void 0 ? void 0 : themeName.split("-")[1];
+  index = variations.findIndex(element => element === variation);
+
+  if (index >= 0) {
+    return index;
+  }
+
+  return defaultVariationIndex;
 }
 function Colorways(props) {
-  var _colorways$find;
-
   let {
     colorways,
+    darkVariation,
     defaultVariationIndex,
     systemVariations,
     variations
-  } = props.content.tiles; // This sets a default value
+  } = props.content.tiles;
+  let hasReverted = false; // Active theme id from JSON e.g. "expressionist"
 
   const activeId = computeColorWay(props.activeTheme, systemVariations);
-  const [colorwayId, setState] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(activeId); // Update state any time activeTheme changes.
+  const [colorwayId, setState] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(activeId);
+  const [variationIndex, setVariationIndex] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(defaultVariationIndex);
+
+  function revertToDefaultTheme() {
+    if (hasReverted) return; // Spoofing an event with current target value of "navigate_away"
+    // helps the handleAction method to read the colorways theme as "revert"
+    // which causes the initial theme to be activated.
+    // The "navigate_away" action is set in content in the colorways screen JSON config.
+    // Any value in the JSON for theme will work, provided it is not `<event>`.
+
+    const event = {
+      currentTarget: {
+        value: "navigate_away"
+      }
+    };
+    props.handleAction(event);
+    hasReverted = true;
+  } // Revert to default theme if the user navigates away from the page or spotlight modal
+  // before clicking on the primary button to officially set theme.
+
+
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    addEventListener("beforeunload", revertToDefaultTheme);
+    addEventListener("pagehide", revertToDefaultTheme);
+    return () => {
+      removeEventListener("beforeunload", revertToDefaultTheme);
+      removeEventListener("pagehide", revertToDefaultTheme);
+    };
+  }); // Update state any time activeTheme changes.
 
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
     setState(computeColorWay(props.activeTheme, systemVariations));
-  }, [props.activeTheme]); // Allow "in" style to render to actually transition towards regular state.
+    setVariationIndex(computeVariationIndex(props.activeTheme, systemVariations, variations, defaultVariationIndex)); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.activeTheme]); //select a random colorway
 
-  const [transition, setTransition] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)("");
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
-    if (transition === "in") {
-      // Figure out the variation to activate based on the active theme. Check
-      // if it's a system variant then colorway variant falling back to default.
-      let variationIndex = systemVariations.findIndex(({
-        id
-      }) => id === props.activeTheme);
+    //We don't want the default theme to be selected
+    const randomIndex = Math.floor(Math.random() * (colorways.length - 1)) + 1;
+    const randomColorwayId = colorways[randomIndex].id; // Change the variation to be the dark variation if configured and dark.
+    // Additional colorway changes will remain dark while system is unchanged.
 
-      if (variationIndex < 0) {
-        variationIndex = variations.findIndex(({
-          id
-        }) => props.activeTheme.includes(id));
+    if (darkVariation !== undefined && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      variations[variationIndex] = variations[darkVariation];
+    }
+
+    const value = `${randomColorwayId}-${variations[variationIndex]}`;
+    props.handleAction({
+      currentTarget: {
+        value
       }
-
-      if (variationIndex < 0) {
-        // This content config default assumes it's been selected correctly to
-        // index into both `systemVariations` or `variations` (also configured).
-        variationIndex = defaultVariationIndex;
-      } // Simulate a color click event now that we're ready to transition in.
-
-
-      props.handleAction({
-        currentTarget: {
-          value: colorwayId === "default" ? systemVariations[variationIndex].id : `${colorwayId}-${variations[variationIndex].id}`
-        }
-      }); // Trigger the transition from "in" to normal.
-
-      requestAnimationFrame(() => requestAnimationFrame(() => setTransition("")));
-    }
-  }, [transition]); // Called on click of Colorway circle that sets the next colorway state and
-  // starts transitions if not already started.
-
-  function handleColorwayClick(event) {
-    setState(event.currentTarget.dataset.colorway);
-
-    if (transition !== "out") {
-      setTransition("out");
-      setTimeout(() => setTransition("in"), 500);
-    }
-  }
-
+    }); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    className: "tiles-theme-container colorway"
+    className: "tiles-theme-container"
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("fieldset", {
     className: "tiles-theme-section"
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
@@ -987,19 +1066,18 @@ function Colorways(props) {
   })), colorways.map(({
     id,
     label,
-    tooltip,
-    description
+    tooltip
   }) => /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     key: id + label,
     text: typeof tooltip === "object" ? tooltip : {}
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("label", {
-    className: "theme colorway",
+    className: "theme",
     title: label,
     "data-l10n-args": JSON.stringify({
       colorwayName: label
     })
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-    text: typeof description === "object" ? description : {}
+    text: typeof label === "object" ? label : {}
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
     className: "sr-only colorway label",
     id: `${id}-label`,
@@ -1007,28 +1085,23 @@ function Colorways(props) {
       colorwayName: label
     })
   })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-    text: typeof description === "object" ? description : {}
+    text: typeof label === "object" ? label : {}
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("input", {
     type: "radio",
     "data-colorway": id,
     name: "theme",
+    value: id === "default" ? systemVariations[variationIndex] : `${id}-${variations[variationIndex]}`,
     checked: colorwayId === id,
     className: "sr-only input",
-    onClick: handleColorwayClick,
+    onClick: props.handleAction,
     "data-l10n-args": JSON.stringify({
       colorwayName: label
     }),
     "aria-labelledby": `${id}-label`
   })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     className: `icon colorway ${colorwayId === id ? "selected" : ""} ${id}`
-  })))))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(VariationsCircle, {
-    nextColor: colorwayId,
-    transition: transition,
-    variations: activeId === "default" ? systemVariations : variations,
-    colorway: activeId,
-    colorwayText: (_colorways$find = colorways.find(colorway => colorway.id === activeId)) === null || _colorways$find === void 0 ? void 0 : _colorways$find.label,
-    setVariation: props.handleAction,
-    activeTheme: props.activeTheme
+  })))))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ColorwayDescription, {
+    colorway: colorways.find(colorway => colorway.id === activeId)
   }));
 }
 
@@ -1067,8 +1140,6 @@ const MarketplaceButtons = props => {
   })) : null);
 };
 const MobileDownloads = props => {
-  var _QRCode$image_overrid;
-
   const {
     QR_code: QRCode
   } = props.data;
@@ -1079,7 +1150,7 @@ const MobileDownloads = props => {
     "data-l10n-id": QRCode.alt_text.string_id ? QRCode.alt_text.string_id : null,
     className: "qr-code-image",
     alt: typeof QRCode.alt_text === "string" ? QRCode.alt_text : "",
-    src: ((_QRCode$image_overrid = QRCode.image_overrides) === null || _QRCode$image_overrid === void 0 ? void 0 : _QRCode$image_overrid[document.documentElement.lang]) ?? QRCode.image_url
+    src: QRCode.image_url
   }) : null, showEmailLink ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     text: props.data.email.link_text
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
@@ -1231,7 +1302,9 @@ function useLanguageSwitcher(appAndSystemLocaleInfo, screens, screenIndex, setSc
     }
 
     setLangPackInstallPhase("installing");
-    window.AWEnsureLangPackInstalled(negotiatedLanguage.langPack).then(() => {
+    window.AWEnsureLangPackInstalled(negotiatedLanguage, screen === null || screen === void 0 ? void 0 : screen.content).then(content => {
+      // Update screen content with strings that might have changed.
+      screen.content = content;
       setLangPackInstallPhase("installed");
     }, error => {
       console.error(error);
@@ -1287,22 +1360,7 @@ function LanguageSwitcher(props) {
         });
       });
     }
-  }, [isAwaitingLangpack, langPackInstallPhase]); // The message args are the localized language names.
-
-  const withMessageArgs = obj => {
-    const langPackDisplayName = negotiatedLanguage === null || negotiatedLanguage === void 0 ? void 0 : negotiatedLanguage.langPackDisplayName;
-
-    if (langPackDisplayName) {
-      return { ...obj,
-        args: { ...obj.args,
-          negotiatedLanguage: langPackDisplayName
-        }
-      };
-    }
-
-    return obj;
-  };
-
+  }, [isAwaitingLangpack, langPackInstallPhase]);
   let showWaitingScreen = false;
   let showPreloadingScreen = false;
   let showReadyScreen = false;
@@ -1317,7 +1375,9 @@ function LanguageSwitcher(props) {
   // the localized text elements rendering as blank, then filling in the text.
 
 
-  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "action-buttons language-switcher-container"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
       display: showPreloadingScreen ? "block" : "none"
     }
@@ -1339,7 +1399,7 @@ function LanguageSwitcher(props) {
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
     value: "decline_waiting",
     type: "button",
-    className: "secondary text-link",
+    className: "secondary text-link arrow-icon",
     onClick: handleAction
   })))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
@@ -1355,7 +1415,7 @@ function LanguageSwitcher(props) {
     src: "chrome://browser/skin/tabbrowser/tab-connecting.png",
     alt: ""
   }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-    text: withMessageArgs(content.languageSwitcher.downloading)
+    text: content.languageSwitcher.downloading
   })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     className: "secondary-cta"
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
@@ -1382,21 +1442,106 @@ function LanguageSwitcher(props) {
       _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendActionTelemetry(messageId, "download_langpack");
       setIsAwaitingLangpack(true);
     }
-  }, // This is the localized name from the Intl.DisplayNames API.
+  }, content.languageSwitcher.switch ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    text: content.languageSwitcher.switch
+  }) : // This is the localized name from the Intl.DisplayNames API.
   negotiatedLanguage === null || negotiatedLanguage === void 0 ? void 0 : negotiatedLanguage.langPackDisplayName)), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
     type: "button",
-    className: "secondary",
+    className: "primary",
     value: "decline",
     onClick: event => {
       window.AWSetRequestedLocales(negotiatedLanguage.originalAppLocales);
       handleAction(event);
     }
-  }, // This is the localized name from the Intl.DisplayNames API.
+  }, content.languageSwitcher.continue ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    text: content.languageSwitcher.continue
+  }) : // This is the localized name from the Intl.DisplayNames API.
   negotiatedLanguage === null || negotiatedLanguage === void 0 ? void 0 : negotiatedLanguage.appDisplayName))));
 }
 
 /***/ }),
 /* 11 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "CTAParagraph": () => (/* binding */ CTAParagraph)
+/* harmony export */ });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _MSLocalized__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(5);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+const CTAParagraph = props => {
+  const {
+    content,
+    handleAction
+  } = props;
+
+  if (!(content !== null && content !== void 0 && content.text)) {
+    return null;
+  }
+
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("h2", {
+    className: "cta-paragraph"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    text: content.text
+  }, content.text.string_name && typeof handleAction === "function" ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
+    "data-l10n-id": content.text.string_id,
+    onClick: handleAction,
+    onKeyUp: event => ["Enter", " "].includes(event.key) ? handleAction(event) : null,
+    value: "cta_paragraph",
+    role: "button",
+    tabIndex: "0"
+  }, " ", /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("a", {
+    role: "button",
+    tabIndex: "0",
+    "data-l10n-name": content.text.string_name
+  }, " ")) : null));
+};
+
+/***/ }),
+/* 12 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "HeroImage": () => (/* binding */ HeroImage)
+/* harmony export */ });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+const HeroImage = props => {
+  const {
+    height,
+    url,
+    alt
+  } = props;
+
+  if (!url) {
+    return null;
+  }
+
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "hero-image"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
+    style: height ? {
+      height
+    } : null,
+    src: url,
+    alt: alt || "",
+    role: alt ? null : "presentation"
+  }));
+};
+
+/***/ }),
+/* 13 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -1438,7 +1583,7 @@ function addUtmParams(url, utmTerm) {
 }
 
 /***/ }),
-/* 12 */
+/* 14 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -1449,7 +1594,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
 /* harmony import */ var _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(3);
 /* harmony import */ var _MultiStageProtonScreen__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(6);
-/* harmony import */ var _asrouter_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(11);
+/* harmony import */ var _asrouter_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(13);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1644,7 +1789,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var react_dom__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react_dom__WEBPACK_IMPORTED_MODULE_1__);
 /* harmony import */ var _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(3);
 /* harmony import */ var _components_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(4);
-/* harmony import */ var _components_ReturnToAMO__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(12);
+/* harmony import */ var _components_ReturnToAMO__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(14);
 function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -1666,8 +1811,10 @@ class AboutWelcome extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
   }
 
   async fetchFxAFlowUri() {
+    var _window$AWGetFxAMetri, _window;
+
     this.setState({
-      metricsFlowUri: await window.AWGetFxAMetricsFlowURI()
+      metricsFlowUri: await ((_window$AWGetFxAMetri = (_window = window).AWGetFxAMetricsFlowURI) === null || _window$AWGetFxAMetri === void 0 ? void 0 : _window$AWGetFxAMetri.call(_window))
     });
   }
 
@@ -1732,6 +1879,7 @@ class AboutWelcome extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       utm_term: props.UTMTerm,
       transitions: props.transitions,
       backdrop: props.backdrop,
+      startScreen: props.startScreen || 0,
       appAndSystemLocaleInfo: props.appAndSystemLocaleInfo
     });
   }

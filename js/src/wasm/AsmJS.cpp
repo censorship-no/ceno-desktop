@@ -32,14 +32,18 @@
 
 #include "jsmath.h"
 
+#include "frontend/BytecodeCompiler.h"    // CompileStandaloneFunction
 #include "frontend/FunctionSyntaxKind.h"  // FunctionSyntaxKind
 #include "frontend/ParseNode.h"
 #include "frontend/Parser.h"
 #include "frontend/ParserAtom.h"     // ParserAtomsTable, TaggedParserAtomIndex
 #include "frontend/SharedContext.h"  // TopLevelFunction
 #include "frontend/TaggedParserAtomIndexHasher.h"  // TaggedParserAtomIndexHasher
+#include "gc/GC.h"
 #include "gc/Policy.h"
-#include "js/BuildId.h"               // JS::BuildIdCharVector
+#include "jit/InlinableNatives.h"
+#include "js/BuildId.h"  // JS::BuildIdCharVector
+#include "js/experimental/JitInfo.h"
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/MemoryMetrics.h"
 #include "js/Printf.h"
@@ -54,6 +58,7 @@
 #include "vm/ErrorReporting.h"
 #include "vm/FunctionFlags.h"          // js::FunctionFlags
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
+#include "vm/Interpreter.h"
 #include "vm/SelfHosting.h"
 #include "vm/Time.h"
 #include "vm/TypedArrayObject.h"
@@ -598,10 +603,29 @@ static inline TaggedParserAtomIndex FunctionName(FunctionNode* funNode) {
   return TaggedParserAtomIndex::null();
 }
 
+static inline ParseNode* FunctionFormalParametersList(FunctionNode* fn,
+                                                      unsigned* numFormals) {
+  ParamsBodyNode* argsBody = fn->body();
+
+  // The number of formals is equal to the number of parameters (excluding the
+  // trailing lexical scope). There are no destructuring or rest parameters for
+  // asm.js functions.
+  *numFormals = argsBody->count();
+
+  // If the function has been fully parsed, the trailing function body node is a
+  // lexical scope. If we've only parsed the function parameters, the last node
+  // is the last parameter.
+  if (*numFormals > 0 && argsBody->last()->is<LexicalScopeNode>()) {
+    MOZ_ASSERT(argsBody->last()->as<LexicalScopeNode>().scopeBody()->isKind(
+        ParseNodeKind::StatementList));
+    (*numFormals)--;
+  }
+
+  return argsBody->head();
+}
+
 static inline ParseNode* FunctionStatementList(FunctionNode* funNode) {
-  MOZ_ASSERT(funNode->body()->isKind(ParseNodeKind::ParamsBody));
-  LexicalScopeNode* last =
-      &funNode->body()->as<ListNode>().last()->as<LexicalScopeNode>();
+  LexicalScopeNode* last = funNode->body()->body();
   MOZ_ASSERT(last->isEmptyScope());
   ParseNode* body = last->scopeBody();
   MOZ_ASSERT(body->isKind(ParseNodeKind::StatementList));
@@ -1418,7 +1442,7 @@ class MOZ_STACK_CLASS ModuleValidatorShared {
 
     auto AddMathFunction = [this](const char* name,
                                   AsmJSMathBuiltinFunction func) {
-      auto atom = parserAtoms_.internAscii(cx_, name, strlen(name));
+      auto atom = parserAtoms_.internAscii(ec_, name, strlen(name));
       if (!atom) {
         return false;
       }
@@ -1447,7 +1471,7 @@ class MOZ_STACK_CLASS ModuleValidatorShared {
     };
 
     auto AddMathConstant = [this](const char* name, double cst) {
-      auto atom = parserAtoms_.internAscii(cx_, name, strlen(name));
+      auto atom = parserAtoms_.internAscii(ec_, name, strlen(name));
       if (!atom) {
         return false;
       }
@@ -2393,7 +2417,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
   // This is also a ModuleValidator<Unit>& after the appropriate static_cast<>.
   ModuleValidatorShared& m_;
 
-  ParseNode* fn_;
+  FunctionNode* fn_;
   Bytes bytes_;
   Encoder encoder_;
   Uint32Vector callSiteLineNums_;
@@ -2410,7 +2434,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
   Maybe<ValType> ret_;
 
  private:
-  FunctionValidatorShared(ModuleValidatorShared& m, ParseNode* fn,
+  FunctionValidatorShared(ModuleValidatorShared& m, FunctionNode* fn,
                           JSContext* cx)
       : m_(m),
         fn_(fn),
@@ -2423,7 +2447,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
 
  protected:
   template <typename Unit>
-  FunctionValidatorShared(ModuleValidator<Unit>& m, ParseNode* fn,
+  FunctionValidatorShared(ModuleValidator<Unit>& m, FunctionNode* fn,
                           JSContext* cx)
       : FunctionValidatorShared(static_cast<ModuleValidatorShared&>(m), fn,
                                 cx) {}
@@ -2434,7 +2458,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
   JSContext* cx() const { return m_.cx(); }
   ErrorContext* ec() const { return m_.ec(); }
   JS::NativeStackLimit stackLimit() const { return m_.stackLimit(); }
-  ParseNode* fn() const { return fn_; }
+  FunctionNode* fn() const { return fn_; }
 
   void define(ModuleValidatorShared::Func* func, unsigned line) {
     MOZ_ASSERT(!blockDepth_);
@@ -2663,7 +2687,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
 template <typename Unit>
 class MOZ_STACK_CLASS FunctionValidator : public FunctionValidatorShared {
  public:
-  FunctionValidator(ModuleValidator<Unit>& m, ParseNode* fn)
+  FunctionValidator(ModuleValidator<Unit>& m, FunctionNode* fn)
       : FunctionValidatorShared(m, fn, m.cx()) {}
 
  public:
@@ -6666,6 +6690,50 @@ static bool ValidateArrayView(JSContext* cx, const AsmJSGlobal& global,
   return true;
 }
 
+static InlinableNative ToInlinableNative(AsmJSMathBuiltinFunction func) {
+  switch (func) {
+    case AsmJSMathBuiltin_sin:
+      return InlinableNative::MathSin;
+    case AsmJSMathBuiltin_cos:
+      return InlinableNative::MathCos;
+    case AsmJSMathBuiltin_tan:
+      return InlinableNative::MathTan;
+    case AsmJSMathBuiltin_asin:
+      return InlinableNative::MathASin;
+    case AsmJSMathBuiltin_acos:
+      return InlinableNative::MathACos;
+    case AsmJSMathBuiltin_atan:
+      return InlinableNative::MathATan;
+    case AsmJSMathBuiltin_ceil:
+      return InlinableNative::MathCeil;
+    case AsmJSMathBuiltin_floor:
+      return InlinableNative::MathFloor;
+    case AsmJSMathBuiltin_exp:
+      return InlinableNative::MathExp;
+    case AsmJSMathBuiltin_log:
+      return InlinableNative::MathLog;
+    case AsmJSMathBuiltin_pow:
+      return InlinableNative::MathPow;
+    case AsmJSMathBuiltin_sqrt:
+      return InlinableNative::MathSqrt;
+    case AsmJSMathBuiltin_abs:
+      return InlinableNative::MathAbs;
+    case AsmJSMathBuiltin_atan2:
+      return InlinableNative::MathATan2;
+    case AsmJSMathBuiltin_imul:
+      return InlinableNative::MathImul;
+    case AsmJSMathBuiltin_fround:
+      return InlinableNative::MathFRound;
+    case AsmJSMathBuiltin_min:
+      return InlinableNative::MathMin;
+    case AsmJSMathBuiltin_max:
+      return InlinableNative::MathMax;
+    case AsmJSMathBuiltin_clz32:
+      return InlinableNative::MathClz32;
+  }
+  MOZ_CRASH("Invalid asm.js math builtin function");
+}
+
 static bool ValidateMathBuiltinFunction(JSContext* cx,
                                         const AsmJSGlobal& global,
                                         HandleValue globalVal) {
@@ -6678,68 +6746,12 @@ static bool ValidateMathBuiltinFunction(JSContext* cx,
     return false;
   }
 
-  Native native = nullptr;
-  switch (global.mathBuiltinFunction()) {
-    case AsmJSMathBuiltin_sin:
-      native = math_sin;
-      break;
-    case AsmJSMathBuiltin_cos:
-      native = math_cos;
-      break;
-    case AsmJSMathBuiltin_tan:
-      native = math_tan;
-      break;
-    case AsmJSMathBuiltin_asin:
-      native = math_asin;
-      break;
-    case AsmJSMathBuiltin_acos:
-      native = math_acos;
-      break;
-    case AsmJSMathBuiltin_atan:
-      native = math_atan;
-      break;
-    case AsmJSMathBuiltin_ceil:
-      native = math_ceil;
-      break;
-    case AsmJSMathBuiltin_floor:
-      native = math_floor;
-      break;
-    case AsmJSMathBuiltin_exp:
-      native = math_exp;
-      break;
-    case AsmJSMathBuiltin_log:
-      native = math_log;
-      break;
-    case AsmJSMathBuiltin_pow:
-      native = math_pow;
-      break;
-    case AsmJSMathBuiltin_sqrt:
-      native = math_sqrt;
-      break;
-    case AsmJSMathBuiltin_min:
-      native = math_min;
-      break;
-    case AsmJSMathBuiltin_max:
-      native = math_max;
-      break;
-    case AsmJSMathBuiltin_abs:
-      native = math_abs;
-      break;
-    case AsmJSMathBuiltin_atan2:
-      native = math_atan2;
-      break;
-    case AsmJSMathBuiltin_imul:
-      native = math_imul;
-      break;
-    case AsmJSMathBuiltin_clz32:
-      native = math_clz32;
-      break;
-    case AsmJSMathBuiltin_fround:
-      native = math_fround;
-      break;
-  }
+  InlinableNative native = ToInlinableNative(global.mathBuiltinFunction());
 
-  if (!IsNativeFunction(v, native)) {
+  JSFunction* fun;
+  if (!IsFunctionObject(v, &fun) || !fun->hasJitInfo() ||
+      fun->jitInfo()->type() != JSJitInfo::InlinableNative ||
+      fun->jitInfo()->inlinableNative != native) {
     return LinkFail(cx, "bad Math.* builtin function");
   }
 

@@ -314,6 +314,15 @@ nsHttpChannel::nsHttpChannel() : HttpAsyncAborter<nsHttpChannel>(this) {
 nsHttpChannel::~nsHttpChannel() {
   LOG(("Destroying nsHttpChannel [this=%p]\n", this));
 
+  if (LOG_ENABLED()) {
+    nsCString webExtension;
+    this->GetPropertyAsACString(u"cancelledByExtension"_ns, webExtension);
+    if (!webExtension.IsEmpty()) {
+      LOG(("channel [%p] cancelled by extension [id=%s]", this,
+           webExtension.get()));
+    }
+  }
+
   if (mAuthProvider) {
     DebugOnly<nsresult> rv = mAuthProvider->Disconnect(NS_ERROR_ABORT);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
@@ -391,6 +400,9 @@ nsHttpChannel::LogMimeTypeMismatch(const nsACString& aMessageName,
 
 nsresult nsHttpChannel::PrepareToConnect() {
   LOG(("nsHttpChannel::PrepareToConnect [this=%p]\n", this));
+
+  // notify "http-on-modify-request-before-cookies" observers
+  gHttpHandler->OnModifyRequestBeforeCookies(this);
 
   AddCookiesToRequest();
 
@@ -720,6 +732,13 @@ nsresult nsHttpChannel::Connect() {
 
   if (ShouldIntercept()) {
     return RedirectToInterceptedChannel();
+  }
+
+  // Step 8.18 of HTTP-network-or-cache fetch
+  // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
+  nsAutoCString rangeVal;
+  if (NS_SUCCEEDED(GetRequestHeader("Range"_ns, rangeVal))) {
+    SetRequestHeader("Accept-Encoding"_ns, "identity"_ns, true);
   }
 
   bool isTrackingResource = IsThirdPartyTrackingResource();
@@ -4584,7 +4603,10 @@ void nsHttpChannel::CloseCacheEntry(bool doomOnFailure) {
   } else {
     // Store updated security info, makes cached EV status race less likely
     // (see bug 1040086)
-    if (mSecurityInfo) mCacheEntry->SetSecurityInfo(mSecurityInfo);
+    nsCOMPtr<nsITransportSecurityInfo> tsi = do_QueryInterface(mSecurityInfo);
+    if (tsi) {
+      mCacheEntry->SetSecurityInfo(tsi);
+    }
   }
 
   mCachedResponseHead = nullptr;
@@ -4730,7 +4752,10 @@ nsresult DoAddCacheEntryHeaders(nsHttpChannel* self, nsICacheEntry* entry,
 
   LOG(("nsHttpChannel::AddCacheEntryHeaders [this=%p] begin", self));
   // Store secure data in memory only
-  if (securityInfo) entry->SetSecurityInfo(securityInfo);
+  nsCOMPtr<nsITransportSecurityInfo> tsi = do_QueryInterface(securityInfo);
+  if (tsi) {
+    entry->SetSecurityInfo(tsi);
+  }
 
   // Store the HTTP request method with the cache entry so we can distinguish
   // for example GET and HEAD responses.
@@ -5416,6 +5441,19 @@ NS_INTERFACE_MAP_END_INHERITING(HttpBaseChannel)
 // nsHttpChannel::nsIRequest
 //-----------------------------------------------------------------------------
 
+NS_IMETHODIMP nsHttpChannel::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP nsHttpChannel::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP
+nsHttpChannel::CancelWithReason(nsresult aStatus, const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
+}
+
 NS_IMETHODIMP
 nsHttpChannel::Cancel(nsresult status) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -5436,8 +5474,8 @@ nsHttpChannel::Cancel(nsresult status) {
   }
 #endif
 
-  LOG(("nsHttpChannel::Cancel [this=%p status=%" PRIx32 "]\n", this,
-       static_cast<uint32_t>(status)));
+  LOG(("nsHttpChannel::Cancel [this=%p status=%" PRIx32 ", reason=%s]\n", this,
+       static_cast<uint32_t>(status), mCanceledReason.get()));
   MOZ_ASSERT_IF(!(mConnectionInfo && mConnectionInfo->UsingConnect()) &&
                     NS_SUCCEEDED(mStatus),
                 !AllowedErrorForHTTPSRRFallback(status));

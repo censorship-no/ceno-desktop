@@ -135,8 +135,9 @@ class CanonicalBrowsingContext final : public BrowsingContext {
       LoadingSessionHistoryInfo* aInfo, nsIChannel* aNewChannel);
 
   using PrintPromise = MozPromise</* unused */ bool, nsresult, false>;
-  RefPtr<PrintPromise> Print(nsIPrintSettings*);
-  already_AddRefed<Promise> PrintJS(nsIPrintSettings*, ErrorResult&);
+  MOZ_CAN_RUN_SCRIPT RefPtr<PrintPromise> Print(nsIPrintSettings*);
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> PrintJS(nsIPrintSettings*,
+                                                       ErrorResult&);
 
   // Call the given callback on all top-level descendant BrowsingContexts.
   // Return Callstate::Stop from the callback to stop calling
@@ -173,10 +174,9 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   void RemoveFromSessionHistory(const nsID& aChangeID);
 
-  void HistoryGo(int32_t aIndex, uint64_t aHistoryEpoch,
-                 bool aRequireUserInteraction, bool aUserActivation,
-                 Maybe<ContentParentId> aContentId,
-                 std::function<void(int32_t&&)>&& aResolver);
+  Maybe<int32_t> HistoryGo(int32_t aOffset, uint64_t aHistoryEpoch,
+                           bool aRequireUserInteraction, bool aUserActivation,
+                           Maybe<ContentParentId> aContentId);
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;

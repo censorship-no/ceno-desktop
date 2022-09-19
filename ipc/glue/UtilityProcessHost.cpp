@@ -182,8 +182,7 @@ void UtilityProcessHost::InitAfterConnect(bool aSucceeded) {
   }
 
   mUtilityProcessParent = MakeRefPtr<UtilityProcessParent>(this);
-  DebugOnly<bool> rv = mUtilityProcessParent->Open(
-      TakeInitialPort(), base::GetProcId(GetChildProcessHandle()));
+  DebugOnly<bool> rv = TakeInitialEndpoint().Bind(mUtilityProcessParent.get());
   MOZ_ASSERT(rv);
 
   // Only clear mPrefSerializer in the success case to avoid a
@@ -198,7 +197,7 @@ void UtilityProcessHost::InitAfterConnect(bool aSucceeded) {
   UniquePtr<SandboxBroker::Policy> policy;
   switch (mSandbox) {
     case SandboxingKind::GENERIC_UTILITY:
-    case SandboxingKind::UTILITY_AUDIO_DECODING:  // TODO: NEW POLICY?
+    case SandboxingKind::UTILITY_AUDIO_DECODING_GENERIC:
       policy = SandboxBrokerPolicyFactory::GetUtilityProcessPolicy(
           GetActor()->OtherPid());
       break;

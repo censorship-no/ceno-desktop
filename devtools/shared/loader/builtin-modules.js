@@ -63,6 +63,7 @@ const debuggerSandbox = (exports.internalSandbox = Cu.Sandbox(systemPrincipal, {
     "Event",
     "FileReader",
     "FormData",
+    "Headers",
     "indexedDB",
     "InspectorUtils",
     "Node",
@@ -89,6 +90,7 @@ const {
   Event,
   FileReader,
   FormData,
+  Headers,
   indexedDB,
   InspectorUtils,
   Node,
@@ -215,7 +217,6 @@ function lazyRequireGetter(obj, properties, module, destructure) {
 
 // List of pseudo modules exposed to all devtools modules.
 exports.modules = {
-  ChromeUtils,
   DebuggerNotificationObserver,
   HeapSnapshot,
   InspectorUtils,
@@ -223,7 +224,6 @@ exports.modules = {
   // and so are never frozen, even if the browser loader module which
   // pull it is destroyed. See bug 1402779.
   Promise,
-  Services: Object.create(Services),
   TelemetryStopwatch,
 };
 
@@ -260,6 +260,7 @@ exports.globals = {
   Blob,
   btoa,
   CanonicalBrowsingContext,
+  ChromeUtils,
   BrowsingContext,
   WebExtensionPolicy,
   WindowGlobalParent,
@@ -278,6 +279,7 @@ exports.globals = {
   Element,
   FileReader,
   FormData,
+  Headers,
   IOUtils,
   isWorker: false,
   L10nRegistry,
@@ -293,6 +295,7 @@ exports.globals = {
   Node,
   PathUtils,
   reportError: Cu.reportError,
+  Services: Object.create(Services),
   StructuredCloneHolder,
   TextDecoder,
   TextEncoder,

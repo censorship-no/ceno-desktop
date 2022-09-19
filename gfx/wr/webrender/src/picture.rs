@@ -2007,6 +2007,25 @@ impl TileCacheInstance {
         self.tile_rect.area() as usize * self.sub_slices.len()
     }
 
+    /// Trims memory held by the tile cache, such as native surfaces.
+    pub fn memory_pressure(&mut self, resource_cache: &mut ResourceCache) {
+        for sub_slice in &mut self.sub_slices {
+            for tile in sub_slice.tiles.values_mut() {
+                if let Some(TileSurface::Texture { descriptor: SurfaceTextureDescriptor::Native { ref mut id, .. }, .. }) = tile.surface {
+                    // Reseting the id to None with take() ensures that a new
+                    // tile will be allocated during the next frame build.
+                    if let Some(id) = id.take() {
+                        resource_cache.destroy_compositor_tile(id);
+                    }
+                }
+            }
+            if let Some(native_surface) = sub_slice.native_surface.take() {
+                resource_cache.destroy_compositor_surface(native_surface.opaque);
+                resource_cache.destroy_compositor_surface(native_surface.alpha);
+            }
+        }
+    }
+
     /// Reset this tile cache with the updated parameters from a new scene
     /// that has arrived. This allows the tile cache to be retained across
     /// new scenes.
@@ -5454,8 +5473,7 @@ impl PicturePrimitive {
                         mode,
                         frame_context.fb_config.gpu_supports_advanced_blend,
                         frame_context.fb_config.advanced_blend_is_coherent,
-                        frame_context.fb_config.dual_source_blending_is_enabled &&
-                            frame_context.fb_config.dual_source_blending_is_supported,
+                        frame_context.fb_config.dual_source_blending_is_supported,
                     ).is_none() => {
                         let parent_surface = &frame_state.surfaces[parent_surface_index.0];
 

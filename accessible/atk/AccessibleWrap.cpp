@@ -823,13 +823,6 @@ static void UpdateAtkRelation(RelationType aType, Accessible* aAcc,
     targets.AppendElement(GetWrapperFor(tempAcc));
   }
 
-  if (aType == RelationType::EMBEDS && aAcc->IsRoot()) {
-    if (RemoteAccessible* proxyDoc =
-            aAcc->AsLocal()->AsRoot()->GetPrimaryRemoteTopLevelContentDoc()) {
-      targets.AppendElement(GetWrapperFor(proxyDoc));
-    }
-  }
-
   if (targets.Length()) {
     atkRelation =
         atk_relation_new(targets.Elements(), targets.Length(), aAtkType);
@@ -843,6 +836,10 @@ AtkRelationSet* refRelationSetCB(AtkObject* aAtkObj) {
       ATK_OBJECT_CLASS(parent_class)->ref_relation_set(aAtkObj);
 
   Accessible* acc = GetInternalObj(aAtkObj);
+  if (!acc) {
+    return relation_set;
+  }
+
   if (!StaticPrefs::accessibility_cache_enabled_AtStartup() &&
       acc->IsRemote()) {
     RemoteAccessible* proxy = acc->AsRemote();

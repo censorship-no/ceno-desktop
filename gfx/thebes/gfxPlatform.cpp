@@ -24,6 +24,7 @@
 #include "mozilla/gfx/CanvasManagerParent.h"
 #include "mozilla/gfx/CanvasRenderThread.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/EnumTypeTraits.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_bidi.h"
@@ -590,7 +591,7 @@ static void WebRenderBatchingPrefChangeCallback(const char* aPrefName, void*) {
 static void WebRenderBlobTileSizePrefChangeCallback(const char* aPrefName,
                                                     void*) {
   uint32_t tileSize = Preferences::GetUint(
-      StaticPrefs::GetPrefName_gfx_webrender_blob_tile_size(), 256);
+      StaticPrefs::GetPrefName_gfx_webrender_blob_tile_size(), 512);
   gfx::gfxVars::SetWebRenderBlobTileSize(tileSize);
 }
 
@@ -921,6 +922,7 @@ void gfxPlatform::Init() {
   gPlatform->InitWebGLConfig();
   gPlatform->InitWebGPUConfig();
   gPlatform->InitWindowOcclusionConfig();
+  gPlatform->InitBackdropFilterConfig();
 
   // When using WebRender, we defer initialization of the D3D11 devices until
   // the (rare) cases where they're used. Note that the GPU process where
@@ -943,10 +945,6 @@ void gfxPlatform::Init() {
   }
 
   if (XRE_IsParentProcess()) {
-    nsAutoCString allowlist;
-    Preferences::GetCString("gfx.offscreencanvas.domain-allowlist", allowlist);
-    gfxVars::SetOffscreenCanvasDomainAllowlist(allowlist);
-
     // Create the global vsync source and dispatcher.
     RefPtr<VsyncSource> vsyncSource =
         gfxPlatform::ForceSoftwareVsync()
@@ -1347,9 +1345,9 @@ void gfxPlatform::ShutdownLayersIPC() {
     layers::ImageBridgeChild::ShutDown();
     // This could be running on either the Compositor or the Renderer thread.
     gfx::CanvasManagerParent::Shutdown();
-    RemoteTextureMap::Shutdown();
     // This has to happen after shutting down the child protocols.
     layers::CompositorThreadHolder::Shutdown();
+    RemoteTextureMap::Shutdown();
     image::ImageMemoryReporter::ShutdownForWebRender();
     // There is a case that RenderThread exists when UseWebRender() is
     // false. This could happen when WebRender was fallbacked to compositor.
@@ -1799,22 +1797,50 @@ bool gfxPlatform::UseGraphiteShaping() {
   return StaticPrefs::gfx_font_rendering_graphite_enabled();
 }
 
-bool gfxPlatform::IsFontFormatSupported(uint32_t aFormatFlags) {
-  // check for strange format flags
-  MOZ_ASSERT(!(aFormatFlags & gfxUserFontSet::FLAG_FORMAT_NOT_USED),
-             "strange font format hint set");
-
-  // accept "common" formats that we support on all platforms
-  if (aFormatFlags & gfxUserFontSet::FLAG_FORMATS_COMMON) {
-    return true;
+bool gfxPlatform::IsFontFormatSupported(
+    StyleFontFaceSourceFormatKeyword aFormatHint,
+    StyleFontFaceSourceTechFlags aTechFlags) {
+  // By default, font resources are assumed to be supported; but if the format
+  // hint or technology flags explicitly indicate something we don't support,
+  // then return false.
+  switch (aFormatHint) {
+    case StyleFontFaceSourceFormatKeyword::None:
+      break;
+    case StyleFontFaceSourceFormatKeyword::Collection:
+      return false;
+    case StyleFontFaceSourceFormatKeyword::Opentype:
+    case StyleFontFaceSourceFormatKeyword::Truetype:
+      break;
+    case StyleFontFaceSourceFormatKeyword::EmbeddedOpentype:
+      return false;
+    case StyleFontFaceSourceFormatKeyword::Svg:
+      return false;
+    case StyleFontFaceSourceFormatKeyword::Woff:
+      break;
+    case StyleFontFaceSourceFormatKeyword::Woff2:
+      break;
+    case StyleFontFaceSourceFormatKeyword::Unknown:
+      return false;
+    default:
+      MOZ_ASSERT_UNREACHABLE("bad format hint!");
+      return false;
   }
-
-  // reject all other formats, known and unknown
-  if (aFormatFlags != 0) {
+  StyleFontFaceSourceTechFlags unsupportedTechnologies =
+      StyleFontFaceSourceTechFlags::INCREMENTAL |
+      StyleFontFaceSourceTechFlags::PALETTES |
+      StyleFontFaceSourceTechFlags::COLOR_SBIX;
+  if (!StaticPrefs::gfx_downloadable_fonts_keep_color_bitmaps()) {
+    unsupportedTechnologies |= StyleFontFaceSourceTechFlags::COLOR_CBDT;
+  }
+  if (!StaticPrefs::gfx_font_rendering_colr_v1_enabled()) {
+    unsupportedTechnologies |= StyleFontFaceSourceTechFlags::COLOR_COLRV1;
+  }
+  if (!StaticPrefs::layout_css_font_variations_enabled()) {
+    unsupportedTechnologies |= StyleFontFaceSourceTechFlags::VARIATIONS;
+  }
+  if (aTechFlags & unsupportedTechnologies) {
     return false;
   }
-
-  // no format hint set, need to look at data
   return true;
 }
 
@@ -2042,6 +2068,14 @@ const mozilla::gfx::ContentDeviceData* gfxPlatform::GetInitContentDeviceData() {
   return gContentDeviceInitData;
 }
 
+CMSMode GfxColorManagementMode() {
+  const auto mode = StaticPrefs::gfx_color_management_mode();
+  if (mode >= 0 && mode < UnderlyingValue(CMSMode::AllCount)) {
+    return CMSMode(mode);
+  }
+  return CMSMode::Off;
+}
+
 void gfxPlatform::InitializeCMS() {
   if (gCMSInitialized) {
     return;
@@ -2060,12 +2094,7 @@ void gfxPlatform::InitializeCMS() {
     return;
   }
 
-  {
-    int32_t mode = StaticPrefs::gfx_color_management_mode();
-    if (mode >= 0 && mode < int32_t(CMSMode::AllCount)) {
-      gCMSMode = CMSMode(mode);
-    }
-  }
+  gCMSMode = GfxColorManagementMode();
 
   gCMSsRGBProfile = qcms_profile_sRGB();
 
@@ -2734,7 +2763,7 @@ void gfxPlatform::InitWebRenderConfig() {
                                  "FEATURE_FAILURE_WR_NO_GFX_INFO"_ns);
         useHwVideoZeroCopy = false;
       } else {
-        if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
+        if (status != nsIGfxInfo::FEATURE_ALLOW_ALWAYS) {
           FeatureState& feature =
               gfxConfig::GetFeature(Feature::HW_DECODED_VIDEO_ZERO_COPY);
           feature.DisableByDefault(FeatureStatus::Blocked,
@@ -2771,7 +2800,7 @@ void gfxPlatform::InitWebRenderConfig() {
                                  "FEATURE_FAILURE_WR_NO_GFX_INFO"_ns);
         reuseDecoderDevice = false;
       } else {
-        if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
+        if (status != nsIGfxInfo::FEATURE_ALLOW_ALWAYS) {
           FeatureState& feature =
               gfxConfig::GetFeature(Feature::REUSE_DECODER_DEVICE);
           feature.DisableByDefault(FeatureStatus::Blocked,
@@ -3015,6 +3044,54 @@ void gfxPlatform::InitWindowOcclusionConfig() {
           StaticPrefs::
               GetPrefName_widget_windows_window_occlusion_tracking_enabled()));
 #endif
+}
+
+static void BackdropFilterPrefChangeCallback(const char*, void*) {
+  FeatureState& feature = gfxConfig::GetFeature(Feature::BACKDROP_FILTER);
+
+  // We need to reset because the user status needs to be set before the
+  // environment status, but the environment status comes from the blocklist,
+  // and the user status can be updated after the fact.
+  feature.Reset();
+  feature.EnableByDefault();
+
+  if (StaticPrefs::layout_css_backdrop_filter_force_enabled()) {
+    feature.UserForceEnable("Force enabled by pref");
+  }
+
+  nsCString message;
+  nsCString failureId;
+  if (!gfxPlatform::IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_BACKDROP_FILTER,
+                                        &message, failureId)) {
+    feature.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
+  }
+
+  // This may still be gated by the layout.css.backdrop-filter.enabled pref but
+  // the test infrastructure is very sensitive to how changes to that pref
+  // propagate, so we don't include them in the gfxVars/gfxFeature.
+  gfxVars::SetAllowBackdropFilter(feature.IsEnabled());
+}
+
+void gfxPlatform::InitBackdropFilterConfig() {
+  // This would ideally be in the nsCSSProps code
+  // but nsCSSProps is initialized before gfxPlatform
+  // so it has to be done here.
+  gfxVars::AddReceiver(&nsCSSProps::GfxVarReceiver());
+
+  if (!XRE_IsParentProcess()) {
+    // gfxVars doesn't notify receivers when initialized on content processes
+    // we need to explicitly recompute backdrop-filter's enabled state here.
+    nsCSSProps::RecomputeEnabledState(
+        StaticPrefs::GetPrefName_layout_css_backdrop_filter_enabled());
+    return;
+  }
+
+  BackdropFilterPrefChangeCallback(nullptr, nullptr);
+
+  Preferences::RegisterCallback(
+      BackdropFilterPrefChangeCallback,
+      nsDependentCString(
+          StaticPrefs::GetPrefName_layout_css_backdrop_filter_force_enabled()));
 }
 
 bool gfxPlatform::CanUseHardwareVideoDecoding() {

@@ -20,11 +20,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
 // These prefs are relative to the `browser.urlbar` branch.
 const ENABLED_PREF = "suggest.quickactions";
 const MATCH_IN_PHRASE_PREF = "quickactions.matchInPhrase";
+const SHOW_IN_ZERO_PREFIX_PREF = "quickactions.showInZeroPrefix";
 const DYNAMIC_TYPE_NAME = "quickactions";
 
 // When the urlbar is first focused and no search term has been
 // entered we show a limited number of results.
-const ACTIONS_SHOWN_FOCUS = 5;
+const ACTIONS_SHOWN_FOCUS = 4;
 
 // Default icon shown for actions if no custom one is provided.
 const DEFAULT_ICON = "chrome://global/skin/icons/settings.svg";
@@ -60,6 +61,13 @@ class ProviderQuickActions extends UrlbarProvider {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
   }
 
+  get helpUrl() {
+    return (
+      Services.urlFormatter.formatURLPref("app.support.baseURL") +
+      "quick-actions-firefox-search-bar"
+    );
+  }
+
   getPriority(context) {
     if (!context.searchString) {
       return 1;
@@ -75,7 +83,11 @@ class ProviderQuickActions extends UrlbarProvider {
    * @returns {boolean} Whether this provider should be invoked for the search.
    */
   isActive(queryContext) {
-    return lazy.UrlbarPrefs.get(ENABLED_PREF);
+    return (
+      lazy.UrlbarPrefs.get(ENABLED_PREF) &&
+      (!queryContext.searchMode ||
+        queryContext.searchMode.source == UrlbarUtils.RESULT_SOURCE.ACTIONS)
+    );
   }
 
   /**
@@ -88,6 +100,11 @@ class ProviderQuickActions extends UrlbarProvider {
    */
   async startQuery(queryContext, addCallback) {
     let input = queryContext.trimmedSearchString.toLowerCase();
+
+    if (!lazy.UrlbarPrefs.get(SHOW_IN_ZERO_PREFIX_PREF) && !input) {
+      return;
+    }
+
     let results = [...(this.#prefixes.get(input) ?? [])];
 
     if (lazy.UrlbarPrefs.get(MATCH_IN_PHRASE_PREF)) {
@@ -97,6 +114,15 @@ class ProviderQuickActions extends UrlbarProvider {
         }
       }
     }
+    // Ensure results are unique.
+    results = [...new Set(results)];
+
+    // Remove invisible actions.
+    results = results.filter(key => {
+      const action = this.#actions.get(key);
+      return !action.isVisible || action.isVisible();
+    });
+
     if (!results?.length) {
       return;
     }
@@ -105,7 +131,7 @@ class ProviderQuickActions extends UrlbarProvider {
     // but not when we are in the normal url mode on first focus.
     if (
       results.length > ACTIONS_SHOWN_FOCUS &&
-      !queryContext.searchString &&
+      !input &&
       !queryContext.searchMode
     ) {
       results.length = ACTIONS_SHOWN_FOCUS;
@@ -117,6 +143,8 @@ class ProviderQuickActions extends UrlbarProvider {
       {
         results: results.map(key => ({ key })),
         dynamicType: DYNAMIC_TYPE_NAME,
+        helpUrl: this.helpUrl,
+        inputLength: input.length,
       }
     );
     result.suggestedIndex = SUGGESTED_INDEX;
@@ -128,51 +156,68 @@ class ProviderQuickActions extends UrlbarProvider {
       attributes: {
         selectable: false,
       },
-      children: result.payload.results.map(({ key }, i) => {
-        let action = this.#actions.get(key);
-        let inActive = "isActive" in action && !action.isActive();
-        let row = {
-          name: `button-${i}`,
-          tag: "span",
+      children: [
+        {
+          name: "buttons",
+          tag: "div",
+          children: result.payload.results.map(({ key }, i) => {
+            let action = this.#actions.get(key);
+            let inActive = "isActive" in action && !action.isActive();
+            let row = {
+              name: `button-${i}`,
+              tag: "span",
+              attributes: {
+                "data-key": key,
+                "data-input-length": result.payload.inputLength,
+                class: "urlbarView-quickaction-row",
+                role: inActive ? "" : "button",
+              },
+              children: [
+                {
+                  name: `icon-${i}`,
+                  tag: "div",
+                  attributes: { class: "urlbarView-favicon" },
+                  children: [
+                    {
+                      name: `image-${i}`,
+                      tag: "img",
+                      attributes: {
+                        class: "urlbarView-favicon-img",
+                        src: action.icon || DEFAULT_ICON,
+                      },
+                    },
+                  ],
+                },
+                {
+                  name: `div-${i}`,
+                  tag: "div",
+                  children: [
+                    {
+                      name: `label-${i}`,
+                      tag: "span",
+                      attributes: { class: "urlbarView-label" },
+                    },
+                  ],
+                },
+              ],
+            };
+            if (inActive) {
+              row.attributes.disabled = "disabled";
+            }
+            return row;
+          }),
+        },
+        {
+          name: "onboarding",
+          tag: "a",
           attributes: {
-            "data-key": key,
-            class: "urlbarView-quickaction-row",
-            role: inActive ? "" : "button",
+            "data-key": "onboarding-button",
+            role: "button",
+            class: "urlbarView-button urlbarView-button-help",
+            "data-l10n-id": "quickactions-learn-more",
           },
-          children: [
-            {
-              name: `icon-${i}`,
-              tag: "div",
-              attributes: { class: "urlbarView-favicon" },
-              children: [
-                {
-                  name: `image-${i}`,
-                  tag: "img",
-                  attributes: {
-                    class: "urlbarView-favicon-img",
-                    src: action.icon || DEFAULT_ICON,
-                  },
-                },
-              ],
-            },
-            {
-              name: `div-${i}`,
-              tag: "div",
-              children: [
-                {
-                  name: `label-${i}`,
-                  tag: "span",
-                  attributes: { class: "urlbarView-label" },
-                },
-              ],
-            },
-          ],
-        };
-        if (inActive) {
-          row.attributes.disabled = "disabled";
-        }
-        return row;
-      }),
+        },
+      ],
     };
   }
 
@@ -188,6 +233,15 @@ class ProviderQuickActions extends UrlbarProvider {
   }
 
   pickResult(result, itemPicked) {
+    let { key, inputLength } = itemPicked.dataset;
+    // We clamp the input length to limit the number of keys to
+    // the number of actions * 10.
+    inputLength = Math.min(inputLength, 10);
+    Services.telemetry.keyedScalarAdd(
+      `quickaction.picked`,
+      `${key}-${inputLength}`,
+      1
+    );
     let options = this.#actions.get(itemPicked.dataset.key).onPick() ?? {};
     if (options.focusContent) {
       itemPicked.ownerGlobal.gBrowser.selectedBrowser.focus();
@@ -226,7 +280,7 @@ class ProviderQuickActions extends UrlbarProvider {
     this.#loopOverPrefixes(definition.commands, prefix => {
       let result = this.#prefixes.get(prefix);
       if (result) {
-        result = result.filter(val => val == key);
+        result = result.filter(val => val != key);
       }
       this.#prefixes.set(prefix, result);
     });

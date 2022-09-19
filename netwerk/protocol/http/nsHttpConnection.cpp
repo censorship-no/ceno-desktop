@@ -33,7 +33,6 @@
 #include "nsProxyRelease.h"
 #include "nsSocketTransport2.h"
 #include "nsStringStream.h"
-#include "nsITransportSecurityInfo.h"
 #include "mozpkix/pkixnss.h"
 #include "sslerr.h"
 #include "sslt.h"
@@ -644,14 +643,10 @@ void nsHttpConnection::Close(nsresult reason, bool aIsShutdown) {
     }
   }
 
-  nsCOMPtr<nsISupports> securityInfo;
-  GetSecurityInfo(getter_AddRefs(securityInfo));
-  if (securityInfo) {
-    nsresult rv;
-    nsCOMPtr<nsISSLSocketControl> ssl = do_QueryInterface(securityInfo, &rv);
-    if (NS_SUCCEEDED(rv)) {
-      ssl->SetHandshakeCallbackListener(nullptr);
-    }
+  nsCOMPtr<nsISSLSocketControl> ssl;
+  GetTLSSocketControl(getter_AddRefs(ssl));
+  if (ssl) {
+    ssl->SetHandshakeCallbackListener(nullptr);
   }
 
   if (NS_FAILED(reason)) {
@@ -1005,7 +1000,6 @@ void nsHttpConnection::HandleTunnelResponse(uint16_t responseStatus,
     LOG(("proxy CONNECT failed! endtoendssl=%d onlyconnect=%d\n", isHttps,
          onlyConnect));
     mTransaction->SetProxyConnectFailed();
-    mDontReuse = true;
   }
 }
 
@@ -1084,6 +1078,15 @@ nsresult nsHttpConnection::TakeTransport(nsISocketTransport** aTransport,
           ("nsHttpConnection::TakeTransport [%p] "
            "StartLongLivedTCPKeepalives failed rv[0x%" PRIx32 "]",
            this, static_cast<uint32_t>(rv)));
+    }
+  }
+
+  if (mHasTLSTransportLayer) {
+    RefPtr<TLSTransportLayer> tlsTransportLayer =
+        do_QueryObject(mSocketTransport);
+    if (tlsTransportLayer) {
+      // This transport layer is no longer owned by this connection.
+      tlsTransportLayer->ReleaseOwner();
     }
   }
 
@@ -1180,22 +1183,23 @@ void nsHttpConnection::UpdateTCPKeepalive(nsITimer* aTimer, void* aClosure) {
   }
 }
 
-void nsHttpConnection::GetSecurityInfo(nsISupports** secinfo) {
+void nsHttpConnection::GetTLSSocketControl(
+    nsISSLSocketControl** tlsSocketControl) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   LOG(("nsHttpConnection::GetSecurityInfo trans=%p socket=%p\n",
        mTransaction.get(), mSocketTransport.get()));
 
-  if (mTransaction &&
-      NS_SUCCEEDED(mTransaction->GetTransactionSecurityInfo(secinfo))) {
+  *tlsSocketControl = nullptr;
+
+  if (mTransaction && NS_SUCCEEDED(mTransaction->GetTransactionTLSSocketControl(
+                          tlsSocketControl))) {
     return;
   }
 
   if (mSocketTransport &&
-      NS_SUCCEEDED(mSocketTransport->GetSecurityInfo(secinfo))) {
+      NS_SUCCEEDED(mSocketTransport->GetTlsSocketControl(tlsSocketControl))) {
     return;
   }
-
-  *secinfo = nullptr;
 }
 
 nsresult nsHttpConnection::PushBack(const char* data, uint32_t length) {
@@ -1411,13 +1415,12 @@ void nsHttpConnection::CloseTransaction(nsAHttpTransaction* trans,
 
 bool nsHttpConnection::CheckCanWrite0RTTData() {
   MOZ_ASSERT(mTlsHandshaker->EarlyDataAvailable());
-  nsCOMPtr<nsISupports> securityInfo;
-  GetSecurityInfo(getter_AddRefs(securityInfo));
-  if (!securityInfo) {
+  nsCOMPtr<nsISSLSocketControl> ssl;
+  GetTLSSocketControl(getter_AddRefs(ssl));
+  if (!ssl) {
     return false;
   }
-  nsCOMPtr<nsITransportSecurityInfo> info;
-  info = do_QueryInterface(securityInfo);
+  nsCOMPtr<nsITransportSecurityInfo> info(do_QueryInterface(ssl));
   if (!info) {
     return false;
   }
@@ -1427,11 +1430,6 @@ bool nsHttpConnection::CheckCanWrite0RTTData() {
   nsresult rv = info->GetNegotiatedNPN(negotiatedNPN);
   if (NS_FAILED(rv)) {
     return true;
-  }
-  nsCOMPtr<nsISSLSocketControl> ssl;
-  ssl = do_QueryInterface(securityInfo);
-  if (!ssl) {
-    return false;
   }
   bool earlyDataAccepted = false;
   rv = ssl->GetEarlyDataAccepted(&earlyDataAccepted);
@@ -2186,18 +2184,13 @@ bool nsHttpConnection::NoClientCertAuth() const {
     return false;
   }
 
-  nsCOMPtr<nsISupports> secInfo;
-  mSocketTransport->GetSecurityInfo(getter_AddRefs(secInfo));
-  if (!secInfo) {
+  nsCOMPtr<nsISSLSocketControl> tlsSocketControl;
+  mSocketTransport->GetTlsSocketControl(getter_AddRefs(tlsSocketControl));
+  if (!tlsSocketControl) {
     return false;
   }
 
-  nsCOMPtr<nsISSLSocketControl> ssc(do_QueryInterface(secInfo));
-  if (!ssc) {
-    return false;
-  }
-
-  return !ssc->GetClientCertSent();
+  return !tlsSocketControl->GetClientCertSent();
 }
 
 bool nsHttpConnection::CanAcceptWebsocket() {
@@ -2259,30 +2252,21 @@ void nsHttpConnection::HandshakeDoneInternal() {
   if (mTlsHandshaker->NPNComplete()) {
     return;
   }
-  nsresult rv = NS_OK;
-  nsCOMPtr<nsISupports> securityInfo;
-  nsCOMPtr<nsITransportSecurityInfo> info;
+
   nsCOMPtr<nsISSLSocketControl> ssl;
+  GetTLSSocketControl(getter_AddRefs(ssl));
+  if (!ssl) {
+    mTlsHandshaker->FinishNPNSetup(false, false);
+    return;
+  }
+
+  nsCOMPtr<nsITransportSecurityInfo> info(do_QueryInterface(ssl));
+  if (!info) {
+    mTlsHandshaker->FinishNPNSetup(false, false);
+    return;
+  }
+
   nsAutoCString negotiatedNPN;
-
-  GetSecurityInfo(getter_AddRefs(securityInfo));
-  if (!securityInfo) {
-    mTlsHandshaker->FinishNPNSetup(false, false);
-    return;
-  }
-
-  ssl = do_QueryInterface(securityInfo, &rv);
-  if (NS_FAILED(rv)) {
-    mTlsHandshaker->FinishNPNSetup(false, false);
-    return;
-  }
-
-  info = do_QueryInterface(securityInfo, &rv);
-  if (NS_FAILED(rv)) {
-    mTlsHandshaker->FinishNPNSetup(false, false);
-    return;
-  }
-
   DebugOnly<nsresult> rvDebug = info->GetNegotiatedNPN(negotiatedNPN);
   MOZ_ASSERT(NS_SUCCEEDED(rvDebug));
 
@@ -2294,7 +2278,7 @@ void nsHttpConnection::HandshakeDoneInternal() {
         ("nsHttpConnection::HandshakeDone [this=%p] - early data "
          "that was sent during 0RTT %s been accepted [rv=%" PRIx32 "].",
          this, earlyDataAccepted ? "has" : "has not",
-         static_cast<uint32_t>(rv)));
+         static_cast<uint32_t>(rvEarlyData)));
 
     if (NS_FAILED(rvEarlyData) ||
         (mTransaction &&

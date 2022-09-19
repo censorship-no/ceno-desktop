@@ -504,7 +504,7 @@ function String_split(separator, limit) {
 
   // Step 2.
   if (
-    !(typeof separator == "string" && StringProtoHasNoSplit()) &&
+    !(typeof separator === "string" && StringProtoHasNoSplit()) &&
     separator !== undefined &&
     separator !== null
   ) {
@@ -581,15 +581,11 @@ function String_substring(start, end) {
   // Step 7.
   var finalEnd = std_Math_min(std_Math_max(intEnd, 0), len);
 
-  // Steps 8-9.
-  var from, to;
-  if (finalStart < finalEnd) {
-    from = finalStart;
-    to = finalEnd;
-  } else {
-    from = finalEnd;
-    to = finalStart;
-  }
+  // Step 8.
+  var from = std_Math_min(finalStart, finalEnd);
+
+  // Step 9.
+  var to = std_Math_max(finalStart, finalEnd);
 
   // Step 10.
   // While |from| and |to - from| are bounded to the length of |str| and this
@@ -622,15 +618,19 @@ function String_substr(start, length) {
   // Step 6.
   if (intStart < 0) {
     intStart = std_Math_max(intStart + size, 0);
+  } else {
+    // Restrict the input range to allow better Ion optimizations.
+    intStart = std_Math_min(intStart, size);
   }
 
   // Step 7.
   var resultLength = std_Math_min(std_Math_max(end, 0), size - intStart);
 
   // Step 8.
-  if (resultLength <= 0) {
-    return "";
-  }
+  assert(
+    0 <= resultLength && resultLength <= size - intStart,
+    "resultLength is a valid substring length value"
+  );
 
   // Step 9.
   // While |intStart| and |resultLength| are bounded to the length of |str|
@@ -787,7 +787,7 @@ function String_repeat(count) {
   // MAX_STRING_LENGTH + 1 as range because that's a valid bit mask. That's
   // fine because it's only used as optimization hint.
   assert(
-    TO_INT32(MAX_STRING_LENGTH + 1) == MAX_STRING_LENGTH + 1,
+    TO_INT32(MAX_STRING_LENGTH + 1) === MAX_STRING_LENGTH + 1,
     "MAX_STRING_LENGTH + 1 must fit in int32"
   );
   assert(
@@ -932,7 +932,7 @@ function String_toLocaleLowerCase() {
 
   // Handle the common cases (no locales argument or a single string
   // argument) first.
-  var locales = arguments.length > 0 ? arguments[0] : undefined;
+  var locales = arguments.length ? arguments[0] : undefined;
   var requestedLocale;
   if (locales === undefined) {
     // Steps 3, 6.
@@ -945,8 +945,7 @@ function String_toLocaleLowerCase() {
     var requestedLocales = CanonicalizeLocaleList(locales);
 
     // Steps 4-6.
-    requestedLocale =
-      requestedLocales.length > 0 ? requestedLocales[0] : undefined;
+    requestedLocale = requestedLocales.length ? requestedLocales[0] : undefined;
   }
 
   // Trivial case: When the input is empty, directly return the empty string.
@@ -978,7 +977,7 @@ function String_toLocaleUpperCase() {
 
   // Handle the common cases (no locales argument or a single string
   // argument) first.
-  var locales = arguments.length > 0 ? arguments[0] : undefined;
+  var locales = arguments.length ? arguments[0] : undefined;
   var requestedLocale;
   if (locales === undefined) {
     // Steps 3, 6.
@@ -991,8 +990,7 @@ function String_toLocaleUpperCase() {
     var requestedLocales = CanonicalizeLocaleList(locales);
 
     // Steps 4-6.
-    requestedLocale =
-      requestedLocales.length > 0 ? requestedLocales[0] : undefined;
+    requestedLocale = requestedLocales.length ? requestedLocales[0] : undefined;
   }
 
   // Trivial case: When the input is empty, directly return the empty string.

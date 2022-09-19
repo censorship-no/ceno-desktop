@@ -109,6 +109,22 @@ const JSWINDOWACTORS = {
     allFrames: true,
     messageManagerGroups: ["browsers"],
   },
+  GeckoViewClipboardPermission: {
+    parent: {
+      moduleURI: "resource:///actors/GeckoViewClipboardPermissionParent.jsm",
+    },
+    child: {
+      moduleURI: "resource:///actors/GeckoViewClipboardPermissionChild.jsm",
+      events: {
+        MozClipboardReadPaste: {},
+        deactivate: { mozSystemGroup: true },
+        mousedown: { capture: true, mozSystemGroup: true },
+        mozvisualscroll: { mozSystemGroup: true },
+        pagehide: { capture: true, mozSystemGroup: true },
+      },
+    },
+    allFrames: true,
+  },
 };
 
 class GeckoViewStartup {
@@ -157,6 +173,16 @@ class GeckoViewStartup {
         ) {
           lazy.ActorManagerParent.addJSWindowActors(JSWINDOWACTORS);
           lazy.ActorManagerParent.addJSProcessActors(JSPROCESSACTORS);
+
+          if (Services.appinfo.sessionHistoryInParent) {
+            GeckoViewUtils.addLazyGetter(this, "GeckoViewSessionStore", {
+              module: "resource://gre/modules/GeckoViewSessionStore.jsm",
+              observers: [
+                "browsing-context-did-set-embedder",
+                "browsing-context-discarded",
+              ],
+            });
+          }
 
           GeckoViewUtils.addLazyGetter(this, "GeckoViewWebExtension", {
             module: "resource://gre/modules/GeckoViewWebExtension.jsm",

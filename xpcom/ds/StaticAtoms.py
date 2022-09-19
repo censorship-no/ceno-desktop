@@ -1003,6 +1003,7 @@ STATIC_ATOMS = [
     Atom("popupgroup", "popupgroup"),
     Atom("popupset", "popupset"),
     Atom("popupsinherittooltip", "popupsinherittooltip"),
+    Atom("portal", "portal"),
     Atom("position", "position"),
     Atom("poster", "poster"),
     Atom("pre", "pre"),
@@ -1121,6 +1122,7 @@ STATIC_ATOMS = [
     Atom("selected", "selected"),
     Atom("selectedIndex", "selectedIndex"),
     Atom("selectedindex", "selectedindex"),
+    Atom("selectmenu", "selectmenu"),
     Atom("self", "self"),
     Atom("seltype", "seltype"),
     Atom("setcookie", "set-cookie"),
@@ -1978,6 +1980,7 @@ STATIC_ATOMS = [
     Atom("proxy", "proxy"),
     Atom("privateBrowsingAllowedPermission", "internal:privateBrowsingAllowed"),
     Atom("svgContextPropertiesAllowedPermission", "internal:svgContextPropertiesAllowed"),
+    Atom("theme", "theme"),
     # CSS Counter Styles
     Atom("decimal_leading_zero", "decimal-leading-zero"),
     Atom("arabic_indic", "arabic-indic"),
@@ -2254,6 +2257,7 @@ STATIC_ATOMS = [
     Atom("_moz_content_prefers_color_scheme", "-moz-content-prefers-color-scheme"),
     Atom("_moz_content_preferred_color_scheme", "-moz-content-preferred-color-scheme"),
     Atom("_moz_system_dark_theme", "-moz-system-dark-theme"),
+    Atom("_moz_box_flexbox_emulation", "-moz-box-flexbox-emulation"),
     # application commands
     Atom("Back", "Back"),
     Atom("Forward", "Forward"),
@@ -2384,6 +2388,8 @@ STATIC_ATOMS = [
     Atom("onplaybackstatechange", "onplaybackstatechange"),
     Atom("onpositionstatechange", "onpositionstatechange"),
     Atom("onsupportedkeyschange", "onsupportedkeyschange"),
+    # media query for MathML Core's implementation of maction/semantics
+    Atom("_moz_mathml_core_maction_and_semantics", "-moz-mathml-core-maction-and-semantics"),
     # Contextual Identity / Containers
     Atom("usercontextid", "usercontextid"),
     Atom("geckoViewSessionContextId", "geckoViewSessionContextId"),
@@ -2489,7 +2495,6 @@ STATIC_ATOMS = [
     InheritingAnonBoxAtom("AnonBox_firstLetterContinuation", ":-moz-first-letter-continuation"),
     InheritingAnonBoxAtom("AnonBox_mozBlockInsideInlineWrapper", ":-moz-block-inside-inline-wrapper"),
     InheritingAnonBoxAtom("AnonBox_mozMathMLAnonymousBlock", ":-moz-mathml-anonymous-block"),
-    InheritingAnonBoxAtom("AnonBox_mozXULAnonymousBlock", ":-moz-xul-anonymous-block"),
     InheritingAnonBoxAtom("AnonBox_mozLineFrame", ":-moz-line-frame"),
     InheritingAnonBoxAtom("AnonBox_buttonContent", ":-moz-button-content"),
     InheritingAnonBoxAtom("AnonBox_cellContent", ":-moz-cell-content"),
@@ -2511,8 +2516,7 @@ STATIC_ATOMS = [
     InheritingAnonBoxAtom("AnonBox_columnContent", ":-moz-column-content"),
     InheritingAnonBoxAtom("AnonBox_viewport", ":-moz-viewport"),
     InheritingAnonBoxAtom("AnonBox_viewportScroll", ":-moz-viewport-scroll"),
-    InheritingAnonBoxAtom("AnonBox_anonymousFlexItem", ":-moz-anonymous-flex-item"),
-    InheritingAnonBoxAtom("AnonBox_anonymousGridItem", ":-moz-anonymous-grid-item"),
+    InheritingAnonBoxAtom("AnonBox_anonymousItem", ":-moz-anonymous-item"),
     InheritingAnonBoxAtom("AnonBox_blockRubyContent", ":-moz-block-ruby-content"),
     InheritingAnonBoxAtom("AnonBox_ruby", ":-moz-ruby"),
     InheritingAnonBoxAtom("AnonBox_rubyBase", ":-moz-ruby-base"),

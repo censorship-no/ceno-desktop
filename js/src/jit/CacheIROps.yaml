@@ -109,6 +109,13 @@
   args:
     input: ValId
 
+- name: GuardIsNotUninitializedLexical
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    val: ValId
+
 - name: GuardToBoolean
   shared: true
   transpile: true
@@ -1164,6 +1171,30 @@
   args:
     code: Int32Id
 
+- name: StringIndexOfResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    searchStr: StringId
+
+- name: StringStartsWithResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    searchStr: StringId
+
+- name: StringEndsWithResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    searchStr: StringId
+
 - name: StringToLowerCaseResult
   shared: true
   transpile: true
@@ -1695,7 +1726,7 @@
     flags: CallFlagsImm
 
 
-# Meta ops generate no code, but contain data for BaselineInspector.
+# Meta ops generate no code, but contain data for the Warp Transpiler.
 - name: MetaScriptedThisShape
   shared: true
   transpile: true
@@ -1935,22 +1966,6 @@
   cost_estimate: 1
   args:
 
-- name: LoadEnvironmentFixedSlotResult
-  shared: false
-  transpile: true
-  cost_estimate: 1
-  args:
-    obj: ObjId
-    offset: RawInt32Field
-
-- name: LoadEnvironmentDynamicSlotResult
-  shared: false
-  transpile: true
-  cost_estimate: 1
-  args:
-    obj: ObjId
-    offset: RawInt32Field
-
 - name: LoadObjectResult
   shared: true
   transpile: true
@@ -2075,6 +2090,15 @@
   args:
     obj: ObjId
     index: Int32Id
+
+- name: CallNativeGetElementSuperResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    obj: ObjId
+    index: Int32Id
+    receiver: ValId
 
 - name: GetNextMapSetEntryForIteratorResult
   shared: true

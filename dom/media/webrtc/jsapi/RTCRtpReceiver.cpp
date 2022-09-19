@@ -27,12 +27,13 @@
 #include "PeerConnectionCtx.h"
 #include "RTCRtpTransceiver.h"
 #include "libwebrtcglue/AudioConduit.h"
+#include "call/call.h"
 
 namespace mozilla::dom {
 
 LazyLogModule gReceiverLog("RTCRtpReceiver");
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(RTCRtpReceiver)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(RTCRtpReceiver)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(RTCRtpReceiver)
   // We do not do anything here, we wait for BreakCycles to be called
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
@@ -40,7 +41,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(RTCRtpReceiver)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow, mPc, mTransceiver, mTrack)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(RTCRtpReceiver)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(RTCRtpReceiver)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(RTCRtpReceiver)
@@ -324,6 +324,13 @@ nsTArray<RefPtr<RTCStatsPromise>> RTCRtpReceiver::GetStatsInternal() {
               local.mPacketsReceived.Construct(audioStats->packets_rcvd);
               local.mPacketsDiscarded.Construct(audioStats->packets_discarded);
               local.mBytesReceived.Construct(audioStats->payload_bytes_rcvd);
+              // Always missing from libwebrtc stats
+              // if (audioStats->estimated_playout_ntp_timestamp_ms) {
+              //   local.mEstimatedPlayoutTimestamp.Construct(
+              //       aConduit->GetTimestampMaker().ConvertNtpToDomTime(
+              //           webrtc::Timestamp::Millis(
+              //               *audioStats->estimated_playout_ntp_timestamp_ms)));
+              // }
               local.mJitterBufferDelay.Construct(
                   audioStats->jitter_buffer_delay_seconds);
               local.mJitterBufferEmittedCount.Construct(
@@ -333,8 +340,6 @@ nsTArray<RefPtr<RTCStatsPromise>> RTCRtpReceiver::GetStatsInternal() {
               local.mConcealedSamples.Construct(audioStats->concealed_samples);
               local.mSilentConcealedSamples.Construct(
                   audioStats->silent_concealed_samples);
-              /*
-               * Potential new stats that are now available upstream.
               if (audioStats->last_packet_received_timestamp_ms) {
                 local.mLastPacketReceivedTimestamp.Construct(
                     aConduit->GetTimestampMaker().ConvertNtpToDomTime(
@@ -348,14 +353,9 @@ nsTArray<RefPtr<RTCStatsPromise>> RTCRtpReceiver::GetStatsInternal() {
                   audioStats->fec_packets_received);
               local.mFecPacketsDiscarded.Construct(
                   audioStats->fec_packets_discarded);
-              if (audioStats->estimated_playout_ntp_timestamp_ms) {
-                local.mEstimatedPlayoutTimestamp.Construct(
-                    aConduit->GetTimestampMaker().ConvertNtpToDomTime(
-                        webrtc::Timestamp::Millis(
-                            *audioStats->estimated_playout_ntp_timestamp_ms)));
-              }
               local.mConcealmentEvents.Construct(
                   audioStats->concealment_events);
+
               local.mInsertedSamplesForDeceleration.Construct(
                   audioStats->inserted_samples_for_deceleration);
               local.mRemovedSamplesForAcceleration.Construct(
@@ -368,7 +368,7 @@ nsTArray<RefPtr<RTCStatsPromise>> RTCRtpReceiver::GetStatsInternal() {
                   audioStats->total_output_energy);
               local.mTotalSamplesDuration.Construct(
                   audioStats->total_output_duration);
-               */
+
               if (!report->mInboundRtpStreamStats.AppendElement(
                       std::move(local), fallible)) {
                 mozalloc_handle_oom(0);
@@ -401,7 +401,7 @@ nsTArray<RefPtr<RTCStatsPromise>> RTCRtpReceiver::GetStatsInternal() {
                 remote.mBytesSent.Construct(
                     videoStats->rtcp_sender_octets_sent);
                 remote.mRemoteTimestamp.Construct(
-                    (webrtc::Timestamp::Millis(
+                    (webrtc::TimeDelta::Millis(
                          videoStats->rtcp_sender_remote_ntp_timestamp_ms) -
                      webrtc::TimeDelta::Seconds(webrtc::kNtpJan1970))
                         .ms());
@@ -449,10 +449,9 @@ nsTArray<RefPtr<RTCStatsPromise>> RTCRtpReceiver::GetStatsInternal() {
                   videoStats->jitter_buffer_delay_seconds);
               local.mJitterBufferEmittedCount.Construct(
                   videoStats->jitter_buffer_emitted_count);
-              /*
-               * Potential new stats that are now available upstream.
+
               if (videoStats->qp_sum) {
-                local.mQpSum.Construct(*videoStats->qp_sum.value);
+                local.mQpSum.Construct(videoStats->qp_sum.value());
               }
               local.mTotalDecodeTime.Construct(
                   double(videoStats->total_decode_time_ms) / 1000);
@@ -461,7 +460,7 @@ nsTArray<RefPtr<RTCStatsPromise>> RTCRtpReceiver::GetStatsInternal() {
               local.mTotalSquaredInterFrameDelay.Construct(
                   videoStats->total_squared_inter_frame_delay);
               if (videoStats->rtp_stats.last_packet_received_timestamp_ms) {
-                local.mLastPacketReceiveTimestamp.Construct(
+                local.mLastPacketReceivedTimestamp.Construct(
                     aConduit->GetTimestampMaker().ConvertNtpToDomTime(
                         webrtc::Timestamp::Millis(
                             *videoStats->rtp_stats
@@ -471,6 +470,10 @@ nsTArray<RefPtr<RTCStatsPromise>> RTCRtpReceiver::GetStatsInternal() {
               local.mHeaderBytesReceived.Construct(
                   videoStats->rtp_stats.packet_counter.header_bytes +
                   videoStats->rtp_stats.packet_counter.padding_bytes);
+              local.mTotalProcessingDelay.Construct(
+                  videoStats->total_processing_delay.seconds<double>());
+              /*
+               * Potential new stats that are now available upstream.
               if (videoStats->estimated_playout_ntp_timestamp_ms) {
                 local.mEstimatedPlayoutTimestamp.Construct(
                     aConduit->GetTimestampMaker().ConvertNtpToDomTime(

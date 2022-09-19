@@ -5352,6 +5352,37 @@ Downloader.prototype = {
       let patchFile = updateDir.clone();
       patchFile.append(FILE_UPDATE_MAR);
 
+      if (lazy.gIsBackgroundTaskMode) {
+        // We don't normally run a background update if we can't use BITS, but
+        // this branch is possible because we do fall back from BITS failures by
+        // attempting an internal download.
+        // If this happens, we are just going to need to wait for interactive
+        // Firefox to download the update. We don't, however, want to be in the
+        // "downloading" state when interactive Firefox runs because we want to
+        // download the newest update available which, at that point, may not be
+        // the one that we are currently trying to download.
+        // However, we can't just unconditionally clobber the current update
+        // because interactive Firefox might already be part way through an
+        // internal update download, and we definitely don't want to interrupt
+        // that.
+        let readyUpdateDir = getReadyUpdateDir();
+        let status = readStatusFile(readyUpdateDir);
+        // nsIIncrementalDownload doesn't use an intermediate download location
+        // for partially downloaded files. If we have started an update
+        // download with it, it will be available at its ultimate location.
+        if (!(status == STATE_DOWNLOADING && patchFile.exists())) {
+          cleanupDownloadingUpdate();
+        }
+
+        // Tell any listeners that the download failed. In some cases, there
+        // won't actually have been a corresponding onStartRequest, but that
+        // shouldn't really hurt anything.
+        this.updateService.forEachDownloadListener(listener => {
+          listener.onStopRequest(null, Cr.NS_ERROR_FAILURE);
+        });
+        return false;
+      }
+
       // The interval is 0 since there is no need to throttle downloads.
       let interval = 0;
 
@@ -6346,8 +6377,8 @@ class RestartOnLastWindowClosed {
       case "quit-application":
         this.shutdown();
         break;
-      case "browser-lastwindow-close-granted":
-        this.#onLastWindowClose();
+      case "domwindowclosed":
+        this.#onWindowClose();
         break;
       case "domwindowopened":
         this.#onWindowOpen();
@@ -6382,7 +6413,7 @@ class RestartOnLastWindowClosed {
       }
       LOG("RestartOnLastWindowClosed.#maybeEnableOrDisable - Enabling");
 
-      Services.obs.addObserver(this, "browser-lastwindow-close-granted");
+      Services.obs.addObserver(this, "domwindowclosed");
       Services.obs.addObserver(this, "domwindowopened");
 
       // Reset internal state, except for #updateReady (see its definition for
@@ -6393,16 +6424,14 @@ class RestartOnLastWindowClosed {
       this.#enabled = true;
 
       // Synchronize with external state.
-      if (!this.#windowsAreOpen()) {
-        this.#onLastWindowClose();
-      }
+      this.#onWindowClose();
     } else {
       if (!this.#enabled) {
         return;
       }
       LOG("RestartOnLastWindowClosed.#maybeEnableOrDisable - Disabling");
 
-      Services.obs.removeObserver(this, "browser-lastwindow-close-granted");
+      Services.obs.removeObserver(this, "domwindowclosed");
       Services.obs.removeObserver(this, "domwindowopened");
 
       this.#enabled = false;
@@ -6453,6 +6482,12 @@ class RestartOnLastWindowClosed {
     }
 
     this.#updateReady = false;
+  }
+
+  #onWindowClose() {
+    if (!this.#windowsAreOpen()) {
+      this.#onLastWindowClose();
+    }
   }
 
   #onLastWindowClose() {

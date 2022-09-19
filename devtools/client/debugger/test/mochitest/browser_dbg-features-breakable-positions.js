@@ -30,7 +30,7 @@ add_task(async function testBreakableLinesOverReloads() {
   );
 
   info("Assert breakable lines of the first html page load");
-  await assertBreakablePositions(dbg, "index.html", 68, [
+  await assertBreakablePositions(dbg, "index.html", 73, [
     { line: 16, columns: [6, 14] },
     { line: 17, columns: [] },
     { line: 21, columns: [6, 14] },
@@ -135,7 +135,7 @@ async function assertBreakablePositions(
     // If there is no column breakpoint, skip all further assertions
     // Last lines of inline script are reported as breakable lines and selectors reports
     // one breakable column, but, we don't report any available column breakpoint for them.
-    if (columns.length == 0) {
+    if (!columns.length) {
       // So, only ensure that the really is no marker on this line
       const lineElement = await getTokenFromPosition(dbg, { line, ch: -1 });
       const columnMarkers = lineElement.querySelectorAll(".column-breakpoint");

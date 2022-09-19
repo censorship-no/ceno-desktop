@@ -8,12 +8,13 @@
 
 #include "gc/Allocator.h"
 #include "gc/GCProbes.h"
+#include "gc/Marking.h"
+#include "gc/Zone.h"
 #include "proxy/DeadObjectProxy.h"
+#include "vm/Compartment.h"
 #include "vm/Realm.h"
 
 #include "gc/ObjectKind-inl.h"
-#include "gc/WeakMap-inl.h"
-#include "vm/JSObject-inl.h"
 
 using namespace js;
 
@@ -118,13 +119,12 @@ ProxyObject* ProxyObject::New(JSContext* cx, const BaseProxyHandler* handler,
 
   debugCheckNewObject(shape, allocKind, heap);
 
-  JSObject* obj =
-      AllocateObject(cx, allocKind, /* nDynamicSlots = */ 0, heap, clasp);
-  if (!obj) {
+  ProxyObject* proxy =
+      cx->newCell<ProxyObject>(allocKind, /* nDynamicSlots = */ 0, heap, clasp);
+  if (!proxy) {
     return nullptr;
   }
 
-  ProxyObject* proxy = static_cast<ProxyObject*>(obj);
   proxy->initShape(shape);
 
   MOZ_ASSERT(clasp->shouldDelayMetadataBuilder());
@@ -153,20 +153,21 @@ void ProxyObject::setSameCompartmentPrivate(const Value& priv) {
 }
 
 inline void ProxyObject::setPrivate(const Value& priv) {
-  MOZ_ASSERT_IF(IsMarkedBlack(this) && priv.isGCThing(),
+  MOZ_ASSERT_IF(!zone()->isGCPreparing() && isMarkedBlack() && priv.isGCThing(),
                 !JS::GCThingIsMarkedGray(priv.toGCCellPtr()));
   *slotOfPrivate() = priv;
 }
 
 void ProxyObject::setExpando(JSObject* expando) {
-  // Ensure that we don't accidentally end up pointing to a
-  // grey object, which would violate GC invariants.
-  MOZ_ASSERT_IF(IsMarkedBlack(this) && expando,
-                !JS::GCThingIsMarkedGray(JS::GCCellPtr(expando)));
-
   // Ensure we're in the same compartment as the proxy object: Don't want the
   // expando to end up as a CCW.
   MOZ_ASSERT_IF(expando, expando->compartment() == compartment());
+
+  // Ensure that we don't accidentally end up pointing to a
+  // grey object, which would violate GC invariants.
+  MOZ_ASSERT_IF(!zone()->isGCPreparing() && isMarkedBlack() && expando,
+                !JS::GCThingIsMarkedGray(JS::GCCellPtr(expando)));
+
   *slotOfExpando() = ObjectOrNullValue(expando);
 }
 

@@ -5,11 +5,9 @@
 "use strict";
 
 const EventEmitter = require("devtools/shared/event-emitter");
-const Services = require("Services");
 const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
 const { l10n } = require("devtools/client/webconsole/utils/messages");
 
-var ChromeUtils = require("ChromeUtils");
 const { BrowserLoader } = ChromeUtils.import(
   "resource://devtools/shared/loader/browser-loader.js"
 );
@@ -238,10 +236,6 @@ class WebConsoleUI {
       return;
     }
 
-    const {
-      hasWebConsoleClearMessagesCacheAsync,
-    } = this.hud.commands.client.mainRoot.traits;
-
     // This can be called during console destruction and getAllFronts would reject in such case.
     try {
       const consoleFronts = await this.hud.commands.targetCommand.getAllFronts(
@@ -250,12 +244,7 @@ class WebConsoleUI {
       );
       const promises = [];
       for (const consoleFront of consoleFronts) {
-        // @backward-compat { version 104 } clearMessagesCacheAsync was added in 104
-        promises.push(
-          hasWebConsoleClearMessagesCacheAsync
-            ? consoleFront.clearMessagesCacheAsync()
-            : consoleFront.clearMessagesCache()
-        );
+        promises.push(consoleFront.clearMessagesCacheAsync());
       }
       await Promise.all(promises);
       this.emitForTests("messages-cache-cleared");
@@ -705,7 +694,14 @@ class WebConsoleUI {
       );
 
       ZoomKeys.register(this.window, shortcuts);
-      shortcuts.on("CmdOrCtrl+Alt+R", quickRestart);
+
+      /* This is the same as DevelopmentHelpers.quickRestart, but it runs in all
+       * builds (even official). This allows a user to do a restart + session restore
+       * with Ctrl+Shift+J (open Browser Console) and then Ctrl+Alt+R (restart).
+       */
+      shortcuts.on("CmdOrCtrl+Alt+R", () => {
+        this.hud.commands.targetCommand.reloadTopLevelTarget();
+      });
     } else if (Services.prefs.getBoolPref(PREF_SIDEBAR_ENABLED)) {
       shortcuts.on("Esc", event => {
         this.wrapper.dispatchSidebarClose();
@@ -755,22 +751,6 @@ class WebConsoleUI {
     const inspectorSelection = this.hud.getInspectorSelection();
     return inspectorSelection?.nodeFront?.actorID;
   }
-}
-
-/* This is the same as DevelopmentHelpers.quickRestart, but it runs in all
- * builds (even official). This allows a user to do a restart + session restore
- * with Ctrl+Shift+J (open Browser Console) and then Ctrl+Shift+R (restart).
- */
-function quickRestart() {
-  const { Cc, Ci } = require("chrome");
-  Services.obs.notifyObservers(null, "startupcache-invalidate");
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  env.set("MOZ_DISABLE_SAFE_MODE_KEY", "1");
-  Services.startup.quit(
-    Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart
-  );
 }
 
 exports.WebConsoleUI = WebConsoleUI;

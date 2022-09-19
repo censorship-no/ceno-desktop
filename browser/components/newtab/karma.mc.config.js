@@ -205,7 +205,7 @@ module.exports = function(config) {
             "content-src/aboutwelcome/**/*.jsx": {
               statements: 62,
               lines: 60,
-              functions: 65,
+              functions: 50,
               branches: 50,
             },
             "content-src/components/**/*.jsx": {
@@ -280,6 +280,11 @@ module.exports = function(config) {
             test: /\.js$/,
             exclude: [/node_modules\/(?!(fluent|fluent-react)\/).*/, /test/],
             loader: "babel-loader",
+            options: {
+              // This is a workaround for bug 1787278. It can be removed once
+              // that bug is fixed.
+              plugins: ["@babel/plugin-proposal-optional-chaining"],
+            },
           },
           {
             test: /\.jsx$/,

@@ -14,6 +14,7 @@
 #include "mozilla/Casting.h"
 
 #include "frontend/TokenStream.h"
+#include "gc/GC.h"
 #include "gc/Zone.h"
 #include "irregexp/imported/regexp-ast.h"
 #include "irregexp/imported/regexp-bytecode-generator.h"
@@ -30,6 +31,7 @@
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/friend/StackLimits.h"    // js::ReportOverRecursed
 #include "util/StringBuffer.h"
+#include "vm/ErrorContext.h"
 #include "vm/MatchPairs.h"
 #include "vm/PlainObject.h"
 #include "vm/RegExpShared.h"
@@ -150,6 +152,8 @@ Isolate* CreateIsolate(JSContext* cx) {
   }
   return isolate.release();
 }
+
+void TraceIsolate(JSTracer* trc, Isolate* isolate) { isolate->trace(trc); }
 
 void DestroyIsolate(Isolate* isolate) {
   MOZ_ASSERT(isolate->liveHandles() == 0);
@@ -280,28 +284,28 @@ static void ReportSyntaxError(TokenStreamAnyChars& ts,
 }
 
 template <typename CharT>
-static bool CheckPatternSyntaxImpl(JSContext* cx, const CharT* input,
-                                   uint32_t inputLength, JS::RegExpFlags flags,
+static bool CheckPatternSyntaxImpl(JSContext* cx,
+                                   JS::NativeStackLimit stackLimit,
+                                   const CharT* input, uint32_t inputLength,
+                                   JS::RegExpFlags flags,
                                    RegExpCompileData* result,
                                    JS::AutoAssertNoGC& nogc) {
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
   Zone zone(allocScope.alloc());
 
-  uintptr_t stackLimit = cx->stackLimit(JS::StackForSystemCode);
-
-  HandleScope handleScope(cx->isolate);
   return RegExpParser::VerifyRegExpSyntax(&zone, stackLimit, input, inputLength,
                                           flags, result, nogc);
 }
 
-bool CheckPatternSyntax(JSContext* cx, TokenStreamAnyChars& ts,
+bool CheckPatternSyntax(JSContext* cx, JS::NativeStackLimit stackLimit,
+                        TokenStreamAnyChars& ts,
                         const mozilla::Range<const char16_t> chars,
                         JS::RegExpFlags flags, mozilla::Maybe<uint32_t> line,
                         mozilla::Maybe<uint32_t> column) {
   RegExpCompileData result;
   JS::AutoAssertNoGC nogc(cx);
-  if (!CheckPatternSyntaxImpl(cx, chars.begin().get(), chars.length(), flags,
-                              &result, nogc)) {
+  if (!CheckPatternSyntaxImpl(cx, stackLimit, chars.begin().get(),
+                              chars.length(), flags, &result, nogc)) {
     ReportSyntaxError(ts, line, column, result, chars.begin().get(),
                       chars.length());
     return false;
@@ -309,19 +313,20 @@ bool CheckPatternSyntax(JSContext* cx, TokenStreamAnyChars& ts,
   return true;
 }
 
-bool CheckPatternSyntax(JSContext* cx, TokenStreamAnyChars& ts,
-                        Handle<JSAtom*> pattern, JS::RegExpFlags flags) {
+bool CheckPatternSyntax(JSContext* cx, JS::NativeStackLimit stackLimit,
+                        TokenStreamAnyChars& ts, Handle<JSAtom*> pattern,
+                        JS::RegExpFlags flags) {
   RegExpCompileData result;
   JS::AutoAssertNoGC nogc(cx);
   if (pattern->hasLatin1Chars()) {
-    if (!CheckPatternSyntaxImpl(cx, pattern->latin1Chars(nogc),
+    if (!CheckPatternSyntaxImpl(cx, stackLimit, pattern->latin1Chars(nogc),
                                 pattern->length(), flags, &result, nogc)) {
       ReportSyntaxError(ts, result, pattern);
       return false;
     }
     return true;
   }
-  if (!CheckPatternSyntaxImpl(cx, pattern->twoByteChars(nogc),
+  if (!CheckPatternSyntaxImpl(cx, stackLimit, pattern->twoByteChars(nogc),
                               pattern->length(), flags, &result, nogc)) {
     ReportSyntaxError(ts, result, pattern);
     return false;
@@ -686,6 +691,7 @@ bool CompilePattern(JSContext* cx, MutableHandleRegExpShared re,
   RegExpDepthCheck depthCheck(cx);
   if (!depthCheck.check(data.tree)) {
     JS_ReportErrorASCII(cx, "regexp too big");
+    cx->reportResourceExhaustion();
     return false;
   }
 
@@ -747,6 +753,7 @@ bool CompilePattern(JSContext* cx, MutableHandleRegExpShared re,
                    isLatin1)) {
     case AssembleResult::TooLarge:
       JS_ReportErrorASCII(cx, "regexp too big");
+      cx->reportResourceExhaustion();
       return false;
     case AssembleResult::OutOfMemory:
       MOZ_ASSERT(cx->isThrowingOutOfMemory());

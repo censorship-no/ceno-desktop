@@ -18,6 +18,16 @@ treeherder:
         'Btime-cache': 'Browsertime performance tests on Firefox with populated bytecode cache.'
         'Btime-1proc': 'Browsertime performance tests on Firefox without e10s'
         'Btime-fis': 'Browsertime performance tests on Firefox with fission enabled'
+        'Btime-nofis': 'Browsertime tests on Firefox without fission enabled'
+        'Btime-P-nofis': 'Browsertime power tests on Firefox without fission enabled'
+        'Btime-Prof-nofis': 'Browsertime tests on Firefox with profiling and without fission enabled'
+        'Btime-P-nofis-refbrow': 'Browsertime Power Usage Tests on reference browser without fission enabled'
+        'Btime-P-nofis-fenix': 'Browsertime Power Usage Tests on Fenix without fission enabled'
+        'Btime-live-nofis-fenix': 'Browsertime tests on Fenix without fission enabled using live sites'
+        'Btime-nofis-fenix': 'Browsertime tests on Fenix without fission enabled'
+        'Btime-live-nofis': 'Browsertime tests on Firefox without fission enabled using live sites'
+        'Btime-nofis-refbrow': 'Browsertime tests on reference browser without fission enabled'
+        'Btime-live-nofis-ChR': 'Browsertime tests on Chrome without fission enabled using live sites'
         'Btime-Prof': 'Browsertime performance tests on Firefox with Gecko Profiling'
         'Btime-Prof-fis': 'Browsertime performance tests on Firefox with Gecko Profiling, fission enabled'
         'Btime-Prof-1proc': 'Browsertime performance tests on Firefox with Gecko Profiling and without e10s'
@@ -27,6 +37,7 @@ treeherder:
         'Btime-live-ChR': 'Browsertime performance tests on Firefox'
         'Btime-live-Cr': 'Browsertime performance tests on Google Chromium'
         'Btime-ChR': 'Browsertime performance tests on Google Chrome Release'
+        'Btime-nofis-ChR': 'Browsertime performance tests on Google Chrome Release without fission enabled'
         'Btime-Cr': 'Browsertime performance tests on Google Chromium'
         'Btime-P': 'Browsertime power tests on Firefox/Geckoview'
         'Btime-P-fenix': 'Browsertime power tests on Fenix'
@@ -544,7 +555,10 @@ workers:
             worker-type:
                 by-release-level:
                     production: '{trust-domain}-3-tree'
-                    staging: '{trust-domain}-1-tree'
+                    staging:
+                        by-project:
+                            autoland: '{trust-domain}-3-tree'
+                            default: '{trust-domain}-1-tree'
         tree-dev:
             provisioner: scriptworker-k8s
             implementation: treescript
@@ -560,11 +574,16 @@ workers:
             implementation: docker-worker
             os: linux
             worker-type: '{alias}-gcp'
-        t-linux-metal:
+        t-linux-kvm:
             provisioner: '{trust-domain}-t'
             implementation: docker-worker
             os: linux
-            worker-type: '{alias}'
+            worker-type: 't-linux-kvm-gcp'
+        t-linux-kvm-aws:
+            provisioner: '{trust-domain}-t'
+            implementation: docker-worker
+            os: linux
+            worker-type: 't-linux-metal'
         t-linux-talos:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -667,3 +686,19 @@ mac-notarization:
         by-platform:
             macosx64.*: build/package/mac_osx/requirements.plist
             default: ''
+
+expiration-policy:
+    by-project:
+        try:
+            default: 1 month
+            medium: 1 month
+            long: 1 month
+        autoland:
+            default: 1 year
+            medium: 1 year
+            # To avoid keeping shippable builds for over a year
+            long: 1 year
+        default:
+            default: 3 months
+            medium: 1 year
+            long: 1 year

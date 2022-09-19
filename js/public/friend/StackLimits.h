@@ -73,6 +73,8 @@ class MOZ_RAII AutoCheckRecursionLimit {
 
   JS_PUBLIC_API JS::StackKind stackKindForCurrentPrincipal(JSContext* cx) const;
 
+  JS_PUBLIC_API void assertMainThread(JSContext* cx) const;
+
 #ifdef __wasi__
   // The JSContext outlives AutoCheckRecursionLimit so it is safe to use raw
   // pointer here.
@@ -163,6 +165,8 @@ class MOZ_RAII AutoCheckRecursionLimit {
   [[nodiscard]] MOZ_ALWAYS_INLINE bool checkConservative(JSContext* cx) const;
   [[nodiscard]] MOZ_ALWAYS_INLINE bool checkConservativeDontReport(
       JSContext* cx) const;
+  [[nodiscard]] MOZ_ALWAYS_INLINE bool checkConservativeDontReport(
+      JS::NativeStackLimit limit) const;
 
   [[nodiscard]] MOZ_ALWAYS_INLINE bool checkSystem(JSContext* cx) const;
   [[nodiscard]] MOZ_ALWAYS_INLINE bool checkSystemDontReport(
@@ -198,6 +202,7 @@ AutoCheckRecursionLimit::getStackLimitSlow(JSContext* cx) const {
 MOZ_ALWAYS_INLINE JS::NativeStackLimit
 AutoCheckRecursionLimit::getStackLimitHelper(JSContext* cx, JS::StackKind kind,
                                              int extraAllowance) const {
+  assertMainThread(cx);
   JS::NativeStackLimit limit =
       JS::RootingContext::get(cx)->nativeStackLimit[kind];
 #if JS_STACK_GROWTH_DIRECTION > 0
@@ -302,6 +307,12 @@ MOZ_ALWAYS_INLINE bool AutoCheckRecursionLimit::checkConservativeDontReport(
     JSContext* cx) const {
   JS::NativeStackLimit limit = getStackLimitHelper(
       cx, JS::StackForUntrustedScript, -1024 * int(sizeof(size_t)));
+  int stackDummy;
+  return checkLimitImpl(limit, &stackDummy);
+}
+
+MOZ_ALWAYS_INLINE bool AutoCheckRecursionLimit::checkConservativeDontReport(
+    JS::NativeStackLimit limit) const {
   int stackDummy;
   return checkLimitImpl(limit, &stackDummy);
 }

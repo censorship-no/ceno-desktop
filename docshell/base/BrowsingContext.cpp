@@ -125,6 +125,22 @@ struct ParamTraits<mozilla::dom::TouchEventsOverride>
           mozilla::dom::TouchEventsOverride,
           mozilla::dom::TouchEventsOverride::Disabled,
           mozilla::dom::TouchEventsOverride::EndGuard_> {};
+
+template <>
+struct ParamTraits<mozilla::dom::EmbedderColorSchemes> {
+  using paramType = mozilla::dom::EmbedderColorSchemes;
+
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mUsed);
+    WriteParam(aWriter, aParam.mPreferred);
+  }
+
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mUsed) &&
+           ReadParam(aReader, &aResult->mPreferred);
+  }
+};
+
 }  // namespace IPC
 
 namespace mozilla {
@@ -352,6 +368,8 @@ already_AddRefed<BrowsingContext> BrowsingContext::CreateDetached(
     MOZ_DIAGNOSTIC_ASSERT(parentBC->Group() == group);
     MOZ_DIAGNOSTIC_ASSERT(parentBC->mType == aType);
     fields.mEmbedderInnerWindowId = aParent->WindowID();
+    // Non-toplevel content documents are always embededed within content.
+    fields.mEmbeddedInContentDocument = parentBC->mType == Type::Content;
 
     // XXX(farre): Can/Should we check aParent->IsLoading() here? (Bug
     // 1608448) Check if the parent was itself loading already
@@ -701,6 +719,8 @@ void BrowsingContext::SetEmbedderElement(Element* aEmbedder) {
   if (aEmbedder) {
     Transaction txn;
     txn.SetEmbedderElementType(Some(aEmbedder->LocalName()));
+    txn.SetEmbeddedInContentDocument(
+        aEmbedder->OwnerDoc()->IsContentDocument());
     if (nsCOMPtr<nsPIDOMWindowInner> inner =
             do_QueryInterface(aEmbedder->GetOwnerGlobal())) {
       txn.SetEmbedderInnerWindowId(inner->WindowID());
@@ -737,7 +757,19 @@ void BrowsingContext::SetEmbedderElement(Element* aEmbedder) {
       obs->NotifyWhenScriptSafe(ToSupports(this),
                                 "browsing-context-did-set-embedder", nullptr);
     }
+
+    if (nsContentUtils::ShouldHideObjectOrEmbedImageDocument() &&
+        IsEmbedderTypeObjectOrEmbed()) {
+      Unused << SetSyntheticDocumentContainer(true);
+    }
   }
+}
+
+bool BrowsingContext::IsEmbedderTypeObjectOrEmbed() {
+  if (const Maybe<nsString>& type = GetEmbedderElementType()) {
+    return nsGkAtoms::object->Equals(*type) || nsGkAtoms::embed->Equals(*type);
+  }
+  return false;
 }
 
 void BrowsingContext::Embed() {
@@ -1059,6 +1091,13 @@ void BrowsingContext::GetChildren(
   aChildren.AppendElements(Children());
 }
 
+Span<RefPtr<BrowsingContext>> BrowsingContext::NonSyntheticChildren() const {
+  if (WindowContext* current = mCurrentWindowContext) {
+    return current->NonSyntheticChildren();
+  }
+  return Span<RefPtr<BrowsingContext>>();
+}
+
 void BrowsingContext::GetWindowContexts(
     nsTArray<RefPtr<WindowContext>>& aWindows) {
   aWindows.AppendElements(mWindowContexts);
@@ -1209,7 +1248,7 @@ BrowsingContext* BrowsingContext::FindWithName(
         found = parent;
         break;
       } else {
-        siblings = parent->Children();
+        siblings = parent->NonSyntheticChildren();
       }
 
       for (BrowsingContext* sibling : siblings) {
@@ -1244,7 +1283,7 @@ BrowsingContext* BrowsingContext::FindChildWithName(
     return nullptr;
   }
 
-  for (BrowsingContext* child : Children()) {
+  for (BrowsingContext* child : NonSyntheticChildren()) {
     if (child->NameEquals(aName) && aRequestingContext.CanAccess(child) &&
         child->IsTargetable()) {
       return child;
@@ -1288,7 +1327,7 @@ BrowsingContext* BrowsingContext::FindWithNameInSubtree(
     return this;
   }
 
-  for (BrowsingContext* child : Children()) {
+  for (BrowsingContext* child : NonSyntheticChildren()) {
     if (BrowsingContext* found =
             child->FindWithNameInSubtree(aName, aRequestingContext)) {
       return found;
@@ -2783,9 +2822,9 @@ bool BrowsingContext::CanSet(FieldIndex<IDX_TouchEventsOverrideInternal>,
   return XRE_IsParentProcess() && !aSource;
 }
 
-void BrowsingContext::DidSet(FieldIndex<IDX_EmbedderColorScheme>,
-                             dom::PrefersColorSchemeOverride aOldValue) {
-  if (GetEmbedderColorScheme() == aOldValue) {
+void BrowsingContext::DidSet(FieldIndex<IDX_EmbedderColorSchemes>,
+                             EmbedderColorSchemes&& aOldValue) {
+  if (GetEmbedderColorSchemes() == aOldValue) {
     return;
   }
   PresContextAffectingFieldChanged();
@@ -2963,6 +3002,13 @@ void BrowsingContext::DidSet(FieldIndex<IDX_IsInBFCache>) {
         doc->NotifyActivityChanged();
       }
     });
+  }
+}
+
+void BrowsingContext::DidSet(FieldIndex<IDX_SyntheticDocumentContainer>) {
+  if (WindowContext* parentWindowContext = GetParentWindowContext()) {
+    parentWindowContext->UpdateChildSynthetic(this,
+                                              GetSyntheticDocumentContainer());
   }
 }
 
@@ -3662,10 +3708,9 @@ void BrowsingContext::RemoveFromSessionHistory(const nsID& aChangeID) {
   }
 }
 
-void BrowsingContext::HistoryGo(int32_t aOffset, uint64_t aHistoryEpoch,
-                                bool aRequireUserInteraction,
-                                bool aUserActivation,
-                                std::function<void(int32_t&&)>&& aResolver) {
+void BrowsingContext::HistoryGo(
+    int32_t aOffset, uint64_t aHistoryEpoch, bool aRequireUserInteraction,
+    bool aUserActivation, std::function<void(Maybe<int32_t>&&)>&& aResolver) {
   if (XRE_IsContentProcess()) {
     ContentChild::GetSingleton()->SendHistoryGo(
         this, aOffset, aHistoryEpoch, aRequireUserInteraction, aUserActivation,
@@ -3673,12 +3718,11 @@ void BrowsingContext::HistoryGo(int32_t aOffset, uint64_t aHistoryEpoch,
         [](mozilla::ipc::
                ResponseRejectReason) { /* FIXME Is ignoring this fine? */ });
   } else {
-    Canonical()->HistoryGo(
+    aResolver(Canonical()->HistoryGo(
         aOffset, aHistoryEpoch, aRequireUserInteraction, aUserActivation,
         Canonical()->GetContentParent()
             ? Some(Canonical()->GetContentParent()->ChildID())
-            : Nothing(),
-        std::move(aResolver));
+            : Nothing()));
   }
 }
 

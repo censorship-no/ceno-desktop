@@ -646,54 +646,6 @@ bool BaselineCacheIRCompiler::emitFrameIsConstructingResult() {
   return true;
 }
 
-bool BaselineCacheIRCompiler::emitLoadEnvironmentFixedSlotResult(
-    ObjOperandId objId, uint32_t offsetOffset) {
-  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
-  AutoOutputRegister output(*this);
-  Register obj = allocator.useRegister(masm, objId);
-  AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
-
-  FailurePath* failure;
-  if (!addFailurePath(&failure)) {
-    return false;
-  }
-
-  masm.load32(stubAddress(offsetOffset), scratch);
-  BaseIndex slot(obj, scratch, TimesOne);
-
-  // Check for uninitialized lexicals.
-  masm.branchTestMagic(Assembler::Equal, slot, failure->label());
-
-  // Load the value.
-  masm.loadValue(slot, output.valueReg());
-  return true;
-}
-
-bool BaselineCacheIRCompiler::emitLoadEnvironmentDynamicSlotResult(
-    ObjOperandId objId, uint32_t offsetOffset) {
-  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
-  AutoOutputRegister output(*this);
-  Register obj = allocator.useRegister(masm, objId);
-  AutoScratchRegister scratch(allocator, masm);
-  AutoScratchRegisterMaybeOutput scratch2(allocator, masm, output);
-
-  FailurePath* failure;
-  if (!addFailurePath(&failure)) {
-    return false;
-  }
-
-  masm.load32(stubAddress(offsetOffset), scratch);
-  masm.loadPtr(Address(obj, NativeObject::offsetOfSlots()), scratch2);
-
-  // Check for uninitialized lexicals.
-  BaseIndex slot(scratch2, scratch, TimesOne);
-  masm.branchTestMagic(Assembler::Equal, slot, failure->label());
-
-  // Load the value.
-  masm.loadValue(slot, output.valueReg());
-  return true;
-}
-
 bool BaselineCacheIRCompiler::emitLoadConstantStringResult(uint32_t strOffset) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
@@ -1193,7 +1145,8 @@ bool BaselineCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
   Register str = allocator.useRegister(masm, strId);
   Register index = allocator.useRegister(masm, indexId);
   AutoScratchRegisterMaybeOutput scratch1(allocator, masm, output);
-  AutoScratchRegister scratch2(allocator, masm);
+  AutoScratchRegisterMaybeOutputType scratch2(allocator, masm, output);
+  AutoScratchRegister scratch3(allocator, masm);
 
   FailurePath* failure;
   if (!addFailurePath(&failure)) {
@@ -1203,7 +1156,8 @@ bool BaselineCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
   // Bounds check, load string char.
   masm.spectreBoundsCheck32(index, Address(str, JSString::offsetOfLength()),
                             scratch1, failure->label());
-  masm.loadStringChar(str, index, scratch1, scratch2, failure->label());
+  masm.loadStringChar(str, index, scratch1, scratch2, scratch3,
+                      failure->label());
 
   allocator.discardStack(masm);
 
@@ -1828,7 +1782,7 @@ bool BaselineCacheIRCompiler::emitMegamorphicSetElement(ObjOperandId objId,
 
   using Fn = bool (*)(JSContext*, HandleObject, HandleValue, HandleValue,
                       HandleValue, bool);
-  callVM<Fn, SetObjectElementWithReceiver>(masm);
+  callVM<Fn, SetElementMegamorphic>(masm);
 
   stubFrame.leave(masm);
   return true;

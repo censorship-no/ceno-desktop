@@ -26,6 +26,7 @@
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_editor.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/dom/Document.h"
@@ -494,6 +495,8 @@ static constexpr struct {
     // need to re-layout.
     {"browser.theme.toolbar-theme"_ns, widget::ThemeChangeKind::AllBits},
     {"browser.theme.content-theme"_ns},
+    {"layout.css.moz-box-flexbox-emulation.enabled"_ns},
+    {"mathml.legacy_maction_and_semantics_implementations.disabled"_ns},
 };
 
 // Read values from the user's preferences.
@@ -1296,8 +1299,6 @@ void LookAndFeel::RecomputeColorSchemes() {
         return ColorScheme::Dark;
       case 1:
         return ColorScheme::Light;
-      case 2:
-        return SystemColorScheme();
       default:
         return ThemeDerivedColorSchemeForContent();
     }
@@ -1305,7 +1306,8 @@ void LookAndFeel::RecomputeColorSchemes() {
 }
 
 ColorScheme LookAndFeel::ColorSchemeForStyle(
-    const dom::Document& aDoc, const StyleColorSchemeFlags& aFlags) {
+    const dom::Document& aDoc, const StyleColorSchemeFlags& aFlags,
+    ColorSchemeMode aMode) {
   using Choice = PreferenceSheet::Prefs::ColorSchemeChoice;
 
   const auto& prefs = PreferenceSheet::PrefsFor(aDoc);
@@ -1337,7 +1339,8 @@ ColorScheme LookAndFeel::ColorSchemeForStyle(
   }
   // No value specified. Chrome docs always supports both, so use the preferred
   // color-scheme.
-  if (nsContentUtils::IsChromeDoc(&aDoc)) {
+  if (aMode == ColorSchemeMode::Preferred ||
+      nsContentUtils::IsChromeDoc(&aDoc)) {
     return aDoc.PreferredColorScheme();
   }
   // Default content to light.
@@ -1345,9 +1348,9 @@ ColorScheme LookAndFeel::ColorSchemeForStyle(
 }
 
 LookAndFeel::ColorScheme LookAndFeel::ColorSchemeForFrame(
-    const nsIFrame* aFrame) {
+    const nsIFrame* aFrame, ColorSchemeMode aMode) {
   return ColorSchemeForStyle(*aFrame->PresContext()->Document(),
-                             aFrame->StyleUI()->mColorScheme.bits);
+                             aFrame->StyleUI()->mColorScheme.bits, aMode);
 }
 
 // static

@@ -456,14 +456,6 @@ function pref_test1_4(pi) {
   run_pac_test();
 }
 
-function protocol_handler_test_1(pi) {
-  Assert.equal(pi, null);
-  prefs.setCharPref("network.proxy.autoconfig_url", "");
-  prefs.setIntPref("network.proxy.type", 0);
-
-  run_pac_cancel_test();
-}
-
 function TestResolveCallback(type, nexttest) {
   this.type = type;
   this.nexttest = nexttest;
@@ -752,7 +744,6 @@ function host_filter_cb(proxy) {
 // Verify that hists in the host filter list are not proxied
 // refers to "network.proxy.no_proxies_on"
 
-var uriStrUseProxyList;
 var uriStrUseProxyList;
 var hostFilterList;
 var uriStrFilterList;

@@ -400,7 +400,7 @@ load 551635-1.html
 load 553504-1.xhtml
 load 564368-1.xhtml
 load 564968.xhtml
-load 569193-1.html
+asserts(5) load 569193-1.html # absurd sizes
 load 570160.html
 load 570289-1.html
 load 571618-1.svg
@@ -409,6 +409,7 @@ load 571995.xhtml
 load 574958.xhtml
 asserts(0-6) load 578977.html # bug 757305
 load 580504-1.xhtml
+load 582793-1.html
 load 585598-1.xhtml
 load 586806-1.html
 load 586806-2.html
@@ -451,7 +452,7 @@ load 656130-2.html
 load 660416.html
 load 665853.html
 load 667025.html
-asserts(3-9) load 673770.html # nested multicols and bogus sizes, e.g. Init: bad caller: height WAS 2147478130
+asserts(9-17) load 673770.html # nested multicols and bogus sizes, e.g. Init: bad caller: height WAS 2147478130
 load 679933-1.html
 load 681489-1.html
 load 682649-1.html
@@ -584,6 +585,9 @@ load 1134531.html
 load 1134667.html
 load 1137723-1.html
 load 1137723-2.html
+asserts(1) load 1140043-1.html
+asserts(1) load 1140043-2.html
+asserts(1) load 1140043-3.html
 load 1140268-1.html
 load 1145768.html
 load 1145931.html
@@ -643,8 +647,8 @@ load 1234701-1.html
 load 1234701-2.html
 load 1248227.html
 load 1271765.html
-pref(layout.css.xul-box-display-values.content.enabled,true) load 1272983-1.html
-pref(layout.css.xul-box-display-values.content.enabled,true) load 1272983-2.html
+load chrome://reftest/content/crashtests/layout/generic/crashtests/1272983-1.html
+load chrome://reftest/content/crashtests/layout/generic/crashtests/1272983-2.html
 load 1275059.html
 load 1278007.html
 load 1278080.html
@@ -694,6 +698,7 @@ load 1460158-2.html
 load 1460158-3.html
 load 1461039.html
 load 1461979-1.html
+load 1463977.html
 asserts(0-1) load 1466224.html # assertion is bug 1683800
 load 1467239.html
 load 1472403.html
@@ -777,7 +782,7 @@ load 1638906.html
 load 1640028.html
 load 1640051.html
 load 1640275.html
-pref(layout.accessiblecaret.enabled,true) asserts(16-26) load 1644819.html # bug 1688115
+pref(layout.accessiblecaret.enabled,true) asserts(11-13) load 1644819.html # bug 1688115
 load 1645549-1.html
 load 1648577.html
 load 1652618.html

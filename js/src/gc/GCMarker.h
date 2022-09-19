@@ -11,7 +11,6 @@
 
 #include "ds/OrderedHashTable.h"
 #include "gc/Barrier.h"
-#include "js/SliceBudget.h"
 #include "js/TracingAPI.h"
 #include "js/TypeDecls.h"
 
@@ -19,6 +18,7 @@ class JSRope;
 
 namespace js {
 
+class SliceBudget;
 class WeakMapBase;
 
 static const size_t NON_INCREMENTAL_MARK_STACK_BASE_CAPACITY = 4096;
@@ -253,7 +253,7 @@ enum MarkingState : uint8_t {
   IterativeMarking
 };
 
-class GCMarker final : public JSTracer {
+class GCMarker final : public GenericTracerImpl<GCMarker> {
  public:
   explicit GCMarker(JSRuntime* rt);
   [[nodiscard]] bool init();
@@ -266,6 +266,10 @@ class GCMarker final : public JSTracer {
   void start();
   void stop();
   void reset();
+
+  template <typename T>
+  void onEdge(T** thingp, const char* name);
+  friend class js::GenericTracerImpl<GCMarker>;
 
   // If |thing| is unmarked, mark it and then traverse its children.
   template <typename T>
@@ -369,9 +373,6 @@ class GCMarker final : public JSTracer {
   // mark stack.
   void markEphemeronEdges(gc::EphemeronEdgeVector& edges,
                           gc::CellColor srcColor);
-
-  size_t getMarkCount() const { return markCount; }
-  void clearMarkCount() { markCount = 0; }
 
   static GCMarker* fromTracer(JSTracer* trc) {
     MOZ_ASSERT(trc->isMarkingTracer());
@@ -483,9 +484,6 @@ class GCMarker final : public JSTracer {
 
   /* Whether more work has been added to the delayed marking list. */
   MainThreadOrGCTaskData<bool> delayedMarkingWorkAdded;
-
-  /* The count of marked objects during GC. */
-  size_t markCount;
 
   /* Track the state of marking. */
   MainThreadOrGCTaskData<MarkingState> state;

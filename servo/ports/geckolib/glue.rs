@@ -28,7 +28,7 @@ use style::data::{self, ElementStyles};
 use style::dom::{ShowSubtreeData, TDocument, TElement, TNode};
 use style::driver;
 use style::error_reporting::{ContextualParseError, ParseErrorReporter};
-use style::font_face::{self, FontFaceSourceListComponent, Source};
+use style::font_face::{self, FontFaceSourceListComponent, FontFaceSourceFormat, Source};
 use style::font_metrics::{get_metrics_provider_for_product, FontMetricsProvider};
 use style::gecko::data::{GeckoStyleSheet, PerDocumentStyleData, PerDocumentStyleDataImpl};
 use style::gecko::restyle_damage::GeckoRestyleDamage;
@@ -2524,6 +2524,7 @@ pub extern "C" fn Servo_StyleRule_SetSelectorText(
             stylesheet_origin: contents.origin,
             namespaces: &namespaces,
             url_data: &url_data,
+            for_supports_rule: false,
         };
 
         let mut parser_input = ParserInput::new(&value_str);
@@ -2968,7 +2969,40 @@ pub extern "C" fn Servo_ContainerRule_GetConditionText(
     result: &mut nsACString,
 ) {
     read_locked_arc(rule, |rule: &ContainerRule| {
+        rule.condition.to_css(&mut CssWriter::new(result)).unwrap();
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_ContainerRule_GetContainerQuery(
+    rule: &RawServoContainerRule,
+    result: &mut nsACString,
+) {
+    read_locked_arc(rule, |rule: &ContainerRule| {
         rule.query_condition().to_css(&mut CssWriter::new(result)).unwrap();
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_ContainerRule_QueryContainerFor(
+    rule: &RawServoContainerRule,
+    element: &RawGeckoElement,
+) -> *const RawGeckoElement {
+    read_locked_arc(rule, |rule: &ContainerRule| {
+        rule.condition.find_container(GeckoElement(element)).map_or(ptr::null(), |result| result.element.0)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_ContainerRule_GetContainerName(
+    rule: &RawServoContainerRule,
+    result: &mut nsACString,
+) {
+    read_locked_arc(rule, |rule: &ContainerRule| {
+        let name = rule.container_name();
+        if !name.is_none() {
+            name.to_css(&mut CssWriter::new(result)).unwrap();
+        }
     })
 }
 
@@ -3253,8 +3287,9 @@ pub unsafe extern "C" fn Servo_FontFaceRule_GetSources(
         };
         let len = sources.iter().fold(0, |acc, src| {
             acc + match *src {
-                // Each format hint takes one position in the array of mSrc.
-                Source::Url(ref url) => url.format_hints.len() + 1,
+                Source::Url(ref url) =>
+                    (if url.format_hint.is_some() { 2 } else { 1 }) +
+                    (if url.tech_flags.is_empty() { 0 } else { 1 }),
                 Source::Local(_) => 1,
             }
         });
@@ -3272,11 +3307,19 @@ pub unsafe extern "C" fn Servo_FontFaceRule_GetSources(
                 match *source {
                     Source::Url(ref url) => {
                         set_next(FontFaceSourceListComponent::Url(&url.url));
-                        for hint in url.format_hints.iter() {
-                            set_next(FontFaceSourceListComponent::FormatHint {
-                                length: hint.len(),
-                                utf8_bytes: hint.as_ptr(),
-                            });
+                        if let Some(hint) = &url.format_hint {
+                            match hint {
+                                FontFaceSourceFormat::Keyword(kw) =>
+                                    set_next(FontFaceSourceListComponent::FormatHintKeyword(*kw)),
+                                FontFaceSourceFormat::String(s) =>
+                                    set_next(FontFaceSourceListComponent::FormatHintString {
+                                        length: s.len(),
+                                        utf8_bytes: s.as_ptr(),
+                                }),
+                            }
+                        }
+                        if !url.tech_flags.is_empty() {
+                            set_next(FontFaceSourceListComponent::TechFlags(url.tech_flags));
                         }
                     },
                     Source::Local(ref name) => {
@@ -4206,20 +4249,22 @@ fn dump_properties_and_rules(cv: &ComputedValues, properties: &LonghandIdSet) {
 
 #[cfg(feature = "gecko_debug")]
 fn dump_rules(cv: &ComputedValues) {
-    println_stderr!("  Rules:");
+    println_stderr!("  Rules({:?}):", cv.pseudo());
     let global_style_data = &*GLOBAL_STYLE_DATA;
     let guard = global_style_data.shared_lock.read();
-    for rn in cv.rules().self_and_ancestors() {
-        if rn.importance().important() {
-            continue;
-        }
-        if let Some(d) = rn.style_source().and_then(|s| s.as_declarations()) {
-            println_stderr!("    [DeclarationBlock: {:?}]", d);
-        }
-        if let Some(r) = rn.style_source().and_then(|s| s.as_rule()) {
-            let mut s = nsCString::new();
-            r.read_with(&guard).to_css(&guard, &mut s).unwrap();
-            println_stderr!("    {}", s);
+    if let Some(rules) = cv.rules.as_ref() {
+        for rn in rules.self_and_ancestors() {
+            if rn.importance().important() {
+                continue;
+            }
+            if let Some(d) = rn.style_source().and_then(|s| s.as_declarations()) {
+                println_stderr!("    [DeclarationBlock: {:?}]", d);
+            }
+            if let Some(r) = rn.style_source().and_then(|s| s.as_rule()) {
+                let mut s = nsCString::new();
+                r.read_with(&guard).to_css(&guard, &mut s).unwrap();
+                println_stderr!("    {}", s);
+            }
         }
     }
 }
@@ -5460,6 +5505,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetAutoValue(
         MarginRight => auto,
         MarginBottom => auto,
         MarginLeft => auto,
+        AspectRatio => specified::AspectRatio::auto(),
     };
     write_locked_arc(declarations, |decls: &mut PropertyDeclarationBlock| {
         decls.push(prop, Importance::Normal);
@@ -5675,6 +5721,9 @@ pub extern "C" fn Servo_CSSSupports(
 }
 
 #[no_mangle]
+// Work around miscompilation when cross-LTO somehow inlines this function.
+// (bug 1789779)
+#[inline(never)]
 pub unsafe extern "C" fn Servo_NoteExplicitHints(
     element: &RawGeckoElement,
     restyle_hint: RestyleHint,

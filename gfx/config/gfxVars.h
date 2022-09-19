@@ -87,14 +87,14 @@ class gfxVarReceiver;
   _(CodecSupportInfo, nsCString, nsCString())                      \
   _(WebRenderRequiresHardwareDriver, bool, false)                  \
   _(SupportsThreadsafeGL, bool, false)                             \
-  _(OffscreenCanvasDomainAllowlist, nsCString, nsCString())        \
   _(AllowWebGPU, bool, false)                                      \
   _(UseVP8HwDecode, bool, false)                                   \
   _(UseVP9HwDecode, bool, false)                                   \
   _(HwDecodedVideoZeroCopy, bool, false)                           \
   _(UseDMABufSurfaceExport, bool, true)                            \
   _(ReuseDecoderDevice, bool, false)                               \
-  _(UseCanvasRenderThread, bool, false)
+  _(UseCanvasRenderThread, bool, false)                            \
+  _(AllowBackdropFilter, bool, true)
 
 /* Add new entries above this line. */
 

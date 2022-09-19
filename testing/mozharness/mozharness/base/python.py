@@ -204,7 +204,9 @@ class VirtualenvMixin(object):
                 self.log("package_versions: Program pip not in path", level=error_level)
                 return {}
             pip_freeze_output = self.get_output_from_command(
-                [pip, "list", "--format", "freeze"], silent=True, ignore_errors=True
+                [pip, "list", "--format", "freeze", "--no-index"],
+                silent=True,
+                ignore_errors=True,
             )
             if not isinstance(pip_freeze_output, string_types):
                 self.fatal(
@@ -353,8 +355,8 @@ class VirtualenvMixin(object):
                 command.extend(["--find-links", link])
             else:
                 self.warning(
-                    "find_links: connection checks failed for %s" % link,
-                    ", but max retries reached. continuing...",
+                    "find_links: connection checks failed for %s"
+                    ", but max retries reached. continuing..." % link
                 )
 
         # TODO: make this fatal if we always see failures after this

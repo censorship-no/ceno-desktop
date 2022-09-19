@@ -82,7 +82,7 @@
 #include "nsStyleConsts.h"
 #include "nsTArray.h"        // for nsTArray, nsTArray_Impl, etc
 #include "nsThreadUtils.h"   // for NS_IsMainThread
-#include "nsViewportInfo.h"  // for kViewportMinScale, kViewportMaxScale
+#include "nsViewportInfo.h"  // for ViewportMinScale(), ViewportMaxScale()
 #include "prsystem.h"        // for PR_GetPhysicalMemorySize
 #include "mozilla/ipc/SharedMemoryBasic.h"  // for SharedMemoryBasic
 #include "ScrollSnap.h"                     // for ScrollSnapUtils
@@ -554,6 +554,32 @@ bool AsyncPanZoomController::IsZero(const ParentLayerPoint& aPoint) const {
   return layers::IsZero(aPoint / zoom);
 }
 
+bool AsyncPanZoomController::IsZero(ParentLayerCoord aCoord) const {
+  RecursiveMutexAutoLock lock(mRecursiveMutex);
+
+  const auto zoom = Metrics().GetZoom();
+
+  if (zoom == CSSToParentLayerScale(0)) {
+    return true;
+  }
+
+  return FuzzyEqualsAdditive((aCoord / zoom).value, 0.0f,
+                             COORDINATE_EPSILON.value);
+}
+
+bool AsyncPanZoomController::FuzzyGreater(ParentLayerCoord aCoord1,
+                                          ParentLayerCoord aCoord2) const {
+  RecursiveMutexAutoLock lock(mRecursiveMutex);
+
+  const auto zoom = Metrics().GetZoom();
+
+  if (zoom == CSSToParentLayerScale(0)) {
+    return false;
+  }
+
+  return (aCoord1 - aCoord2) / zoom > COORDINATE_EPSILON;
+}
+
 class MOZ_STACK_CLASS StateChangeNotificationBlocker final {
  public:
   explicit StateChangeNotificationBlocker(AsyncPanZoomController* aApzc)
@@ -733,9 +759,9 @@ AsyncPanZoomController::AsyncPanZoomController(
           StaticPrefs::apz_pinch_lock_buffer_max_age_AtStartup())),
       mZoomConstraints(false, false,
                        mScrollMetadata.GetMetrics().GetDevPixelsPerCSSPixel() *
-                           kViewportMinScale / ParentLayerToScreenScale(1),
+                           ViewportMinScale() / ParentLayerToScreenScale(1),
                        mScrollMetadata.GetMetrics().GetDevPixelsPerCSSPixel() *
-                           kViewportMaxScale / ParentLayerToScreenScale(1)),
+                           ViewportMaxScale() / ParentLayerToScreenScale(1)),
       mLastSampleTime(GetFrameTime()),
       mLastCheckerboardReport(GetFrameTime()),
       mLastNotifiedZoom(),
@@ -2232,7 +2258,8 @@ ScrollDirections AsyncPanZoomController::GetAllowedHandoffDirections() const {
 
 bool AsyncPanZoomController::CanScroll(const ParentLayerPoint& aDelta) const {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
-  return mX.CanScroll(aDelta.x) || mY.CanScroll(aDelta.y);
+  return mX.CanScroll(ParentLayerCoord(aDelta.x)) ||
+         mY.CanScroll(ParentLayerCoord(aDelta.y));
 }
 
 bool AsyncPanZoomController::CanScrollWithWheel(
@@ -2243,11 +2270,11 @@ bool AsyncPanZoomController::CanScrollWithWheel(
   // code in struct ScrollMetadata which defines mDisregardedDirection.
   Maybe<ScrollDirection> disregardedDirection =
       mScrollMetadata.GetDisregardedDirection();
-  if (mX.CanScroll(aDelta.x) &&
+  if (mX.CanScroll(ParentLayerCoord(aDelta.x)) &&
       disregardedDirection != Some(ScrollDirection::eHorizontal)) {
     return true;
   }
-  if (mY.CanScroll(aDelta.y) &&
+  if (mY.CanScroll(ParentLayerCoord(aDelta.y)) &&
       disregardedDirection != Some(ScrollDirection::eVertical)) {
     return true;
   }
@@ -3117,7 +3144,7 @@ bool AsyncPanZoomController::Contains(const ScreenIntPoint& aPoint) const {
 
 bool AsyncPanZoomController::IsInOverscrollGutter(
     const ScreenPoint& aHitTestPoint) const {
-  if (!IsOverscrolled()) {
+  if (!IsPhysicallyOverscrolled()) {
     return false;
   }
 
@@ -3152,6 +3179,10 @@ bool AsyncPanZoomController::IsInOverscrollGutter(
 }
 
 bool AsyncPanZoomController::IsOverscrolled() const {
+  return mOverscrollEffect->IsOverscrolled();
+}
+
+bool AsyncPanZoomController::IsPhysicallyOverscrolled() const {
   // As an optimization, avoid calling Apply/UnapplyAsyncTestAttributes
   // unless we're in a test environment where we need it.
   if (StaticPrefs::apz_overscroll_test_async_scroll_offset_enabled()) {
@@ -3639,10 +3670,10 @@ void AsyncPanZoomController::OverscrollBy(ParentLayerPoint& aOverscroll) {
   // Do not go into overscroll in a direction in which we have no room to
   // scroll to begin with.
   ScrollDirections overscrollableDirections = GetOverscrollableDirections();
-  if (FuzzyEqualsAdditive(aOverscroll.x, 0.0f, COORDINATE_EPSILON)) {
+  if (IsZero(aOverscroll.x)) {
     overscrollableDirections -= ScrollDirection::eHorizontal;
   }
-  if (FuzzyEqualsAdditive(aOverscroll.y, 0.0f, COORDINATE_EPSILON)) {
+  if (IsZero(aOverscroll.y)) {
     overscrollableDirections -= ScrollDirection::eVertical;
   }
 
@@ -3800,8 +3831,8 @@ void AsyncPanZoomController::HandleFlingOverscroll(
       }
 
       if (!IsZero(residualVelocity)) {
-        mOverscrollEffect->HandleFlingOverscroll(residualVelocity,
-                                                 aOverscrollSideBits);
+        mOverscrollEffect->RelieveOverscroll(residualVelocity,
+                                             aOverscrollSideBits);
       }
     }
   }
@@ -4055,6 +4086,10 @@ void AsyncPanZoomController::CancelAnimation(CancelAnimationFlags aFlags) {
 }
 
 void AsyncPanZoomController::ClearOverscroll() {
+  mOverscrollEffect->ClearOverscroll();
+}
+
+void AsyncPanZoomController::ClearPhysicalOverscroll() {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
   mX.ClearOverscroll();
   mY.ClearOverscroll();
@@ -4327,12 +4362,11 @@ bool AsyncPanZoomController::SnapBackIfOverscrolled() {
   if (SnapBackIfOverscrolledForMomentum(ParentLayerPoint(0, 0))) {
     return true;
   }
-  // If we don't kick off an overscroll animation, we still need to ask the
-  // main thread to snap to any nearby snap points, assuming we haven't already
-  // done so when we started this fling
+  // If we don't kick off an overscroll animation, we still need to snap to any
+  // nearby snap points, assuming we haven't already done so when we started
+  // this fling
   if (mState != FLING) {
-    ScrollSnap(ScrollSnapFlags::IntendedEndPosition |
-               ScrollSnapFlags::IntendedDirection);
+    ScrollSnap(ScrollSnapFlags::IntendedEndPosition);
   }
   return false;
 }
@@ -4344,7 +4378,7 @@ bool AsyncPanZoomController::SnapBackIfOverscrolledForMomentum(
   // animation - if so, don't start a new one.
   if (IsOverscrolled() && mState != OVERSCROLL_ANIMATION) {
     APZC_LOG("%p is overscrolled, starting snap-back\n", this);
-    StartOverscrollAnimation(aVelocity, GetOverscrollSideBits());
+    mOverscrollEffect->RelieveOverscroll(aVelocity, GetOverscrollSideBits());
     return true;
   }
   return false;
@@ -4587,7 +4621,7 @@ AsyncTransformComponentMatrix AsyncPanZoomController::GetOverscrollTransform(
     return AsyncTransformComponentMatrix();
   }
 
-  if (!IsOverscrolled()) {
+  if (!IsPhysicallyOverscrolled()) {
     return AsyncTransformComponentMatrix();
   }
 
@@ -6080,9 +6114,9 @@ void AsyncPanZoomController::UpdateZoomConstraints(
 
   RecursiveMutexAutoLock lock(mRecursiveMutex);
   CSSToParentLayerScale min = Metrics().GetDevPixelsPerCSSPixel() *
-                              kViewportMinScale / ParentLayerToScreenScale(1);
+                              ViewportMinScale() / ParentLayerToScreenScale(1);
   CSSToParentLayerScale max = Metrics().GetDevPixelsPerCSSPixel() *
-                              kViewportMaxScale / ParentLayerToScreenScale(1);
+                              ViewportMaxScale() / ParentLayerToScreenScale(1);
 
   // inf float values and other bad cases should be sanitized by the code below.
   mZoomConstraints.mAllowZoom = aConstraints.mAllowZoom;

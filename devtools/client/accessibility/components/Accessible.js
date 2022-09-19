@@ -294,6 +294,10 @@ class Accessible extends Component {
       valueProps.onDOMNodeMouseOut = () => this.hideHighlighter();
       valueProps.onDOMNodeMouseOver = () =>
         this.showHighlighter(this.props.nodeFront);
+
+      valueProps.inspectIconTitle = L10N.getStr(
+        "accessibility.accessible.selectNodeInInspector.title"
+      );
       valueProps.onInspectIconClick = () =>
         this.selectNode(this.props.nodeFront);
     } else if (isAccessibleFront(object)) {
@@ -303,6 +307,9 @@ class Accessible extends Component {
         this.hideAccessibleHighlighter(target);
       valueProps.onAccessibleMouseOver = () =>
         this.showAccessibleHighlighter(target);
+      valueProps.inspectIconTitle = L10N.getStr(
+        "accessibility.accessible.selectElement.title"
+      );
       valueProps.onInspectIconClick = (obj, e) => {
         e.stopPropagation();
         this.selectAccessible(target);
@@ -503,7 +510,7 @@ const makeParentMap = items => {
   const map = new WeakMap();
 
   function _traverse(item) {
-    if (item.children.length > 0) {
+    if (item.children.length) {
       for (const child of item.children) {
         map.set(child, item);
         _traverse(child);

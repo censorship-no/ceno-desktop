@@ -110,10 +110,6 @@ bool wasm::DecodeLocalEntries(Decoder& d, const TypeContext& types,
       return false;
     }
 
-    if (!type.isDefaultable()) {
-      return d.fail("cannot have a non-defaultable local");
-    }
-
     if (!locals->appendN(type, count)) {
       return false;
     }
@@ -138,8 +134,8 @@ bool wasm::DecodeValidatedLocalEntries(Decoder& d, ValTypeVector* locals) {
 }
 
 bool wasm::CheckIsSubtypeOf(Decoder& d, const ModuleEnvironment& env,
-                            size_t opcodeOffset, ValType actual,
-                            ValType expected, TypeCache* cache) {
+                            size_t opcodeOffset, FieldType actual,
+                            FieldType expected, TypeCache* cache) {
   switch (env.types->isSubtypeOf(actual, expected, cache)) {
     case TypeResult::OOM:
       return false;
@@ -178,7 +174,7 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
                                     const uint8_t* bodyEnd, Decoder* d) {
   ValidatingOpIter iter(env, *d);
 
-  if (!iter.startFunction(funcIndex)) {
+  if (!iter.startFunction(funcIndex, locals)) {
     return false;
   }
 
@@ -589,9 +585,23 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
             uint32_t unusedUint;
             CHECK(iter.readArrayNew(&unusedUint, &nothing, &nothing));
           }
+          case uint32_t(GcOp::ArrayNewFixed): {
+            uint32_t unusedUint1, unusedUint2;
+            CHECK(iter.readArrayNewFixed(&unusedUint1, &unusedUint2));
+          }
           case uint32_t(GcOp::ArrayNewDefault): {
             uint32_t unusedUint;
             CHECK(iter.readArrayNewDefault(&unusedUint, &nothing));
+          }
+          case uint32_t(GcOp::ArrayNewData): {
+            uint32_t unusedUint1, unusedUint2;
+            CHECK(iter.readArrayNewData(&unusedUint1, &unusedUint2, &nothing,
+                                        &nothing));
+          }
+          case uint32_t(GcOp::ArrayNewElem): {
+            uint32_t unusedUint1, unusedUint2;
+            CHECK(iter.readArrayNewElem(&unusedUint1, &unusedUint2, &nothing,
+                                        &nothing));
           }
           case uint32_t(GcOp::ArrayGet): {
             uint32_t unusedUint1;
@@ -616,6 +626,12 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
           case uint32_t(GcOp::ArrayLen): {
             uint32_t unusedUint1;
             CHECK(iter.readArrayLen(&unusedUint1, &nothing));
+          }
+          case uint32_t(GcOp::ArrayCopy): {
+            int32_t unusedInt;
+            bool unusedBool;
+            CHECK(iter.readArrayCopy(&unusedInt, &unusedBool, &nothing,
+                                     &nothing, &nothing, &nothing, &nothing));
           }
           case uint16_t(GcOp::RefTest): {
             uint32_t typeIndex;
@@ -1137,6 +1153,14 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
         CHECK(
             iter.readBrOnNull(&unusedDepth, &unusedType, &nothings, &nothing));
       }
+      case uint16_t(Op::BrOnNonNull): {
+        if (!env.functionReferencesEnabled()) {
+          return iter.unrecognizedOpcode(&op);
+        }
+        uint32_t unusedDepth;
+        CHECK(iter.readBrOnNonNull(&unusedDepth, &unusedType, &nothings,
+                                   &nothing));
+      }
 #endif
 #ifdef ENABLE_WASM_GC
       case uint16_t(Op::RefEq): {
@@ -1486,6 +1510,13 @@ static bool DecodeValTypeVector(Decoder& d, ModuleEnvironment* env,
     if (!d.readValType(env->types->length(), env->features, &(*valTypes)[i])) {
       return false;
     }
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+    if (env->functionReferencesEnabled()) {
+      // Disable validatation of param/result types for functions.
+      // ValidateTypeState rejects only TypeState::Func, which is needed.
+      continue;
+    }
+#endif
     if (!ValidateTypeState(d, typeState, (*valTypes)[i])) {
       return false;
     }
@@ -2590,8 +2621,9 @@ static bool DecodeElemSection(Decoder& d, ModuleEnvironment* env) {
       case ElemSegmentKind::ActiveWithTableIndex: {
         RefType tblElemType = env->tables[seg->tableIndex].elemType;
         TypeCache cache;
-        if (!CheckIsSubtypeOf(d, *env, d.currentOffset(), ValType(elemType),
-                              ValType(tblElemType), &cache)) {
+        if (!CheckIsSubtypeOf(d, *env, d.currentOffset(),
+                              ValType(elemType).fieldType(),
+                              ValType(tblElemType).fieldType(), &cache)) {
           return false;
         }
         break;
@@ -2657,8 +2689,9 @@ static bool DecodeElemSection(Decoder& d, ModuleEnvironment* env) {
           default:
             return d.fail("failed to read initializer operation");
         }
-        if (!CheckIsSubtypeOf(d, *env, d.currentOffset(), ValType(initType),
-                              ValType(elemType), &cache)) {
+        if (!CheckIsSubtypeOf(d, *env, d.currentOffset(),
+                              ValType(initType).fieldType(),
+                              ValType(elemType).fieldType(), &cache)) {
           return false;
         }
       }

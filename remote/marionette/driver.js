@@ -18,7 +18,7 @@ const lazy = {};
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   Addon: "chrome://remote/content/marionette/addon.js",
-  AppInfo: "chrome://remote/content/marionette/appinfo.js",
+  AppInfo: "chrome://remote/content/shared/AppInfo.jsm",
   assert: "chrome://remote/content/shared/webdriver/Assert.jsm",
   atom: "chrome://remote/content/marionette/atom.js",
   browser: "chrome://remote/content/marionette/browser.js",
@@ -86,6 +86,9 @@ const SUPPORTED_STRATEGIES = new Set([
 // Timeout used to abort fullscreen, maximize, and minimize
 // commands if no window manager is present.
 const TIMEOUT_NO_WINDOW_MANAGER = 5000;
+
+// Observer topic to wait for until the browser window is ready.
+const TOPIC_BROWSER_READY = "browser-delayed-startup-finished";
 
 /**
  * The Marionette WebDriver services provides a standard conforming
@@ -489,7 +492,7 @@ GeckoDriver.prototype.newSession = async function(cmd) {
     lazy.registerCommandsActor();
     lazy.enableEventsActor();
 
-    Services.obs.addObserver(this, "browser-delayed-startup-finished");
+    Services.obs.addObserver(this, TOPIC_BROWSER_READY);
   } catch (e) {
     throw new lazy.error.SessionNotCreatedError(e);
   }
@@ -542,7 +545,7 @@ GeckoDriver.prototype.handleEvent = function({ target, type }) {
 
 GeckoDriver.prototype.observe = function(subject, topic, data) {
   switch (topic) {
-    case "browser-delayed-startup-finished":
+    case TOPIC_BROWSER_READY:
       this.registerListenersForWindow(subject);
       break;
   }
@@ -2267,7 +2270,11 @@ GeckoDriver.prototype.deleteSession = function() {
     this.dialogObserver = null;
   }
 
-  Services.obs.removeObserver(this, "browser-delayed-startup-finished");
+  try {
+    Services.obs.removeObserver(this, TOPIC_BROWSER_READY);
+  } catch (e) {
+    lazy.logger.debug(`Failed to remove observer "${TOPIC_BROWSER_READY}"`);
+  }
 
   lazy.clearElementIdCache();
 
@@ -2787,7 +2794,7 @@ GeckoDriver.prototype.quit = async function(cmd) {
 
   let quitSeen;
   let mode = 0;
-  if (flags.length > 0) {
+  if (flags.length) {
     for (let k of flags) {
       lazy.assert.in(k, Ci.nsIAppStartup);
 

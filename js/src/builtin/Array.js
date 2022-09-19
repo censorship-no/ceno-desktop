@@ -76,40 +76,11 @@ function ArraySome(callbackfn /*, thisArg*/) {
 // Inlining this enables inlining of the callback function.
 SetIsInlinableLargeFunction(ArraySome);
 
-// ES2018 draft rev 3bbc87cd1b9d3bf64c3e68ca2fe9c5a3f2c304c0
-// 22.1.3.25 Array.prototype.sort ( comparefn )
-function ArraySort(comparefn) {
-  return SortArray(this, comparefn);
-}
-
-function SortArray(obj, comparefn) {
-  // Step 1.
-  if (comparefn !== undefined) {
-    if (!IsCallable(comparefn)) {
-      ThrowTypeError(JSMSG_BAD_SORT_ARG);
-    }
-  }
-
-  // Step 2.
-  var O = ToObject(obj);
-
-  // First try to sort the array in native code, if that fails, indicated by
-  // returning |false| from ArrayNativeSort, sort it in self-hosted code.
-  if (callFunction(ArrayNativeSort, O, comparefn)) {
-    return O;
-  }
-
-  // Step 3.
-  var len = ToLength(O.length);
-
-  if (len <= 1) {
-    return O;
-  }
-
-  /* 22.1.3.25.1 Runtime Semantics: SortCompare( x, y ) */
-  var wrappedCompareFn = comparefn;
-  comparefn = function(x, y) {
-    /* Steps 1-3. */
+// ES2023 draft rev cb4224156c54156f30c18c50784c1b0148ebfae5
+// 23.1.3.30 Array.prototype.sort ( comparefn )
+function ArraySortCompare(comparefn) {
+  return function(x, y) {
+    // Steps 4.a-c.
     if (x === undefined) {
       if (y === undefined) {
         return 0;
@@ -120,14 +91,68 @@ function SortArray(obj, comparefn) {
       return -1;
     }
 
-    /* Step 4.a. */
-    var v = ToNumber(callContentFunction(wrappedCompareFn, undefined, x, y));
+    // Step 4.d.i.
+    var v = ToNumber(callContentFunction(comparefn, undefined, x, y));
 
-    /* Step 4.b-c. */
+    // Steps 4.d.ii-iii.
     return v !== v ? 0 : v;
   };
+}
 
-  return MergeSort(O, len, comparefn);
+// ES2023 draft rev cb4224156c54156f30c18c50784c1b0148ebfae5
+// 23.1.3.30 Array.prototype.sort ( comparefn )
+function ArraySort(comparefn) {
+  // Step 1.
+  if (comparefn !== undefined) {
+    if (!IsCallable(comparefn)) {
+      ThrowTypeError(JSMSG_BAD_SORT_ARG);
+    }
+  }
+
+  // Step 2.
+  var O = ToObject(this);
+
+  // First try to sort the array in native code, if that fails, indicated by
+  // returning |false| from ArrayNativeSort, sort it in self-hosted code.
+  if (callFunction(ArrayNativeSort, O, comparefn)) {
+    return O;
+  }
+
+  // Step 3.
+  var len = ToLength(O.length);
+
+  // Arrays with less than two elements remain unchanged when sorted.
+  if (len <= 1) {
+    return O;
+  }
+
+  // Step 4.
+  var wrappedCompareFn = ArraySortCompare(comparefn);
+
+  // Step 5.
+  // To save effort we will do all of our work on a dense list, then create
+  // holes at the end.
+  var denseList = [];
+  var denseLen = 0;
+
+  for (var i = 0; i < len; i++) {
+    if (i in O) {
+      DefineDataProperty(denseList, denseLen++, O[i]);
+    }
+  }
+
+  if (denseLen < 1) {
+    return O;
+  }
+
+  var sorted = MergeSort(denseList, denseLen, wrappedCompareFn);
+
+  assert(IsPackedArray(sorted), "sorted is a packed array");
+  assert(sorted.length === denseLen, "sorted array has the correct length");
+
+  MoveHoles(O, len, sorted, denseLen);
+
+  return O;
 }
 
 /* ES5 15.4.4.18. */
@@ -249,8 +274,8 @@ function ArrayFilter(callbackfn /*, thisArg*/) {
 #ifdef NIGHTLY_BUILD
 // Array Grouping proposal
 //
-// Array.prototype.groupBy
-// https://tc39.es/proposal-array-grouping/#sec-array.prototype.groupby
+// Array.prototype.group
+// https://tc39.es/proposal-array-grouping/#sec-array.prototype.group
 function ArrayGroup(callbackfn /*, thisArg*/) {
   /* Step 1. Let O be ? ToObject(this value). */
   var O = ToObject(this);
@@ -264,9 +289,12 @@ function ArrayGroup(callbackfn /*, thisArg*/) {
   }
 
   /* Step 5. Let groups be a new empty List. */
-  var groups = new_List();
+  // Not applicable in our implementation.
 
-  var T = arguments.length > 1 ? arguments[1] : undefined;
+  /* Step 7. Let obj be ! OrdinaryObjectCreate(null). */
+  var object = std_Object_create(null);
+
+  var thisArg = arguments.length > 1 ? arguments[1] : undefined;
 
   /* Steps 4, 6. */
   for (var k = 0; k < len; k++) {
@@ -282,29 +310,23 @@ function ArrayGroup(callbackfn /*, thisArg*/) {
      *   ? Call(callbackfn, thisArg, « kValue, 𝔽(k), O »)).
      */
     var propertyKey = TO_PROPERTY_KEY(
-      callContentFunction(callbackfn, T, kValue, k, O)
+      callContentFunction(callbackfn, thisArg, kValue, k, O)
     );
 
     /* Step 6.d. Perform ! AddValueToKeyedGroup(groups, propertyKey, kValue). */
-    if (!groups[propertyKey]) {
-      var elements = [kValue];
-      DefineDataProperty(groups, propertyKey, elements);
+    var elements = object[propertyKey];
+    if (elements === undefined) {
+      DefineDataProperty(object, propertyKey, [kValue]);
     } else {
-      var lenElements = groups[propertyKey].length;
-      DefineDataProperty(groups[propertyKey], lenElements, kValue);
+      DefineDataProperty(elements, elements.length, kValue);
     }
   }
-
-  /* Step 7. Let obj be ! OrdinaryObjectCreate(null). */
-  var object = std_Object_create(null);
 
   /* Step 8. For each Record { [[Key]], [[Elements]] } g of groups, do
    *  a. Let elements be ! CreateArrayFromList(g.[[Elements]]).
    *  b. Perform ! CreateDataPropertyOrThrow(obj, g.[[Key]], elements).
    */
-  for (var propertyKey in groups) {
-    DefineDataProperty(object, propertyKey, groups[propertyKey]);
-  }
+  // Not applicable in our implementation.
 
   /* Step 9. Return obj. */
   return object;
@@ -313,7 +335,7 @@ function ArrayGroup(callbackfn /*, thisArg*/) {
 // Array Grouping proposal
 //
 // Array.prototype.groupToMap
-// https://tc39.es/proposal-array-grouping/#sec-array.prototype.groupbymap
+// https://tc39.es/proposal-array-grouping/#sec-array.prototype.grouptomap
 function ArrayGroupToMap(callbackfn /*, thisArg*/) {
   /* Step 1. Let O be ? ToObject(this value). */
   var O = ToObject(this);
@@ -338,7 +360,7 @@ function ArrayGroupToMap(callbackfn /*, thisArg*/) {
   var C = GetBuiltinConstructor("Map");
   var map = new C();
 
-  var T = arguments.length > 1 ? arguments[1] : undefined;
+  var thisArg = arguments.length > 1 ? arguments[1] : undefined;
 
   /* Combine Step 6. and Step 8.
    *
@@ -358,7 +380,7 @@ function ArrayGroupToMap(callbackfn /*, thisArg*/) {
     /* Step 6.c.
      * Let key be ? Call(callbackfn, thisArg, « kValue, 𝔽(k), O »).
      */
-    var propertyKey = callContentFunction(callbackfn, T, kValue, k, O);
+    var key = callContentFunction(callbackfn, thisArg, kValue, k, O);
 
     /* Skipping Step 6.d. If key is -0𝔽, set key to +0𝔽.
      *
@@ -372,11 +394,10 @@ function ArrayGroupToMap(callbackfn /*, thisArg*/) {
      * 6.e (Perform ! AddValueToKeyedGroup(groups, key, kValue))
      * and 8.a-b as a result.
      */
-    if (!callFunction(std_Map_get, map, propertyKey)) {
-      var elements = [kValue];
-      callFunction(std_Map_set, map, propertyKey, elements);
+    var elements = callFunction(std_Map_get, map, key);
+    if (elements === undefined) {
+      callFunction(std_Map_set, map, key, [kValue]);
     } else {
-      var elements = callFunction(std_Map_get, map, propertyKey);
       DefineDataProperty(elements, elements.length, kValue);
     }
   }
@@ -833,14 +854,11 @@ function ArrayFrom(items, mapfn = undefined, thisArg = undefined) {
     // Steps 5.a-b.
     var A = IsConstructor(C) ? constructContentFunction(C, C) : [];
 
-    // Step 5.c.
-    var iterator = MakeIteratorWrapper(items, usingIterator);
-
     // Step 5.d.
     var k = 0;
 
-    // Step 5.e
-    for (var nextValue of allowContentIter(iterator)) {
+    // Steps 5.c, 5.e
+    for (var nextValue of allowContentIterWith(items, usingIterator)) {
       // Step 5.e.i.
       // Disabled for performance reason.  We won't hit this case on
       // normal array, since DefineDataProperty will throw before it.
@@ -899,21 +917,6 @@ function ArrayFrom(items, mapfn = undefined, thisArg = undefined) {
 
   // Step 19.
   return A;
-}
-
-function MakeIteratorWrapper(items, method) {
-  assert(IsCallable(method), "method argument is a function");
-
-  // This function is not inlined in ArrayFrom, because function default
-  // parameters combined with nested functions are currently not optimized
-  // correctly.
-  return {
-    // Use a named function expression instead of a method definition, so
-    // we don't create an inferred name for this function at runtime.
-    [GetBuiltinSymbol("iterator")]: function IteratorMethod() {
-      return callContentFunction(method, items);
-    },
-  };
 }
 
 // ES2015 22.1.3.27 Array.prototype.toString.
@@ -1015,7 +1018,7 @@ SetCanonicalName($ArraySpecies, "get [Symbol.species]");
 // ES 2016 draft Mar 25, 2016 9.4.2.3.
 function ArraySpeciesCreate(originalArray, length) {
   // Step 1.
-  assert(typeof length == "number", "length should be a number");
+  assert(typeof length === "number", "length should be a number");
   assert(length >= 0, "length should be a non-negative number");
 
   // Step 2.
@@ -1224,7 +1227,7 @@ function ArrayFlat(/* depth */) {
   var depthNum = 1;
 
   // Step 4.
-  if (arguments.length > 0 && arguments[0] !== undefined) {
+  if (arguments.length && arguments[0] !== undefined) {
     depthNum = ToInteger(arguments[0]);
   }
 
@@ -1350,64 +1353,82 @@ SetIsInlinableLargeFunction(ArrayAt);
 // https://github.com/tc39/proposal-change-array-by-copy
 // Array.prototype.toReversed()
 function ArrayToReversed() {
-  /* Step 1. Let O be ? ToObject(this value). */
+  // Step 1. Let O be ? ToObject(this value).
   var O = ToObject(this);
 
-  /* Step 2. Let len be ? LengthOfArrayLike(O). */
+  // Step 2. Let len be ? LengthOfArrayLike(O).
   var len = ToLength(O.length);
 
-  /* Step 3. Let A be ArrayCreate(𝔽(len)). */
+  // Step 3. Let A be ArrayCreate(𝔽(len)).
   var A = std_Array(len);
 
-  /* Step 4. Let k be 0. */
-  /* Step 5. Repeat, while k < len, */
+  // Step 4. Let k be 0.
+  // Step 5. Repeat, while k < len,
   for (var k = 0; k < len; k++) {
-    /* Step 5a. Let from be ! ToString(𝔽(len - k - 1)). */
+    // Step 5.a. Let from be ! ToString(𝔽(len - k - 1)).
     var from = len - k - 1;
-    /* Skip Step 5b. Let Pk be ToString(𝔽(k)).
-     * k is coerced into a string through the property access. */
-    /* Step 5c. Let fromValue be ? Get(O, from).  */
+
+    // Skip Step 5.b. Let Pk be ToString(𝔽(k)).
+    // k is coerced into a string through the property access.
+
+    // Step 5.c. Let fromValue be ? Get(O, from).
     var fromValue = O[from];
-    /* Step 5d. Perform ! CreateDataPropertyOrThrow(A, 𝔽(k), fromValue. */
+
+    // Step 5.d. Perform ! CreateDataPropertyOrThrow(A, 𝔽(k), fromValue).
     DefineDataProperty(A, k, fromValue);
   }
 
-  /* Step 6. Return A. */
+  // Step 6. Return A.
   return A;
 }
 
 // https://github.com/tc39/proposal-change-array-by-copy
 // Array.prototype.toSorted()
 function ArrayToSorted(comparefn) {
-  /* Step 1.  If comparefn is not undefined and IsCallable(comparefn) is
-   * false, throw a TypeError exception.
-   */
+  // Step 1.  If comparefn is not undefined and IsCallable(comparefn) is
+  // false, throw a TypeError exception.
   if (comparefn !== undefined && !IsCallable(comparefn)) {
     ThrowTypeError(JSMSG_BAD_TOSORTED_ARG);
   }
 
-  /* Step 2. Let O be ? ToObject(this value). */
+  // Step 2. Let O be ? ToObject(this value).
   var O = ToObject(this);
 
-  /* Step 3. Let len be ? LengthOfArrayLike(O) */
+  // Step 3. Let len be ? LengthOfArrayLike(O).
   var len = ToLength(O.length);
 
-  /* Step 4. Let A be ? ArrayCreate(𝔽(len)). */
+  // Step 4. Let A be ? ArrayCreate(𝔽(len)).
   var items = std_Array(len);
 
-  /* We depart from steps 5-8 of the spec for performance reasons, as
-   * following the spec would require copying the input array twice.
-   * Instead, we create a new array that replaces holes with undefined,
-   * and sort this array.
-   */
+  // We depart from steps 5-8 of the spec for performance reasons, as
+  // following the spec would require copying the input array twice.
+  // Instead, we create a new array that replaces holes with undefined,
+  // and sort this array.
   for (var k = 0; k < len; k++) {
     DefineDataProperty(items, k, O[k]);
   }
 
-  SortArray(items, comparefn);
+  // Arrays with less than two elements remain unchanged when sorted.
+  if (len <= 1) {
+    return items;
+  }
 
-  /* Step 9. Return A */
-  return items;
+  // First try to sort the array in native code, if that fails, indicated by
+  // returning |false| from ArrayNativeSort, sort it in self-hosted code.
+  if (callFunction(ArrayNativeSort, items, comparefn)) {
+    return items;
+  }
+
+  // Step 5.
+  var wrappedCompareFn = ArraySortCompare(comparefn);
+
+  // Steps 6-9.
+  var sorted = MergeSort(items, len, wrappedCompareFn);
+
+  assert(IsPackedArray(sorted), "sorted is a packed array");
+  assert(sorted.length === len, "sorted array has the correct length");
+
+  return sorted;
 }
 
 #endif
@@ -1415,13 +1436,13 @@ function ArrayToSorted(comparefn) {
 // https://github.com/tc39/proposal-array-find-from-last
 // Array.prototype.findLast ( predicate, thisArg )
 function ArrayFindLast(predicate /*, thisArg*/) {
-  /* Steps 1. */
+  // Step 1.
   var O = ToObject(this);
 
-  /* Steps 2. */
+  // Step 2.
   var len = ToLength(O.length);
 
-  /* Step 3. */
+  // Step 3.
   if (arguments.length === 0) {
     ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, "Array.prototype.findLast");
   }
@@ -1429,32 +1450,33 @@ function ArrayFindLast(predicate /*, thisArg*/) {
     ThrowTypeError(JSMSG_NOT_FUNCTION, DecompileArg(0, predicate));
   }
 
-  var T = arguments.length > 1 ? arguments[1] : undefined;
+  var thisArg = arguments.length > 1 ? arguments[1] : undefined;
 
-  /* Step 4-5. */
+  // Steps 4-5.
   for (var k = len - 1; k >= 0; k--) {
-    /* Steps 5.a-b. */
+    // Steps 5.a-b.
     var kValue = O[k];
-    /* Steps 5.c-d. */
-    if (callContentFunction(predicate, T, kValue, k, O)) {
+
+    // Steps 5.c-d.
+    if (callContentFunction(predicate, thisArg, kValue, k, O)) {
       return kValue;
     }
   }
 
-  /* Step 6. */
+  // Step 6.
   return undefined;
 }
 
 // https://github.com/tc39/proposal-array-find-from-last
 // Array.prototype.findLastIndex ( predicate, thisArg )
 function ArrayFindLastIndex(predicate /*, thisArg*/) {
-  /* Steps 1. */
+  // Step 1.
   var O = ToObject(this);
 
-  /* Steps 2. */
+  // Steps 2.
   var len = ToLength(O.length);
 
-  /* Step 3. */
+  // Step 3.
   if (arguments.length === 0) {
     ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, "Array.prototype.findLastIndex");
   }
@@ -1462,18 +1484,19 @@ function ArrayFindLastIndex(predicate /*, thisArg*/) {
     ThrowTypeError(JSMSG_NOT_FUNCTION, DecompileArg(0, predicate));
   }
 
-  var T = arguments.length > 1 ? arguments[1] : undefined;
+  var thisArg = arguments.length > 1 ? arguments[1] : undefined;
 
-  /* Step 4-5. */
+  // Steps 4-5.
   for (var k = len - 1; k >= 0; k--) {
-    /* Steps 5.a-b. */
+    // Steps 5.a-b.
     var kValue = O[k];
-    /* Steps 5.c-d. */
-    if (callContentFunction(predicate, T, kValue, k, O)) {
+
+    // Steps 5.c-d.
+    if (callContentFunction(predicate, thisArg, kValue, k, O)) {
       return k;
     }
   }
 
-  /* Step 6. */
+  // Step 6.
   return -1;
 }

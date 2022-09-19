@@ -434,6 +434,9 @@ enum class Op {
   // GC (experimental)
   RefEq = 0xd5,
 
+  // Function references
+  BrOnNonNull = 0xd6,
+
   FirstPrefix = 0xfa,
   GcPrefix = 0xfb,
   MiscPrefix = 0xfc,
@@ -458,12 +461,16 @@ enum class GcOp {
 
   // Array operations
   ArrayNew = 0x1b,
+  ArrayNewFixed = 0x1a,
   ArrayNewDefault = 0x1c,
+  ArrayNewData = 0x1d,
+  ArrayNewElem = 0x10,
   ArrayGet = 0x13,
   ArrayGetS = 0x14,
   ArrayGetU = 0x15,
   ArraySet = 0x16,
   ArrayLen = 0x17,
+  ArrayCopy = 0x18,
 
   // Ref operations
   RefTest = 0x44,

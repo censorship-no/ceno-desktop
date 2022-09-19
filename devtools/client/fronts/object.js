@@ -142,12 +142,14 @@ class ObjectFront extends FrontClassWithSpec(objectSpec) {
   enumEntries() {
     if (
       ![
+        "Headers",
         "Map",
         "WeakMap",
         "Set",
         "WeakSet",
         "Storage",
         "URLSearchParams",
+        "FormData",
       ].includes(this._grip.class)
     ) {
       console.error(

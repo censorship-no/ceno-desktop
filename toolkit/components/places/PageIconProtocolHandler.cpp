@@ -132,13 +132,17 @@ class FaviconDataCallback final : public nsIFaviconDataCallback {
   }
 
  private:
-  ~FaviconDataCallback() = default;
+  ~FaviconDataCallback();
   nsCOMPtr<nsIURI> mURI;
   MozPromiseHolder<FaviconMetadataPromise> mPromiseHolder;
   nsCOMPtr<nsILoadInfo> mLoadInfo;
 };
 
 NS_IMPL_ISUPPORTS(FaviconDataCallback, nsIFaviconDataCallback);
+
+FaviconDataCallback::~FaviconDataCallback() {
+  mPromiseHolder.RejectIfExists(NS_ERROR_FAILURE, __func__);
+}
 
 NS_IMETHODIMP FaviconDataCallback::OnComplete(nsIURI* aURI, uint32_t aDataLen,
                                               const uint8_t* aData,
@@ -263,7 +267,8 @@ nsresult PageIconProtocolHandler::NewChannelInternal(nsIURI* aURI,
                 do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID, &rv);
 
             if (NS_WARN_IF(NS_FAILED(rv))) {
-              channel->Cancel(NS_BINDING_ABORTED);
+              channel->CancelWithReason(NS_BINDING_ABORTED,
+                                        "GetFaviconData failed"_ns);
               return;
             }
 

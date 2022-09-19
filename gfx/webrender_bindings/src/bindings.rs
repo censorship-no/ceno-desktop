@@ -37,12 +37,12 @@ use rayon;
 use tracy_rs::register_thread_with_profiler;
 use webrender::sw_compositor::SwCompositor;
 use webrender::{
-    api::units::*, api::*, render_api::*, set_profiler_hooks, AsyncPropertySampler, AsyncScreenshotHandle, Compositor,
-    CompositorCapabilities, CompositorConfig, CompositorSurfaceTransform, DebugFlags, Device, MappableCompositor,
-    MappedTileInfo, NativeSurfaceId, NativeSurfaceInfo, NativeTileId, PartialPresentCompositor, PipelineInfo,
-    ProfilerHooks, RecordedFrameHandle, Renderer, RendererOptions, RendererStats, SWGLCompositeSurfaceInfo,
-    SceneBuilderHooks, ShaderPrecacheFlags, Shaders, SharedShaders, TextureCacheConfig, UploadMethod, WindowVisibility,
-    ONE_TIME_USAGE_HINT,
+    api::units::*, api::*, create_webrender_instance, render_api::*, set_profiler_hooks, AsyncPropertySampler,
+    AsyncScreenshotHandle, Compositor, CompositorCapabilities, CompositorConfig, CompositorSurfaceTransform,
+    DebugFlags, Device, MappableCompositor, MappedTileInfo, NativeSurfaceId, NativeSurfaceInfo, NativeTileId,
+    PartialPresentCompositor, PipelineInfo, ProfilerHooks, RecordedFrameHandle, Renderer, RendererStats,
+    SWGLCompositeSurfaceInfo, SceneBuilderHooks, ShaderPrecacheFlags, Shaders, SharedShaders, TextureCacheConfig,
+    UploadMethod, WebRenderOptions, WindowVisibility, ONE_TIME_USAGE_HINT,
 };
 use wr_malloc_size_of::MallocSizeOfOps;
 
@@ -1113,7 +1113,7 @@ pub extern "C" fn wr_thread_pool_new(low_priority: bool) -> *mut WrThreadPool {
 
 #[no_mangle]
 pub unsafe extern "C" fn wr_thread_pool_delete(thread_pool: *mut WrThreadPool) {
-    Box::from_raw(thread_pool);
+    mem::drop(Box::from_raw(thread_pool));
 }
 
 #[no_mangle]
@@ -1128,7 +1128,7 @@ pub unsafe extern "C" fn wr_program_cache_new(
 
 #[no_mangle]
 pub unsafe extern "C" fn wr_program_cache_delete(program_cache: *mut WrProgramCache) {
-    Box::from_raw(program_cache);
+    mem::drop(Box::from_raw(program_cache));
 }
 
 #[no_mangle]
@@ -1632,9 +1632,8 @@ pub extern "C" fn wr_window_new(
         }
     };
 
-    let opts = RendererOptions {
+    let opts = WebRenderOptions {
         enable_aa: true,
-        force_subpixel_aa: false,
         enable_subpixel_aa: cfg!(not(target_os = "android")),
         support_low_priority_transactions,
         allow_texture_swizzling,
@@ -1688,7 +1687,7 @@ pub extern "C" fn wr_window_new(
 
     let window_size = DeviceIntSize::new(window_width, window_height);
     let notifier = Box::new(CppNotifier { window_id });
-    let (renderer, sender) = match Renderer::new(gl, notifier, opts, shaders.map(|sh| &sh.0)) {
+    let (renderer, sender) = match create_webrender_instance(gl, notifier, opts, shaders.map(|sh| &sh.0)) {
         Ok((renderer, sender)) => (renderer, sender),
         Err(e) => {
             warn!(" Failed to create a Renderer: {:?}", e);
@@ -2419,7 +2418,7 @@ pub extern "C" fn wr_state_delete(state: *mut WrState) {
     assert!(unsafe { !is_in_render_thread() });
 
     unsafe {
-        Box::from_raw(state);
+        mem::drop(Box::from_raw(state));
     }
 }
 
@@ -3953,7 +3952,7 @@ impl WrSpatialId {
 
 #[no_mangle]
 pub unsafe extern "C" fn wr_device_delete(device: *mut Device) {
-    Box::from_raw(device);
+    mem::drop(Box::from_raw(device));
 }
 
 // Call MakeCurrent before this.
@@ -3971,7 +3970,7 @@ pub extern "C" fn wr_shaders_new(
         ShaderPrecacheFlags::ASYNC_COMPILE
     };
 
-    let opts = RendererOptions {
+    let opts = WebRenderOptions {
         precache_flags,
         ..Default::default()
     };

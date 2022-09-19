@@ -32,6 +32,7 @@
 
 #include "gc/ObjectKind-inl.h"
 #include "vm/NativeObject-inl.h"
+#include "wasm/WasmInstance-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -708,7 +709,7 @@ bool WarpCacheIRTranspiler::emitMegamorphicSetElement(ObjOperandId objId,
   MDefinition* id = getOperand(idId);
   MDefinition* rhs = getOperand(rhsId);
 
-  auto* ins = MCallSetElement::New(alloc(), obj, id, rhs, strict);
+  auto* ins = MMegamorphicSetElement::New(alloc(), obj, id, rhs, strict);
   addEffectful(ins);
 
   return resumeAfter(ins);
@@ -1545,48 +1546,18 @@ bool WarpCacheIRTranspiler::emitLoadFixedSlotTypedResult(ObjOperandId objId,
   return true;
 }
 
-bool WarpCacheIRTranspiler::emitLoadEnvironmentFixedSlotResult(
-    ObjOperandId objId, uint32_t offsetOffset) {
-  int32_t offset = int32StubField(offsetOffset);
+bool WarpCacheIRTranspiler::emitGuardIsNotUninitializedLexical(
+    ValOperandId valId) {
+  MDefinition* val = getOperand(valId);
 
-  MDefinition* obj = getOperand(objId);
-  uint32_t slotIndex = NativeObject::getFixedSlotIndexFromOffset(offset);
-
-  auto* load = MLoadFixedSlot::New(alloc(), obj, slotIndex);
-  add(load);
-
-  auto* lexicalCheck = MLexicalCheck::New(alloc(), load);
+  auto* lexicalCheck = MLexicalCheck::New(alloc(), val);
   add(lexicalCheck);
 
   if (snapshot().bailoutInfo().failedLexicalCheck()) {
     lexicalCheck->setNotMovable();
   }
 
-  pushResult(lexicalCheck);
-  return true;
-}
-
-bool WarpCacheIRTranspiler::emitLoadEnvironmentDynamicSlotResult(
-    ObjOperandId objId, uint32_t offsetOffset) {
-  int32_t offset = int32StubField(offsetOffset);
-
-  MDefinition* obj = getOperand(objId);
-  size_t slotIndex = NativeObject::getDynamicSlotIndexFromOffset(offset);
-
-  auto* slots = MSlots::New(alloc(), obj);
-  add(slots);
-
-  auto* load = MLoadDynamicSlot::New(alloc(), slots, slotIndex);
-  add(load);
-
-  auto* lexicalCheck = MLexicalCheck::New(alloc(), load);
-  add(lexicalCheck);
-
-  if (snapshot().bailoutInfo().failedLexicalCheck()) {
-    lexicalCheck->setNotMovable();
-  }
-
-  pushResult(lexicalCheck);
+  setOperand(valId, lexicalCheck);
   return true;
 }
 
@@ -1868,6 +1839,19 @@ bool WarpCacheIRTranspiler::emitCallNativeGetElementResult(
   return resumeAfter(call);
 }
 
+bool WarpCacheIRTranspiler::emitCallNativeGetElementSuperResult(
+    ObjOperandId objId, Int32OperandId indexId, ValOperandId receiverId) {
+  MDefinition* obj = getOperand(objId);
+  MDefinition* index = getOperand(indexId);
+  MDefinition* receiver = getOperand(receiverId);
+
+  auto* call = MCallNativeGetElementSuper::New(alloc(), obj, index, receiver);
+  addEffectful(call);
+
+  pushResult(call);
+  return resumeAfter(call);
+}
+
 bool WarpCacheIRTranspiler::emitLoadDenseElementExistsResult(
     ObjOperandId objId, Int32OperandId indexId) {
   MDefinition* obj = getOperand(objId);
@@ -2068,6 +2052,42 @@ bool WarpCacheIRTranspiler::emitStringFromCodePointResult(
   return true;
 }
 
+bool WarpCacheIRTranspiler::emitStringIndexOfResult(
+    StringOperandId strId, StringOperandId searchStrId) {
+  MDefinition* str = getOperand(strId);
+  MDefinition* searchStr = getOperand(searchStrId);
+
+  auto* indexOf = MStringIndexOf::New(alloc(), str, searchStr);
+  add(indexOf);
+
+  pushResult(indexOf);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitStringStartsWithResult(
+    StringOperandId strId, StringOperandId searchStrId) {
+  MDefinition* str = getOperand(strId);
+  MDefinition* searchStr = getOperand(searchStrId);
+
+  auto* startsWith = MStringStartsWith::New(alloc(), str, searchStr);
+  add(startsWith);
+
+  pushResult(startsWith);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitStringEndsWithResult(
+    StringOperandId strId, StringOperandId searchStrId) {
+  MDefinition* str = getOperand(strId);
+  MDefinition* searchStr = getOperand(searchStrId);
+
+  auto* endsWith = MStringEndsWith::New(alloc(), str, searchStr);
+  add(endsWith);
+
+  pushResult(endsWith);
+  return true;
+}
+
 bool WarpCacheIRTranspiler::emitStringToLowerCaseResult(StringOperandId strId) {
   MDefinition* str = getOperand(strId);
 
@@ -2232,9 +2252,8 @@ bool WarpCacheIRTranspiler::emitStoreDenseElement(ObjOperandId objId,
   add(barrier);
 
   bool needsHoleCheck = true;
-  auto* store =
-      MStoreElement::New(alloc(), elements, index, rhs, needsHoleCheck);
-  store->setNeedsBarrier();
+  auto* store = MStoreElement::NewBarriered(alloc(), elements, index, rhs,
+                                            needsHoleCheck);
   addEffectful(store);
   return resumeAfter(store);
 }
@@ -2254,12 +2273,9 @@ bool WarpCacheIRTranspiler::emitStoreDenseElementHole(ObjOperandId objId,
   add(barrier);
 
   MInstruction* store;
-  MStoreElementCommon* common;
   if (handleAdd) {
     // TODO(post-Warp): Consider changing MStoreElementHole to match IC code.
-    auto* ins = MStoreElementHole::New(alloc(), obj, elements, index, rhs);
-    store = ins;
-    common = ins;
+    store = MStoreElementHole::New(alloc(), obj, elements, index, rhs);
   } else {
     auto* length = MInitializedLength::New(alloc(), elements);
     add(length);
@@ -2267,12 +2283,9 @@ bool WarpCacheIRTranspiler::emitStoreDenseElementHole(ObjOperandId objId,
     index = addBoundsCheck(index, length);
 
     bool needsHoleCheck = false;
-    auto* ins =
-        MStoreElement::New(alloc(), elements, index, rhs, needsHoleCheck);
-    store = ins;
-    common = ins;
+    store = MStoreElement::NewBarriered(alloc(), elements, index, rhs,
+                                        needsHoleCheck);
   }
-  common->setNeedsBarrier();
   addEffectful(store);
 
   return resumeAfter(store);
@@ -4895,8 +4908,10 @@ bool WarpCacheIRTranspiler::emitCallWasmFunction(ObjOperandId calleeId,
              static_cast<int32_t>(callInfo_->argc()));
 #endif
   JSObject* instanceObject = tenuredObjectStubField(instanceOffset);
+  auto* wasmInstanceObj = &instanceObject->as<WasmInstanceObject>();
   const wasm::FuncExport* funcExport = wasmFuncExportField(funcExportOffset);
-  const wasm::FuncType& sig = funcExport->funcType();
+  const wasm::FuncType& sig =
+      wasmInstanceObj->instance().metadata().getFuncExportType(*funcExport);
 
   if (!updateCallInfo(callee, flags)) {
     return false;
@@ -4908,7 +4923,6 @@ bool WarpCacheIRTranspiler::emitCallWasmFunction(ObjOperandId calleeId,
 
   MOZ_ASSERT(callInfo_->argFormat() == CallInfo::ArgFormat::Standard);
 
-  auto* wasmInstanceObj = &instanceObject->as<WasmInstanceObject>();
   auto* call = MIonToWasmCall::New(alloc(), wasmInstanceObj, *funcExport);
   if (!call) {
     return false;

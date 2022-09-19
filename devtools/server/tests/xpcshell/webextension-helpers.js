@@ -15,7 +15,6 @@ const {
   ExtensionTestUtils,
 } = require("resource://testing-common/ExtensionXPCShellUtils.jsm");
 
-const Services = require("Services");
 const { DevToolsServer } = require("devtools/server/devtools-server");
 const { DevToolsClient } = require("devtools/client/devtools-client");
 
@@ -176,6 +175,8 @@ async function extensionScriptWithMessageListener() {
 
     browser.test.sendMessage(`${msg}:done`, item);
   });
+  // window is available in background scripts
+  // eslint-disable-next-line no-undef
   browser.test.sendMessage("extension-origin", window.location.origin);
 }
 exports.extensionScriptWithMessageListener = extensionScriptWithMessageListener;

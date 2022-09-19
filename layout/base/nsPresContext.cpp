@@ -278,9 +278,8 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mUsesFontMetricDependentFontUnits(false),
       mCounterStylesDirty(true),
       mFontFeatureValuesDirty(true),
-      mSuppressResizeReflow(false),
       mIsVisual(false),
-      mHasWarnedAboutPositionedTableParts(false),
+      mUnused(false),
       mHasWarnedAboutTooLargeDashedOrDottedRadius(false),
       mQuirkSheetAdded(false),
       mHadNonBlankPaint(false),
@@ -553,7 +552,7 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
       float oldWidthDevPixels = oldWidthAppUnits / oldAppUnitsPerDevPixel;
       float oldHeightDevPixels = oldHeightAppUnits / oldAppUnitsPerDevPixel;
 
-      AppUnitsPerDevPixelChanged();
+      UIResolutionChangedInternal();
 
       nscoord width = NSToCoordRound(oldWidthDevPixels * AppUnitsPerDevPixel());
       nscoord height =
@@ -876,7 +875,7 @@ void nsPresContext::AttachPresShell(mozilla::PresShell* aPresShell) {
 }
 
 Maybe<ColorScheme> nsPresContext::GetOverriddenOrEmbedderColorScheme() const {
-  if (IsPrintingOrPrintPreview()) {
+  if (Medium() == nsGkAtoms::print) {
     return Some(ColorScheme::Light);
   }
 
@@ -900,12 +899,9 @@ void nsPresContext::SetColorSchemeOverride(
   mOverriddenOrEmbedderColorScheme = aOverride;
 
   if (mDocument->PreferredColorScheme() != oldScheme) {
-    // We need to restyle because not only media queries have changed, system
-    // colors may as well via the prefers-color-scheme meta tag / effective
-    // color-scheme property value.
-    MediaFeatureValuesChanged({RestyleHint::RecascadeSubtree(), nsChangeHint(0),
-                               MediaFeatureChangeReason::SystemMetricsChange},
-                              MediaFeatureChangePropagation::JustThisDocument);
+    MediaFeatureValuesChanged(
+        MediaFeatureChange::ForPreferredColorSchemeChange(),
+        MediaFeatureChangePropagation::JustThisDocument);
   }
 }
 
@@ -934,10 +930,11 @@ void nsPresContext::RecomputeBrowsingContextDependentData() {
     if (overriden != PrefersColorSchemeOverride::None) {
       return overriden;
     }
-    // We only use the top embedder color-scheme for now, see
-    // https://github.com/w3c/csswg-drafts/issues/7213 for a more general
-    // proposal.
-    return top->GetEmbedderColorScheme();
+    if (!StaticPrefs::
+            layout_css_iframe_embedder_prefers_color_scheme_content_enabled()) {
+      return top->GetEmbedderColorSchemes().mPreferred;
+    }
+    return browsingContext->GetEmbedderColorSchemes().mPreferred;
   }());
 
   if (doc == mDocument) {
@@ -999,6 +996,84 @@ void nsPresContext::DetachPresShell() {
     mRefreshDriver->Disconnect();
     // Can't null out the refresh driver here.
   }
+}
+
+struct QueryContainerState {
+  nsSize mSize;
+  WritingMode mWm;
+
+  nscoord GetInlineSize() const { return LogicalSize(mWm, mSize).ISize(mWm); }
+
+  bool Changed(const QueryContainerState& aNewState, StyleContainerType aType) {
+    if (aType & StyleContainerType::SIZE) {
+      return mSize != aNewState.mSize;
+    }
+    if (aType & StyleContainerType::INLINE_SIZE) {
+      return GetInlineSize() != aNewState.GetInlineSize();
+    }
+    return false;
+  }
+};
+NS_DECLARE_FRAME_PROPERTY_DELETABLE(ContainerState, QueryContainerState);
+
+void nsPresContext::RegisterContainerQueryFrame(nsIFrame* aFrame) {
+  mContainerQueryFrames.Insert(aFrame);
+}
+
+void nsPresContext::UnregisterContainerQueryFrame(nsIFrame* aFrame) {
+  mContainerQueryFrames.Remove(aFrame);
+}
+
+void nsPresContext::FinishedContainerQueryUpdate() {
+  mUpdatedContainerQueryContents.Clear();
+}
+
+bool nsPresContext::UpdateContainerQueryStyles() {
+  if (mContainerQueryFrames.IsEmpty()) {
+    return false;
+  }
+
+  PresShell()->DoFlushLayout(/* aInterruptible = */ false);
+
+  bool anyChanged = false;
+  for (nsIFrame* frame : mContainerQueryFrames) {
+    if (!frame->IsPrimaryFrame()) {
+      continue;
+    }
+
+    auto type = frame->StyleDisplay()->mContainerType;
+    MOZ_ASSERT(type, "Non-container frames shouldn't be in this type");
+
+    if (!mUpdatedContainerQueryContents.EnsureInserted(frame->GetContent())) {
+      continue;
+    }
+
+    const QueryContainerState newState{frame->GetSize(),
+                                       frame->GetWritingMode()};
+    QueryContainerState* oldState = frame->GetProperty(ContainerState());
+
+    const bool changed = !oldState || oldState->Changed(newState, type);
+
+    // Make sure to update the state regardless. It's cheap and it keeps tracks
+    // of both axes correctly even if only one axis is contained.
+    if (oldState) {
+      *oldState = newState;
+    } else {
+      frame->SetProperty(ContainerState(), new QueryContainerState(newState));
+    }
+
+    if (!changed) {
+      continue;
+    }
+
+    // TODO(emilio): More fine-grained invalidation rather than invalidating the
+    // whole subtree, probably!
+    RestyleManager()->PostRestyleEvent(frame->GetContent()->AsElement(),
+                                       RestyleHint::RestyleSubtree(),
+                                       nsChangeHint(0));
+    anyChanged = true;
+  }
+  return anyChanged;
 }
 
 void nsPresContext::DocumentCharSetChanged(NotNull<const Encoding*> aCharSet) {
@@ -1209,15 +1284,6 @@ void nsPresContext::SetFullZoom(float aZoom) {
   float oldHeightDevPixels = oldHeightAppUnits / float(mCurAppUnitsPerDevPixel);
   mDeviceContext->SetFullZoom(aZoom);
 
-  NS_ASSERTION(!mSuppressResizeReflow,
-               "two zooms happening at the same time? Impossible!");
-
-  // We can't suppress the resize reflow if we support APZ zooming, as MVM
-  // relies on ResizeReflowIgnoreOverride() actually updating layout to update
-  // the viewport based on that.
-  RefPtr<MobileViewportManager> mvm = mPresShell->GetMobileViewportManager();
-  mSuppressResizeReflow = !mvm;
-
   mFullZoom = aZoom;
 
   AppUnitsPerDevPixelChanged();
@@ -1225,8 +1291,6 @@ void nsPresContext::SetFullZoom(float aZoom) {
   mPresShell->GetViewManager()->SetWindowDimensions(
       NSToCoordRound(oldWidthDevPixels * AppUnitsPerDevPixel()),
       NSToCoordRound(oldHeightDevPixels * AppUnitsPerDevPixel()));
-
-  mSuppressResizeReflow = false;
 }
 
 void nsPresContext::SetOverrideDPPX(float aDPPX) {
@@ -1581,9 +1645,7 @@ bool nsPresContext::UseOverlayScrollbars() const {
 }
 
 void nsPresContext::ThemeChanged(widget::ThemeChangeKind aKind) {
-  // NOTE(emilio): This ideally wouldn't need to be a _TEXT() marker, but
-  // otherwise the stack is not captured, see bug 1670046.
-  PROFILER_MARKER_TEXT("ThemeChanged", LAYOUT, MarkerStack::Capture(), ""_ns);
+  PROFILER_MARKER_UNTYPED("ThemeChanged", LAYOUT, MarkerStack::Capture());
 
   mPendingThemeChangeKind |= unsigned(aKind);
 
@@ -1677,8 +1739,12 @@ void nsPresContext::UIResolutionChangedInternal() {
     AppUnitsPerDevPixelChanged();
   }
 
-  if (GetPresShell()) {
-    GetPresShell()->RefreshZoomConstraintsForScreenSizeChange();
+  if (mPresShell) {
+    mPresShell->RefreshZoomConstraintsForScreenSizeChange();
+    if (RefPtr<MobileViewportManager> mvm =
+            mPresShell->GetMobileViewportManager()) {
+      mvm->UpdateSizesBeforeReflow();
+    }
   }
 
   // Recursively notify all remote leaf descendants of the change.
@@ -1697,13 +1763,22 @@ void nsPresContext::UIResolutionChangedInternal() {
 
 void nsPresContext::EmulateMedium(nsAtom* aMediaType) {
   MOZ_ASSERT(!aMediaType || aMediaType->IsAsciiLowercase());
+
   RefPtr<const nsAtom> oldMedium = Medium();
+  auto oldScheme = mDocument->PreferredColorScheme();
+
   mMediaEmulationData.mMedium = aMediaType;
 
-  if (Medium() != oldMedium) {
-    MediaFeatureValuesChanged({MediaFeatureChangeReason::MediumChange},
-                              MediaFeatureChangePropagation::JustThisDocument);
+  if (Medium() == oldMedium) {
+    return;
   }
+
+  MediaFeatureChange change(MediaFeatureChangeReason::MediumChange);
+  if (oldScheme != mDocument->PreferredColorScheme()) {
+    change |= MediaFeatureChange::ForPreferredColorSchemeChange();
+  }
+  MediaFeatureValuesChanged(change,
+                            MediaFeatureChangePropagation::JustThisDocument);
 }
 
 void nsPresContext::ContentLanguageChanged() {
@@ -1806,6 +1881,11 @@ void nsPresContext::MediaFeatureValuesChanged(
     };
     mDocument->EnumerateSubDocuments(recurse);
   }
+
+  // We notify the media feature values changed for the responsive content of
+  // HTMLImageElements synchronously, so their image sources are always
+  // up-to-date when running the image load tasks in the microtasks.
+  mDocument->NotifyMediaFeatureValuesChanged();
 }
 
 bool nsPresContext::FlushPendingMediaFeatureValuesChanged() {
@@ -1831,8 +1911,6 @@ bool nsPresContext::FlushPendingMediaFeatureValuesChanged() {
     MOZ_ASSERT(mDocument->MediaQueryLists().isEmpty());
     return changedStyle;
   }
-
-  mDocument->NotifyMediaFeatureValuesChanged();
 
   // https://drafts.csswg.org/cssom-view/#evaluate-media-queries-and-report-changes
   //
@@ -1911,13 +1989,15 @@ void nsPresContext::SetPrintSettings(nsIPrintSettings* aPrintSettings) {
   mDrawColorBackground = mPrintSettings->GetPrintBGColors();
   mDrawImageBackground = mPrintSettings->GetPrintBGImages();
 
-  nsIntMargin unwriteableTwips = mPrintSettings->GetUnwriteableMarginInTwips();
-  NS_ASSERTION(unwriteableTwips.top >= 0 && unwriteableTwips.right >= 0 &&
-                   unwriteableTwips.bottom >= 0 && unwriteableTwips.left >= 0,
-               "Unwriteable twips should be non-negative");
-
   nsIntMargin marginTwips = mPrintSettings->GetMarginInTwips();
-  marginTwips.EnsureAtLeast(unwriteableTwips);
+  if (!mPrintSettings->GetIgnoreUnwriteableMargins()) {
+    nsIntMargin unwriteableTwips =
+        mPrintSettings->GetUnwriteableMarginInTwips();
+    NS_ASSERTION(unwriteableTwips.top >= 0 && unwriteableTwips.right >= 0 &&
+                     unwriteableTwips.bottom >= 0 && unwriteableTwips.left >= 0,
+                 "Unwriteable twips should be non-negative");
+    marginTwips.EnsureAtLeast(unwriteableTwips);
+  }
   mDefaultPageMargin = nsPresContext::CSSTwipsToAppUnits(marginTwips);
 }
 
@@ -2569,6 +2649,11 @@ bool nsPresContext::IsRootContentDocumentCrossProcess() const {
     return false;
   }
 
+  if (BrowsingContext* browsingContext = mDocument->GetBrowsingContext()) {
+    if (browsingContext->GetEmbeddedInContentDocument()) {
+      return false;
+    }
+  }
   return mDocument->IsTopLevelContentDocument();
 }
 
@@ -2745,8 +2830,7 @@ void nsPresContext::SetDynamicToolbarMaxHeight(ScreenIntCoord aHeight) {
     nscoord currentWidth, currentHeight;
     presShell->GetViewManager()->GetWindowDimensions(&currentWidth,
                                                      &currentHeight);
-    presShell->ResizeReflow(currentWidth, currentHeight,
-                            ResizeReflowOptions::NoOption);
+    presShell->ResizeReflow(currentWidth, currentHeight);
   }
 }
 

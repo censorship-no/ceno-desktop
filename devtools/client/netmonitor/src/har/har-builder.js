@@ -4,7 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
 const appInfo = Services.appinfo;
 const { LocalizationHelper } = require("devtools/shared/l10n");
 const { CurlUtils } = require("devtools/client/shared/curl");
@@ -487,24 +486,6 @@ HarBuilder.prototype = {
     }
 
     return cache;
-  },
-
-  getBlockingEndTime(file) {
-    if (file.resolveStarted && file.connectStarted) {
-      return file.resolvingTime;
-    }
-
-    if (file.connectStarted) {
-      return file.connectingTime;
-    }
-
-    if (file.sendStarted) {
-      return file.sendingTime;
-    }
-
-    return file.sendingTime > file.startTime
-      ? file.sendingTime
-      : file.waitingForTime;
   },
 
   // RDP Helpers

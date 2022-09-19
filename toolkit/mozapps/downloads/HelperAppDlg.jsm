@@ -461,29 +461,6 @@ nsUnknownContentTypeDialog.prototype = {
       validatedFile = aLocalFolder;
     }
 
-    if (AppConstants.platform == "win") {
-      let ext;
-      try {
-        // We can fail here if there's no primary extension set
-        ext = "." + this.mLauncher.MIMEInfo.primaryExtension;
-      } catch (e) {}
-
-      // Append a file extension if it's an executable that doesn't have one
-      // but make sure we actually have an extension to add
-      let leaf = validatedFile.leafName;
-      if (
-        ext &&
-        !leaf.toLowerCase().endsWith(ext.toLowerCase()) &&
-        validatedFile.isExecutable()
-      ) {
-        validatedFile.remove(false);
-        aLocalFolder.leafName = leaf + ext;
-        if (!aAllowExisting) {
-          validatedFile = DownloadPaths.createNiceUniqueFile(aLocalFolder);
-        }
-      }
-    }
-
     return validatedFile;
   },
 
@@ -557,10 +534,17 @@ nsUnknownContentTypeDialog.prototype = {
     // then set up simple ui
     var mimeType = this.mLauncher.MIMEInfo.MIMEType;
     let isPlain = mimeType == "text/plain";
+
+    this.isExemptExecutableExtension = Services.policies.isExemptExecutableExtension(
+      url.spec,
+      fname?.split(".").at(-1)
+    );
+
     var shouldntRememberChoice =
       mimeType == "application/octet-stream" ||
       mimeType == "application/x-msdownload" ||
-      this.mLauncher.targetFileIsExecutable ||
+      (this.mLauncher.targetFileIsExecutable &&
+        !this.isExemptExecutableExtension) ||
       // Do not offer to remember text/plain mimetype choices if the file
       // isn't actually a 'plain' text file.
       (isPlain && lazy.gReputationService.isBinary(suggestedFileName));
@@ -737,7 +721,10 @@ nsUnknownContentTypeDialog.prototype = {
       // in that case).
 
       //  Default is Ok if the file isn't executable (and vice-versa).
-      return !this.mLauncher.targetFileIsExecutable;
+      return (
+        !this.mLauncher.targetFileIsExecutable ||
+        this.isExemptExecutableExtension
+      );
     }
     // On other platforms, default is Ok if there is a default app.
     // Note that nsIMIMEInfo providers need to ensure that this holds true
@@ -778,7 +765,8 @@ nsUnknownContentTypeDialog.prototype = {
     var mimeType = this.mLauncher.MIMEInfo.MIMEType;
     var openHandler = this.dialogElement("openHandler");
     if (
-      this.mLauncher.targetFileIsExecutable ||
+      (this.mLauncher.targetFileIsExecutable &&
+        !this.isExemptExecutableExtension) ||
       ((mimeType == "application/octet-stream" ||
         mimeType == "application/x-msdos-program" ||
         mimeType == "application/x-msdownload") &&

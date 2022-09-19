@@ -1,3 +1,7 @@
+// These are globlas defined for proxy servers, in ProxyAutoConfig.cpp. See
+// PACGlobalFunctions
+/* globals dnsResolve, alert */
+
 "use strict";
 
 const { TestUtils } = ChromeUtils.import(
@@ -55,10 +59,10 @@ async function configurePac(fn) {
 
   await TestUtils.waitForCondition(
     () =>
-      consoleListener.messages.filter(
+      !!consoleListener.messages.filter(
         e => e.includes("PAC file installed from"),
         0
-      ).length > 0,
+      ).length,
     "Wait for PAC file to be installed."
   );
   consoleListener.clear();
@@ -86,7 +90,8 @@ setup();
 // resolving the DNS name "null"
 add_task(async function test_bug1724345() {
   consoleListener.clear();
-  /* globals dnsResolve, isInNet */
+  // isInNet is defined by ascii_pac_utils.js which is included for proxies.
+  /* globals isInNet */
   let pac = function FindProxyForURL(url, host) {
     alert(`PAC resolving: ${host}`);
     let destIP = dnsResolve(host);
@@ -116,9 +121,9 @@ add_task(async function test_bug1724345() {
     chan.asyncOpen(new ChannelListener(resolve, null, CL_EXPECT_FAILURE))
   );
   ok(
-    consoleListener.messages.filter(e =>
+    !!consoleListener.messages.filter(e =>
       e.includes("PAC isInNet: example.org null false")
-    ).length > 0,
+    ).length,
     `should have proper result ${consoleListener.messages}`
   );
 });

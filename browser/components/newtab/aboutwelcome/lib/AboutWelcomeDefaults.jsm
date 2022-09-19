@@ -17,7 +17,22 @@ const lazy = {};
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
   AttributionCode: "resource:///modules/AttributionCode.jsm",
+  BuiltInThemes: "resource:///modules/BuiltInThemes.jsm",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "usesFirefoxSync",
+  "services.sync.username"
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "mobileDevices",
+  "services.sync.clients.devices.mobile",
+  0
+);
 
 const DEFAULT_WELCOME_CONTENT = {
   id: "DEFAULT_ABOUTWELCOME_PROTON",
@@ -257,31 +272,41 @@ const MR_ABOUT_WELCOME_DEFAULT = {
     "browser.aboutwelcome.transitions",
     true
   ),
-  backdrop: "#438ab6",
+  backdrop:
+    "var(--mr-welcome-background-color) var(--mr-welcome-background-gradient)",
   screens: [
     {
       id: "AW_PIN_FIREFOX",
       content: {
         position: "split",
+        split_narrow_bkg_position: "-155px",
         background:
-          "radial-gradient(83.12% 83.12% at 80.59% 16.88%, #9059FF 0%, #3A8EE6 54.51%, #A0C4EA 100%)",
+          "url('chrome://activity-stream/content/data/content/assets/mr-pintaskbar.svg') var(--mr-secondary-position) no-repeat var(--mr-screen-background-color)",
         progress_bar: true,
         logo: {},
-        title: "Open up an amazing internet",
-        subtitle:
-          "Launch Firefox from anywhere with a single click. Every time you do, you’re choosing a more open and independent web.",
+        title: {
+          string_id: "mr2022-onboarding-welcome-pin-header",
+        },
+        subtitle: {
+          string_id: "mr2022-onboarding-welcome-pin-subtitle",
+        },
         primary_button: {
-          label: "Pin Firefox to taskbar",
+          label: {
+            string_id: "mr2022-onboarding-pin-primary-button-label",
+          },
           action: {
             navigate: true,
             type: "PIN_FIREFOX_TO_TASKBAR",
           },
         },
         secondary_button: {
-          label: "Skip this step",
+          label: {
+            string_id: "mr2022-onboarding-secondary-skip-button-label",
+          },
           action: {
             navigate: true,
           },
+          has_arrow_icon: true,
         },
         secondary_button_top: {
           label: {
@@ -301,12 +326,19 @@ const MR_ABOUT_WELCOME_DEFAULT = {
       id: "AW_LANGUAGE_MISMATCH",
       content: {
         position: "split",
-        background:
-          "radial-gradient(83.12% 83.12% at 80.59% 16.88%, #9059FF 0%, #3A8EE6 54.51%, #A0C4EA 100%)",
+        background: "var(--mr-screen-background-color)",
         progress_bar: true,
         logo: {},
-        title: { string_id: "onboarding-live-language-header" },
-        subtitle: "Firefox speaks your language",
+        title: {
+          string_id: "mr2022-onboarding-live-language-text",
+        },
+        subtitle: {
+          string_id: "mr2022-language-mismatch-subtitle",
+        },
+        hero_text: {
+          string_id: "mr2022-onboarding-live-language-text",
+          useLangPack: true,
+        },
         languageSwitcher: {
           downloading: {
             string_id: "onboarding-live-language-button-label-downloading",
@@ -315,9 +347,16 @@ const MR_ABOUT_WELCOME_DEFAULT = {
             string_id: "onboarding-live-language-secondary-cancel-download",
           },
           waiting: { string_id: "onboarding-live-language-waiting-button" },
-          skip: { string_id: "onboarding-live-language-skip-button-label" },
+          skip: { string_id: "mr2022-onboarding-secondary-skip-button-label" },
           action: {
             navigate: true,
+          },
+          switch: {
+            string_id: "mr2022-onboarding-live-language-switch-to",
+            useLangPack: true,
+          },
+          continue: {
+            string_id: "mr2022-onboarding-live-language-continue-in",
           },
         },
       },
@@ -326,25 +365,34 @@ const MR_ABOUT_WELCOME_DEFAULT = {
       id: "AW_SET_DEFAULT",
       content: {
         position: "split",
+        split_narrow_bkg_position: "-60px",
         background:
-          "radial-gradient(83.12% 83.12% at 80.59% 16.88%, #9059FF 0%, #3A8EE6 54.51%, #A0C4EA 100%)",
+          "url('chrome://activity-stream/content/data/content/assets/mr-settodefault.svg') var(--mr-secondary-position) no-repeat var(--mr-screen-background-color)",
         progress_bar: true,
         logo: {},
-        title: "Make Firefox your go-to browser",
-        subtitle:
-          "Use a browser backed by a non-profit. We defend your privacy while you zip around the web.",
+        title: {
+          string_id: "mr2022-onboarding-set-default-title",
+        },
+        subtitle: {
+          string_id: "mr2022-onboarding-set-default-subtitle",
+        },
         primary_button: {
-          label: "Set as default browser",
+          label: {
+            string_id: "mr2022-onboarding-set-default-primary-button-label",
+          },
           action: {
             navigate: true,
             type: "SET_DEFAULT_BROWSER",
           },
         },
         secondary_button: {
-          label: "Skip this step",
+          label: {
+            string_id: "mr2022-onboarding-secondary-skip-button-label",
+          },
           action: {
             navigate: true,
           },
+          has_arrow_icon: true,
         },
       },
     },
@@ -352,17 +400,21 @@ const MR_ABOUT_WELCOME_DEFAULT = {
       id: "AW_IMPORT_SETTINGS",
       content: {
         position: "split",
+        split_narrow_bkg_position: "-42px",
         background:
-          "radial-gradient(83.12% 83.12% at 80.59% 16.88%, #9059FF 0%, #3A8EE6 54.51%, #A0C4EA 100%)",
+          "url('chrome://activity-stream/content/data/content/assets/mr-import.svg') var(--mr-secondary-position) no-repeat var(--mr-screen-background-color)",
         progress_bar: true,
         logo: {},
-        title: "Lightning fast setup",
-        subtitle:
-          "Set up Firefox how you like it. Add your bookmarks, passwords and more from your old browser.",
+        title: {
+          string_id: "mr2022-onboarding-import-header",
+        },
+        subtitle: {
+          string_id: "mr2022-onboarding-import-subtitle",
+        },
         primary_button: {
           label: {
             string_id:
-              "mr1-onboarding-import-primary-button-label-no-attribution",
+              "mr2022-onboarding-import-primary-button-label-no-attribution",
           },
           action: {
             type: "SHOW_MIGRATION_WIZARD",
@@ -371,92 +423,195 @@ const MR_ABOUT_WELCOME_DEFAULT = {
           },
         },
         secondary_button: {
-          label: "Skip this step",
+          label: {
+            string_id: "mr2022-onboarding-secondary-skip-button-label",
+          },
           action: {
             navigate: true,
+          },
+          has_arrow_icon: true,
+        },
+      },
+    },
+    {
+      id: "AW_CHOOSE_COLORWAY",
+      content: {
+        position: "split",
+        split_narrow_bkg_position: "-65px",
+        background:
+          "url('chrome://activity-stream/content/data/content/assets/mr-colorways.avif') var(--mr-secondary-position) no-repeat var(--mr-screen-background-color)",
+        progress_bar: true,
+        logo: {},
+        title: {
+          string_id: "mr2022-onboarding-colorway-title",
+        },
+        subtitle: {
+          string_id: "mr2022-onboarding-colorway-subtitle",
+        },
+        tiles: {
+          type: "colorway",
+          action: {
+            theme: "<event>",
+          },
+          defaultVariationIndex: 1,
+          systemVariations: ["light", "automatic", "dark"],
+          variations: ["soft", "balanced", "bold"],
+          colorways: [
+            {
+              id: "default",
+              label: {
+                string_id: "mr2022-onboarding-colorway-label-default",
+              },
+              tooltip: {
+                string_id: "mr2022-onboarding-colorway-tooltip-default",
+              },
+              description: {
+                string_id: "mr2022-onboarding-colorway-description-default",
+              },
+            },
+            {
+              id: "playmaker",
+              label: {
+                string_id: "mr2022-onboarding-colorway-label-playmaker",
+              },
+              tooltip: {
+                string_id: "mr2022-onboarding-colorway-tooltip-playmaker",
+              },
+              description: {
+                string_id: "mr2022-onboarding-colorway-description-playmaker",
+              },
+            },
+            {
+              id: "expressionist",
+              label: {
+                string_id: "mr2022-onboarding-colorway-label-expressionist",
+              },
+              tooltip: {
+                string_id: "mr2022-onboarding-colorway-tooltip-expressionist",
+              },
+              description: {
+                string_id:
+                  "mr2022-onboarding-colorway-description-expressionist",
+              },
+            },
+            {
+              id: "visionary",
+              label: {
+                string_id: "mr2022-onboarding-colorway-label-visionary",
+              },
+              tooltip: {
+                string_id: "mr2022-onboarding-colorway-tooltip-visionary",
+              },
+              description: {
+                string_id: "mr2022-onboarding-colorway-description-visionary",
+              },
+            },
+            {
+              id: "activist",
+              label: {
+                string_id: "mr2022-onboarding-colorway-label-activist",
+              },
+              tooltip: {
+                string_id: "mr2022-onboarding-colorway-tooltip-activist",
+              },
+              description: {
+                string_id: "mr2022-onboarding-colorway-description-activist",
+              },
+            },
+            {
+              id: "dreamer",
+              label: {
+                string_id: "mr2022-onboarding-colorway-label-dreamer",
+              },
+              tooltip: {
+                string_id: "mr2022-onboarding-colorway-tooltip-dreamer",
+              },
+              description: {
+                string_id: "mr2022-onboarding-colorway-description-dreamer",
+              },
+            },
+            {
+              id: "innovator",
+              label: {
+                string_id: "mr2022-onboarding-colorway-label-innovator",
+              },
+              tooltip: {
+                string_id: "mr2022-onboarding-colorway-tooltip-innovator",
+              },
+              description: {
+                string_id: "mr2022-onboarding-colorway-description-innovator",
+              },
+            },
+          ],
+        },
+        primary_button: {
+          label: {
+            string_id:
+              "mr2022-onboarding-colorway-primary-button-label-continue",
+          },
+          action: {
+            persistActiveTheme: true,
+            navigate: true,
+          },
+        },
+        secondary_button: {
+          label: {
+            string_id: "mr2022-onboarding-secondary-skip-button-label",
+          },
+          action: {
+            theme: "automatic",
+            navigate: true,
+          },
+          has_arrow_icon: true,
+        },
+        navigate_away: {
+          action: {
+            theme: "revert",
           },
         },
       },
     },
     {
-      id: "AW_CHOOSE_THEME",
+      id: "AW_MOBILE_DOWNLOAD",
       content: {
         position: "split",
+        split_narrow_bkg_position: "-160px",
         background:
-          "radial-gradient(83.12% 83.12% at 80.59% 16.88%, #9059FF 0%, #3A8EE6 54.51%, #A0C4EA 100%)",
+          "url('chrome://activity-stream/content/data/content/assets/mr-mobilecrosspromo.svg') var(--mr-secondary-position) no-repeat var(--mr-screen-background-color)",
         progress_bar: true,
         logo: {},
-        title: "Independent voices can change culture",
-        tiles: {
-          type: "theme",
-          action: {
-            theme: "<event>",
-          },
-          data: [
-            {
-              theme: "automatic",
-              label: {
-                string_id: "mr1-onboarding-theme-label-system",
-              },
-              tooltip: {
-                string_id: "mr1-onboarding-theme-tooltip-system",
-              },
-              description: {
-                string_id: "mr1-onboarding-theme-description-system",
-              },
-            },
-            {
-              theme: "light",
-              label: {
-                string_id: "mr1-onboarding-theme-label-light",
-              },
-              tooltip: {
-                string_id: "mr1-onboarding-theme-tooltip-light",
-              },
-              description: {
-                string_id: "mr1-onboarding-theme-description-light",
-              },
-            },
-            {
-              theme: "dark",
-              label: {
-                string_id: "mr1-onboarding-theme-label-dark",
-              },
-              tooltip: {
-                string_id: "mr1-onboarding-theme-tooltip-dark",
-              },
-              description: {
-                string_id: "mr1-onboarding-theme-description-dark",
-              },
-            },
-            {
-              theme: "alpenglow",
-              label: {
-                string_id: "mr1-onboarding-theme-label-alpenglow",
-              },
-              tooltip: {
-                string_id: "mr1-onboarding-theme-tooltip-alpenglow",
-              },
-              description: {
-                string_id: "mr1-onboarding-theme-description-alpenglow",
-              },
-            },
-          ],
+        title: {
+          string_id: "mr2022-onboarding-mobile-download-title",
         },
-        subtitle:
-          "You are an Expressionist. You see the world differently and your creations stir the emotions of others.",
-        primary_button: {
-          label: "Set colorway",
+        subtitle: {
+          string_id: "mr2022-onboarding-mobile-download-subtitle",
+        },
+        hero_image: {
+          url:
+            "chrome://activity-stream/content/data/content/assets/mobile-download-qr-new-user.svg",
+        },
+        cta_paragraph: {
+          text: {
+            string_id: "mr2022-onboarding-mobile-download-cta-text",
+            string_name: "download-label",
+          },
           action: {
-            navigate: true,
+            type: "OPEN_URL",
+            data: {
+              args:
+                "https://www.mozilla.org/firefox/mobile/get-app/?utm_medium=firefox-desktop&utm_source=onboarding-modal&utm_campaign=mr2022&utm_content=new-global",
+              where: "tab",
+            },
           },
         },
         secondary_button: {
-          label: "Skip this step",
+          label: {
+            string_id: "mr2022-onboarding-secondary-skip-button-label",
+          },
           action: {
-            theme: "automatic",
             navigate: true,
           },
+          has_arrow_icon: true,
         },
       },
     },
@@ -464,23 +619,30 @@ const MR_ABOUT_WELCOME_DEFAULT = {
       id: "AW_GRATITUDE",
       content: {
         position: "split",
+        split_narrow_bkg_position: "-228px",
         background:
-          "radial-gradient(83.12% 83.12% at 80.59% 16.88%, #9059FF 0%, #3A8EE6 54.51%, #A0C4EA 100%)",
+          "url('chrome://activity-stream/content/data/content/assets/mr-gratitude.svg') var(--mr-secondary-position) no-repeat var(--mr-screen-background-color)",
         progress_bar: true,
         logo: {},
-        title: "You’re helping us build a better web.",
-        subtitle:
-          "Thank you for using Firefox, backed by the Mozilla Foundation. With your support, we’re working to make the internet more open, accessible, and better for everyone.",
+        title: {
+          string_id: "mr2022-onboarding-gratitude-title",
+        },
+        subtitle: {
+          string_id: "mr2022-onboarding-gratitude-subtitle",
+        },
         primary_button: {
-          label: "See what’s new",
+          label: {
+            string_id: "mr2022-onboarding-gratitude-primary-button-label",
+          },
           action: {
-            type: "OPEN_ABOUT_PAGE",
-            data: { args: "firefoxview", where: "current" },
+            type: "OPEN_FIREFOX_VIEW",
             navigate: true,
           },
         },
         secondary_button: {
-          label: "Start browsing",
+          label: {
+            string_id: "mr2022-onboarding-gratitude-secondary-button-label",
+          },
           action: {
             navigate: true,
           },
@@ -588,17 +750,58 @@ function removeScreens(check, screens) {
   }
 }
 
+// Function to evalute the appropriate string for the welcome screen button label
+function evaluateWelcomeScreenButtonLabel(removeDefault, content) {
+  if (content.templateMR) {
+    return removeDefault
+      ? "mr2022-onboarding-get-started-primary-button-label"
+      : "mr2022-onboarding-set-default-primary-button-label";
+  }
+  return removeDefault
+    ? "mr1-onboarding-get-started-primary-button-label"
+    : "mr1-onboarding-set-default-only-primary-button-label";
+}
+
+function prepareMobileDownload(screens) {
+  let mobileContent = screens.find(screen => screen.id === "AW_MOBILE_DOWNLOAD")
+    ?.content;
+
+  if (!mobileContent) {
+    return;
+  }
+  if (!lazy.BrowserUtils.sendToDeviceEmailsSupported()) {
+    // If send to device emails are not supported for a user's locale,
+    // remove the send to device link and update the screen text
+    delete mobileContent.cta_paragraph.action;
+    mobileContent.cta_paragraph.text = {
+      string_id: "mr2022-onboarding-no-mobile-download-cta-text",
+    };
+  }
+  // Update CN specific QRCode url
+  if (AppConstants.isChinaRepack()) {
+    mobileContent.hero_image.url = `${mobileContent.hero_image.url.slice(
+      0,
+      mobileContent.hero_image.url.indexOf(".svg")
+    )}-cn.svg`;
+  }
+}
+
 function prepareMRContent(content) {
   // Expand with logic for finalized MR designs
   const { screens } = content;
 
-  //If Fx is set as default, skip Import settings screen and show colorways
-  let removeDefault = !content.needDefault;
-  if (removeDefault) {
-    removeScreens(
-      screen => screen.id?.startsWith("AW_IMPORT_SETTINGS"),
-      screens
-    );
+  // Do not show the screen to users who are already using firefox sync
+  // and syncing to a mobile device
+  if (lazy.usesFirefoxSync && lazy.mobileDevices > 0) {
+    removeScreens(screen => screen.id === "AW_MOBILE_DOWNLOAD", screens);
+  } else {
+    prepareMobileDownload(screens);
+  }
+
+  // Remove colorways screen if there is no active colorways collection
+  const hasActiveColorways = !!lazy.BuiltInThemes.findActiveColorwayCollection?.();
+  if (!hasActiveColorways) {
+    removeScreens(screen => screen.id === "AW_CHOOSE_COLORWAY", screens);
   }
 
   return content;
@@ -654,13 +857,21 @@ async function prepareContentForReact(content) {
     if (pinScreen?.content) {
       pinScreen.id = removeDefault ? "AW_GET_STARTED" : "AW_ONLY_DEFAULT";
       pinScreen.content.title = {
-        string_id: "mr1-onboarding-welcome-header",
+        string_id: content.templateMR
+          ? "mr2022-onboarding-welcome-pin-header"
+          : "mr1-onboarding-welcome-header",
       };
+
+      if (content.templateMR) {
+        pinScreen.content.subtitle = {
+          string_id: removeDefault
+            ? "mr2022-onboarding-get-started-primary-subtitle"
+            : "mr2022-onboarding-set-default-only-subtitle",
+        };
+      }
       pinScreen.content.primary_button = {
         label: {
-          string_id: removeDefault
-            ? "mr1-onboarding-get-started-primary-button-label"
-            : "mr1-onboarding-set-default-only-primary-button-label",
+          string_id: evaluateWelcomeScreenButtonLabel(removeDefault, content),
         },
         action: {
           navigate: true,

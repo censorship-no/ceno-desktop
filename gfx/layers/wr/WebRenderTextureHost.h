@@ -57,6 +57,10 @@ class WebRenderTextureHost : public TextureHost {
 
   WebRenderTextureHost* AsWebRenderTextureHost() override { return this; }
 
+  RemoteTextureHostWrapper* AsRemoteTextureHostWrapper() override {
+    return mWrappedTextureHost->AsRemoteTextureHostWrapper();
+  }
+
   bool IsWrappingBufferTextureHost() override;
 
   virtual void PrepareForUse() override;
@@ -91,6 +95,8 @@ class WebRenderTextureHost : public TextureHost {
   AndroidHardwareBuffer* GetAndroidHardwareBuffer() const override;
 
   void MaybeNotifyForUse(wr::TransactionBuilder& aTxn);
+
+  TextureHostType GetTextureHostType() override;
 
   const RefPtr<TextureHost> mWrappedTextureHost;
 };

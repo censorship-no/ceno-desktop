@@ -68,6 +68,7 @@
 #include "wasm/WasmStubs.h"
 #include "wasm/WasmValidate.h"
 
+#include "gc/GCContext-inl.h"
 #include "vm/ArrayBufferObject-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -252,21 +253,17 @@ bool wasm::IonDisabledByFeatures(JSContext* cx, bool* isDisabled,
                                  JSStringBuilder* reason) {
   // Ion has no debugging support, no gc support.
   bool debug = WasmDebuggerActive(cx);
-  bool functionReferences = WasmFunctionReferencesFlag(cx);
   bool gc = WasmGcFlag(cx);
   if (reason) {
     char sep = 0;
     if (debug && !Append(reason, "debug", &sep)) {
       return false;
     }
-    if (functionReferences && !Append(reason, "function-references", &sep)) {
-      return false;
-    }
     if (gc && !Append(reason, "gc", &sep)) {
       return false;
     }
   }
-  *isDisabled = debug || functionReferences || gc;
+  *isDisabled = debug || gc;
   return true;
 }
 
@@ -1364,8 +1361,9 @@ bool WasmModuleObject::imports(JSContext* cx, unsigned argc, Value* vp) {
     switch (import.kind) {
       case DefinitionKind::Function: {
         size_t funcIndex = numFuncImport++;
-        typeObj = FuncTypeToObject(
-            cx, metadataTier.funcImports[funcIndex].funcType());
+        const FuncType& funcType =
+            metadata.getFuncImportType(metadataTier.funcImports[funcIndex]);
+        typeObj = FuncTypeToObject(cx, funcType);
         break;
       }
       case DefinitionKind::Table: {
@@ -1473,7 +1471,8 @@ bool WasmModuleObject::exports(JSContext* cx, unsigned argc, Value* vp) {
     switch (exp.kind()) {
       case DefinitionKind::Function: {
         const FuncExport& fe = metadataTier.lookupFuncExport(exp.funcIndex());
-        typeObj = FuncTypeToObject(cx, fe.funcType());
+        const FuncType& funcType = metadata.getFuncExportType(fe);
+        typeObj = FuncTypeToObject(cx, funcType);
         break;
       }
       case DefinitionKind::Table: {
@@ -2312,7 +2311,8 @@ bool WasmInstanceObject::getExportedFunction(
   const Instance& instance = instanceObj->instance();
   const FuncExport& funcExport =
       instance.metadata(instance.code().bestTier()).lookupFuncExport(funcIndex);
-  unsigned numArgs = funcExport.funcType().args().length();
+  const FuncType& funcType = instance.metadata().getFuncExportType(funcExport);
+  unsigned numArgs = funcType.args().length();
 
   if (instance.isAsmJS()) {
     // asm.js needs to act like a normal JS function which means having the
@@ -2354,7 +2354,7 @@ bool WasmInstanceObject::getExportedFunction(
     // separate 4kb code page. Most eagerly-accessed functions are not called,
     // so use a shared, provisional (and slow) lazy stub as JitEntry and wait
     // until Instance::callExport() to create the fast entry stubs.
-    if (funcExport.canHaveJitEntry()) {
+    if (funcType.canHaveJitEntry()) {
       if (!funcExport.hasEagerStubs()) {
         if (!EnsureBuiltinThunksInitialized()) {
           return false;
@@ -3392,7 +3392,7 @@ WasmGlobalObject* WasmGlobalObject::create(JSContext* cx, HandleVal value,
   MOZ_ASSERT(obj->isNewborn());
   MOZ_ASSERT(obj->isTenured(), "assumed by global.set post barriers");
 
-  GCPtrVal* val = js_new<GCPtrVal>(Val(value.get().type()));
+  GCPtrVal* val = js_new<GCPtrVal>(Val());
   if (!val) {
     ReportOutOfMemory(cx);
     return nullptr;
@@ -4147,10 +4147,10 @@ bool WasmFunctionTypeImpl(JSContext* cx, const CallArgs& args) {
       cx, ExportedFunctionToInstanceObject(function));
   uint32_t funcIndex = ExportedFunctionToFuncIndex(function);
   Instance& instance = instanceObj->instance();
-  const FuncType& ft = instance.metadata(instance.code().bestTier())
-                           .lookupFuncExport(funcIndex)
-                           .funcType();
-  RootedObject typeObj(cx, FuncTypeToObject(cx, ft));
+  const FuncExport& fe =
+      instance.metadata(instance.code().bestTier()).lookupFuncExport(funcIndex);
+  const FuncType& funcType = instance.metadata().getFuncExportType(fe);
+  RootedObject typeObj(cx, FuncTypeToObject(cx, funcType));
   if (!typeObj) {
     return false;
   }

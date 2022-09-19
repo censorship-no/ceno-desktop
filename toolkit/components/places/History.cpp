@@ -95,6 +95,7 @@ struct VisitData {
     guid.SetIsVoid(true);
     title.SetIsVoid(true);
     baseDomain.SetIsVoid(true);
+    triggeringSearchEngine.SetIsVoid(true);
     triggeringSponsoredURL.SetIsVoid(true);
     triggeringSponsoredURLBaseDomain.SetIsVoid(true);
   }
@@ -130,6 +131,7 @@ struct VisitData {
     guid.SetIsVoid(true);
     title.SetIsVoid(true);
     baseDomain.SetIsVoid(true);
+    triggeringSearchEngine.SetIsVoid(true);
     triggeringSponsoredURL.SetIsVoid(true);
     triggeringSponsoredURLBaseDomain.SetIsVoid(true);
   }
@@ -184,6 +186,7 @@ struct VisitData {
   bool useFrecencyRedirectBonus;
 
   uint16_t source;
+  nsCString triggeringSearchEngine;
   int64_t triggeringPlaceId;
   nsCString triggeringSponsoredURL;
   nsCString triggeringSponsoredURLBaseDomain;
@@ -1209,9 +1212,13 @@ class InsertVisitedURIs final : public Runnable {
   }
 
   nsresult UpdateVisitSource(VisitData& aPlace, History* aHistory) {
-    aPlace.source = aPlace.bookmarked
-                        ? nsINavHistoryService::VISIT_SOURCE_BOOKMARKED
-                        : nsINavHistoryService::VISIT_SOURCE_ORGANIC;
+    if (aPlace.bookmarked) {
+      aPlace.source = nsINavHistoryService::VISIT_SOURCE_BOOKMARKED;
+    } else if (!aPlace.triggeringSearchEngine.IsEmpty()) {
+      aPlace.source = nsINavHistoryService::VISIT_SOURCE_SEARCHED;
+    } else {
+      aPlace.source = nsINavHistoryService::VISIT_SOURCE_ORGANIC;
+    }
 
     if (aPlace.triggeringSponsoredURL.IsEmpty()) {
       // No triggeringSponsoredURL.
@@ -1252,13 +1259,14 @@ class InsertVisitedURIs final : public Runnable {
     rv = stmt->ExecuteStep(&exists);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    if (!exists) {
-      // Not in sponsored session since no history.
-      return NS_OK;
+    if (exists) {
+      rv = stmt->GetInt64(0, &aPlace.triggeringPlaceId);
+      NS_ENSURE_SUCCESS(rv, rv);
+    } else {
+      Telemetry::ScalarAdd(
+          Telemetry::ScalarID::PLACES_SPONSORED_VISIT_NO_TRIGGERING_URL, 1);
     }
 
-    rv = stmt->GetInt64(0, &aPlace.triggeringPlaceId);
-    NS_ENSURE_SUCCESS(rv, rv);
     aPlace.source = nsINavHistoryService::VISIT_SOURCE_SPONSORED;
 
     return NS_OK;
@@ -1990,6 +1998,19 @@ History::VisitURI(nsIWidget* aWidget, nsIURI* aURI, nsIURI* aLastVisitedURI,
     NS_ENSURE_SUCCESS(rv, rv);
     if (browser) {
       RefPtr<Element> browserElement = static_cast<Element*>(browser.get());
+
+      nsAutoString triggeringSearchEngineURL;
+      browserElement->GetAttribute(u"triggeringSearchEngineURL"_ns,
+                                   triggeringSearchEngineURL);
+      if (!triggeringSearchEngineURL.IsEmpty() &&
+          place.spec.Equals(NS_ConvertUTF16toUTF8(triggeringSearchEngineURL))) {
+        nsAutoString triggeringSearchEngine;
+        browserElement->GetAttribute(u"triggeringSearchEngine"_ns,
+                                     triggeringSearchEngine);
+        place.triggeringSearchEngine.Assign(
+            NS_ConvertUTF16toUTF8(triggeringSearchEngine));
+      }
+
       nsAutoString triggeringSponsoredURL;
       browserElement->GetAttribute(u"triggeringSponsoredURL"_ns,
                                    triggeringSponsoredURL);

@@ -264,3 +264,121 @@ addAccessibleTask(
   },
   { iframe: true, remoteIframe: true }
 );
+
+/**
+ * Test rel caching for <label> element with existing "for" attribute.
+ */
+addAccessibleTask(
+  `data:text/html,<label id="label" for="input">label</label><input id="input">`,
+  async function(browser, accDoc) {
+    const input = findAccessibleChildByID(accDoc, "input");
+    const label = findAccessibleChildByID(accDoc, "label");
+    await testCachedRelation(input, RELATION_LABELLED_BY, label);
+    await testCachedRelation(label, RELATION_LABEL_FOR, input);
+  },
+  { iframe: true, remoteIframe: true }
+);
+
+/*
+ * Test caching of relations with respect to label objects that are ancestors of
+ * their target.
+ */
+addAccessibleTask(
+  `
+  <label id="host">
+    <input type="checkbox" id="dependant1">
+  </label>`,
+  async function(browser, accDoc) {
+    const input = findAccessibleChildByID(accDoc, "dependant1");
+    const label = findAccessibleChildByID(accDoc, "host");
+
+    await testCachedRelation(input, RELATION_LABELLED_BY, label);
+    await testCachedRelation(label, RELATION_LABEL_FOR, input);
+  },
+  { iframe: true, remoteIframe: true }
+);
+
+/*
+ * Test EMBEDS on root accessible.
+ */
+addAccessibleTask(
+  `hello world`,
+  async function(browser, primaryDocAcc, secondaryDocAcc) {
+    // The root accessible should EMBED the top level
+    // content document. If this test runs in an iframe,
+    // the test harness will pass in doc accs for both the
+    // iframe (primaryDocAcc) and the top level remote
+    // browser (secondaryDocAcc). We should use the second
+    // one.
+    // If this is not in an iframe, we'll only get
+    // a single docAcc (primaryDocAcc) which refers to
+    // the top level content doc.
+    const topLevelDoc = secondaryDocAcc ? secondaryDocAcc : primaryDocAcc;
+    await testRelation(
+      getRootAccessible(document),
+      RELATION_EMBEDS,
+      topLevelDoc
+    );
+  },
+  { chrome: true, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Test CONTAINING_TAB_PANE
+ */
+addAccessibleTask(
+  `<p id="p">hello world</p>`,
+  async function(browser, primaryDocAcc, secondaryDocAcc) {
+    // The CONTAINING_TAB_PANE of any acc should be the top level
+    // content document. If this test runs in an iframe,
+    // the test harness will pass in doc accs for both the
+    // iframe (primaryDocAcc) and the top level remote
+    // browser (secondaryDocAcc). We should use the second
+    // one.
+    // If this is not in an iframe, we'll only get
+    // a single docAcc (primaryDocAcc) which refers to
+    // the top level content doc.
+    const topLevelDoc = secondaryDocAcc ? secondaryDocAcc : primaryDocAcc;
+    await testCachedRelation(
+      findAccessibleChildByID(primaryDocAcc, "p"),
+      RELATION_CONTAINING_TAB_PANE,
+      topLevelDoc
+    );
+  },
+  {
+    chrome: true,
+    topLevel: isCacheEnabled,
+    iframe: isCacheEnabled,
+    remoteIframe: isCacheEnabled,
+  }
+);
+
+/*
+ * Test relation caching on link
+ */
+addAccessibleTask(
+  `
+  <a id="link" href="#item">
+  <div id="item">hello</div>
+  <div id="item2">world</div>`,
+  async function(browser, accDoc) {
+    const link = findAccessibleChildByID(accDoc, "link");
+    const item = findAccessibleChildByID(accDoc, "item");
+    const item2 = findAccessibleChildByID(accDoc, "item2");
+
+    await testCachedRelation(link, RELATION_LINKS_TO, item);
+
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("link").href = "";
+    });
+
+    await testCachedRelation(link, RELATION_LINKS_TO, null);
+
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("link").href = "#item2";
+    });
+
+    await testCachedRelation(link, RELATION_LINKS_TO, item2);
+  },
+  { chrome: true, iframe: true, remoteIframe: true }
+);

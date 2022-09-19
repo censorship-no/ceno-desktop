@@ -231,7 +231,7 @@ export var UrlbarUtils = {
       {
         source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
         restrict: lazy.UrlbarTokenizer.RESTRICT.ACTION,
-        icon: "chrome://devtools/skin/images/command-console.svg",
+        icon: "chrome://browser/skin/quickactions.svg",
         pref: "shortcuts.quickactions",
       },
     ];
@@ -1210,6 +1210,8 @@ export var UrlbarUtils = {
         if (result.providerName == "TabToSearch") {
           // This is the onboarding result.
           return "tabtosearch";
+        } else if (result.providerName == "quickactions") {
+          return "quickaction";
         }
         return "dynamic";
     }

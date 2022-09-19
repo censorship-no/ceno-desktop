@@ -182,13 +182,13 @@ grcov-osx-x86_64:
         sha256: c7c323e0647b1309b412874000d677e8f5b898401ec57761c57a9c396c433823
         size: 2476735
 
-zlib-1.2.11:
-    description: zlib 1.2.11 source code
+zlib-1.2.12:
+    description: zlib 1.2.12 source code
     fetch:
         type: static-url
-        url: https://downloads.sourceforge.net/project/libpng/zlib/1.2.11/zlib-1.2.11.tar.gz
-        sha256: c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1
-        size: 607698
+        url: http://zlib.net/zlib-1.2.12.tar.gz
+        sha256: 91844808532e5ce316b3c010929493c0244f3d37593afd6de04f71821d5136d9
+        size: 1490071
         gpg-signature:
             sig-url: "{url}.asc"
             key-path: build/unix/build-gcc/5ED46A6721D365587791E2AA783FCD8E58BCAFBA.key
@@ -365,13 +365,13 @@ clang-trunk:
 # We build stable rust from source so the resulting compiler acts as a nightly
 # rust compiler, allowing to use unstable features like -Zbuild-std and
 # sanitizers.
-rust-1.62.0:
-    description: Rust 1.62.0 source code
+rust-1.63.0:
+    description: Rust 1.63.0 source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: a8314ef7d0ec7b75c336af2c9857bfaf43002bfc
+        revision: 4b91a6ea7258a947e59c6522cd5898e7c0a6a88f
 
 wasi-sdk:
     description: wasi-sdk-16 source code
@@ -406,7 +406,7 @@ dump-syms:
     fetch:
         type: git
         repo: https://github.com/mozilla/dump_syms/
-        revision: 29c131802494c52e9e89597f1d763f79e797b348
+        revision: b4b85e7187bbcdd0850417498ce03e2da356b170
 
 rust-minidump:
     description: rust-minidump 0.14.0 source code (for minidump-stackwalk)
@@ -420,7 +420,7 @@ fix-stacks:
     fetch:
         type: git
         repo: https://github.com/mozilla/fix-stacks/
-        revision: d7829964fb9ebf14b1f283403408ecabead4c5da
+        revision: cfa7048e437c6778b066e7ecb5ce834eb8c3efe7
 
 winchecksec:
     description: winchecksec source code
@@ -595,23 +595,23 @@ pkgconf:
         strip-components: 1
         add-prefix: pkgconf/
 
-aflplusplus-4.0:
-    description: AFL++ 4.00 source
+afl-2.5:
+    description: AFL 2.5x source
     fetch:
         type: git
-        repo: https://github.com/AFLplusplus/AFLplusplus
-        revision: ba3c7bfe40f9b17a691958e3525828385127ad25
+        repo: https://github.com/google/AFL
+        revision: e75894a889fe854c02b9435186bd1e2927d6d490
 
 cargo-vet:
     description: cargo-vet source
     fetch:
         type: git
         repo: https://github.com/mozilla/cargo-vet
-        revision: 16e5c986f3204889910720b647a2ef25dd417f13
+        revision: 12e3593437263bd17b5c3d2626ea8346799bf4b1
 
 symbol-scrapers:
     description: Linux distribution symbol scraper source
     fetch:
         type: git
         repo: http://github.com/mozilla/symbol-scrapers
-        revision: 1dc0e02e913e567e248f194883cd26f1c83ac3b1
+        revision: 32df4bfb69b0ef166ed8288da9760c2badff2e91

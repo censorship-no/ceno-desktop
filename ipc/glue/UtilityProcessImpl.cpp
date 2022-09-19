@@ -20,12 +20,7 @@
 
 namespace mozilla::ipc {
 
-UtilityProcessImpl::UtilityProcessImpl(ProcessId aParentPid)
-    : ProcessChild(aParentPid) {
-  mUtility = new UtilityProcessChild();
-}
-
-UtilityProcessImpl::~UtilityProcessImpl() { mUtility = nullptr; }
+UtilityProcessImpl::~UtilityProcessImpl() = default;
 
 bool UtilityProcessImpl::Init(int aArgc, char* aArgv[]) {
   Maybe<uint64_t> sandboxingKind = geckoargs::sSandboxingKind.Get(aArgc, aArgv);
@@ -43,8 +38,16 @@ bool UtilityProcessImpl::Init(int aArgc, char* aArgv[]) {
   // lower the sandbox in processes where the policy will prevent loading.
   ::LoadLibraryW(L"winmm.dll");
 
-  if (*sandboxingKind == SandboxingKind::UTILITY_AUDIO_DECODING) {
-    UtilityAudioDecoderParent::PreloadForSandbox();
+  if (*sandboxingKind == SandboxingKind::UTILITY_AUDIO_DECODING_GENERIC) {
+    UtilityAudioDecoderParent::GenericPreloadForSandbox();
+  }
+
+  if (*sandboxingKind == SandboxingKind::UTILITY_AUDIO_DECODING_WMF
+#  ifdef MOZ_WMF_MEDIA_ENGINE
+      || *sandboxingKind == SandboxingKind::MF_MEDIA_ENGINE_CDM
+#  endif
+  ) {
+    UtilityAudioDecoderParent::WMFPreloadForSandbox();
   }
 
   // Go for it
@@ -64,8 +67,8 @@ bool UtilityProcessImpl::Init(int aArgc, char* aArgv[]) {
     return false;
   }
 
-  return mUtility->Init(ParentPid(), nsCString(*parentBuildID), *sandboxingKind,
-                        IOThreadChild::TakeInitialPort());
+  return mUtility->Init(TakeInitialEndpoint(), nsCString(*parentBuildID),
+                        *sandboxingKind);
 }
 
 void UtilityProcessImpl::CleanUp() { NS_ShutdownXPCOM(nullptr); }
