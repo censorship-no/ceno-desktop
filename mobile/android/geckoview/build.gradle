@@ -8,6 +8,35 @@ apply plugin: 'kotlin-android'
 
 apply from: "${topsrcdir}/mobile/android/gradle/product_flavors.gradle"
 
+/* CENO: Add signing for Sonatype release of fork */
+// Create variables with empty default values
+ext["groupId"] = ''
+ext["signingKey"] = ''
+ext["signing.keyId"] = ''
+ext["signing.password"] = ''
+ext["signing.secretKeyRingFile"] = ''
+ext["ossrhUsername"] = ''
+ext["ossrhPassword"] = ''
+ext["exoplayerVersion"] = ''
+
+File secretPropsFile = project.rootProject.file('local.properties')
+if (secretPropsFile.exists()) {
+    // Read local.properties file first if it exists
+    Properties p = new Properties()
+    new FileInputStream(secretPropsFile).withCloseable { is -> p.load(is) }
+    p.each { name, value -> ext[name] = value }
+} else {
+    // Use system environment variables
+    ext["groupId"] = System.getenv('GROUP_ID')
+    ext["ossrhUsername"] = System.getenv('OSSRH_USERNAME')
+    ext["ossrhPassword"] = System.getenv('OSSRH_PASSWORD')
+    ext["signingKey"] = System.getenv('SIGNING_KEY')
+    ext["signingKeyId"] = System.getenv('SIGNING_KEY_ID')
+    ext["signingPassword"] = System.getenv('SIGNING_PASSWORD')
+    ext["exoplayerVersion"] = System.getenv('EXOPLAYER_VERSION')
+}
+/* END CENO */
+
 // The SDK binding generation tasks depend on the JAR creation task of the
 // :annotations project.
 evaluationDependsOn(':annotations')
@@ -185,7 +214,8 @@ configurations {
             }
             afterEvaluate {
                 // Implicit capability
-                capability("org.mozilla.geckoview:${getArtifactId()}:${project.ext.versionNumber}")
+                /* CENO: groupId set by environment variable */
+                capability("${groupId}:${getArtifactId()}:${project.ext.versionNumber}")
             }
         }
     }
@@ -197,7 +227,8 @@ configurations {
         outgoing {
             afterEvaluate {
                 // Implicit capability
-                capability("org.mozilla.geckoview:geckoview:${project.ext.versionNumber}")
+                /* CENO: groupId set by environment variable */
+                capability("${groupId}:geckoview:${project.ext.versionNumber}")
             }
         }
     }
@@ -214,7 +245,14 @@ dependencies {
     implementation "androidx.lifecycle:lifecycle-common-java8:2.4.0"
 
     if (mozconfig.substs.MOZ_ANDROID_HLS_SUPPORT) {
-        implementation project(":exoplayer2")
+        /* CENO: Workaround to avoid building our own exoplayer2, instead peg to a matching nightly build */
+        if (exoplayerVersion != '') {
+            implementation "org.mozilla.geckoview:geckoview-exoplayer2-nightly:$exoplayerVersion"
+        }
+        /* END CENO */
+        else {
+            implementation project(":exoplayer2")
+        }
     }
 
     testImplementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
@@ -381,9 +419,12 @@ android.libraryVariants.all { variant ->
 }
 
 apply plugin: 'maven-publish'
+/* CENO: Add signing plugin to sign AARs for Sonatype publish */
+apply plugin: 'signing'
 
 version = getVersionNumber()
-group = 'org.mozilla.geckoview'
+/* CENO: groupId set by environment variable */
+group = groupId
 
 def getArtifactId() {
     def id = "geckoview" + project.ext.artifactSuffix
@@ -416,6 +457,17 @@ publishing {
                         artifactId = getArtifactId()
                     }
 
+                    /* CENO: Name, description, and developers fields required for Sonatype publishing */
+                    name = getArtifactId()
+                    description = 'Fork of Mozilla GeckoView for CENO Browser'
+                    developers {
+                        developer {
+                            name = 'CENO Developers'
+                            email = 'cenoers@equalit.ie'
+                        }
+                    }
+                    /* END CENO */
+
                     url = 'https://geckoview.dev'
 
                     licenses {
@@ -427,6 +479,8 @@ publishing {
                     }
 
                     scm {
+                        /* CENO: Change SCM urls to point to our fork */
+                        /*
                         if (mozconfig.substs.MOZ_INCLUDE_SOURCE_INFO) {
                             // URL is like "https://hg.mozilla.org/mozilla-central/rev/1e64b8a0c546a49459d404aaf930d5b1f621246a".
                             connection = "scm::hg::${mozconfig.substs.MOZ_SOURCE_REPO}"
@@ -437,6 +491,10 @@ publishing {
                             connection = 'scm::hg::https://hg.mozilla.org/mozilla-central/'
                             url = 'https://hg.mozilla.org/mozilla-central/'
                         }
+                        */
+                        connection = 'scm:git:github.com/equalitie/gecko-dev.git'
+                        url = 'https://github.com/equalitie/gecko-dev/tree/ceno-v2'
+                        /* END CENO */
                     }
                 }
 
@@ -450,8 +508,27 @@ publishing {
         maven {
             url = "${topobjdir}/gradle/maven"
         }
+        /* CENO: Add Sonatype repo for publishing AARs */
+        maven {
+            name = "sonatype"
+            url "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2"
+            credentials {
+                username ossrhUsername
+                password ossrhPassword
+            }
+        }
+        /* END CENO */
     }
 }
+
+/* CENO: Sign AARs for publishing */
+signing {
+    if (signingKey) {
+        useInMemoryPgpKeys(signingKeyId, signingKey, signingPassword)
+    }
+    sign publishing.publications
+}
+/* END CENO */
 
 // This is all related to the withGeckoBinaries approach; see
 // mobile/android/gradle/with_gecko_binaries.gradle.

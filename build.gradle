@@ -235,6 +235,11 @@ def getArtifactSuffix() {
     if (substs.MOZ_UPDATE_CHANNEL != 'release') {
         suffix += "-${mozconfig.substs.MOZ_UPDATE_CHANNEL}"
     }
+    /* CENO: Label our releases with "ceno" suffix to differentiate from Mozilla's builds */
+    else {
+        suffix += "-ceno"
+    }
+    /* END CENO */
 
     return suffix
 }
