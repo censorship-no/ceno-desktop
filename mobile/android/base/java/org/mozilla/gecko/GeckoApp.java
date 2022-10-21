@@ -1444,6 +1444,10 @@ public abstract class GeckoApp extends GeckoActivity
             }
         });
 
+        /* Removing mobile data dialog warning, as it causes more issues than it solves
+        *  and needs to be refactored, delay until CENO v2 
+        */
+        /*
         ConnectivityManager connectivityMgr =
                 (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         NetworkInfo mobile_info = connectivityMgr.getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
@@ -1480,6 +1484,7 @@ public abstract class GeckoApp extends GeckoActivity
                 }
             }
         }, intentFilter);
+        */
     }
 
     @Override
