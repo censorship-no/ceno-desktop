@@ -1455,6 +1455,7 @@ public abstract class GeckoApp extends GeckoActivity
         if (mobile_info != null && mobile_info.isConnected()) {
             showOnMobileDataDialog();
         }
+        */
 
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
@@ -1465,6 +1466,7 @@ public abstract class GeckoApp extends GeckoActivity
                         intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
                 if (info == null) return;
 
+                /*
                 if (info.getType() == ConnectivityManager.TYPE_MOBILE) {
                     if (info.isConnected()) {
                         Log.d(LOGTAG, "Mobile connection detected, showing on mobile data dialog");
@@ -1474,6 +1476,7 @@ public abstract class GeckoApp extends GeckoActivity
                         hideOnMobileDataDialog();
                     }
                 }
+                */
 
                 // Restart the Ouinet client whenever connectivity has changed and become stable.
                 NetworkInfo.State state = info.getState();
@@ -1484,7 +1487,6 @@ public abstract class GeckoApp extends GeckoActivity
                 }
             }
         }, intentFilter);
-        */
     }
 
     @Override
