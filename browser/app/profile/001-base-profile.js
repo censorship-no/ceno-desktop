@@ -46,10 +46,12 @@ pref("browser.startup.homepage_override.buildID", "20100101");
 pref("browser.disableResetPrompt", true);
 
 // Disk activity: Disable Browsing History Storage
-pref("browser.privatebrowsing.autostart", true);
+// CENO: Do not start into private mode automatically
+pref("browser.privatebrowsing.autostart", false);
 pref("browser.cache.disk.enable", false);
 pref("permissions.memory_only", true);
-pref("security.nocertdb", true);
+// CENO: certdb is required for MitM cert injection
+pref("security.nocertdb", false);
 pref("media.aboutwebrtc.hist.enabled", false);
 
 // Disk Activity
@@ -584,6 +586,8 @@ pref("extensions.postDownloadThirdPartyPrompt", false);
 // tor-browser#41701: Reporting an extension does not work. The request goes to
 // Mozilla and is always rejected anyway (HTTP 400).
 pref("extensions.abuseReport.enabled", false);
+// CENO: Quarantined Domains allows built-in Ceno extension to work on restricted domains
+pref("extensions.quarantinedDomains.enabled", false);
 // We are already providing the languages we support in multi-lingual packages.
 // Therefore, do not allow download of additional language packs. They are not a
 // privacy/security threat, we are disabling them for UX reasons. See bug 41377.
@@ -599,7 +603,8 @@ pref("security.osclientcerts.autoload", false);
 pref("security.family_safety.mode", 0);
 
 // Don't allow MitM via enterprise roots, see bug 30681
-pref("security.enterprise_roots.enabled", false);
+// CENO: Enterprise roots required for MitM cert injection
+pref("security.enterprise_roots.enabled", true);
 
 // Don't ping Mozilla for MitM detection, see bug 32321
 pref("security.certerrors.mitm.priming.enabled", false);
@@ -633,6 +638,9 @@ pref("privacy.query_stripping.strip_on_share.enabled", true);
 
 // Disable platform text recogniition functionality (tor-browser#42057)
 pref("dom.text-recognition.enabled", false);
+
+// CENO: Needed to install built-in extensions
+pref("xpinstall.signatures.required", false);
 
 #ifdef XP_WIN
 pref("browser.taskbar.lists.enabled", false);
